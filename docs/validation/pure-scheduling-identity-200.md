@@ -5,7 +5,7 @@ Scheduling artifacts were qualified at `c4e1446b36724d9c693737188cab0ce0e9a5149e
 identity's final guard/test inputs at `81b287334ddf6e7315fbb604e9941a7003ca6f27`.
 The [machine-readable evidence](pure-scheduling-identity-200.json) records exact
 input hashes, commands, executed case identities, artifact hashes and revisions.
-Later changes to this evidence or pending patch do not change those package inputs.
+Later integration changes do not relabel those original runs.
 
 ## Delivered boundaries
 
@@ -66,32 +66,21 @@ dependencies through task-owned links, building only chess-line. The first saved
 seam run reported an unrelated cache-write warning outside the checkout; the
 clean-setup proof disables that cache and passes without warnings.
 
-## Pending integration and independent review
+## Historical integration review at 3562e6fc
 
-This branch intentionally leaves D-owned initial shared metadata/tooling unchanged.
-The [exact registration patch](pure-scheduling-identity-200-registration.patch)
-contains only scheduling/chess-core component entries, their backend pins/path
-installs/lock entries, explicit image package copy/install inputs and relevant
-regression registration. It applies to the starting shared files (`git apply
---check` passes), and its dependency changes were resolved/installed successfully
-in a disposable copy. Its test `cwd` fields target D's announced selector design.
-
-After D's baseline is merged, reconcile/apply this patch, retaining D's Python
-range, other component entries and unrelated lock data. Then run D's scoped
-component validation, discovery and restricted artifact commands with
-`--component scheduling --component chess-core`. No competing checker/schema is
-introduced. No image rebuild or deployment is part of this task.
-
-Independent `codex review --uncommitted` found two P1 integration gaps: current
-backend installs omit chess-core, and the current backend pin/lock still requires
-scheduling 0.1.0. The pending patch addresses both mechanically, but they remain
-unresolved on the actual branch until D integration. Therefore the PR is draft,
-uses **Refs #200**, and does not claim #200 or parent #253 complete.
+At the original review, D's foundation had not merged. Independent review found
+backend installation omitted chess-core and still pinned scheduling 0.1.0. Those
+findings described actual head `3562e6fc`, despite a passing disposable rehearsal.
+The original unapplied patch and complete original validation documents are
+archived under `/Users/andy/tempo/test-results/pr275-integration-20261015/`.
+The patch is incorporated into actual configuration and removed in `5b1436af`;
+it is no longer an implementation instruction. The table above and the original
+JSON root fields remain historical results at their exact original revisions.
 
 #200 mapping: executable pure APIs, unchanged stable digests, legacy adapter proof,
 installed artifacts, deterministic processes and forbidden-import rejection are
-delivered. Actual shared registration/dependency integration and its scoped proof
-remain. Package unit success does not prove Learning queue/receipt durability.
+delivered. At that original revision, shared registration/dependency integration and its
+scoped proof remained outstanding; the integrated qualification below resolves them. Package unit success does not prove Learning queue/receipt durability.
 PostgreSQL, browser matrices, full-system gates, model work, image builds, registry
 publication, migrations, merges and deployment were not run.
 
@@ -100,3 +89,73 @@ and reproduction scripts are retained outside the task checkout at
 `/Users/andy/tempo/test-results/agent-c-200/`. Task-owned environments/checkout are
 removed after verifying pushed durable commits and absence of active users;
 shared dependencies, caches, other checkouts and live study resources are retained.
+
+
+## Integrated current-main qualification — October 15, 2026
+
+Executable integration commit: **`5b1436affbe6395a90588466794a02af0e54a124`**.
+Current target main: `dfcb08faeef40ad7522a65c4cada9ece1761448c`.
+Foundation #277 head `cbc12f77b114c60e91a91d1f9d4b8cb929f4153f` is included through
+merge `9e99159148cc6b1b656caf1eeeb3f9a7208d7a55`. PRs #276/#279 are preserved.
+Learning #278 is still unmerged; the existing application seam suite is unchanged.
+
+Actual backend metadata, lock, test requirements and image inputs now install
+`tempo-scheduling==0.2.0` and `tempo-chess-core==0.1.0`. Both existing manifest
+entries are implemented with matching versions, public exports and explicit suite
+working directories. All other components, shared suites, schema/catalog inputs,
+Python >=3.12,<3.15, FSRS 6.3.2 and unrelated resolved versions match current main.
+No package algorithm or backend application behavior changed in this integration.
+
+| Integrated proof | Actual result |
+| --- | --- |
+| Clean declared backend setup, CPython 3.12.12 | Both distributions installed noneditably; adapter identities pass |
+| Backend adapter/application/boundary suites | 52 passed, including two installed-distribution regression cases |
+| Selected manifest validation and discovery | Both implemented packages selected and validated |
+| All three selectors with Python/uv/npm unavailable | Listing succeeds without setup |
+| Registered component suites | Scheduling 55; chess-core 105; declared package cwd |
+| Restricted installed wheel, Python 3.12.12 | Scheduling 55 ordinary + 55 guarded; chess-core 105 ordinary + 105 guarded |
+| Restricted installed wheel, Python 3.14.8 | Scheduling 55 ordinary + 55 guarded; chess-core 105 ordinary + 105 guarded |
+| Restricted wheel/sdist builds and artifact hashes | Four artifacts; all match original final package artifact hashes |
+| Restricted empty selections | Exit 5 for each package/runtime; no false pass |
+| Component tooling regular suite | 72 passed; zero failures/skips/TODOs |
+| Scheduling and TypeScript FEN-key/card-ID producer parity | 2 passed |
+| Conflict, complete PR whitespace, lock drift and input checks | Passed |
+
+The clean setup command was `uv sync --project backend --locked --no-editable
+--python 3.12`. Imports resolve inside `backend/.venv/lib/python3.12/site-packages/`,
+with installed metadata versions 0.2.0 / 0.1.0 and editable=false. `Schedule` and
+`card_id` identities match their packages; the legacy review function remains an
+intentional wrapper. `PYTHONPATH` was empty. The registered suite commands remain
+D's `uv run` commands: uv chose package-local CPython **3.13.5** environments,
+while `TEMPO_COMPONENT_PYTHON` selected the installed backend interpreter for the
+checker/report reader. Endpoint qualification is the separate restricted proof.
+Ordinary and guarded counts above are repeated executions of the same unique
+case sets, not additional unique cases. Restricted builds install wheels;
+independent sdist rebuilds remain the original historical proof.
+
+Exact commands, runtimes, case identities, input hashes, artifact hashes and
+reports are in JSON `integratedCandidate` and outside the task checkout at
+`/Users/andy/tempo/test-results/pr275-integration-20261015/`.
+`restricted-build.json` retains the full installed-artifact report and
+`restricted-case-identities.json` separates component/runtime case sets.
+The pending patch's original bytes are retained as `original-registration.patch`.
+
+The new named registration regression failed against the pre-integration planned
+chess-core entry, then passed after integration. Initial producer attempts ran no
+cases because the task dependency links omitted the chess-line workspace link;
+correcting that task-only link yielded the two passing cases. The first backend
+run passed 52 cases with a denied unrelated home-cache warning; disabling only
+pytest's cache provider yielded 52 passes without warnings. The first restricted
+run passed, but its report filename collided with task command metadata; a repeat
+after correcting the recorder preserved the complete report. These diagnostics
+remain recorded separately and are not passing qualification evidence.
+
+Independent read-only source and evidence review found **no actionable findings**.
+The reviewer verified original evidence preservation, input/artifact hashes, installed
+versions/origins, runtimes, counts and case identities; it did not rerun tests.
+Engineering verdict: **ready for independent final review and merge**, subject to the
+normal human review decision. This qualifies the bounded package/backend integration; it does
+not claim deployment or full-product qualification. Actions remains disabled and
+is not treated as a correctness failure. No Docker image, PostgreSQL, browser,
+model, full-system, Rust, publication, migration, merge or deployment work ran.
+Task resources are removed only after evidence and pushed refs are verified.

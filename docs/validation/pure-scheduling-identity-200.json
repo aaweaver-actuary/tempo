@@ -976,5 +976,916 @@
     "npm run check:conflicts",
     "git diff origin/main --check"
   ],
-  "rawEvidenceDirectory": "/Users/andy/tempo/test-results/agent-c-200"
+  "rawEvidenceDirectory": "/Users/andy/tempo/test-results/agent-c-200",
+  "historicalEvidenceScope": "All original root fields retain the original PR-275 source-bound results; integratedCandidate is the new current-main qualification and does not relabel old runs.",
+  "integratedCandidate": {
+    "codeRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+    "mainRevision": "dfcb08faeef40ad7522a65c4cada9ece1761448c",
+    "originalPrHead": "3562e6fc90b512dbb572c7b2444c2526d1a3131c",
+    "foundationRevision": "cbc12f77b114c60e91a91d1f9d4b8cb929f4153f",
+    "foundationMerge": "9e99159148cc6b1b656caf1eeeb3f9a7208d7a55",
+    "foundationMerged": true,
+    "rawEvidenceDirectory": "/Users/andy/tempo/test-results/pr275-integration-20261015",
+    "pendingPatch": {
+      "status": "incorporated and removed",
+      "archive": "/Users/andy/tempo/test-results/pr275-integration-20261015/original-registration.patch",
+      "sha256": "4dae961781a5fcffa8ed30b357708eadc264630760daf059fc53ae9c646cfe0d"
+    },
+    "sourceInputs": {
+      "backend/Dockerfile": "9f5157039f71aad289c489979670ccc43abaf10ae2c037a31d122c7120be82e1",
+      "backend/app/services/cards.py": "90dac196ea8991303b03c525aa8c7c8ec81694af66f4f96844d82f54e77de3b3",
+      "backend/app/services/scheduler.py": "84128e8017167966a8f57037c318cda43a075902836f4d7e4f3d82803b3bec91",
+      "backend/app/services/scheduling_review_application.py": "5028ea9bd6fc7c399c6f42975db47fadae0b0e90b132dd5ce04cdd6bbce62bbe",
+      "backend/pyproject.toml": "02981b03c6b92a7184c73f9bd8744cd11a36bc11154f9c65623ed3434f5328c4",
+      "backend/requirements-test.txt": "0ce8aa79ee7d6463af3dd680b68eec65854149453bcdc658b31f5b594a09f09d",
+      "backend/tests/test_scheduling_boundary.py": "21ee8b70aa9f8448adbc0a1ec31e00943301e97ded9bb2735b0bd44d6e526c68",
+      "backend/tests/test_scheduling_package_adapter.py": "40c4d99cc684f2067e1f66ca482cadca87b638aec2f8d0b930dec3d5b8aaddc3",
+      "backend/tests/test_scheduling_review_application.py": "0615e76ab2f3aa37cfeaac374369cba31c4de653ff5db3e594cc812d1a100d6a",
+      "backend/uv.lock": "fb36becf95f0e198afdb4630162cc182ed14dedd98848e66abf971997a6fcf19",
+      "components.json": "f813db0b3cb024401c852b1d65ed37801ac2ba5e6b421046ef13ae9ebb743cda",
+      "components.schema.json": "605e9385648e4f80c133429b5f3929883c49f032aa957a6bdb3a0ff2a8480888",
+      "module-resolution.ts": "f5a8b3377518dd9f5bc54ddbc7f568da2f67ca2a926bc476ad34163ba1974262",
+      "package-lock.json": "165d63f29b615745058bfb184e6d47de67664bab60bce2e3438c9bfb81597e7a",
+      "package.json": "133d8942b63674c14f94864a93d1b306856892965bff1ef9cc9acbec3a4bbcc8",
+      "packages/chess-core/README.md": "3fd51fc17176a34cec4d979699bbf27e75bd0582b598515e631a1bb1db906588",
+      "packages/chess-core/REGRESSIONS.md": "134cabf50c34ed50d191948554c11b3244c6d9445424ecd99b0ec6b15d2171ba",
+      "packages/chess-core/pyproject.toml": "83a057e0463f0dd31154331695ce226082f2782e21d8563a25466dbaec8b3900",
+      "packages/chess-core/src/tempo_chess_core/__init__.py": "2e5b1d8260005af4eeb44bbc0938cc6a35c6ece73a4029d6109afa463b44408d",
+      "packages/chess-core/src/tempo_chess_core/_identity.py": "a868b76c8e4e49202f71a38f0d424d3ed10c6183fcb30f0e2c3c707689a1437a",
+      "packages/chess-core/tests/baseline.json": "07c1562de0ef24413d938a31ff51e8ec1dd068e2c60a8482d69ed824eeab7b16",
+      "packages/chess-core/tests/conftest.py": "c9c5900914333a5e7961b6d73974abebb1777171c576ae75aaae5803d55e536d",
+      "packages/chess-core/tests/shared-card-id-parity.json": "a02d6a59930e1cb7690535abae50a9c04d8fc858071f5feff0c45a153767b59a",
+      "packages/chess-core/tests/test_identity.py": "27116fbdbf9216d50a22fda1aa8f9323de16e72006078bca610b16afdbb099af",
+      "packages/chess-core/tests/test_purity.py": "51bfbfb46f1bd77e899164c2b47d41590fae73ff6d6697472c862f94012ba77b",
+      "packages/chess-core/uv.lock": "60eb28d2f976bcdfd0eb2f3a9496b9c0abdd8aa5cd16f580f7de6a8dc326e1a4",
+      "packages/scheduling/README.md": "397964e8b8cd604515a857163967e0df8af80f9bb0bab57fd5193df8ac1269c0",
+      "packages/scheduling/REGRESSIONS.md": "f653379f80e0e6706a8f2c73a59e317086bd21a6b7fc3acf6585767b82871fc8",
+      "packages/scheduling/pyproject.toml": "95147e7b787706d155e0af7d2deb12fb06179b55a677ae2c90546ddfe94d5e44",
+      "packages/scheduling/src/tempo_scheduling/__init__.py": "c6f4ff4ba619e1dd65f8fa1ff5c458aa31789e934a2ac79f2e44eeb768f7c654",
+      "packages/scheduling/src/tempo_scheduling/_scheduler.py": "3ff7b00013cea79ffdc3cb9bacf1bb3ca3695cca83636c040cff9377fd73f253",
+      "packages/scheduling/tests/baseline.json": "cee12c2cda2747843300601ac7465a0e1d3f2ff71915a956671b992524b4469c",
+      "packages/scheduling/tests/conftest.py": "c9c5900914333a5e7961b6d73974abebb1777171c576ae75aaae5803d55e536d",
+      "packages/scheduling/tests/golden.json": "23e7a908c5e493e5f01060c6c82af94a399ca975224d3b6e1c17d82408c3973c",
+      "packages/scheduling/tests/guarded_probe.py": "3669a5198e7539692696e5c64b0aebe8fd2bb31b39f0b14cb53bea2a0c016de7",
+      "packages/scheduling/tests/test_purity.py": "9054f6edb16aea7ec72cd5d0047c54cff5aa6f9934a58f9cc3ecceb4f7c614c7",
+      "packages/scheduling/tests/test_scheduler.py": "7a0ca118bc1db3d1525b5d6c2a74bb4d261693908c56540f28c32d0c2d0c53c3",
+      "packages/scheduling/uv.lock": "658fa4ff1b33ab2b8bed954b65b6393fe73bc42a900cdc4db828017dd5632a26",
+      "scripts/resolve-python.mjs": "28d5a13e9451a3ceb8b5689115199e373ff6cb615219d288b17c539760deb7eb",
+      "tests/fixtures/card-id-parity.json": "8dc45e89fc6ed5d382a7a1edd82b0aa0f4a72e4fc366ad531f48579d130d2c1d",
+      "tests/unit/scheduling-producer-parity-regressions.test.ts": "13fda4152e9977ae9796df4e3f7904173b058530254a2cd40a1a31ddfffcfa9d",
+      "tools/component-build/README.md": "294c0cb5cc2b7a306d1409a81871cf641c0fd0668f0dbad9fb58824e49991fa7",
+      "tools/component-build/REGRESSIONS.md": "229484c3dec7e80bde1f699e667e767c4c52425a23150f2e9516584a5d5473de",
+      "tools/component-build/case-results.py": "aecf95b59517258e975967dcd2d376995cb8b8b609d752d3b457cf792365fb36",
+      "tools/component-build/check-components.mjs": "badd886b27567a1f73c5f5fb4fb7dcb19d831d49e49a2e265d05a42975322885",
+      "tools/component-build/check-contract.py": "95bf72be632e5cf43b4e420e2554f3fa89a86687f7869096591e87f412f3f079",
+      "tools/component-build/check-python.py": "9d4c6a42f93fc741e9c02184bf50f91215ea4a0d770898e7b3d956d541254c7d",
+      "tools/component-build/component-tests.mjs": "0562716e7b13a970c2b5fe7d7361f41a43749c795780ba5877f36eebec01e877",
+      "tools/component-build/contract-exchange.py": "39d8b5bcb58c89b06573b940d66dcbd53f0a3ae8db24b0bb37c34e483d4aafd7",
+      "tools/component-build/node-test-reporter.mjs": "39211724145f0cb76a497aa2dabcbfb341de6c7168895c76bfcc2cfedded163e",
+      "tools/component-build/package-lock.json": "9c77e8e604e2647e8c85ea5dfcf9f738514f7ed266e96f2d947bb2cc99cfcf60",
+      "tools/component-build/package.json": "cc51130e731e46ba61273fb282854bd54e2f6694f3839caaa8809ac0eae5c095",
+      "tools/component-build/restricted-build.mjs": "e016f644e0d50809e2bfe065b1a6cfbd00f73ea6a2e3757cbb4daaa24b933266",
+      "tools/component-build/restricted-contracts.mjs": "a59e6d9967fc24eef1c8642ee1cf6bbd097c3951364d22e1f0c8c96874e28f88",
+      "tools/component-build/selection.mjs": "b6e2cdc339454848e7cb897cba0d6f79f2e66e3de4029677528f33cffa4b14e1",
+      "tools/component-build/test-inventory.json": "23a5bc41eccbaaedfde8b9b7a0df2ad1dcf57c0dff13f7a95bb582be30627f35",
+      "tools/component-build/test-lane.mjs": "fc07db6ba38722af3c6898d4f87140d7b0d78b1a61d85385e22f0bb9154a16e0",
+      "tools/component-build/test-node.mjs": "c88cde295bafb69e81138d539d4159fac5621d3e6977c6e3ee2250c4069249fb",
+      "tools/component-build/tests/boundaries.test.mjs": "698c80c27948d3100293b91a0665b6910df31f8f17bce3e9bda5b290004429d1",
+      "tools/component-build/tests/integration.test.mjs": "2d324caf0edb08fc79e9244460aa679ea6a55ca08067d5c0bb2dbd1a7ef114bd",
+      "tools/component-build/verify-contract-artifact.py": "02131a82472db60669b94ec407f3244b4282cd5457a3cefc27fc6ada27e1e3d8",
+      "vitest.lanes.config.ts": "be334c05476fc25e66f9b85f4c2f49216cbda1fed4994e2c31fa7643edf1f6ad"
+    },
+    "backendInstallation": {
+      "python": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
+      "interpreter": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+      "distributions": [
+        {
+          "name": "tempo-scheduling",
+          "version": "0.2.0",
+          "module": "tempo_scheduling",
+          "origin": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/lib/python3.12/site-packages/tempo_scheduling/__init__.py",
+          "directUrl": {
+            "url": "file:///Users/andy/tempo/.dev-copies/pr275-integration-20261015/packages/scheduling",
+            "dir_info": {
+              "editable": false
+            }
+          }
+        },
+        {
+          "name": "tempo-chess-core",
+          "version": "0.1.0",
+          "module": "tempo_chess_core",
+          "origin": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/lib/python3.12/site-packages/tempo_chess_core/__init__.py",
+          "directUrl": {
+            "url": "file:///Users/andy/tempo/.dev-copies/pr275-integration-20261015/packages/chess-core",
+            "dir_info": {
+              "editable": false
+            }
+          }
+        }
+      ]
+    },
+    "backendSeams": {
+      "passed": 52,
+      "executedIdentities": [
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_declares_installed_noneditable_pure_packages[tempo-scheduling-tempo_scheduling-scheduling]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_declares_installed_noneditable_pure_packages[tempo-chess-core-tempo_chess_core-chess-core]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_scheduler_keeps_package_class_identity_and_equivalent_results",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_scheduler_retains_entire_legacy_signature",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_scheduler_forwards_every_control_without_replacing_supplied_identity",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[False-False]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[True-False]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[False-True]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[True-True]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_normalizes_legacy_naive_time_to_utc",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_creates_and_serializes_real_fsrs_initial_identity_at_boundary[None]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_backend_creates_and_serializes_real_fsrs_initial_identity_at_boundary[]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_invalid_legacy_outcome_does_not_generate_identity",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_package_adapter::test_legacy_identity_adapter_preserves_shared_digests_and_public_identity",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_uses_original_completion_clock_without_database",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_source_replay_preserves_current_result_contract",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts0-mature]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts1-learning]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts2-learning]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts3-mature]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts4-learning]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_empty_source_does_not_lookup_replay[None]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_empty_source_does_not_lookup_replay[]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_propagates_persistence_failure_without_more_effects[append_review]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_propagates_persistence_failure_without_more_effects[load_maturity_facts]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_propagates_persistence_failure_without_more_effects[save_card_state]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_review_application::test_scheduling_application_import_does_not_load_infrastructure",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[import app.main]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[import psycopg]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[def hidden():\\n    from app import database]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[if False:\\n    from . import unrelated_analysis]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_transitive_infrastructure_imports",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_unowned_consumers[app.services.scheduling_review_application]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_unowned_consumers[app.services.scheduling_review_contracts]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_has_no_unrelated_transitive_dependencies",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_disallows_dynamic_import_loaders[app.services.scheduling_review_application]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_disallows_dynamic_import_loaders[app.services.scheduling_review_contracts]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_disallows_dynamic_import_loaders[app.services.scheduler]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_runs_without_application_startup_or_services",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_module_change_selects_owning_tests",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_unrelated_module_change_excludes_scheduling_tests",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_contract_change_expands_consumer_qualification",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[import fastapi-scheduling-exports0-dependencies0]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[import fastapi-chess-core-exports1-dependencies1]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[def hidden():\\n    import app.main-scheduling-exports0-dependencies0]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[def hidden():\\n    import app.main-chess-core-exports1-dependencies1]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[if False:\\n    import celery-scheduling-exports0-dependencies0]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[if False:\\n    import celery-chess-core-exports1-dependencies1]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[from . import bridge-scheduling-exports0-dependencies0]",
+        "tempo..dev-copies.pr275-integration-20261015.backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[from . import bridge-chess-core-exports1-dependencies1]"
+      ],
+      "junit": "/Users/andy/tempo/test-results/pr275-integration-20261015/backend-seams-final.xml"
+    },
+    "componentSuites": [
+      {
+        "suite": "scheduling",
+        "cwd": "packages/scheduling",
+        "command": "uv run --locked --no-editable python -m pytest tests",
+        "seconds": 1.350243209,
+        "executedIdentities": [
+          "tests.test_purity::test_installed_scheduling_is_identical_across_fresh_guarded_processes[UTC] [cases.xml:1]",
+          "tests.test_purity::test_installed_scheduling_is_identical_across_fresh_guarded_processes[America/New_York] [cases.xml:2]",
+          "tests.test_purity::test_installed_scheduling_is_identical_across_fresh_guarded_processes[Asia/Tokyo] [cases.xml:3]",
+          "tests.test_purity::test_installed_guard_rejects_environmental_apis[clock] [cases.xml:4]",
+          "tests.test_purity::test_installed_guard_rejects_environmental_apis[sleep] [cases.xml:5]",
+          "tests.test_purity::test_installed_guard_rejects_environmental_apis[identity] [cases.xml:6]",
+          "tests.test_purity::test_installed_guard_rejects_environmental_apis[random] [cases.xml:7]",
+          "tests.test_scheduler.SchedulerTests::test_again_is_reshuffled_into_todays_queue [cases.xml:8]",
+          "tests.test_scheduler.SchedulerTests::test_first_clean_pass_returns_to_end_then_fsrs_schedules [cases.xml:9]",
+          "tests.test_scheduler.SchedulerTests::test_hard_track_enters_and_recovers_on_fixed_cadence [cases.xml:10]",
+          "tests.test_scheduler.SchedulerTests::test_overdue_growth_is_capped [cases.xml:11]",
+          "tests.test_scheduler.SchedulerTests::test_unlock_requires_stability_across_days [cases.xml:12]",
+          "tests.test_scheduler::test_fixed_time_schedule_matches_golden_output [cases.xml:13]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[first-correct] [cases.xml:14]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[again] [cases.xml:15]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[reinforcement] [cases.xml:16]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[overdue-growth-cap] [cases.xml:17]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[light-first-correct] [cases.xml:18]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[light-again-returns-normal] [cases.xml:19]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[hard-entry] [cases.xml:20]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[hard-recovery-1] [cases.xml:21]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[hard-recovery-2] [cases.xml:22]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[hard-recovery-3] [cases.xml:23]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[separate-local-day] [cases.xml:24]",
+          "tests.test_scheduler::test_explicit_schedule_preserves_baseline[existing-maximum-interval] [cases.xml:25]",
+          "tests.test_scheduler::test_installed_scheduling_exports_and_identity [cases.xml:26]",
+          "tests.test_scheduler::test_invalid_outcome_is_rejected [cases.xml:27]",
+          "tests.test_scheduler::test_environmental_inputs_are_required_keyword_arguments[reviewed_at] [cases.xml:28]",
+          "tests.test_scheduler::test_environmental_inputs_are_required_keyword_arguments[review_day] [cases.xml:29]",
+          "tests.test_scheduler::test_environmental_inputs_are_required_keyword_arguments[fsrs_card_json] [cases.xml:30]",
+          "tests.test_scheduler::test_naive_review_time_is_rejected [cases.xml:31]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[card_id] [cases.xml:32]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[state] [cases.xml:33]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[step] [cases.xml:34]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[stability] [cases.xml:35]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[difficulty] [cases.xml:36]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[due] [cases.xml:37]",
+          "tests.test_scheduler::test_incomplete_card_state_is_rejected[last_review] [cases.xml:38]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes0] [cases.xml:39]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes1] [cases.xml:40]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes2] [cases.xml:41]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes3] [cases.xml:42]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes4] [cases.xml:43]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes5] [cases.xml:44]",
+          "tests.test_scheduler::test_invalid_explicit_card_state_is_rejected[changes6] [cases.xml:45]",
+          "tests.test_scheduler::test_missing_serialized_card_has_no_initial_state_fallback[] [cases.xml:46]",
+          "tests.test_scheduler::test_missing_serialized_card_has_no_initial_state_fallback[null] [cases.xml:47]",
+          "tests.test_scheduler::test_missing_serialized_card_has_no_initial_state_fallback[[]] [cases.xml:48]",
+          "tests.test_scheduler::test_missing_serialized_card_has_no_initial_state_fallback[{}] [cases.xml:49]",
+          "tests.test_scheduler::test_missing_serialized_card_has_no_initial_state_fallback[malformed] [cases.xml:50]",
+          "tests.test_scheduler::test_aware_offsets_preserve_instant_and_separate_local_day[-7] [cases.xml:51]",
+          "tests.test_scheduler::test_aware_offsets_preserve_instant_and_separate_local_day[-4] [cases.xml:52]",
+          "tests.test_scheduler::test_aware_offsets_preserve_instant_and_separate_local_day[5.5] [cases.xml:53]",
+          "tests.test_scheduler::test_aware_offsets_preserve_instant_and_separate_local_day[9] [cases.xml:54]",
+          "tests.test_scheduler::test_existing_card_offset_timestamps_do_not_change_effective_review_instant [cases.xml:55]"
+        ],
+        "passed": 55,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "python": "3.13.5 (uv-selected package-local installed environment)"
+      },
+      {
+        "suite": "chess-core",
+        "cwd": "packages/chess-core",
+        "command": "uv run --locked --no-editable python -m pytest tests",
+        "seconds": 0.5663559170000003,
+        "executedIdentities": [
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-0] [cases.xml:1]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-1] [cases.xml:2]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-2] [cases.xml:3]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-3] [cases.xml:4]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-4] [cases.xml:5]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-5] [cases.xml:6]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-6] [cases.xml:7]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-7] [cases.xml:8]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-8] [cases.xml:9]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-9] [cases.xml:10]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-10] [cases.xml:11]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-11] [cases.xml:12]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-12] [cases.xml:13]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-13] [cases.xml:14]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-14] [cases.xml:15]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-15] [cases.xml:16]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-16] [cases.xml:17]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-17] [cases.xml:18]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-18] [cases.xml:19]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-19] [cases.xml:20]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-20] [cases.xml:21]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-21] [cases.xml:22]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-22] [cases.xml:23]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-23] [cases.xml:24]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-24] [cases.xml:25]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-25] [cases.xml:26]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-26] [cases.xml:27]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-27] [cases.xml:28]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-28] [cases.xml:29]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-29] [cases.xml:30]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-30] [cases.xml:31]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-31] [cases.xml:32]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-32] [cases.xml:33]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-33] [cases.xml:34]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-34] [cases.xml:35]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-35] [cases.xml:36]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-36] [cases.xml:37]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-37] [cases.xml:38]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-38] [cases.xml:39]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-39] [cases.xml:40]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-40] [cases.xml:41]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-41] [cases.xml:42]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-42] [cases.xml:43]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-43] [cases.xml:44]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-44] [cases.xml:45]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-45] [cases.xml:46]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-46] [cases.xml:47]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-47] [cases.xml:48]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-48] [cases.xml:49]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-49] [cases.xml:50]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-50] [cases.xml:51]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-51] [cases.xml:52]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-52] [cases.xml:53]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-53] [cases.xml:54]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-54] [cases.xml:55]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-55] [cases.xml:56]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-56] [cases.xml:57]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-57] [cases.xml:58]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-58] [cases.xml:59]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-59] [cases.xml:60]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-60] [cases.xml:61]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-61] [cases.xml:62]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-62] [cases.xml:63]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-63] [cases.xml:64]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-64] [cases.xml:65]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-65] [cases.xml:66]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-66] [cases.xml:67]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-67] [cases.xml:68]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-68] [cases.xml:69]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-69] [cases.xml:70]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-70] [cases.xml:71]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-71] [cases.xml:72]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-72] [cases.xml:73]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-73] [cases.xml:74]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-74] [cases.xml:75]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-75] [cases.xml:76]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-76] [cases.xml:77]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-77] [cases.xml:78]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-78] [cases.xml:79]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-79] [cases.xml:80]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-80] [cases.xml:81]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-81] [cases.xml:82]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-82] [cases.xml:83]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-83] [cases.xml:84]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-84] [cases.xml:85]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-85] [cases.xml:86]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-86] [cases.xml:87]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-87] [cases.xml:88]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-88] [cases.xml:89]",
+          "tests.test_identity::test_exact_baseline_digest_and_fen_key[baseline-89] [cases.xml:90]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[starting position] [cases.xml:91]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[FEN clock changes preserve card ID] [cases.xml:92]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[noncapturable en passant is retained for card identity] [cases.xml:93]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[same board without en passant has another card ID] [cases.xml:94]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[castling rights affect card ID] [cases.xml:95]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[promotion move is part of card ID] [cases.xml:96]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[invalid FEN hashes exactly as Python] [cases.xml:97]",
+          "tests.test_identity::test_existing_python_rust_digest_fixture_is_preserved[extra whitespace is normalized] [cases.xml:98]",
+          "tests.test_identity::test_clocks_and_whitespace_do_not_split_identity [cases.xml:99]",
+          "tests.test_identity::test_castling_en_passant_case_and_move_order_remain_distinct [cases.xml:100]",
+          "tests.test_identity::test_malformed_and_empty_input_are_hashed_without_repair [cases.xml:101]",
+          "tests.test_identity::test_installed_identity_package_exports_only_identity_without_runtime_dependencies [cases.xml:102]",
+          "tests.test_purity::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[UTC] [cases.xml:103]",
+          "tests.test_purity::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[America/New_York] [cases.xml:104]",
+          "tests.test_purity::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[Asia/Tokyo] [cases.xml:105]"
+        ],
+        "passed": 105,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "python": "3.13.5 (uv-selected package-local installed environment)"
+      }
+    ],
+    "restrictedArtifacts": {
+      "report": "/Users/andy/tempo/test-results/pr275-integration-20261015/restricted-build.json",
+      "sha256": "92ee9afbd319fb6b7a099e2038083dadac7db2bea3d585889d1754d6b3bff079",
+      "artifacts": [
+        {
+          "name": "tempo_scheduling-0.2.0-py3-none-any.whl",
+          "sha256": "7fd727f381877ef8e80e11fc3d56f1e75b872db4969c59ae218c30856d6a649d"
+        },
+        {
+          "name": "tempo_scheduling-0.2.0.tar.gz",
+          "sha256": "718cc1d3f90d19b53f6c6d0014befdae0e68605bcf7e57aa6754e520e96b5e3c"
+        },
+        {
+          "name": "tempo_chess_core-0.1.0-py3-none-any.whl",
+          "sha256": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5"
+        },
+        {
+          "name": "tempo_chess_core-0.1.0.tar.gz",
+          "sha256": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516"
+        }
+      ],
+      "runtimes": [
+        "3.12.12",
+        "3.14.8"
+      ],
+      "caseCounts": [
+        {
+          "component": "scheduling",
+          "python": "3.12",
+          "ordinaryPassed": 55,
+          "guardedPassed": 55
+        },
+        {
+          "component": "scheduling",
+          "python": "3.14",
+          "ordinaryPassed": 55,
+          "guardedPassed": 55
+        },
+        {
+          "component": "chess-core",
+          "python": "3.12",
+          "ordinaryPassed": 105,
+          "guardedPassed": 105
+        },
+        {
+          "component": "chess-core",
+          "python": "3.14",
+          "ordinaryPassed": 105,
+          "guardedPassed": 105
+        }
+      ],
+      "caseIdentities": "/Users/andy/tempo/test-results/pr275-integration-20261015/restricted-case-identities.json",
+      "zeroSelectedExitCode": 5,
+      "temporaryWorkspaceRemoved": true,
+      "proof": "Wheels and sdists built; installed wheels tested without package source. Original independent sdist-to-wheel rebuild evidence remains historical."
+    },
+    "tooling": {
+      "lane": "node",
+      "collectedFiles": [
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs"
+      ],
+      "executedIdentities": [
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:39:4 M02 TypeScript rejects direct forbidden imports [case 1; 0:1]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:39:4 M02 TypeScript rejects lazy forbidden imports [case 2; 0:2]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:39:4 M02 TypeScript rejects conditional forbidden imports [case 3; 0:3]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:39:4 M02 TypeScript rejects source escape forbidden imports [case 4; 0:4]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:39:4 M02 TypeScript rejects unresolved dynamic forbidden imports [case 5; 0:5]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:45:1 M02 TypeScript rejects forbidden transitive imports [case 6; 0:6]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:52:1 M02 TypeScript rejects private exports and undeclared dependency metadata [case 7; 0:7]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects direct forbidden imports [case 8; 0:8]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects lazy forbidden imports [case 9; 0:9]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects conditional forbidden imports [case 10; 0:10]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects source escape forbidden imports [case 11; 0:11]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects unresolved dynamic forbidden imports [case 12; 0:12]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects dynamic importlib forbidden imports [case 13; 0:13]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:74:4 M02 Python rejects aliased dynamic loader forbidden imports [case 14; 0:14]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:82:1 M02 Python rejects forbidden transitive imports [case 15; 0:15]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:87:1 M02 Python public API policy rejects private and unavailable consumer exports [case 16; 0:16]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:97:1 M02 manifest rejects duplicate missing escaping and false implemented components [case 17; 0:17]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:105:1 M02 zero-selected Node tests fail [case 18; 0:18]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:116:1 M02 separate test discovery preserves every legacy unit and runner file [case 19; 0:19]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:125:1 M02 Python rejects undeclared dependency metadata and accidental public exports [case 20; 0:20]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: ordinary passing case [case 21; 0:21]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: TODO-only file [case 22; 0:22]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: skip-only file [case 23; 0:23]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: empty describe suite [case 24; 0:24]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: unmatched name filter [case 25; 0:25]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: two nested passing cases [case 26; 0:26]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: failed case [case 27; 0:27]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: mixed pass TODO and skip [case 28; 0:28]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: passing case cannot hide failure [case 29; 0:29]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: skip and TODO reasons [case 30; 0:30]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: repeated source locations [case 31; 0:31]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 generic Node accounting: repeated nested names [case 32; 0:32]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: ordinary passing case [case 33; 0:33]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: TODO-only file [case 34; 0:34]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: skip-only file [case 35; 0:35]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: empty describe suite [case 36; 0:36]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: unmatched name filter [case 37; 0:37]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: two nested passing cases [case 38; 0:38]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: failed case [case 39; 0:39]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: mixed pass TODO and skip [case 40; 0:40]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: passing case cannot hide failure [case 41; 0:41]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: skip and TODO reasons [case 42; 0:42]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: repeated source locations [case 43; 0:43]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:154:5 M02 package-local Node accounting: repeated nested names [case 44; 0:44]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:206:49 M02 frontend prepares packages once before consumers and rejects failed builds [case 45; 0:45]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:206:49 M02 integration prepares packages once before consumers and rejects failed builds [case 46; 0:46]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:226:1 M02 runners lane shares generic Node accounting without building packages [case 47; 0:47]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:240:1 M02 development and package test hooks prepare initial artifacts [case 48; 0:48]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:251:5 M02 generic rejects missing summary reporter output [case 49; 0:49]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:251:5 M02 generic rejects malformed JSON reporter output [case 50; 0:50]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:251:5 M02 generic rejects invalid summary reporter output [case 51; 0:51]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:251:5 M02 package-local rejects missing summary reporter output [case 52; 0:52]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:251:5 M02 package-local rejects malformed JSON reporter output [case 53; 0:53]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/boundaries.test.mjs:251:5 M02 package-local rejects invalid summary reporter output [case 54; 0:54]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:11:1 #200 registered pure packages validate and list their actual owning suites without setup [case 55; 0:55]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:48:1 D contract registration validates versioned namespaces without application source [case 56; 0:56]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:52:1 D implemented contract rejects missing source [case 57; 0:57]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:57:42 D contract rejects wrong artifact name [case 58; 0:58]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:57:42 D contract rejects wrong artifact version [case 59; 0:59]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:62:1 D contract rejects missing public namespace [case 60; 0:60]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:67:1 D contract rejects a missing schema rather than accepting an empty glob [case 61; 0:61]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:72:1 D contract cannot declare schemas omitted from its wheel [case 62; 0:62]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:78:1 D contract reuses the owning checker for undeclared lazy imports [case 63; 0:63]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:83:1 D selectors reject unknown, empty and planned owners [case 64; 0:64]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:92:1 D implemented suite rejects an incorrect cwd [case 65; 0:65]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:97:1 D planned component cannot claim executable tests [case 66; 0:66]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:103:1 D selected TypeScript validation never invokes Python or needs backend source [case 67; 0:67]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:114:1 D component listing performs no build, producer or test execution [case 68; 0:68]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:137:1 D selected contract execution runs owning cases without frontend, database or model setup [case 69; 0:69]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:146:1 D shared suites dispatch once when selected repeatedly [case 70; 0:70]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:153:1 D zero-case execution cannot succeed through an empty owning runner [case 71; 0:71]",
+        "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/tools/component-build/tests/integration.test.mjs:160:1 D checker and restricted builder listing never invoke a toolchain [case 72; 0:72]"
+      ],
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0,
+      "success": true
+    },
+    "producerParity": {
+      "lane": "producer-parity",
+      "executedIdentities": [
+        "M02 installed Python scheduling producer retains the fixed-time serialized golden contract",
+        "M04 installed identity producer preserves shared digests and equivalent TypeScript FEN keys"
+      ],
+      "passed": 2
+    },
+    "listingWithoutToolchain": "/Users/andy/tempo/test-results/pr275-integration-20261015/listing-without-toolchain.json",
+    "consistency": {
+      "baseline": "dfcb08faeef40ad7522a65c4cada9ece1761448c",
+      "unrelatedComponentsAndSharedSuites": "unchanged",
+      "schemaAndCatalog": "unchanged",
+      "unrelatedDependencyVersions": "unchanged",
+      "versions": {
+        "backend": "0.1.0",
+        "chess": "1.11.2",
+        "click": "8.5.0",
+        "colorama": "0.4.6",
+        "fsrs": "6.3.2",
+        "grimp": "3.17",
+        "import-linter": "2.15",
+        "iniconfig": "2.3.0",
+        "markdown-it-py": "4.2.0",
+        "mdurl": "0.1.2",
+        "packaging": "26.3",
+        "pluggy": "1.6.0",
+        "pygments": "2.21.0",
+        "pytest": "9.1.1",
+        "python-chess": "1.999",
+        "rich": "15.0.0",
+        "tempo-chess-core": "0.1.0",
+        "tempo-scheduling": "0.2.0",
+        "typing-extensions": "4.16.0"
+      },
+      "dockerInputs": "exist; image and subsequent instructions unchanged",
+      "pendingPatch": "archived and incorporated"
+    },
+    "commands": [
+      {
+        "label": "backend-clean-sync",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "uv",
+          "sync",
+          "--project",
+          "backend",
+          "--locked",
+          "--no-editable",
+          "--python",
+          "3.12"
+        ],
+        "exitCode": 0,
+        "seconds": 1.268,
+        "timestamp": "2026-10-15T11:29:01.771255+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/backend-clean-sync.log"
+      },
+      {
+        "label": "installed-proof",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend",
+        "command": [
+          "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "-c",
+          "exec(open('/Users/andy/tempo/test-results/pr275-integration-20261015/installed-proof.py').read())"
+        ],
+        "exitCode": 0,
+        "seconds": 0.191,
+        "timestamp": "2026-10-15T11:29:28.684040+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/installed-proof.log"
+      },
+      {
+        "label": "backend-seams-no-cache",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend",
+        "command": [
+          "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "-m",
+          "pytest",
+          "tests/test_scheduling_package_adapter.py",
+          "tests/test_scheduling_review_application.py",
+          "tests/test_scheduling_boundary.py",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "--junitxml=/Users/andy/tempo/test-results/pr275-integration-20261015/backend-seams-final.xml"
+        ],
+        "exitCode": 0,
+        "seconds": 2.49,
+        "timestamp": "2026-10-15T11:30:56.761418+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/backend-seams-no-cache.log"
+      },
+      {
+        "label": "component-list",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "node",
+          "tools/component-build/check-components.mjs",
+          "--component",
+          "scheduling",
+          "--component",
+          "chess-core",
+          "--list"
+        ],
+        "exitCode": 0,
+        "seconds": 0.463,
+        "timestamp": "2026-10-15T11:29:28.955647+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/component-list.log"
+      },
+      {
+        "label": "component-check",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "node",
+          "tools/component-build/check-components.mjs",
+          "--component",
+          "scheduling",
+          "--component",
+          "chess-core"
+        ],
+        "exitCode": 0,
+        "seconds": 0.53,
+        "timestamp": "2026-10-15T11:29:29.022895+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/component-check.log"
+      },
+      {
+        "label": "suite-list",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "node",
+          "tools/component-build/test-lane.mjs",
+          "--component",
+          "scheduling",
+          "--component",
+          "chess-core",
+          "--list"
+        ],
+        "exitCode": 0,
+        "seconds": 0.463,
+        "timestamp": "2026-10-15T11:29:28.955695+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/suite-list.log"
+      },
+      {
+        "label": "owning-suites",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "node",
+          "tools/component-build/test-lane.mjs",
+          "--component",
+          "scheduling",
+          "--component",
+          "chess-core"
+        ],
+        "exitCode": 0,
+        "seconds": 2.208,
+        "timestamp": "2026-10-15T11:29:45.365389+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/owning-suites.log"
+      },
+      {
+        "label": "restricted-build-final",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "node",
+          "tools/component-build/restricted-build.mjs",
+          "--component",
+          "scheduling",
+          "--component",
+          "chess-core",
+          "/Users/andy/tempo/test-results/pr275-integration-20261015/restricted-build.json"
+        ],
+        "exitCode": 0,
+        "seconds": 8.141,
+        "timestamp": "2026-10-15T11:31:29.194353+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/restricted-build-final.log"
+      },
+      {
+        "label": "tooling-regressions",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "node",
+          "tools/component-build/test-node.mjs",
+          "tools/component-build/tests"
+        ],
+        "exitCode": 0,
+        "seconds": 8.532,
+        "timestamp": "2026-10-15T11:30:29.057413+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/tooling-regressions.log"
+      },
+      {
+        "label": "producer-parity-linked",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "npm",
+          "run",
+          "test:producer-parity",
+          "--",
+          "scheduling-producer"
+        ],
+        "exitCode": 0,
+        "seconds": 1.973,
+        "timestamp": "2026-10-15T11:31:54.999460+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/producer-parity-linked.log"
+      },
+      {
+        "label": "runtime-record",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "python3",
+          "-c",
+          "import subprocess,json; print(json.dumps({p: subprocess.check_output(['packages/'+p+'/.venv/bin/python','-c','import sys; print(sys.version); print(sys.executable)'],text=True) for p in ['scheduling','chess-core']},indent=2))"
+        ],
+        "exitCode": 0,
+        "seconds": 0.159,
+        "timestamp": "2026-10-15T11:32:14.903824+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/runtime-record.log"
+      },
+      {
+        "label": "conflicts",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "npm",
+          "run",
+          "check:conflicts"
+        ],
+        "exitCode": 0,
+        "seconds": 0.625,
+        "timestamp": "2026-10-15T11:32:15.370290+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/conflicts.log"
+      },
+      {
+        "label": "whitespace",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "git",
+          "diff",
+          "origin/main...HEAD",
+          "--check"
+        ],
+        "exitCode": 0,
+        "seconds": 0.034,
+        "timestamp": "2026-10-15T11:32:14.779347+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/whitespace.log"
+      },
+      {
+        "label": "consistency",
+        "cwd": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015",
+        "command": [
+          "python3",
+          "/Users/andy/tempo/test-results/pr275-integration-20261015/consistency.py"
+        ],
+        "exitCode": 0,
+        "seconds": 0.182,
+        "timestamp": "2026-10-15T11:32:14.926981+00:00",
+        "sourceRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+        "dirty": "",
+        "environment": {
+          "PYTHONPATH": "",
+          "UV_CACHE_DIR": "/private/tmp/tempo-pr275-uv-cache",
+          "TEMPO_COMPONENT_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python",
+          "TEMPO_PYTHON": "/Users/andy/tempo/.dev-copies/pr275-integration-20261015/backend/.venv/bin/python"
+        },
+        "log": "/Users/andy/tempo/test-results/pr275-integration-20261015/consistency.log"
+      }
+    ],
+    "diagnostics": [
+      {
+        "label": "registration-before",
+        "result": "Expected named regression failure: chess-core still planned before metadata integration."
+      },
+      {
+        "label": "backend-seams",
+        "result": "52 passed; pytest attempted an unrelated home-cache write, denied by sandbox. Repeated with only cache provider disabled: 52 passed, no warnings."
+      },
+      {
+        "labels": [
+          "producer-parity",
+          "producer-diagnostic",
+          "producer-parity-final"
+        ],
+        "result": "Task dependency setup lacked the @tempo/chess-line workspace link. No cases executed; corrected only the task-owned link and reran the registered command: 2 passed."
+      },
+      {
+        "label": "restricted-build",
+        "result": "First successful report collided with command metadata filename. Preserved initial command output; corrected task recorder and repeated to retain the complete report."
+      }
+    ],
+    "independentReview": {
+      "reviewer": "independent_pr275_review",
+      "reviewedRevision": "5b1436affbe6395a90588466794a02af0e54a124",
+      "sourceVerdict": "No actionable findings",
+      "evidenceReview": "No actionable findings",
+      "evidenceVerified": [
+        "unchanged original JSON and archived originals",
+        "source input hashes",
+        "artifact hashes",
+        "clean source revision and command records",
+        "installed versions and noneditable origins",
+        "runtimes, counts and actual case identities",
+        "historical and corrected setup diagnostics"
+      ],
+      "independentlyReranTests": false
+    },
+    "remaining": [],
+    "excluded": [
+      "Docker image build",
+      "database/browser/model/full-system suites",
+      "fresh Rust execution",
+      "registry publication",
+      "migration",
+      "merge",
+      "deployment"
+    ]
+  }
 }
