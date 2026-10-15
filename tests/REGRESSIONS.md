@@ -4458,3 +4458,15 @@ is independently selected by the producer-parity lane and consumes the installed
 
 - `backend/tests/test_opening_graph_recovery.py::test_maintenance_claim_refuses_wrong_scope_generation_lease_or_checkpoint` guards exact maintenance task authority without resetting the saved publication phase. `test_maintenance_preflight_and_release_yield_to_foreground` protects admission-denied reads and lease-release retries.
 - Regular PostgreSQL durability owner: `scripts/check_postgres_opening_graph_recovery.py`, registered in `scripts/test-postgres-docker.mjs`. Named cases `test_failed_first_publication_recovery_unlocks_practiced_parent_and_admits_maia_rank`, `test_recovery_refuses_mismatched_source_and_target`, and `test_scoped_recovery_claim_preserves_publish_and_fences_other_tasks` cover first-publication failure, source/identity validation, generation/lease fences, study-only recovery, integrity completion, parent exposure, rank preference, quotas, and preservation of reviews, ranks, and unrelated jobs. The proof owns a fresh database in the regular runner; `--disposable` owns and cleans up dedicated PostgreSQL/Redis containers for focused local execution.
+
+## #200 pure scheduling and stable identity
+
+- Package-local scheduling regressions: [owning inventory](../packages/scheduling/REGRESSIONS.md).
+- Package-local stable identity regressions: [owning inventory](../packages/chess-core/REGRESSIONS.md).
+- Legacy adapter compatibility: `backend/tests/test_scheduling_package_adapter.py` (complete legacy signature,
+  Schedule class identity, forwarding/result parity, controlled clocks/local day, naive UTC handling,
+  initial FSRS identity generation, and unchanged shared card digests).
+- Pure import rejection: `backend/tests/test_scheduling_boundary.py::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports`.
+- Installed producer parity: `tests/unit/scheduling-producer-parity-regressions.test.ts` in the existing
+  producer-parity lane; no Python dependency is added to frontend-only collection.
+- Declared installed distributions: `backend/tests/test_scheduling_package_adapter.py::test_backend_declares_installed_noneditable_pure_packages` verifies backend pins, package versions and noneditable import origins for both packages.

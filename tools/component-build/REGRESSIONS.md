@@ -10,5 +10,9 @@ TypeScript validation, listing without setup, isolated contract execution, share
 suite deduplication and zero-case execution. The fixtures run real subprocesses
 and preserve their exit status and structured case evidence.
 
+The #200 pure-package registration regression validates both actual implemented
+packages and lists their owning suites with Python disabled, preserving explicit
+working directories and discovery without setup.
+
 `tests/boundaries.test.mjs` retains the #270 AST/dependency, public API, inventory,
 package prerequisite and structured Node reporter protections unchanged.

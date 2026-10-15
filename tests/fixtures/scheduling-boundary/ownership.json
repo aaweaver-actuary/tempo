@@ -6,6 +6,7 @@
   "shared_contract_module": "app.services.scheduling_review_contracts",
   "owning_tests": [
     "backend/tests/test_scheduling_boundary.py",
+    "backend/tests/test_scheduling_package_adapter.py",
     "backend/tests/test_scheduling_review_application.py"
   ],
   "consumers": {
@@ -44,6 +45,8 @@
       "typing"
     ],
     "app.services.scheduler": [
+      "datetime",
+      "fsrs",
       "tempo_scheduling"
     ],
     "app": [],
@@ -58,7 +61,7 @@
       "tests/browser/studies.spec.ts"
     ],
     "browser_reason": "Real server review or study-attempt calls exercise the wrapper. Mocked responses in these or other specs do not prove backend scheduling.",
-    "qualification_owner": "CI; current candidate is FULL because qualification dependencies/workflows change."
+    "qualification_owner": "Learning owns native persistence proofs; #200 runs focused installed-package, adapter and producer seams without claiming PostgreSQL durability."
   },
   "source_paths": {
     "app.services.scheduling_review_application": "backend/app/services/scheduling_review_application.py",

@@ -197,3 +197,33 @@ def test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup():
         assert f'{name}=={version}' in ci_requirements, name
         assert name in locked_development_names, name
         assert any(package['name'] == name and package['version'] == version for package in lock['package']), name
+
+
+@pytest.mark.parametrize('package_name,exports,dependencies', [
+    ('scheduling', ['Schedule', 'schedule_review', 'unlock_ready'], ['fsrs']),
+    ('chess-core', ['canonical_fen_key', 'card_id'], []),
+])
+@pytest.mark.parametrize('forbidden_source', [
+    'import fastapi',
+    'def hidden():\n    import app.main',
+    'if False:\n    import celery',
+    'from . import bridge',
+])
+def test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports(
+        tmp_path, package_name, exports, dependencies, forbidden_source):
+    """Use D's existing checker; mutate only a disposable copy of owned source."""
+    import shutil
+    package_root = REPOSITORY / 'packages' / package_name
+    isolated = tmp_path / package_name
+    shutil.copytree(package_root / 'src', isolated / 'src')
+    shutil.copyfile(package_root / 'pyproject.toml', isolated / 'pyproject.toml')
+    import_root = next((isolated / 'src').iterdir())
+    entry = import_root / '__init__.py'
+    entry.write_text(entry.read_text() + '\n' + forbidden_source + '\n')
+    if forbidden_source == 'from . import bridge':
+        (import_root / 'bridge.py').write_text('import app.database\n')
+    completed = subprocess.run([sys.executable, str(REPOSITORY / 'tools/component-build/check-python.py'),
+        str(isolated), json.dumps(dependencies), json.dumps(exports)],
+        capture_output=True, text=True, timeout=20)
+    assert completed.returncode != 0, completed.stdout + completed.stderr
+    assert 'undeclared dependency' in completed.stderr
