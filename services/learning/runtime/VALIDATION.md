@@ -1,6 +1,6 @@
 # Independent Learning runtime validation
 
-Tested implementation: `c4e24327775e478f13cc46fec899775ecf4dacc6`, based on refreshed `main` `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`. The subsequent documentation commit records these results without changing executable inputs. No live checkout, database, service or development copy was reused.
+Installed artifact qualification: `c4e24327775e478f13cc46fec899775ecf4dacc6`. Final native resource/cleanup qualification: `7fa179b06bae859aeb6e680498e8ae430d4cb3ae`, based on refreshed `main` `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`. The intervening runner change confines scratch data to the invocation; runtime package source is unchanged. Subsequent documentation records these results. No live checkout, database, service or development copy was reused.
 
 ## Commands and outcomes
 
@@ -8,7 +8,7 @@ Run from the repository root unless a different directory is stated. Evidence wa
 
 | Exact check | Outcome |
 | --- | --- |
-| `PYTEST_ADDOPTS=--junitxml=$evidence/component-native.xml services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py $evidence` | **44 passed**, 20.55 s. Exact collection and all execution phases matched JUnit, including the caller-specified receipt destination. |
+| `PYTEST_ADDOPTS=--junitxml=$evidence/component-native.xml services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py $evidence` | **44 passed**, 23.13 s. Exact collection and all execution phases matched JUnit, including the caller-specified receipt destination. |
 | `services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py $evidence/installed-final` | **2 passed on Python 3.12.12 and 2 on Python 3.14.8** after producer source removal; all six wheels/sdists built; both zero-selected negative probes exited 5 as required. |
 | `TEMPO_COMPONENT_PYTHON=services/learning/runtime/.venv/bin/python node tools/component-build/check-components.mjs --component learning` | Runtime and all five actual component dependencies passed the existing source/export/artifact/contract checks. |
 | `TEMPO_COMPONENT_PYTHON=services/learning/runtime/.venv/bin/python node tools/component-build/test-node.mjs tools/component-build/tests` | **73 passed**, no failures/skips; includes normalized Python distribution dependency selection. |
@@ -45,10 +45,10 @@ SHA-256:
 
 - Runtime wheel `tempo_learning_runtime-0.1.0-py3-none-any.whl`: `0d70b7419239a0947f529126268c646cafc32269197da8428cfd10627df23910`.
 - Runtime sdist `tempo_learning_runtime-0.1.0.tar.gz`: `69fbf372de0677ac5097c06eba787ce7695a4434dbc0373744d091bcf6faa953`.
-- Tested minimal container: `sha256:b9aba3acc180f8280744e58ae7c61982fa8d8927395359172cafc5a32c441edb`.
+- Tested minimal container: `sha256:e4c249931c12210b5b712d220609ef81646c1fd2fe4d96a009d4450d8dc9cb4a`.
 - PostgreSQL 18.6 fixture: `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`.
 
-`native.json` binds the revision, source hashes, exact commands, PostgreSQL/image identities and complete executed inventory. `installed-final/installed.json` binds all copied build inputs, six artifact pairs, dependency lists, interpreter identities, installed inventories and removal of temporary consumer workspaces. XML/logs accompany both. Native container/volume absence and task image-tag removal were verified after the passing run. Evidence is retained before checkout cleanup.
+`native.json` binds the revision, source hashes, exact commands, PostgreSQL/image identities and complete executed inventory. `installed-final/installed.json` binds all copied build inputs, six artifact pairs, dependency lists, interpreter identities, installed inventories and removal of temporary consumer workspaces. XML/logs accompany both. Native container/volume absence, task image-tag removal and invocation-owned scratch removal were verified after the passing run; service logs were retained. Evidence is retained before checkout cleanup.
 
 ## Limits and remaining acceptance
 
