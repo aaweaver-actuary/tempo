@@ -107,11 +107,14 @@ export async function retainedStudyRequest(scope: string, parentAttemptId?: stri
     receipt: retained.receipt, state: retained.state, practiceBoundary: snapshot.value } : undefined;
 }
 
-let recovery: { store: IntentStore; promise: Promise<void> } | undefined;
+let recovery: { store: IntentStore; signal: AbortSignal | undefined; promise: Promise<void> } | undefined;
 /** Bounded, persistent round-robin recovery, including commands no longer in the issued queue. */
 export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason;
   const store = await studyIntentStore();
-  if (recovery?.store === store) return recovery.promise;
+  if (signal?.aborted) throw signal.reason;
+  // Pass cancellation belongs to its caller; the session still shares immutable command work.
+  if (recovery?.store === store && recovery.signal === signal) return recovery.promise;
   const promise = (async () => {
     const coordinator = await studySession();
     const pending = (await store.list(undefined, true)).filter(record => ["study-command", "defense-command"].includes(record.kind));
@@ -150,7 +153,7 @@ export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> 
       }
     }
   })().finally(() => { if (recovery?.promise === promise) recovery = undefined; });
-  recovery = { store, promise }; return promise;
+  recovery = { store, signal, promise }; return promise;
 }
 export async function startAnotherStudyPractice(scope: string, expectedBoundary?: number) {
   const store = await studyIntentStore();

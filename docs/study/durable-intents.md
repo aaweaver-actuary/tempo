@@ -177,8 +177,22 @@ callbacks. Existing retained envelopes are never rewritten to add a generation.
 Specialized recovery persists a last-visited sequence cursor, examines at most
 20 commands per pass, and wraps to older unresolved work. Unresolved checks and
 dependent-command deferrals advance the cursor. Compare-and-set cursor writes
-prevent a stale pass from overwriting another pass's progress; overlapping local
-passes coalesce. Interrupted/unvisited commands remain retained and eligible.
+prevent a stale pass from overwriting another pass's progress. Recovery passes
+share only the same current store and identical caller signal; two signal-less
+callers also share. A replacement signal starts a separate pass, so cancellation
+of its predecessor cannot fail the replacement queue load. Entry and acquisition
+checks reject already-cancelled callers before delivery. Promise-identity cleanup
+cannot clear a newer pass. Different passes still share the coordinator's
+per-intent receipt/delivery operation and its existing deadline. Superseding a
+waiter need not cancel that immutable operation: it can settle the original
+durable command, while queue generations retain authority over the displayed
+attempt and board. Old-store work cannot publish into a replacement store.
+
+An interrupted pass may advance its cursor in the visited candidate's `finally`
+block. This records visitation, not successful grading; unresolved and unvisited
+commands remain retained and eligible. If another pass wins the compare-and-set,
+the loser stops writing that cursor. Either interleaving permits later bounded
+passes to reach the tail and wrap around to earlier unresolved commands.
 Self-assessment and linked defense recovery require their retained predecessor to
 be committed; independent commands continue. This is foreground recovery, not a
 new background scheduler.

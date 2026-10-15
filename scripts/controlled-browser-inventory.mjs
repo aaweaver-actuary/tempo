@@ -64,6 +64,7 @@ studyIntentTitles.push(
   "pr285 native legacy reimport recovers sequence two without rollback",
   "pr285 native practice reset excludes both records across tabs and reload",
   "pr285 native teaching notification carries committed seen and first clean facts",
+  "pr285 recovery ownership replacement queue load survives cancelled receipt recovery",
 );
 export function supportedIdentities() {
   return [...verifyPilotSource(), ...visualTitles.map(title => `chromium|tests/controlled-browser/visual.spec.ts|${title}`), ...studyIntentTitles.map(title => `chromium|tests/controlled-browser/study-intents.spec.ts|${title}`)];

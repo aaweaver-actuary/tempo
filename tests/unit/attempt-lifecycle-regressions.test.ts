@@ -11,6 +11,8 @@ import { attemptEntryKey } from "../../app/domain/attempt";
 import { conflictedReviews, enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
+import { studyIntentStore } from "../../app/lib/study-intent-storage";
+import { completedRecoveryReceipt, deferred, enterRecovery, observe, observeRecoveryPasses, recoveryCommand } from "./support/recovery-ownership-fixtures";
 import {
   asCardId,
   asFenString,
@@ -311,6 +313,110 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
     expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
   });
+  it("pr285_recovery_ownership_superseded_queue_load_cannot_fail_live_replacement", async () => {
+    const command = recoveryCommand(); const intentStore = await studyIntentStore();
+    await intentStore.put(command, { started: true });
+    const receiptStarted = deferred<void>(), response = deferred<Response>();
+    const trace: string[] = []; let posts = 0; const recoveries = observeRecoveryPasses();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (options?.method === "POST") { posts++; throw new Error("The original must not be reposted"); }
+      if (String(input).includes("/api/operations/")) {
+        trace.push("receipt:held"); receiptStarted.resolve(); return response.promise;
+      }
+      trace.push("queue:authoritative-successor");
+      return Response.json({ cards: [{ id: "independent-successor", queue_entry_id: 44, start_fen: card.startingFen,
+        moves: ["d2d4"], content_type: "opening", repertoire_name: "Authoritative successor", repertoire_source: "PGN" }], count: 1 });
+    }));
+    const first = await enterRecovery(() => fetchAndInitializeQueue(true), trace, "A");
+    let replacement: Awaited<ReturnType<typeof enterRecovery<string>>> | undefined;
+    try {
+      await receiptStarted.promise;
+      replacement = await enterRecovery(() => fetchAndInitializeQueue(true), trace, "B");
+      expect(await first.outcome).toEqual({ status: "fulfilled", value: "superseded" });
+      trace.push("receipt:released"); response.resolve(Response.json(completedRecoveryReceipt(command)));
+      console.info("pr285 queue recovery ordering", trace);
+      expect(await replacement.outcome).toEqual({ status: "fulfilled", value: "installed" });
+      const installed = useTrainingStore.getState();
+      expect(installed.queueReadiness).toBe("ready"); expect(installed.serviceError).toBe("");
+      expect(installed.getCard().queueEntryId).toBe(44);
+      expect(await intentStore.get(command.key)).toMatchObject({ ...command, state: "committed" });
+      await first.outcome;
+      expect(useTrainingStore.getState().attempt).toEqual(installed.attempt);
+      expect(useTrainingStore.getState().boardAttempt).toBe(installed.boardAttempt);
+      expect(posts).toBe(0);
+      expect(trace.indexOf("B:storage-acquired")).toBeLessThan(trace.indexOf("receipt:released"));
+    } finally {
+      response.resolve(Response.json(completedRecoveryReceipt(command)));
+      await Promise.all([first.outcome, replacement?.outcome]); await Promise.all(recoveries.outcomes);
+      recoveries.restore(); vi.unstubAllGlobals();
+    }
+  });
+  it.each(["three-loads", "pending", "queue-error", "own-cancellation", "own-deadline", "replay-bypass"] as const)(
+    "pr285_recovery_ownership_replacement_queue_control (%s)", async scenario => {
+      useTrainingStore.getState().hydrateLocalQueue([card], true, 1);
+      const command = recoveryCommand(); const intentStore = await studyIntentStore();
+      await intentStore.put(command, { started: true });
+      const receiptStarted = deferred<void>(), receiptResponse = deferred<Response>();
+      const trace: string[] = [], recoveries = observeRecoveryPasses(); let posts = 0, receiptReads = 0, queueReads = 0;
+      const receipt = scenario === "pending" ? { operation_id: command.requestId, state: "pending" } : completedRecoveryReceipt(command);
+      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+        if (options?.method === "POST") { posts++; throw new Error("Unexpected repost"); }
+        if (String(input).includes("/api/operations/")) { receiptReads++; receiptStarted.resolve(); return receiptResponse.promise; }
+        queueReads++;
+        if (scenario === "queue-error") return Response.json({ detail: "Current authoritative queue is unavailable" }, { status: 403 });
+        return Response.json({ cards: [{ id: "independent-successor", queue_entry_id: 44, start_fen: card.startingFen,
+          moves: ["d2d4"], content_type: "opening", repertoire_name: "Authoritative successor", repertoire_source: "PGN" }], count: 1 });
+      }));
+      if (scenario === "own-deadline") vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const first = await enterRecovery(() => fetchAndInitializeQueue(true), trace, "A");
+      const outcomes: ReturnType<typeof observe<string>>[] = [first.outcome];
+      const controller = new AbortController(), reason = new Error("Only B was cancelled");
+      try {
+        await receiptStarted.promise;
+        let replacement: { outcome: ReturnType<typeof observe<string>> };
+        if (scenario === "replay-bypass") replacement = { outcome: observe(fetchAndInitializeQueue(true, { replaySavedReviews: false })) };
+        else replacement = await enterRecovery(() => fetchAndInitializeQueue(true, {
+          signal: controller.signal, ...(scenario === "own-deadline" ? { timeoutMs: 100 } : {}),
+        }), trace, "B");
+        outcomes.push(replacement.outcome);
+        if (scenario === "three-loads") {
+          const newest = await enterRecovery(() => fetchAndInitializeQueue(true), trace, "C");
+          outcomes.push(newest.outcome);
+          expect(await replacement.outcome).toEqual({ status: "fulfilled", value: "superseded" }); replacement = newest;
+        }
+        expect(await first.outcome).toEqual({ status: "fulfilled", value: "superseded" });
+        if (scenario === "own-cancellation") controller.abort(reason);
+        if (scenario === "own-deadline") await vi.advanceTimersByTimeAsync(100);
+        if (scenario === "replay-bypass") {
+          expect(await replacement.outcome).toEqual({ status: "fulfilled", value: "installed" });
+          expect(await intentStore.get(command.key)).toMatchObject({ state: "pending" });
+          expect(recoveries.outcomes).toHaveLength(1);
+        }
+        receiptResponse.resolve(Response.json(receipt));
+        const result = await replacement.outcome;
+        if (scenario === "queue-error" || scenario.startsWith("own-")) {
+          expect(result.status).toBe("rejected");
+          const message = scenario === "queue-error" ? "Current authoritative queue is unavailable" : scenario === "own-cancellation" ? reason.message : "timed out";
+          if (result.status === "rejected") expect(String(result.reason)).toContain(message);
+          expect(useTrainingStore.getState().serviceError).toContain(message);
+          expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
+          expect(useTrainingStore.getState().getCard().queueEntryId).toBe(42);
+        } else {
+          expect(result).toEqual({ status: "fulfilled", value: "installed" });
+          expect(useTrainingStore.getState().getCard().queueEntryId).toBe(44);
+          expect(useTrainingStore.getState().queueReadiness).toBe("ready"); expect(useTrainingStore.getState().serviceError).toBe("");
+        }
+        const installed = useTrainingStore.getState(); await Promise.all(recoveries.outcomes);
+        expect(useTrainingStore.getState().attempt).toEqual(installed.attempt);
+        expect(useTrainingStore.getState().boardAttempt).toBe(installed.boardAttempt);
+        expect(await intentStore.get(command.key)).toMatchObject({ ...command, state: scenario === "pending" ? "pending" : "committed" });
+        expect(posts).toBe(0); expect(receiptReads).toBe(1);
+        expect(queueReads).toBe(scenario.startsWith("own-") ? 0 : 1);
+      } finally {
+        receiptResponse.resolve(Response.json(receipt)); await Promise.all(outcomes); await Promise.all(recoveries.outcomes);
+        recoveries.restore(); vi.useRealTimers(); vi.unstubAllGlobals();
+      }
+    });
   it("superseded queue request releases its browser connection without replacing the current attempt", async () => {
     let firstRequestSignal: AbortSignal | undefined;
     const fetchMock = vi.fn()

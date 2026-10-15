@@ -4547,5 +4547,23 @@ the real disposable PostgreSQL integration owner. See
   sequence-two recovery, cross-tab practice reset and targeted teaching messages.
   They are registered alongside all protected native and visual identities.
 
+### PR #285 recovery cancellation ownership follow-up
+
+- `study-intent-storage-regressions.test.ts`: `pr285_recovery_ownership_*` imports
+  production recovery with the actual IndexedDB adapter/session. Held receipt and
+  store-acquisition barriers cover cancelled A/live B, pending and rejected
+  originals, each caller's reason, signal identity and signal-less sharing,
+  pre-aborted/acquisition cancellation, one original POST, old-finalizer ownership,
+  competing cursor CAS with bounded eventual coverage, and replacement-store fencing.
+- `attempt-lifecycle-regressions.test.ts`: the same prefix owns the actual queue
+  loader chain, superseded/installed results, A/B/C overlap, pending originals,
+  genuine current failures, caller cancellation/deadline and explicit replay bypass.
+  Late durable settlement cannot replace the authoritative successor or board.
+- `tests/controlled-browser/study-intents.spec.ts`: `pr285 recovery ownership
+  replacement queue load survives cancelled receipt recovery` uses one mounted
+  document, two real reconnect handlers, native storage and a held receipt.
+  Pass-through browser witnesses establish replacement waiters before release;
+  the original settles with no repost, page error or optional provider/analysis traffic.
+
 Package-local inventories retain their ownership. Client/double tests do not
 establish PostgreSQL exactly-once effects or offline/service-worker behavior.

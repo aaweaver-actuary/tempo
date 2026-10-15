@@ -5,6 +5,9 @@ import { executeStudyRequest, recoverStudyRequests } from "../../app/lib/study-c
 import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../../app/lib/teaching-state-outbox";
 import { enqueueTrainingFailure, flushTrainingFailures, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { interceptIntentWrites } from "./support/study-intent-fixtures";
+import { completedRecoveryReceipt, deferred, enterRecovery, observe, recoveryCommand } from "./support/recovery-ownership-fixtures";
+import * as storage from "../../app/lib/study-intent-storage";
+import { notifications } from "../../app/lib/notifications";
 
 const legacyReview = (id: string) => ({ backendId: id, queueEntryId: id === "a" ? 1 : 2, attemptId: id,
   outcome: "again", guided: true, completedAt: "2026-10-15T16:00:00Z" });
@@ -146,6 +149,193 @@ const repairScope = "study:repair:exercise:practice:1";
 const repairCommand = (id: string, scope = repairScope) => ({ key: `${scope}:${id}`, kind: "study-command", attemptId: id,
   requestId: id, endpoint: "/api/studies/repair/exercises/exercise/attempts", revision: 1,
   createdAt: "2026-10-15T16:00:00Z", payload: { scope, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: { attempt_id: id } } });
+it("pr285_recovery_ownership_live_replacement_does_not_inherit_aborted_pass", async () => {
+  const command = recoveryCommand(); const store = await studyIntentStore();
+  await store.put(command, { started: true });
+  const receiptStarted = deferred<void>(), response = deferred<Response>();
+  const trace: string[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    expect(String(input)).toContain(`/api/operations/${command.requestId}`); expect(options?.method).not.toBe("POST");
+    trace.push("receipt:held"); receiptStarted.resolve(); return response.promise;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const firstController = new AbortController(), replacementController = new AbortController();
+  const firstReason = new Error("Only the first recovery was cancelled");
+  const first = await enterRecovery(() => recoverStudyRequests(firstController.signal), trace, "A");
+  let replacement: Awaited<ReturnType<typeof enterRecovery<void>>> | undefined;
+  try {
+    await receiptStarted.promise;
+    firstController.abort(firstReason); trace.push("A:cancelled");
+    replacement = await enterRecovery(() => recoverStudyRequests(replacementController.signal), trace, "B");
+    trace.push("receipt:released"); response.resolve(Response.json(completedRecoveryReceipt(command)));
+    console.info("pr285 direct recovery ordering", trace);
+    expect(await replacement.outcome).toEqual({ status: "fulfilled", value: undefined });
+    expect(await first.outcome).toEqual({ status: "rejected", reason: firstReason });
+    expect(replacementController.signal.aborted).toBe(false);
+    expect(await store.get(command.key)).toMatchObject({ ...command, state: "committed" });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(trace.indexOf("A:cancelled")).toBeLessThan(trace.indexOf("B:storage-acquired"));
+    expect(trace.indexOf("B:storage-acquired")).toBeLessThan(trace.indexOf("receipt:released"));
+  } finally {
+    response.resolve(Response.json(completedRecoveryReceipt(command)));
+    await Promise.all([first.outcome, replacement?.outcome]); vi.unstubAllGlobals();
+  }
+});
+
+async function recoveryOverlap(options: { receipt?: "pending" | "rejected"; first?: "none"; second?: "none" | "same";
+  cancelFirst?: boolean; cancelSecond?: boolean; started?: boolean } = {}) {
+  const command = recoveryCommand(["overlap", options.receipt ?? "complete", options.first ?? "signal", options.second ?? "independent",
+    options.cancelFirst, options.cancelSecond, options.started].join("-")); const store = await studyIntentStore();
+  await store.put(command, { started: options.started !== false });
+  const requestStarted = deferred<void>(), response = deferred<Response>(); const trace: string[] = [];
+  const requests: Array<{ url: string; options?: RequestInit }> = [];
+  const checkpoint = vi.spyOn(store, "checkpoint");
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, requestOptions?: RequestInit) => {
+    requests.push({ url: String(input), options: requestOptions }); requestStarted.resolve(); return response.promise;
+  }));
+  const firstController = new AbortController(), secondController = new AbortController();
+  const firstReason = new Error("cancel A only"), secondReason = new Error("cancel B only");
+  const first = await enterRecovery(() => recoverStudyRequests(options.first === "none" ? undefined : firstController.signal), trace, "A");
+  let second: Awaited<ReturnType<typeof enterRecovery<void>>> | undefined;
+  const receipt = options.receipt === "pending" ? { operation_id: command.requestId, state: "pending" } : options.receipt === "rejected"
+    ? { operation_id: command.requestId, state: "failed", error: { status_code: 422, message: "Original validation rejection", retryable: false } }
+    : completedRecoveryReceipt(command);
+  const release = () => response.resolve(Response.json(options.started === false ? completedRecoveryReceipt(command).response : receipt));
+  try {
+    await requestStarted.promise;
+    if (options.cancelFirst) firstController.abort(firstReason);
+    const signal = options.second === "none" ? undefined : options.second === "same" ? firstController.signal : secondController.signal;
+    second = await enterRecovery(() => recoverStudyRequests(signal), trace, "B");
+    if (options.cancelSecond) secondController.abort(secondReason);
+    release();
+    const outcomes = await Promise.all([first.outcome, second.outcome]);
+    return { command, record: await store.get(command.key), requests, outcomes, firstReason, secondReason,
+      passes: checkpoint.mock.calls.filter(([key]) => key === "study-command-recovery:cursor").length };
+  } finally { release(); await Promise.all([first.outcome, second?.outcome]); checkpoint.mockRestore(); vi.unstubAllGlobals(); }
+}
+
+it.each(["pending", "rejected"] as const)("pr285_recovery_ownership_%s_original_does_not_poison_replacement", async receipt => {
+  const result = await recoveryOverlap({ receipt, cancelFirst: true });
+  expect(result.outcomes).toEqual([{ status: "rejected", reason: result.firstReason }, { status: "fulfilled", value: undefined }]);
+  expect(result.record).toMatchObject({ ...result.command, state: receipt === "pending" ? "pending" : "discarded" });
+  const notices = notifications().filter(notice => notice.key === `study-command:${result.command.key}`);
+  expect(notices.some(notice => notice.severity === "success")).toBe(false);
+  expect(notices.at(-1)?.message).toContain(receipt === "pending" ? "remains saved" : "Original validation rejection");
+  expect(result.requests).toHaveLength(1);
+});
+it("pr285_recovery_ownership_each_caller_observes_its_own_cancellation", async () => {
+  const result = await recoveryOverlap({ cancelFirst: true, cancelSecond: true });
+  expect(result.outcomes).toEqual([{ status: "rejected", reason: result.firstReason }, { status: "rejected", reason: result.secondReason }]);
+  expect(result.record?.state).toBe("committed");
+});
+it.each([
+  { second: "same" as const, passes: 1 },
+  { first: "none" as const, second: "none" as const, passes: 1 },
+  { first: "none" as const, passes: 2 },
+  { second: "none" as const, cancelFirst: true, passes: 2 },
+  { passes: 2 },
+])("pr285_recovery_ownership_signal_identity_and_signalless_sharing (%j)", async scenario => {
+  const result = await recoveryOverlap(scenario);
+  expect(result.outcomes[1]).toEqual({ status: "fulfilled", value: undefined });
+  expect(result.passes).toBe(scenario.passes); expect(result.requests).toHaveLength(1);
+  expect(result.record).toMatchObject({ ...result.command, state: "committed" });
+});
+it.each([false, true])("pr285_recovery_ownership_cancelled_storage_acquisition_starts_no_delivery (%s)", async duringAcquisition => {
+  const command = recoveryCommand(); const store = await studyIntentStore(); const retained = await store.put(command);
+  const controller = new AbortController(), reason = new Error("cancelled before recovery acquired storage");
+  const acquired = deferred<void>(), release = deferred<void>(); const acquire = storage.studyIntentStore;
+  const acquisition = vi.spyOn(storage, "studyIntentStore").mockImplementation(async () => {
+    const current = await acquire(); acquired.resolve(); await release.promise; return current;
+  });
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  if (!duringAcquisition) controller.abort(reason);
+  const outcome = observe(recoverStudyRequests(controller.signal));
+  try {
+    if (duringAcquisition) { await acquired.promise; controller.abort(reason); }
+    release.resolve();
+    expect(await outcome).toEqual({ status: "rejected", reason });
+    expect(fetcher).not.toHaveBeenCalled(); expect(await store.get(command.key)).toEqual(retained);
+    expect(acquisition).toHaveBeenCalledTimes(duringAcquisition ? 1 : 0);
+  } finally { release.resolve(); await outcome; acquisition.mockRestore(); vi.unstubAllGlobals(); }
+});
+it("pr285_recovery_ownership_real_session_coalesces_original_delivery", async () => {
+  const result = await recoveryOverlap({ cancelFirst: true, started: false });
+  expect(result.outcomes[1]).toEqual({ status: "fulfilled", value: undefined });
+  expect(result.requests).toHaveLength(1);
+  expect(result.requests[0]).toMatchObject({ url: result.command.endpoint, options: { method: "POST",
+    body: JSON.stringify((result.command.payload as { body: unknown }).body), headers: (result.command.payload as { headers: unknown }).headers } });
+  expect(result.record).toMatchObject({ ...result.command, state: "committed" });
+});
+it("pr285_recovery_ownership_old_finalizer_preserves_new_pass", async () => {
+  const store = await studyIntentStore(), original = recoveryCommand(), later = recoveryCommand("later");
+  await store.put(original, { started: true }); await store.put(later, { started: true });
+  const firstStarted = deferred<void>(), firstResponse = deferred<Response>(), laterStarted = deferred<void>(), laterResponse = deferred<Response>();
+  const trace: string[] = []; const checkpoint = vi.spyOn(store, "checkpoint");
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/original")) { firstStarted.resolve(); return firstResponse.promise; }
+    laterStarted.resolve(); return laterResponse.promise;
+  }));
+  const firstController = new AbortController(), replacementController = new AbortController();
+  const first = await enterRecovery(() => recoverStudyRequests(firstController.signal), trace, "A");
+  const outcomes = [first.outcome];
+  try {
+    await firstStarted.promise; firstController.abort(new Error("cancel A"));
+    const replacement = await enterRecovery(() => recoverStudyRequests(replacementController.signal), trace, "B"); outcomes.push(replacement.outcome);
+    firstResponse.resolve(Response.json(completedRecoveryReceipt(original)));
+    expect((await first.outcome).status).toBe("rejected"); await laterStarted.promise;
+    const joined = await enterRecovery(() => recoverStudyRequests(replacementController.signal), trace, "B-again"); outcomes.push(joined.outcome);
+    expect(checkpoint.mock.calls.filter(([key]) => key === "study-command-recovery:cursor")).toHaveLength(2);
+    laterResponse.resolve(Response.json(completedRecoveryReceipt(later)));
+    expect((await replacement.outcome).status).toBe("fulfilled"); expect((await joined.outcome).status).toBe("fulfilled");
+  } finally {
+    firstResponse.resolve(Response.json(completedRecoveryReceipt(original))); laterResponse.resolve(Response.json(completedRecoveryReceipt(later)));
+    await Promise.all(outcomes); checkpoint.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+it("pr285_recovery_ownership_overlapping_cursors_preserve_bounded_eventual_coverage", async () => {
+  const store = await studyIntentStore();
+  for (let index = 1; index <= 25; index++) await store.put(recoveryCommand(`fair-${index}`), { started: true });
+  const started = deferred<void>(), release = deferred<void>(); const reads: string[] = [], trace: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).split("/").at(-1)!; reads.push(id);
+    if (reads.length === 1) { started.resolve(); await release.promise; }
+    return Response.json({ operation_id: id, state: "pending" });
+  }));
+  const controller = new AbortController(); const first = await enterRecovery(() => recoverStudyRequests(controller.signal), trace, "A");
+  let replacement: Awaited<ReturnType<typeof enterRecovery<void>>> | undefined;
+  const compare = vi.spyOn(store, "compareCheckpoint");
+  try {
+    await started.promise; controller.abort(new Error("cancel fair A"));
+    replacement = await enterRecovery(() => recoverStudyRequests(new AbortController().signal), trace, "B");
+    release.resolve(); await Promise.all([first.outcome, replacement.outcome]);
+    expect(new Set(reads).size).toBe(20); expect(reads).toHaveLength(20);
+    expect(await Promise.all(compare.mock.results.map(result => result.value))).toContain(false);
+    const covered = new Set(reads); const resumed: string[] = [];
+    // Either pass may win the first CAS. A losing pass must not overwrite it;
+    // subsequent bounded passes must cover the tail and revisit older work.
+    for (let pass = 0; pass < 3; pass++) {
+      reads.length = 0; await recoverStudyRequests(); expect(reads).toHaveLength(20);
+      expect(new Set(reads).size).toBe(20);
+      for (const id of reads) covered.add(id); resumed.push(...reads);
+    }
+    expect(covered.size).toBe(25); expect(resumed).toContain("fair-1");
+    expect(await store.list(undefined, true)).toHaveLength(25);
+  } finally { release.resolve(); await Promise.all([first.outcome, replacement?.outcome]); compare.mockRestore(); vi.unstubAllGlobals(); }
+});
+it("pr285_recovery_ownership_old_store_cannot_publish_or_advance_replacement_cursor", async () => {
+  const command = recoveryCommand("old-store-original"); const oldStore = await studyIntentStore(); await oldStore.put(command, { started: true });
+  const started = deferred<void>(), response = deferred<Response>(); const trace: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async () => { started.resolve(); return response.promise; }));
+  const pass = await enterRecovery(() => recoverStudyRequests(), trace, "old-store");
+  try {
+    await started.promise; closeStudyIntentStorage(); const replacement = await initializeStudyIntentStorage();
+    response.resolve(Response.json(completedRecoveryReceipt(command)));
+    expect(await pass.outcome).toEqual({ status: "fulfilled", value: undefined });
+    expect(await replacement.get(command.key)).toMatchObject({ ...command, state: "pending" });
+    expect(await replacement.checkpoint("study-command-recovery:cursor")).toBeUndefined();
+    expect(notifications().filter(notice => notice.key === `study-command:${command.key}`)).toEqual([]);
+  } finally { response.resolve(Response.json(completedRecoveryReceipt(command))); await pass.outcome; vi.unstubAllGlobals(); }
+});
 it("pr285_rejected_answer_retains_terminal_validation_evidence", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Submit one move" }, { status: 422 })));
   await expect(executeStudyRequest({ scope: repairScope, endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: "invalid",

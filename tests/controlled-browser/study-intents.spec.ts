@@ -7,6 +7,9 @@ import { nativeStudyRecords } from "../browser/native-study-storage";
 import { validateReview } from "./contracts";
 
 type NativeWindow = Window & { intentFixture: typeof import("@tempo/browser-intents"); nativeIntents: IntentStore };
+type RecoveryTraceWindow = NativeWindow & { recoveryOwnership: {
+  events: Array<{ event: string; signal: number }>; restore: () => void;
+} };
 const bundle = build({ stdin: { contents: 'export * from "@tempo/browser-intents";', resolveDir: process.cwd() }, bundle: true,
   write: false, format: "iife", globalName: "intentFixture", platform: "browser" }).then(result => result.outputFiles[0].text);
 async function nativeStore(page: Page, workspace = "native-regression") {
@@ -187,6 +190,80 @@ test("issue219 specialized lost response reload recovers after the issued head a
   expect(posts).toBe(1); expect(receiptReads).toBe(1);
   expect((await nativeStudyRecords(page)).find(record => record.kind === "study-command")).toMatchObject({ state: "committed", payload: { body: frozen } });
   expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
+});
+
+test("pr285 recovery ownership replacement queue load survives cancelled receipt recovery", async ({ page }, testInfo) => {
+  const successor = openingCard("ownership-successor", "Recovery replacement successor", "d2d4", 995);
+  const api = await prepareControlledUI(page, [], false);
+  const original: IntentEnvelope = { key: "study:ownership:exercise:review:3:original", kind: "study-command", requestId: "ownership-original",
+    attemptId: "ownership-attempt", endpoint: "/api/studies/ownership/exercises/exercise/attempts", revision: 3,
+    createdAt: "2026-09-18T15:00:00Z", payload: { scope: "study:ownership:exercise:review:3",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": "ownership-original" }, body: { attempt_id: "ownership-attempt", revision: 3,
+        context: "review", card_id: "original-card", queue_entry_id: 994,
+        answer: { type: "choice", option_ids: ["a"], displayed_order: ["a", "b"] } } } };
+  let releaseReceipt!: () => void, receiptStarted!: () => void;
+  const held = new Promise<void>(resolve => { releaseReceipt = resolve; });
+  const started = new Promise<void>(resolve => { receiptStarted = resolve; });
+  let issuedSuccessor = false, receiptReads = 0, posts = 0;
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  api.register({ method: "GET", path: "/api/operations/ownership-original", query: {} }, async route => {
+    receiptReads++; receiptStarted(); await held;
+    await route.fulfill({ json: { operation_id: original.requestId, state: "complete", response: { attempt_id: original.attemptId,
+      assessment: { outcome: "correct", feedback: "Original result confirmed" }, rating: "correct" } } });
+  });
+  api.register({ method: "POST", path: original.endpoint, query: {}, validate: () => { posts++; throw new Error("Original command was reposted"); } }, () => undefined);
+  api.register({ method: "GET", path: "/api/cards/ownership-successor/teaching", query: {} }, route => route.fulfill({ json: { states: [] } }));
+  for (const query of ([{ limit: "20" }, { limit: "20", include_opening_evidence: "true" }] as Record<string, string>[]))
+    api.register({ method: "GET", path: "/api/queue/window", query }, route => route.fulfill({ json: { cards: issuedSuccessor ? [successor] : [], count: Number(issuedSuccessor) } }));
+  await page.goto("/"); await expect(page.getByText("No cards due. Your next session will appear here.", { exact: true })).toBeVisible();
+  await nativeStore(page, `${new URL(page.url()).origin}:study`);
+  await page.evaluate(async envelope => { await (window as unknown as NativeWindow).nativeIntents.put(envelope, { started: true }); }, original);
+  await page.evaluate(() => {
+    const events: Array<{ event: string; signal: number }> = [], identities = new WeakMap<AbortSignal, number>();
+    let next = 0;
+    const identity = (signal: AbortSignal) => { if (!identities.has(signal)) identities.set(signal, ++next); return identities.get(signal)!; };
+    const add = AbortSignal.prototype.addEventListener, abort = AbortController.prototype.abort;
+    // Pass-through browser witnesses observe the real queue controllers and stage waiters.
+    AbortSignal.prototype.addEventListener = function (this: AbortSignal, type: string,
+      listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+      if (type === "abort") events.push({ event: "waiter", signal: identity(this) });
+      return add.call(this, type, listener, options);
+    };
+    AbortController.prototype.abort = function (reason) { events.push({ event: "abort", signal: identity(this.signal) }); return abort.call(this, reason); };
+    (window as unknown as RecoveryTraceWindow).recoveryOwnership = { events, restore() {
+      AbortSignal.prototype.addEventListener = add; AbortController.prototype.abort = abort;
+    } };
+    window.dispatchEvent(new Event("online"));
+  });
+  try {
+    await started; issuedSuccessor = true;
+    await page.evaluate(() => {
+      (window as unknown as RecoveryTraceWindow).recoveryOwnership.events.push({ event: "B-start", signal: 0 });
+      window.dispatchEvent(new Event("online"));
+    });
+    await expect.poll(() => page.evaluate(() => {
+      const events = (window as unknown as RecoveryTraceWindow).recoveryOwnership.events;
+      const replacement = events.slice(events.findIndex(event => event.event === "B-start") + 1);
+      const cancelled = replacement.find(event => event.event === "abort");
+      return Boolean(cancelled && replacement.some(event => event.event === "waiter" && event.signal !== cancelled.signal &&
+        replacement.filter(candidate => candidate.event === "waiter" && candidate.signal === event.signal).length >= 2));
+    })).toBe(true);
+    // The second queue's initialization and recovery waiters exist while the receipt is still held.
+    const ordering = await page.evaluate(() => (window as unknown as RecoveryTraceWindow).recoveryOwnership.events);
+    await testInfo.attach("recovery-overlap-ordering", { body: JSON.stringify({ ordering, release: "after B recovery waiter" }, null, 2), contentType: "application/json" });
+    releaseReceipt();
+    await expect(page.getByRole("heading", { name: "Recovery replacement successor", exact: true })).toBeVisible();
+    await expect(page.getByText(/The local queue could not be loaded/)).toHaveCount(0);
+    await expect.poll(async () => (await nativeStudyRecords(page)).find(record => record.requestId === original.requestId)?.state).toBe("committed");
+    expect((await nativeStudyRecords(page)).filter(record => record.requestId === original.requestId)).toEqual([
+      expect.objectContaining({ ...original, state: "committed" }),
+    ]);
+    expect(receiptReads).toBe(1); expect(posts).toBe(0); expect(errors).toEqual([]);
+    expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
+  } finally {
+    releaseReceipt();
+    await page.evaluate(() => { const native = window as unknown as RecoveryTraceWindow; native.recoveryOwnership.restore(); native.nativeIntents.close(); });
+  }
 });
 
 test("issue219 two tabs retain competing outcomes on one issued head", async ({ page, context }) => {
