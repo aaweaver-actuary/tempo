@@ -18,9 +18,10 @@ _OUTSTANDING = """
  WHERE head.workspace_id=%s AND head.card_id=%s AND head.active
    AND contribution.kind='real_game_miss'
    AND NOT EXISTS (
-     SELECT 1 FROM remediation_settlements settlement
-     JOIN remediation_attempts attempt USING(workspace_id,attempt_id)
+     SELECT 1 FROM remediation_attempts attempt
+     JOIN remediation_settlements settlement USING(workspace_id,attempt_id)
      WHERE settlement.workspace_id=head.workspace_id AND settlement.card_id=head.card_id
+       AND attempt.workspace_id=head.workspace_id AND attempt.card_id=head.card_id
        AND NOT settlement.invalidated
        AND incident.work_sequence<=attempt.frontier_sequence
        AND incident.accepted_at<=attempt.issued_at

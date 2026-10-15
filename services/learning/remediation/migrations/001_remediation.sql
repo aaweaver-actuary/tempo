@@ -61,6 +61,8 @@ CREATE TABLE remediation_review_receipts (
     workspace_id text NOT NULL, review_id text NOT NULL, payload_json text NOT NULL,
     settled boolean NOT NULL, PRIMARY KEY(workspace_id,review_id)
 );
+CREATE INDEX remediation_attempts_frontier ON remediation_attempts
+    (workspace_id,card_id,card_revision,frontier_sequence DESC);
 CREATE TABLE remediation_settlements (
     workspace_id text NOT NULL, review_id text NOT NULL, attempt_id text NOT NULL,
     card_id text NOT NULL, reviewed_at timestamptz NOT NULL,
@@ -69,3 +71,4 @@ CREATE TABLE remediation_settlements (
     FOREIGN KEY(workspace_id,attempt_id) REFERENCES remediation_attempts(workspace_id,attempt_id)
 );
 CREATE INDEX remediation_settlements_card ON remediation_settlements(workspace_id,card_id,reviewed_at DESC) WHERE NOT invalidated;
+CREATE INDEX remediation_settlements_attempt ON remediation_settlements(workspace_id,attempt_id) WHERE NOT invalidated;

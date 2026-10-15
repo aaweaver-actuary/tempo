@@ -278,6 +278,36 @@ def test_native_rejected_pages_advance_with_a_four_page_bound(workspace):
         assert not last.has_more and last.cursor == "card-069" and last.examined_pages == 1
 
 
+def test_native_new_miss_lookup_does_not_scan_past_review_history(workspace):
+    class ObservedConnection:
+        def __init__(self, connection):
+            self.connection, self.info, self.last = connection, connection.info, None
+        def execute(self, statement, parameters=()):
+            self.last = (statement, parameters)
+            return self.connection.execute(statement, parameters)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        old = scoped(delivery(), workspace); accept(repository, old)
+        # Owned fixture history, never product review/FSRS tables.
+        connection.execute("""INSERT INTO remediation_attempts
+            SELECT %s,'history-'||number::text,'card',1,'publication',1,%s,1
+            FROM generate_series(1,1000) number""", (workspace, NOW+timedelta(seconds=1)))
+        connection.execute("""INSERT INTO remediation_settlements(workspace_id,review_id,attempt_id,card_id,reviewed_at)
+            SELECT %s,'history-review-'||number::text,'history-'||number::text,'card',%s
+            FROM generate_series(1,1000) number""", (workspace, NOW+timedelta(seconds=2)))
+        assert accept(repository, withdrawal(old)).status == "completed"
+        accept(repository, scoped(delivery(game="later", evidence="later", obligation="later", transport="later"), workspace))
+        observed = ObservedConnection(connection)
+        assert PostgresRepository(observed, workspace).has_outstanding("card")
+        statement, parameters = observed.last
+        plan = connection.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + statement, parameters).fetchone()[0][0]["Plan"]
+        def scanned(node):
+            local = ((node.get("Actual Rows",0)+node.get("Rows Removed by Filter",0))*node.get("Actual Loops",0)
+                     if node.get("Relation Name") in {"remediation_attempts","remediation_settlements"} else 0)
+            return local + sum(scanned(child) for child in node.get("Plans",[]))
+        assert scanned(plan) <= 16, plan
+
+
 @pytest.mark.parametrize("introduced", [False, True])
 def test_native_zero_limit_paths_keep_deferral_head_schedule_and_history(workspace, introduced):
     class Writer:
