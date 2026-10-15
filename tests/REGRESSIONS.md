@@ -4454,6 +4454,10 @@ is independently selected by the producer-parity lane and consumes the installed
 - `backend/tests/test_frozen_maia_plan.py::test_frozen_cli_waits_for_admission_without_holding_a_connection_or_replaying_writes` protects bounded staging against transient foreground admission deferrals while retaining foreground priority and one execution of the write body.
 - `test_frozen_cli_admission_wait_times_out_without_opening_a_write` bounds waiting outside a database connection; `test_frozen_cli_does_not_replay_a_write_body_that_raises_admission_error` preserves errors after the transaction body starts. Both remain in `backend/tests/test_frozen_maia_plan.py`.
 
+## Failed first opening publication recovery (Advance Caro Kann)
+
+- `backend/tests/test_opening_graph_recovery.py::test_maintenance_claim_refuses_wrong_scope_generation_lease_or_checkpoint` guards exact maintenance task authority without resetting the saved publication phase. `test_maintenance_preflight_and_release_yield_to_foreground` protects admission-denied reads and lease-release retries.
+- Regular PostgreSQL durability owner: `scripts/check_postgres_opening_graph_recovery.py`, registered in `scripts/test-postgres-docker.mjs`. Named cases `test_failed_first_publication_recovery_unlocks_practiced_parent_and_admits_maia_rank`, `test_recovery_refuses_mismatched_source_and_target`, and `test_scoped_recovery_claim_preserves_publish_and_fences_other_tasks` cover first-publication failure, source/identity validation, generation/lease fences, study-only recovery, integrity completion, parent exposure, rank preference, quotas, and preservation of reviews, ranks, and unrelated jobs. The proof owns a fresh database in the regular runner; `--disposable` owns and cleans up dedicated PostgreSQL/Redis containers for focused local execution.
 
 ## #200 pure scheduling and stable identity
 
