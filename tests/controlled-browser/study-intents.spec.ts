@@ -227,7 +227,7 @@ test("pr285 recovery ownership replacement queue load survives cancelled receipt
     AbortSignal.prototype.addEventListener = function (this: AbortSignal, type: string,
       listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
       if (type === "abort") events.push({ event: "waiter", signal: identity(this) });
-      return add.call(this, type, listener, options);
+      return Reflect.apply(add, this, [type, listener, options]);
     };
     AbortController.prototype.abort = function (reason) { events.push({ event: "abort", signal: identity(this.signal) }); return abort.call(this, reason); };
     (window as unknown as RecoveryTraceWindow).recoveryOwnership = { events, restore() {
