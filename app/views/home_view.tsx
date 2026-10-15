@@ -3,7 +3,7 @@ import { rememberTeachingFact, savedTeachingFacts } from "../lib/study-intent-st
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
 import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
 import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
-import { PendingOperationError, readOperationResponse } from "../lib/operation-status";
+import { PendingOperationError } from "../lib/operation-status";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { backgroundFetch } from "../lib/background-fetch";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
@@ -528,21 +528,21 @@ function StudyComposition() {
     setQueueReconciliationError("");
     if (!conflicted) rememberConfirmedQueueEntry(completedCard);
     invalidateWorkspaceData();
-    if (!conflicted && advancePreparedContinuation(continuation, attemptId, generation)) {
-      setReviewPersistenceState("idle");
-      setSafeBreakCounter(count => count + 1);
-      resolveNotification(notice, { severity: "success", details: { ...details, phase: "prepared continuation selected" },
-        message: "Result saved. Next card loaded." });
-      preparedProgressionAttempt.current = useTrainingStore.getState().attempt;
-      void reconcilePreparedQueue();
-      void checkPendingIntegrity();
-      return;
-    }
     setReviewPersistenceState(conflicted ? "conflicted" : "refreshingQueue");
     const finishReadiness = measureTempoDragPhase("next-card-readiness");
     try {
       const coordinator = await reviewStudySession();
       await coordinator.retryNext(`review:${attemptId}`, async (signal, acquisition) => {
+        if (!conflicted && advancePreparedContinuation(continuation, attemptId, generation)) {
+            setReviewPersistenceState("idle");
+            setSafeBreakCounter(count => count + 1);
+            resolveNotification(notice, { severity: "success", details: { ...details, phase: "prepared continuation selected" },
+              message: "Result saved. Next card loaded." });
+            preparedProgressionAttempt.current = useTrainingStore.getState().attempt;
+            void reconcilePreparedQueue();
+            void checkPendingIntegrity();
+            return;
+          }
         updateNotification(notice, { details: { ...details, phase: "authoritative refresh requested", acquisition: acquisition + 1 },
           message: acquisition ? "Result saved. Retrying the next card…" : "Result saved. Loading the next card…", active: true });
         const result = await fetchAndInitializeQueue(true, { replaySavedReviews: false, timeoutMs: 15_000, expectedAttempt, signal });
@@ -987,19 +987,19 @@ function StudyComposition() {
   }
 
   async function persistExplicitAttemptFailure() {
-    if (!usesLocalApi() || card.kind === "defense" || !card.queueEntryId) return;
+    if (!usesLocalApi() || card.kind === "defense" || !card.queueEntryId) return true;
     if (offlineQueue) {
-      void markOfflineAttemptFailed(card.queueEntryId)
-        .then(() => showTrainingNotice("Guided attempt saved on phone.", "success"))
-        .catch((error) => showTrainingNotice(`The phone could not save the guided attempt. ${String(error)}`, "error"));
-      return;
+      try { await markOfflineAttemptFailed(card.queueEntryId); showTrainingNotice("Guided attempt saved on phone.", "success"); return true; }
+      catch (error) { showTrainingNotice(`The phone could not save the guided attempt. ${String(error)}`, "error"); return false; }
     }
     try {
       await enqueueTrainingFailure(card.queueEntryId, String(card.backendId ?? card.id), card.revision);
       void flushTrainingFailures().catch((error) =>
         showTrainingNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`, "warning"));
+      return true;
     } catch (error) {
       showTrainingNotice(`Could not save guided-attempt state in this browser. Keep this page open. ${String(error)}`, "error");
+      return false;
     }
   }
 
@@ -1316,10 +1316,11 @@ function StudyComposition() {
               "The active queue entry is unavailable. Refresh the queue.",
             );
           if (!recordedAtCompletion) {
+            if (useTrainingStore.getState().isAttemptFailed && !await persistExplicitAttemptFailure()) throw new Error("The guided failure must be saved before completing this review.");
             openingJournal();
             const attemptId = useTrainingStore.getState().attempt.attemptId;
             const completion = completeOpeningAttempt(attemptId);
-            await enqueuePendingReview({
+            submittedAttemptId = await enqueuePendingReview({
               attemptId, openingEvidenceCompletion: completion, completedAt: completion?.terminal?.ended_at,
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
@@ -1332,8 +1333,8 @@ function StudyComposition() {
             });
           }
           const submittedReview = pendingReviews().find((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
-          submittedAttemptId = submittedReview ? logicalAttemptId(submittedReview)
-            : recordedAtCompletion ? useTrainingStore.getState().attempt.attemptId : undefined;
+          submittedAttemptId = submittedAttemptId ?? (submittedReview ? logicalAttemptId(submittedReview)
+            : recordedAtCompletion ? useTrainingStore.getState().attempt.attemptId : undefined);
           reviewSaveDiagnosticIdentity.current = undefined;
           setReviewPersistenceIdentity(submittedAttemptId ? { backendId: card.backendId,
             queueEntryId: card.queueEntryId, attemptId: submittedAttemptId } : undefined);
@@ -1349,14 +1350,7 @@ function StudyComposition() {
         const finishReviewPersistence = measureTempoDragPhase("review-persistence");
         let flushResult: ReviewFlushResult;
         try {
-          if ((recordedAtCompletion || retryPending) && !pendingReviews().some(review => logicalAttemptId(review) === submittedAttemptId) &&
-              !conflictedReviews().some(review => logicalAttemptId(review) === submittedAttemptId)) {
-            // A queue reconciliation may have flushed this completion during feedback.
-            // Absence from storage is not proof; check its original authoritative receipt.
-            const receipt = await readOperationResponse(`review-attempt:${submittedAttemptId}`);
-            const receiptPayload = await receipt.json() as { persisted?: boolean };
-            flushResult = { persistedAttemptIds: receiptPayload.persisted === true ? [submittedAttemptId] : [], conflictedAttemptIds: [] };
-          } else flushResult = await flushPendingReviews(Infinity, retryPending, retryPending ? submittedAttemptId : undefined, undefined, submittedAttemptId);
+          flushResult = await flushPendingReviews(Infinity, retryPending, retryPending ? submittedAttemptId : undefined, undefined, submittedAttemptId);
           finishReviewPersistence();
         }
         catch (error) {
@@ -1480,6 +1474,8 @@ function StudyComposition() {
     let reviewRecordedAtCompletion = false;
     if (databaseQueue && !offlineQueue && card.backendId && card.queueEntryId) {
       try {
+        if (outcome === "again" && !await persistExplicitAttemptFailure()) throw new Error("The guided failure must be saved before completing this review.");
+        if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
         await enqueuePendingReview({
           attemptId: token.attemptId, completedAt, openingEvidenceCompletion: completion,
           backendId: card.backendId,

@@ -4478,3 +4478,21 @@ requires noneditable installed Learning 0.1.0, scheduling 0.2.0 and chess-core 0
 verifies origins and explicit review command assembly, and rejects import-time
 service connections. Learning-owned qualification runner regressions are registered
 in `services/learning/application/REGRESSIONS.md` and its implemented component lane.
+
+## Durable Study intents (#219/#221 and #13)
+
+Installed owners: [browser-intents](../packages/browser-intents/REGRESSIONS.md)
+and [study-session](../packages/study-session/REGRESSIONS.md).
+`tests/unit/study-intent-storage-regressions.test.ts` owns the named migration,
+legacy-writer, storage, atomic-teaching and specialized boot-recovery cases.
+The regular frontend lane registers that file; existing outbox, lifecycle,
+pending-recovery, conflict, Study, defense and promotion suites retain their
+owning assertions with asynchronous storage barriers.
+
+`tests/controlled-browser/study-intents.spec.ts` is registered in E's existing
+controlled lane for native two-tab writes/claims, actual reload, retained legacy
+sources and old writers, storage denial/quota, committed-next-load recovery,
+wrong-tactic Again persistence, specialized lost responses after head advancement
+and competing outcomes. `tests/browser/post-review-progression.spec.ts` retains
+the real disposable PostgreSQL integration owner. See
+[adapter/cutover and invariant documentation](../docs/study/durable-intents.md).

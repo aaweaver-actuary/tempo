@@ -29,7 +29,7 @@ it("online conflict dialog exports original evidence and discards only the selec
   const exported = JSON.parse((screen.getByRole("textbox", { name: "Conflict data" }) as HTMLTextAreaElement).value);
   expect(exported.onlineReviews[0]).toEqual(conflict);
   fireEvent.click(screen.getAllByRole("button", { name: "Discard saved result" })[0]);
-  expect(conflictedReviews().map(review => review.attemptId)).toEqual(["completed-b"]);
+  await waitFor(() => expect(conflictedReviews().map(review => review.attemptId)).toEqual(["completed-b"]));
 });
 
 it("online conflict dialog explicitly retries the immutable logical attempt", async () => {
@@ -40,6 +40,7 @@ it("online conflict dialog explicitly retries the immutable logical attempt", as
   render(<OfflineReviewConflicts />);
   fireEvent.click(await screen.findByRole("button", { name: "Review conflicts (1)" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry saved result" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   await waitFor(() => expect(conflictedReviews()).toEqual([]));
   expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("review-reconcile:completed-a:2");
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ attempt_id: "completed-a", recorded_at: conflict.completedAt });

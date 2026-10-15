@@ -24,7 +24,7 @@ export type IntentStore = {
 };
 
 export class IntentStorageError extends Error {
-  constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = "IntentStorageError"; }
+  constructor(message: string, options?: ErrorOptions) { super(message + (options?.cause && typeof options.cause === "object" && "message" in options.cause ? ` (${String("name" in options.cause ? options.cause.name : "StorageError")}: ${String(options.cause.message)})` : ""), options); this.name = "IntentStorageError"; }
 }
 export class IntentIdentityConflict extends Error {
   constructor(readonly key: string) { super("This study request already has a different immutable payload."); this.name = "IntentIdentityConflict"; }
@@ -67,12 +67,18 @@ export async function openIntentStore(options: { workspace: string; databaseName
     opening.onblocked = () => { rejected = true; reject(new IntentStorageError("Close older Tempo tabs and reopen to update study storage.")); };
   });
   const listeners = new Set<() => void>();
-  const notify = () => { for (const listener of listeners) listener(); };
+  const notify = () => { for (const listener of listeners) {
+    try { listener(); } catch { /* Subscriber failures cannot undo a committed transaction. */ }
+  } };
   let closed = false;
   database.onversionchange = () => { closed = true; database.close(); notify(); };
   const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(`tempo-study-intents:${options.workspace}`) : undefined;
   channel?.addEventListener("message", notify);
-  const changed = () => { notify(); channel?.postMessage("changed"); };
+  const changed = () => {
+    if (closed) return;
+    notify();
+    try { channel?.postMessage("changed"); } catch { /* Notifications are advisory; storage/receipts retain authority. */ }
+  };
   async function transaction<T>(names: string[], mode: IDBTransactionMode, action: (transaction: IDBTransaction) => Promise<T>): Promise<T> {
     if (closed) throw new IntentStorageError("Study storage changed in another tab. Reopen Tempo before continuing.");
     return new Promise<T>((resolve, reject) => {
@@ -94,6 +100,8 @@ export async function openIntentStore(options: { workspace: string; databaseName
   const get = (recordKey: string) => transaction(["intents"], "readonly", tx => request<IntentRecord | undefined>(tx.objectStore("intents").get(key(recordKey))));
   return {
     async put(envelope, data) {
+      // Snapshot before the first asynchronous turn; callers cannot mutate an in-flight insertion.
+      envelope = structuredClone(envelope); data = structuredClone(data);
       if (![envelope.key, envelope.kind, envelope.attemptId, envelope.requestId, envelope.endpoint, envelope.createdAt].every(value => typeof value === "string" && value.length))
         throw new IntentStorageError("The study request has an incomplete identity.");
       return transaction(["intents", "metadata"], "readwrite", async tx => {
@@ -140,7 +148,9 @@ export async function openIntentStore(options: { workspace: string; databaseName
       const current = await request<IntentRecord | undefined>(records.get(key(recordKey)));
       if (current?.claim?.token === token) { delete current.claim; await request(records.put({ ...current, version: current.version + 1 })); }
     }),
-    addTeachingFact: (fact, intent) => transaction(intent ? ["teaching", "intents", "metadata"] : ["teaching"], "readwrite", async tx => {
+    addTeachingFact: (fact, intent) => {
+      fact = structuredClone(fact); intent = structuredClone(intent);
+      return transaction(intent ? ["teaching", "intents", "metadata"] : ["teaching"], "readwrite", async tx => {
       if (!fact.cardId || !fact.key || !Number.isSafeInteger(fact.revision) || fact.revision < 1 ||
           (fact.ply !== undefined && (!Number.isSafeInteger(fact.ply) || fact.ply < 0))) throw new IntentStorageError("Invalid teaching fact.");
       const facts = tx.objectStore("teaching");
@@ -157,7 +167,8 @@ export async function openIntentStore(options: { workspace: string; databaseName
           await request(records.add({ ...intent, workspace: options.workspace, sequence, version: 1, state: "pending" }));
         }
       }
-    }),
+      });
+    },
     teachingFacts: cardId => transaction(["teaching"], "readonly", async tx => {
       const source = tx.objectStore("teaching");
       const facts = await request<TeachingFact[]>(cardId ? source.index("card").getAll([options.workspace, cardId]) : source.index("workspace").getAll(options.workspace));

@@ -1,3 +1,4 @@
+import { settleStudyStorageTasks, advanceStudyTimers } from "./support/study-intent-fixtures";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
@@ -90,9 +91,10 @@ describe("review attempt reliability", () => {
       }], count: 1 });
     }));
     await fetchAndInitializeQueue();
-    expect(requestedPaths.slice(0, 4)).toEqual([
-      originalReceiptPath, "/api/cards/persisted-card/review", "/api/queue/entries/43/fail", "/api/queue/window",
-    ]);
+    await settleStudyStorageTasks();
+    expect(requestedPaths.slice(0, 2)).toEqual([originalReceiptPath, "/api/cards/persisted-card/review"]);
+    expect(requestedPaths).toEqual(expect.arrayContaining(["/api/queue/entries/43/fail", "/api/queue/window"]));
+    expect(requestedPaths.indexOf("/api/cards/persisted-card/review")).toBeLessThan(requestedPaths.indexOf("/api/queue/entries/43/fail"));
     expect(pendingReviews()).toEqual([]);
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(43);
     expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
@@ -285,7 +287,9 @@ describe("review attempt reliability", () => {
       vi.fn(() => new Promise<Response>((resolve) => responses.push(resolve))),
     );
     const first = fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     const second = fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     const payload = (id: number) =>
       Response.json({
         cards: [
@@ -367,7 +371,9 @@ describe("review attempt reliability", () => {
     try {
       const queueRead = fetchAndInitializeQueue();
       const rejected = expect(queueRead).rejects.toThrow(/timed out/i);
-      await vi.advanceTimersByTimeAsync(15_000);
+      await settleStudyStorageTasks();
+      await advanceStudyTimers(15_000);
+      await settleStudyStorageTasks();
       await rejected;
       expect(useTrainingStore.getState().attempt).toEqual(completedAttempt);
       expect(useTrainingStore.getState().serviceError).toContain("Retry loading the queue");

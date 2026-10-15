@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import type { IntentStore, IntentEnvelope } from "@tempo/browser-intents";
 import { test, expect, prepareControlledUI, openingCard } from "./fixtures";
 import { move } from "../browser/native-board";
+import { nativeStudyRecords } from "../browser/native-study-storage";
 import { validateReview } from "./contracts";
 
 type NativeWindow = Window & { intentFixture: typeof import("@tempo/browser-intents"); nativeIntents: IntentStore };
@@ -22,9 +23,12 @@ test("issue221 native two-tab writes preserve both orders and competing claims",
     const pages = [page, second]; const prefix = order.join("");
     // Both documents reach the barrier before either starts its transaction.
     await Promise.all(pages.map(current => current.evaluate(() => Promise.resolve("ready"))));
-    await Promise.all(order.map(index => pages[index].evaluate(async envelope => (window as unknown as NativeWindow).nativeIntents.put(envelope), command(`${prefix}:${index}`))));
+    for (const index of order) await pages[index].evaluate(async envelope => (window as unknown as NativeWindow).nativeIntents.put(envelope), command(`${prefix}:${index}`));
+    // Independent transactions also start concurrently after the same barrier.
+    await Promise.all(pages.map((current, index) => current.evaluate(async envelope => (window as unknown as NativeWindow).nativeIntents.put(envelope), command(`${prefix}:concurrent:${index}`))));
     const retained = await second.evaluate(async () => (await (window as unknown as NativeWindow).nativeIntents.list()).map(record => record.key));
-    expect(retained).toEqual(expect.arrayContaining([`${prefix}:0`, `${prefix}:1`]));
+    expect(retained).toEqual(expect.arrayContaining([`${prefix}:0`, `${prefix}:1`, `${prefix}:concurrent:0`, `${prefix}:concurrent:1`]));
+    expect(retained.filter(key => key === `${prefix}:0` || key === `${prefix}:1`)).toEqual(order.map(index => `${prefix}:${index}`));
   }
   const claims = await Promise.all([page, second].map((current, index) => current.evaluate(async owner =>
     (window as unknown as NativeWindow).nativeIntents.claim("01:0", owner, Date.now(), 30_000), String(index))));
@@ -113,4 +117,115 @@ test("issue186 committed review next-load retry and reload never resubmit the gr
   await page.reload(); await expect(page.getByRole("heading", { name: "Recovered successor", exact: true })).toBeVisible();
   expect(posts).toBe(1);
   expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
+});
+
+test("issue219 wrong tactic survives true reload and guided completion stays Again", async ({ page }) => {
+  const tactic = { ...openingCard("wrong-tactic", "Durable tactic", "e2e4", 941), content_type: "tactic" };
+  const api = await prepareControlledUI(page, [tactic], false);
+  let allowFailure = false;
+  api.register({ method: "POST", path: "/api/queue/entries/941/fail", query: {}, validate: request => {
+    expect(request.body).toMatchObject({ card_id: "wrong-tactic", expected_revision: 1 });
+    expect(request.headers["idempotency-key"]).toBeTruthy();
+  } }, route => allowFailure ? route.fulfill({ json: { persisted: true } }) : route.abort("connectionfailed"));
+  const reviews: Record<string, unknown>[] = [];
+  api.register({ method: "POST", path: "/api/cards/wrong-tactic/review", query: {}, validate: request => {
+    const body = request.body as Record<string, unknown>;
+    expect(body).toMatchObject({ outcome: "again", guided: true, queue_entry_id: 941 });
+    expect(request.headers["idempotency-key"]).toBe(`review-attempt:${body.attempt_id}`);
+    reviews.push(body);
+  } }, route => route.fulfill({ json: { persisted: true } }));
+  let operationId = "";
+  api.register({ method: "GET", path: () => `/api/operations/${encodeURIComponent(operationId)}`, query: {} }, route => route.fulfill({ status: 404 }));
+  await page.goto("/"); await move(page, "d2", "d4");
+  await expect.poll(async () => (await nativeStudyRecords(page)).filter(record => record.kind === "failure").length).toBe(1);
+  operationId = (await nativeStudyRecords(page)).find(record => record.kind === "failure")!.requestId;
+  await page.reload();
+  await expect(page.getByText(/Guided attempt resumed/).first()).toBeVisible();
+  expect(reviews).toEqual([]);
+  allowFailure = true;
+  await move(page, "e2", "e4");
+  await expect.poll(() => reviews.length).toBe(1);
+  await expect.poll(async () => (await nativeStudyRecords(page)).find(record => record.kind === "review")?.state).toBe("committed");
+  expect(reviews[0]).toMatchObject({ outcome: "again", guided: true });
+});
+
+test("issue219 specialized lost response reload recovers after the issued head advances", async ({ page }) => {
+  const exercise = { ...openingCard("study-card", "Connected exercise", "e2e4", 951), moves: [],
+    content_type: "study_exercise", study_id: "native-study", study_exercise_id: "native-exercise", revision: 3 };
+  const successor = openingCard("after-study", "Issued after study", "d2d4", 952);
+  const api = await prepareControlledUI(page, [exercise], false);
+  let answer: Record<string, unknown> | undefined, posts = 0, receiptReads = 0;
+  let releaseLostResponse!: () => void;
+  const lostResponse = new Promise<void>(resolve => { releaseLostResponse = resolve; });
+  api.register({ method: "GET", path: "/api/studies/native-study/exercises/native-exercise/present", query: {} }, route => route.fulfill({ json: {
+    id: "native-exercise", revision: 3, type: "choice", prompt: "Choose the durable answer", hint: "", fen: exercise.start_fen,
+    options: [{ id: "a", text: "Preserve the original" }, { id: "b", text: "Replace it" }],
+  } }));
+  api.register({ method: "POST", path: "/api/studies/native-study/exercises/native-exercise/attempts", query: {}, validate: request => {
+    answer = request.body as Record<string, unknown>; posts++;
+    expect(answer).toMatchObject({ revision: 3, context: "review", card_id: "study-card", queue_entry_id: 951,
+      answer: { type: "choice", option_ids: ["a"], displayed_order: ["a", "b"] } });
+    expect(request.headers["idempotency-key"]).toBe(answer.attempt_id);
+  } }, async route => { await lostResponse; await route.abort("connectionfailed").catch(() => undefined); });
+  api.register({ method: "GET", path: () => `/api/operations/${encodeURIComponent(String(answer?.attempt_id))}`, query: {} }, route => {
+    receiptReads++; return route.fulfill({ json: { state: "complete", response: { attempt_id: answer?.attempt_id,
+      assessment: { outcome: "correct", feedback: "Original result confirmed" }, rating: "correct" } } });
+  });
+  api.register({ method: "GET", path: "/api/cards/after-study/teaching", query: {} }, route => route.fulfill({ json: { states: [] } }));
+  for (const query of ([{ limit: "20" }, { limit: "20", include_opening_evidence: "true" }] as Record<string, string>[])) api.register({ method: "GET", path: "/api/queue/window", query }, route =>
+    route.fulfill({ json: { cards: answer ? [successor] : [exercise], count: 1 } }));
+  await page.goto("/"); await page.getByLabel("Preserve the original").check();
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect.poll(() => posts).toBe(1);
+  const frozen = structuredClone(answer);
+  await page.reload();
+  releaseLostResponse();
+  await expect(page.getByRole("heading", { name: "Issued after study", exact: true })).toBeVisible();
+  expect(posts).toBe(1); expect(receiptReads).toBe(1);
+  expect((await nativeStudyRecords(page)).find(record => record.kind === "study-command")).toMatchObject({ state: "committed", payload: { body: frozen } });
+  expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
+});
+
+test("issue219 two tabs retain competing outcomes on one issued head", async ({ page, context }) => {
+  const card = openingCard("competing", "One issued head", "e2e4", 961);
+  const api = await prepareControlledUI(page, [card], false);
+  let releaseFirst!: () => void;
+  const firstResponse = new Promise<void>(resolve => { releaseFirst = resolve; });
+  let posted = 0, reconciled = 0;
+  api.register({ method: "POST", path: "/api/queue/entries/961/fail", query: {}, validate: request => {
+    expect(request.body).toMatchObject({ card_id: "competing", expected_revision: 1 });
+  } }, route => route.fulfill({ json: { persisted: true } }));
+  api.register({ method: "POST", path: "/api/cards/competing/review", query: {}, validate: request => {
+    const body = request.body as Record<string, unknown>;
+    expect(body).toMatchObject({ queue_entry_id: 961 });
+    expect(request.headers["idempotency-key"]).toBe(`review-attempt:${body.attempt_id}`);
+    api.register({ method: "GET", path: `/api/operations/${encodeURIComponent(`review-attempt:${body.attempt_id}`)}`, query: {} }, route => route.fulfill({ status: 404 }));
+  } }, async route => {
+    if (++posted === 1) { await firstResponse; await route.fulfill({ json: { persisted: true } }); }
+    else await route.fulfill({ status: 409, json: { detail: "This issued head already has a result.", retryable: false } });
+  });
+  api.register({ method: "POST", path: "/api/cards/competing/review/reconcile", query: {}, validate: request => {
+    expect(request.body).toMatchObject({ queue_entry_id: 961, outcome: "correct", guided: false });
+    expect(request.headers["idempotency-key"]).toMatch(/^review-reconcile:.+:1$/);
+    reconciled++;
+  } }, route => route.fulfill({ json: { persisted: false, conflict: { code: "competing_review", message: "Another tab saved Again on this issued head.", retryable: false } } }));
+  const second = await context.newPage(); await prepareControlledUI(second, [card], false);
+  // prepareControlledUI shares the context registry; restore our authoritative queue handler last.
+  for (const query of ([{ limit: "20" }, { limit: "20", include_opening_evidence: "true" }] as Record<string, string>[])) api.register({ method: "GET", path: "/api/queue/window", query }, route =>
+    route.fulfill({ json: { cards: posted ? [] : [card], count: posted ? 0 : 1 } }));
+  await Promise.all([page.goto("/"), second.goto("/")]);
+  await page.getByRole("button", { name: "Show move" }).click();
+  await move(page, "e2", "e4");
+  await expect.poll(async () => (await nativeStudyRecords(page)).filter(record => record.kind === "review").length).toBe(1);
+  await move(second, "e2", "e4");
+  await expect.poll(async () => (await nativeStudyRecords(page)).filter(record => record.kind === "review").length).toBe(2);
+  releaseFirst();
+  await expect.poll(async () => (await nativeStudyRecords(page)).filter(record => record.kind === "review").map(record => record.state).sort()).toEqual(["committed", "conflicted"]);
+  const reviews = (await nativeStudyRecords(page)).filter(record => record.kind === "review");
+  expect(reviews.find(record => record.state === "committed")?.payload).toMatchObject({ outcome: "again", guided: true });
+  expect(reviews.find(record => record.state === "conflicted")?.payload).toMatchObject({ outcome: "correct", guided: false });
+  expect(posted).toBe(2); expect(reconciled).toBe(1);
+  await second.reload();
+  expect((await nativeStudyRecords(second)).filter(record => record.kind === "review").map(record => record.state).sort()).toEqual(["committed", "conflicted"]);
+  await second.close();
 });

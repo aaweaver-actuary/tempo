@@ -1,3 +1,4 @@
+import { advanceStudyTimers } from "./support/study-intent-fixtures";
 import {
   act,
   fireEvent,
@@ -160,7 +161,7 @@ async function readyTactics() {
 }
 async function pause(ms = 751) {
   await act(async () => {
-    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(ms);
+    if (vi.isFakeTimers()) await advanceStudyTimers(ms);
     else await new Promise((resolve) => setTimeout(resolve, ms));
   });
 }
@@ -997,7 +998,7 @@ it("repair completion preserves the active attempt focus and pending opponent re
   expect(after.practiceCards[after.activeCardIndex].queueEntryId).toBe(activeCardBefore.queueEntryId);
   expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window"))).toHaveLength(queueReadsBefore);
   expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
-  await act(async () => { await vi.advanceTimersByTimeAsync(430); });
+  await act(async () => { await advanceStudyTimers(430); });
   expect(useTrainingStore.getState().step).toBe(2);
 });
 
@@ -1183,9 +1184,9 @@ async function renderIntegrityOrderingHome(initialRepertoires = [integrityOrderi
   render(<Home />);
   await screen.findByRole("heading", { name: "Integrity ordering study" });
   const queueReadCount = () => fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
-  // The startup check and both queue refreshes must finish before requests are held.
+  // Settle Study startup before holding reads. Optional game sync no longer triggers a second startup queue refresh.
   await waitFor(() => {
-    expect(queueReadCount()).toBeGreaterThanOrEqual(2);
+    expect(queueReadCount()).toBeGreaterThanOrEqual(1);
     expect(initialIntegrityReads).toBe(queueReadCount() + 1);
     expect(useTrainingStore.getState().queueReadiness).toBe("ready");
     expect(screen.getByRole("button", { name: "Resume repair" })).not.toBeNull();

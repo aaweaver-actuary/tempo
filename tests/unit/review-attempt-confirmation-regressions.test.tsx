@@ -1,3 +1,4 @@
+import { advanceStudyTimers, settleStudyStorageTasks } from "./support/study-intent-fixtures";
 import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -82,8 +83,8 @@ it.each(["headers", "body", "worker", "abort"])("issue186_post_review_acquisitio
   if (failure === "worker") vi.mocked(runStudyTask).mockImplementation(task => task.kind === "queue"
     ? new Promise(() => {}) : originalCompute(task));
   try {
-    await act(async () => { await trainingProps.rateCard("correct"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+    await act(async () => { await advanceStudyTimers(15_001); await advanceStudyTimers(15_001); });
     expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
     expect(acquisitionCount).toBe(2);
     expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy();
@@ -100,8 +101,8 @@ it("issue186_healthy_fallback_does_not_wait_for_integrity", async () => {
   const originalFetcher = fetcher.getMockImplementation()!;
   fetcher.mockImplementation(async (input, options) => String(input).endsWith("/api/repertoires")
     ? new Promise(() => {}) : originalFetcher(input, options));
-  await act(async () => { await trainingProps.rateCard("correct"); });
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  await act(async () => { await advanceStudyTimers(0); });
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
   expect(trainingProps.reviewPersistenceState).toBe("idle");
   expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
@@ -116,11 +117,11 @@ it("issue186_queue_retry_recovers_without_resubmitting_saved_review", async () =
     if (String(input).includes("/api/queue/window") && queueUnavailable) throw new DOMException("Fetch is aborted", "AbortError");
     return originalFetcher(input, options);
   });
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
   queueUnavailable = false;
   queue = [queueCard("card-b", 13)];
-  await act(async () => { trainingProps.retryQueueAfterReview!(); });
+  await act(async () => { trainingProps.retryQueueAfterReview!(); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("idle");
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
   expect(reviewPosts()).toHaveLength(1);
@@ -131,7 +132,7 @@ it("issue186_queue_retry_recovers_without_resubmitting_saved_review", async () =
 it("issue186_authoritative_empty_queue_settles_saved_progression", async () => {
   await readyHome();
   queue = [];
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("idle");
   expect(useTrainingStore.getState().cardsLeft).toBe(0);
   expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false,
@@ -146,7 +147,7 @@ it("issue186_ordinary_reconnection_replays_saved_reviews_without_replacing_activ
   await enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 11,
     attemptId: "earlier-offline-result", outcome: "correct", guided: false });
   await act(async () => { window.dispatchEvent(new Event("online")); });
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  await act(async () => { await advanceStudyTimers(0); });
   expect(reviewPosts()).toHaveLength(1);
   expect(String(reviewPosts()[0][0])).toContain("/api/cards/earlier-card/review");
   expect(pendingReviews()).toEqual([]);
@@ -176,12 +177,12 @@ it.each(["fallback", "prepared"])("issue186_periodic_refresh_preserves_progressi
       if (path === "prepared") throw new DOMException("Fetch is aborted", "AbortError");
       return new Promise(() => {});
     });
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     const activeAttempt = useTrainingStore.getState().attempt;
     await act(async () => { refreshIntervals.forEach(refresh => refresh()); });
     if (path === "fallback") {
       expect(acquisitions).toBe(1);
-      await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+      await act(async () => { await advanceStudyTimers(15_001); await advanceStudyTimers(15_001); });
       expect(acquisitions).toBe(2);
       expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
     } else {
@@ -211,13 +212,13 @@ it.each(["abort", "deadline"])("issue186_prepared_card_survives_aborted_reconcil
     }
     return originalFetcher(input, options);
   });
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   const preparedAttempt = useTrainingStore.getState().attempt;
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
   expect(useTrainingStore.getState().queueReadiness).toBe("ready");
   expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
   expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
-  if (failure === "deadline") await act(async () => { await vi.advanceTimersByTimeAsync(15_001); });
+  if (failure === "deadline") await act(async () => { await advanceStudyTimers(15_001); });
   expect(useTrainingStore.getState().attempt).toEqual(preparedAttempt);
   expect(useTrainingStore.getState().queueReadiness).toBe("ready");
   unavailable = false;
@@ -246,7 +247,7 @@ it.each(["completed head", "malformed JSON", "invalid head", "partial envelope",
       if (invalid === "invalid head") return Response.json({ count: 2, cards: [{ id: "unusable" }, queueCard("card-b", 13)] });
       return Response.json({ count: 2, cards: [queueCard("card-a", 12), queueCard("card-b", 13)] });
     });
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
     expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
     expect(queueReads).toBe(1);
@@ -259,10 +260,10 @@ it("issue186_view_replacement_cannot_orphan_progression_notification", async () 
   const originalFetcher = fetcher.getMockImplementation()!;
   fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window")
     ? new Promise(() => {}) : originalFetcher(input, options));
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(notifications().find(record => record.key === "review-queue:12")?.active).toBe(true);
   cleanup();
-  await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+  await act(async () => { await advanceStudyTimers(15_001); await advanceStudyTimers(15_001); });
   expect(notifications().find(record => record.key === "review-queue:12")?.active).toBe(false);
   expect(reviewPosts()).toHaveLength(1);
 });
@@ -276,11 +277,11 @@ it("issue186_cancelled_reconciliation_cannot_update_replaced_view", async () => 
   const originalFetcher = fetcher.getMockImplementation()!;
   fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window")
     ? new Promise(() => {}) : originalFetcher(input, options));
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   const settledNotice = { ...notifications().find(record => record.key === "review-queue:12")! };
   expect(settledNotice).toMatchObject({ active: false, severity: "success" });
   cleanup();
-  await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+  await act(async () => { await advanceStudyTimers(15_001); await advanceStudyTimers(15_001); });
   expect(notifications().find(record => record.key === "review-queue:12")).toEqual(settledNotice);
   expect(reviewPosts()).toHaveLength(1);
 });
@@ -291,7 +292,7 @@ it("issue186_lost_review_response_receipt_recovery_uses_queue_only_retry", async
   reviewResponse = async url => url.includes("/api/operations/")
     ? receiptReady ? Response.json({ state: "complete", response: { persisted: true } }) : new Response(null, { status: 404 })
     : Promise.reject(new TypeError("Committed review response lost"));
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toHaveLength(1);
   const originalAttempt = pendingReviews()[0].attemptId;
   receiptReady = true;
@@ -306,7 +307,7 @@ it("issue186_lost_review_response_receipt_recovery_uses_queue_only_retry", async
   expect(notifications().find(record => record.key === `review-save:${originalAttempt}`)?.resolvedAt).not.toBeNull();
   queueUnavailable = false;
   queue = [queueCard("card-b", 13)];
-  await act(async () => { trainingProps.retryQueueAfterReview!(); });
+  await act(async () => { trainingProps.retryQueueAfterReview!(); await settleStudyStorageTasks(); });
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
   expect(reviewPosts()).toHaveLength(1);
 });
@@ -317,7 +318,7 @@ it("issue186_stale_progression_cannot_replace_new_attempt", async () => {
   let finishQueue!: (response: Response) => void;
   fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window")
     ? new Promise(resolve => { finishQueue = resolve; }) : originalFetcher(input, options));
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   act(() => {
     useTrainingStore.getState().hydrateLocalQueue([mapQueueCardToPracticeCard(queueCard("newer-card", 99))], true, 1);
     useTrainingStore.setState({ queueReadiness: "ready" });
@@ -338,13 +339,14 @@ async function readyHome() {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 }
 async function recoverIdle() {
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  await act(async () => { await advanceStudyTimers(0); });
+  await act(async () => { await advanceStudyTimers(1000); });
   await act(async () => {
     const scheduled = [...idleCallbacks.values()]; idleCallbacks.clear();
     for (const callback of scheduled) callback({ didTimeout: false, timeRemaining: () => 50 });
+    await settleStudyStorageTasks();
   });
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  await act(async () => { await advanceStudyTimers(0); });
   vi.useRealTimers();
 }
 const reviewPosts = () => fetcher.mock.calls.filter(([url, options]) => String(url).endsWith("/review") && options?.method === "POST");
@@ -372,7 +374,7 @@ it.each([false, true])("flush_settlement_audit Home foreground settlement and id
     return submitted;
   };
   const idleOwner = flushPendingReviews();
-  act(() => { trainingProps.retryReviewSave!(); });
+  await act(async () => { trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   const foreground = flushPendingReviews(Infinity, false, undefined, undefined, attempt.attemptId);
   const idleOutcome = idleOwner.catch(error => error);
   try {
@@ -438,7 +440,7 @@ it("prepared_next_card_advances_after_durable_review_without_queue_refresh", asy
     local_date: new Date().toLocaleDateString("en-CA"),
   } });
   try {
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
     expect(trainingProps.reviewPersistenceState).toBe("idle");
     expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
@@ -471,7 +473,7 @@ it.each(["missing continuation", "pending review", "conflicted review"])(
       card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0,
       local_date: new Date().toLocaleDateString("en-CA"),
     } });
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     await waitFor(() => expect(rejectReconciliation).toBeTypeOf("function"));
     const playedPosition = new Chess(); playedPosition.move("e4");
     act(() => useTrainingStore.setState({ currentFenString: asFenString(playedPosition.fen()), step: 1,
@@ -492,7 +494,7 @@ it.each(["missing continuation", "pending review", "conflicted review"])(
         : Response.json({ detail: "Attempt retired", retryable: false }, { status: 409 });
       return Response.json({ persisted: true });
     };
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     await waitFor(() => expect(trainingProps.reviewPersistenceState).toBe(
       settlement === "pending review" ? "pendingConfirmation" : settlement === "conflicted review" ? "conflicted" : "queueFailed"));
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
@@ -509,6 +511,7 @@ it.each(["missing continuation", "pending review", "conflicted review"])(
     await act(async () => {
       if (settlement === "pending review") await trainingProps.retryReviewSave!();
       else trainingProps.retryQueueAfterReview!();
+      await settleStudyStorageTasks();
     });
     await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(14));
     expect(useTrainingStore.getState().queueReadiness).toBe("ready");
@@ -533,13 +536,13 @@ it.each(["pending", "network timeout", "failed"])("unconfirmed_review_does_not_a
     if (failure === "network timeout") throw new DOMException("Review request timed out", "TimeoutError");
     return Response.json({ detail: "Review was rejected", retryable: false }, { status: 422 });
   };
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
   expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
   expect(pendingReviews()[0].attemptId).toBe(attemptedIdentity);
   queue = queue.slice(1);
   reviewResponse = async () => Response.json({ state: "complete", response: { persisted: true } });
-  await act(async () => { await trainingProps.retryReviewSave!(); });
+  await act(async () => { await trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   vi.useRealTimers();
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
   expect(pendingReviews()).toEqual([]);
@@ -548,13 +551,13 @@ it.each(["pending", "network timeout", "failed"])("unconfirmed_review_does_not_a
 it("unconfirmed_review_does_not_advance_prepared_card: explicit retry remains available after queue head recovery fails", async () => {
   reviewResponse = async () => Response.json({ detail: "Invalid result", retryable: false }, { status: 422 });
   await readyHome();
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   const original = pendingReviews()[0];
   act(() => useTrainingStore.setState({ serviceError: "The authoritative queue head has unresolved local results.", queueReadiness: "unavailable" }));
   reviewResponse = async url => url.includes("/api/operations/")
     ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
   queue = [queueCard("card-b", 13)];
-  await act(async () => { await trainingProps.retryReviewSave!(); });
+  await act(async () => { await trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toEqual([]);
   expect(reviewPosts()).toHaveLength(2);
   expect(reviewPosts()[1][1]?.body).toEqual(reviewPosts()[0][1]?.body);
@@ -565,7 +568,7 @@ it("unconfirmed_review_does_not_advance_prepared_card: explicit retry remains av
 
 it("PR105 displayed idle conflict releases pending confirmation and retains the original completed result", async () => {
   pendingThenConflict(); await readyHome();
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   const original = pendingReviews()[0];
   expect(trainingProps.reviewPersistenceState).toBe("pendingConfirmation");
   expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy();
@@ -586,7 +589,7 @@ it("PR105 displayed idle conflict releases pending confirmation and retains the 
 it("PR105 earlier idle conflict preserves an unrelated active board logical attempt and progress", async () => {
   queue = [queueCard("card-a", 12), queueCard("card-b", 13)];
   pendingThenConflict(); await readyHome();
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
   // Pending connected completion cannot start cached B. Model a separately
   // opened active B, whose progress the older idle recovery must preserve.
@@ -611,11 +614,11 @@ it("PR105 earlier idle conflict preserves an unrelated active board logical atte
 it.each([false, true])("PR105 successful flush cannot credit or advance a suppressed same-card successor independent=%s", async independent => {
   queue = [queueCard("card-a", 12), queueCard("card-b", 13)];
   await readyHome();
-  act(async () => await enqueuePendingReview(suppressedReview));
-  if (independent) act(async () => await enqueuePendingReview({ backendId: "card-c", queueEntryId: 14,
+  await act(async () => await enqueuePendingReview(suppressedReview));
+  if (independent) await act(async () => await enqueuePendingReview({ backendId: "card-c", queueEntryId: 14,
     attemptId: "other-persisted", outcome: "correct", guided: false }));
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toHaveLength(independent ? 3 : 2);
   expect(pendingReviews()[0]).toMatchObject(suppressedReview);
   expect(pendingReviews().at(-1)).toMatchObject({ attemptId: submittedAttemptId, queueEntryId: 12, outcome: "correct" });
@@ -627,7 +630,7 @@ it.each([false, true])("PR105 successful flush cannot credit or advance a suppre
   expect(notifications().some(record => record.details?.attemptId === submittedAttemptId && record.message.includes("Result saved"))).toBe(false);
   expect(reviewPosts()).toHaveLength(0);
   const retainedSuccessor = pendingReviews().at(-1)!;
-  await act(async () => { trainingProps.retryReviewSave!(); });
+  await act(async () => { trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   expect(screen.getByText("An earlier result for this card needs attention. Use Check saved reviews to resolve it first.")).toBeTruthy();
   expect(pendingReviews().at(-1)).toEqual(retainedSuccessor);
   expect(reviewPosts()).toHaveLength(0);
@@ -643,10 +646,10 @@ it.each([false, true])("PR105 successful flush cannot credit or advance a suppre
 
 it("PR105 independent submitted review alone is credited while a suppressed result remains intact", async () => {
   queue = [queueCard("card-b", 13)]; await readyHome();
-  act(async () => await enqueuePendingReview(suppressedReview));
+  await act(async () => await enqueuePendingReview(suppressedReview));
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   queue = [queueCard("card-c", 14)];
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toEqual([suppressedReview]);
   expect(reviewPosts()).toHaveLength(1);
   expect(reviewPosts()[0][1]?.headers).toMatchObject({ "Idempotency-Key": `review-attempt:${submittedAttemptId}` });
@@ -661,10 +664,10 @@ it("PR105 Home saveFailed allows independent idle receipts without retrying the 
     ? Response.json({ state: "complete", response: { persisted: true } })
     : Response.json({ detail: "Invalid result", retryable: false }, { status: 422 });
   await readyHome();
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   const terminal = pendingReviews()[0];
   expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
-  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  await act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "independent-b", outcome: "correct", guided: false }));
   const activeBeforeRecovery = snapshotActive();
   await recoverIdle();
@@ -679,7 +682,7 @@ it("PR105 independent idle confirmation waits for a held pointer before changing
   await readyHome();
   let finishReceipt!: (response: Response) => void;
   reviewResponse = async () => new Promise<Response>(resolve => { finishReceipt = resolve; });
-  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  await act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "independent-held", outcome: "correct", guided: false }));
   await recoverIdle();
   const activeBeforeRecovery = snapshotActive();
@@ -701,9 +704,9 @@ it("PR105 foreground saving defers independent idle recovery until the save sett
   let saving!: Promise<void>;
   await act(async () => { saving = trainingProps.rateCard("correct"); });
   expect(trainingProps.reviewPersistenceState).toBe("saving");
-  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  await act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "foreground-independent", outcome: "correct", guided: false }));
-  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  await act(async () => { await advanceStudyTimers(1000); });
   expect(idleCallbacks.size).toBe(0);
   expect(fetcher.mock.calls.some(([url]) => String(url).includes("/api/operations/"))).toBe(false);
   await act(async () => { finishSave(Response.json({ detail: "Invalid", retryable: false }, { status: 422 })); await saving; });
@@ -715,7 +718,7 @@ it("PR105 foreground saving defers independent idle recovery until the save sett
 
 it("PR105 missing submitted identity cannot become successful confirmation", async () => {
   await readyHome();
-  await act(async () => { trainingProps.retryReviewSave!(); });
+  await act(async () => { trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
   expect(reviewPosts()).toHaveLength(0);
   expect(notifications().some(record => record.message.includes("Result saved"))).toBe(false);
@@ -730,7 +733,7 @@ it("PR105 a later independent flush failure cannot erase the submitted persisted
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   let saving!: Promise<void>;
   await act(async () => { saving = trainingProps.rateCard("correct"); });
-  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  await act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "later-independent-failed", outcome: "correct", guided: false }));
   queue = [queueCard("card-c", 14)];
   await act(async () => { finishSubmitted(Response.json({ persisted: true })); await saving; });
@@ -766,7 +769,7 @@ it("PR105 explicit legacy retry credits the normalized attempt without a new ide
     queueEntryId: 12, attemptId: undefined }]));
   await initializeStudyIntentStorage(true);
   reviewResponse = async url => url.includes("/api/operations/") ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
-  await act(async () => { trainingProps.retryReviewSave!(); });
+  await act(async () => { trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   vi.useRealTimers();
   await waitFor(() => expect(pendingReviews()).toEqual([]));
   expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe("legacy-online:12");
@@ -788,14 +791,14 @@ it.each(["queued", "unconfirmed"])("PR105 completion removed during feedback req
   expect(pendingReviews()).toEqual([]);
   reviewResponse = async () => Response.json(receiptState === "queued"
     ? { state: "queued" } : { state: "complete", response: { persisted: false } });
-  await act(async () => { await vi.advanceTimersByTimeAsync(751); });
+  await act(async () => { await advanceStudyTimers(751); });
   expect(trainingProps.reviewPersistenceState).toBe("pendingConfirmation");
   expect(useTrainingStore.getState().attempt.attemptId).toBe(originalAttemptId);
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
   expect(reviewPosts()).toHaveLength(1);
   reviewResponse = async () => Response.json({ state: "complete", response: { persisted: true } });
   queue = [queueCard("card-b", 13)];
-  await act(async () => { trainingProps.retryReviewSave!(); });
+  await act(async () => { trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
   vi.useRealTimers();
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
   expect(reviewPosts()).toHaveLength(1);
@@ -815,7 +818,7 @@ it("PR105 non-replay save failure retains raw diagnostics in one attempt-owned i
     originalWrite.call(this, key, value);
   });
   try {
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
     expect(document.querySelector(".review-save-status")?.textContent).toContain("open Notifications for details");
     expect(document.querySelector(".review-save-status")?.textContent).not.toContain(failure.message);
@@ -852,7 +855,7 @@ it("PR105 non-replay replacement save failure keeps diagnostics off the prior sa
   };
   await readyHome(); vi.useRealTimers();
   const earlierAttemptId = useTrainingStore.getState().attempt.attemptId;
-  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   await waitFor(() => expect(useTrainingStore.getState().getCard().backendId).toBe("card-b"));
   const failedAttemptId = useTrainingStore.getState().attempt.attemptId;
   expect(failedAttemptId).not.toBe(earlierAttemptId);
@@ -863,7 +866,7 @@ it("PR105 non-replay replacement save failure keeps diagnostics off the prior sa
     originalWrite.call(this, key, value);
   });
   try {
-    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
     const failures = notifications().filter(record => record.source === "training review" && record.severity === "error" && !record.resolvedAt);
     expect(failures).toHaveLength(1);

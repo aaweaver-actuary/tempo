@@ -36,3 +36,25 @@ test('issue219_next_load_timeout_has_two_attempts_and_actionable_failure', async
   await assert.rejects(session.retryNext('review:a', async () => { acquisitions++; return new Promise(() => {}); }, () => true), /timed out/);
   assert.equal(acquisitions, 2); assert.equal(session.getSnapshot().phase, 'next-load-failed');
 }));
+
+test('issue186_installing_next_attempt_resolves_the_original_progression_checkpoint', async () => run(async () => ({ state: 'committed' }), async (session, store) => {
+  await session.submit(envelope());
+  await session.retryNext('review:a', async () => { session.start('review:next'); }, () => true);
+  assert.deepEqual(await store.checkpoint('progression:review:a'), { key: 'review:a', pending: false });
+  assert.equal(session.getSnapshot().key, 'review:next');
+  assert.equal(session.getSnapshot().phase, 'active');
+}));
+test('issue219_unexpired_crashed_tab_lease_allows_receipt_confirmation_without_delivery', async () => {
+  const store = await openIntentStore({ workspace: 'crash', indexedDB: new IDBFactory() });
+  let posts = 0, reads = 0;
+  const session = createStudySession({ store, now: () => 100, learning: {
+    deliver: async () => { posts++; return { state: 'pending' }; },
+    checkReceipt: async original => { reads++; assert.equal(original.requestId, 'review:a'); return { state: 'committed', receipt: { persisted: true } }; },
+  } });
+  try {
+    await store.put(envelope()); await store.claim('review:a', 'closed-tab', 100, 60_000);
+    session.start('review:a');
+    await session.checkSave('review:a');
+    assert.equal(posts, 0); assert.equal(reads, 1); assert.equal((await store.get('review:a')).state, 'committed');
+  } finally { session.dispose(); store.close(); }
+});

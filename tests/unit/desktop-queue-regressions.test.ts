@@ -1,3 +1,4 @@
+import { settleStudyStorageTasks, advanceStudyTimers } from "./support/study-intent-fixtures";
 import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
@@ -8,7 +9,7 @@ import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbo
 import { localDayKey } from "../../app/utils/local";
 import { OfflineReplayError, type PreparedTraining } from "../../app/lib/offline-training";
 import { clearNotificationHistory, notificationToastIds, notifications, publishNotification } from "../../app/lib/notifications";
-import { enqueueTrainingFailure, pendingTrainingFailures, flushTrainingFailures } from "../../app/lib/training-failure-outbox";
+import { enqueueTrainingFailure, pendingTrainingFailures, pendingTrainingFailureContexts, flushTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { asCardId, asFenString, asQueueEntryId, asSanMove, type PracticeCard } from "../../app/types";
 
 const offlineTrainingMocks = vi.hoisted(() => ({
@@ -60,7 +61,8 @@ describe("desktop live queue isolation", () => {
       vi.stubGlobal("fetch", request);
       const loading = fetchAndInitializeQueue();
       const settled = loading.then(() => null, error => error);
-      await vi.advanceTimersByTimeAsync(5_000);
+      await advanceStudyTimers(5_000);
+      await advanceStudyTimers(5_000);
       expect(await settled).toBeNull();
       expect(request).toHaveBeenCalledTimes(6);
       expect(request.mock.calls[0][1]?.headers).toBeUndefined();
@@ -78,7 +80,9 @@ describe("desktop live queue isolation", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 0, cards: [] })));
     const firstQueue = fetchAndInitializeQueue();
     expect(useTrainingStore.getState().queueReadiness).toBe("loading");
+    await settleStudyStorageTasks();
     const secondQueue = fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     firstRead(null);
     await firstQueue;
     expect(useTrainingStore.getState().queueReadiness).toBe("loading");
@@ -117,6 +121,7 @@ describe("desktop live queue isolation", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 0, cards: [] })));
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(notifications().find((record) => record.id === pendingNotice)?.resolvedAt).not.toBeNull();
     expect(notifications().find((record) => record.key === "phone-review-conflicts")).toMatchObject({ severity: "warning", resolvedAt: null });
   });
@@ -131,6 +136,7 @@ describe("desktop live queue isolation", () => {
         start_fen: startingFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "Desktop active", repertoire_source: "PGN" }] });
     }));
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(pendingTrainingFailures()).toEqual([801]);
     expect(notifications().find((record) => record.key === "guided-attempt-save")).toMatchObject({ severity: "warning", resolvedAt: null });
     expect(notifications().find((record) => record.id === legacy)?.resolvedAt).toBeNull();
@@ -189,6 +195,7 @@ describe("desktop live queue isolation", () => {
     expect(debugErrors().at(-1)?.context.endpointPath).toBe("/api/cards/desktop-active/review");
     expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "warning", active: false, resolvedAt: null });
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "success", active: false });
     expect(notifications().find((record) => record.key === "phone-review-syncing")?.resolvedAt).not.toBeNull();
   });
@@ -304,10 +311,12 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during
   vi.stubGlobal("fetch", fetcher);
   try {
     await fetchAndInitializeQueue().catch(() => undefined);
+    await settleStudyStorageTasks();
     expect(resolveMarker).toBeDefined();
     expectNoCleanLegacyAttempt();
     const normalized = JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!);
-    expect(normalized).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+    expect(normalized).toEqual(saved);
+    expect(pendingTrainingFailureContexts()).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
     useTrainingStore.setState(useTrainingStore.getInitialState(), true);
     await fetchAndInitializeQueue().catch(() => undefined);
     expectNoCleanLegacyAttempt();
@@ -316,6 +325,7 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during
     resolveMarker(Response.json({ attempt_failed: true }));
     await waitFor(() => expect(pendingTrainingFailures()).toEqual([]));
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(useTrainingStore.getState().getCard().backendId).toBe("desktop-active");
     expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
     expect(useTrainingStore.getState().attempt.phase).toBe("guided");
@@ -362,6 +372,7 @@ it("authoritative legacy marker resolution guides a retained active attempt with
     resolveMarker(Response.json({ attempt_failed: true }));
     await flushTrainingFailures();
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(useTrainingStore.getState().attempt).toMatchObject({ ...logicalAttempt, phase: "guided" });
     expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
     expect(useTrainingStore.getState().serviceError).toBe("");
@@ -389,7 +400,8 @@ it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or repla
     expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
     expect(pendingTrainingFailures()).toEqual([801]);
     const normalized = JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!);
-    expect(normalized).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+    expect(normalized).toEqual(saved);
+    expect(pendingTrainingFailureContexts()).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
     useTrainingStore.setState(useTrainingStore.getInitialState(), true);
   }
 });

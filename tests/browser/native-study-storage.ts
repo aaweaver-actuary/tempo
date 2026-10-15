@@ -16,3 +16,18 @@ export function connectedReviewState(page: Page, attemptId: string): Promise<str
     };
   }), attemptId);
 }
+
+export function nativeStudyRecords(page: Page): Promise<Array<{ key: string; kind: string; state: string; requestId: string; payload: unknown; receipt?: unknown }>> {
+  return page.evaluate(() => new Promise((resolve, reject) => {
+    const opening = indexedDB.open("tempo-study-intents", 1);
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const database = opening.result;
+      const transaction = database.transaction("intents");
+      const request = transaction.objectStore("intents").getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = transaction.onabort = () => database.close();
+    };
+  }));
+}

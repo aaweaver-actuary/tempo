@@ -1,3 +1,4 @@
+import { settleStudyStorageTasks, advanceStudyTimers, interceptIntentWrites } from "./support/study-intent-fixtures";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { retryBlockedOperation } from "../../app/lib/operation-status";
@@ -11,7 +12,7 @@ const review = { backendId: "card-one", queueEntryId: 101, attemptId: "original-
 function Harness({ blocked = false, confirmed }: { blocked?: boolean; confirmed: () => void }) {
   usePendingReviewRecovery(true, true, blocked, confirmed); return null;
 }
-const advance = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); }); };
+const advance = async (milliseconds: number) => { await act(async () => { await advanceStudyTimers(milliseconds); await settleStudyStorageTasks(); }); };
 
 it.each(["success", "failure"])("flush_settlement_audit idle receipt observer retains target evidence after later %s", async laterOutcome => {
   const continuation = { card_id: "next", queue_entry_id: 103, revision: 1, cycle: 0, local_date: "2026-10-11" };
@@ -37,7 +38,7 @@ it.each(["success", "failure"])("flush_settlement_audit idle receipt observer re
     await act(async () => {
       if (laterOutcome === "success") releaseOther(Response.json({ state: "complete", response: { persisted: true } }));
       else rejectOther(new Error("Other transport failure"));
-      await foregroundOwner;
+      await foregroundOwner; await settleStudyStorageTasks();
     });
     expect(confirmed).toHaveBeenCalledOnce();
     expect(confirmed.mock.calls[0][0]).toMatchObject({ persistedAttemptIds: expect.arrayContaining([review.attemptId]),
@@ -105,7 +106,7 @@ it("phone review receipt confirmation waits for held pointer release before refr
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
   await advance(1000);
   window.dispatchEvent(new Event("pointerdown"));
-  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); });
+  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toEqual([]); expect(confirmed).not.toHaveBeenCalled();
   act(() => window.dispatchEvent(new Event("pointerup")));
   expect(confirmed).toHaveBeenCalledOnce();
@@ -129,7 +130,7 @@ it("phone receipt confirmed during a foreground pause refreshes once after resum
   const confirmed = vi.fn(); const mounted = render(<Harness confirmed={confirmed} />);
   await advance(1000);
   mounted.rerender(<Harness blocked confirmed={confirmed} />);
-  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); });
+  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toEqual([]); expect(confirmed).not.toHaveBeenCalled();
   mounted.rerender(<Harness confirmed={confirmed} />);
   expect(confirmed).toHaveBeenCalledOnce();
@@ -145,14 +146,14 @@ it("phone readiness toggles retain one in-flight recovery and one confirmation c
   mounted.rerender(<Harness blocked confirmed={confirmed} />);
   mounted.rerender(<Harness confirmed={confirmed} />);
   await advance(1000);
-  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); });
+  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); await settleStudyStorageTasks(); });
   expect(fetch).toHaveBeenCalledOnce(); expect(confirmed).toHaveBeenCalledOnce();
   await advance(30000); expect(confirmed).toHaveBeenCalledOnce();
 });
 
 it("phone review storage failure suspends recovery and retains the confirmed result for repair", async () => {
   await enqueuePendingReview(review);
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Storage denied", "SecurityError"); });
+  interceptIntentWrites(record => { if (record.kind === "review" && record.state === "committed") throw new DOMException("Storage denied", "SecurityError"); });
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true } })));
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
   await advance(1000); await advance(60000);

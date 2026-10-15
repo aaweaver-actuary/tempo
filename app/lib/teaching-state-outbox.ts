@@ -1,9 +1,10 @@
 import { API_URL } from "../const";
-import { confirmOperationResponse, readOperationResponse } from "./operation-status";
+import { confirmOperationResponse, readOperationResponse, PendingOperationError } from "./operation-status";
 import { rememberTeachingFact, studyIntentRecords, studyIntentStore, updateStudyIntent } from "./study-intent-storage";
 
 export type PendingTeachingState = { cardId: string; revision: number; ply: number };
 let activeFlush: Promise<void> | undefined;
+let activeStore: Awaited<ReturnType<typeof studyIntentStore>> | undefined;
 const deliveryOwner = crypto.randomUUID();
 export function pendingTeachingStates(): PendingTeachingState[] {
   return studyIntentRecords("teaching").filter(record => record.state === "pending").map(record => record.payload as PendingTeachingState);
@@ -31,6 +32,7 @@ async function saveTeachingStates(): Promise<void> {
         body: JSON.stringify({ revision: state.revision, ply: state.ply }),
       });
       response = await confirmOperationResponse(response);
+      if (response.status === 202) throw new PendingOperationError(id);
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { detail?: string };
         throw new Error(body.detail ?? `Teaching save returned HTTP ${response.status}.`);
@@ -39,7 +41,12 @@ async function saveTeachingStates(): Promise<void> {
     } finally { await store.release(id, token); }
   }
 }
-export function flushTeachingStates(): Promise<void> {
-  activeFlush ??= saveTeachingStates().finally(() => { activeFlush = undefined; });
+export async function flushTeachingStates(): Promise<void> {
+  const store = await studyIntentStore();
+  if (activeStore !== store) { activeStore = store; activeFlush = undefined; }
+  if (!activeFlush) {
+    const delivery = saveTeachingStates().finally(() => { if (activeFlush === delivery) activeFlush = undefined; });
+    activeFlush = delivery;
+  }
   return activeFlush;
 }

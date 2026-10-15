@@ -28,3 +28,15 @@ export function interceptIntentWrites(before: (record: IntentRecord) => void) {
   });
   return { mockRestore() { add.mockRestore(); put.mockRestore(); } };
 }
+
+/** Drain browser-storage task turns without advancing the page's controlled clock. */
+export async function settleStudyStorageTasks() {
+  const { setImmediate } = await import("node:timers");
+  for (let turn = 0; turn < 100; turn++) await new Promise<void>(resolve => setImmediate(resolve));
+}
+
+export async function advanceStudyTimers(milliseconds: number) {
+  await settleStudyStorageTasks();
+  await vi.advanceTimersByTimeAsync(milliseconds);
+  await settleStudyStorageTasks();
+}

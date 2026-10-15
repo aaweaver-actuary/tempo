@@ -12,7 +12,7 @@ import type { PracticeCard } from "../domain/cards";
 import { API_URL } from "../const";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
-import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
+import { executeStudyRequest, retainedStudyRequest, startAnotherStudyPractice } from "../lib/study-command-client";
 
 type PresentedStudyExercise = {
   id: string; revision: number; type: "move_line" | "square_set" | "knight_path" | "choice" | "explanation";
@@ -60,7 +60,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const pendingRef = useRef<{ id: string; payload: Record<string, unknown> } | null>(null);
   const offlineAnswerRef = useRef<StudyAnswer | null>(null);
   const generationRef = useRef(0);
-  const requestScope = `study:${studyId}:${exerciseId}:${card?.queueEntryId ?? "practice"}`;
+  const requestScope = `study:${studyId}:${exerciseId}:${card?.queueEntryId ?? "practice"}:${exercise?.revision ?? 0}`;
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -207,7 +207,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       if (assessment) {
         const response = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
           endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${body.attempt_id}/self-assess`,
-          requestId: assessment.requestId, body: assessment.body });
+          requestId: assessment.requestId, attemptId: assessment.attemptId, body: assessment.body });
         if (active && generation === generationRef.current) setReply(await response.json() as AttemptReply);
       }
       await revealFeedback(body.attempt_id, generation);
@@ -284,7 +284,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     try {
       const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
-        requestId: `${reply.attempt_id}:self-assess`, body: { rating } });
+        requestId: `${reply.attempt_id}:self-assess`, attemptId: reply.attempt_id, body: { rating } });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
       if (generation === generationRef.current) setReply(body);
@@ -351,6 +351,15 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       {reply.pending_self_assessment && <div><Button disabled={busy} onClick={() => void selfAssess("correct")}>Correct (self-assessed)</Button>
         <Button disabled={busy} onClick={() => void selfAssess("again")}>Again (self-assessed)</Button></div>}
       {!reply.pending_self_assessment && onAdvance && <Button onClick={() => void onAdvance()}>Continue</Button>}
+      {!reply.pending_self_assessment && !card && !onAdvance && <Button disabled={busy} onClick={() => {
+        const generation = generationRef.current;
+        setBusy(true);
+        void startAnotherStudyPractice(requestScope).then(() => {
+          if (generationRef.current !== generation) return;
+          setReply(null); setFeedback(null); setSaveError(""); setSelectedSquares([]); setMoveSequence([]); setChoiceIds([]);
+          setAnswerText(""); setHintSeen(false);
+        }).catch(error => setSaveError(String(error))).finally(() => setBusy(false));
+      }}>Practice again</Button>}
     </div>}
   </section>;
 }

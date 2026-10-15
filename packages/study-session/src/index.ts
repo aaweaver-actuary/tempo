@@ -1,17 +1,20 @@
-import type { IntentEnvelope, IntentRecord, IntentStore } from "@tempo/browser-intents";
+import { IntentStorageError, type IntentEnvelope, type IntentRecord, type IntentStore } from "@tempo/browser-intents";
 
 export type SessionPhase = "active" | "persisting" | "pending" | "conflicted" | "committed" | "next-attempt-loading" | "next-load-failed" | "storage-failed";
 export type SessionSnapshot = { phase: SessionPhase; key?: string; generation: number; error?: string };
 export type Settlement = { state: "committed" | "conflicted" | "pending"; receipt?: unknown; data?: unknown };
-export type LearningClient = { deliver(record: IntentRecord, signal: AbortSignal): Promise<Settlement> };
+export type LearningClient = {
+  deliver(record: IntentRecord, signal: AbortSignal): Promise<Settlement>;
+  checkReceipt?(record: IntentRecord, signal: AbortSignal): Promise<Settlement | undefined>;
+};
 export type StudySession = ReturnType<typeof createStudySession>;
 
 /** Owns delivery and progression. The view may project this state, never infer settlement. */
 export function createStudySession(options: {
   store: IntentStore; learning: LearningClient; owner?: string; now?: () => number;
-  requestTimeoutMs?: number; claimDurationMs?: number;
+  requestTimeoutMs?: number; claimDurationMs?: number; identity?: () => string;
 }) {
-  const owner = options.owner ?? crypto.randomUUID();
+  const owner = options.owner ?? (options.identity ?? (() => crypto.randomUUID()))();
   const now = options.now ?? Date.now;
   const listeners = new Set<() => void>();
   let snapshot: SessionSnapshot = { phase: "active", generation: 0 };
@@ -44,11 +47,21 @@ export function createStudySession(options: {
     if (current.state === "committed" || current.state === "conflicted") return { state: current.state, receipt: current.receipt, data: current.data };
     if (current.state === "discarded") throw new Error("This study request was explicitly discarded.");
     const token = await options.store.claim(key, owner, now(), options.claimDurationMs ?? 60_000);
-    if (!token) { if (key === displayedKey) publish("pending", generation, displayedKey); return { state: "pending" }; }
+    if (!token) {
+      // A crashed tab's unexpired delivery lease must not block read-only receipt recovery.
+      const receipt = options.learning.checkReceipt ? await deadline(signal => options.learning.checkReceipt!(current, signal)) : undefined;
+      if (receipt && receipt.state !== "pending") {
+        await options.store.update(key, latest => latest.state === "committed" ? latest : ({ ...latest, state: receipt.state, receipt: receipt.receipt, data: receipt.data ?? latest.data }));
+        if (key === displayedKey) publish(receipt.state, generation, displayedKey);
+        return receipt;
+      }
+      if (key === displayedKey) publish("pending", generation, displayedKey);
+      return { state: "pending" };
+    }
     if (key === displayedKey) publish("pending", generation, displayedKey);
     try {
       // Network authority is required even after another tab's lease expires.
-      const settlement = await deadline(signal => options.learning.deliver(current, signal));
+      const settlement = await deadline(signal => options.store.get(key).then(latest => { if (!latest) throw new Error("The original study request is unavailable."); return options.learning.deliver(latest, signal); }));
       if (settlement.state !== "pending") {
         await options.store.update(key, latest => latest.state === "committed" ? latest : ({
           state: settlement.state === "committed" ? "committed" : "conflicted",
@@ -57,7 +70,7 @@ export function createStudySession(options: {
       }
       if (key === displayedKey) publish(settlement.state, generation, displayedKey);
       return settlement;
-    } catch (error) { if (key === displayedKey) publish("pending", generation, displayedKey, error); throw error; }
+    } catch (error) { if (key === displayedKey) publish(error instanceof IntentStorageError ? "storage-failed" : "pending", generation, displayedKey, error); throw error; }
     finally { await options.store.release(key, token); }
   }
   function recover(key: string): Promise<Settlement> {
@@ -69,7 +82,7 @@ export function createStudySession(options: {
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     start(key: string) {
-      controller?.abort(); disposed = false;
+      disposed = false;
       snapshot = { phase: "active", generation: snapshot.generation + 1, key };
       for (const listener of listeners) listener();
     },
@@ -92,7 +105,9 @@ export function createStudySession(options: {
       for (let acquisition = 0; acquisition < 2; acquisition++) {
         try {
           await deadline(signal => acquire(signal, acquisition), current.signal);
-          if (disposed || current.signal.aborted || !stillCurrent() || snapshot.generation !== generation) return;
+          // Acquisition may install the next attempt and advance the presentation generation.
+          // Its successful return still resolves the original progression checkpoint.
+          if (disposed || !stillCurrent()) return;
           await options.store.checkpoint(`progression:${key}`, { key, pending: false });
           publish("active", generation, displayedKey); return;
         } catch (error) {

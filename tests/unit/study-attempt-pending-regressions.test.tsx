@@ -23,7 +23,7 @@ it.each([false, true])("study feedback browses the reference line and R restores
       prompt: "Find the reference line", hint: "Develop a piece", fen: startingFen });
     if (url.endsWith("/attempts") && init?.method === "POST") {
       submissions.push(JSON.parse(String(init.body)));
-      return Response.json({ attempt_id: "submitted-attempt", assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again" });
+      return Response.json({ attempt_id: JSON.parse(String(init?.body)).attempt_id, assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again" });
     }
     if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Find the reference line",
       hint: "Develop a piece", explanation: "Reference continuation", grading_policy: "reference", mode: "stepwise_line",
@@ -40,6 +40,7 @@ it.each([false, true])("study feedback browses the reference line and R restores
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
   }
   fireEvent.click(screen.getByRole("button", { name: "Hint" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   await screen.findByText("Reference continuation");
   const frame = document.querySelector(".board-frame")!;
@@ -143,20 +144,21 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
 
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise"
     boardTheme="brown" pieceSet="cburnett" useSharedBoard />);
-  fireEvent.click(await screen.findByRole("button", { name: "I have my answer" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "I have my answer" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "I have my answer" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
   fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
   await screen.findByRole("button", { name: "Correct (self-assessed)" });
-  expect(attemptWrites).toHaveLength(2);
-  expect(attemptWrites[0]).toEqual(attemptWrites[1]);
+  expect(attemptWrites).toHaveLength(1);
+  expect(attemptStatusReads).toBe(2);
   expect(attemptWrites[0].key).toBe(attemptWrites[0].id);
 
   fireEvent.click(screen.getByRole("button", { name: "Correct (self-assessed)" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
   fireEvent.click(screen.getByRole("button", { name: "Correct (self-assessed)" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Correct (self-assessed)" })).toBeNull());
+  expect(assessmentStatusReads).toBe(2);
   expect(assessmentWrites).toEqual([
-    { rating: "correct", key: `${attemptWrites[0].id}:self-assess` },
     { rating: "correct", key: `${attemptWrites[0].id}:self-assess` },
   ]);
 });

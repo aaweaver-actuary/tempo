@@ -1,3 +1,4 @@
+import { recoverStudyRequests } from "../lib/study-command-client";
 import { initializeStudyIntentStorage } from "../lib/study-intent-storage";
 import { API_URL } from "../const";
 import { isIPhoneHomeScreen, localDayKey, usesLocalApi } from "../utils/local";
@@ -268,6 +269,7 @@ export async function fetchAndInitializeQueue(
   let queueRequestFailed = false;
   try {
     await awaitQueueStage(initializeStudyIntentStorage(), controller.signal);
+    if (options.replaySavedReviews !== false) await awaitQueueStage(recoverStudyRequests(controller.signal), controller.signal);
     const pendingFailureContexts = pendingTrainingFailureContexts();
     const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
     let failureSaveError: string | null = null;

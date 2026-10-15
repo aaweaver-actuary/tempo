@@ -48,3 +48,11 @@ test('issue221_workspace_keys_cannot_settle_another_workspace', async () => stor
   try { await first.put(envelope()); assert.equal(await other.get('review:a'), undefined); assert.equal((await second.list(undefined, true)).length, 1); }
   finally { other.close(); }
 }));
+
+test('issue221_inflight_insertion_freezes_payload_before_callers_can_change_it', async () => stores(async first => {
+  const command = envelope();
+  const writing = first.put(command);
+  command.payload.outcome = 'correct';
+  await writing;
+  assert.equal((await first.get('review:a')).payload.outcome, 'again');
+}));
