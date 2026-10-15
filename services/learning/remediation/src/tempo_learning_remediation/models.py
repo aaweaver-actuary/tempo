@@ -13,7 +13,9 @@ class AcceptedDecision:
     publication_generation: int
     position_key: str
     accepted_moves: tuple[str, ...]
+    workspace_id: str
     active: bool = True
+    aliases: tuple[str, ...] = ()
 
 
 class ContentAuthority(Protocol):

@@ -246,9 +246,10 @@ class PostgresRepository:
             WHERE workspace_id=%s AND card_id=%s""",
             ("admitted" if result.status == "applied" else "deferred", result.reason, result.queue_entry_id, self.workspace_id, card_id))
 
-    @staticmethod
-    def _check_attempt(attempt: AttemptAuthority, current: AcceptedDecision):
+    def _check_attempt(self, attempt: AttemptAuthority, current: AcceptedDecision):
         instant(attempt.issued_at)
+        if current.workspace_id != self.workspace_id:
+            raise RemediationError("terminal_failure", "accepted_workspace_mismatch")
         if not current.active or (attempt.card_id, attempt.card_revision, attempt.publication_id, attempt.publication_generation) != (
                 current.card_id, current.card_revision, current.publication_id, current.publication_generation):
             raise RemediationError("stale_revision", "attempt_authority_changed")

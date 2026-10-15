@@ -21,6 +21,10 @@ A supplies authenticated `ReceiveContext` independently of request declarations,
 and a `ContentAuthority` backed by accepted, active, fenced Learning definitions.
 The authority maps route aliases to canonical card IDs and supplies the complete
 accepted alternatives at the specific position/decision. This library validates
+the accepted fact's workspace and explicit allowed aliases as well as the
+decision position, publication and card revision. An unrelated incoming card ID
+cannot become an alias merely because a lookup returns a valid definition.
+The library validates
 the coherent observation against those facts; C remains responsible for source
 game computation, and A for authentication/current source authority. These ports
 do not establish current production adoption of the Content contract.

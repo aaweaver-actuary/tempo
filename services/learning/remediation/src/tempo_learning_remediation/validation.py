@@ -59,6 +59,10 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
                                             comparison.publication_id, comparison.publication_generation)
         if accepted is None or not accepted.active:
             raise RemediationError("stale_revision", "publication_not_active")
+        if accepted.workspace_id != context.workspace_id:
+            raise RemediationError("terminal_failure", "accepted_workspace_mismatch")
+        if obligation.card_id not in (accepted.card_id, *accepted.aliases):
+            raise RemediationError("terminal_failure", "unsupported_card_linkage")
         if ((accepted.decision_id, accepted.publication_id, accepted.publication_generation)
                 != (obligation.decision_id, comparison.publication_id, comparison.publication_generation)
                 or (isinstance(delivery, v2.EvidenceDelivery) and accepted.card_revision != obligation.card_revision)):

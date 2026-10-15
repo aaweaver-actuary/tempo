@@ -23,8 +23,11 @@ DECISION, NOW, delivery, context, withdrawal = support.DECISION, support.NOW, su
 
 @pytest.fixture
 def workspace():
+    global DECISION
     assert os.environ.get("TEMPO_REMEDIATION_OWNED", "").startswith("tempo264-")
-    return "remediation-" + uuid4().hex
+    identity = "remediation-" + uuid4().hex
+    DECISION = replace(support.DECISION, workspace_id=identity)
+    return identity
 
 
 def connect():
@@ -36,6 +39,7 @@ def scoped(value, workspace, **changes):
 
 
 def accept(repository, value, **changes):
+    changes.setdefault("accepted", DECISION)
     return repository.receive(value, replace(context(value, **changes), workspace_id=repository.workspace_id))
 
 
@@ -111,7 +115,7 @@ def test_native_immutable_identity_conflict_has_no_partial_effect(workspace, ide
         assert count(connection, "remediation_contributions", workspace) == 1
 
 
-@pytest.mark.parametrize("kind", ["publication", "alternative", "game_revision"])
+@pytest.mark.parametrize("kind", ["publication", "alternative", "game_revision", "foreign_workspace", "forged_card"])
 def test_native_stale_or_forged_supported_miss_is_not_accepted(workspace, kind):
     value = scoped(delivery(), workspace)
     if kind == "alternative":
@@ -121,6 +125,8 @@ def test_native_stale_or_forged_supported_miss_is_not_accepted(workspace, kind):
     with connect() as connection, connection.transaction():
         repository = PostgresRepository(connection, workspace)
         expected = replace(context(value, accepted=replace(DECISION, active=False) if kind == "publication" else DECISION), workspace_id=workspace)
+        if kind == "foreign_workspace": expected = replace(expected, content=support.Authority(replace(DECISION, workspace_id="foreign")))
+        if kind == "forged_card": expected = replace(expected, content=support.Authority(replace(DECISION, card_id="unrelated", aliases=())))
         if kind == "game_revision": expected = replace(expected, game_revision=2)
         assert repository.receive(value, expected).status in {"terminal_failure", "stale_revision"}
         assert count(connection, "remediation_deliveries", workspace) == 0
