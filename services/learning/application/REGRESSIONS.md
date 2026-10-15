@@ -51,3 +51,31 @@ It requires no PostgreSQL cluster and stays outside the guarded application test
 - `backend/tests/test_learning_package_installation.py::test_backend_learning_distribution_and_command_import_need_no_source_or_services`:
   declared installed package versions/origins, noneditable metadata and explicit
   command registration work without import-time database/network initialization.
+
+## Qualification review follow-up
+
+All cases below are discovered in the same regular tooling suite and through its
+registered `run_suite.py tooling` command. Tiny pytest fixtures and mocked Docker
+responses exercise failure paths without provisioning extra native clusters.
+
+- `test_registered_component_python_suites_cannot_accept_partial_selection`:
+  execute each actual registered Python command with the reproduced selector,
+  a no-match selector and other filtering/early-exit options; both must reject it.
+- `test_component_wrapper_runs_complete_fixture_and_preserves_external_junit`,
+  `test_component_wrapper_rejects_unknown_arguments_and_duplicate_junit`, and
+  `test_component_wrapper_fails_on_nonpassing_required_fixture`: controlled real
+  collection/execution, all supported JUnit forms, strict CLI and required
+  skip/failure/setup/teardown rejection. Existing exact-inventory cases retain
+  missing/duplicate/deselection coverage.
+- `test_native_failure_paths_cleanup_only_verified_owned_resources`:
+  start failure after/before creation, image failure, collision, mismatched labels,
+  daemon/label inspection failure, removal failure and surviving-container proof.
+- `test_native_success_is_published_only_after_verified_cleanup` and
+  `test_native_preserves_startup_and_cleanup_errors_together`: current success is
+  conditional on cleanup, and diagnostics preserve both failures.
+- `test_native_failed_retry_invalidates_previous_success_and_preserves_history`:
+  success followed by skip, collection/startup/image/cleanup failure or rejected
+  selectors has a fresh incomplete summary, distinct invocation inputs, preserved
+  previous evidence and a nonzero qualification exit even when pytest returns zero.
+- `test_atomic_summary_replacement_never_exposes_partial_json`: replacement
+  failure preserves parseable prior bytes and removes the incomplete temporary file.

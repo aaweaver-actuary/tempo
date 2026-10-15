@@ -49,9 +49,9 @@ Rust or Maia workload is part of this qualification. No standalone Learning
 service, domain database cutover or production wire-v1 adoption is claimed.
 
 
-## Final integrated results
+## Original integration results (before qualification review)
 
-**READY FOR MERGE — SUBJECT TO FINAL INDEPENDENT REVIEW.** Tested executable
+Historical integration verdict: **READY FOR MERGE — SUBJECT TO FINAL INDEPENDENT REVIEW.** Tested executable
 revision: `16402a9d83d3376cea5af999f81b8477cbf9c5e8`. The final evidence follow-up
 changes only this validation document and the new
 [integration qualification record](evidence/integration-qualification.json).
@@ -141,4 +141,20 @@ GitHub Actions remains disabled, the PR has no hosted check results, main branch
 protection returned 404, and repository rulesets were empty when inspected. No
 GitHub settings changed. This is completed engineering qualification for the
 specified integration, subject to final independent review; it is not a full-product
-or deployment qualification. No outstanding code or integration blocker is known.
+or deployment qualification. That result predates the qualification review findings; the follow-up below establishes their repair status.
+
+
+## Qualification review follow-up
+
+The subsequent review reproduced three tooling gaps: direct registered pytest
+commands accepted partial Python selections; failed Docker startup could leave a
+created container; and a failed native retry could retain an earlier success
+summary. The follow-up replaces both Python registrations with a Learning-owned
+complete-suite wrapper, verifies cleanup after every creation attempt, and makes
+current atomic native evidence conditional on both inventory and cleanup success.
+Shared component tooling, production application behavior and dependency versions
+remain unchanged. Fresh final qualification is recorded after the executable
+repair commit; earlier results remain historical unless explicitly verified reusable.
+
+Follow-up raw evidence is stored outside tracked source at
+`/Users/andy/tempo/test-results/pr278-qualification-repair-20261015/`.

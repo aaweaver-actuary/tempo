@@ -87,9 +87,38 @@ TEMPO_COMPONENT_PYTHON="$PWD/backend/.venv/bin/python" node tools/component-buil
 ```
 
 The component lane runs package tests, runner/backend installation regressions and
-the native suite sequentially. `TEMPO_LEARNING_EVIDENCE_DIR` can place native logs
+the native suite sequentially. Both Python entries use `run_suite.py` with fixed
+`application` / `tooling` suite choices, independent collection and exact execution
+validation. The wrapper rejects inherited `PYTEST_ADDOPTS` and unknown CLI options;
+it accepts one explicit `--junitxml` / `--junit-xml` destination in either form.
+The shared component runner and its reporting contract are unchanged. `TEMPO_LEARNING_EVIDENCE_DIR` can place native logs
 outside the checkout; it does not accept or configure an external database.
 
 #224 remains open for thin HTTP composition, essential worker/runtime isolation;
 #194 owns broker-independent foreground delivery. Domain database cutover and full
 production wire-v1 adoption are not delivered by this library.
+
+## Native failure and evidence lifecycle
+
+The native runner marks the current summary incomplete before image inspection or
+provisioning. A rejected invocation also invalidates any existing current success
+record, while a rejected new evidence path creates no database/build resources.
+Each invocation keeps logs and collection/execution receipts under
+`runs/<identity>/`; previous root summaries/JUnit copies are retained under
+`history/<next-identity>/`. The requested external JUnit and the root `native.xml`
+copy remain available, but only the current `native.json` qualification result
+establishes success.
+
+A creation attempt is tracked before `docker run`, so cleanup also covers a
+container created before startup fails. Cleanup checks the exact name, verifies
+both ownership/disposable labels, removes only that container ID and verifies
+absence. Docker inspection failure is an unverified outcome, not absence.
+`container_removed` records actual removal; `container_absent` is null when absence
+was not established, and `cleanup_verified` records whether required cleanup was
+verified. No creation attempt requires no container cleanup.
+
+Summaries are atomically replaced on success and failure. `pytest_exit_code` is
+separate from the qualification `exit_code`; pytest success with a skip, inventory
+error or failed cleanup is a failed qualification. `complete` becomes true only
+after the complete test inventory and required resource cleanup both succeed.
+Primary and cleanup errors are retained together.

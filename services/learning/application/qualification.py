@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shlex
 import sys
+import tempfile
 import xml.etree.ElementTree as xml
 
 
@@ -37,6 +38,21 @@ def controlled_environment(environment=None):
     result['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
     result['PYTHONDONTWRITEBYTECODE'] = '1'
     return result
+
+
+def write_json(destination, value):
+    """Replace a machine-readable summary without exposing a partial write."""
+    destination = Path(destination)
+    temporary_name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=destination.parent, delete=False) as temporary:
+            temporary_name = temporary.name
+            json.dump(value, temporary, indent=2)
+            temporary.write('\n')
+        os.replace(temporary_name, destination)
+    finally:
+        if temporary_name and Path(temporary_name).exists():
+            Path(temporary_name).unlink()
 
 
 class Inventory:

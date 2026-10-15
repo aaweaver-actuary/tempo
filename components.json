@@ -809,7 +809,8 @@
         "REGRESSIONS.md",
         "tests",
         "qualification.py",
-        "qualify.py"
+        "qualify.py",
+        "run_suite.py"
       ],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {
@@ -822,16 +823,19 @@
           "owner": "learning-review-application",
           "kind": "python",
           "cwd": "services/learning/application",
-          "command": "python -m pytest tests -q",
+          "command": "python run_suite.py application",
           "inputs": [
-            "tests"
+            "tests",
+            "run_suite.py",
+            "qualification.py",
+            "pyproject.toml"
           ]
         },
         {
           "owner": "learning-review-application",
           "kind": "python",
           "cwd": ".",
-          "command": "python -m pytest services/learning/application/integration/test_qualification_runners.py backend/tests/test_learning_package_installation.py -q",
+          "command": "python services/learning/application/run_suite.py tooling",
           "inputs": [
             "services/learning/application/qualification.py",
             "services/learning/application/qualify.py",
@@ -840,7 +844,8 @@
             "backend/tests/test_learning_package_installation.py",
             "backend/pyproject.toml",
             "backend/requirements-test.txt",
-            "backend/Dockerfile"
+            "backend/Dockerfile",
+            "services/learning/application/run_suite.py"
           ]
         },
         {
