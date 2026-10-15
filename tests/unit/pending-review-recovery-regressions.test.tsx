@@ -21,9 +21,14 @@ it.each(["success", "failure"])("flush_settlement_audit idle receipt observer re
   let releaseReceipt!: (response: Response) => void;
   let releaseOther!: (response: Response) => void;
   let rejectOther!: (error: Error) => void;
+  let markOtherStarted!: () => void;
+  const otherStarted = new Promise<void>(resolve => { markOtherStarted = resolve; });
   const receipt = new Promise<Response>(resolve => { releaseReceipt = resolve; });
   const other = new Promise<Response>((resolve, reject) => { releaseOther = resolve; rejectOther = reject; });
-  vi.stubGlobal("fetch", vi.fn(input => String(input).includes("original-attempt") ? receipt : other));
+  vi.stubGlobal("fetch", vi.fn(input => {
+    if (String(input).includes("original-attempt")) return receipt;
+    markOtherStarted(); return other;
+  }));
   const foregroundOwner = flushPendingReviews(Infinity, true).catch(error => error);
   const confirmed = vi.fn();
   try {
@@ -36,6 +41,7 @@ it.each(["success", "failure"])("flush_settlement_audit idle receipt observer re
     });
     expect(confirmed).not.toHaveBeenCalled();
     await act(async () => {
+      await otherStarted;
       if (laterOutcome === "success") releaseOther(Response.json({ state: "complete", response: { persisted: true } }));
       else rejectOther(new Error("Other transport failure"));
       await foregroundOwner; await settleStudyStorageTasks();

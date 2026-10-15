@@ -4539,6 +4539,9 @@ the real disposable PostgreSQL integration owner. See
 - `study-intent-storage-regressions.test.ts` also owns malformed legacy review and
   failure rejection, structured failed-operation detail after reopen, and the
   distinction between a hidden factory and an already usable database connection.
+- `review-conflict-ui-regressions.test.tsx` owns
+  `pr285_storage_retry_conflict_dialog_reports_storage_closure_during_delivery`;
+  retry completion reports a closed store without an unhandled rejection.
 - `tests/controlled-browser/study-intents.spec.ts`: five `pr285` native identities
   cover actual reload after rejection, late transaction failure and retry, legacy
   sequence-two recovery, cross-tab practice reset and targeted teaching messages.

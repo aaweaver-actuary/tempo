@@ -79,7 +79,8 @@ export function OfflineReviewConflicts() {
     } catch (failure) {
       setError(`The result remains saved and will retry when connected. ${String(failure)}`);
     } finally {
-      setOnlineConflicts(conflictedReviews());
+      try { setOnlineConflicts(conflictedReviews()); }
+      catch (failure) { setError(`Could not read saved conflicts: ${String(failure)}`); }
       setRetrying(undefined);
     }
   }
