@@ -1,115 +1,13 @@
-"""Idempotent foreground review command for the PostgreSQL worker."""
-
-from __future__ import annotations
-
-from datetime import date
-import json
-from typing import Any
-
+"""Legacy command assembly: explicit Learning registration and owned savepoint."""
+from tempo_learning_review import register_review_commands
 from .command_gateway import register_command
-from .models import ReviewRequest
 from .postgres_store import PostgresConnection
-from .queue_position_lock import lock_queue_date_for_position
-from .services.background_runtime import training_timing_stage
-
-
-def _lock_review_cards(database, card_id, candidate):
-    """Never wait for an optional continuation's edit lock; preserve card-before-queue order."""
-    continuation_locked = candidate is not None
-    for locked_card_id in sorted({card_id, *([candidate.card_id] if candidate else [])}):
-        if locked_card_id == card_id:
-            if hasattr(database, "execute_native"):
-                database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{locked_card_id}",))
-            database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (locked_card_id,))
-        else:
-            if isinstance(database, PostgresConnection):
-                admitted = database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{locked_card_id}",)).fetchone()[0]
-                if not admitted:
-                    continuation_locked = False
-                    continue
-            row = database.execute("SELECT id FROM cards WHERE id=?" + (" FOR UPDATE SKIP LOCKED" if isinstance(database, PostgresConnection) else ""), (locked_card_id,)).fetchone()
-            continuation_locked = continuation_locked and row is not None
-    return continuation_locked
-
-
-def _issue_prepared_continuation(database, candidate):
-    from .queue_commands import issue_queue_head
-
-    if candidate.local_date != date.today().isoformat():
-        return None
-    row = database.execute("SELECT q.cycle,q.attempt_failed,c.revision,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=? AND q.card_id=? AND q.status='queued'", (candidate.queue_entry_id, candidate.card_id)).fetchone()
-    # These runners load additional live specifications; an ordinary queue window
-    # alone is not a prepared presentation for them.
-    if not row or row["content_type"] in {"study_exercise", "defense"} or row["cycle"] != candidate.cycle or row["revision"] != candidate.revision:
-        return None
-    issued = issue_queue_head(database, {"queue_date": candidate.local_date, "entry_id": candidate.queue_entry_id,
-                                      "card_id": candidate.card_id, "expected_revision": candidate.revision})
-    if not issued["issued"]:
-        return None
-    return {**candidate.model_dump(mode="json"), "attempt_failed": bool(row["attempt_failed"])}
+from .services.learning_review_adapter import submit_legacy_review
+from typing import Any
 
 
 def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
-    # Import lazily: main owns the scheduling rules and imports the Celery app.
-    from .main import _apply_review
-
-    request = ReviewRequest.model_validate(payload["review"])
-    card_id = str(payload["card_id"])
-    continuation_locked = _lock_review_cards(database, card_id, request.prepared_next)
-    from .card_deletion import is_card_deleted
-    from .review_conflicts import ReviewConflict
-    if is_card_deleted(database, card_id):
-        raise ReviewConflict("card_deleted", "This card was permanently deleted. Discard this attempt and refresh training.")
-    lock_queue_date_for_position(database, date.today().isoformat())
-    prior_review = database.execute("SELECT 1 FROM review_attempt_receipts WHERE attempt_id=?", (request.attempt_id,)).fetchone() if request.attempt_id else None
-    completion = request.opening_evidence_completion
-    if completion:
-        from .services.postgres_opening_evidence import persist_checkpoint, evidence_error
-        if (completion.attempt_id != request.attempt_id or completion.manifest.card_id != card_id or
-                completion.queue_entry_id is None or completion.queue_entry_id != request.queue_entry_id or not completion.terminal or
-                completion.terminal.state != "complete"):
-            raise evidence_error("Completion must identify the same aggregate review attempt and queue entry")
-        existing_review_receipt = prior_review
-        if existing_review_receipt:
-            completed = database.execute_native("SELECT state FROM opening_evidence_attempts WHERE attempt_id=%s", (request.attempt_id,)).fetchone()
-            if not completed or completed[0] != "complete":
-                raise evidence_error("The saved review receipt has no matching evidence completion binding")
-        else:
-            revision = database.execute("SELECT revision FROM cards WHERE id=?", (card_id,)).fetchone()
-            entry = database.execute("SELECT status FROM daily_queue WHERE id=? AND card_id=?", (request.queue_entry_id,card_id)).fetchone()
-            if not revision or (revision[0] != completion.manifest.card_revision and
-                    (not entry or entry[0] == "queued" or request.expected_revision != completion.manifest.card_revision)):
-                raise evidence_error("The opening presentation changed before review completion")
-        with training_timing_stage("completion_evidence"):
-            persist_checkpoint(database, {"checkpoint": completion.model_dump(mode="json"),
-                                          "prepared_manifest": payload["prepared_manifest"]}, completing_review=True)
-    with training_timing_stage("fsrs_review_receipt"):
-        result = _apply_review(card_id, request, database=database)
-    if completion:
-        from .services.postgres_opening_evidence import complete_review_evidence
-        complete_review_evidence(database, completion, result)
-        if (not existing_review_receipt and result.get("idempotent") is False
-                and result.get("requeue_entry_id") is not None):
-            # The insert trigger binds mutable fallback first. Only this fresh,
-            # uncommitted requeue may inherit the validated parent color; receipt
-            # replay can return an old requeue with cached idempotent=False.
-            database.execute_native(
-                "INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color) "
-                "VALUES(%s,%s,%s,%s) ON CONFLICT(queue_entry_id,presentation_snapshot_id,repertoire_id) "
-                "DO UPDATE SET effective_trained_color=EXCLUDED.effective_trained_color",
-                (result["requeue_entry_id"], completion.manifest.presentation_snapshot_id,
-                 completion.manifest.repertoire_id, completion.manifest.trained_color),
-            )
-    if request.attempt_id and not prior_review and result.get("idempotent") is False and continuation_locked:
-        with training_timing_stage("prepared_head_issuance"):
-            continuation = _issue_prepared_continuation(database, request.prepared_next)
-        if continuation:
-            result = {**result, "prepared_continuation": continuation}
-            database.execute("UPDATE review_attempt_receipts SET result_json=? WHERE attempt_id=?", (json.dumps(result), request.attempt_id))
-    return result
-
-
-register_command("cards.review", submit_review)
+    return submit_legacy_review(database, payload)
 
 
 def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -128,4 +26,4 @@ def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> d
     return result
 
 
-register_command("cards.review.reconcile", reconcile_review)
+register_review_commands(register_command, submit=submit_review, reconcile=reconcile_review)

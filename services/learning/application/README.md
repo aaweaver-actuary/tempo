@@ -1,0 +1,74 @@
+# Installed Learning review application
+
+`tempo-learning-review` 0.1.0 exposes `tempo_learning_review`, requires Python
+>=3.12,<3.15, and has no third-party runtime dependencies. This is an implemented
+application library within the still-planned independent Learning deployment.
+Legacy HTTP payloads remain legacy payloads; no wire-v1 conformance is implied.
+
+The application owns replay/validation/recovery decisions, review sequencing,
+required evidence binding and prepared-successor orchestration. Immutable records
+carry the original durable payload, effective review time, local queue day,
+local scheduling day, content identity and recorded result. SQL, locks, savepoints,
+connection ownership and framework translation stay in the legacy adapter.
+
+| Source / effect | Owner after extraction | Transaction and proof |
+|---|---|---|
+| HTTP `_apply_review`; receipt/projection/origin replay; guided/revision/deletion decisions | `application.apply_review` | Borrowed transaction; package tests and native replay/stale cases |
+| `review_commands.submit_review`; evidence validation/completion, successor decisions | `application.submit_review` | Same borrowed transaction; native evidence/issuance/rollback cases |
+| Card-before-queue locks, SQL, required gameplay clearing, scheduling/history/maturity and chronological rebuild | Legacy `LearningReviewAdapter`, existing scheduling store/wrapper and reconciliation helper | Existing scheduler signature/fields unchanged; legacy characterization and native failure/concurrency cases |
+| `reconcile_review` handled conflict | Legacy command adapter | Roll back its savepoint before returning; native injected conflict after writes |
+| Progression invalidation, maturity queue work and priority refresh | Explicit adapter capabilities | PG durable effects share transaction; SQLite ordinary effects retain post-context timing; replay stays quiet |
+| Frozen-order constraints | Existing queue admission/readers | Native active/inactive fixtures; no ranking or private activation changes |
+
+The application never opens, commits, rolls back or closes a transaction. The
+legacy command gateway owns transport receipts and its handler savepoint;
+reconciliation owns the nested rollback needed before converting conflicts into
+normal transport responses. Logical receipts, queue-result replay and scheduling
+source-reference replay remain distinct. Scheduling still appends history before
+loading maturity facts. The existing scheduler wrapper retains required gameplay
+remediation and legacy child unlocking, rather than substituting no-op effects.
+
+Prepared continuation is optional: same local day/cycle/revision, supported kind,
+nonblocking successor lock and current admission/issuance must all succeed. A
+projection generation is never attempt authority. Historical continuation in a
+receipt does not authorize later mutation of invalidated content. Evidence is
+completed before successor issuance as before; on logical retry its stored result
+may acquire the already-recorded continuation without another review/issuance.
+
+From this directory:
+
+```sh
+uv sync --locked --no-editable --python 3.14
+uv run --locked --no-editable python -m pytest tests
+python qualify.py /absolute/evidence/directory
+```
+
+`qualify.py` builds from declared inputs, installs the wheel into separate 3.12 and
+3.14 consumers, removes the build sources and runs all application tests under
+service import/connection guards. It uses the existing shared Python boundary
+checker and records inputs, commands, identities, environment versions and hashes.
+
+Native integration requires only the legacy Python test dependencies, the
+installed scheduling and Learning packages, and the existing local PostgreSQL
+image; no Node dependencies or model assets. From the checkout root:
+
+```sh
+uv venv --python 3.14 .venv
+uv pip install --python .venv/bin/python -r backend/requirements.txt -r backend/requirements-test.txt pytest==9.1.1
+uv pip install --python .venv/bin/python ./services/learning/application
+.venv/bin/python services/learning/application/integration/run_postgres.py /absolute/evidence/directory
+```
+
+The native runner accepts only an evidence directory, creates a uniquely labelled
+PostgreSQL cluster/port/secrets/tmpfs and provisions legacy reader/writer roles.
+Migrations run only there. It refuses external database targets and verifies
+owned-container removal. Advisory post-commit broker wakes may fail when no broker
+is running; durable queue intent remains asserted. This proves the application
+seam, not broker-free production delivery or independent service authorization.
+
+D owns initial shared manifest/toolchain reconciliation. `registration.patch`
+contains only this component's exact registration and dependency/install additions,
+to apply after that baseline. Until applied, install the package explicitly as above.
+#224 remains open for thin HTTP composition, essential worker/runtime isolation;
+#194 owns broker-independent foreground delivery. Domain database cutover and full
+production wire-v1 adoption are not delivered by this library.

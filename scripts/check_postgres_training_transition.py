@@ -237,13 +237,14 @@ def test_postgres_prepared_issuance_fences_competing_edits_and_deletions(identit
         issue(reviewed_index)
         issuance_reached, release_issuance, mutation_started = Event(), Event(), Event()
         review_pids, mutation_pids = [], []
-        original_issuance = review_commands._issue_prepared_continuation
+        from app.services.learning_review_adapter import LearningReviewAdapter
+        original_issuance = LearningReviewAdapter.issue_head
 
-        def pause_issuance(database, candidate):
-            review_pids.append(database.execute_native("SELECT pg_backend_pid()").fetchone()[0])
+        def pause_issuance(adapter, candidate):
+            review_pids.append(adapter.database.execute_native("SELECT pg_backend_pid()").fetchone()[0])
             issuance_reached.set()
             assert release_issuance.wait(timeout=15), "Prepared issuance barrier was not released"
-            return original_issuance(database, candidate)
+            return original_issuance(adapter, candidate)
 
         def mutate_successor():
             with postgres_store.connection() as database:
@@ -255,7 +256,7 @@ def test_postgres_prepared_issuance_fences_competing_edits_and_deletions(identit
                     database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{successor_identity['card_id']}",))
                     database.execute("UPDATE cards SET revision=revision+1 WHERE id=?", (successor_identity["card_id"],))
 
-        with ThreadPoolExecutor(max_workers=2) as executor, patch.object(review_commands, "_issue_prepared_continuation", pause_issuance):
+        with ThreadPoolExecutor(max_workers=2) as executor, patch.object(LearningReviewAdapter, "issue_head", pause_issuance):
             review_future = executor.submit(execute_command, str(uuid4()), "cards.review", review(reviewed_index, successor_index))
             try:
                 assert issuance_reached.wait(timeout=5), "Review did not reach prepared issuance"
