@@ -1,10 +1,12 @@
 # Agent B / #224 validation and remaining scope
 
-Tested implementation: `744c47ce1459b740159da206d5fb5ee7148af8cc`, based on refreshed
-main `6b99085f8978346a959b5d4a6ea44b6e56f05dd6`. This evidence-only follow-up
-adds no runtime, dependency, fixture or build-input change. [The machine-readable
-record](evidence/qualification.json) preserves exact executed identities/counts,
-input hashes, artifact hashes, runtimes, commands and known failure.
+Tested implementation: `52f1ac8fc1e7168e1b1aa8580468be60ec45ef9c`, based on refreshed
+main `6b99085f8978346a959b5d4a6ea44b6e56f05dd6`. The later evidence-only commit
+changes no runtime, dependency, fixture or build input. [The machine-readable
+record](evidence/qualification.json) preserves executed identities/counts, source
+hashes, artifact hashes, runtimes, commands, D compatibility and the known failure.
+The broad affected legacy selection ran at `744c47ce`; its complete relevant
+application, test, scheduler and import-policy inputs remain byte-identical.
 
 ## Results and commands
 
@@ -14,6 +16,8 @@ input hashes, artifact hashes, runtimes, commands and known failure.
 | Installed application under import/connection guards, CPython 3.12.12 | 43 passed, zero skipped |
 | Same installed suite, CPython 3.14.8 | 43 passed, zero skipped |
 | Real installed application + legacy adapter, PostgreSQL 18.6 | 24 passed, zero skipped |
+| Retargeted evidence, deletion and lock-order seam selection | 55 passed, zero skipped |
+| D published checker / owning test-lane compatibility | Checker passes; 43 pure + 24 native, structured identities preserved |
 | Affected legacy seam selection below | 177 passed, 1 failed, zero skipped |
 | Original unchanged local-day failure reproduced separately | 1 failed, same absent compatibility symbol |
 | Existing shared Python package boundary checker | Passed |
@@ -21,15 +25,15 @@ input hashes, artifact hashes, runtimes, commands and known failure.
 | Pending patch lock check in disposable context | Passed; only this dependency and its metadata added |
 
 ```sh
-.venv/bin/python services/learning/application/qualify.py EVIDENCE/final-installed
-.venv/bin/python services/learning/application/integration/run_postgres.py EVIDENCE/final-native
+.venv/bin/python services/learning/application/qualify.py EVIDENCE/revised-installed
+.venv/bin/python services/learning/application/integration/run_postgres.py EVIDENCE/revised-native
 PYTHONPATH=backend:backend/tests .venv/bin/python -m pytest backend/tests/test_scheduling_review_application.py backend/tests/test_scheduling_review_store.py backend/tests/test_scheduling_package_adapter.py backend/tests/test_scheduling_boundary.py backend/tests/test_prepared_review_continuation.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_queue_attempt_issuance.py backend/tests/test_phone_offline_training.py backend/tests/test_study_durability.py backend/tests/test_frozen_opening_order.py -q -o cache_dir=CHECKOUT/.pytest_cache --junitxml=EVIDENCE/final-affected.xml
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=UNCHANGED_CHECKOUT/backend .venv/bin/python -m pytest UNCHANGED_CHECKOUT/backend/tests/test_study_durability.py::test_default_scheduler_uses_local_day_not_utc_day -q -p no:cacheprovider --junitxml=EVIDENCE/baseline-scheduler-failure.xml
-git apply --check services/learning/application/registration.patch
-uv lock --check --offline --directory DISPOSABLE_PATCH_CONTEXT/backend
+git -C DISPOSABLE_D_CONTEXT apply --check CHECKOUT/services/learning/application/registration.patch
+uv lock --check --offline --directory DISPOSABLE_D_CONTEXT/backend
 ```
 
-`CHECKOUT`, `EVIDENCE`, `UNCHANGED_CHECKOUT` and `DISPOSABLE_PATCH_CONTEXT` are
+`CHECKOUT`, `EVIDENCE`, `UNCHANGED_CHECKOUT` and `DISPOSABLE_D_CONTEXT` are
 absolute local directory substitutions, not new runner flags. The baseline four
 files were the scheduling application/store, prepared continuation and queue
 attempt recovery files from the affected selection. The installed qualifier logs
@@ -40,7 +44,7 @@ Full logs/JUnit and wheels are retained outside the disposable checkout under
 
 Wheel SHA-256: `f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce`.
 Native image: `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`.
-Native cluster `tempo224-4cd9ec72d88f0a0d` was uniquely owned, used ephemeral
+Native cluster `tempo224-3641887fe3a2648a` was uniquely owned, used ephemeral
 storage and separate legacy reader/writer credentials, and was removed with its
 absence checked. No external database target was accepted. Broker wakes were
 pointed at unavailable loopback port 1; durable queue intent remained asserted.
@@ -73,13 +77,22 @@ pointed at unavailable loopback port 1; durable queue intent remained asserted.
 
 ## Concrete remaining work
 
-D's initial schema/registration baseline has not merged. Shared manifests,
-backend metadata/lock and central tooling remain untouched. The exact narrow
-`registration.patch` includes the child library registration, backend path/install
-metadata and image copy/install. Apply/reconcile only those additions after D's
-baseline; the parent Learning service stays planned.
+D's initial schema/registration baseline #277 is published but has not merged.
+Shared manifests, backend metadata/lock and central tooling remain untouched on
+B's branch. `registration.patch` now targets D's exact published baseline
+`cbc12f77b114c60e91a91d1f9d4b8cb929f4153f`, including explicit test cwd and local
+inventory. It applies in a disposable combined context: D's unmodified checker
+passes, and its owning test lane records 43 pure + 24 native passing identities.
+B's native runner preserves D's externally supplied JUnit path and also retains
+its own report; both standalone and D report modes pass. The patch also includes
+only B's backend dependency/image install additions. Apply/reconcile those small
+additions after D merges; the parent Learning service stays planned.
 
-The affected selection is **not green**: unchanged
+The 55-case additional selection retargets the existing evidence and card-lock
+mocks to their actual new owners, preserving connection identity, evidence order,
+rollback and result assertions. No tests were skipped or assertions removed.
+
+The broader affected selection is **not green**: unchanged
 `test_default_scheduler_uses_local_day_not_utc_day` patches missing
 `app.services.scheduler.date`. It also fails on unchanged source. C owns this
 compatibility behavior; C reports its pending PR #275 restores the existing clock
@@ -95,3 +108,8 @@ broker-independent foreground delivery. Local passes do not certify those items.
 
 GitHub Actions was read as disabled. Classic main branch protection returned 404
 ("Branch not protected"); the repository ruleset listing was also empty. No GitHub settings or protections were changed.
+
+The D compatibility commands (with only B's patch applied in the disposable
+context) are recorded verbatim in the JSON evidence. D tools were hash-compared
+to its published commit and remained unchanged. No other owner's worktree or
+shared source was edited for this integration proof.

@@ -1,18 +1,20 @@
 {
-  "tested_revision": "744c47ce1459b740159da206d5fb5ee7148af8cc",
+  "tested_revision": "52f1ac8fc1e7168e1b1aa8580468be60ec45ef9c",
   "starting_main": "6b99085f8978346a959b5d4a6ea44b6e56f05dd6",
   "source_hashes": {
     "backend/app/main.py": "4a621f4340f0f0ff8e95f271c8df5c71ce3e021c7461c4d3fcc77ee9e8927181",
     "backend/app/review_commands.py": "c7a2129885906b37e35fae29b0b60894f484e3912fc6ea1f55d68a2bd2a1d04b",
     "backend/app/services/learning_review_adapter.py": "62d2be01f345345eb9feffad4fa759415111baa8f82a61c0ae92e92d9580973f",
+    "backend/tests/test_opening_evidence_contracts.py": "5e4431cc5c6743869816dbf5ab07eefa3c5da61f568342e2386094f16a70acdb",
+    "backend/tests/test_postgres_cutover.py": "cbf23cadcdbc687e9bcae2b17988140b7288f4f955cb4dd93457d9c55a67b150",
     "scripts/check_postgres_training_transition.py": "5a8b935e140a92cfa0cc2f3e77ac866cb1602d90ae4c34d5872c07911430da8d",
-    "services/learning/application/README.md": "2c063884f7ac7999c4f67b566ba71dc0fc4c190a0ab7dcff5c5cf08aa40e0938",
-    "services/learning/application/REGRESSIONS.md": "6de42fc8449a5cbc9504d860c680042385e8ab2d6527d90efb8d4009f4376be7",
-    "services/learning/application/integration/run_postgres.py": "28404f3b6d193e8ea55c5fc61ffa422ccce57f018231991605004dc49fb57816",
+    "services/learning/application/README.md": "3e5425faa1a133e72f600195999743bde6e1e640b4184d6cb365732ebc37ab0b",
+    "services/learning/application/REGRESSIONS.md": "10eecf6894f445f4bd59d57d9909669a51800618ce53597f8980b8698919dacb",
+    "services/learning/application/integration/run_postgres.py": "40225fac03f0a9fa5208b5201692e4376c22541040a24e82686bbdf0baf598ed",
     "services/learning/application/integration/test_postgres.py": "a18d6a5feb8d823eb042d46a8cd1a25ad5d99e67a4501ac812baeab03ff49c57",
     "services/learning/application/pyproject.toml": "b5a812d65ecc8a9e82c3e7c505b5006d6df184318bcfb707b3ec23e90e41ce3f",
     "services/learning/application/qualify.py": "b97eee56cc3a32dc797a32753c2ab274a7ab462b929d4b5b2ca71ddbea3caf17",
-    "services/learning/application/registration.patch": "5afc39721c07e0ad63c60fc0fa7046aaa56339e1abc7c53fedb605f959f9f34b",
+    "services/learning/application/registration.patch": "a05663dae6fbb62e85375326a84eb474e23023969f047eff5238bc5d602706d4",
     "services/learning/application/src/tempo_learning_review/__init__.py": "fc3dbd02215521521e4ac7a6b40bf88d7863327e391800c3b54131076185aa51",
     "services/learning/application/src/tempo_learning_review/application.py": "14f5f50c93619f31c90fb50a9e94cd47e49dd6a19ac120877159e6b948a4d57e",
     "services/learning/application/src/tempo_learning_review/commands.py": "7b88c05473a8ffc31e2d53899df073798ece5a46986ea79d24d981528fa7599b",
@@ -24,8 +26,8 @@
     "services/learning/application/uv.lock": "380869ba4484813b5f787ee42e3d6f3d9223d45989c7408b0c00a0fc0c65e5db"
   },
   "installed_build_input_hashes": {
-    "README.md": "2c063884f7ac7999c4f67b566ba71dc0fc4c190a0ab7dcff5c5cf08aa40e0938",
-    "REGRESSIONS.md": "6de42fc8449a5cbc9504d860c680042385e8ab2d6527d90efb8d4009f4376be7",
+    "README.md": "3e5425faa1a133e72f600195999743bde6e1e640b4184d6cb365732ebc37ab0b",
+    "REGRESSIONS.md": "10eecf6894f445f4bd59d57d9909669a51800618ce53597f8980b8698919dacb",
     "pyproject.toml": "b5a812d65ecc8a9e82c3e7c505b5006d6df184318bcfb707b3ec23e90e41ce3f",
     "src/tempo_learning_review/__init__.py": "fc3dbd02215521521e4ac7a6b40bf88d7863327e391800c3b54131076185aa51",
     "src/tempo_learning_review/application.py": "14f5f50c93619f31c90fb50a9e94cd47e49dd6a19ac120877159e6b948a4d57e",
@@ -38,7 +40,7 @@
     "uv.lock": "380869ba4484813b5f787ee42e3d6f3d9223d45989c7408b0c00a0fc0c65e5db"
   },
   "artifacts": {
-    "tempo_learning_review-0.1.0.tar.gz": "eaeac12c08f9172ff845565fc21eabccfefd77040abac0decacb787e7a8d29ed",
+    "tempo_learning_review-0.1.0.tar.gz": "6534f1eb9c83ea03ada9acc899428bc4b6d6b008b7f909446a12d464c191fe41",
     "tempo_learning_review-0.1.0-py3-none-any.whl": "f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce"
   },
   "installed_consumers": {
@@ -100,7 +102,7 @@
         "pygments==2.21.0",
         "pyproject-hooks==1.3.3",
         "pytest==9.1.1",
-        "tempo-learning-review @ file:///var/folders/j2/t40bwpzn2hv6lcjy86kjvpnh0000gn/T/tempo224-installed-4__nwc92/build/dist/tempo_learning_review-0.1.0-py3-none-any.whl",
+        "tempo-learning-review @ file:///var/folders/j2/t40bwpzn2hv6lcjy86kjvpnh0000gn/T/tempo224-installed-hw1xqwma/build/dist/tempo_learning_review-0.1.0-py3-none-any.whl",
         "trove-classifiers==2026.9.21.13"
       ]
     },
@@ -162,13 +164,13 @@
         "pygments==2.21.0",
         "pyproject-hooks==1.3.3",
         "pytest==9.1.1",
-        "tempo-learning-review @ file:///var/folders/j2/t40bwpzn2hv6lcjy86kjvpnh0000gn/T/tempo224-installed-4__nwc92/build/dist/tempo_learning_review-0.1.0-py3-none-any.whl",
+        "tempo-learning-review @ file:///var/folders/j2/t40bwpzn2hv6lcjy86kjvpnh0000gn/T/tempo224-installed-hw1xqwma/build/dist/tempo_learning_review-0.1.0-py3-none-any.whl",
         "trove-classifiers==2026.9.21.13"
       ]
     }
   },
   "native": {
-    "command": ".venv/bin/python services/learning/application/integration/run_postgres.py EVIDENCE/final-native",
+    "command": ".venv/bin/python services/learning/application/integration/run_postgres.py EVIDENCE/revised-native",
     "suite": {
       "selected": 24,
       "passed": 24,
@@ -204,7 +206,7 @@
       "skipped_identities": []
     },
     "resource": {
-      "identity": "tempo224-4cd9ec72d88f0a0d",
+      "identity": "tempo224-3641887fe3a2648a",
       "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
       "container_removed": true,
       "exit_code": 0,
@@ -405,7 +407,9 @@
         }
       ],
       "skipped_identities": []
-    }
+    },
+    "tested_revision": "744c47ce1459b740159da206d5fb5ee7148af8cc",
+    "relevant_inputs_identical_to_current": true
   },
   "baseline": {
     "suite": {
@@ -532,7 +536,7 @@
       "skipped_identities": []
     }
   },
-  "status": "Application and native seam pass; shared integration pending D, selected baseline failure pending C; no full-service completion or merge qualification claim",
+  "status": "Real installed application and legacy/native seams pass; D patch remains unapplied pending normal integration, selected unchanged baseline failure pending C; no full-service completion or merge qualification claim.",
   "unrun": [
     "Full-system/whole-backend/whole-browser suites",
     "Model/provider workloads",
@@ -541,5 +545,189 @@
     "Production wire-v1 conformance",
     "Independent review"
   ],
-  "shared_metadata": "Unmodified. registration.patch applies to current main and its minimal backend lock addition passes uv lock --check --offline in a disposable context."
+  "shared_metadata": "Unmodified on B branch. registration.patch targets published unmerged D baseline cbc12f77; checked and executed in a disposable context using D tools unchanged. Exact Python cwd, native cwd, local inventory and backend dependency/image install additions only.",
+  "additional_seam_tests": {
+    "command": "PYTHONPATH=backend:backend/tests .venv/bin/python -m pytest backend/tests/test_opening_evidence_contracts.py backend/tests/test_postgres_cutover.py::test_postgres_review_reserves_card_then_queue_position_before_reordering backend/tests/test_card_deletion.py -q -o cache_dir=CHECKOUT/.pytest_cache --junitxml=EVIDENCE/revised-evidence-seam.xml",
+    "suite": {
+      "selected": 55,
+      "passed": 55,
+      "failed": 0,
+      "skipped": 0,
+      "passed_identities": [
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api[True]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api[False]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_background_opening_attempt_http_read_yields_and_retries_after_foreground_admission[found]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_background_opening_attempt_http_read_yields_and_retries_after_foreground_admission[missing]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_background_opening_attempt_http_read_yields_and_retries_after_foreground_admission[error]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_foreground_opening_attempt_http_read_does_not_self_deadlock",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_evidence_http_unavailable_rejects_without_database_or_dispatch[True]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_evidence_http_unavailable_rejects_without_database_or_dispatch[False]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_http_schema_rejection_precedes_dispatch",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_payload_identity_ignores_historical_preparation",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_foreground_review_http_preparation_keeps_foreground_request_lease[False]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_foreground_review_http_preparation_keeps_foreground_request_lease[True]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_attempt_http_closes_read_before_event_decoding",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_request_is_background_without_a_client_work_class_header",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revision",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_shadow_chess_validation_closes_read_connection_before_traversal",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_evidence_migration_is_unique_additive_and_matches_readiness",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_queue_evidence_is_explicitly_negotiated_for_live_window_and_prepared_clients",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_completion_requires_a_resolved_actual_queue_binding",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_scoped_color_adapter_preserves_raw_legacy_presentation",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_scoped_color_adapter_rejects_unknown_and_explicit_mismatch",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_evidence_migration_captures_valid_scope_color_without_overwriting_context",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[False-False-False-202-1]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[False-True-False-202-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[False-False-True-202-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[False-False-False-None-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[False-False-None-202-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[True-False-False-202-1]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[True-True-False-202-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[True-False-True-202-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[True-False-False-None-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_review_requeue_context_correction_only_runs_for_fresh_review[True-False-None-202-0]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_receipt_read_uses_background_admission[True]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_opening_checkpoint_receipt_read_uses_background_admission[False]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_opening_evidence_contracts::test_reconciliation_digest_ignores_only_derived_preparation",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_postgres_cutover::test_postgres_review_reserves_card_then_queue_position_before_reordering",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_ignores_unrelated_null_job_payload_and_fences_exact_tasks",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_policies_preserve_shared_history_and_non_main_selection[keep]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_policies_preserve_shared_history_and_non_main_selection[delete]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_reassigns_shared_queued_admission_without_rewriting_origins[primary-owner-keep]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_reassigns_shared_queued_admission_without_rewriting_origins[primary-owner-delete]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_reassigns_shared_queued_admission_without_rewriting_origins[non-owning-membership-keep]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_repertoire_delete_reassigns_shared_queued_admission_without_rewriting_origins[non-owning-membership-delete]",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_individual_permanent_deletion_removes_all_memberships_history_and_rejects_delayed_review",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_deleted_graph_prerequisites_preserve_source_and_usable_descendants",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_deleted_repeated_route_prerequisite_reparents_each_occurrence_without_self_dependency",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_retained_introduced_cards_survive_queue_refresh_and_next_day_without_a_review",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_card_archive_api_remains_compatible_and_permanent_requires_revision",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_retained_deck_is_protected_and_hidden_after_its_last_card_is_deleted",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_automatic_tactic_admission_skips_deleted_content_without_consuming_allowance",
+        "tempo..dev-copies.learning-review-224.backend.tests.test_card_deletion::test_import_does_not_report_deleted_content_as_created_or_shared"
+      ],
+      "failed_cases": [],
+      "skipped_identities": []
+    }
+  },
+  "integration_with_d": {
+    "baseline": "cbc12f77b114c60e91a91d1f9d4b8cb929f4153f",
+    "tools_unmodified": [
+      "tools/component-build/check-components.mjs",
+      "tools/component-build/check-python.py",
+      "tools/component-build/component-tests.mjs",
+      "tools/component-build/selection.mjs",
+      "tools/component-build/case-results.py",
+      "tools/component-build/test-lane.mjs",
+      "components.schema.json"
+    ],
+    "pending_patch_applies": true,
+    "backend_lock_check": "uv lock --check --offline --directory /tmp/tempo224-d-compat/backend",
+    "checker": "TEMPO_COMPONENT_ROOT=/private/tmp/tempo224-d-compat TEMPO_COMPONENT_PYTHON=CHECKOUT/.venv/bin/python node /private/tmp/tempo224-d-compat/tools/component-build/check-components.mjs --component learning-review-application",
+    "test_lane": "TEMPO_COMPONENT_ROOT=/private/tmp/tempo224-d-compat TEMPO_COMPONENT_PYTHON=CHECKOUT/.venv/bin/python node /private/tmp/tempo224-d-compat/tools/component-build/test-lane.mjs --component learning-review-application",
+    "structured_suites": [
+      {
+        "suite": "learning-review-application",
+        "cwd": "services/learning/application",
+        "command": "python -m pytest tests -q",
+        "seconds": 0.31987191600000003,
+        "executedIdentities": [
+          "tests.test_application::test_ordinary_review_sequence_and_original_receipt_replay [cases.xml:1]",
+          "tests.test_application::test_logical_receipt_rejects_changed_original_payload[changes0] [cases.xml:2]",
+          "tests.test_application::test_logical_receipt_rejects_changed_original_payload[changes1] [cases.xml:3]",
+          "tests.test_application::test_logical_receipt_rejects_changed_original_payload[changes2] [cases.xml:4]",
+          "tests.test_application::test_logical_receipt_rejects_changed_original_payload[changes3] [cases.xml:5]",
+          "tests.test_application::test_logical_receipt_rejects_changed_original_payload[changes4] [cases.xml:6]",
+          "tests.test_application::test_logical_receipt_rejects_changed_original_payload[changes5] [cases.xml:7]",
+          "tests.test_application::test_unavailable_card_distinctions[archived-True-card_archived] [cases.xml:8]",
+          "tests.test_application::test_unavailable_card_distinctions[superseded_by-replacement-card_replaced] [cases.xml:9]",
+          "tests.test_application::test_unavailable_card_distinctions[content_type-defense-review_requires_rubric] [cases.xml:10]",
+          "tests.test_application::test_unavailable_card_distinctions[integrity_allowed-False-card_integrity_blocked] [cases.xml:11]",
+          "tests.test_application::test_required_effect_failure_propagates_to_transaction_owner[schedule] [cases.xml:12]",
+          "tests.test_application::test_required_effect_failure_propagates_to_transaction_owner[complete] [cases.xml:13]",
+          "tests.test_application::test_required_effect_failure_propagates_to_transaction_owner[receipt] [cases.xml:14]",
+          "tests.test_application::test_required_effect_failure_propagates_to_transaction_owner[retain] [cases.xml:15]",
+          "tests.test_application::test_required_effect_failure_propagates_to_transaction_owner[progression] [cases.xml:16]",
+          "tests.test_application::test_guided_failure_schedules_again_but_binds_original_request[True-False] [cases.xml:17]",
+          "tests.test_application::test_guided_failure_schedules_again_but_binds_original_request[False-True] [cases.xml:18]",
+          "tests.test_application::test_guided_failure_schedules_again_but_binds_original_request[True-True] [cases.xml:19]",
+          "tests.test_application::test_completed_projection_legacy_confirmation_and_broader_replay [cases.xml:20]",
+          "tests.test_application::test_completed_attempt_competitor_and_recovered_chronological_path [cases.xml:21]",
+          "tests.test_application::test_timestamp_validation[invalid-422] [cases.xml:22]",
+          "tests.test_application::test_timestamp_validation[2026-01-01T00:00:00-422] [cases.xml:23]",
+          "tests.test_application::test_timestamp_validation[2026-10-15T03:00:00Z-422] [cases.xml:24]",
+          "tests.test_application::test_offline_clock_normalization_and_scheduling_local_day [cases.xml:25]",
+          "tests.test_application::test_evidence_and_prepared_continuation_sequence_and_exact_replay [cases.xml:26]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[day] [cases.xml:27]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[cycle] [cases.xml:28]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[revision] [cases.xml:29]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[defense] [cases.xml:30]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[study_exercise] [cases.xml:31]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[absent] [cases.xml:32]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[lock] [cases.xml:33]",
+          "tests.test_application::test_unavailable_optional_continuation_preserves_saved_review[admission] [cases.xml:34]",
+          "tests.test_application::test_required_evidence_binding_rejects_mismatches_before_writes[changes0] [cases.xml:35]",
+          "tests.test_application::test_required_evidence_binding_rejects_mismatches_before_writes[changes1] [cases.xml:36]",
+          "tests.test_application::test_required_evidence_binding_rejects_mismatches_before_writes[changes2] [cases.xml:37]",
+          "tests.test_application::test_required_evidence_binding_rejects_mismatches_before_writes[changes3] [cases.xml:38]",
+          "tests.test_application::test_explicit_registration_and_immutable_internal_records [cases.xml:39]",
+          "tests.test_application::test_recorded_receipt_replay_does_not_read_current_scheduling_policy [cases.xml:40]",
+          "tests.test_application::test_offline_local_timezone_and_unknown_zone_preserve_system_fallback[local] [cases.xml:41]",
+          "tests.test_application::test_offline_local_timezone_and_unknown_zone_preserve_system_fallback[Unavailable/Zone] [cases.xml:42]",
+          "tests.test_boundary::test_import_and_explicit_registration_need_no_legacy_runtime [cases.xml:43]"
+        ],
+        "passed": 43,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "suite": "learning-review-application",
+        "cwd": ".",
+        "command": "python services/learning/application/integration/run_postgres.py",
+        "seconds": 5.321916209,
+        "executedIdentities": [
+          "integration.test_postgres::test_native_ordinary_required_effects_receipts_and_lost_response [cases.xml:1]",
+          "integration.test_postgres::test_native_failure_rolls_back_all_logical_effects[history] [cases.xml:2]",
+          "integration.test_postgres::test_native_failure_rolls_back_all_logical_effects[evidence] [cases.xml:3]",
+          "integration.test_postgres::test_native_failure_rolls_back_all_logical_effects[logical_receipt] [cases.xml:4]",
+          "integration.test_postgres::test_native_failure_rolls_back_all_logical_effects[transport_receipt] [cases.xml:5]",
+          "integration.test_postgres::test_native_handled_conflict_rolls_back_evidence_history_and_logical_receipt [cases.xml:6]",
+          "integration.test_postgres::test_native_concurrent_identical_and_competing_payloads_use_one_logical_attempt [cases.xml:7]",
+          "integration.test_postgres::test_native_stale_or_deleted_attempt_cannot_create_effects[deleted-card_deleted] [cases.xml:8]",
+          "integration.test_postgres::test_native_stale_or_deleted_attempt_cannot_create_effects[archived-card_archived] [cases.xml:9]",
+          "integration.test_postgres::test_native_stale_or_deleted_attempt_cannot_create_effects[revision-card_revision_changed] [cases.xml:10]",
+          "integration.test_postgres::test_native_stale_or_deleted_attempt_cannot_create_effects[pending_validation-card_integrity_blocked] [cases.xml:11]",
+          "integration.test_postgres::test_native_committed_replay_precedes_archive_but_not_deletion [cases.xml:12]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[removed] [cases.xml:13]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[day] [cases.xml:14]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[cycle] [cases.xml:15]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[revision] [cases.xml:16]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[defense] [cases.xml:17]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[study_exercise] [cases.xml:18]",
+          "integration.test_postgres::test_native_optional_successor_unavailable_never_loses_completed_review[contended] [cases.xml:19]",
+          "integration.test_postgres::test_native_connection_interruption_rolls_back_and_fresh_process_replays [cases.xml:20]",
+          "integration.test_postgres::test_native_frozen_reader_admission_fences_successor_without_reordering[False] [cases.xml:21]",
+          "integration.test_postgres::test_native_frozen_reader_admission_fences_successor_without_reordering[True] [cases.xml:22]",
+          "integration.test_postgres::test_native_existing_issuance_edit_and_deletion_regression_uses_relocated_seam [cases.xml:23]",
+          "integration.test_postgres::test_native_distinct_completed_attempt_gets_existing_reconciliation_credit [cases.xml:24]"
+        ],
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    ],
+    "resource": {
+      "identity": "tempo224-bd89ba178bce9924",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "container_removed": true,
+      "exit_code": 0,
+      "external_database_accepted": false
+    }
+  }
 }
