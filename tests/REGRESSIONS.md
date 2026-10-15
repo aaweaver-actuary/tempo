@@ -4448,3 +4448,8 @@ is independently selected by the producer-parity lane and consumes the installed
 ### Frozen Maia production capture under locale collation
 
 - `backend/tests/test_frozen_maia_plan.py::test_capture_uses_database_collation_for_composite_pagination_keys` reproduces the production capture failure on built-in underscore-prefixed repertoire IDs under `en_US.utf8`. PostgreSQL validates advancement using the same native collation as ordering and seek predicates. The regression spans the 128-row boundary with numeric composite keys and rejects invalid database advancement flags.
+
+### Frozen Maia CLI foreground admission
+
+- `backend/tests/test_frozen_maia_plan.py::test_frozen_cli_waits_for_admission_without_holding_a_connection_or_replaying_writes` protects bounded staging against transient foreground admission deferrals while retaining foreground priority and one execution of the write body.
+- `test_frozen_cli_admission_wait_times_out_without_opening_a_write` bounds waiting outside a database connection; `test_frozen_cli_does_not_replay_a_write_body_that_raises_admission_error` preserves errors after the transaction body starts. Both remain in `backend/tests/test_frozen_maia_plan.py`.
