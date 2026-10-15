@@ -1,9 +1,9 @@
 # Independent Learning runtime validation
 
 The original implementation and initial repair evidence are preserved below.
-The independent-review follow-up records additional identity-race repairs;
-earlier 44-check and 74-check results are historical milestones, not substitutes
-for qualification of that follow-up.
+**Final qualification after independent review** records the latest executed
+76-check source. Earlier 44-check and 74-check results are historical milestones,
+not substitutes for qualification of the reviewed follow-up.
 
 Installed artifact qualification: `c4e24327775e478f13cc46fec899775ecf4dacc6`. Final native resource/cleanup qualification: `7fa179b06bae859aeb6e680498e8ae430d4cb3ae`, based on refreshed `main` `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`. The intervening runner change confines scratch data to the invocation; runtime package source is unchanged. Subsequent documentation records these results. No live checkout, database, service or development copy was reused.
 
@@ -237,5 +237,81 @@ with a fresh statement after the insert/conflict wait and before admission,
 frontier advancement or receipt creation. Conflicting lineage/transport is an
 explicit HTTP 409; all losing domain/frontier/receipt effects roll back. No
 additional obligation-lock tier, transaction owner or broad database-error
-classification was introduced. A second independent source review and refreshed
-affected qualification are recorded below when complete.
+classification was introduced. The second independent source review and refreshed
+affected qualification are recorded below.
+
+## Final qualification after independent review
+
+All refreshed affected checks below were personally executed on exact source
+`6ff2583ba79f07185ff54e22f6140c7663e0a94c`. Any later commit updates validation
+documentation only. The complete native inventory is now **76 cases**, including
+all 44 original cases and 32 added cases; both newly reproduced identity races
+pass with explicit conflict and verified loser rollback.
+
+With `evidence=/private/tmp/tempo-pr284-evidence-20261015`, from the task checkout
+root:
+
+| Exact final check | Outcome |
+| --- | --- |
+| `PYTEST_ADDOPTS=--junitxml=$evidence/native-reviewed.xml services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py $evidence/native-reviewed` | **76 passed in 29.42 s**. Real PostgreSQL 18.6, restricted container, both Chromium cases, all family/transaction/recovery cases, migration and both identity-race regressions. Collection, every phase and JUnit agree; zero required skips/deselections/failures. |
+| `services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py $evidence/installed-reviewed` | **2 passed on Python 3.12.12 and 2 on Python 3.14.8**, six fresh wheel/sdist pairs, producer-source removal, packaged migrations, restricted consumers and both required exit-5 zero-selected probes. |
+| `TEMPO_COMPONENT_PYTHON=$PWD/services/learning/runtime/.venv/bin/python node tools/component-build/check-components.mjs --component learning` | Passed Learning plus all five actual component dependencies. |
+| `/Users/andy/.local/bin/ruff check services/learning/runtime/src services/learning/runtime/tests --select F821,F822,F823 --no-cache --output-format concise` | Passed focused undefined-name check. |
+| `npm run check:conflicts` | Passed. |
+| `git diff 38b6f7c --check` | Passed. |
+
+The exact ten-file legacy command above was rerun from `backend/`, retaining
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1`, with the JUnit option
+`--junitxml=/private/tmp/tempo-pr284-evidence-20261015/legacy-reviewed.xml`.
+**110 passed in 3.57 s**. Its full argument list is also preserved in
+`legacy-reviewed.json`.
+
+The **73-pass** tooling result from `42402871` is reused: component-tooling source,
+tests, fixture sources, root metadata and dependency/toolchain inputs did not
+change. The latest receiver changes were separately covered by fresh boundary,
+native, installed, legacy and static checks. No additional broad suite was
+substituted for a failed or missing owning check.
+
+Latest artifact identities:
+
+- Runtime wheel: SHA-256 `ae059c7eb2c2beb36e72fd6652fb443759166551fe326852aaa3816edac163e1`.
+- Runtime sdist: SHA-256 `96373034113a008e828f28440ce4dba53384ce1cf202256002b4e37d7109d1c3`.
+- Tested runtime container: `sha256:96996d9100b308b5b266a4de46ee117148f67459be376378fdd105bb602a0efe`.
+- PostgreSQL fixture: `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`.
+
+`native-reviewed/native.json` and `installed-reviewed/installed.json` bind exact
+source hashes, commands, artifact/runtime identities and full inventories to
+`6ff2583b`; accompanying JSON/log/XML files retain outcomes. The final native
+invocation `tempo-learning-78b6560307db579d` verifies its container, volume,
+runtime image tag and scratch removal. Installed build/consumer workspaces were
+removed. The real-PG red reproduction and the first independent review remain
+preserved alongside final evidence. Disk was rechecked before this run (about
+28 GiB available). Existing dependency deprecation warnings remain (2,263 native
+warnings); no required case was suppressed. No live study resource was changed.
+
+### Final independent assessment
+
+The separately authorized reviewer inspected actual final source at `6ff2583b`,
+the repair diff and affected transaction/admission/review paths, migration and
+restricted-role behavior, both red PostgreSQL identity reproductions and final
+qualification evidence. Result: **no remaining scoped P1/P2/P3 findings**. Both
+first-round P2 findings are closed. The reviewer found no reverse acquisition
+path for the delivery lock, and verified the conflict checks precede admission,
+frontier advancement and acknowledgement while custom receivers retain authority.
+
+The reviewer independently checked native collection/execution/JUnit agreement,
+both installed consumer inventories, negative probes, artifact and log hashes,
+and all 56 packaged runtime/fixture files against current bytes. The assessment
+used saved executed evidence; it did not repeat infrastructure runs. Native
+runtime coverage is Python 3.14; Python 3.12 has installed-consumer coverage.
+This is an independently reviewed focused component merge recommendation, not
+whole-product, hosted CI, live cutover or full Study UI qualification.
+
+Both review rounds are retained as `independent-review-round1.json` and
+`independent-review-round2.json` in the evidence directory. Final
+`input-equivalence-reviewed.json` verifies the current runtime, tests, dependencies
+and fixtures against the qualified inputs/wheel, with only this validation record
+changing afterward. Refs, pushed PR identity and checkout cleanup are preserved
+in `handoff.json` outside the checkout. All original publication-size, downstream
+integration and provider-truth limits above remain explicit and nonblocking for
+this component pass.
