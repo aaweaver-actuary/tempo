@@ -564,7 +564,7 @@
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {
         "name": "tempo-scheduling",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "format": "wheel + sdist"
       },
       "tests": [
@@ -652,16 +652,46 @@
     {
       "id": "chess-core",
       "type": "library",
-      "maintainer": "Tempo / #200",
-      "status": "planned",
+      "maintainer": "Tempo / #200 (stable identity)",
+      "status": "implemented",
       "root": "packages/chess-core",
-      "publicExports": [],
+      "publicExports": [
+        "canonical_fen_key",
+        "card_id"
+      ],
       "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "README.md",
+        "REGRESSIONS.md",
+        "tests"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-chess-core",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "chess-core",
+          "kind": "python",
+          "command": "uv run --locked --no-editable python -m pytest tests",
+          "inputs": [
+            "tests"
+          ],
+          "cwd": "packages/chess-core"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
       "dataOwnership": {
         "authority": null,
         "databases": [],

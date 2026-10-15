@@ -8,6 +8,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "python-chess" },
+    { name = "tempo-chess-core" },
     { name = "tempo-scheduling" },
 ]
 
@@ -21,6 +22,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "python-chess", specifier = ">=1.999" },
+    { name = "tempo-chess-core", directory = "../packages/chess-core" },
     { name = "tempo-scheduling", directory = "../packages/scheduling" },
 ]
 
@@ -249,8 +251,22 @@ wheels = [
 ]
 
 [[package]]
-name = "tempo-scheduling"
+name = "tempo-chess-core"
 version = "0.1.0"
+source = { directory = "../packages/chess-core" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "hatchling", specifier = "==1.27.0" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
+
+[[package]]
+name = "tempo-scheduling"
+version = "0.2.0"
 source = { directory = "../packages/scheduling" }
 dependencies = [
     { name = "fsrs" },

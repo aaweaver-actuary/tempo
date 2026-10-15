@@ -4453,3 +4453,16 @@ is independently selected by the producer-parity lane and consumes the installed
 
 - `backend/tests/test_frozen_maia_plan.py::test_frozen_cli_waits_for_admission_without_holding_a_connection_or_replaying_writes` protects bounded staging against transient foreground admission deferrals while retaining foreground priority and one execution of the write body.
 - `test_frozen_cli_admission_wait_times_out_without_opening_a_write` bounds waiting outside a database connection; `test_frozen_cli_does_not_replay_a_write_body_that_raises_admission_error` preserves errors after the transaction body starts. Both remain in `backend/tests/test_frozen_maia_plan.py`.
+
+
+## #200 pure scheduling and stable identity
+
+- Package-local scheduling regressions: [owning inventory](../packages/scheduling/REGRESSIONS.md).
+- Package-local stable identity regressions: [owning inventory](../packages/chess-core/REGRESSIONS.md).
+- Legacy adapter compatibility: `backend/tests/test_scheduling_package_adapter.py` (complete legacy signature,
+  Schedule class identity, forwarding/result parity, controlled clocks/local day, naive UTC handling,
+  initial FSRS identity generation, and unchanged shared card digests).
+- Pure import rejection: `backend/tests/test_scheduling_boundary.py::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports`.
+- Installed producer parity: `tests/unit/scheduling-producer-parity-regressions.test.ts` in the existing
+  producer-parity lane; no Python dependency is added to frontend-only collection.
+- Declared installed distributions: `backend/tests/test_scheduling_package_adapter.py::test_backend_declares_installed_noneditable_pure_packages` verifies backend pins, package versions and noneditable import origins for both packages.
