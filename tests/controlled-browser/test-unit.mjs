@@ -9,8 +9,10 @@ process.chdir(root);
 const directory = mkdtempSync(join(tmpdir(), "tempo-controlled-unit-"));
 try {
   const environment = controlledEnvironment(process.env);
-  const build = spawnSync(process.execPath, ["node_modules/typescript/bin/tsc", "-p", "packages/chess-line/tsconfig.json"], { cwd: root, env: environment, stdio: "inherit" });
-  if (build.error || build.status !== 0) throw new Error("Chess-line prerequisite failed");
+  for (const packageName of ["chess-line", "browser-intents", "study-session"]) {
+    const build = spawnSync(process.execPath, ["node_modules/typescript/bin/tsc", "-p", `packages/${packageName}/tsconfig.json`], { cwd: root, env: environment, stdio: "inherit" });
+    if (build.error || build.status !== 0) throw new Error(packageName + " prerequisite failed");
+  }
   const reportPath = join(directory, "vitest.json");
   const result = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", "tests/controlled-browser/vitest.config.ts", "--reporter=json", "--outputFile=" + reportPath], { cwd: root, env: environment, stdio: "inherit" });
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
