@@ -9,6 +9,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "python-chess" },
     { name = "tempo-chess-core" },
+    { name = "tempo-learning-review" },
     { name = "tempo-scheduling" },
 ]
 
@@ -23,6 +24,7 @@ dev = [
 requires-dist = [
     { name = "python-chess", specifier = ">=1.999" },
     { name = "tempo-chess-core", directory = "../packages/chess-core" },
+    { name = "tempo-learning-review", directory = "../services/learning/application" },
     { name = "tempo-scheduling", directory = "../packages/scheduling" },
 ]
 
@@ -254,6 +256,20 @@ wheels = [
 name = "tempo-chess-core"
 version = "0.1.0"
 source = { directory = "../packages/chess-core" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "hatchling", specifier = "==1.27.0" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
+
+[[package]]
+name = "tempo-learning-review"
+version = "0.1.0"
+source = { directory = "../services/learning/application" }
 
 [package.metadata]
 

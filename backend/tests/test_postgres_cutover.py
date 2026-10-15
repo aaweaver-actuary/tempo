@@ -4100,7 +4100,9 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
 
 
 def test_postgres_review_reserves_card_then_queue_position_before_reordering(monkeypatch):
-    from app import main, review_commands
+    from app import review_commands
+    from app.services import learning_review_adapter
+    from tempo_learning_review import apply_review as installed_apply_review, ReviewResult
 
     observed = []
 
@@ -4113,11 +4115,12 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
         def fetchone(self):
             return None
 
-    monkeypatch.setattr(review_commands, "lock_queue_date_for_position",
+    monkeypatch.setattr(learning_review_adapter, "lock_queue_date_for_position",
                         lambda database, queue_date: observed.append(("queue_lock", queue_date)))
-    monkeypatch.setattr(main, "_apply_review",
-                        lambda card_id, request, *, database:
-                        observed.append(("review", card_id, request.outcome)) or {"persisted": True})
+    monkeypatch.setattr(f"{installed_apply_review.__module__}.apply_review",
+                        lambda adapter, command, context:
+                        observed.append(("review", command.card_id, command.outcome))
+                        or ReviewResult.from_dict({"persisted": True}))
     assert review_commands.submit_review(
         RecordingDatabase(), {"card_id": "card-1", "review": {"outcome": "again"}},
     ) == {"persisted": True}

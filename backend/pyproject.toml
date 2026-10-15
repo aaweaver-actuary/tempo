@@ -8,6 +8,7 @@ dependencies = [
     "python-chess>=1.999",
     "tempo-scheduling==0.2.0",
     "tempo-chess-core==0.1.0",
+    "tempo-learning-review==0.1.0",
 ]
 
 [dependency-groups]
@@ -20,3 +21,4 @@ dev = [
 [tool.uv.sources]
 tempo-scheduling = { path = "../packages/scheduling" }
 tempo-chess-core = { path = "../packages/chess-core" }
+tempo-learning-review = { path = "../services/learning/application" }

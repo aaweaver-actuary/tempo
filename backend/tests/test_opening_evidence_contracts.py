@@ -361,8 +361,9 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch)
     import pytest
     from fastapi import HTTPException
     from app import review_commands
+    from app.services import learning_review_adapter
     fixture=json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
-    monkeypatch.setattr(review_commands,'lock_queue_date_for_position',lambda *args:None)
+    monkeypatch.setattr(learning_review_adapter,'lock_queue_date_for_position',lambda *args:None)
     completion={'attempt_id':'unbound-repeat','manifest':fixture,'origin_queue_entry_id':101,
       'queue_entry_id':None,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
       'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}}
@@ -410,8 +411,10 @@ def test_evidence_migration_captures_valid_scope_color_without_overwriting_conte
 @pytest.mark.parametrize("reconciling", [False, True])
 def test_review_requeue_context_correction_only_runs_for_fresh_review(
         monkeypatch, has_receipt, idempotent, requeue_id, expected_corrections, reconciling):
-    from app import main, review_commands
+    from app import review_commands
     from app.services import postgres_opening_evidence
+    from app.services import learning_review_adapter
+    from tempo_learning_review import apply_review as installed_apply_review, ReviewResult
     manifest = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
     completion = {'attempt_id':'context-authority', 'manifest':manifest, 'origin_queue_entry_id':101,
                   'queue_entry_id':101, 'started_at':'2026-09-30T12:00:00Z', 'study_timezone':'UTC',
@@ -424,7 +427,9 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
 
     def execute(statement, parameters):
         if 'FROM review_attempt_receipts' in statement:
-            row = (1,) if has_receipt else None
+            row = {'card_id':manifest['card_id'], 'queue_entry_id':101, 'outcome':'correct',
+                   'guided':False, 'completed_at':None, 'result_json':json.dumps(result),
+                   'request_json':None} if has_receipt else None
         elif 'SELECT revision' in statement:
             row = (manifest['card_revision'],)
         elif 'SELECT status' in statement:
@@ -440,12 +445,12 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         return SimpleNamespace(fetchone=lambda:None if 'FROM deleted_cards' in statement else ('complete',))
 
     database = SimpleNamespace(execute=execute, execute_native=execute_native, raw=SimpleNamespace(execute=lambda *args:None))
-    def apply_review(*arguments, **options):
-        assert options['database'] is database and validation_order == ['validated']
+    def apply_review(adapter, command, context):
+        assert adapter.database is database and validation_order == ['validated']
         validation_order.append('reviewed')
-        return result
-    monkeypatch.setattr(review_commands, 'lock_queue_date_for_position', lambda *arguments:None)
-    monkeypatch.setattr(main, '_apply_review', apply_review)
+        return ReviewResult.from_dict(result)
+    monkeypatch.setattr(learning_review_adapter, 'lock_queue_date_for_position', lambda *arguments:None)
+    monkeypatch.setattr(f'{installed_apply_review.__module__}.apply_review', apply_review)
     def persist_completion(connection, payload, **options):
         assert connection is database and options == {'completing_review':True}
         validation_order.append('validated')
@@ -490,9 +495,11 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
 
 
 def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(monkeypatch):
-    from app import main, review_commands
+    from app import review_commands
     from app.review_conflicts import ReviewConflict
     from app.services import postgres_opening_evidence as evidence
+    from app.services import learning_review_adapter
+    from tempo_learning_review import apply_review as installed_apply_review
     manifest = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
     completion = {'attempt_id':'atomic-reconcile', 'manifest':manifest, 'origin_queue_entry_id':101,
         'queue_entry_id':101, 'started_at':'2026-09-30T12:00:00Z', 'study_timezone':'UTC',
@@ -510,7 +517,7 @@ def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_che
         row = (manifest['card_revision'],) if 'SELECT revision' in statement else ('queued',) if 'SELECT status' in statement else None
         return SimpleNamespace(fetchone=lambda:row)
     database = SimpleNamespace(execute=execute, execute_native=execute, raw=SimpleNamespace(execute=transaction))
-    monkeypatch.setattr(review_commands, 'lock_queue_date_for_position', lambda *args:None)
+    monkeypatch.setattr(learning_review_adapter, 'lock_queue_date_for_position', lambda *args:None)
     def persist(*args, **options):
         writes.append('new-completion-events')
     def conflict(*args, **options):
@@ -518,7 +525,7 @@ def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_che
         raise ReviewConflict('content_changed', 'Saved content changed')
     monkeypatch.setattr(evidence, 'persist_checkpoint', persist)
     monkeypatch.setattr(evidence, 'complete_review_evidence', lambda *args:pytest.fail('Conflicted review completed evidence'))
-    monkeypatch.setattr(main, '_apply_review', conflict)
+    monkeypatch.setattr(f'{installed_apply_review.__module__}.apply_review', conflict)
     result = review_commands.reconcile_review(database, {'card_id':manifest['card_id'],
         'review':{'outcome':'correct','attempt_id':completion['attempt_id'],'queue_entry_id':101,
                   'opening_evidence_completion':completion},'prepared_manifest':manifest})
