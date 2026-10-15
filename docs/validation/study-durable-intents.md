@@ -1,4 +1,117 @@
-# Durable Study intents: PR #285 repair qualification
+# Durable Study intents: recovery cancellation ownership follow-up
+
+**Review: approve. Local acceptance: passed. Hosted/release qualification remains
+unclaimed.** The remaining replacement-queue cancellation race is repaired. The
+earlier readiness statement below is historical evidence about `f7375229`, which
+still contained this race; it is not proof of this follow-up.
+
+## Follow-up source and ownership
+
+The defective published head was `f7375229beb9fba03c6d7c31d8cb924b318fcfb8`.
+Initial current main was `39c5a34601fcfbf79eedd6bdcf207fffe77427b6`, with merge
+base `52f26ee55b08a70d5529847cd5849b10cbd12351` (PR ahead 13, behind 16).
+Repair `25468822fab32086d1f008d542028c3a8f2cae43` is independently attributable
+before merge `251e5564d97cc6a827bb58e3c0769bcb59b72b76` integrated that main.
+`71b08ce4259d3a400ac7a52f61ff6fe7be061e86` corrects native witness typing;
+`8b3000ea29974de62c4e5ff0970c027c89a9a48c` strengthens the queue regression's
+final completion barrier. Later evidence-only commits change no product inputs.
+
+The only authored production file is `app/lib/study-command-client.ts`. Its
+store-only pass cache now also requires identical caller signal identity, with
+pre-entry and post-storage-acquisition cancellation checks. Two signal-less
+callers share a pass. Different callers share the existing session's immutable
+per-intent operation, rather than a caller-owned cancellation outcome. The
+promise-identity finalizer, store fences, per-command deadline and cursor CAS
+remain intact. No queue-loader, session package, storage schema, request identity,
+endpoint, grading or production runtime-adoption behavior was changed.
+
+Only `tests/REGRESSIONS.md` conflicted during main integration; both complete
+Study and independent Learning runtime sections were preserved. `components.json`
+merged automatically and was checked semantically: `learning`, `browser-intents`
+and `study-session` each retain their implemented registration. Main's Python
+dependency normalization and backend/runtime changes remain intact. Repository
+instructions and architecture/testing guidance were unchanged by this merge.
+
+## Reproduction and fresh checks
+
+Before the production repair, both primary regressions failed at the intended
+replacement-success assertion: B received A's cancellation. The acquisition
+barrier was reachable on the defective implementation. HTTP receipt release came
+after A started, its receipt was held, A was cancelled, and B acquired storage.
+Both tests import the production recovery function, actual coordinator and actual
+IndexedDB adapter (fake IndexedDB in the frontend suite).
+
+All following results require successful process exit, not assertions alone:
+
+| Exact command / selection | Outcome |
+| --- | --- |
+| `node_modules/.bin/vitest run tests/unit/study-intent-storage-regressions.test.ts tests/unit/attempt-lifecycle-regressions.test.ts -t pr285_recovery_ownership_ --reporter=default --reporter=json --outputFile=<evidence>/baseline-overlap.json` | Before repair: 2 intended failures; 72 cases outside the filter excluded, not executed. |
+| Same two files, without `-t`, output `owning-suites.json` | 94 passed; no skips or unhandled errors. Includes 22 new ownership cases and existing cursor/dependency proofs. |
+| `node_modules/.bin/vitest run` + the ordered 25 files in `frontend-selection.txt` + `--reporter=default --reporter=json --outputFile=<evidence>/frontend-integrated.json` | 568 passed across 25 files, zero failed/pending/unhandled errors; exit 0 on integrated `251e5564`. |
+| `node_modules/.bin/vitest run tests/unit/attempt-lifecycle-regressions.test.ts --reporter=default --reporter=json --outputFile=<evidence>/queue-final-barrier.json` | 32 passed after review strengthened the final assertion barrier. |
+| `node scripts/test-controlled-browser.mjs --list study-intents.spec.ts --grep 'pr285 recovery ownership'` | Exactly one registered Chromium identity selected. |
+| `node scripts/test-controlled-browser.mjs study-intents.spec.ts --grep 'pr285 recovery ownership'` | New same-document native overlap passed; run `run-xYJOLa`. |
+| `node scripts/test-controlled-browser.mjs study-intents.spec.ts` | All 16 identities passed, zero skips/retries; run `run-5T5RM8`, cleanup true, on `71b08ce4`. |
+| `node tools/component-build/test-lane.mjs controlled-browser` | 53 owning runner/registration cases passed; strict identity and single-compiler accounting retained. |
+| `make ui-file FILE=post-review-progression.spec.ts` | 4 passed on `71b08ce4`; disposable project `tempo-pg-regressions-86206-cde8abaf`, 152.25 s wall; cleanup exit 0. |
+| `npm run typecheck`; final `node_modules/.bin/tsc --noEmit --incremental false` | Passed, including reviewed `8b3000ea`. |
+| `npm run lint`; final `node_modules/.bin/eslint tests/unit/attempt-lifecycle-regressions.test.ts tests/controlled-browser/study-intents.spec.ts` | Full lint: zero errors, same 9 existing warnings. Final edited-test check: clean. |
+| `npm run test:components` | 76 passed, including main's normalized Python dependency selection. |
+| `node tools/component-build/check-components.mjs --component browser-intents --component study-session --component learning --consumers` | Exports, consumers, manifest and selected producer contracts passed. |
+| `npm run check:conflicts`; `git diff --check` | Passed before final handoff. |
+
+The 25-file pass covers the six earlier repair owners plus Workbench/status and
+packaging consumers. The subsequent native witness fix affects no frontend suite
+input. The final queue change only adds an awaited completion barrier and its
+owning file was rerun; it changes no native/PostgreSQL product input. The sole
+application repair is identical across these integrated executions.
+
+The native test starts two existing `online` refresh handlers in one mounted
+application document, with native retained command storage and a held receipt.
+Pass-through controller/listener witnesses establish B's queue-stage waiters
+before release. The successor is displayed, the original commits after one
+receipt read, and there are zero reposts, page errors or optional provider/analysis
+requests. It does not bundle a second recovery-module instance.
+
+## Reused evidence, review and limits
+
+Package source, README/build inputs, package tests and lockfiles are byte-identical
+to the previous qualified browser-intents and study-session inputs. Their tree
+IDs remain `5a8f47b518761dda9a3b13d6cd55f0d0a20dce9d` and
+`07a986ca4440547099f27e4dc62963ef54abc863`; Node remains 26.10.0 and TypeScript
+5.9.3. Earlier 15 + 10 package cases and 25 installed-artifact cases remain
+applicable package evidence, not fresh executions. The restricted builder and
+component checker are unchanged. Main changes the selector's Python distribution
+normalization; the selected npm component/dependency identities are unchanged,
+and fresh component/tooling/consumer checks validate the integrated selector.
+
+A separate read-only reviewer inspected the repair, barriers, sharing, cursor,
+store fences, error handling and semantic integration: **approve**, no remaining
+actionable finding. Its one proof improvement was implemented: the primary queue
+case awaits every captured recovery before final board/attempt assertions.
+
+Development failures are retained: the intended baseline failures, an initial
+cursor test that incorrectly assumed which overlapping pass won the CAS, queue
+controls that had not hydrated their asserted starting card, a reused notification
+identity in the old-store test, and native witness TypeScript diagnostics. The
+fixtures/assertion scheduling were corrected without weakening product invariants,
+skipping selected checks or increasing deadlines.
+
+Evidence lives at
+`/Users/andy/tempo/.dev-copies/study-intents-evidence/pr285-recovery-ownership-20261015-b`.
+It includes exact command arrays/exit codes, source identities, baseline source,
+red/green reports and ordering, native traffic/attachments, PostgreSQL timings,
+package input equivalence and independent review. Earlier evidence is preserved.
+
+Hosted reads report Actions disabled and no PR check results. The required-status
+endpoint returned 404; that is not proof that no external policy exists. Hosted
+merge/release qualification, full-system coverage, production exactly-once effects
+and offline/service-worker qualification remain unclaimed. Controlled contexts
+block service workers. No merge, deployment, live migration, settings change,
+Actions enablement or unrelated cleanup is part of this task. Remote verification
+and completed task-owned cleanup are recorded in the final PR handoff.
+
+## Previous PR #285 repair qualification (historical at f7375229)
 
 **FUNCTIONALLY READY — QUALIFICATION INCOMPLETE.** All five mandatory repairs
 and the scoped teaching-cache repair pass local acceptance. Hosted qualification
