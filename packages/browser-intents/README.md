@@ -26,3 +26,16 @@ Already-loaded old JavaScript cannot be forced to honor new browser locks;
 close/reopen is a required cutover condition, and mixed-version operation is
 unsupported. No code here migrates a running user's browser from the development
 environment.
+
+`put` accepts an optional initial pending/conflicted state used only on insertion,
+and an expected checkpoint boundary checked atomically before a new insertion.
+Equivalent retained records preserve their mutable state and remain recoverable
+through an old boundary. `boundary` reads selected records with their checkpoint
+or atomically advances it after settlement and an optional caller-owned completion
+predicate. The predicate runs synchronously inside the transaction; it performs
+no network or asynchronous work. `compareCheckpoint` fences advisory cursor
+updates. These primitives contain no grading or application scope policy.
+
+Subscriptions carry `IntentChange` notifications after commit, including keyed
+teaching changes and connection invalidation. `teachingFact` reads one durable
+fact. Broadcasts never establish persistence or server settlement.

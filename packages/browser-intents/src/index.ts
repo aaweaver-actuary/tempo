@@ -9,17 +9,22 @@ export type IntentRecord = IntentEnvelope & {
   data?: unknown; receipt?: unknown; claim?: { owner: string; token: string; expiresAt: number };
 };
 export type TeachingFact = { key: string; cardId: string; revision: number; ply?: number; kind: "seen" | "first-clean" };
+export type IntentPutOptions = { initialState?: "pending" | "conflicted"; boundary?: { key: string; value: number } };
+export type IntentChange = { intents?: boolean; metadata?: boolean; teachingKeys?: string[]; invalidated?: boolean };
 export type IntentStore = {
-  put(envelope: IntentEnvelope, data?: unknown): Promise<IntentRecord>;
+  put(envelope: IntentEnvelope, data?: unknown, options?: IntentPutOptions): Promise<IntentRecord>;
   get(key: string): Promise<IntentRecord | undefined>;
   list(kind?: string, activeOnly?: boolean): Promise<IntentRecord[]>;
   update(key: string, change: (record: IntentRecord) => Pick<IntentRecord, "state" | "data" | "receipt">): Promise<IntentRecord>;
   claim(key: string, owner: string, now: number, durationMs: number): Promise<string | undefined>;
   release(key: string, token: string): Promise<void>;
   addTeachingFact(fact: TeachingFact, intent?: IntentEnvelope): Promise<void>;
+  teachingFact(key: string): Promise<TeachingFact | undefined>;
   teachingFacts(cardId?: string): Promise<TeachingFact[]>;
   checkpoint(key: string, value?: unknown): Promise<unknown>;
-  subscribe(listener: () => void): () => void;
+  compareCheckpoint(key: string, expected: unknown, value: unknown): Promise<boolean>;
+  boundary(key: string, select: (record: IntentRecord) => boolean, advanceFrom?: number, settled?: (records: IntentRecord[]) => boolean): Promise<{ value: number; records: IntentRecord[] }>;
+  subscribe(listener: (change: IntentChange) => void): () => void;
   close(): void;
 };
 
@@ -66,20 +71,23 @@ export async function openIntentStore(options: { workspace: string; databaseName
     opening.onerror = () => reject(new IntentStorageError("Could not open durable study storage.", { cause: opening.error }));
     opening.onblocked = () => { rejected = true; reject(new IntentStorageError("Close older Tempo tabs and reopen to update study storage.")); };
   });
-  const listeners = new Set<() => void>();
-  const notify = () => { for (const listener of listeners) {
-    try { listener(); } catch { /* Subscriber failures cannot undo a committed transaction. */ }
+  const listeners = new Set<(change: IntentChange) => void>();
+  const notify = (change: IntentChange) => { for (const listener of listeners) {
+    try { listener(change); } catch { /* Subscriber failures cannot undo a committed transaction. */ }
   } };
   let closed = false;
-  database.onversionchange = () => { closed = true; database.close(); notify(); };
+  database.onversionchange = () => { closed = true; database.close(); notify({ invalidated: true }); };
   const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(`tempo-study-intents:${options.workspace}`) : undefined;
-  channel?.addEventListener("message", notify);
-  const changed = () => {
+  channel?.addEventListener("message", event => {
+    const change = event.data as IntentChange;
+    if (change && typeof change === "object" && (!change.teachingKeys || (Array.isArray(change.teachingKeys) && change.teachingKeys.every(key => typeof key === "string")))) notify(change);
+  });
+  const changed = (change: IntentChange) => {
     if (closed) return;
-    notify();
-    try { channel?.postMessage("changed"); } catch { /* Notifications are advisory; storage/receipts retain authority. */ }
+    notify(change);
+    try { channel?.postMessage(change); } catch { /* Notifications are advisory; storage/receipts retain authority. */ }
   };
-  async function transaction<T>(names: string[], mode: IDBTransactionMode, action: (transaction: IDBTransaction) => Promise<T>): Promise<T> {
+  async function transaction<T>(names: string[], mode: IDBTransactionMode, action: (transaction: IDBTransaction) => Promise<T>, change: IntentChange = { intents: names.includes("intents"), metadata: names.includes("metadata") }): Promise<T> {
     if (closed) throw new IntentStorageError("Study storage changed in another tab. Reopen Tempo before continuing.");
     return new Promise<T>((resolve, reject) => {
       let operation: IDBTransaction;
@@ -87,7 +95,7 @@ export async function openIntentStore(options: { workspace: string; databaseName
       catch (cause) { reject(new IntentStorageError("Could not access durable study storage.", { cause })); return; }
       let result: T;
       let failure: unknown;
-      operation.oncomplete = () => { if (mode === "readwrite") changed(); resolve(result); };
+      operation.oncomplete = () => { if (mode === "readwrite") changed(change); resolve(result); };
       // A request error bubbles before the transaction has its final abort/cause.
       operation.onerror = () => { /* Wait for abort; request errors are not a commit result. */ };
       operation.onabort = () => reject(failure instanceof IntentIdentityConflict ? failure :
@@ -101,20 +109,25 @@ export async function openIntentStore(options: { workspace: string; databaseName
   const key = (recordKey: string): IDBValidKey => [options.workspace, recordKey];
   const get = (recordKey: string) => transaction(["intents"], "readonly", tx => request<IntentRecord | undefined>(tx.objectStore("intents").get(key(recordKey))));
   return {
-    async put(envelope, data) {
+    async put(envelope, data, insertion = {}) {
       // Snapshot before the first asynchronous turn; callers cannot mutate an in-flight insertion.
-      envelope = structuredClone(envelope); data = structuredClone(data);
+      envelope = structuredClone(envelope); data = structuredClone(data); insertion = structuredClone(insertion);
       if (![envelope.key, envelope.kind, envelope.attemptId, envelope.requestId, envelope.endpoint, envelope.createdAt].every(value => typeof value === "string" && value.length))
         throw new IntentStorageError("The study request has an incomplete identity.");
+      if (insertion.initialState !== undefined && !["pending", "conflicted"].includes(insertion.initialState)) throw new IntentStorageError("Invalid initial study state.");
       return transaction(["intents", "metadata"], "readwrite", async tx => {
         const records = tx.objectStore("intents");
         const previous = await request<IntentRecord | undefined>(records.get(key(envelope.key)));
         if (previous) { if (identity(previous) !== identity(envelope)) throw new IntentIdentityConflict(envelope.key); return previous; }
         const metadata = tx.objectStore("metadata");
+        if (insertion.boundary) {
+          const boundary = await request<{ value: number } | undefined>(metadata.get(key(insertion.boundary.key)));
+          if ((boundary?.value ?? 0) !== insertion.boundary.value) throw new IntentStorageError("Practice changed in another tab. Reload this exercise before answering.");
+        }
         const counter = await request<{ value: number } | undefined>(metadata.get(key("sequence")));
         const sequence = (counter?.value ?? 0) + 1;
         await request(metadata.put({ workspace: options.workspace, key: "sequence", value: sequence }));
-        const record: IntentRecord = { ...envelope, workspace: options.workspace, sequence, state: "pending", version: 1, data };
+        const record: IntentRecord = { ...envelope, workspace: options.workspace, sequence, state: insertion.initialState ?? "pending", version: 1, data };
         await request(records.add(record));
         return record;
       });
@@ -169,8 +182,9 @@ export async function openIntentStore(options: { workspace: string; databaseName
           await request(records.add({ ...intent, workspace: options.workspace, sequence, version: 1, state: "pending" }));
         }
       }
-      });
+      }, { teachingKeys: [fact.key], intents: Boolean(intent) });
     },
+    teachingFact: factKey => transaction(["teaching"], "readonly", tx => request<TeachingFact | undefined>(tx.objectStore("teaching").get(key(factKey)))),
     teachingFacts: cardId => transaction(["teaching"], "readonly", async tx => {
       const source = tx.objectStore("teaching");
       const facts = await request<TeachingFact[]>(cardId ? source.index("card").getAll([options.workspace, cardId]) : source.index("workspace").getAll(options.workspace));
@@ -180,6 +194,24 @@ export async function openIntentStore(options: { workspace: string; databaseName
       const metadata = tx.objectStore("metadata");
       if (value !== undefined) await request(metadata.put({ workspace: options.workspace, key: recordKey, value }));
       return (await request<{ value: unknown } | undefined>(metadata.get(key(recordKey))))?.value;
+    }),
+    compareCheckpoint: (recordKey, expected, value) => transaction(["metadata"], "readwrite", async tx => {
+      const metadata = tx.objectStore("metadata");
+      const previous = (await request<{ value: unknown } | undefined>(metadata.get(key(recordKey))))?.value;
+      if (canonical(previous) !== canonical(expected)) return false;
+      await request(metadata.put({ workspace: options.workspace, key: recordKey, value })); return true;
+    }),
+    boundary: (recordKey, select, advanceFrom, settled) => transaction(["intents", "metadata"], advanceFrom === undefined ? "readonly" : "readwrite", async tx => {
+      const metadata = tx.objectStore("metadata");
+      const value = Number((await request<{ value: number } | undefined>(metadata.get(key(recordKey))))?.value ?? 0);
+      const records = (await request<IntentRecord[]>(tx.objectStore("intents").index("workspace").getAll(options.workspace)))
+        .filter(select).sort((left, right) => left.sequence - right.sequence);
+      if (advanceFrom === undefined) return { value, records };
+      if (value !== advanceFrom) throw new IntentStorageError("Practice changed in another tab. Reload this exercise before answering.");
+      if (records.some(record => record.state === "pending" || record.state === "conflicted") || (settled && !settled(records))) throw new IntentStorageError("Confirm the saved answer before starting another practice attempt.");
+      const next = Math.max(value, ...records.map(record => record.sequence));
+      await request(metadata.put({ workspace: options.workspace, key: recordKey, value: next }));
+      return { value: next, records };
     }),
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     close() { closed = true; database.close(); channel?.close(); listeners.clear(); },

@@ -1,5 +1,5 @@
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
-import { rememberTeachingFact, savedTeachingFacts } from "../lib/study-intent-storage";
+import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../lib/study-intent-storage";
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
 import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
 import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
@@ -339,9 +339,14 @@ function StudyComposition() {
     }).catch(error => setReviewSaveError(String(error)));
   }, [attempt.attemptId, setReviewSaveError]);
   useEffect(() => {
-    const persisted = savedTeachingFacts();
-    setSeenMoves(current => new Set([...current, ...persisted.filter(fact => fact.kind === "seen").map(fact => asTeachingMoveKey(fact.key))]));
-    setFirstCleanPasses(current => new Set([...current, ...persisted.filter(fact => fact.kind === "first-clean").map(fact => fact.cardId)]));
+    const project = (persisted: ReturnType<typeof savedTeachingFacts>) => {
+      const seen = persisted.filter(fact => fact.kind === "seen").map(fact => asTeachingMoveKey(fact.key));
+      const clean = persisted.filter(fact => fact.kind === "first-clean").map(fact => fact.cardId);
+      if (seen.length) setSeenMoves(current => seen.some(key => !current.has(key)) ? new Set([...current, ...seen]) : current);
+      if (clean.length) setFirstCleanPasses(current => clean.some(key => !current.has(key)) ? new Set([...current, ...clean]) : current);
+    };
+    project(savedTeachingFacts());
+    return subscribeTeachingFacts(project);
   }, [setSeenMoves, setFirstCleanPasses]);
   const reviewPendingEntries = useRef(new Set<string>());
   const [pendingBurialEntryState, setPendingBurialEntryId] = useState<number | undefined>(() => usesLocalApi() ? pendingTrainingBurialEntry() : undefined);

@@ -58,6 +58,13 @@ export function verifyPilotSource() {
 }
 export const visualTitles = ["Controlled visual board 1280", "Controlled visual phone 390", "Controlled visual tablet menu 768"];
 export const studyIntentTitles = ["issue221 native two-tab writes preserve both orders and competing claims", "issue221 native intent survives true reload with original payload and settlement", "issue221 legacy migration requires closed-tab acknowledgement and retains sources", "issue221 denied native storage cannot report saved success", "issue221 native quota failure aborts the intent and permits recovery", "issue186 committed review next-load retry and reload never resubmit the grade", "issue219 wrong tactic survives true reload and guided completion stays Again", "issue219 specialized lost response reload recovers after the issued head advances", "issue219 two tabs retain competing outcomes on one issued head", "issue219 defense recognition survives reload with its immutable assessment"];
+studyIntentTitles.push(
+  "pr285 rejected native answer permits corrected identity after true reload",
+  "pr285 native storage retry reopens after a later transaction failure",
+  "pr285 native legacy reimport recovers sequence two without rollback",
+  "pr285 native practice reset excludes both records across tabs and reload",
+  "pr285 native teaching notification carries committed seen and first clean facts",
+);
 export function supportedIdentities() {
   return [...verifyPilotSource(), ...visualTitles.map(title => `chromium|tests/controlled-browser/visual.spec.ts|${title}`), ...studyIntentTitles.map(title => `chromium|tests/controlled-browser/study-intents.spec.ts|${title}`)];
 }

@@ -673,6 +673,8 @@
       "root": "packages/browser-intents",
       "publicExports": [
         "IntentEnvelope",
+        "IntentPutOptions",
+        "IntentChange",
         "IntentState",
         "IntentRecord",
         "TeachingFact",

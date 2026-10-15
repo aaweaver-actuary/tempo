@@ -20,3 +20,9 @@ Build the declared browser-intents dependency, then run this package's `npm test
 or use `node tools/component-build/test-lane.mjs --component study-session` from
 the repository root. The legacy frontend consumes the installed workspace export.
 The package is a library, not a separately deployed Study Web application.
+
+Adapters may return terminal `discarded` settlement, including authoritative
+validation rejection. The coordinator commits that result before publishing it,
+returns the actual retained terminal winner in a race, and never advances from a
+discarded command. Its caller owns rejection messages and corrected identities.
+Submission can forward an expected storage boundary for atomic new retention.

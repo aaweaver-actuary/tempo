@@ -56,3 +56,70 @@ test('issue221_inflight_insertion_freezes_payload_before_callers_can_change_it',
   await writing;
   assert.equal((await first.get('review:a')).payload.outcome, 'again');
 }));
+
+test('pr285_legacy_conflict_initial_state_is_atomic_and_existing_mutable_state_wins', async () => stores(async (first, second) => {
+  const original = envelope();
+  const [left, right] = await Promise.all([first.put(original, { reconciliationSequence: 1 }, { initialState: 'conflicted' }), second.put(original, { reconciliationSequence: 1 }, { initialState: 'conflicted' })]);
+  assert.equal(left.state, 'conflicted'); assert.equal(right.sequence, left.sequence);
+  await first.update(original.key, current => ({ ...current, state: 'pending', data: { reconciliationSequence: 2, automaticRecoverySuppressed: 'blocked' }, receipt: { sequence: 2 } }));
+  const claim = await first.claim(original.key, 'owner', 1, 100);
+  const before = await first.get(original.key);
+  const repeated = await second.put(original, { reconciliationSequence: 1 }, { initialState: 'conflicted' });
+  assert.deepEqual(repeated, before); assert.equal(repeated.claim.token, claim);
+  await assert.rejects(second.put({ ...original, payload: { outcome: 'correct' } }, undefined, { initialState: 'conflicted' }), IntentIdentityConflict);
+}));
+test('pr285_legacy_conflict_reimport_preserves_both_terminal_tombstones', async () => {
+  for (const state of ['committed', 'discarded']) await stores(async (first, second) => {
+    await first.put(envelope(), undefined, { initialState: 'conflicted' });
+    await first.update('review:a', current => ({ ...current, state, receipt: { reason: state } }));
+    const before = await first.get('review:a');
+    assert.deepEqual(await second.put(envelope(), { old: true }, { initialState: 'conflicted' }), before);
+  });
+});
+test('pr285_practice_generation_reset_and_insertion_are_serialized_in_both_orders', async () => {
+  for (const insertionFirst of [true, false]) await stores(async (first, second) => {
+    const matches = record => record.kind === 'review';
+    await first.put(envelope()); await first.update('review:a', current => ({ ...current, state: 'committed' }));
+    assert.equal((await first.boundary('practice', matches)).value, 0);
+    if (insertionFirst) {
+      await second.put(envelope('review:new'), undefined, { boundary: { key: 'practice', value: 0 } });
+      await assert.rejects(first.boundary('practice', matches, 0), /Confirm the saved answer/);
+      assert.equal((await first.boundary('practice', matches)).value, 0);
+    } else {
+      const reset = await first.boundary('practice', matches, 0); assert.equal(reset.value, 1);
+      await assert.rejects(second.put(envelope('review:new'), undefined, { boundary: { key: 'practice', value: 0 } }), /Practice changed/);
+      assert.equal(await first.get('review:new'), undefined);
+      await second.put(envelope('review:new'), undefined, { boundary: { key: 'practice', value: 1 } });
+      // Existing immutable evidence remains readable through its old boundary.
+      assert.equal((await second.put(envelope(), undefined, { boundary: { key: 'practice', value: 0 } })).state, 'committed');
+    }
+  });
+});
+test('pr285_practice_generation_transaction_abort_keeps_answer_and_assessment_together', async () => stores(async (first, second) => {
+  const { IDBObjectStore } = await import('fake-indexeddb');
+  for (const key of ['review:answer', 'review:assessment']) { await first.put(envelope(key)); await first.update(key, current => ({ ...current, state: 'committed' })); }
+  const originalPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function(value, ...args) { if (this.name === 'metadata' && value.key === 'practice') throw new DOMException('reset interrupted', 'AbortError'); return originalPut.call(this, value, ...args); };
+  try { await assert.rejects(first.boundary('practice', () => true, 0), /reset interrupted/); }
+  finally { IDBObjectStore.prototype.put = originalPut; }
+  const snapshot = await second.boundary('practice', () => true);
+  assert.equal(snapshot.value, 0); assert.equal(snapshot.records.filter(record => record.sequence > snapshot.value).length, 2);
+}));
+test('pr285_recovery_cursor_stale_compare_cannot_overwrite_newer_progress', async () => stores(async (first, second) => {
+  assert.equal(await first.compareCheckpoint('cursor', undefined, 20), true);
+  assert.equal(await second.compareCheckpoint('cursor', undefined, 1), false);
+  assert.equal(await second.checkpoint('cursor'), 20);
+  assert.equal(await first.compareCheckpoint('cursor', 20, 1), true); // Authorized wraparound.
+}));
+test('pr285_teaching_cross_tab_notification_is_keyed_and_reads_committed_fact', async () => stores(async (first, second) => {
+  let notify;
+  const event = new Promise(resolve => { notify = resolve; });
+  const unsubscribe = second.subscribe(change => { if (change.teachingKeys) notify(change); });
+  try {
+    const fact = { key: 'first-clean:card', cardId: 'card', revision: 1, kind: 'first-clean' };
+    await first.addTeachingFact(fact);
+    const change = await event; assert.deepEqual(change.teachingKeys, [fact.key]);
+    assert.deepEqual(await second.teachingFact(fact.key), { ...fact, workspace: 'one' });
+    assert.equal(await second.teachingFact('missing'), undefined);
+  } finally { unsubscribe(); }
+}));

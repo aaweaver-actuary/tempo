@@ -404,3 +404,20 @@ it("issue36_demo_keeps_demo_branch_membership_without_loading_an_index", async (
   expect(useTrainingStore.getState()).toMatchObject({ feedback: "branch", isAttemptFailed: false });
   expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(0);
 });
+
+it("pr285_teaching_cross_tab_committed_facts_update_the_mounted_home", async () => {
+  const { openIntentStore } = await import("@tempo/browser-intents");
+  const { API_URL } = await import("../../app/const");
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  render(<Home />);
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  const other = await openIntentStore({ workspace: `${new URL(API_URL || "/", window.location.href).origin}:study` });
+  try {
+    await act(async () => {
+      await other.addTeachingFact({ key: "cross-tab-card:1:0", cardId: "cross-tab-card", revision: 1, ply: 0, kind: "seen" });
+      await other.addTeachingFact({ key: "first-clean:cross-tab-card", cardId: "cross-tab-card", revision: 1, kind: "first-clean" });
+    });
+    await waitFor(() => expect([...useTrainingStore.getState().seenMoves]).toContain("cross-tab-card:1:0"));
+    await waitFor(() => expect(useTrainingStore.getState().firstCleanPasses.has("cross-tab-card")).toBe(true));
+  } finally { other.close(); }
+});

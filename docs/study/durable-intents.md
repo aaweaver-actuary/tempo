@@ -131,3 +131,57 @@ Controlled tests block service workers. They make no offline-shell, service-work
 or production exactly-once qualification claim. The PostgreSQL progression spec
 is a separate real integration proof; neither it nor focused client suites is
 the full hosted merge/release gate.
+
+## PR #285 correctness repairs
+
+Connected Study distinguishes uncertain delivery from authoritative validation
+rejection. Direct validation HTTP 422 and a matching failed operation receipt
+with status 422 (unless explicitly retryable) retain a `discarded` intent with a
+structured rejection receipt. Its frozen command and validation details remain
+inspectable. A discarded validation request is never a grade and is not replayed
+on reload. Correcting the answer requires an explicit submission with fresh
+attempt/request IDs. A rejected self-assessment retains its parent identity; an
+explicit replacement assessment uses a fresh operation key. Other conflicts,
+transport failures, pending/blocked receipts and needs-analysis keep their
+existing recovery semantics. An uncertain answer/rating keeps its exact original
+payload, endpoint, revision, timestamp and key. Mismatched operation/attempt
+identities cannot settle the original. Rejection is reported only after its
+terminal storage transaction commits; a storage abort leaves recovery pending.
+
+Initialization promises cover only an opening in progress. Readiness requires
+current-generation migration and complete hydration. A later refresh failure or
+connection invalidation blocks Study; the retry button reopens and rehydrates the
+backing database. Cached promises cannot establish readiness. Unsupported database
+versions or a blocked upgrade remain errors with an explicit reload action.
+Superseded openings/refreshes cannot publish into a replacement connection.
+
+Legacy conflict state is installed atomically with first insertion. Reimport
+validates immutable identity and preserves every mutable field of an existing
+record, including reconciliation sequence, receipts, claims and suppression.
+Legacy arrays are retained and the explicit old-tab cutover policy remains.
+
+Practice answer and self-assessment scopes share their parent's sequence boundary.
+A transaction checks all relevant work is settled and advances that one marker.
+An answer awaiting self-assessment is incomplete until a matching committed
+assessment exists. New insertion checks the displayed generation in the same
+transaction as retention: an earlier pending insert blocks reset; an earlier
+reset rejects stale insertion before delivery. Boundary reads are consistent with
+the selected records. Old requests remain retained; restoration also verifies the
+assessment's parent attempt. Cross-tab reset notifications invalidate stale UI
+callbacks. Existing retained envelopes are never rewritten to add a generation.
+
+Specialized recovery persists a last-visited sequence cursor, examines at most
+20 commands per pass, and wraps to older unresolved work. Unresolved checks and
+dependent-command deferrals advance the cursor. Compare-and-set cursor writes
+prevent a stale pass from overwriting another pass's progress; overlapping local
+passes coalesce. Interrupted/unvisited commands remain retained and eligible.
+Self-assessment and linked defense recovery require their retained predecessor to
+be committed; independent commands continue. This is foreground recovery, not a
+new background scheduler.
+
+Teaching transactions notify subscribers with affected keys only after commit.
+Other tabs reread those keys from IndexedDB; notification payloads are advisory.
+The application coalesces targeted reads and Home subscribes to incremental
+teaching updates. Initial hydration reads history once; ordinary delivery claims,
+checkpoint changes and teaching moves do not enumerate or rewrite historical
+teaching facts. Both seen and first-clean facts use this path.

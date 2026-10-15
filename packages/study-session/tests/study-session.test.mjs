@@ -63,3 +63,26 @@ test('issue219_capture_commits_before_deferred_feedback_delivery', async () => r
   assert.equal((await store.get('review:a')).state, 'pending');
   assert.equal(session.getSnapshot().phase, 'pending');
 }));
+
+test('pr285_rejected_answer_terminal_settlement_is_retained_and_never_redelivered', async () => {
+  let posts = 0;
+  await run(async () => { posts++; return { state: 'discarded', receipt: { type: 'rejected', status: 422 } }; }, async (session, store) => {
+    assert.equal((await session.submit(envelope())).state, 'discarded');
+    assert.equal(session.getSnapshot().phase, 'discarded');
+    assert.equal((await session.checkSave('review:a')).state, 'discarded');
+    assert.equal((await store.get('review:a')).receipt.status, 422); assert.equal(posts, 1);
+    await assert.rejects(session.retryNext('review:a', async () => {}, () => true), /Confirm the original review/);
+  });
+});
+test('pr285_rejected_answer_late_delivery_returns_actual_durable_terminal_result', async () => {
+  let release, entered;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  await run(async () => { entered(); await barrier; return { state: 'discarded', receipt: { type: 'rejected' } }; }, async (session, store) => {
+    const pending = session.submit(envelope()); await started;
+    await store.update('review:a', current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+    release();
+    assert.deepEqual(await pending, { state: 'committed', receipt: { persisted: true }, data: undefined });
+    assert.equal(session.getSnapshot().phase, 'committed');
+  });
+});

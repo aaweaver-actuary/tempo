@@ -9,9 +9,9 @@ import { validateReview } from "./contracts";
 type NativeWindow = Window & { intentFixture: typeof import("@tempo/browser-intents"); nativeIntents: IntentStore };
 const bundle = build({ stdin: { contents: 'export * from "@tempo/browser-intents";', resolveDir: process.cwd() }, bundle: true,
   write: false, format: "iife", globalName: "intentFixture", platform: "browser" }).then(result => result.outputFiles[0].text);
-async function nativeStore(page: Page) {
+async function nativeStore(page: Page, workspace = "native-regression") {
   await page.addScriptTag({ content: await bundle });
-  await page.evaluate(async () => { const native = window as unknown as NativeWindow; native.nativeIntents = await native.intentFixture.openIntentStore({ workspace: "native-regression" }); });
+  await page.evaluate(async workspace => { const native = window as unknown as NativeWindow; native.nativeIntents = await native.intentFixture.openIntentStore({ workspace }); }, workspace);
 }
 const command = (key: string): IntentEnvelope => ({ key, kind: "review", attemptId: key, requestId: `request:${key}`,
   endpoint: "/review", createdAt: "2026-09-18T16:00:00Z", revision: 1, payload: { outcome: "again", guided: true } });
@@ -277,4 +277,97 @@ test("issue219 defense recognition survives reload with its immutable assessment
   expect(await nativeStudyRecords(page)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "defense-command", state: "pending",
     payload: expect.objectContaining({ body: expect.objectContaining({ move_uci: "a2a4", recognition_attempt_id: recognition?.attempt_id }) }) })]));
   expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
+});
+
+test("pr285 rejected native answer permits corrected identity after true reload", async ({ page }) => {
+  const card = { ...openingCard("repair-study", "Repair study", "e2e4", 981), content_type: "study_exercise", study_id: "repair", study_exercise_id: "exercise", revision: 1, moves: [] };
+  const api = await prepareControlledUI(page, [card], false);
+  const requests: Array<Record<string, unknown>> = [];
+  api.register({ method: "GET", path: "/api/studies/repair/exercises/exercise/present", query: {} }, route => route.fulfill({ json: { id: "exercise", revision: 1, type: "move_line", mode: "single", prompt: "Submit exactly one move", hint: "", fen: card.start_fen } }));
+  api.register({ method: "POST", path: "/api/studies/repair/exercises/exercise/attempts", query: {}, validate: request => {
+    const body = request.body as Record<string, unknown>; requests.push(body); expect(request.headers["idempotency-key"]).toBe(body.attempt_id);
+  } }, route => {
+    const body = requests.at(-1)!;
+    return route.fulfill({ status: requests.length === 1 ? 422 : 200, json: requests.length === 1 ? { detail: "Submit one move" } : { attempt_id: body.attempt_id, assessment: { outcome: "correct", feedback: "Corrected native answer saved" }, rating: "correct" } });
+  });
+  api.register({ method: "GET", path: () => `/api/studies/repair/exercises/exercise/attempts/${requests.at(-1)?.attempt_id}/feedback`, query: {} }, route => route.fulfill({ json: { specification: { type: "move_line", mode: "single", grading_policy: "reference", prompt: "Submit exactly one move", accepted_lines: [["e2e4"]], explanation: "Develop" } } }));
+  await page.goto("/"); await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Submit one move" })).toBeVisible();
+  await expect.poll(async () => (await nativeStudyRecords(page)).find(record => record.kind === "study-command")?.state).toBe("discarded");
+  await page.reload(); await expect(page.getByRole("alert").filter({ hasText: "Submit one move" })).toBeVisible();
+  await page.getByLabel("Coordinates or UCI move").fill("e2e4"); await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByText("Corrected native answer saved", { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(2); expect(requests[0].attempt_id).not.toBe(requests[1].attempt_id);
+  expect(requests[0].answer).toEqual({ type: "move_line", moves: [] }); expect(requests[1].answer).toEqual({ type: "move_line", moves: ["e2e4"] });
+  const records = (await nativeStudyRecords(page)).filter(record => record.kind === "study-command");
+  expect(records).toHaveLength(2);
+  expect(records.find(record => record.requestId === requests[0].attempt_id)).toMatchObject({ state: "discarded", payload: { body: requests[0] } });
+  expect(records.find(record => record.requestId === requests[1].attempt_id)).toMatchObject({ state: "committed", payload: { body: requests[1] } });
+  expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
+});
+
+test("pr285 native storage retry reopens after a later transaction failure", async ({ page }) => {
+  await prepareControlledUI(page, [openingCard("retry-storage", "Retry storage card", "e2e4", 982)]);
+  await expect(page.locator(".board-frame")).toBeVisible();
+  await nativeStore(page, await page.evaluate(() => `${location.origin}:study`));
+  await page.evaluate(() => {
+    const original = IDBIndex.prototype.getAll;
+    Object.assign(window, { restoreIntentReads: () => { IDBIndex.prototype.getAll = original; } });
+    IDBIndex.prototype.getAll = function (...args) { if (this.objectStore.name === "intents") throw new DOMException("refresh stopped", "AbortError"); return original.apply(this, args); };
+  });
+  await page.evaluate(envelope => (window as unknown as NativeWindow).nativeIntents.put(envelope), { ...command("retry-preserved"), kind: "fixture" });
+  await expect(page.getByRole("alert").filter({ hasText: "refresh stopped" }).first()).toBeVisible(); await expect(page.locator(".board-frame")).toHaveCount(0);
+  await page.evaluate(() => (window as unknown as { restoreIntentReads(): void }).restoreIntentReads());
+  await page.getByRole("button", { name: "Retry study storage" }).click();
+  await expect(page.locator(".board-frame")).toBeVisible();
+  expect((await nativeStudyRecords(page)).find(record => record.key === "retry-preserved")).toMatchObject({ state: "pending", kind: "fixture" });
+});
+
+test("pr285 native legacy reimport recovers sequence two without rollback", async ({ page }) => {
+  const api = await prepareControlledUI(page, [], false);
+  const legacy = { backendId: "legacy-repair", queueEntryId: 983, attemptId: "legacy-repair", outcome: "again", guided: true,
+    completedAt: "2026-09-18T16:00:00Z", state: "conflicted", reconciliationSequence: 1, conflict: { code: "stale", message: "Changed", retryable: false } };
+  await page.addInitScript(legacy => { if (!localStorage.getItem("repair-legacy-seeded")) { localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([legacy])); localStorage.setItem("repair-legacy-seeded", "true"); } }, legacy);
+  let reads = 0;
+  api.register({ method: "GET", path: "/api/operations/review-reconcile%3Alegacy-repair%3A2", query: {} }, route => { reads++; return route.fulfill({ json: { state: "complete", response: { persisted: true } } }); });
+  await page.goto("/");
+  await expect.poll(async () => (await nativeStudyRecords(page)).find(record => record.key === "review:legacy-repair")?.state).toBe("conflicted");
+  await nativeStore(page, await page.evaluate(() => `${location.origin}:study`));
+  await page.evaluate(async () => { await (window as unknown as NativeWindow).nativeIntents.update("review:legacy-repair", current => ({ ...current, state: "pending", data: { ...current.data as object, state: "reconciling", reconciliationSequence: 2 } })); });
+  await page.reload();
+  await expect.poll(async () => (await nativeStudyRecords(page)).find(record => record.key === "review:legacy-repair")?.state).toBe("committed");
+  expect(reads).toBeGreaterThan(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!)[0].reconciliationSequence)).toBe(1);
+});
+
+test("pr285 native practice reset excludes both records across tabs and reload", async ({ page, context }) => {
+  await prepareControlledUI(page, []); await nativeStore(page);
+  const second = await context.newPage(); await prepareControlledUI(second, []); await nativeStore(second);
+  for (const id of ["practice-answer", "practice-assessment"]) await page.evaluate(async envelope => {
+    const store = (window as unknown as NativeWindow).nativeIntents; await store.put(envelope); await store.update(envelope.key, current => ({ ...current, state: "committed", receipt: { persisted: true } }));
+  }, command(id));
+  const value = await page.evaluate(async () => (await (window as unknown as NativeWindow).nativeIntents.boundary("practice", () => true, 0)).value);
+  await second.reload(); await nativeStore(second);
+  expect(await second.evaluate(async () => {
+    const snapshot = await (window as unknown as NativeWindow).nativeIntents.boundary("practice", () => true);
+    return { value: snapshot.value, retained: snapshot.records.length, active: snapshot.records.filter(record => record.sequence > snapshot.value).length };
+  })).toEqual({ value, retained: 2, active: 0 });
+  expect(await second.evaluate(async envelope => { try { await (window as unknown as NativeWindow).nativeIntents.put(envelope, undefined, { boundary: { key: "practice", value: 0 } }); return "unsafe insertion"; } catch { return "stale generation blocked"; } }, command("stale-assessment"))).toBe("stale generation blocked");
+  await second.close();
+});
+
+test("pr285 native teaching notification carries committed seen and first clean facts", async ({ page, context }) => {
+  await prepareControlledUI(page, []); await nativeStore(page);
+  const second = await context.newPage(); await prepareControlledUI(second, []); await nativeStore(second);
+  await second.evaluate(() => {
+    const native = window as unknown as NativeWindow;
+    Object.assign(window, { incomingTeaching: [] });
+    native.nativeIntents.subscribe(change => { if (change.teachingKeys) void Promise.all(change.teachingKeys.map(key => native.nativeIntents.teachingFact(key))).then(facts => (window as unknown as { incomingTeaching: unknown[] }).incomingTeaching.push(...facts)); });
+  });
+  for (const fact of [{ key: "native:1:0", cardId: "native", revision: 1, ply: 0, kind: "seen" as const }, { key: "first-clean:native", cardId: "native", revision: 1, kind: "first-clean" as const }])
+    await page.evaluate(fact => (window as unknown as NativeWindow).nativeIntents.addTeachingFact(fact), fact);
+  await expect.poll(() => second.evaluate(() => (window as unknown as { incomingTeaching: unknown[] }).incomingTeaching.length)).toBe(2);
+  expect(await second.evaluate(async () => (await (window as unknown as NativeWindow).nativeIntents.teachingFacts()).map(fact => fact.kind).sort())).toEqual(["first-clean", "seen"]);
+  await second.close();
 });

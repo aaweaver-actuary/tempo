@@ -4506,3 +4506,33 @@ wrong-tactic Again persistence, specialized lost responses after head advancemen
 and competing outcomes. `tests/browser/post-review-progression.spec.ts` retains
 the real disposable PostgreSQL integration owner. See
 [adapter/cutover and invariant documentation](../docs/study/durable-intents.md).
+
+### PR #285 correctness repair owners
+
+- `study-intent-storage-regressions.test.ts`: named `pr285_rejected_answer_*`,
+  `pr285_storage_retry_*`, `pr285_legacy_conflict_*`,
+  `pr285_practice_generation_*`, `pr285_recovery_cursor_*`, and
+  `pr285_teaching_cross_tab_*` cases cover authoritative versus uncertain outcomes,
+  rejection storage abort, unexpired claims, real IndexedDB reset interruption,
+  migration monotonicity, shared generation and pending assessment guards,
+  persistent bounded wraparound/cancellation/dependency recovery, and incremental
+  cross-tab projections without full teaching enumeration.
+- `study-attempt-pending-regressions.test.tsx`: named `pr285_rejected_answer_*`
+  cases assert corrected fresh identities before/after remount and storage reopen,
+  immutable rejected evidence, and replacement self-assessment operation keys.
+  `pr285_practice_generation_new_self_assessment_cannot_reuse_the_old_attempt`
+  exercises a complete second practice cycle with a different rating.
+- `study-storage-boundary-regressions.test.tsx`: named `pr285_storage_retry_*`
+  cases exercise the actual retry button, initial/later denial, retained data,
+  superseded opening, unmount and database version change. This file is registered
+  in the regular frontend lane.
+- `repertoire-alternative-home-regressions.test.tsx`:
+  `pr285_teaching_cross_tab_committed_facts_update_the_mounted_home` verifies both
+  seen and first-clean changes in the mounted Home store projection.
+- `tests/controlled-browser/study-intents.spec.ts`: five `pr285` native identities
+  cover actual reload after rejection, late transaction failure and retry, legacy
+  sequence-two recovery, cross-tab practice reset and targeted teaching messages.
+  They are registered alongside all protected native and visual identities.
+
+Package-local inventories retain their ownership. Client/double tests do not
+establish PostgreSQL exactly-once effects or offline/service-worker behavior.

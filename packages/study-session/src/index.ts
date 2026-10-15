@@ -1,8 +1,8 @@
-import { IntentStorageError, type IntentEnvelope, type IntentRecord, type IntentStore } from "@tempo/browser-intents";
+import { IntentStorageError, type IntentPutOptions, type IntentEnvelope, type IntentRecord, type IntentStore } from "@tempo/browser-intents";
 
-export type SessionPhase = "active" | "persisting" | "pending" | "conflicted" | "committed" | "next-attempt-loading" | "next-load-failed" | "storage-failed";
+export type SessionPhase = "discarded" | "active" | "persisting" | "pending" | "conflicted" | "committed" | "next-attempt-loading" | "next-load-failed" | "storage-failed";
 export type SessionSnapshot = { phase: SessionPhase; key?: string; generation: number; error?: string };
-export type Settlement = { state: "committed" | "conflicted" | "pending"; receipt?: unknown; data?: unknown };
+export type Settlement = { state: "committed" | "conflicted" | "pending" | "discarded"; receipt?: unknown; data?: unknown };
 export type LearningClient = {
   deliver(record: IntentRecord, signal: AbortSignal): Promise<Settlement>;
   checkReceipt?(record: IntentRecord, signal: AbortSignal): Promise<Settlement | undefined>;
@@ -39,40 +39,41 @@ export function createStudySession(options: {
     try { return await Promise.race([action(current.signal), cancelled]); }
     finally { clearTimeout(timeout); parent?.removeEventListener("abort", abort); }
   }
+  async function settle(key: string, result: Settlement): Promise<Settlement> {
+    const retained = result.state === "pending" ? await options.store.get(key) : await options.store.update(key, latest =>
+      latest.state === "committed" || latest.state === "discarded" ? latest : ({ ...latest, state: result.state, receipt: result.receipt, data: result.data ?? latest.data }));
+    if (!retained) throw new Error("The original study request is unavailable.");
+    return retained.state === "pending" ? result : { state: retained.state, receipt: retained.receipt, data: retained.data };
+  }
   async function deliver(key: string): Promise<Settlement> {
     const generation = snapshot.generation;
     const displayedKey = snapshot.key;
     const current = await options.store.get(key);
     if (!current) throw new Error("The original completed study request is unavailable.");
-    if (current.state === "committed" || current.state === "conflicted") {
+    if (current.state === "committed" || current.state === "conflicted" || current.state === "discarded") {
       if (key === displayedKey) publish(current.state, generation, displayedKey);
       return { state: current.state, receipt: current.receipt, data: current.data };
     }
-    if (current.state === "discarded") throw new Error("This study request was explicitly discarded.");
     const token = await options.store.claim(key, owner, now(), options.claimDurationMs ?? 60_000);
     if (!token) {
       // A crashed tab's unexpired delivery lease must not block read-only receipt recovery.
       const receipt = options.learning.checkReceipt ? await deadline(signal => options.learning.checkReceipt!(current, signal)) : undefined;
       if (receipt && receipt.state !== "pending") {
-        await options.store.update(key, latest => latest.state === "committed" ? latest : ({ ...latest, state: receipt.state, receipt: receipt.receipt, data: receipt.data ?? latest.data }));
-        if (key === displayedKey) publish(receipt.state, generation, displayedKey);
-        return receipt;
+        const result = await settle(key, receipt);
+        if (key === displayedKey) publish(result.state, generation, displayedKey);
+        return result;
       }
-      if (key === displayedKey) publish("pending", generation, displayedKey);
-      return { state: "pending" };
+      const result = await settle(key, { state: "pending" });
+      if (key === displayedKey) publish(result.state, generation, displayedKey);
+      return result;
     }
     if (key === displayedKey) publish("pending", generation, displayedKey);
     try {
       // Network authority is required even after another tab's lease expires.
       const settlement = await deadline(signal => options.store.get(key).then(latest => { if (!latest) throw new Error("The original study request is unavailable."); return options.learning.deliver(latest, signal); }));
-      if (settlement.state !== "pending") {
-        await options.store.update(key, latest => latest.state === "committed" ? latest : ({
-          state: settlement.state === "committed" ? "committed" : "conflicted",
-          data: settlement.data ?? latest.data, receipt: settlement.receipt,
-        }));
-      }
-      if (key === displayedKey) publish(settlement.state, generation, displayedKey);
-      return settlement;
+      const result = await settle(key, settlement);
+      if (key === displayedKey) publish(result.state, generation, displayedKey);
+      return result;
     } catch (error) { if (key === displayedKey) publish(error instanceof IntentStorageError ? "storage-failed" : "pending", generation, displayedKey, error); throw error; }
     finally { await options.store.release(key, token); }
   }
@@ -89,15 +90,14 @@ export function createStudySession(options: {
       snapshot = { phase: "active", generation: snapshot.generation + 1, key };
       for (const listener of listeners) listener();
     },
-    async submit(envelope: IntentEnvelope, data?: unknown, submission: { deliver?: boolean } = {}): Promise<Settlement> {
+    async submit(envelope: IntentEnvelope, data?: unknown, submission: { deliver?: boolean; boundary?: IntentPutOptions["boundary"] } = {}): Promise<Settlement> {
       const generation = snapshot.generation, displayedKey = snapshot.key;
       if (envelope.key === displayedKey) publish("persisting", generation, displayedKey);
       let retained: IntentRecord;
-      try { retained = await options.store.put(envelope, data); }
+      try { retained = await options.store.put(envelope, data, { boundary: submission.boundary }); }
       catch (error) { if (envelope.key === displayedKey) publish("storage-failed", generation, displayedKey, error); throw error; }
       if (submission.deliver === false) {
-        if (retained.state === "discarded") throw new Error("This study request was explicitly discarded.");
-        const state = retained.state === "committed" || retained.state === "conflicted" ? retained.state : "pending";
+        const state = retained.state;
         if (envelope.key === displayedKey) publish(state, generation, displayedKey);
         return { state, receipt: retained.receipt, data: retained.data };
       }

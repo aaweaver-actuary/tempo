@@ -1,18 +1,21 @@
-import { openIntentStore, type IntentEnvelope, type IntentRecord, type IntentStore, type TeachingFact } from "@tempo/browser-intents";
+import { openIntentStore, type IntentChange, type IntentEnvelope, type IntentRecord, type IntentStore, type TeachingFact } from "@tempo/browser-intents";
 import { API_URL } from "../const";
 
 export const legacyStudyKeys = ["tempo-pending-training-reviews-v1", "tempo-pending-training-failures-v1", "tempo-pending-teaching-states-v1", "tempo-seen-moves", "tempo-first-clean-passes"] as const;
 const acknowledgementKey = "tempo-study-intents-cutover-v1";
 let opening: Promise<IntentStore> | undefined;
 let connection: IntentStore | undefined;
+let hydrated = false;
+let unsubscribeConnection: (() => void) | undefined;
 let records: IntentRecord[] = [];
 let facts: TeachingFact[] = [];
 let failure: unknown;
 let legacyWriterObserved = false;
 let factory: IDBFactory | undefined;
 let storageGeneration = 0;
-const listeners = new Set<() => void>();
-const changed = () => { for (const listener of listeners) listener(); window.dispatchEvent(new Event("tempo:review-outbox")); };
+const listeners = new Set<(change?: IntentChange) => void>();
+const teachingListeners = new Set<(facts: TeachingFact[]) => void>();
+const changed = (change?: IntentChange) => { for (const listener of listeners) listener(change); window.dispatchEvent(new Event("tempo:review-outbox")); };
 function workspace() { return `${new URL(API_URL || "/", window.location.href).origin}:study`; }
 function legacyPresent() { return legacyStudyKeys.some(key => { const value = localStorage.getItem(key); return value && value !== "[]"; }); }
 function array(key: string): unknown[] {
@@ -23,7 +26,7 @@ function array(key: string): unknown[] {
 function requireReady() {
   if (failure) throw failure;
   if (legacyWriterObserved) throw new Error("An older Tempo tab changed study data. Finish or close older tabs and reopen before continuing.");
-  if (!connection) throw new Error("Durable study storage is still loading.");
+  if (!connection || !hydrated) throw new Error("Durable study storage is still loading.");
 }
 export function immutableReviewPayload(review: Record<string, unknown>): Record<string, unknown> {
   const payload = { ...review };
@@ -34,9 +37,40 @@ export function studyIntentRecords(kind?: string): IntentRecord[] { requireReady
 export function savedTeachingFacts(): TeachingFact[] { requireReady(); return facts; }
 export function legacyStudyCutoverRequired(): boolean { return legacyWriterObserved || (legacyPresent() && localStorage.getItem(acknowledgementKey) !== "acknowledged"); }
 export function isStudyIntentStoreCurrent(store: IntentStore) { return connection === store; }
-export function studyIntentStorageReady() { return Boolean(connection) && !failure && !legacyWriterObserved; }
-export function subscribeStudyIntents(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+export function studyIntentStorageReady() { return Boolean(connection) && hydrated && !failure && !legacyWriterObserved; }
+export function subscribeStudyIntents(listener: (change?: IntentChange) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 
+export function studyIntentStorageError() { return failure; }
+export function subscribeTeachingFacts(listener: (facts: TeachingFact[]) => void) { teachingListeners.add(listener); return () => { teachingListeners.delete(listener); }; }
+function publishFacts(incoming: TeachingFact[]) {
+  if (!incoming.length) return;
+  const byKey = new Map(facts.map(fact => [fact.key, fact]));
+  for (const fact of incoming) byKey.set(fact.key, fact);
+  facts = [...byKey.values()];
+  for (const listener of teachingListeners) listener(incoming);
+}
+function failedRefresh(error: unknown, store: IntentStore | undefined, generation: number) {
+  if (connection === store && generation === refreshGeneration) { failure = error; hydrated = false; changed(); }
+}
+let factRefresh: Promise<void> | undefined;
+const requestedFacts = new Set<string>();
+function refreshFacts(store: IntentStore, keys: string[]): Promise<void> {
+  for (const key of keys) requestedFacts.add(key);
+  if (!factRefresh) {
+    const generation = refreshGeneration;
+    const pending = (async () => {
+      while (requestedFacts.size) {
+        const keys = [...requestedFacts]; requestedFacts.clear();
+        const incoming = await Promise.all(keys.map(key => store.teachingFact(key)));
+        if (generation !== refreshGeneration || connection !== store) return;
+        publishFacts(incoming.filter((fact): fact is TeachingFact => Boolean(fact)));
+      }
+    })().catch(error => { failedRefresh(error, store, generation); throw error; })
+      .finally(() => { if (factRefresh === pending) factRefresh = undefined; });
+    factRefresh = pending;
+  }
+  return factRefresh;
+}
 let refreshGeneration = 0;
 let refreshRequested = false;
 let refreshPromise: Promise<void> | undefined;
@@ -53,7 +87,8 @@ export function refreshStudyIntents(): Promise<void> {
         records = next;
         changed();
       } while (refreshRequested);
-    })().finally(() => { if (refreshPromise === refreshing) refreshPromise = undefined; });
+    })().catch(error => { failedRefresh(error, store, generation); throw error; })
+      .finally(() => { if (refreshPromise === refreshing) refreshPromise = undefined; });
     refreshPromise = refreshing;
   }
   return refreshPromise;
@@ -85,9 +120,8 @@ async function migrate(store: IntentStore) {
       throw new Error("Saved training review is invalid. Keep this browser's data.");
     const id = String(review.attemptId ?? `legacy-online:${review.queueEntryId}`);
     const key = `review:${id}`;
-    try { await store.put(legacyEnvelope(key, "review", immutableReviewPayload({ ...review, attemptId: id }), `/api/cards/${encodeURIComponent(review.backendId)}/review`, `review-attempt:${id}`), { ...review, attemptId: id, deliveryStarted: true }); }
+    try { await store.put(legacyEnvelope(key, "review", immutableReviewPayload({ ...review, attemptId: id }), `/api/cards/${encodeURIComponent(review.backendId)}/review`, `review-attempt:${id}`), { ...review, attemptId: id, deliveryStarted: true }, { initialState: review.state === "conflicted" ? "conflicted" : "pending" }); }
     catch (error) { if (error && typeof error === "object") Object.assign(error, { backendId: review.backendId, queueEntryId: review.queueEntryId, attemptId: id }); throw error; }
-    if (review.state === "conflicted") await store.update(key, current => current.state === "pending" ? { state: "conflicted", data: review } : current);
     await imported(legacyStudyKeys[0], key);
   }
   for (const entry of array(legacyStudyKeys[1])) {
@@ -127,22 +161,48 @@ async function migrate(store: IntentStore) {
 }
 
 export async function initializeStudyIntentStorage(acknowledgeOlderTabsClosed = false): Promise<IntentStore> {
-  if ((!connection && !opening) || (globalThis.indexedDB && factory !== globalThis.indexedDB)) {
-    if (globalThis.indexedDB && factory !== globalThis.indexedDB) legacyWriterObserved = false;
-    closeStudyIntentStorage(); factory = globalThis.indexedDB;
+  if (factory !== globalThis.indexedDB) { closeStudyIntentStorage(); factory = globalThis.indexedDB; legacyWriterObserved = false; }
+  if (acknowledgeOlderTabsClosed) {
+    localStorage.setItem(acknowledgementKey, "acknowledged"); legacyWriterObserved = false;
+    if (connection) closeStudyIntentStorage();
   }
-  if (acknowledgeOlderTabsClosed) { localStorage.setItem(acknowledgementKey, "acknowledged"); legacyWriterObserved = false; failure = undefined; }
-  if (acknowledgeOlderTabsClosed && connection) { await migrate(connection); await refreshStudyIntents(); }
   if (legacyStudyCutoverRequired()) throw new Error("Finish or close older Tempo tabs, then confirm to recover saved study work.");
+  if (opening) return opening;
+  if (studyIntentStorageReady()) return connection!;
+  closeStudyIntentStorage();
   const generation = storageGeneration;
-  opening ??= (async () => {
-    const store = await openIntentStore({ workspace: workspace() });
-    try { await migrate(store); if (generation !== storageGeneration) { store.close(); throw new Error("Study storage initialization was superseded."); } connection = store; failure = undefined; facts = await store.teachingFacts(); await refreshStudyIntents(); }
-    catch (error) { store.close(); throw error; }
-    store.subscribe(() => { void refreshStudyIntents().catch(error => { if (connection === store) { failure = error; changed(); } }); });
-    return store;
-  })().catch(error => { if (generation === storageGeneration) { failure = error; opening = undefined; } throw error; });
-  return opening;
+  let store: IntentStore | undefined;
+  const pending = (async () => {
+    store = await openIntentStore({ workspace: workspace() });
+    const currentStore = store;
+    let initializationChanged = false;
+    const unsubscribe = store.subscribe(change => {
+      if (generation !== storageGeneration) return;
+      if (connection !== currentStore) { initializationChanged = true; return; }
+      if (change.invalidated) { failedRefresh(new Error("Study storage changed in another tab. Reload Tempo before continuing."), currentStore, refreshGeneration); return; }
+      if (change.teachingKeys?.length) void refreshFacts(currentStore, change.teachingKeys).catch(() => undefined);
+      if (change.intents) void refreshStudyIntents().catch(() => undefined);
+      if (change.metadata) changed(change);
+    });
+    try {
+      await migrate(store);
+      let initialRecords: IntentRecord[], initialFacts: TeachingFact[];
+      do {
+        initializationChanged = false;
+        [initialRecords, initialFacts] = await Promise.all([store.list(undefined, true), store.teachingFacts()]);
+        if (generation !== storageGeneration) throw new Error("Study storage initialization was superseded.");
+      } while (initializationChanged);
+      connection = store; unsubscribeConnection = unsubscribe;
+      records = initialRecords; facts = initialFacts; failure = undefined; hydrated = true;
+      changed(); return store;
+    } catch (error) { unsubscribe(); throw error; }
+  })().catch(error => {
+    store?.close();
+    if (generation === storageGeneration) { connection = undefined; hydrated = false; failure = error; changed(); }
+    throw error;
+  }).finally(() => { if (opening === pending) opening = undefined; });
+  opening = pending;
+  return pending;
 }
 export async function studyIntentStore(): Promise<IntentStore> { const store = await initializeStudyIntentStorage(); requireReady(); return store; }
 export async function putStudyIntent(envelope: IntentEnvelope, data?: unknown) {
@@ -154,10 +214,14 @@ export async function updateStudyIntent(key: string, change: Parameters<IntentSt
 export async function rememberTeachingFact(fact: TeachingFact, intent?: IntentEnvelope) {
   const store = await studyIntentStore(); await store.addTeachingFact(fact, intent);
   // Incremental local projection; no historical serialization or enumeration per move.
-  if (!facts.some(previous => previous.key === fact.key)) facts = [...facts, fact];
+  if (connection === store) publishFacts([fact]);
   if (intent) await refreshStudyIntents();
 }
-export function closeStudyIntentStorage() { storageGeneration++; refreshGeneration++; refreshPromise = undefined; refreshRequested = false; connection?.close(); connection = undefined; opening = undefined; records = []; facts = []; failure = undefined; }
+export function closeStudyIntentStorage() {
+  storageGeneration++; refreshGeneration++; refreshPromise = undefined; refreshRequested = false;
+  factRefresh = undefined; requestedFacts.clear(); unsubscribeConnection?.(); unsubscribeConnection = undefined;
+  connection?.close(); connection = undefined; opening = undefined; hydrated = false; records = []; facts = []; failure = undefined;
+}
 if (typeof window !== "undefined") window.addEventListener("storage", event => {
   if (event.key !== null && !legacyStudyKeys.includes(event.key as typeof legacyStudyKeys[number])) return;
   if (event.oldValue === event.newValue) return;
