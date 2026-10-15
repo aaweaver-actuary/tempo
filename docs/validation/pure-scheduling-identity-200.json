@@ -1,0 +1,980 @@
+{
+  "startingRevision": "6b99085f8978346a959b5d4a6ea44b6e56f05dd6",
+  "testedCodeRevisions": {
+    "scheduling": "c4e1446b36724d9c693737188cab0ce0e9a5149e",
+    "chess-core": "81b287334ddf6e7315fbb604e9941a7003ca6f27",
+    "seams": "81b287334ddf6e7315fbb604e9941a7003ca6f27"
+  },
+  "supportedPython": ">=3.12,<3.15",
+  "executedPython": [
+    "3.12.12",
+    "3.14.8"
+  ],
+  "fsrs": "6.3.2",
+  "sourceInputs": {
+    "scheduling": {
+      "README.md": "397964e8b8cd604515a857163967e0df8af80f9bb0bab57fd5193df8ac1269c0",
+      "REGRESSIONS.md": "f653379f80e0e6706a8f2c73a59e317086bd21a6b7fc3acf6585767b82871fc8",
+      "pyproject.toml": "95147e7b787706d155e0af7d2deb12fb06179b55a677ae2c90546ddfe94d5e44",
+      "src/tempo_scheduling/__init__.py": "c6f4ff4ba619e1dd65f8fa1ff5c458aa31789e934a2ac79f2e44eeb768f7c654",
+      "src/tempo_scheduling/_scheduler.py": "3ff7b00013cea79ffdc3cb9bacf1bb3ca3695cca83636c040cff9377fd73f253",
+      "tests/baseline.json": "cee12c2cda2747843300601ac7465a0e1d3f2ff71915a956671b992524b4469c",
+      "tests/conftest.py": "c9c5900914333a5e7961b6d73974abebb1777171c576ae75aaae5803d55e536d",
+      "tests/golden.json": "23e7a908c5e493e5f01060c6c82af94a399ca975224d3b6e1c17d82408c3973c",
+      "tests/guarded_probe.py": "3669a5198e7539692696e5c64b0aebe8fd2bb31b39f0b14cb53bea2a0c016de7",
+      "tests/test_purity.py": "9054f6edb16aea7ec72cd5d0047c54cff5aa6f9934a58f9cc3ecceb4f7c614c7",
+      "tests/test_scheduler.py": "7a0ca118bc1db3d1525b5d6c2a74bb4d261693908c56540f28c32d0c2d0c53c3",
+      "uv.lock": "658fa4ff1b33ab2b8bed954b65b6393fe73bc42a900cdc4db828017dd5632a26"
+    },
+    "chess-core": {
+      "README.md": "3fd51fc17176a34cec4d979699bbf27e75bd0582b598515e631a1bb1db906588",
+      "REGRESSIONS.md": "134cabf50c34ed50d191948554c11b3244c6d9445424ecd99b0ec6b15d2171ba",
+      "pyproject.toml": "83a057e0463f0dd31154331695ce226082f2782e21d8563a25466dbaec8b3900",
+      "src/tempo_chess_core/__init__.py": "2e5b1d8260005af4eeb44bbc0938cc6a35c6ece73a4029d6109afa463b44408d",
+      "src/tempo_chess_core/_identity.py": "a868b76c8e4e49202f71a38f0d424d3ed10c6183fcb30f0e2c3c707689a1437a",
+      "tests/baseline.json": "07c1562de0ef24413d938a31ff51e8ec1dd068e2c60a8482d69ed824eeab7b16",
+      "tests/conftest.py": "c9c5900914333a5e7961b6d73974abebb1777171c576ae75aaae5803d55e536d",
+      "tests/shared-card-id-parity.json": "a02d6a59930e1cb7690535abae50a9c04d8fc858071f5feff0c45a153767b59a",
+      "tests/test_identity.py": "27116fbdbf9216d50a22fda1aa8f9323de16e72006078bca610b16afdbb099af",
+      "tests/test_purity.py": "51bfbfb46f1bd77e899164c2b47d41590fae73ff6d6697472c862f94012ba77b",
+      "uv.lock": "60eb28d2f976bcdfd0eb2f3a9496b9c0abdd8aa5cd16f580f7de6a8dc326e1a4"
+    }
+  },
+  "installedTests": [
+    {
+      "component": "scheduling",
+      "python": "3.12",
+      "passed": 55,
+      "identities": [
+        "tests/test_purity.py::test_installed_scheduling_is_identical_across_fresh_guarded_processes[UTC]",
+        "tests/test_purity.py::test_installed_scheduling_is_identical_across_fresh_guarded_processes[America/New_York]",
+        "tests/test_purity.py::test_installed_scheduling_is_identical_across_fresh_guarded_processes[Asia/Tokyo]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[clock]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[sleep]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[identity]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[random]",
+        "tests/test_scheduler.py::SchedulerTests::test_again_is_reshuffled_into_todays_queue",
+        "tests/test_scheduler.py::SchedulerTests::test_first_clean_pass_returns_to_end_then_fsrs_schedules",
+        "tests/test_scheduler.py::SchedulerTests::test_hard_track_enters_and_recovers_on_fixed_cadence",
+        "tests/test_scheduler.py::SchedulerTests::test_overdue_growth_is_capped",
+        "tests/test_scheduler.py::SchedulerTests::test_unlock_requires_stability_across_days",
+        "tests/test_scheduler.py::test_fixed_time_schedule_matches_golden_output",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[first-correct]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[again]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[reinforcement]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[overdue-growth-cap]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[light-first-correct]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[light-again-returns-normal]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-entry]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-recovery-1]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-recovery-2]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-recovery-3]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[separate-local-day]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[existing-maximum-interval]",
+        "tests/test_scheduler.py::test_installed_scheduling_exports_and_identity",
+        "tests/test_scheduler.py::test_invalid_outcome_is_rejected",
+        "tests/test_scheduler.py::test_environmental_inputs_are_required_keyword_arguments[reviewed_at]",
+        "tests/test_scheduler.py::test_environmental_inputs_are_required_keyword_arguments[review_day]",
+        "tests/test_scheduler.py::test_environmental_inputs_are_required_keyword_arguments[fsrs_card_json]",
+        "tests/test_scheduler.py::test_naive_review_time_is_rejected",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[card_id]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[state]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[step]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[stability]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[difficulty]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[due]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[last_review]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes0]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes1]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes2]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes3]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes4]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes5]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes6]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[null]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[[]]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[{}]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[malformed]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[-7]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[-4]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[5.5]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[9]",
+        "tests/test_scheduler.py::test_existing_card_offset_timestamps_do_not_change_effective_review_instant"
+      ],
+      "buildSourceRemoved": true
+    },
+    {
+      "component": "scheduling",
+      "python": "3.14",
+      "passed": 55,
+      "identities": [
+        "tests/test_purity.py::test_installed_scheduling_is_identical_across_fresh_guarded_processes[UTC]",
+        "tests/test_purity.py::test_installed_scheduling_is_identical_across_fresh_guarded_processes[America/New_York]",
+        "tests/test_purity.py::test_installed_scheduling_is_identical_across_fresh_guarded_processes[Asia/Tokyo]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[clock]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[sleep]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[identity]",
+        "tests/test_purity.py::test_installed_guard_rejects_environmental_apis[random]",
+        "tests/test_scheduler.py::SchedulerTests::test_again_is_reshuffled_into_todays_queue",
+        "tests/test_scheduler.py::SchedulerTests::test_first_clean_pass_returns_to_end_then_fsrs_schedules",
+        "tests/test_scheduler.py::SchedulerTests::test_hard_track_enters_and_recovers_on_fixed_cadence",
+        "tests/test_scheduler.py::SchedulerTests::test_overdue_growth_is_capped",
+        "tests/test_scheduler.py::SchedulerTests::test_unlock_requires_stability_across_days",
+        "tests/test_scheduler.py::test_fixed_time_schedule_matches_golden_output",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[first-correct]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[again]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[reinforcement]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[overdue-growth-cap]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[light-first-correct]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[light-again-returns-normal]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-entry]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-recovery-1]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-recovery-2]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[hard-recovery-3]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[separate-local-day]",
+        "tests/test_scheduler.py::test_explicit_schedule_preserves_baseline[existing-maximum-interval]",
+        "tests/test_scheduler.py::test_installed_scheduling_exports_and_identity",
+        "tests/test_scheduler.py::test_invalid_outcome_is_rejected",
+        "tests/test_scheduler.py::test_environmental_inputs_are_required_keyword_arguments[reviewed_at]",
+        "tests/test_scheduler.py::test_environmental_inputs_are_required_keyword_arguments[review_day]",
+        "tests/test_scheduler.py::test_environmental_inputs_are_required_keyword_arguments[fsrs_card_json]",
+        "tests/test_scheduler.py::test_naive_review_time_is_rejected",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[card_id]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[state]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[step]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[stability]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[difficulty]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[due]",
+        "tests/test_scheduler.py::test_incomplete_card_state_is_rejected[last_review]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes0]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes1]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes2]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes3]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes4]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes5]",
+        "tests/test_scheduler.py::test_invalid_explicit_card_state_is_rejected[changes6]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[null]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[[]]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[{}]",
+        "tests/test_scheduler.py::test_missing_serialized_card_has_no_initial_state_fallback[malformed]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[-7]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[-4]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[5.5]",
+        "tests/test_scheduler.py::test_aware_offsets_preserve_instant_and_separate_local_day[9]",
+        "tests/test_scheduler.py::test_existing_card_offset_timestamps_do_not_change_effective_review_instant"
+      ],
+      "buildSourceRemoved": true
+    },
+    {
+      "component": "chess-core",
+      "python": "3.12",
+      "passed": 105,
+      "identities": [
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-0]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-1]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-2]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-3]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-4]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-5]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-6]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-7]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-8]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-9]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-10]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-11]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-12]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-13]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-14]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-15]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-16]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-17]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-18]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-19]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-20]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-21]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-22]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-23]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-24]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-25]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-26]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-27]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-28]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-29]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-30]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-31]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-32]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-33]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-34]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-35]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-36]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-37]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-38]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-39]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-40]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-41]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-42]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-43]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-44]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-45]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-46]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-47]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-48]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-49]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-50]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-51]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-52]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-53]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-54]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-55]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-56]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-57]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-58]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-59]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-60]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-61]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-62]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-63]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-64]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-65]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-66]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-67]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-68]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-69]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-70]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-71]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-72]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-73]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-74]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-75]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-76]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-77]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-78]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-79]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-80]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-81]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-82]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-83]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-84]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-85]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-86]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-87]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-88]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-89]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[starting position]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[FEN clock changes preserve card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[noncapturable en passant is retained for card identity]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[same board without en passant has another card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[castling rights affect card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[promotion move is part of card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[invalid FEN hashes exactly as Python]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[extra whitespace is normalized]",
+        "tests/test_identity.py::test_clocks_and_whitespace_do_not_split_identity",
+        "tests/test_identity.py::test_castling_en_passant_case_and_move_order_remain_distinct",
+        "tests/test_identity.py::test_malformed_and_empty_input_are_hashed_without_repair",
+        "tests/test_identity.py::test_installed_identity_package_exports_only_identity_without_runtime_dependencies",
+        "tests/test_purity.py::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[UTC]",
+        "tests/test_purity.py::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[America/New_York]",
+        "tests/test_purity.py::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[Asia/Tokyo]"
+      ],
+      "buildSourceRemoved": true
+    },
+    {
+      "component": "chess-core",
+      "python": "3.14",
+      "passed": 105,
+      "identities": [
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-0]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-1]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-2]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-3]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-4]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-5]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-6]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-7]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-8]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-9]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-10]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-11]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-12]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-13]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-14]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-15]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-16]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-17]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-18]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-19]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-20]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-21]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-22]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-23]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-24]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-25]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-26]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-27]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-28]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-29]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-30]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-31]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-32]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-33]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-34]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-35]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-36]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-37]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-38]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-39]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-40]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-41]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-42]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-43]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-44]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-45]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-46]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-47]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-48]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-49]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-50]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-51]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-52]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-53]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-54]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-55]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-56]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-57]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-58]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-59]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-60]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-61]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-62]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-63]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-64]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-65]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-66]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-67]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-68]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-69]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-70]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-71]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-72]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-73]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-74]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-75]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-76]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-77]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-78]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-79]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-80]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-81]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-82]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-83]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-84]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-85]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-86]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-87]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-88]",
+        "tests/test_identity.py::test_exact_baseline_digest_and_fen_key[baseline-89]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[starting position]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[FEN clock changes preserve card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[noncapturable en passant is retained for card identity]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[same board without en passant has another card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[castling rights affect card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[promotion move is part of card ID]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[invalid FEN hashes exactly as Python]",
+        "tests/test_identity.py::test_existing_python_rust_digest_fixture_is_preserved[extra whitespace is normalized]",
+        "tests/test_identity.py::test_clocks_and_whitespace_do_not_split_identity",
+        "tests/test_identity.py::test_castling_en_passant_case_and_move_order_remain_distinct",
+        "tests/test_identity.py::test_malformed_and_empty_input_are_hashed_without_repair",
+        "tests/test_identity.py::test_installed_identity_package_exports_only_identity_without_runtime_dependencies",
+        "tests/test_purity.py::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[UTC]",
+        "tests/test_purity.py::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[America/New_York]",
+        "tests/test_purity.py::test_installed_identity_runs_in_fresh_process_without_service_or_engine_dependencies[Asia/Tokyo]"
+      ],
+      "buildSourceRemoved": true
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "tempo_scheduling-0.2.0-py3-none-any.whl",
+      "sha256": "7fd727f381877ef8e80e11fc3d56f1e75b872db4969c59ae218c30856d6a649d"
+    },
+    {
+      "name": "tempo_scheduling-0.2.0.tar.gz",
+      "sha256": "718cc1d3f90d19b53f6c6d0014befdae0e68605bcf7e57aa6754e520e96b5e3c"
+    },
+    {
+      "name": "tempo_chess_core-0.1.0-py3-none-any.whl",
+      "sha256": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5"
+    },
+    {
+      "name": "tempo_chess_core-0.1.0.tar.gz",
+      "sha256": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516"
+    }
+  ],
+  "sdistRebuilds": [
+    "scheduling",
+    "chess-core"
+  ],
+  "expectedZeroSelectionExitCode": 5,
+  "review": {
+    "method": "codex review --uncommitted -c sandbox_mode=\"read-only\"",
+    "findings": [
+      "P1: chess-core absent from current backend installs/image inputs",
+      "P1: backend scheduling pin/lock remains 0.1.0"
+    ],
+    "resolution": "Exact pending patch is validated in a disposable setup; actual integration awaits D baseline."
+  },
+  "remaining": [
+    "Integrate Agent D baseline; apply/reconcile the exact registration patch.",
+    "Run D scoped validation/discovery/restricted-build commands on the actual registered candidate."
+  ],
+  "excluded": [
+    "PostgreSQL/browser/full-system/model tests",
+    "Rust execution (counterpart unchanged)",
+    "image builds/deployment",
+    "external registry publication"
+  ],
+  "seamSourceInputs": {
+    "backend/app/services/cards.py": "90dac196ea8991303b03c525aa8c7c8ec81694af66f4f96844d82f54e77de3b3",
+    "backend/app/services/scheduler.py": "84128e8017167966a8f57037c318cda43a075902836f4d7e4f3d82803b3bec91",
+    "backend/tests/test_scheduling_package_adapter.py": "33a11902d6dfa79f2ddf0330c678e0dffd962320911447ed48f2438cdcfd0ee7",
+    "backend/tests/test_scheduling_boundary.py": "21ee8b70aa9f8448adbc0a1ec31e00943301e97ded9bb2735b0bd44d6e526c68",
+    "backend/tests/test_scheduling_review_application.py": "0615e76ab2f3aa37cfeaac374369cba31c4de653ff5db3e594cc812d1a100d6a",
+    "tests/fixtures/scheduling-boundary/ownership.json": "0cb494ebe8f54eee3a52692c1d0c6dee224484487562b2e5f3b337f80ae4b2c3",
+    "tests/unit/scheduling-producer-parity-regressions.test.ts": "13fda4152e9977ae9796df4e3f7904173b058530254a2cd40a1a31ddfffcfa9d",
+    "tests/fixtures/card-id-parity.json": "8dc45e89fc6ed5d382a7a1edd82b0aa0f4a72e4fc366ad531f48579d130d2c1d",
+    "packages/chess-line/src/index.ts": "b99b8fa38615a909970385e5cc73b73ba6dfb46e6c41ee08036803749bba4912",
+    "tempo-core/src/lib.rs": "1e483056734b87db74dd980c4b8b69285930f15f8ef9253c5d973d71adde3b7e",
+    "tempo-core/src/domain/canonical_fen_key.rs": "7cbf3e32a0df28a89bad9a55a99e53d2eed710eada9b011e739f79279118b813",
+    "docs/validation/pure-scheduling-identity-200-registration.patch": "4dae961781a5fcffa8ed30b357708eadc264630760daf059fc53ae9c646cfe0d"
+  },
+  "backendSeams": {
+    "passed": 50,
+    "identities": [
+      "backend.tests.test_scheduling_package_adapter::test_backend_scheduler_keeps_package_class_identity_and_equivalent_results",
+      "backend.tests.test_scheduling_package_adapter::test_backend_scheduler_retains_entire_legacy_signature",
+      "backend.tests.test_scheduling_package_adapter::test_backend_scheduler_forwards_every_control_without_replacing_supplied_identity",
+      "backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[False-False]",
+      "backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[True-False]",
+      "backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[False-True]",
+      "backend.tests.test_scheduling_package_adapter::test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct[True-True]",
+      "backend.tests.test_scheduling_package_adapter::test_backend_normalizes_legacy_naive_time_to_utc",
+      "backend.tests.test_scheduling_package_adapter::test_backend_creates_and_serializes_real_fsrs_initial_identity_at_boundary[None]",
+      "backend.tests.test_scheduling_package_adapter::test_backend_creates_and_serializes_real_fsrs_initial_identity_at_boundary[]",
+      "backend.tests.test_scheduling_package_adapter::test_invalid_legacy_outcome_does_not_generate_identity",
+      "backend.tests.test_scheduling_package_adapter::test_legacy_identity_adapter_preserves_shared_digests_and_public_identity",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[import app.main]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[import psycopg]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[def hidden():\\n    from app import database]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports[if False:\\n    from . import unrelated_analysis]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_transitive_infrastructure_imports",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_unowned_consumers[app.services.scheduling_review_application]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_rejects_unowned_consumers[app.services.scheduling_review_contracts]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_has_no_unrelated_transitive_dependencies",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_disallows_dynamic_import_loaders[app.services.scheduling_review_application]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_disallows_dynamic_import_loaders[app.services.scheduling_review_contracts]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_disallows_dynamic_import_loaders[app.services.scheduler]",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_runs_without_application_startup_or_services",
+      "backend.tests.test_scheduling_boundary::test_scheduling_module_change_selects_owning_tests",
+      "backend.tests.test_scheduling_boundary::test_unrelated_module_change_excludes_scheduling_tests",
+      "backend.tests.test_scheduling_boundary::test_scheduling_contract_change_expands_consumer_qualification",
+      "backend.tests.test_scheduling_boundary::test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[import fastapi-scheduling-exports0-dependencies0]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[import fastapi-chess-core-exports1-dependencies1]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[def hidden():\\n    import app.main-scheduling-exports0-dependencies0]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[def hidden():\\n    import app.main-chess-core-exports1-dependencies1]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[if False:\\n    import celery-scheduling-exports0-dependencies0]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[if False:\\n    import celery-chess-core-exports1-dependencies1]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[from . import bridge-scheduling-exports0-dependencies0]",
+      "backend.tests.test_scheduling_boundary::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports[from . import bridge-chess-core-exports1-dependencies1]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_uses_original_completion_clock_without_database",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_source_replay_preserves_current_result_contract",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts0-mature]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts1-learning]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts2-learning]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts3-mature]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts[facts4-learning]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_empty_source_does_not_lookup_replay[None]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_empty_source_does_not_lookup_replay[]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_propagates_persistence_failure_without_more_effects[append_review]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_propagates_persistence_failure_without_more_effects[load_maturity_facts]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_propagates_persistence_failure_without_more_effects[save_card_state]",
+      "backend.tests.test_scheduling_review_application::test_scheduling_application_import_does_not_load_infrastructure"
+    ],
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend <disposable-backend-python> -m pytest -c /dev/null --rootdir=. -p no:cacheprovider backend/tests/test_scheduling_package_adapter.py backend/tests/test_scheduling_boundary.py backend/tests/test_scheduling_review_application.py -q",
+    "environment": "uv sync --offline --locked --no-editable against temporary metadata with the pending dependency patch"
+  },
+  "producerParity": {
+    "lane": "producer-parity",
+    "executedIdentities": [
+      "M02 installed Python scheduling producer retains the fixed-time serialized golden contract",
+      "M04 installed identity producer preserves shared digests and equivalent TypeScript FEN keys"
+    ],
+    "passed": 2
+  },
+  "commands": [
+    {
+      "label": "scheduling-setup",
+      "command": [
+        "uv",
+        "sync",
+        "--offline",
+        "--locked",
+        "--no-editable",
+        "--python",
+        "/opt/homebrew/opt/python@3.14/bin/python3.14"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-boundary",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build/.venv/bin/python",
+        "-I",
+        "/Users/andy/tempo/.dev-copies/pure-scheduling-identity-200/tools/component-build/check-python.py",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build",
+        "[\"fsrs\"]",
+        "[\"Schedule\", \"schedule_review\", \"unlock_ready\"]"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-build",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build/.venv/bin/python",
+        "-I",
+        "-m",
+        "build",
+        "--no-isolation"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-locked-requirements",
+      "command": [
+        "uv",
+        "export",
+        "--offline",
+        "--locked",
+        "--no-emit-project",
+        "--no-hashes"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-sdist-rebuild",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-build/.venv/bin/python",
+        "-I",
+        "-m",
+        "build",
+        "--no-isolation",
+        "--wheel",
+        "--outdir",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-sdist/wheel"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-sdist/tempo_scheduling-0.2.0",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.12-venv",
+      "command": [
+        "uv",
+        "venv",
+        "--python",
+        "/Users/andy/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12/.venv"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.12-install",
+      "command": [
+        "uv",
+        "pip",
+        "install",
+        "--offline",
+        "--python",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12/.venv/bin/python",
+        "-r",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-requirements.txt",
+        "/Users/andy/tempo/test-results/agent-c-200/artifacts/tempo_scheduling-0.2.0-py3-none-any.whl"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.12-runtime",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12/.venv/bin/python",
+        "-I",
+        "--version"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.12-tests",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12/.venv/bin/python",
+        "-I",
+        "-B",
+        "-c",
+        "import sys\nfrom importlib.abc import MetaPathFinder\nclass Guard(MetaPathFinder):\n    def find_spec(self, fullname, path=None, target=None):\n        if fullname.split('.')[0] in {'app','services','fastapi','celery','psycopg','psycopg_pool','redis','httpx','sqlite3','torch'}:\n            raise AssertionError('forbidden runtime import: ' + fullname)\nsys.meta_path.insert(0, Guard())\ndef reject_services(event, arguments):\n    if event in {'socket.connect','socket.bind','sqlite3.connect'}:\n        raise AssertionError('forbidden initialization: ' + event)\nsys.addaudithook(reject_services)\nassert all('/Users/andy/tempo' not in path for path in sys.path)\nimport pytest\nraise SystemExit(pytest.main(sys.argv[1:]))\n",
+        "tests",
+        "-q",
+        "--junitxml=/Users/andy/tempo/test-results/agent-c-200/scheduling-3.12.xml"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.12-zero-selected",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12/.venv/bin/python",
+        "-I",
+        "-m",
+        "pytest",
+        "tests",
+        "-k",
+        "no_such_identity",
+        "-q"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12",
+      "exitCode": 5
+    },
+    {
+      "label": "scheduling-3.12-dependencies",
+      "command": [
+        "uv",
+        "pip",
+        "freeze",
+        "--python",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12/.venv/bin/python"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.14-venv",
+      "command": [
+        "uv",
+        "venv",
+        "--python",
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14/.venv"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.14-install",
+      "command": [
+        "uv",
+        "pip",
+        "install",
+        "--offline",
+        "--python",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14/.venv/bin/python",
+        "-r",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-requirements.txt",
+        "/Users/andy/tempo/test-results/agent-c-200/artifacts/tempo_scheduling-0.2.0-py3-none-any.whl"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.14-runtime",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14/.venv/bin/python",
+        "-I",
+        "--version"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.14-tests",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14/.venv/bin/python",
+        "-I",
+        "-B",
+        "-c",
+        "import sys\nfrom importlib.abc import MetaPathFinder\nclass Guard(MetaPathFinder):\n    def find_spec(self, fullname, path=None, target=None):\n        if fullname.split('.')[0] in {'app','services','fastapi','celery','psycopg','psycopg_pool','redis','httpx','sqlite3','torch'}:\n            raise AssertionError('forbidden runtime import: ' + fullname)\nsys.meta_path.insert(0, Guard())\ndef reject_services(event, arguments):\n    if event in {'socket.connect','socket.bind','sqlite3.connect'}:\n        raise AssertionError('forbidden initialization: ' + event)\nsys.addaudithook(reject_services)\nassert all('/Users/andy/tempo' not in path for path in sys.path)\nimport pytest\nraise SystemExit(pytest.main(sys.argv[1:]))\n",
+        "tests",
+        "-q",
+        "--junitxml=/Users/andy/tempo/test-results/agent-c-200/scheduling-3.14.xml"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "scheduling-3.14-zero-selected",
+      "command": [
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14/.venv/bin/python",
+        "-I",
+        "-m",
+        "pytest",
+        "tests",
+        "-k",
+        "no_such_identity",
+        "-q"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14",
+      "exitCode": 5
+    },
+    {
+      "label": "scheduling-3.14-dependencies",
+      "command": [
+        "uv",
+        "pip",
+        "freeze",
+        "--python",
+        "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14/.venv/bin/python"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/artifact-consumers/scheduling-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-setup",
+      "command": [
+        "uv",
+        "sync",
+        "--offline",
+        "--locked",
+        "--no-editable",
+        "--python",
+        "/opt/homebrew/opt/python@3.14/bin/python3.14"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-boundary",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build/.venv/bin/python",
+        "-I",
+        "/Users/andy/tempo/.dev-copies/pure-scheduling-identity-200/tools/component-build/check-python.py",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build",
+        "[]",
+        "[\"canonical_fen_key\", \"card_id\"]"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-build",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build/.venv/bin/python",
+        "-I",
+        "-m",
+        "build",
+        "--no-isolation"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-locked-requirements",
+      "command": [
+        "uv",
+        "export",
+        "--offline",
+        "--locked",
+        "--no-emit-project",
+        "--no-hashes"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-sdist-rebuild",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-build/.venv/bin/python",
+        "-I",
+        "-m",
+        "build",
+        "--no-isolation",
+        "--wheel",
+        "--outdir",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-sdist/wheel"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-sdist/tempo_chess_core-0.1.0",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.12-venv",
+      "command": [
+        "uv",
+        "venv",
+        "--python",
+        "/Users/andy/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12/.venv"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.12-install",
+      "command": [
+        "uv",
+        "pip",
+        "install",
+        "--offline",
+        "--python",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12/.venv/bin/python",
+        "-r",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-requirements.txt",
+        "/Users/andy/tempo/test-results/agent-c-200/identity-final/artifacts/tempo_chess_core-0.1.0-py3-none-any.whl"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.12-runtime",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12/.venv/bin/python",
+        "-I",
+        "--version"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.12-tests",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12/.venv/bin/python",
+        "-I",
+        "-B",
+        "-c",
+        "import sys\nfrom importlib.abc import MetaPathFinder\nclass Guard(MetaPathFinder):\n    def find_spec(self, fullname, path=None, target=None):\n        if fullname.split('.')[0] in {'app','services','fastapi','celery','psycopg','psycopg_pool','redis','httpx','sqlite3','torch'}:\n            raise AssertionError('forbidden runtime import: ' + fullname)\nsys.meta_path.insert(0, Guard())\ndef reject_services(event, arguments):\n    if event in {'socket.connect','socket.bind','sqlite3.connect'}:\n        raise AssertionError('forbidden initialization: ' + event)\nsys.addaudithook(reject_services)\nassert all('/Users/andy/tempo' not in path for path in sys.path)\nimport pytest\nraise SystemExit(pytest.main(sys.argv[1:]))\n",
+        "tests",
+        "-q",
+        "--junitxml=/Users/andy/tempo/test-results/agent-c-200/identity-final/chess-core-3.12.xml"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.12-zero-selected",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12/.venv/bin/python",
+        "-I",
+        "-m",
+        "pytest",
+        "tests",
+        "-k",
+        "no_such_identity",
+        "-q"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12",
+      "exitCode": 5
+    },
+    {
+      "label": "chess-core-3.12-dependencies",
+      "command": [
+        "uv",
+        "pip",
+        "freeze",
+        "--python",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12/.venv/bin/python"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.12",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.14-venv",
+      "command": [
+        "uv",
+        "venv",
+        "--python",
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14/.venv"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.14-install",
+      "command": [
+        "uv",
+        "pip",
+        "install",
+        "--offline",
+        "--python",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14/.venv/bin/python",
+        "-r",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-requirements.txt",
+        "/Users/andy/tempo/test-results/agent-c-200/identity-final/artifacts/tempo_chess_core-0.1.0-py3-none-any.whl"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.14-runtime",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14/.venv/bin/python",
+        "-I",
+        "--version"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.14-tests",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14/.venv/bin/python",
+        "-I",
+        "-B",
+        "-c",
+        "import sys\nfrom importlib.abc import MetaPathFinder\nclass Guard(MetaPathFinder):\n    def find_spec(self, fullname, path=None, target=None):\n        if fullname.split('.')[0] in {'app','services','fastapi','celery','psycopg','psycopg_pool','redis','httpx','sqlite3','torch'}:\n            raise AssertionError('forbidden runtime import: ' + fullname)\nsys.meta_path.insert(0, Guard())\ndef reject_services(event, arguments):\n    if event in {'socket.connect','socket.bind','sqlite3.connect'}:\n        raise AssertionError('forbidden initialization: ' + event)\nsys.addaudithook(reject_services)\nassert all('/Users/andy/tempo' not in path for path in sys.path)\nimport pytest\nraise SystemExit(pytest.main(sys.argv[1:]))\n",
+        "tests",
+        "-q",
+        "--junitxml=/Users/andy/tempo/test-results/agent-c-200/identity-final/chess-core-3.14.xml"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14",
+      "exitCode": 0
+    },
+    {
+      "label": "chess-core-3.14-zero-selected",
+      "command": [
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14/.venv/bin/python",
+        "-I",
+        "-m",
+        "pytest",
+        "tests",
+        "-k",
+        "no_such_identity",
+        "-q"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14",
+      "exitCode": 5
+    },
+    {
+      "label": "chess-core-3.14-dependencies",
+      "command": [
+        "uv",
+        "pip",
+        "freeze",
+        "--python",
+        "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14/.venv/bin/python"
+      ],
+      "cwd": "/private/tmp/tempo-c-200/identity-final-consumers/chess-core-3.14",
+      "exitCode": 0
+    }
+  ],
+  "additionalCommands": [
+    "TEMPO_PYTHON=<installed-packages-python> npm run test:producer-parity -- scheduling-producer-parity-regressions",
+    "git apply --check docs/validation/pure-scheduling-identity-200-registration.patch",
+    "npm run check:conflicts",
+    "git diff origin/main --check"
+  ],
+  "rawEvidenceDirectory": "/Users/andy/tempo/test-results/agent-c-200"
+}

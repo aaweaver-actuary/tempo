@@ -1,0 +1,204 @@
+diff --git a/components.json b/components.json
+index b08e25850ffe62c1c89991da001e2370e5d32b91..215a7391421bed4ac2ec232a58f9defd03014190 100644
+--- a/components.json
++++ b/components.json
+@@ -531,7 +531,7 @@
+       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+       "artifact": {
+         "name": "tempo-scheduling",
+-        "version": "0.1.0",
++        "version": "0.2.0",
+         "format": "wheel + sdist"
+       },
+       "tests": [
+@@ -541,7 +541,8 @@
+           "command": "uv run --locked --no-editable python -m pytest tests",
+           "inputs": [
+             "tests"
+-          ]
++          ],
++          "cwd": "packages/scheduling"
+         }
+       ],
+       "toolchain": {
+@@ -618,16 +619,46 @@
+     {
+       "id": "chess-core",
+       "type": "library",
+-      "maintainer": "Tempo / #200",
+-      "status": "planned",
++      "maintainer": "Tempo / #200 (stable identity)",
++      "status": "implemented",
+       "root": "packages/chess-core",
+-      "publicExports": [],
+-      "dependencies": [],
+-      "buildInputs": [],
+-      "buildCommand": null,
+-      "artifact": null,
+-      "tests": [],
+-      "toolchain": {},
++      "publicExports": [
++        "canonical_fen_key",
++        "card_id"
++      ],
++      "dependencies": [],
++      "buildInputs": [
++        "pyproject.toml",
++        "uv.lock",
++        "src",
++        "README.md",
++        "REGRESSIONS.md",
++        "tests"
++      ],
++      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
++      "artifact": {
++        "name": "tempo-chess-core",
++        "version": "0.1.0",
++        "format": "wheel + sdist"
++      },
++      "tests": [
++        {
++          "owner": "chess-core",
++          "kind": "python",
++          "command": "uv run --locked --no-editable python -m pytest tests",
++          "inputs": [
++            "tests"
++          ],
++          "cwd": "packages/chess-core"
++        }
++      ],
++      "toolchain": {
++        "python": ">=3.12,<3.15",
++        "qualificationPython": [
++          "3.12",
++          "3.14"
++        ]
++      },
+       "dataOwnership": {
+         "authority": null,
+         "databases": [],
+diff --git a/backend/pyproject.toml b/backend/pyproject.toml
+index de8923087077977a6bdc01eba43335665d7c091d..d32830e857d2f35bf631563f1b37ce7792ffe543 100644
+--- a/backend/pyproject.toml
++++ b/backend/pyproject.toml
+@@ -6,7 +6,8 @@
+ requires-python = ">=3.14"
+ dependencies = [
+     "python-chess>=1.999",
+-    "tempo-scheduling==0.1.0",
++    "tempo-scheduling==0.2.0",
++    "tempo-chess-core==0.1.0",
+ ]
+
+ [dependency-groups]
+@@ -18,3 +19,4 @@
+
+ [tool.uv.sources]
+ tempo-scheduling = { path = "../packages/scheduling" }
++tempo-chess-core = { path = "../packages/chess-core" }
+diff --git a/backend/uv.lock b/backend/uv.lock
+index 53dade2cdcf72cd176ba8510249e0f1c4e7a8a47..a8a246bba1c0c8e83415016da49a3fd57fc257a7 100644
+--- a/backend/uv.lock
++++ b/backend/uv.lock
+@@ -8,6 +8,7 @@
+ source = { virtual = "." }
+ dependencies = [
+     { name = "python-chess" },
++    { name = "tempo-chess-core" },
+     { name = "tempo-scheduling" },
+ ]
+
+@@ -21,6 +22,7 @@
+ [package.metadata]
+ requires-dist = [
+     { name = "python-chess", specifier = ">=1.999" },
++    { name = "tempo-chess-core", directory = "../packages/chess-core" },
+     { name = "tempo-scheduling", directory = "../packages/scheduling" },
+ ]
+
+@@ -231,15 +233,11 @@
+ ]
+
+ [[package]]
+-name = "tempo-scheduling"
++name = "tempo-chess-core"
+ version = "0.1.0"
+-source = { directory = "../packages/scheduling" }
+-dependencies = [
+-    { name = "fsrs" },
+-]
++source = { directory = "../packages/chess-core" }
+
+ [package.metadata]
+-requires-dist = [{ name = "fsrs", specifier = "==6.3.2" }]
+
+ [package.metadata.requires-dev]
+ dev = [
+@@ -249,6 +247,24 @@
+ ]
+
+ [[package]]
++name = "tempo-scheduling"
++version = "0.2.0"
++source = { directory = "../packages/scheduling" }
++dependencies = [
++    { name = "fsrs" },
++]
++
++[package.metadata]
++requires-dist = [{ name = "fsrs", specifier = "==6.3.2" }]
++
++[package.metadata.requires-dev]
++dev = [
++    { name = "build", specifier = "==1.4.0" },
++    { name = "hatchling", specifier = "==1.27.0" },
++    { name = "pytest", specifier = "==9.1.1" },
++]
++
++[[package]]
+ name = "typing-extensions"
+ version = "4.16.0"
+ source = { registry = "https://pypi.org/simple" }
+diff --git a/backend/requirements-test.txt b/backend/requirements-test.txt
+index a92c5ae6fe0fc3bf95a00ee3bb81315677e7447d..117c14fcb3edf5c5b3fe0b3adcf0aefdc6c300d6 100644
+--- a/backend/requirements-test.txt
++++ b/backend/requirements-test.txt
+@@ -4,3 +4,4 @@
+
+ # Transitional assembly: install the declared package, not its source via PYTHONPATH.
+ ./packages/scheduling
++./packages/chess-core
+diff --git a/backend/Dockerfile b/backend/Dockerfile
+index fbc6a9b55d7b1cf41e6658687024a524f3d33193..c31ef6cd5e23fc71a78bc1ce26e0e03051feca9b 100644
+--- a/backend/Dockerfile
++++ b/backend/Dockerfile
+@@ -3,7 +3,8 @@
+ WORKDIR /app
+ COPY backend/requirements.txt .
+ COPY packages/scheduling /packages/scheduling
+-RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling
++COPY packages/chess-core /packages/chess-core
++RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling /packages/chess-core
+ COPY backend/app ./app
+ COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
+ COPY public/data/tactics-packs ./public/data/tactics-packs
+diff --git a/tests/REGRESSIONS.md b/tests/REGRESSIONS.md
+index 022be20c589b1a4ba887ce73fd2ea352b08c4bdb..c992cfa996fba76391c94e2b0b93f19dd9f00cfe 100644
+--- a/tests/REGRESSIONS.md
++++ b/tests/REGRESSIONS.md
+@@ -4448,3 +4448,15 @@
+ ### Frozen Maia production capture under locale collation
+
+ - `backend/tests/test_frozen_maia_plan.py::test_capture_uses_database_collation_for_composite_pagination_keys` reproduces the production capture failure on built-in underscore-prefixed repertoire IDs under `en_US.utf8`. PostgreSQL validates advancement using the same native collation as ordering and seek predicates. The regression spans the 128-row boundary with numeric composite keys and rejects invalid database advancement flags.
++
++
++## #200 pure scheduling and stable identity
++
++- Package-local scheduling regressions: [owning inventory](../packages/scheduling/REGRESSIONS.md).
++- Package-local stable identity regressions: [owning inventory](../packages/chess-core/REGRESSIONS.md).
++- Legacy adapter compatibility: `backend/tests/test_scheduling_package_adapter.py` (complete legacy signature,
++  Schedule class identity, forwarding/result parity, controlled clocks/local day, naive UTC handling,
++  initial FSRS identity generation, and unchanged shared card digests).
++- Pure import rejection: `backend/tests/test_scheduling_boundary.py::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports`.
++- Installed producer parity: `tests/unit/scheduling-producer-parity-regressions.test.ts` in the existing
++  producer-parity lane; no Python dependency is added to frontend-only collection.
