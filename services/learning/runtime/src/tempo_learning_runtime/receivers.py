@@ -40,6 +40,12 @@ def receive(database, delivery, workspace_id):
         return _receiver(database, delivery, admit).model_dump(mode="json")
     serialized = delivery.model_dump_json()
     digest = hashlib.sha256(serialized.encode()).hexdigest()
+    # Delivery IDs are global, even when competing payloads name different
+    # evidence IDs. Serialize transport identity before semantic identity.
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+        ("learning:evidence-delivery:" + delivery.delivery_id,),
+    )
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
         ("learning:evidence:" + delivery.evidence_id,),
@@ -102,12 +108,6 @@ def receive(database, delivery, workspace_id):
         ).fetchone():
             raise HTTPException(409, "Evidence names a stale executable definition")
         encoded = obligation.model_dump_json()
-        existing = database.execute(
-            "SELECT payload_json FROM learning_obligations WHERE obligation_id=?",
-            (obligation.obligation_id,),
-        ).fetchone()
-        if existing and existing[0] != encoded:
-            raise HTTPException(409, "Obligation identity reused")
         database.execute(
             "INSERT INTO learning_obligations(obligation_id,source_evidence_id,source_revision,card_id,decision_id,publication_generation,kind,payload_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
             (
@@ -121,6 +121,15 @@ def receive(database, delivery, workspace_id):
                 encoded,
             ),
         )
+        # A different evidence identity can win this global obligation ID while
+        # our insert waits. The fresh statement must verify that winner before
+        # admission, frontier advancement or acknowledgement can claim authority.
+        existing = database.execute(
+            "SELECT payload_json FROM learning_obligations WHERE obligation_id=?",
+            (obligation.obligation_id,),
+        ).fetchone()
+        if existing is None or existing[0] != encoded:
+            raise HTTPException(409, "Obligation identity reused")
         if obligation.kind == "real_game_miss":
             admit(database, obligation.card_id, date.today().isoformat(), MISS_REASON)
     if not semantic_replay:

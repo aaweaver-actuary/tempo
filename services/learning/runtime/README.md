@@ -66,6 +66,8 @@ The registered remediation receiver borrows the transaction and receives the sin
 
 The default receiver owns a durable workspace/evidence revision frontier. Exact transport retries return their original acknowledgement, including after newer revisions. New delivery IDs with identical current semantic content acknowledge the existing effects without repeating admission; conflicting same-revision content is rejected. Older revisions persist a `stale_revision` acknowledgement without obligations or Learning authority. Newer revisions, including empty corrections, advance the frontier atomically with obligations, queue effects and the transport receipt. This prevents stale additions; it does not implement B/F's richer correction/settlement policy. A registered custom receiver replaces this default authority.
 
+The default receiver locks global delivery identity before evidence identity. It also verifies the authoritative stored obligation payload after an insert conflict has finished waiting. Different evidence identities cannot silently share conflicting obligation lineage or turn a reused delivery ID into an unclassified uniqueness error; these conflicts return 409 and roll back the losing delivery's effects.
+
 Append-only migration `learning.runtime/0002` depends on `learning.runtime/0001`. It backfills the highest completed revision from old transport acknowledgements. Because old receipts lack semantic payloads, their semantic digest is explicitly unknown: exact delivery retries still work, but new IDs at that same historical revision conflict until a newer revision establishes known content. Apply the manifest using the migration owner and reapply runtime/reader grants; HTTP startup never applies migrations.
 
 ## Build and qualification

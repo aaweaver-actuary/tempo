@@ -32,6 +32,12 @@ return `status=stale_revision`, a reason, empty accepted obligations and null
 (even zero-obligation corrections) and all effects commit together. Newer
 acceptance does not retract older obligations; richer correction belongs to B/F.
 
+The default receiver acquires the global delivery identity advisory lock before
+the evidence identity lock. Global obligation identity is checked against the
+stored payload after the insert's conflict wait, before admission/frontier/receipt
+effects. Concurrent cross-evidence reuse with conflicting transport or obligation
+content returns HTTP 409 and rolls back the losing delivery.
+
 Migration registration is an ordered JSON array under the installed package's
 `migrations/manifest.json`: `{id, owner, path, depends_on}`. Paths are package-local
 SQL files. Existing entries are append-only and checked against installed checksums.
