@@ -615,39 +615,109 @@
       "id": "study-session",
       "type": "library",
       "maintainer": "Tempo / #219",
-      "status": "planned",
+      "status": "implemented",
       "root": "packages/study-session",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "SessionPhase",
+        "SessionSnapshot",
+        "Settlement",
+        "LearningClient",
+        "StudySession",
+        "createStudySession"
+      ],
+      "dependencies": [
+        "@tempo/browser-intents"
+      ],
+      "buildInputs": [
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "src",
+        "README.md"
+      ],
+      "buildCommand": "npm ci --workspaces=false && npm run build",
+      "artifact": {
+        "name": "@tempo/study-session",
+        "version": "0.1.0",
+        "format": "npm tarball / ESM + declarations"
+      },
+      "tests": [
+        {
+          "owner": "study-session",
+          "kind": "frontend",
+          "command": "npm test",
+          "inputs": [
+            "test.mjs",
+            "tests"
+          ],
+          "cwd": "packages/study-session"
+        }
+      ],
+      "toolchain": {
+        "node": ">=22.13.0",
+        "qualificationNode": "26.10.0",
+        "typescript": "5.9.3"
+      },
       "dataOwnership": {
         "authority": null,
         "databases": [],
         "migrations": []
-      }
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "browser-intents",
       "type": "library",
       "maintainer": "Tempo / #221",
-      "status": "planned",
+      "status": "implemented",
       "root": "packages/browser-intents",
-      "publicExports": [],
+      "publicExports": [
+        "IntentEnvelope",
+        "IntentState",
+        "IntentRecord",
+        "TeachingFact",
+        "IntentStore",
+        "IntentStorageError",
+        "IntentIdentityConflict",
+        "openIntentStore"
+      ],
       "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "buildInputs": [
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "src",
+        "README.md"
+      ],
+      "buildCommand": "npm ci --workspaces=false && npm run build",
+      "artifact": {
+        "name": "@tempo/browser-intents",
+        "version": "0.1.0",
+        "format": "npm tarball / ESM + declarations"
+      },
+      "tests": [
+        {
+          "owner": "browser-intents",
+          "kind": "frontend",
+          "command": "npm test",
+          "inputs": [
+            "test.mjs",
+            "tests"
+          ],
+          "cwd": "packages/browser-intents"
+        }
+      ],
+      "toolchain": {
+        "node": ">=22.13.0",
+        "qualificationNode": "26.10.0",
+        "typescript": "5.9.3"
+      },
       "dataOwnership": {
         "authority": null,
         "databases": [],
         "migrations": []
-      }
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "chess-core",

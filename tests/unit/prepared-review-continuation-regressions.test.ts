@@ -1,3 +1,4 @@
+import { updateStudyIntent } from "../../app/lib/study-intent-storage";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { advancePreparedContinuation, capturePreparedNext } from "../../app/lib/prepared-review-continuation";
 import { enqueuePendingReview, flushPendingReviews, pendingReviews } from "../../app/lib/review-outbox";
@@ -31,7 +32,7 @@ it.each(["none", "missing", "mismatch", "attempt", "generation", "entry", "revis
     const submitted = useTrainingStore.getState().attempt;
     const preparedNext = capturePreparedNext()!;
     const candidate = { ...preparedNext, attempt_failed: false };
-    enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submitted.attemptId!,
+    await enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submitted.attemptId!,
       outcome: "correct", guided: false, expectedRevision: 1, preparedNext });
     let release!: (response: Response) => void;
     const response = new Promise<Response>(resolve => { release = resolve; });
@@ -51,7 +52,7 @@ it.each(["none", "missing", "mismatch", "attempt", "generation", "entry", "revis
       useTrainingStore.setState({ practiceCards: [cards[0], next, cards[2]] });
     }
     if (invalidation === "date") useTrainingStore.setState({ queueLocalDate: "1999-01-01" });
-    if (invalidation === "failed-marker") enqueueTrainingFailure(502, "b", 1);
+    if (invalidation === "failed-marker") await enqueueTrainingFailure(502, "b", 1);
     const before = useTrainingStore.getState();
     release(Response.json({ persisted: true, ...(invalidation === "missing" ? {} : {
       prepared_continuation: invalidation === "mismatch" ? { ...candidate, queue_entry_id: 777 } : candidate }) }));
@@ -74,7 +75,7 @@ it.each(["none", "missing", "mismatch", "attempt", "generation", "entry", "revis
 it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unresolved authoritative head cannot issue a filtered successor (advance=%s)", async advance => {
   const activeAttempt = useTrainingStore.getState().attempt;
   rememberConfirmedQueueEntry(cards[0]);
-  enqueuePendingReview({ backendId: "c", queueEntryId: 503, attemptId: "independent-pending", outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "c", queueEntryId: 503, attemptId: "independent-pending", outcome: "correct", guided: false });
   // C was promoted ahead of prepared B. The server issued C, while its saved
   // local review remains unconfirmed; filtering C cannot confer issuance on B.
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ cards: [queue[2], queue[1]], count: 2, local_date: localDayKey() })));
@@ -87,20 +88,20 @@ it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unres
 });
 
 it.each(["revision", "cycle", "day", "generation", "attempt", "pending", "conflict", "guided_pending", "guided_flag", "window", "readiness", "database"])(
-  "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", invalidation => {
+  "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", async invalidation => {
     const candidate = { ...capturePreparedNext()!, attempt_failed: false };
     const { attempt } = useTrainingStore.getState();
     if (invalidation === "revision") candidate.revision++;
     if (invalidation === "cycle") candidate.cycle++;
     if (invalidation === "day") candidate.local_date = "1999-01-01";
-    if (invalidation === "pending") enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
-    if (invalidation === "guided_pending") enqueueTrainingFailure(502, "b", 1);
+    if (invalidation === "pending") await enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
+    if (invalidation === "guided_pending") await enqueueTrainingFailure(502, "b", 1);
     if (invalidation === "guided_flag") useTrainingStore.setState({ practiceCards: [cards[0], { ...cards[1], attemptFailed: true }, cards[2]] });
     if (invalidation === "conflict") {
-      enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
-      const stored = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!);
-      stored[0] = { ...stored[0], state: "conflicted", conflict: { code: "queue_attempt_unprovable", message: "Needs review", retryable: false } };
-      localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify(stored));
+      await enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
+      const review = pendingReviews()[0];
+      await updateStudyIntent(`review:${review.attemptId}`, current => ({ ...current, state: "conflicted", data: { ...review,
+        state: "conflicted", conflict: { code: "queue_attempt_unprovable", message: "Needs review", retryable: false } } }));
     }
     if (invalidation === "window") useTrainingStore.setState({ practiceCards: [cards[0]] });
     if (invalidation === "readiness") useTrainingStore.setState({ queueReadiness: "loading" });
@@ -122,7 +123,7 @@ it.each(["removed", "revision", "cycle", "replacement", "promotion", "day"])(
   "pr229_observed_authoritative_invalidation_blocks_delayed_continuation: %s", async invalidation => {
     const submittedAttempt = useTrainingStore.getState().attempt;
     const preparedNext = capturePreparedNext()!;
-    enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submittedAttempt.attemptId!,
+    await enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submittedAttempt.attemptId!,
       outcome: "correct", guided: false, expectedRevision: 1, preparedNext });
     let releaseReview!: (response: Response) => void;
     const heldReview = new Promise<Response>(resolve => { releaseReview = resolve; });
@@ -256,7 +257,7 @@ it("issue186_reconciliation_preserves_completed_prepared_attempt", async () => {
 });
 
 it("issue186_late_body_after_deadline_cannot_install", async () => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
   let finishBody!: (value: unknown) => void;
   const response = Response.json({});
   vi.spyOn(response, "json").mockImplementation(() => new Promise(resolve => { finishBody = resolve; }));
@@ -264,6 +265,7 @@ it("issue186_late_body_after_deadline_cannot_install", async () => {
   const activeAttempt = useTrainingStore.getState().attempt;
   const loading = fetchAndInitializeQueue(true, { timeoutMs: 15_000, replaySavedReviews: false, expectedAttempt: activeAttempt });
   const failure = loading.catch(error => error);
+  await vi.waitFor(() => expect(finishBody).toBeTypeOf("function"));
   await vi.advanceTimersByTimeAsync(15_001);
   expect(await failure).toBeInstanceOf(Error);
   finishBody({ cards: queue.slice(1), count: 2, local_date: localDayKey() });
@@ -274,8 +276,8 @@ it("issue186_late_body_after_deadline_cannot_install", async () => {
 });
 
 it("issue186_queue_prerequisite_is_included_in_acquisition_deadline", async () => {
-  vi.useFakeTimers();
-  vi.stubGlobal("indexedDB", {});
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+
   vi.spyOn(offlineTraining, "readPreparedTraining").mockImplementation(() => new Promise(() => {}));
   const fetcher = vi.fn<typeof fetch>();
   vi.stubGlobal("fetch", fetcher);
@@ -293,17 +295,18 @@ it("unconfirmed_review_does_not_advance_prepared_card: frozen retry and malforme
   const candidate = capturePreparedNext()!;
   const review = { backendId: "a", queueEntryId: 501, attemptId: "frozen-attempt", outcome: "correct" as const,
     guided: false, expectedRevision: 1, preparedNext: candidate };
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const requestBodies: unknown[] = [];
   let confirmed = false;
   vi.stubGlobal("fetch", vi.fn(async (_url, options) => {
+    if (String(_url).includes("/api/operations/")) return new Response(null, { status: 404 });
     requestBodies.push(JSON.parse(options.body));
     return Response.json(confirmed ? { persisted: true, prepared_continuation: "invalid" } : { persisted: false });
   }));
   await expect(flushPendingReviews()).rejects.toThrow("did not confirm");
   expect(pendingReviews()[0].preparedNext).toEqual(candidate);
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
-  enqueuePendingReview({ ...review, preparedNext: { ...candidate, revision: 8 } });
+  await expect(enqueuePendingReview({ ...review, preparedNext: { ...candidate, revision: 8 } })).rejects.toThrow("different completed result");
   confirmed = true;
   const result = await flushPendingReviews();
   expect(requestBodies[1]).toEqual(requestBodies[0]);
@@ -314,8 +317,8 @@ it("unconfirmed_review_does_not_advance_prepared_card: frozen retry and malforme
 
 it("foreground review confirmation yields before unrelated later outbox delivery", async () => {
   const first = { backendId: "a", queueEntryId: 501, attemptId: "first", outcome: "correct" as const, guided: false };
-  enqueuePendingReview(first);
-  enqueuePendingReview({ ...first, backendId: "unrelated", queueEntryId: 900, attemptId: "later" });
+  await enqueuePendingReview(first);
+  await enqueuePendingReview({ ...first, backendId: "unrelated", queueEntryId: 900, attemptId: "later" });
   let releaseFirst!: (response: Response) => void;
   let releaseLater!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn().mockImplementationOnce(() => new Promise(resolve => { releaseFirst = resolve; }))
@@ -334,7 +337,7 @@ it("foreground review confirmation yields before unrelated later outbox delivery
 it("prepared_continuation_replay_preserves_exactly_once_scheduling: confirmed frozen receipt", async () => {
   const candidate = capturePreparedNext()!;
   const attempt = useTrainingStore.getState().attempt;
-  enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: attempt.attemptId!,
+  await enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: attempt.attemptId!,
     outcome: "correct", guided: false, expectedRevision: 1, preparedNext: candidate });
   let confirmed = false;
   let submissions = 0;
@@ -357,9 +360,9 @@ it("prepared_continuation_replay_preserves_exactly_once_scheduling: confirmed fr
 
 it("foreground review submission waits only for its same-card predecessors", async () => {
   const original = { backendId: "a", queueEntryId: 500, attemptId: "earlier", outcome: "again" as const, guided: false };
-  enqueuePendingReview({ ...original, backendId: "unrelated", attemptId: "independent", queueEntryId: 900 });
-  enqueuePendingReview(original);
-  enqueuePendingReview({ ...original, queueEntryId: 501, attemptId: "submitted", outcome: "correct" });
+  await enqueuePendingReview({ ...original, backendId: "unrelated", attemptId: "independent", queueEntryId: 900 });
+  await enqueuePendingReview(original);
+  await enqueuePendingReview({ ...original, queueEntryId: 501, attemptId: "submitted", outcome: "correct" });
   const deliveries: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_url, options) => {
     deliveries.push(JSON.parse(options.body).attempt_id);

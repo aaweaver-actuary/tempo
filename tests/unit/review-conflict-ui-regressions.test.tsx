@@ -1,3 +1,4 @@
+import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { OfflineReviewConflicts } from "../../app/components/offline-review-conflicts";
@@ -21,6 +22,7 @@ beforeEach(() => {
 
 it("online conflict dialog exports original evidence and discards only the selected record", async () => {
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict, { ...conflict, attemptId: "completed-b", queueEntryId: 18 }]));
+  await initializeStudyIntentStorage(true);
   render(<OfflineReviewConflicts />);
   fireEvent.click(await screen.findByRole("button", { name: "Review conflicts (2)" }));
   expect(screen.getAllByText(conflict.conflict.message)).toHaveLength(2);
@@ -32,6 +34,7 @@ it("online conflict dialog exports original evidence and discards only the selec
 
 it("online conflict dialog explicitly retries the immutable logical attempt", async () => {
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict]));
+  await initializeStudyIntentStorage(true);
   const fetchMock = vi.fn().mockResolvedValue(Response.json({ persisted: true }));
   vi.stubGlobal("fetch", fetchMock);
   render(<OfflineReviewConflicts />);

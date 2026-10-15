@@ -12,7 +12,7 @@ import type { PracticeCard } from "../domain/cards";
 import { API_URL } from "../const";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
-import { confirmOperationResponse } from "../lib/operation-status";
+import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
 
 type PresentedStudyExercise = {
   id: string; revision: number; type: "move_line" | "square_set" | "knight_path" | "choice" | "explanation";
@@ -55,11 +55,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const [hintSeen, setHintSeen] = useState(false);
   const [reply, setReply] = useState<AttemptReply | null>(null);
   const [feedback, setFeedback] = useState<Record<string, unknown> | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(!card?.studySnapshot);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const pendingRef = useRef<{ id: string; payload: Record<string, unknown> } | null>(null);
   const offlineAnswerRef = useRef<StudyAnswer | null>(null);
   const generationRef = useRef(0);
+  const requestScope = `study:${studyId}:${exerciseId}:${card?.queueEntryId ?? "practice"}`;
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -99,6 +100,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       });
     return () => { controller.abort(); generationRef.current += 1; };
   }, [studyId, exerciseId, card?.studySnapshot]);
+
 
   const answerLocked = Boolean(reply);
   const currentFen = useMemo(() => {
@@ -180,12 +182,40 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     return { type: "explanation", text: answerText, ready: true };
   };
 
-  const revealFeedback = async (attemptId: string, generation: number) => {
+  const revealFeedback = useCallback(async (attemptId: string, generation: number) => {
     const feedbackResponse = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${attemptId}/feedback`);
     if (!feedbackResponse.ok) throw new Error("Answer saved, but feedback could not load. Retry feedback.");
     const revealed = await feedbackResponse.json() as { specification: Record<string, unknown> };
     if (generation === generationRef.current) { setFeedback(revealed.specification); setSaveError(""); }
-  };
+  }, [studyId, exerciseId]);
+
+  const exerciseRevision = exercise?.revision;
+  useEffect(() => {
+    if (!exerciseRevision || card?.studySnapshot) return;
+    const generation = generationRef.current;
+    let active = true;
+    queueMicrotask(() => { if (active) setBusy(true); });
+    void retainedStudyRequest(requestScope).then(async retained => {
+      if (!active || generation !== generationRef.current || !retained) return;
+      pendingRef.current = { id: retained.requestId, payload: retained.body };
+      const restored = await executeStudyRequest({ scope: requestScope,
+        endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, requestId: retained.requestId, body: retained.body });
+      const body = await restored.json() as AttemptReply;
+      if (!active || generation !== generationRef.current) return;
+      setReply(body); pendingRef.current = null;
+      const assessment = await retainedStudyRequest(`${requestScope}:self-assess`);
+      if (assessment) {
+        const response = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
+          endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${body.attempt_id}/self-assess`,
+          requestId: assessment.requestId, body: assessment.body });
+        if (active && generation === generationRef.current) setReply(await response.json() as AttemptReply);
+      }
+      await revealFeedback(body.attempt_id, generation);
+    }).catch(error => { if (active && generation === generationRef.current) setSaveError(String(error)); })
+      .finally(() => { if (active && generation === generationRef.current) setBusy(false); });
+    return () => { active = false; };
+  // The loaded revision, rather than live answer fields, defines request recovery.
+  }, [exerciseRevision, requestScope, studyId, exerciseId, card?.studySnapshot, revealFeedback]);
 
   const submit = async () => {
     if (!exercise || reply || busy || blocked) return;
@@ -226,14 +256,10 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     pendingRef.current = pending;
     setBusy(true); setSaveError("");
     try {
-      const response = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.id },
-        body: JSON.stringify(pending.payload),
-      });
-      const confirmed = await confirmOperationResponse(response);
+      const confirmed = await executeStudyRequest({ scope: requestScope, endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`,
+        requestId: pending.id, body: pending.payload });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) {
-        if (confirmed.status >= 400 && confirmed.status < 500) pendingRef.current = null;
         throw new Error(responseError(confirmed.status, body.detail));
       }
       if (generation !== generationRef.current) return;
@@ -256,11 +282,9 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     }
     setBusy(true); setSaveError("");
     try {
-      const response = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`, {
-        method: "POST", headers: { "Content-Type": "application/json",
-          "Idempotency-Key": `${reply.attempt_id}:self-assess` }, body: JSON.stringify({ rating }),
-      });
-      const confirmed = await confirmOperationResponse(response);
+      const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
+        endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
+        requestId: `${reply.attempt_id}:self-assess`, body: { rating } });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
       if (generation === generationRef.current) setReply(body);

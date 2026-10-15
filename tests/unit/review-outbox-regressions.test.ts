@@ -1,3 +1,5 @@
+import { withMissingReceipts, resetStudyStorage, interceptIntentWrites } from "./support/study-intent-fixtures";
+import { initializeStudyIntentStorage, closeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { conflictedReviews, enqueuePendingReview, flushPendingReviews, pendingReviews, retryReviewConflict, ReviewReplayError } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
@@ -18,10 +20,10 @@ const auditReview = (attemptId: string, queueEntryId: number, backendId = attemp
 const auditSuccessor = { card_id: "audit-successor", queue_entry_id: 9999, revision: 1, cycle: 0, local_date: "2026-10-11" };
 
 it("flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery", async () => {
-  enqueuePendingReview({ ...auditReview("startup-predecessor", 10001, "startup-conflict-card"), state: "conflicted",
+  await enqueuePendingReview({ ...auditReview("startup-predecessor", 10001, "startup-conflict-card"), state: "conflicted",
     conflict: { code: "retired", message: "Needs attention", retryable: false } });
-  enqueuePendingReview(auditReview("startup-conflict", 10002, "startup-conflict-card"));
-  enqueuePendingReview({ ...auditReview("startup-target", 10003), preparedNext: auditSuccessor });
+  await enqueuePendingReview(auditReview("startup-conflict", 10002, "startup-conflict-card"));
+  await enqueuePendingReview({ ...auditReview("startup-target", 10003), preparedNext: auditSuccessor });
   const heldPost = auditDeferred<Response>();
   const postRequested = auditDeferred<void>();
   const heldReceipt = auditDeferred<Response>();
@@ -86,22 +88,22 @@ it("flush_settlement_audit reentrant submitted owner cannot reject after concurr
 });
 
 it.each(["persisted", "terminal"])("flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication", async outcome => {
-  enqueuePendingReview({ ...auditReview("reentrant-a", 9901), preparedNext: auditSuccessor });
-  enqueuePendingReview(auditReview("reentrant-b", 9902));
+  await enqueuePendingReview({ ...auditReview("reentrant-a", 9901), preparedNext: auditSuccessor });
+  await enqueuePendingReview(auditReview("reentrant-b", 9902));
   const heldA = auditDeferred<Response>();
   const requestedA = auditDeferred<void>();
   const heldB = auditDeferred<Response>();
   const requestedB = auditDeferred<void>();
   const trace: string[] = [];
   const deliveries: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input, options) => {
     const attempt = JSON.parse(options!.body as string).attempt_id;
     deliveries.push(attempt);
     if (attempt === "reentrant-b") { requestedB.resolve(); return heldB.promise; }
     if (String(input).endsWith("/reconcile")) return Response.json({ persisted: false,
       conflict: { code: "retired", message: "Needs attention", retryable: false } });
     requestedA.resolve(); return heldA.promise;
-  }));
+  })));
   let ownerCompleted = false;
   const owner = flushPendingReviews().then(result => { ownerCompleted = true; return result; });
   await requestedA.promise;
@@ -139,18 +141,18 @@ it.each(["persisted", "terminal"])("flush_settlement_audit synchronous outbox su
 });
 
 it.each(["unlimited", "submitted"])("flush_settlement_audit %s follow-up failure retains earlier settled evidence", async caller => {
-  enqueuePendingReview({ ...auditReview("partial-a", 9801, "partial-card"), preparedNext: auditSuccessor });
-  enqueuePendingReview(auditReview("partial-b", 9802, "partial-card"));
-  enqueuePendingReview(auditReview("partial-c", 9803, "partial-card"));
+  await enqueuePendingReview({ ...auditReview("partial-a", 9801, "partial-card"), preparedNext: auditSuccessor });
+  await enqueuePendingReview(auditReview("partial-b", 9802, "partial-card"));
+  await enqueuePendingReview(auditReview("partial-c", 9803, "partial-card"));
   const responseA = auditDeferred<Response>();
   const requestedA = auditDeferred<void>();
   const responseB = auditDeferred<Response>();
   const requestedB = auditDeferred<void>();
-  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (_input, options) => {
     const attempt = JSON.parse(options!.body as string).attempt_id;
     if (attempt === "partial-a") { requestedA.resolve(); return responseA.promise; }
     requestedB.resolve(); return responseB.promise;
-  }));
+  })));
   const owner = flushPendingReviews(1);
   await requestedA.promise;
   const joinedOutcome = flushPendingReviews(Infinity, false, undefined, undefined, caller === "submitted" ? "partial-c" : undefined)
@@ -179,8 +181,8 @@ it.each(["unlimited", "submitted"])("flush_settlement_audit %s follow-up failure
 });
 
 it.each(["persisted", "failed"])("flush_settlement_audit different explicit retry identities retain suppression after %s owner", async outcome => {
-  enqueuePendingReview({ ...auditReview("retry-a", 9701), automaticRecoverySuppressed: "failed" });
-  enqueuePendingReview({ ...auditReview("retry-b", 9702), automaticRecoverySuppressed: "failed" });
+  await enqueuePendingReview({ ...auditReview("retry-a", 9701), automaticRecoverySuppressed: "failed" });
+  await enqueuePendingReview({ ...auditReview("retry-b", 9702), automaticRecoverySuppressed: "failed" });
   const heldA = auditDeferred<Response>();
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input, options) => {
@@ -201,15 +203,15 @@ it.each(["persisted", "failed"])("flush_settlement_audit different explicit retr
   expect(pendingReviews().map(item => [item.attemptId, item.automaticRecoverySuppressed])).toEqual(outcome === "persisted" ? [] : [["retry-a", "failed"]]);
 });
 
-it.each(["completion", "rejection"])("flush_settlement_audit next generation publishes before previous waiter callbacks: %s", async outcome => {
+it.each(["completion", "rejection"])("flush_settlement_audit durable next generation settles waiters with its own terminal result: %s", async outcome => {
   const trace: string[] = [];
   const initialResponse = auditDeferred<Response>();
   const initialRequested = auditDeferred<void>();
-  enqueuePendingReview(auditReview("handoff-a", 9601));
-  enqueuePendingReview({ ...auditReview("handoff-predecessor", 9602, "handoff-card"), state: "conflicted",
+  await enqueuePendingReview(auditReview("handoff-a", 9601));
+  await enqueuePendingReview({ ...auditReview("handoff-predecessor", 9602, "handoff-card"), state: "conflicted",
     conflict: { code: "retired", message: "Needs attention", retryable: false } });
-  enqueuePendingReview(auditReview("handoff-b", 9603, "handoff-card"));
-  vi.stubGlobal("fetch", vi.fn(() => { initialRequested.resolve(); return initialResponse.promise; }));
+  await enqueuePendingReview(auditReview("handoff-b", 9603, "handoff-card"));
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(() => { initialRequested.resolve(); return initialResponse.promise; })));
   const owner = flushPendingReviews(1).then(result => { trace.push("A caller completion"); return { result }; },
     error => { trace.push("A caller rejection"); return { error }; });
   await initialRequested.promise;
@@ -227,8 +229,10 @@ it.each(["completion", "rejection"])("flush_settlement_audit next generation pub
       trace.push("first microtask");
       queueMicrotask(() => {
         trace.push("B starts");
-        nextFlush = flushPendingReviews(Infinity, false, undefined, undefined, "handoff-b");
-        trace.push(conflictedReviews().some(item => item.attemptId === "handoff-b") ? "B published terminal settlement" : "B did not publish synchronously");
+        nextFlush = flushPendingReviews(Infinity, false, undefined, undefined, "handoff-b").then(result => {
+          expect(conflictedReviews().some(item => item.attemptId === "handoff-b")).toBe(true);
+          trace.push("B published terminal settlement"); return result;
+        });
       });
     });
   };
@@ -241,10 +245,10 @@ it.each(["completion", "rejection"])("flush_settlement_audit next generation pub
     expect(nextFlush).toBeDefined();
     const nextResult = await nextFlush!;
     expect(trace.indexOf("B published terminal settlement")).toBeGreaterThan(trace.indexOf("B starts"));
-    expect(trace.indexOf("B published terminal settlement")).toBeLessThan(trace.indexOf(`A caller ${outcome}`));
-    expect(submittedResult).toMatchObject({ result: { persistedAttemptIds: [], conflictedAttemptIds: ["handoff-b"] } });
-    expect(nextResult).toMatchObject({ persistedAttemptIds: [], conflictedAttemptIds: ["handoff-b"] });
-    expect(nextResult.preparedContinuations).toBeUndefined();
+    expect(trace).toContain("old B waiter completion");
+    expect(submittedResult).toMatchObject({ result: { persistedAttemptIds: outcome === "completion" ? ["handoff-a"] : [], conflictedAttemptIds: ["handoff-b"] } });
+    expect(nextResult).toMatchObject({ persistedAttemptIds: outcome === "completion" ? ["handoff-a"] : [], conflictedAttemptIds: ["handoff-b"] });
+    expect(nextResult.preparedContinuations ?? {}).toEqual({});
     if (outcome === "completion") expect(ownerResult).toMatchObject({ result: { persistedAttemptIds: ["handoff-a"] } });
     else expect(ownerResult).toMatchObject({ error: { attemptId: "handoff-a" } });
     console.info("flush_settlement_audit handoff", outcome, trace);
@@ -254,16 +258,16 @@ it.each(["completion", "rejection"])("flush_settlement_audit next generation pub
 it.each([1, 2])("flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities", async maximum => {
   const response = auditDeferred<Response>();
   const firstRequested = auditDeferred<void>();
-  enqueuePendingReview({ ...auditReview("bounded-a", 9101), preparedNext: auditSuccessor });
-  enqueuePendingReview(auditReview("bounded-b", 9102));
-  enqueuePendingReview({ ...auditReview("bounded-c", 9103), preparedNext: auditSuccessor });
+  await enqueuePendingReview({ ...auditReview("bounded-a", 9101), preparedNext: auditSuccessor });
+  await enqueuePendingReview(auditReview("bounded-b", 9102));
+  await enqueuePendingReview({ ...auditReview("bounded-c", 9103), preparedNext: auditSuccessor });
   const deliveries: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (_input, options) => {
     const attempt = JSON.parse(options!.body as string).attempt_id;
     deliveries.push(attempt);
     if (attempt === "bounded-a") { firstRequested.resolve(); return response.promise; }
     return Response.json({ persisted: true, prepared_continuation: auditSuccessor });
-  }));
+  })));
   const bounded = flushPendingReviews(maximum);
   await firstRequested.promise;
   const unlimited = flushPendingReviews();
@@ -277,8 +281,8 @@ it.each([1, 2])("flush_settlement_audit bounded %s then unlimited preserves all 
 });
 
 it.each([1, 2, Infinity])("flush_settlement_audit submitted identities coalesce with limit %s and retain immutable early snapshots", async maximum => {
-  enqueuePendingReview({ ...auditReview("identity-a", 9201), preparedNext: auditSuccessor });
-  enqueuePendingReview(auditReview("identity-b", 9202));
+  await enqueuePendingReview({ ...auditReview("identity-a", 9201), preparedNext: auditSuccessor });
+  await enqueuePendingReview(auditReview("identity-b", 9202));
   const responseA = auditDeferred<Response>();
   const responseB = auditDeferred<Response>();
   const requestedA = auditDeferred<void>();
@@ -311,7 +315,7 @@ it.each([1, 2, Infinity])("flush_settlement_audit submitted identities coalesce 
 it.each(["terminal", "retryable", "network-before", "network-after", "missing-confirmation"])(
   "flush_settlement_audit overlapping submitted outcome remains truthful: %s", async outcome => {
     const attempt = "outcome-attempt";
-    enqueuePendingReview({ ...auditReview(attempt, 9301), preparedNext: auditSuccessor });
+    await enqueuePendingReview({ ...auditReview(attempt, 9301), preparedNext: auditSuccessor });
     const response = auditDeferred<Response>();
     const requested = auditDeferred<void>();
     let committed = false;
@@ -358,8 +362,8 @@ it.each(["terminal", "retryable", "network-before", "network-after", "missing-co
   });
 
 it.each([false, true])("flush_settlement_audit unrelated rejection attributes its own attempt and explicit retry=%s", async explicitRetry => {
-  enqueuePendingReview(auditReview("reject-a", 9401));
-  enqueuePendingReview(auditReview("waiting-b", 9402));
+  await enqueuePendingReview(auditReview("reject-a", 9401));
+  await enqueuePendingReview(auditReview("waiting-b", 9402));
   const rejectedResponse = auditDeferred<Response>();
   const requested = auditDeferred<void>();
   const requests: string[] = [];
@@ -387,17 +391,17 @@ it.each([false, true])("flush_settlement_audit unrelated rejection attributes it
 });
 
 it.each(["persisted", "suppressed", "conflicted"])("flush_settlement_audit target cannot bypass same-card %s predecessor", async predecessor => {
-  enqueuePendingReview(auditReview("independent-before", 9500));
-  enqueuePendingReview({ ...auditReview("same-earlier", 9501, "same-card"),
+  await enqueuePendingReview(auditReview("independent-before", 9500));
+  await enqueuePendingReview({ ...auditReview("same-earlier", 9501, "same-card"),
     ...(predecessor === "suppressed" ? { automaticRecoverySuppressed: "failed" as const } : {}),
     ...(predecessor === "conflicted" ? { state: "conflicted" as const, conflict: { code: "retired", message: "Needs review", retryable: false } } : {}) });
-  enqueuePendingReview(auditReview("same-target", 9502, "same-card"));
-  enqueuePendingReview(auditReview("independent-after", 9503));
+  await enqueuePendingReview(auditReview("same-target", 9502, "same-card"));
+  await enqueuePendingReview(auditReview("independent-after", 9503));
   const deliveries: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (_input, options) => {
     deliveries.push(JSON.parse(options!.body as string).attempt_id);
     return Response.json({ persisted: true });
-  }));
+  })));
   const result = await flushPendingReviews(Infinity, false, undefined, undefined, "same-target");
   if (predecessor === "persisted") expect(result.persistedAttemptIds).toEqual(["same-earlier", "same-target"]);
   else {
@@ -420,14 +424,14 @@ it.each(["success", "failure"])("overlapping_review_flushes_settle_only_their_su
   const preparedNext = { card_id: "successor-a", queue_entry_id: 104, revision: 1, cycle: 0, local_date: "2026-10-11" };
   const firstReview = { backendId: "a", queueEntryId: 101, attemptId: "overlap-a", outcome: "correct" as const,
     guided: false, preparedNext };
-  enqueuePendingReview(firstReview);
-  enqueuePendingReview({ ...firstReview, backendId: "b", queueEntryId: 102, attemptId: "overlap-b", preparedNext: undefined });
+  await enqueuePendingReview(firstReview);
+  await enqueuePendingReview({ ...firstReview, backendId: "b", queueEntryId: 102, attemptId: "overlap-b", preparedNext: undefined });
   const firstResponse = heldReviewResponse();
   const secondResponse = heldReviewResponse();
   const thirdResponse = heldReviewResponse();
   const fetcher = vi.fn().mockImplementationOnce(() => firstResponse.response)
     .mockImplementationOnce(() => secondResponse.response).mockImplementationOnce(() => thirdResponse.response);
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   const originalFlush = flushPendingReviews();
   const originalOutcome = originalFlush.then(result => ({ result }), error => ({ error }));
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
@@ -439,7 +443,7 @@ it.each(["success", "failure"])("overlapping_review_flushes_settle_only_their_su
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   // Joining after publication must consume A's snapshot only for A.
   expect(await flushPendingReviews(Infinity, false, undefined, undefined, "overlap-a")).toEqual(firstSettlement);
-  enqueuePendingReview({ ...firstReview, backendId: "c", queueEntryId: 103, attemptId: "overlap-c", preparedNext: undefined });
+  await enqueuePendingReview({ ...firstReview, backendId: "c", queueEntryId: 103, attemptId: "overlap-c", preparedNext: undefined });
   let thirdSettled = false;
   const thirdWaiter = flushPendingReviews(Infinity, false, undefined, undefined, "overlap-c");
   const thirdOutcome = thirdWaiter.then(result => { thirdSettled = true; return { result }; }, error => ({ error }));
@@ -474,13 +478,15 @@ it.each(["success", "failure"])("overlapping_review_flushes_settle_only_their_su
 
 it.each(["success", "rejection", "timeout"])("review_flush_waiters_release_listeners_on_settlement: %s", async outcome => {
   const review = { backendId: "listener-card", queueEntryId: 201, attemptId: "listener-attempt", outcome: "correct" as const, guided: false };
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const heldResponse = heldReviewResponse();
-  vi.stubGlobal("fetch", vi.fn((_url, options) => {
+  let requestStarted = false;
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn((_url, options) => {
+    requestStarted = true;
     options.signal.addEventListener("abort", () => heldResponse.rejectResponse(options.signal.reason), { once: true });
     return heldResponse.response;
-  }));
-  if (outcome === "timeout") vi.useFakeTimers();
+  })));
+  if (outcome === "timeout") vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
   const active = flushPendingReviews();
   const activeOutcome = active.catch(error => error);
   const originalAdd = Set.prototype.add;
@@ -504,9 +510,10 @@ it.each(["success", "rejection", "timeout"])("review_flush_waiters_release_liste
     const registration = registrations[0];
     expect(registration).toBeDefined();
     const waiterOutcome = waiter.catch(error => error);
+    await vi.waitFor(() => expect(requestStarted).toBe(true));
     if (outcome === "success") heldResponse.resolveResponse(Response.json({ persisted: true }));
     if (outcome === "rejection") heldResponse.rejectResponse(new Error("Transport failed"));
-    if (outcome === "timeout") await vi.advanceTimersByTimeAsync(15_000);
+    if (outcome === "timeout") { await vi.waitFor(() => expect(requestStarted).toBe(true)); await vi.advanceTimersByTimeAsync(15_000); }
     const settlement = await waiterOutcome;
     await activeOutcome;
     expect(removals.some(removal => removal.owner === registration.owner && removal.listener === registration.listener)).toBe(true);
@@ -523,13 +530,13 @@ it.each(["success", "rejection", "timeout"])("review_flush_waiters_release_liste
 
 it("new_review_flush_and_restart_receipt_cannot_reuse_previous_attempt_authorization", async () => {
   const preparedNext = { card_id: "next-a", queue_entry_id: 304, revision: 1, cycle: 0, local_date: "2026-10-11" };
-  enqueuePendingReview({ backendId: "a", queueEntryId: 301, attemptId: "receipt-a", outcome: "correct", guided: false, preparedNext });
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ persisted: true, prepared_continuation: preparedNext })));
+  await enqueuePendingReview({ backendId: "a", queueEntryId: 301, attemptId: "receipt-a", outcome: "correct", guided: false, preparedNext });
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async () => Response.json({ persisted: true, prepared_continuation: preparedNext }))));
   await flushPendingReviews();
-  enqueuePendingReview({ backendId: "b", queueEntryId: 302, attemptId: "receipt-b", outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "b", queueEntryId: 302, attemptId: "receipt-b", outcome: "correct", guided: false });
   const heldResponse = heldReviewResponse();
   const fetcher = vi.fn(() => heldResponse.response);
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   const active = flushPendingReviews();
   const waiter = flushPendingReviews(Infinity, false, undefined, undefined, "receipt-b");
   heldResponse.resolveResponse(Response.json({ persisted: true, prepared_continuation: preparedNext }));
@@ -538,7 +545,7 @@ it("new_review_flush_and_restart_receipt_cannot_reuse_previous_attempt_authoriza
   expect(result.persistedAttemptIds).toEqual(["receipt-b"]);
   expect(result.preparedContinuations).toEqual({});
   // A restarted module has no in-memory flush; the original receipt is authoritative.
-  enqueuePendingReview({ backendId: "a", queueEntryId: 301, attemptId: "receipt-a", outcome: "correct", guided: false, preparedNext });
+  await enqueuePendingReview({ backendId: "a", queueEntryId: 301, attemptId: "receipt-a", outcome: "correct", guided: false, preparedNext });
   vi.resetModules();
   const restartedOutbox = await import("../../app/lib/review-outbox");
   const receiptReader = vi.fn<typeof fetch>(async () => Response.json({ state: "complete", response: { persisted: true, prepared_continuation: preparedNext } }));
@@ -546,18 +553,17 @@ it("new_review_flush_and_restart_receipt_cannot_reuse_previous_attempt_authoriza
   const recovered = await restartedOutbox.flushPendingReviews(Infinity, true, undefined, undefined, "receipt-a");
   expect(recovered.persistedAttemptIds).toEqual(["receipt-a"]);
   expect(recovered.preparedContinuations).toEqual({ "receipt-a": preparedNext });
-  expect(receiptReader).toHaveBeenCalledTimes(1);
-  expect(String(receiptReader.mock.calls[0][0])).toContain("review-attempt%3Areceipt-a");
+  expect(receiptReader).not.toHaveBeenCalled(); // The original confirmed server receipt is now durable.
 });
 
 it("conflicted_review_settlement_never_returns_prepared_authorization", async () => {
   const preparedNext = { card_id: "successor", queue_entry_id: 402, revision: 1, cycle: 0, local_date: "2026-10-11" };
-  enqueuePendingReview({ backendId: "conflicted", queueEntryId: 401, attemptId: "conflicted-attempt",
+  await enqueuePendingReview({ backendId: "conflicted", queueEntryId: 401, attemptId: "conflicted-attempt",
     outcome: "correct", guided: false, preparedNext });
   const heldResponse = heldReviewResponse();
-  vi.stubGlobal("fetch", vi.fn().mockImplementationOnce(() => heldResponse.response)
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn().mockImplementationOnce(() => heldResponse.response)
     .mockResolvedValueOnce(Response.json({ persisted: false,
-      conflict: { code: "queue_attempt_unprovable", message: "Needs attention", retryable: false }, prepared_continuation: preparedNext })));
+      conflict: { code: "queue_attempt_unprovable", message: "Needs attention", retryable: false }, prepared_continuation: preparedNext }))));
   const active = flushPendingReviews();
   const waiter = flushPendingReviews(Infinity, false, undefined, undefined, "conflicted-attempt");
   heldResponse.resolveResponse(Response.json({ detail: "Retired", retryable: false }, { status: 409 }));
@@ -576,14 +582,14 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-function enqueueOpeningEvidenceReview(attemptId: string) {
+async function enqueueOpeningEvidenceReview(attemptId: string) {
   const completion = openingEvidenceCheckpointSchema.parse({ attempt_id: attemptId, manifest,
     origin_queue_entry_id: 101, queue_entry_id: 101, started_at: "2026-09-30T12:00:00Z", study_timezone: "UTC",
     events: [{ sequence: 1, decision_index: 0, decision_id: manifest.decisions[0].decision_id,
       expected_uci: "e2e4", kind: "first_response", response_uci: "e2e4",
       observed_at: "2026-09-30T12:00:01Z", disposition: "expected" }],
     terminal: { state: "complete", final_sequence: 1, ended_at: "2026-09-30T12:01:00Z" } });
-  enqueuePendingReview({ backendId: "shadow-card", queueEntryId: 101, outcome: "correct", guided: false,
+  await enqueuePendingReview({ backendId: "shadow-card", queueEntryId: 101, outcome: "correct", guided: false,
     attemptId, completedAt: completion.terminal!.ended_at, openingEvidenceCompletion: completion });
   return pendingReviews()[0];
 }
@@ -592,27 +598,29 @@ describe("optimistic training review outbox", () => {
   it("legacy identity storage failure attributes the retained result before any request", async () => {
     const original = JSON.stringify([{ backendId: "legacy-a", queueEntryId: 71, outcome: "correct", guided: false }]);
     localStorage.setItem("tempo-pending-training-reviews-v1", original);
-    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage unavailable"); });
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    const storageFailure = new Error("Storage unavailable");
+    const write = interceptIntentWrites(() => { throw storageFailure; });
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     try {
-      await expect(flushPendingReviews()).rejects.toMatchObject({ backendId: "legacy-a", queueEntryId: 71, attemptId: "legacy-online:71", message: "Storage unavailable" });
+      await expect(initializeStudyIntentStorage(true)).rejects.toMatchObject({ backendId: "legacy-a", queueEntryId: 71,
+        attemptId: "legacy-online:71", cause: storageFailure });
       expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(original);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally { write.mockRestore(); }
   });
 
   it("review timeout also bounds deferred operation receipt polling", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ operation_id: "pending-a" }, { status: 202 }))
       .mockImplementationOnce((_input, options) => new Promise<Response>((_resolve, reject) => {
         options.signal.addEventListener("abort", () => reject(options.signal.reason));
       }));
     vi.stubGlobal("fetch", fetchMock);
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
     try {
       const saving = flushPendingReviews();
       const rejected = expect(saving).rejects.toMatchObject({ queueEntryId: 17, message: expect.stringContaining("timed out") });
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
       await vi.advanceTimersByTimeAsync(15_000);
       await rejected;
       expect(pendingReviews()).toHaveLength(1);
@@ -623,11 +631,12 @@ describe("optimistic training review outbox", () => {
     localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
       { backendId: "legacy-card", queueEntryId: 71, outcome: "correct", guided: false },
     ]));
+  await initializeStudyIntentStorage(true);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ detail: "historical rejection" }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
       .mockResolvedValueOnce(Response.json({ persisted: true }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await expect(flushPendingReviews()).rejects.toMatchObject({ status: 503, attemptId: "legacy-online:71" });
     expect(pendingReviews()[0]).toMatchObject({ attemptId: "legacy-online:71", state: "reconciling" });
     expect(pendingReviews()[0].completedAt).toBeUndefined();
@@ -643,9 +652,10 @@ describe("optimistic training review outbox", () => {
       state: "conflicted", reconciliationSequence: 1,
       conflict: { code: "card_revision_changed", message: "Card changed", retryable: false } };
     localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([review]));
-    retryReviewConflict(review.attemptId);
+  await initializeStudyIntentStorage(true);
+    await retryReviewConflict(review.attemptId);
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ persisted: true }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await flushPendingReviews();
     expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("review-reconcile:immutable-attempt:2");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
@@ -659,10 +669,11 @@ describe("optimistic training review outbox", () => {
       { backendId: "card-a", queueEntryId: 70, outcome: "correct", guided: false, attemptId: "older-a", state: "conflicted",
         conflict: { code: "card_revision_changed", message: "Card changed", retryable: false } },
     ]));
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 71, outcome: "again", guided: false });
-    enqueuePendingReview({ backendId: "card-b", queueEntryId: 72, outcome: "correct", guided: false });
+  await initializeStudyIntentStorage(true);
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 71, outcome: "again", guided: false });
+    await enqueuePendingReview({ backendId: "card-b", queueEntryId: 72, outcome: "correct", guided: false });
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ persisted: true }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await flushPendingReviews();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain("card-b/review");
@@ -671,21 +682,16 @@ describe("optimistic training review outbox", () => {
   });
 
   it("failed atomic conflict write preserves A and pauses B without data loss", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
-    enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ detail: "stale" }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "No proof", retryable: false } }));
-    vi.stubGlobal("fetch", fetchMock);
-    const originalWrite = Storage.prototype.setItem;
-    const write = vi.spyOn(Storage.prototype, "setItem");
-    write.mockImplementation(function (this: Storage, key, value) {
-      if (key === "tempo-pending-training-reviews-v1" && value.includes('"state":"conflicted"'))
-        throw new DOMException("Storage full", "QuotaExceededError");
-      return originalWrite.call(this, key, value);
-    });
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
+    const storageFailure = new DOMException("Storage full", "QuotaExceededError");
+    const write = interceptIntentWrites(record => { if (record.state === "conflicted") throw storageFailure; });
     try {
-      await expect(flushPendingReviews()).rejects.toMatchObject({ queueEntryId: 17, message: expect.stringContaining("Storage full") });
+      await expect(flushPendingReviews()).rejects.toMatchObject({ queueEntryId: 17, classification: "storage", cause: { cause: storageFailure } });
       expect(pendingReviews().map(review => review.queueEntryId)).toEqual([17, 18]);
       expect(conflictedReviews()).toEqual([]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -693,7 +699,7 @@ describe("optimistic training review outbox", () => {
   });
 
   it("deferred failed receipt retains conflict classification and reconciles the same attempt", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
     const attemptId = pendingReviews()[0].attemptId;
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ operation_id: "old-save" }, { status: 202 }))
@@ -707,7 +713,7 @@ describe("optimistic training review outbox", () => {
   });
   it("terminal stale A remains inspectable while independent B and C persist", async () => {
     for (const [backendId, queueEntryId] of [["card-a", 17], ["card-b", 18], ["card-c", 19]] as const)
-      enqueuePendingReview({ backendId, queueEntryId, outcome: "correct", guided: false });
+      await enqueuePendingReview({ backendId, queueEntryId, outcome: "correct", guided: false });
     const initialAttempts = pendingReviews();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const endpoint = String(input);
@@ -717,10 +723,10 @@ describe("optimistic training review outbox", () => {
         return Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "The original queue context is unavailable.", retryable: false } });
       return Response.json({ persisted: true });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
-    const retained = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!);
+    const retained = conflictedReviews();
     expect(retained).toEqual([expect.objectContaining({ ...initialAttempts[0], state: "conflicted" })]);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       expect.stringContaining("/card-a/review"), expect.stringContaining("/card-a/review/reconcile"),
@@ -729,30 +735,30 @@ describe("optimistic training review outbox", () => {
   });
 
   it("replay rejection identifies old A rather than the current B", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
-    enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
     const attemptId = pendingReviews()[0].attemptId;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ detail: "busy" }, { status: 503 })));
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn().mockResolvedValue(Response.json({ detail: "busy" }, { status: 503 }))));
     await expect(flushPendingReviews()).rejects.toMatchObject({
       backendId: "card-a", queueEntryId: 17, attemptId, status: 503, retryable: true,
     });
   });
   it("confirmed guided review clears its earlier contextual failure marker", async () => {
-    enqueueTrainingFailure(17, "card-a", 1);
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, expectedRevision: 1,
+    await enqueueTrainingFailure(17, "card-a", 1);
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, expectedRevision: 1,
       outcome: "again", guided: true });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ persisted: true })));
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn().mockResolvedValue(Response.json({ persisted: true }))));
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
     expect(pendingTrainingFailures()).toEqual([]);
   });
   it("retains a failed review for retry after reload without duplicating the queue entry", async () => {
     const review = { backendId: "card-a", queueEntryId: 17, outcome: "correct" as const, guided: false };
-    enqueuePendingReview(review);
-    enqueuePendingReview(review);
+    await enqueuePendingReview(review);
+    await enqueuePendingReview(review);
     expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
-      .mockResolvedValueOnce(Response.json({ persisted: true })));
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn().mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ persisted: true }))));
     await expect(flushPendingReviews()).rejects.toThrow("busy");
     expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
     await flushPendingReviews();
@@ -760,10 +766,10 @@ describe("optimistic training review outbox", () => {
   });
 
   it("replays failed-attempt marking before grading and preserves order", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "again", guided: true });
-    enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "again", guided: true });
+    await enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ persisted: true }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await flushPendingReviews();
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       expect.stringContaining("/api/queue/entries/17/fail"),
@@ -774,11 +780,11 @@ describe("optimistic training review outbox", () => {
   });
 
   it("stale guided failure marking still saves the guided review once", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: true });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: true });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ persisted: true }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
 
     await flushPendingReviews();
 
@@ -792,11 +798,11 @@ describe("optimistic training review outbox", () => {
 
   it("unprovable guided result becomes a durable nonblocking conflict", async () => {
     const review = { backendId: "card-a", queueEntryId: 17, outcome: "correct" as const, guided: true };
-    enqueuePendingReview(review);
-    vi.stubGlobal("fetch", vi.fn()
+    await enqueuePendingReview(review);
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn()
       .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 }))
-      .mockResolvedValueOnce(Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original attempt unavailable", retryable: false } })));
+      .mockResolvedValueOnce(Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original attempt unavailable", retryable: false } }))));
 
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
@@ -804,20 +810,21 @@ describe("optimistic training review outbox", () => {
   });
 
   it("drains a review appended while an earlier review request is still in flight", async () => {
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
     let finishFirst: ((response: Response) => void) | undefined;
     const savedEntries: number[] = [];
-    vi.stubGlobal("fetch", vi.fn((input) => {
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn((input) => {
       const queueEntryId = String(input).includes("card-a") ? 17 : 18;
       savedEntries.push(queueEntryId);
       return queueEntryId === 17
         ? new Promise<Response>((resolve) => { finishFirst = resolve; })
         : Promise.resolve(Response.json({ persisted: true }));
-    }));
+    })));
     const saving = flushPendingReviews();
     expect(flushPendingReviews()).toBe(saving);
-    enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
-    finishFirst?.(Response.json({ persisted: true }));
+    await enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
+    await vi.waitFor(() => expect(finishFirst).toBeTypeOf("function"));
+    finishFirst!(Response.json({ persisted: true }));
     await saving;
     expect(savedEntries).toEqual([17, 18]);
     expect(pendingReviews()).toEqual([]);
@@ -825,14 +832,17 @@ describe("optimistic training review outbox", () => {
 
   it("times out an unresponsive review save and keeps it available for retry", async () => {
     const review = { backendId: "card-stalled", queueEntryId: 19, outcome: "correct" as const, guided: false };
-    enqueuePendingReview(review);
-    vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn((_input, options) => new Promise<Response>((_resolve, reject) => {
+    await enqueuePendingReview(review);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    let requestStarted = false;
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn((_input, options) => new Promise<Response>((_resolve, reject) => {
+      requestStarted = true;
       options.signal.addEventListener("abort", () => reject(options.signal.reason));
-    })));
+    }))));
     try {
       const saving = flushPendingReviews();
       const rejected = expect(saving).rejects.toThrow(/timed out/i);
+      await vi.waitFor(() => expect(requestStarted).toBe(true));
       await vi.advanceTimersByTimeAsync(15_000);
       await rejected;
       expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
@@ -843,11 +853,10 @@ describe("optimistic training review outbox", () => {
 
   it("keeps a Celery-accepted review until its operation receipt confirms the save", async () => {
     const review = { backendId: "card-pending", queueEntryId: 81, outcome: "correct" as const, guided: false };
-    enqueuePendingReview(review);
+    await enqueuePendingReview(review);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }, { status: 202 }))
       .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }))
-      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }, { status: 202 }))
       .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "complete", response: { persisted: true } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -856,11 +865,12 @@ describe("optimistic training review outbox", () => {
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
     expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toMatch(/^review-attempt:/);
-    expect(fetchMock.mock.calls[2][1].headers["Idempotency-Key"]).toBe(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]);
+    expect(String(fetchMock.mock.calls[2][0])).toContain(encodeURIComponent(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]));
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
   });
 
   it("retries one phone review identity after an uncertain save and clears it only on confirmation", async () => {
-    enqueuePendingReview({ backendId: "phone-card", queueEntryId: 91, outcome: "correct", guided: false });
+    await enqueuePendingReview({ backendId: "phone-card", queueEntryId: 91, outcome: "correct", guided: false });
     const saved = pendingReviews()[0];
     expect(saved.attemptId).toBeTruthy();
     expect(saved.completedAt).toBeTruthy();
@@ -868,7 +878,7 @@ describe("optimistic training review outbox", () => {
       .mockResolvedValueOnce(Response.json({ detail: "Temporarily unavailable" }, { status: 503 }))
       .mockResolvedValueOnce(Response.json({ persisted: true, review_id: 32,
         reconciliation: "chronological", warning: null }));
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await expect(flushPendingReviews()).rejects.toThrow("Temporarily unavailable");
     expect(pendingReviews()[0]).toEqual(saved);
     await flushPendingReviews();
@@ -880,107 +890,77 @@ describe("optimistic training review outbox", () => {
   });
 
   it("keeps a phone review when the server omits persistence confirmation", async () => {
-    enqueuePendingReview({ backendId: "phone-card", queueEntryId: 92, outcome: "again", guided: false });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({})));
+    await enqueuePendingReview({ backendId: "phone-card", queueEntryId: 92, outcome: "again", guided: false });
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn().mockResolvedValue(Response.json({}))));
     await expect(flushPendingReviews()).rejects.toThrow("did not confirm");
     expect(pendingReviews()).toHaveLength(1);
   });
   it.each(["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"])("AS-16 evidence outbox quota falls back to durable aggregate-only review (%s)", async quotaName => {
-    vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview("quota-attempt");
-    const unchanged = structuredClone(original);
-    localStorage.clear();
+    const original = await enqueueOpeningEvidenceReview("quota-attempt"); const unchanged = structuredClone(original);
+    await resetStudyStorage();
     const retainEvidence = vi.spyOn(openingEvidenceJournal, "retainOpeningEvidenceForStorageFallback");
-    const setItem = Storage.prototype.setItem;
-    const writes: string[] = [];
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (key === "tempo-pending-training-reviews-v1") {
-        writes.push(value);
-        if (value.includes("openingEvidenceCompletion")) throw new DOMException("Storage quota exceeded", quotaName);
-      }
-      return setItem.call(this, key, value);
+    const writes: unknown[] = [];
+    const write = interceptIntentWrites(record => {
+      writes.push(record.data);
+      if ((record.data as typeof original)?.openingEvidenceCompletion) throw new DOMException("Storage quota exceeded", quotaName);
     });
-    expect(() => enqueuePendingReview(original)).not.toThrow();
+    await enqueuePendingReview(original); write.mockRestore();
     expect(original).toEqual(unchanged);
     const { openingEvidenceCompletion: _completion, ...aggregate } = unchanged;
     expect(pendingReviews()).toEqual([{ ...aggregate, evidenceFallbackReason: "local_storage_quota" }]);
-    expect(writes).toHaveLength(2);
-    expect(JSON.parse(writes[0])).toEqual([unchanged]);
-    expect(JSON.parse(writes[1])).toEqual(pendingReviews());
+    expect(writes).toEqual([unchanged, pendingReviews()[0]]);
     expect(retainEvidence).toHaveBeenCalledExactlyOnceWith(unchanged.openingEvidenceCompletion);
     const request = vi.fn(async (_url, options: RequestInit) => {
-      expect(pendingReviews()[0]).toMatchObject({ evidenceFallbackReason: "local_storage_quota" });
       expect(new Headers(options.headers).get("Idempotency-Key")).toBe("review-attempt:quota-attempt:aggregate-only");
       expect(JSON.parse(options.body as string)).toEqual({ outcome: original.outcome, guided: original.guided,
         queue_entry_id: original.queueEntryId, attempt_id: original.attemptId, recorded_at: original.completedAt });
       return Response.json({ persisted: true });
     });
-    vi.stubGlobal("fetch", request);
-    await flushPendingReviews();
-    expect(request).toHaveBeenCalledOnce();
-    expect(pendingReviews()).toEqual([]);
+    vi.stubGlobal("fetch", withMissingReceipts(request)); await flushPendingReviews();
+    expect(request).toHaveBeenCalledOnce(); expect(pendingReviews()).toEqual([]);
   });
 
   it.each(["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"])("AS-16 aggregate-only outbox storage failure remains blocking and retryable (%s)", async quotaName => {
-    vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview("quota-blocked");
-    localStorage.clear();
-    const request = vi.fn(); vi.stubGlobal("fetch", request);
-    const failure = new DOMException("All review storage is full", quotaName);
-    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw failure; });
-    expect(() => enqueuePendingReview(original)).toThrow(failure);
-    expect(write).toHaveBeenCalledTimes(2);
-    expect(pendingReviews()).toEqual([]);
-    await flushPendingReviews();
-    expect(request).not.toHaveBeenCalled();
-    write.mockRestore();
-    enqueuePendingReview(original);
-    expect(pendingReviews()).toEqual([original]);
+    const original = await enqueueOpeningEvidenceReview("quota-blocked"); await resetStudyStorage();
+    const request = vi.fn(); vi.stubGlobal("fetch", withMissingReceipts(request));
+    const failure = new DOMException("All review storage is full", quotaName); let writes = 0;
+    const write = interceptIntentWrites(() => { writes++; throw failure; });
+    await expect(enqueuePendingReview(original)).rejects.toMatchObject({ cause: failure });
+    expect(writes).toBe(2); expect(pendingReviews()).toEqual([]);
+    await flushPendingReviews(); expect(request).not.toHaveBeenCalled();
+    write.mockRestore(); await enqueuePendingReview(original); expect(pendingReviews()).toEqual([original]);
   });
 
   it.each(["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"])("AS-16 quota fallback reload and ambiguous retries retain the compact payload and key (%s)", async quotaName => {
-    vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview("quota-retry"); localStorage.clear();
-    const setItem = Storage.prototype.setItem;
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (key === "tempo-pending-training-reviews-v1" && value.includes("openingEvidenceCompletion"))
-        throw new DOMException("Evidence is too large", quotaName);
-      return setItem.call(this, key, value);
-    });
-    enqueuePendingReview(original);
-    const durable = localStorage.getItem("tempo-pending-training-reviews-v1");
+    const original = await enqueueOpeningEvidenceReview("quota-retry"); await resetStudyStorage();
+    const write = interceptIntentWrites(record => { if ((record.data as typeof original)?.openingEvidenceCompletion) throw new DOMException("Evidence is too large", quotaName); });
+    await enqueuePendingReview(original); write.mockRestore();
+    const durable = pendingReviews()[0];
     const posts: RequestInit[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (_url, options: RequestInit) => {
-      posts.push(options);
-      if (posts.length === 1) throw new TypeError("Lost response");
-      return Response.json({ persisted: true });
-    }));
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (_url, options: RequestInit) => {
+      posts.push(options); if (posts.length === 1) throw new TypeError("Lost response"); return Response.json({ persisted: true });
+    })));
     await expect(flushPendingReviews()).rejects.toThrow("Lost response");
-    expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(durable);
-    await flushPendingReviews();
+    expect(pendingReviews()).toEqual([durable]);
+    closeStudyIntentStorage(); await initializeStudyIntentStorage(); await flushPendingReviews();
     expect(posts[1].body).toBe(posts[0].body);
     expect(new Headers(posts[1].headers).get("Idempotency-Key")).toBe("review-attempt:quota-retry:aggregate-only");
     expect(pendingReviews()).toEqual([]);
   });
 
-  it.each(["SecurityError", "InvalidStateError", "NotAllowedError"])("AS-16 denied initial review storage never switches to aggregate-only (%s)", storageErrorName => {
-    const original = enqueueOpeningEvidenceReview("denied-initial"); localStorage.clear();
-    const denied = new DOMException("Storage access denied", storageErrorName);
-    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw denied; });
-    expect(() => enqueuePendingReview(original)).toThrow(denied);
-    expect(write).toHaveBeenCalledOnce();
-    expect(pendingReviews()).toEqual([]);
+  it.each(["SecurityError", "InvalidStateError", "NotAllowedError"])("AS-16 denied initial review storage never switches to aggregate-only (%s)", async storageErrorName => {
+    const original = await enqueueOpeningEvidenceReview("denied-initial"); await resetStudyStorage();
+    const denied = new DOMException("Storage access denied", storageErrorName); let writes = 0;
+    const write = interceptIntentWrites(() => { writes++; throw denied; });
+    await expect(enqueuePendingReview(original)).rejects.toMatchObject({ cause: denied });
+    expect(writes).toBe(1); expect(pendingReviews()).toEqual([]); write.mockRestore();
   });
 
-  it.each([
-    new Error("Unknown storage failure"),
-    Object.assign(new Error("Unverified quota failure"), { name: "NS_ERROR_DOM_QUOTA_REACHED" }),
-  ])("AS-16 unknown initial review storage failure remains blocking (%s)", storageFailure => {
-    const original = enqueueOpeningEvidenceReview("unknown-storage"); localStorage.clear();
-    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw storageFailure; });
-    expect(() => enqueuePendingReview(original)).toThrow(storageFailure);
-    expect(write).toHaveBeenCalledOnce();
-    expect(pendingReviews()).toEqual([]);
+  it.each([new Error("Unknown storage failure"), Object.assign(new Error("Unverified quota failure"), { name: "NS_ERROR_DOM_QUOTA_REACHED" })])("AS-16 unknown initial review storage failure remains blocking (%s)", async storageFailure => {
+    const original = await enqueueOpeningEvidenceReview("unknown-storage"); await resetStudyStorage(); let writes = 0;
+    const write = interceptIntentWrites(() => { writes++; throw storageFailure; });
+    await expect(enqueuePendingReview(original)).rejects.toMatchObject({ cause: storageFailure });
+    expect(writes).toBe(1); expect(pendingReviews()).toEqual([]); write.mockRestore();
   });
 
   it.each([
@@ -988,18 +968,16 @@ describe("optimistic training review outbox", () => {
     ["deferred", "opening_evidence_conflict"], ["deferred", "opening_evidence_unavailable"],
   ] as const)("AS-16 %s %s primary rejection marker failure prevents fallback and preserves retry", async (timing, code) => {
     vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview(`required-marker-${timing}-${code}`);
-    const originalSetItem = Storage.prototype.setItem;
+    const original = await enqueueOpeningEvidenceReview(`required-marker-${timing}-${code}`);
     const storageFailure = new DOMException("Primary review storage denied", "SecurityError");
-    const primaryWrite = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (key === "tempo-pending-training-reviews-v1" && JSON.parse(value).some(
-        (item: { evidenceRejected?: string }) => item.evidenceRejected !== undefined)) throw storageFailure;
-      return originalSetItem.call(this, key, value);
+    const primaryWrite = interceptIntentWrites(record => {
+      if ((record.data as { evidenceRejected?: string } | undefined)?.evidenceRejected !== undefined) throw storageFailure;
     });
     const detail = { code, message: "Rejected immutable evidence", aggregate_review_allowed: true };
     const receiptMessage = `409: ${code}: Rejected immutable evidence`;
     const posts: RequestInit[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url, options?: RequestInit) => {
+      if (options?.method !== "POST" && decodeURIComponent(String(_url)).endsWith(":aggregate-only")) return new Response(null, { status: 404 });
       if (options?.method !== "POST") return Response.json({ state: "failed",
         error: { status_code: 409, message: receiptMessage, detail } });
       posts.push(options);
@@ -1007,30 +985,28 @@ describe("optimistic training review outbox", () => {
         return timing === "immediate" ? Response.json({ detail }, { status: 409 })
           : Response.json({ operation_id: `review-attempt:${original.attemptId}`, state: "pending" }, { status: 202 });
       expect(pendingReviews()).toEqual([{ ...original,
-        evidenceRejected: timing === "immediate" ? detail.message : receiptMessage }]);
+        evidenceRejected: receiptMessage }]);
       return Response.json({ persisted: true });
     }));
 
-    await expect(flushPendingReviews()).rejects.toBe(storageFailure);
+    await expect(flushPendingReviews()).rejects.toMatchObject({ cause: storageFailure });
     expect(posts).toHaveLength(1);
     expect(pendingReviews()).toEqual([original]);
     expect(localStorage.getItem("tempo-rejected-opening-reviews-v1")).toBeNull();
 
     primaryWrite.mockRestore();
     await flushPendingReviews();
-    expect(posts).toHaveLength(3);
-    expect(posts[1].body).toBe(posts[0].body);
+    expect(posts).toHaveLength(2);
     const originalKey = new Headers(posts[0].headers).get("Idempotency-Key");
-    expect(new Headers(posts[1].headers).get("Idempotency-Key")).toBe(originalKey);
-    expect(new Headers(posts[2].headers).get("Idempotency-Key")).toBe(`${originalKey}:aggregate-only`);
+    expect(new Headers(posts[1].headers).get("Idempotency-Key")).toBe(`${originalKey}:aggregate-only`);
     const aggregateBody = JSON.parse(posts[0].body as string); delete aggregateBody.opening_evidence_completion;
-    expect(JSON.parse(posts[2].body as string)).toEqual(aggregateBody);
+    expect(JSON.parse(posts[1].body as string)).toEqual(aggregateBody);
     expect(pendingReviews()).toEqual([]);
   });
 
   it.each(["denied read", "malformed data"])("AS-16 diagnostic archive %s cannot block aggregate-only delivery", async (failure) => {
     vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview(`archive-${failure}`);
+    const original = await enqueueOpeningEvidenceReview(`archive-${failure}`);
     if (failure === "malformed data") localStorage.setItem("tempo-rejected-opening-reviews-v1", "invalid JSON");
     else {
       const originalGetItem = Storage.prototype.getItem;
@@ -1046,7 +1022,7 @@ describe("optimistic training review outbox", () => {
       expect(pendingReviews()).toEqual([{ ...original, evidenceRejected: "Rejected evidence" }]);
       return Response.json({ persisted: true });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await flushPendingReviews();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(pendingReviews()).toEqual([]);
@@ -1054,7 +1030,7 @@ describe("optimistic training review outbox", () => {
 
   it("AS-16 diagnostic warning failure cannot block aggregate-only delivery", async () => {
     vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview("archive-warning-failure");
+    const original = await enqueueOpeningEvidenceReview("archive-warning-failure");
     const originalSetItem = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
       if (key === "tempo-rejected-opening-reviews-v1") throw new DOMException("Storage quota exceeded", "QuotaExceededError");
@@ -1070,7 +1046,7 @@ describe("optimistic training review outbox", () => {
       expect(pendingReviews()).toEqual([{ ...original, evidenceRejected: "Rejected evidence" }]);
       return Response.json({ persisted: true });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
     await flushPendingReviews();
     expect(warning.mock.calls.filter(([input]) => input.key === `opening-evidence-archive:${original.attemptId}`))
       .toHaveLength(1);
@@ -1080,7 +1056,7 @@ describe("optimistic training review outbox", () => {
 
   it("AS-16 failed diagnostic archive retains aggregate-only identity across uncertain save retries", async () => {
     vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview("archive-uncertain-fallback");
+    const original = await enqueueOpeningEvidenceReview("archive-uncertain-fallback");
     const originalSetItem = Storage.prototype.setItem;
     const archiveWrite = vi.fn(() => { throw new DOMException("Storage quota exceeded", "QuotaExceededError"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
@@ -1088,7 +1064,7 @@ describe("optimistic training review outbox", () => {
       return originalSetItem.call(this, key, value);
     });
     const posts: RequestInit[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (_url, options: RequestInit) => {
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (_url, options: RequestInit) => {
       posts.push(options);
       if (posts.length === 1) return Response.json({ detail: {
         code: "opening_evidence_conflict", message: "Rejected evidence", aggregate_review_allowed: true,
@@ -1096,7 +1072,7 @@ describe("optimistic training review outbox", () => {
       if (posts.length === 2) throw new TypeError("Connection lost after submission");
       expect(pendingReviews()).toEqual([{ ...original, evidenceRejected: "Rejected evidence" }]);
       return Response.json({ persisted: true });
-    }));
+    })));
 
     await expect(flushPendingReviews()).rejects.toThrow("Connection lost after submission");
     expect(pendingReviews()).toEqual([{ ...original, evidenceRejected: "Rejected evidence" }]);
@@ -1118,7 +1094,7 @@ describe("optimistic training review outbox", () => {
     ["deferred", "opening_evidence_conflict"], ["deferred", "opening_evidence_unavailable"],
   ] as const)("AS-16 %s %s diagnostic archive quota failure still saves the aggregate review", async (timing, code) => {
     vi.stubGlobal("indexedDB", undefined);
-    const original = enqueueOpeningEvidenceReview(`archive-quota-${timing}-${code}`);
+    const original = await enqueueOpeningEvidenceReview(`archive-quota-${timing}-${code}`);
     const originalSetItem = Storage.prototype.setItem;
     const archiveWrite = vi.fn(() => { throw new DOMException("Storage quota exceeded", "QuotaExceededError"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
@@ -1167,7 +1143,7 @@ describe("optimistic training review outbox", () => {
       events:[{sequence:1,decision_index:0,decision_id:manifest.decisions[0].decision_id,
         expected_uci:"e2e4",kind:"first_response",response_uci:"e2e4",observed_at:"2026-09-30T12:00:01Z",disposition:"expected"}],
       terminal:{state:"complete",final_sequence:1,ended_at:"2026-09-30T12:01:00Z"} });
-    enqueuePendingReview({backendId:"shadow-card",queueEntryId:101,outcome:"correct",guided:false,
+    await enqueuePendingReview({backendId:"shadow-card",queueEntryId:101,outcome:"correct",guided:false,
       attemptId:completion.attempt_id,openingEvidenceCompletion:completion});
     const original=pendingReviews()[0];
     const detail={code,message:"Rejected immutable evidence",aggregate_review_allowed:true};
@@ -1200,13 +1176,13 @@ describe("optimistic training review outbox", () => {
 
   it("unresolved guided review remains inspectable when reconciliation rejects it", async () => {
     const review = { backendId: "card-a", queueEntryId: 17, outcome: "correct" as const, guided: true };
-    enqueuePendingReview(review);
-    vi.stubGlobal("fetch", vi.fn()
+    await enqueuePendingReview(review);
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn()
       .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ persisted: false, conflict: {
         code: "queue_attempt_unprovable", message: "This queue attempt is no longer available", retryable: false,
-      } })));
+      } }))));
 
     const saved = pendingReviews()[0];
     expect(await flushPendingReviews()).toEqual({ persistedAttemptIds: [], conflictedAttemptIds: [saved.attemptId] });
@@ -1214,19 +1190,19 @@ describe("optimistic training review outbox", () => {
     expect(conflictedReviews()).toEqual([expect.objectContaining({ ...review, state: "conflicted" })]);
   });
   it("reconciliation preserves valid opening evidence and original result across retry and reload", async () => {
-    const original = enqueueOpeningEvidenceReview("evidence-reconcile");
+    const original = await enqueueOpeningEvidenceReview("evidence-reconcile");
     const posts: { url: string; init: RequestInit }[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (url: string, init: RequestInit) => {
       posts.push({ url, init });
       if (posts.length === 1) return Response.json({ detail: "Historical failed receipt", retryable: false }, { status: 409 });
       if (posts.length === 2) throw new TypeError("Lost reconciliation response");
       return Response.json({ persisted: true });
-    }));
+    })));
     await expect(flushPendingReviews()).rejects.toThrow("Lost reconciliation response");
-    const saved = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!);
+    const saved = pendingReviews();
     expect(saved).toEqual([{ ...original, state: "reconciling", reconciliationSequence: 1 }]);
-    // Reload the serialized record rather than reconstructing a completion.
-    localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify(saved));
+    closeStudyIntentStorage();
+    await initializeStudyIntentStorage();
     await flushPendingReviews();
     expect(posts).toHaveLength(3);
     for (const post of posts) expect(JSON.parse(post.init.body as string)).toEqual({
@@ -1245,9 +1221,9 @@ describe("optimistic training review outbox", () => {
 
 
 it("terminal review survives passive flushes and explicit retry preserves its complete envelope", async () => {
-  const original = enqueueOpeningEvidenceReview("terminal-evidence-attempt");
+  const original = await enqueueOpeningEvidenceReview("terminal-evidence-attempt");
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Invalid review" }, { status: 422 }));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await expect(flushPendingReviews()).rejects.toMatchObject({ classification: "failed" });
   expect(pendingReviews()[0]).toMatchObject({ ...original, automaticRecoverySuppressed: "failed" });
   const retained = localStorage.getItem("tempo-pending-training-reviews-v1");
@@ -1255,6 +1231,7 @@ it("terminal review survives passive flushes and explicit retry preserves its co
   expect(fetcher).toHaveBeenCalledOnce();
   expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(retained);
   fetcher.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(Response.json({ persisted: true }));
+  vi.stubGlobal("fetch", fetcher);
   await flushPendingReviews(Infinity, true, original.attemptId);
   expect(fetcher.mock.calls[2][1].body).toBe(fetcher.mock.calls[0][1].body);
   expect(fetcher.mock.calls[2][1].headers).toEqual(fetcher.mock.calls[0][1].headers);
@@ -1277,6 +1254,7 @@ it("explicit terminal retry becoming transient releases only its attempt for aut
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
     { ...first, automaticRecoverySuppressed: "failed" }, { ...second, automaticRecoverySuppressed: "failed" },
   ]));
+  await initializeStudyIntentStorage(true);
   const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 404 }))
     .mockResolvedValueOnce(Response.json({ detail: "Busy" }, { status: 503 }))
     .mockResolvedValueOnce(Response.json({ state: "complete", response: { persisted: true } }));
@@ -1293,17 +1271,18 @@ it("explicit retry cannot bypass an earlier suppressed result for the same card"
   const later = { ...original, queueEntryId: 2, attemptId: "later" };
   const retained = JSON.stringify([original, later]);
   localStorage.setItem("tempo-pending-training-reviews-v1", retained);
-  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await initializeStudyIntentStorage(true);
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await expect(flushPendingReviews(Infinity, true, "later")).rejects.toThrow("earlier result");
   expect(fetcher).not.toHaveBeenCalled();
   expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(retained);
 });
 
 it("retryable failed operation receipt remains transient and retains the original review", async () => {
-  enqueuePendingReview({ backendId: "card", queueEntryId: 1, attemptId: "retryable-receipt", outcome: "again", guided: false });
+  await enqueuePendingReview({ backendId: "card", queueEntryId: 1, attemptId: "retryable-receipt", outcome: "again", guided: false });
   const original = pendingReviews()[0];
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed", error: {
-    status_code: 409, retryable: true, message: "Worker will recover" } })));
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn().mockResolvedValue(Response.json({ state: "failed", error: {
+    status_code: 409, retryable: true, message: "Worker will recover" } }))));
   await expect(flushPendingReviews(1, true)).rejects.toMatchObject({ classification: "transient", retryable: true });
   expect(pendingReviews()).toEqual([original]);
 });
@@ -1312,7 +1291,7 @@ it("retryable failed operation receipt remains transient and retains the origina
 it("PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker", async () => {
   const review = { backendId: "guided-persisted", queueEntryId: 811, attemptId: "guided-original",
     completedAt: "2026-10-08T12:00:00Z", outcome: "correct" as const, guided: true, expectedRevision: 3 };
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const fetcher = vi.fn<typeof fetch>(async (input, options) => options?.method === "POST"
     ? Response.json({ detail: "Command broker unavailable" }, { status: 503 })
     : Response.json({ state: "complete", response: { persisted: true, review_id: 88 } }));

@@ -21,7 +21,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it("issue225_loading_review_replay_does_not_invent_prepared_continuation", async () => {
   const attempt = useTrainingStore.getState().attempt;
   expect(capturePreparedNext()).toBeUndefined();
-  enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: attempt.attemptId!,
+  await enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: attempt.attemptId!,
     outcome: "correct", guided: false, expectedRevision: 1, preparedNext: capturePreparedNext() });
   const frozenResult = { persisted: true, card_id: "a", review_id: 7 };
   let confirmed = false;

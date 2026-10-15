@@ -1,3 +1,4 @@
+import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { fetchAndInitializeQueue, loadEligibleOfflineQueue } from "../../app/views/fetchAndInitializeQueue";
@@ -41,7 +42,7 @@ beforeEach(() => {
     }], attempts: [], nextTemporaryId: -1,
   });
   offlineTrainingMocks.replayOfflineAttempts.mockResolvedValue(null);
-  vi.stubGlobal("indexedDB", {});
+
 });
 
 describe("desktop live queue isolation", () => {
@@ -122,7 +123,7 @@ describe("desktop live queue isolation", () => {
 
   it("guided attempt warnings clear quietly only after pending saves are confirmed", async () => {
     const legacy = publishNotification({ severity: "warning", source: "training queue", message: "Guided attempt save pending. Tempo will retry." });
-    enqueueTrainingFailure(801, "desktop-active", 1);
+    await enqueueTrainingFailure(801, "desktop-active", 1);
     let confirmAttempt: ((response: Response) => void) | undefined;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith("/fail")) return new Promise<Response>((resolve) => { confirmAttempt = resolve; });
@@ -195,7 +196,7 @@ describe("desktop live queue isolation", () => {
 
 
 it("pending old-card review cannot hide replacement content on the same queue ID", async () => {
-  enqueuePendingReview({ backendId: "old-card", queueEntryId: 801, outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "old-card", queueEntryId: 801, outcome: "correct", guided: false });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).endsWith("/review")
     ? Response.json({ detail: "busy" }, { status: 503 })
     : Response.json({ count: 1, cards: [{ id: "replacement-card", queue_entry_id: 801,
@@ -206,7 +207,7 @@ it("pending old-card review cannot hide replacement content on the same queue ID
 });
 
 it("old guided marker cannot label replacement content sharing its queue ID", async () => {
-  enqueueTrainingFailure(801, "old-card", 1);
+  await enqueueTrainingFailure(801, "old-card", 1);
   vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).endsWith("/fail")
     ? Response.json({ detail: "busy" }, { status: 503 })
     : Response.json({ count: 1, cards: [{ id: "replacement-card", revision: 1, queue_entry_id: 801,
@@ -229,7 +230,8 @@ it("iphone fallback applies conflict card identity pending pair identity and una
     state: "conflicted", reconciliationSequence: 1,
     conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } };
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict]));
-  enqueuePendingReview({ backendId: "pending-E", queueEntryId: 805, outcome: "correct", guided: false });
+  await initializeStudyIntentStorage(true);
+  await enqueuePendingReview({ backendId: "pending-E", queueEntryId: 805, outcome: "correct", guided: false });
   const prepared = { localDate: localDayKey(), preparedAt: new Date().toISOString(), nextTemporaryId: -1,
     cards: [rawCard("conflicted-A", 901), rawCard("independent-B", 802), rawCard("unsynced-C", 803),
       { ...rawCard("connected-D", 804), content_type: "defense" }, rawCard("pending-E", 805),
@@ -270,6 +272,7 @@ it("offline eligibility preserves only linked unchanged reinforcement while reta
     queueEntryId: 799, attemptId: "retained-conflict", completedAt: parent.completedAt, expectedRevision: 1,
     outcome: "correct", guided: false, state: "conflicted", reconciliationSequence: 1,
     conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } }]));
+  await initializeStudyIntentStorage(true);
   expect(await loadEligibleOfflineQueue(prepared)).toEqual([]);
 });
 
@@ -292,6 +295,7 @@ function expectNoCleanLegacyAttempt() {
 
 it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during delayed replay and reload", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   let resolveMarker!: (response: Response) => void;
   let serverFailed = false;
   const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
@@ -323,7 +327,8 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during
 
 it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration when replay is deferred behind another review", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
-  enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 41, outcome: "correct", guided: false });
+  await initializeStudyIntentStorage(true);
+  await enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 41, outcome: "correct", guided: false });
   const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/review")
     ? Response.json({ detail: "Review transport unavailable" }, { status: 503 })
     : Response.json(legacyMarkerQueuePayload()));
@@ -342,6 +347,7 @@ it("authoritative legacy marker resolution guides a retained active attempt with
   useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
   const logicalAttempt = useTrainingStore.getState().attempt;
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify([801]));
+  await initializeStudyIntentStorage(true);
   let resolveMarker!: (response: Response) => void;
   let serverFailed = false;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
@@ -367,6 +373,7 @@ it("authoritative legacy marker resolution guides a retained active attempt with
 
 it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or replacement content after ambiguous validation", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   for (const [cardId, revision] of [["desktop-active", 2], ["replacement-card", 1]] as const) {
     const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       if (String(input).endsWith("/fail")) {
@@ -388,7 +395,7 @@ it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or repla
 });
 
 it("modern guided markers hydrate only their exact card and revision", async () => {
-  enqueueTrainingFailure(801, "desktop-active", 1);
+  await enqueueTrainingFailure(801, "desktop-active", 1);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
     : Response.json(legacyMarkerQueuePayload())));
@@ -404,6 +411,7 @@ it("modern guided markers hydrate only their exact card and revision", async () 
 
 it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prepared offline attempt", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
   useTrainingStore.getState().setOfflineQueue(true);
   await expect(loadEligibleOfflineQueue({ localDate: localDayKey(), preparedAt: new Date().toISOString(),
@@ -413,6 +421,7 @@ it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prep
 
 it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh authoritative guided queue in the same hydration", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/fail")) return Response.json({ attempt_failed: true });
     await flushTrainingFailures();
@@ -426,7 +435,7 @@ it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh aut
 
 
 it.each(["complete", "missing"])("PR105 initial queue recovery confirms retained reviews before replay receipt=%s", async receiptState => {
-  enqueuePendingReview({ backendId: "retained-card", queueEntryId: 811, attemptId: "reload-original", outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "retained-card", queueEntryId: 811, attemptId: "reload-original", outcome: "correct", guided: false });
   const original = pendingReviews()[0];
   const fetcher = vi.fn<typeof fetch>(async (input, options) => {
     if (String(input).includes("/api/operations/")) return receiptState === "complete"

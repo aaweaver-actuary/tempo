@@ -5,7 +5,7 @@ import { usePendingReviewRecovery } from "../../app/hooks/use-pending-review-rec
 import { enqueuePendingReview, flushPendingReviews, pendingReviews } from "../../app/lib/review-outbox";
 import { clearNotificationHistory, notificationToasts, notifications } from "../../app/lib/notifications";
 
-beforeEach(() => { localStorage.clear(); clearNotificationHistory(); vi.useFakeTimers(); });
+beforeEach(() => { localStorage.clear(); clearNotificationHistory(); vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const review = { backendId: "card-one", queueEntryId: 101, attemptId: "original-attempt", outcome: "correct" as const, guided: false };
 function Harness({ blocked = false, confirmed }: { blocked?: boolean; confirmed: () => void }) {
@@ -15,8 +15,8 @@ const advance = async (milliseconds: number) => { await act(async () => { await 
 
 it.each(["success", "failure"])("flush_settlement_audit idle receipt observer retains target evidence after later %s", async laterOutcome => {
   const continuation = { card_id: "next", queue_entry_id: 103, revision: 1, cycle: 0, local_date: "2026-10-11" };
-  enqueuePendingReview({ ...review, preparedNext: continuation });
-  enqueuePendingReview({ ...review, backendId: "other", queueEntryId: 102, attemptId: "other-attempt" });
+  await enqueuePendingReview({ ...review, preparedNext: continuation });
+  await enqueuePendingReview({ ...review, backendId: "other", queueEntryId: 102, attemptId: "other-attempt" });
   let releaseReceipt!: (response: Response) => void;
   let releaseOther!: (response: Response) => void;
   let rejectOther!: (error: Error) => void;
@@ -51,7 +51,7 @@ it.each(["success", "failure"])("flush_settlement_audit idle receipt observer re
 });
 
 it("phone review recovery confirms the original receipt after reload without another POST", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const fetcher = vi.fn().mockResolvedValue(Response.json({ state: "complete", response: { persisted: true, review_id: 77 } }));
   vi.stubGlobal("fetch", fetcher); const confirmed = vi.fn();
   render(<Harness confirmed={confirmed} />); await advance(1000);
@@ -62,7 +62,7 @@ it("phone review recovery confirms the original receipt after reload without ano
 });
 
 it("phone pending receipt retries with bounded backoff and yields to foreground work", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const fetcher = vi.fn(async () => Response.json({ state: "queued" }));
   vi.stubGlobal("fetch", fetcher); const confirmed = vi.fn();
   const mounted = render(<Harness confirmed={confirmed} />);
@@ -82,7 +82,7 @@ it("phone pending receipt retries with bounded backoff and yields to foreground 
 });
 
 it("phone receipt recovery yields after one result and preserves another pending review", async () => {
-  enqueuePendingReview(review); enqueuePendingReview({ ...review, attemptId: "second", queueEntryId: 102 });
+  await enqueuePendingReview(review); await enqueuePendingReview({ ...review, attemptId: "second", queueEntryId: 102 });
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true } })));
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />); await advance(1000);
   expect(fetch).toHaveBeenCalledOnce(); expect(pendingReviews().map(item => item.attemptId)).toEqual(["second"]);
@@ -90,7 +90,7 @@ it("phone receipt recovery yields after one result and preserves another pending
 });
 
 it("phone blocked review receipt preserves the attempt and stops automatic retries", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "blocked", message: "Restore database access" })));
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
   await advance(1000); await advance(60000);
@@ -99,7 +99,7 @@ it("phone blocked review receipt preserves the attempt and stops automatic retri
 });
 
 it("phone review receipt confirmation waits for held pointer release before refreshing training", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   let finishReceipt: ((response: Response) => void) | undefined;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finishReceipt = resolve; })));
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
@@ -112,7 +112,7 @@ it("phone review receipt confirmation waits for held pointer release before refr
 });
 
 it("phone recovery replays a missing receipt with the original immutable review identity", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 404 }))
     .mockResolvedValueOnce(Response.json({ persisted: true }));
   vi.stubGlobal("fetch", fetcher); const confirmed = vi.fn();
@@ -123,7 +123,7 @@ it("phone recovery replays a missing receipt with the original immutable review 
 });
 
 it("phone receipt confirmed during a foreground pause refreshes once after resume", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   let finishReceipt: ((response: Response) => void) | undefined;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finishReceipt = resolve; })));
   const confirmed = vi.fn(); const mounted = render(<Harness confirmed={confirmed} />);
@@ -137,7 +137,7 @@ it("phone receipt confirmed during a foreground pause refreshes once after resum
 });
 
 it("phone readiness toggles retain one in-flight recovery and one confirmation callback", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   let finishReceipt: ((response: Response) => void) | undefined;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finishReceipt = resolve; })));
   const confirmed = vi.fn(); const mounted = render(<Harness confirmed={confirmed} />);
@@ -151,7 +151,7 @@ it("phone readiness toggles retain one in-flight recovery and one confirmation c
 });
 
 it("phone review storage failure suspends recovery and retains the confirmed result for repair", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Storage denied", "SecurityError"); });
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true } })));
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
@@ -164,7 +164,7 @@ it("phone review storage failure suspends recovery and retains the confirmed res
 
 
 it.each([false, true])("phone definitive foreground failure suppresses idle replay across reload=%s", async reload => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const original = pendingReviews()[0];
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Invalid review" }, { status: 422 }))
     .mockImplementation(async (_url, options) => options?.method === "POST"
@@ -180,7 +180,7 @@ it.each([false, true])("phone definitive foreground failure suppresses idle repl
 });
 
 it("phone blocked review suppression survives reload and permits explicit intervention", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const original = pendingReviews()[0];
   const fetcher = vi.fn<typeof fetch>(async () => Response.json({ state: "blocked", message: "Repair service in Jobs" }));
   vi.stubGlobal("fetch", fetcher);
@@ -202,13 +202,13 @@ it("phone blocked review suppression survives reload and permits explicit interv
 });
 
 it("phone terminal A does not starve independent B or allow a later same-card result", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Invalid review" }, { status: 422 }))
     .mockResolvedValue(Response.json({ state: "complete", response: { persisted: true } }));
   vi.stubGlobal("fetch", fetcher);
   await expect(flushPendingReviews()).rejects.toMatchObject({ status: 422 });
-  enqueuePendingReview({ ...review, attemptId: "later-same-card", queueEntryId: 102 });
-  enqueuePendingReview({ ...review, backendId: "independent-card", attemptId: "independent", queueEntryId: 103 });
+  await enqueuePendingReview({ ...review, attemptId: "later-same-card", queueEntryId: 102 });
+  await enqueuePendingReview({ ...review, backendId: "independent-card", attemptId: "independent", queueEntryId: 103 });
   render(<Harness confirmed={vi.fn()} />); await advance(60000);
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(fetcher.mock.calls[1][0]).toContain("review-attempt%3Aindependent");
@@ -216,7 +216,7 @@ it("phone terminal A does not starve independent B or allow a later same-card re
 });
 
 it("phone explicitly retryable 409 retains bounded automatic recovery and immutable identity", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const original = pendingReviews()[0];
   const posts: RequestInit[] = [];
   const fetcher = vi.fn(async (_url, options?: RequestInit) => {
@@ -238,7 +238,7 @@ it("phone explicitly retryable 409 retains bounded automatic recovery and immuta
 
 
 it("phone transient recovery caps backoff at thirty seconds without changing the saved identity", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const retained = localStorage.getItem("tempo-pending-training-reviews-v1");
   const fetcher = vi.fn(async () => Response.json({ detail: "Unavailable" }, { status: 503 }));
   vi.stubGlobal("fetch", fetcher); render(<Harness confirmed={vi.fn()} />);
@@ -253,8 +253,8 @@ it("phone transient recovery caps backoff at thirty seconds without changing the
 
 
 it("phone terminal explicit retry cannot suspend an independent idle review sharing its in-flight flush", async () => {
-  enqueuePendingReview({ ...review, automaticRecoverySuppressed: "failed" });
-  enqueuePendingReview({ ...review, backendId: "independent-card", queueEntryId: 102, attemptId: "independent" });
+  await enqueuePendingReview({ ...review, automaticRecoverySuppressed: "failed" });
+  await enqueuePendingReview({ ...review, backendId: "independent-card", queueEntryId: 102, attemptId: "independent" });
   let rejectRetry: ((response: Response) => void) | undefined;
   const fetcher = vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
     if (String(url).includes("review-attempt%3Aoriginal-attempt")) return new Response(null, { status: 404 });
@@ -273,8 +273,8 @@ it("phone terminal explicit retry cannot suspend an independent idle review shar
 });
 
 it("phone shared flush delivers authoritative settled attempts when a later independent receipt fails", async () => {
-  enqueuePendingReview({ ...review, automaticRecoverySuppressed: "failed" });
-  enqueuePendingReview({ ...review, backendId: "independent-card", queueEntryId: 102, attemptId: "independent-failed" });
+  await enqueuePendingReview({ ...review, automaticRecoverySuppressed: "failed" });
+  await enqueuePendingReview({ ...review, backendId: "independent-card", queueEntryId: 102, attemptId: "independent-failed" });
   let finishOriginal!: (response: Response) => void;
   const fetcher = vi.fn<typeof fetch>(async url => String(url).includes("review-attempt%3Aoriginal-attempt")
     ? new Promise<Response>(resolve => { finishOriginal = resolve; })
@@ -293,7 +293,7 @@ it("phone shared flush delivers authoritative settled attempts when a later inde
 
 
 it("phone explicit retry after an idle terminal failure resumes automatic recovery when it becomes transient", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   let posts = 0;
   const fetcher = vi.fn(async (_url: RequestInfo | URL, options?: RequestInit) => {
     if (options?.method !== "POST") return posts < 2 ? new Response(null, { status: 404 })
@@ -315,7 +315,7 @@ it("phone explicit retry after an idle terminal failure resumes automatic recove
 
 
 it("PR105 transient review backoff permits independent receipt confirmation without bypassing same-card successors", async () => {
-  enqueuePendingReview(review);
+  await enqueuePendingReview(review);
   const original = pendingReviews()[0];
   const fetcher = vi.fn<typeof fetch>(async input => String(input).includes("review-attempt%3Aindependent")
     ? Response.json({ state: "complete", response: { persisted: true } })
@@ -324,8 +324,8 @@ it("PR105 transient review backoff permits independent receipt confirmation with
   const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
   await advance(1000); await advance(1000);
   expect(fetcher).toHaveBeenCalledTimes(2);
-  enqueuePendingReview({ ...review, attemptId: "same-card-successor", queueEntryId: 102 });
-  enqueuePendingReview({ ...review, backendId: "independent-card", attemptId: "independent", queueEntryId: 103 });
+  await enqueuePendingReview({ ...review, attemptId: "same-card-successor", queueEntryId: 102 });
+  await enqueuePendingReview({ ...review, backendId: "independent-card", attemptId: "independent", queueEntryId: 103 });
   await advance(1000);
   expect(pendingReviews().map(item => item.attemptId)).toEqual(["original-attempt", "same-card-successor"]);
   expect(pendingReviews()[0]).toEqual(original);

@@ -35,7 +35,7 @@
     "bench:graph": "node scripts/benchmark-graph.mjs",
     "bench:motifs": "node scripts/benchmark-motifs.mjs",
     "bench:writer": "node scripts/benchmark-writer.mjs",
-    "build:packages": "npm run build --workspace @tempo/chess-line",
+    "build:packages": "npm run build --workspace @tempo/chess-line && npm run build --workspace @tempo/browser-intents && npm run build --workspace @tempo/study-session",
     "pretest:unit": "npm run build:packages",
     "pretypecheck": "npm run build:packages",
     "prebuild": "npm run build:packages",
@@ -60,7 +60,9 @@
     "react-dom": "19.2.6",
     "zod": "4.5.4",
     "zustand": "^5.0.15",
-    "@tempo/chess-line": "file:packages/chess-line"
+    "@tempo/chess-line": "file:packages/chess-line",
+    "@tempo/browser-intents": "file:packages/browser-intents",
+    "@tempo/study-session": "file:packages/study-session"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -86,10 +88,13 @@
     "vinext": "1.0.0-beta.3",
     "vite": "8.0.13",
     "vitest": "^5.0.1",
-    "wrangler": "4.92.0"
+    "wrangler": "4.92.0",
+    "fake-indexeddb": "6.2.5"
   },
   "type": "module",
   "workspaces": [
-    "packages/chess-line"
+    "packages/chess-line",
+    "packages/browser-intents",
+    "packages/study-session"
   ]
 }

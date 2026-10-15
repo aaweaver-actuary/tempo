@@ -1,3 +1,5 @@
+import { StudyStorageBoundary } from "../components/study-storage-boundary";
+import { rememberTeachingFact, savedTeachingFacts } from "../lib/study-intent-storage";
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
 import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
 import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
@@ -101,6 +103,7 @@ import {
   recoverableReviews,
   conflictedReviews,
   ReviewReplayError,
+  reviewStudySession,
   type PendingReview,
   type ReviewFlushResult,
 } from "../lib/review-outbox";
@@ -127,9 +130,10 @@ import {
 import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
-export default function Home() {
+export default function Home() { return <StudyStorageBoundary><StudyComposition /></StudyStorageBoundary>; }
+
+function StudyComposition() {
   const studyOnlyMode = useStudyOnlyMode();
-  const gameSync = useGameSync();
   useEffect(() => prepareMoveSounds(), []);
   useEffect(() => {
     if (!usesLocalApi()) return;
@@ -150,6 +154,7 @@ export default function Home() {
     };
   }, []);
   const [currentView, setCurrentView] = useState<View>("train");
+  const gameSync = useGameSync(currentView !== "train");
   const [comparisonLaunch, setComparisonLaunch] = useState<ComparisonLaunch>();
   const [comparisonOpenError, setComparisonOpenError] = useState("");
   const [discoveryReturn, setDiscoveryReturn] = useState<{
@@ -306,10 +311,10 @@ export default function Home() {
     initializeCardState,
     resetTrainingLine,
   } = useTrainingStore(useShallow(selectTrainingActions));
-  function showTrainingNotice(message: string, severity: "info" | "success" | "warning" | "error") {
+  const showTrainingNotice = useCommittedCallback((message: string, severity: "info" | "success" | "warning" | "error") => {
     setQueueNotice(message);
     publishNotification({ severity, source: "training", message });
-  }
+  });
   useEffect(() => {
     if (!pendingReviewError) return;
     // Exact attempt notices are owned by the outbox. Only failures outside it need a separate notice.
@@ -328,6 +333,17 @@ export default function Home() {
       if (previous) resolveNotification(previous.id, { severity: "success", message: "Training service is available again." });
     }
   }, [serviceError]);
+  useEffect(() => {
+    const identity = attempt.attemptId;
+    void reviewStudySession().then(coordinator => {
+      if (useTrainingStore.getState().attempt.attemptId === identity) coordinator.start(`review:${identity}`);
+    }).catch(error => setReviewSaveError(String(error)));
+  }, [attempt.attemptId, setReviewSaveError]);
+  useEffect(() => {
+    const persisted = savedTeachingFacts();
+    setSeenMoves(current => new Set([...current, ...persisted.filter(fact => fact.kind === "seen").map(fact => asTeachingMoveKey(fact.key))]));
+    setFirstCleanPasses(current => new Set([...current, ...persisted.filter(fact => fact.kind === "first-clean").map(fact => fact.cardId)]));
+  }, [setSeenMoves, setFirstCleanPasses]);
   const reviewPendingEntries = useRef(new Set<string>());
   const [pendingBurialEntryState, setPendingBurialEntryId] = useState<number | undefined>(() => usesLocalApi() ? pendingTrainingBurialEntry() : undefined);
   const pendingBurialEntryId = pendingBurialEntryState ?? (databaseQueue && !offlineQueue
@@ -524,32 +540,26 @@ export default function Home() {
     }
     setReviewPersistenceState(conflicted ? "conflicted" : "refreshingQueue");
     const finishReadiness = measureTempoDragPhase("next-card-readiness");
-    for (let acquisition = 0; acquisition < 2; acquisition++) {
-      updateNotification(notice, { details: { ...details, phase: "authoritative refresh requested", acquisition: acquisition + 1 },
-        message: acquisition ? "Result saved. Retrying the next card…" : "Result saved. Loading the next card…", active: true });
-      try {
-        const result = await fetchAndInitializeQueue(true, { replaySavedReviews: false, timeoutMs: 15_000,
-          expectedAttempt, signal: controller.signal });
-        if (!ownsProgression() || result === "superseded") { finishReadiness(true); settleSuperseded(); return; }
+    try {
+      const coordinator = await reviewStudySession();
+      await coordinator.retryNext(`review:${attemptId}`, async (signal, acquisition) => {
+        updateNotification(notice, { details: { ...details, phase: "authoritative refresh requested", acquisition: acquisition + 1 },
+          message: acquisition ? "Result saved. Retrying the next card…" : "Result saved. Loading the next card…", active: true });
+        const result = await fetchAndInitializeQueue(true, { replaySavedReviews: false, timeoutMs: 15_000, expectedAttempt, signal });
+        if (!ownsProgression() || result === "superseded") return;
         setReviewPersistenceState(conflicted ? "conflicted" : "idle");
         setSafeBreakCounter(count => count + 1);
-        resolveNotification(notice, { severity: "success", details: { ...details,
-          phase: result === "exhausted" ? "queue exhausted" : "next card installed" },
+        resolveNotification(notice, { severity: "success", details: { ...details, phase: result === "exhausted" ? "queue exhausted" : "next card installed" },
           message: result === "exhausted" ? "Result saved. Training queue complete." : "Result saved. Next card loaded." });
         requestAnimationFrame(() => finishReadiness());
-        void checkPendingIntegrity();
-        return;
-      } catch (error) {
-        if (!ownsProgression() || !stillDisplayed()) { finishReadiness(true); settleSuperseded(); return; }
-        updateNotification(notice, { details: { ...details, phase: "authoritative refresh failed", error: String(error) } });
-        if (acquisition === 0 && !(error instanceof QueueProcessingError)) continue;
-        finishReadiness(true);
-        setReviewPersistenceState(conflicted ? "conflicted" : "queueFailed");
-        updateNotification(notice, { severity: "warning", active: false,
-          details: { ...details, phase: "fallback/retry entered", error: String(error) },
-          message: "Result saved; the next card could not be loaded. Retry loading the queue." });
-        return;
-      }
+      }, ownsProgression, error => !(error instanceof QueueProcessingError));
+      if (!ownsProgression()) { finishReadiness(true); settleSuperseded(); }
+    } catch (error) {
+      if (!ownsProgression() || !stillDisplayed()) { finishReadiness(true); settleSuperseded(); return; }
+      finishReadiness(true);
+      setReviewPersistenceState(conflicted ? "conflicted" : "queueFailed");
+      updateNotification(notice, { severity: "warning", active: false, details: { ...details, phase: "fallback/retry entered", error: String(error) },
+        message: "Result saved; the next card could not be loaded. Retry loading the queue." });
     }
   });
   const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
@@ -976,7 +986,7 @@ export default function Home() {
     resetTrainingLine(nextCard);
   }
 
-  function persistExplicitAttemptFailure() {
+  async function persistExplicitAttemptFailure() {
     if (!usesLocalApi() || card.kind === "defense" || !card.queueEntryId) return;
     if (offlineQueue) {
       void markOfflineAttemptFailed(card.queueEntryId)
@@ -985,7 +995,7 @@ export default function Home() {
       return;
     }
     try {
-      enqueueTrainingFailure(card.queueEntryId, String(card.backendId ?? card.id), card.revision);
+      await enqueueTrainingFailure(card.queueEntryId, String(card.backendId ?? card.id), card.revision);
       void flushTrainingFailures().catch((error) =>
         showTrainingNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`, "warning"));
     } catch (error) {
@@ -1309,7 +1319,7 @@ export default function Home() {
             openingJournal();
             const attemptId = useTrainingStore.getState().attempt.attemptId;
             const completion = completeOpeningAttempt(attemptId);
-            enqueuePendingReview({
+            await enqueuePendingReview({
               attemptId, openingEvidenceCompletion: completion, completedAt: completion?.terminal?.ended_at,
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
@@ -1420,6 +1430,7 @@ export default function Home() {
       return;
     }
     const firstClean = outcome === "correct" && !firstCleanPasses.has(card.id);
+    if (firstClean) await rememberTeachingFact({ key: `first-clean:${card.id}`, cardId: String(card.id), revision: card.revision ?? 1, kind: "first-clean" });
     const nextQueue = dailyQueue.slice(1);
     if (outcome === "again") {
       const key = `tempo-failures-${card.id}`;
@@ -1455,7 +1466,7 @@ export default function Home() {
     setSafeBreakCounter((count) => count + 1);
   }
 
-  function completeAttempt(finalFen: string) {
+  async function completeAttempt(finalFen: string) {
     setCurrentFenString(asFenString(finalFen));
     setAttemptPhase("feedbackPause");
     setFeedback("complete");
@@ -1469,7 +1480,7 @@ export default function Home() {
     let reviewRecordedAtCompletion = false;
     if (databaseQueue && !offlineQueue && card.backendId && card.queueEntryId) {
       try {
-        enqueuePendingReview({
+        await enqueuePendingReview({
           attemptId: token.attemptId, completedAt, openingEvidenceCompletion: completion,
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
@@ -1486,6 +1497,7 @@ export default function Home() {
         setReviewSaveError(
           `The completed result could not be stored locally. ${String(error)}`,
         );
+        return;
       }
     }
     clearTimeout(completionTimer.current);
@@ -1512,14 +1524,9 @@ export default function Home() {
     const key = asTeachingMoveKey(
       `${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`,
     );
-    setSeenMoves((current) => {
-      const next = new Set(current).add(key);
-      localStorage.setItem(
-        "tempo-seen-moves",
-        JSON.stringify(Array.from(next)),
-      );
-      return next;
-    });
+    void rememberTeachingFact({ key, cardId: String(card.backendId ?? card.id), revision: card.revision ?? 1, ply: moveStep, kind: "seen" })
+      .then(() => setSeenMoves(current => new Set(current).add(key)))
+      .catch(error => showTrainingNotice(`Teaching progress could not be saved. Keep this page open. ${String(error)}`, "error"));
   }
 
   const currentMoveKey = asTeachingMoveKey(
@@ -1608,16 +1615,10 @@ export default function Home() {
       }
       setTeachingEncounterKey(currentMoveKey);
       setAssistedThisAttempt(true);
-      setSeenMoves((current) => {
-        if (current.has(currentMoveKey)) return current;
-        const next = new Set(current).add(currentMoveKey);
-        localStorage.setItem("tempo-seen-moves", JSON.stringify([...next]));
-        return next;
-      });
-      if (card.backendId) {
-        enqueueTeachingState({ cardId: card.backendId, revision: card.revision ?? 1, ply: step });
-        void flushTeachingStates().catch(() => undefined);
-      }
+      const state = { cardId: String(card.backendId ?? card.id), revision: card.revision ?? 1, ply: step };
+      void (card.backendId ? enqueueTeachingState(state) : rememberTeachingFact({ key: currentMoveKey, ...state, kind: "seen" }))
+        .then(() => { setSeenMoves(current => new Set(current).add(currentMoveKey)); if (card.backendId) void flushTeachingStates().catch(() => undefined); })
+        .catch(error => showTrainingNotice(`Teaching progress could not be saved. Keep this page open. ${String(error)}`, "error"));
     });
   }, [
     card.kind,
@@ -1627,6 +1628,8 @@ export default function Home() {
     card.backendId,
     card.revision,
     currentMoveKey,
+    card.id,
+    showTrainingNotice,
     isPlayerTurn,
     seenMoves,
     step,

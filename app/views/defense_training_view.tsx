@@ -13,7 +13,7 @@ import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessb
 import { BoardTools } from "../components/board/board-workspace";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL } from "../const";
-import { confirmOperationResponse } from "../lib/operation-status";
+import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
 import type { PracticeCard } from "../types";
 
 type DefenseExercisePayload = {
@@ -96,16 +96,21 @@ export default function DefenseTrainingView({
   const loadedRevision = useRef<number | null>(null);
   const pendingRef = useRef<PendingAttempt | null>(null);
   const submittingRef = useRef(false);
+  const generationRef = useRef(0);
+  const requestScope = `defense:${candidateId}:${queueEntryId}:${card.revision ?? 1}`;
+  useEffect(() => { generationRef.current += 1; return () => { generationRef.current += 1; }; }, [requestScope]);
 
   const loadExercise = useCallback(async () => {
     if (!candidateId) {
       setLoadError("This defensive card has no candidate ID. Refresh the queue.");
       return;
     }
+    const generation = generationRef.current;
     try {
       const response = await fetch(`${API_URL}/api/defense-exercises/${candidateId}`);
       if (!response.ok) throw new Error(`Exercise unavailable (${response.status}). Refresh the queue.`);
       const body = await response.json() as DefenseExercisePayload;
+      if (generation !== generationRef.current) return;
       if (body.card_id !== card.backendId) throw new Error("Exercise and queue card differ. Refresh the queue.");
       if (body.rubric_version !== 3 || !body.preview_fen || !body.proposed_move_san) {
         throw new Error("This exercise needs a refreshed board preview. Retry loading the exercise.");
@@ -128,39 +133,34 @@ export default function DefenseTrainingView({
 
   const submit = useCallback(async (attempt: PendingAttempt) => {
     if (!candidateId || !queueEntryId || !exercise || submittingRef.current) return;
+    const generation = generationRef.current;
     submittingRef.current = true;
     setBusy(true);
     setSaveError("");
     try {
-      const response = await fetch(`${API_URL}/api/defense-exercises/${candidateId}/attempt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          attempt_id: attempt.attemptId,
-          exercise_revision: exercise.exercise_revision,
-          queue_entry_id: queueEntryId,
-          move_uci: attempt.moveUci,
-          recognition_attempt_id: recognitionAttemptId.current,
-        }),
-      });
-      const confirmedResponse = await confirmOperationResponse(response);
+      const retained = await retainedStudyRequest(`${requestScope}:move`);
+      const confirmedResponse = await executeStudyRequest({ kind: "defense-command", scope: `${requestScope}:move`,
+        endpoint: `${API_URL}/api/defense-exercises/${candidateId}/attempt`, requestId: retained?.requestId ?? `defense-attempt:${attempt.attemptId}`,
+        body: retained?.body ?? { attempt_id: attempt.attemptId, exercise_revision: exercise.exercise_revision,
+          queue_entry_id: queueEntryId, move_uci: attempt.moveUci, recognition_attempt_id: recognitionAttemptId.current } });
       if (!confirmedResponse.ok) {
         const body = await confirmedResponse.json().catch(() => null) as { detail?: string } | null;
         throw new Error(body?.detail ?? `Could not grade the move (${confirmedResponse.status})`);
       }
       const result = await confirmedResponse.json() as DefenseGradePayload;
+      if (generation !== generationRef.current) return;
       setGrade(result);
       if (result.status !== "needs_analysis") {
         pendingRef.current = null;
         setPending(null);
       }
     } catch (reason) {
+      if (generation !== generationRef.current) return;
       setSaveError(reason instanceof Error ? reason.message : "Could not save this attempt. Retry it.");
     } finally {
-      submittingRef.current = false;
-      setBusy(false);
+      if (generation === generationRef.current) { submittingRef.current = false; setBusy(false); }
     }
-  }, [candidateId, exercise, queueEntryId]);
+  }, [candidateId, exercise, queueEntryId, requestScope]);
 
   useEffect(() => {
     if (!pending || grade?.status !== "needs_analysis") return;
@@ -200,12 +200,14 @@ export default function DefenseTrainingView({
     if (blocked || !candidateId || !queueEntryId || !exercise || busy) return;
     setBusy(true);
     setSaveError("");
+    const generation = generationRef.current;
     const attemptId = recognitionAttemptId.current ?? crypto.randomUUID();
     recognitionAttemptId.current = attemptId;
     try {
-      const response = await fetch(`${API_URL}/api/defense-exercises/${candidateId}/recognition`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const retained = await retainedStudyRequest(`${requestScope}:recognition`);
+      const confirmedResponse = await executeStudyRequest({ kind: "defense-command", scope: `${requestScope}:recognition`,
+        endpoint: `${API_URL}/api/defense-exercises/${candidateId}/recognition`, requestId: retained?.requestId ?? `defense-recognition:${attemptId}`,
+        body: retained?.body ?? {
           attempt_id: attemptId, exercise_revision: exercise.exercise_revision,
           rubric_version: exercise.rubric_version,
           queue_entry_id: queueEntryId, no_concrete_threat: noConcreteThreat,
@@ -215,23 +217,47 @@ export default function DefenseTrainingView({
           major_square: noConcreteThreat ? null : selectedSquares[3] ?? null,
           consequence: noConcreteThreat ? "none" : consequence,
           hinted: hintRevealed,
-        }),
-      });
-      const confirmedResponse = await confirmOperationResponse(response);
+        } });
       if (!confirmedResponse.ok) {
         const body = await confirmedResponse.json().catch(() => ({})) as { detail?: string };
         throw new Error(body.detail ?? `Could not save recognition answer (HTTP ${confirmedResponse.status})`);
       }
       const result = await confirmedResponse.json() as DefenseGradePayload;
+      if (generation !== generationRef.current) return;
       setRecognitionDone(true);
       setRecognitionResult(result);
       if (result.status === "correct" || result.status === "incorrect") setGrade(result);
     } catch (reason) {
+      if (generation !== generationRef.current) return;
       setSaveError(reason instanceof Error ? reason.message : "Could not save recognition answer");
     } finally {
-      setBusy(false);
+      if (generation === generationRef.current) setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!exercise?.exercise_revision) return;
+    const generation = generationRef.current;
+    let active = true;
+    void (async () => {
+      const recognition = await retainedStudyRequest(`${requestScope}:recognition`);
+      if (recognition && active && generation === generationRef.current) {
+        recognitionAttemptId.current = String(recognition.body.attempt_id);
+        const response = await executeStudyRequest({ kind: "defense-command", scope: `${requestScope}:recognition`,
+          endpoint: `${API_URL}/api/defense-exercises/${candidateId}/recognition`, requestId: recognition.requestId, body: recognition.body });
+        if (!active || generation !== generationRef.current) return;
+        const result = await response.json() as DefenseGradePayload;
+        setRecognitionDone(true); setRecognitionResult(result);
+        if (result.status === "correct" || result.status === "incorrect") setGrade(result);
+      }
+      const move = await retainedStudyRequest(`${requestScope}:move`);
+      if (move && active && generation === generationRef.current) {
+        const attempt = { attemptId: String(move.body.attempt_id), moveUci: String(move.body.move_uci) };
+        pendingRef.current = attempt; setPending(attempt); setDefenseReady(true); await submit(attempt);
+      }
+    })().catch(error => { if (active && generation === generationRef.current) setSaveError(String(error)); });
+    return () => { active = false; };
+  }, [exercise, requestScope, candidateId, submit]);
 
   const recognitionStage = Boolean(exercise?.recognition_required && !recognitionDone);
   const showingPreview = Boolean(exercise?.preview_fen && !defenseReady);

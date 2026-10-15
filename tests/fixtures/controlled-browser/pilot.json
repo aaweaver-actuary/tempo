@@ -186,9 +186,9 @@
         "real browser DOM, viewport, pointer, localStorage and reload as originally asserted"
       ],
       "retained": "original identity plus post-review-progression, phone-offline-training and PostgreSQL receipt/issuance durability",
-      "assertion_action_sha256": "2c838d8b98363b862503d6809758370c55c6dd4f6f2634564af92dc324eadbc9",
+      "assertion_action_sha256": "6fef1f75b63db6582550695565dc0a1af1f054402c6b31a6e60c744c39389d6f",
       "assertions_preserved": [
-        "expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem(\"tempo-pending-training-reviews-v1\") ?? \"[]\").length)).toBe(0)",
+        "expect.poll(() => connectedReviewState(page, \"reload-original\")).toBe(\"committed\")",
         "expect(page.locator(\".phone-study-heading h2\")).toHaveText(\"Ruy Lopez\")",
         "expect(traffic).toEqual([\"receipt\"])",
         "noPageOverflow(page)"
@@ -196,8 +196,7 @@
       "native_actions_preserved": [
         "page.setViewportSize({ width: 390, height: 844 })",
         "page.evaluate(() => localStorage.setItem(\"tempo-pending-training-reviews-v1\", JSON.stringify([{\n        backendId: \"reload-london\", queueEntryId: 811, attemptId: \"reload-original\", outcome: \"correct\", guided: false,\n        completedAt: \"2026-09-18T15:00:00Z\",\n    }])))",
-        "page.reload()",
-        "page.evaluate(() => JSON.parse(localStorage.getItem(\"tempo-pending-training-reviews-v1\") ?? \"[]\").length)"
+        "page.reload()"
       ],
       "provider_consumer_contracts": [
         "generate.py actual response producers",
@@ -208,7 +207,12 @@
         "original identity on regular PostgreSQL Playwright config",
         "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
         "PostgreSQL command_recreation and study_durability"
-      ]
+      ],
+      "proof_change": {
+        "owner": "#221",
+        "previous_sha256": "2c838d8b98363b862503d6809758370c55c6dd4f6f2634564af92dc324eadbc9",
+        "reason": "Legacy envelopes must remain retained. The replacement assertion requires the new IndexedDB owner to record committed settlement; original receipt-only traffic, true reload and native presentation assertions remain."
+      }
     }
   ]
 }

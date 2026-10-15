@@ -1,3 +1,4 @@
+import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -142,7 +143,7 @@ it("issue186_ordinary_reconnection_replays_saved_reviews_without_replacing_activ
   const activeAttempt = useTrainingStore.getState().attempt;
   reviewResponse = async url => url.includes("/api/operations/")
     ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
-  enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 11,
+  await enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 11,
     attemptId: "earlier-offline-result", outcome: "correct", guided: false });
   await act(async () => { window.dispatchEvent(new Event("online")); });
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -230,7 +231,7 @@ it.each(["abort", "deadline"])("issue186_prepared_card_survives_aborted_reconcil
 it.each(["completed head", "malformed JSON", "invalid head", "partial envelope", "inconsistent count", "conflicted head"])(
   "issue186_invalid_authoritative_head_requires_recovery: %s", async invalid => {
     await readyHome();
-    if (invalid === "conflicted head") await act(async () => { enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+    if (invalid === "conflicted head") await act(async () => { await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
       attemptId: "conflicted-next", outcome: "again", guided: false, state: "conflicted",
       conflict: { code: "queue_attempt_unprovable", message: "Saved next-card attempt needs attention", retryable: false } }); });
     const originalFetcher = fetcher.getMockImplementation()!;
@@ -358,8 +359,8 @@ it.each([false, true])("flush_settlement_audit Home foreground settlement and id
   const attempt = useTrainingStore.getState().attempt;
   const preparedNext = { card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0,
     local_date: new Date().toLocaleDateString("en-CA") };
-  enqueuePendingReview({ backendId: "card-a", queueEntryId: 12, attemptId: attempt.attemptId!, outcome: "correct", guided: false, preparedNext });
-  enqueuePendingReview({ backendId: "unrelated-later", queueEntryId: 999, attemptId: "audit-later", outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "card-a", queueEntryId: 12, attemptId: attempt.attemptId!, outcome: "correct", guided: false, preparedNext });
+  await enqueuePendingReview({ backendId: "unrelated-later", queueEntryId: 999, attemptId: "audit-later", outcome: "correct", guided: false });
   let releaseSubmitted!: (response: Response) => void;
   let releaseLater!: (response: Response) => void;
   const submitted = new Promise<Response>(resolve => { releaseSubmitted = resolve; });
@@ -610,8 +611,8 @@ it("PR105 earlier idle conflict preserves an unrelated active board logical atte
 it.each([false, true])("PR105 successful flush cannot credit or advance a suppressed same-card successor independent=%s", async independent => {
   queue = [queueCard("card-a", 12), queueCard("card-b", 13)];
   await readyHome();
-  act(() => enqueuePendingReview(suppressedReview));
-  if (independent) act(() => enqueuePendingReview({ backendId: "card-c", queueEntryId: 14,
+  act(async () => await enqueuePendingReview(suppressedReview));
+  if (independent) act(async () => await enqueuePendingReview({ backendId: "card-c", queueEntryId: 14,
     attemptId: "other-persisted", outcome: "correct", guided: false }));
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   await act(async () => { await trainingProps.rateCard("correct"); });
@@ -642,7 +643,7 @@ it.each([false, true])("PR105 successful flush cannot credit or advance a suppre
 
 it("PR105 independent submitted review alone is credited while a suppressed result remains intact", async () => {
   queue = [queueCard("card-b", 13)]; await readyHome();
-  act(() => enqueuePendingReview(suppressedReview));
+  act(async () => await enqueuePendingReview(suppressedReview));
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   queue = [queueCard("card-c", 14)];
   await act(async () => { await trainingProps.rateCard("correct"); });
@@ -663,7 +664,7 @@ it("PR105 Home saveFailed allows independent idle receipts without retrying the 
   await act(async () => { await trainingProps.rateCard("correct"); });
   const terminal = pendingReviews()[0];
   expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
-  act(() => enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "independent-b", outcome: "correct", guided: false }));
   const activeBeforeRecovery = snapshotActive();
   await recoverIdle();
@@ -678,7 +679,7 @@ it("PR105 independent idle confirmation waits for a held pointer before changing
   await readyHome();
   let finishReceipt!: (response: Response) => void;
   reviewResponse = async () => new Promise<Response>(resolve => { finishReceipt = resolve; });
-  act(() => enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "independent-held", outcome: "correct", guided: false }));
   await recoverIdle();
   const activeBeforeRecovery = snapshotActive();
@@ -700,7 +701,7 @@ it("PR105 foreground saving defers independent idle recovery until the save sett
   let saving!: Promise<void>;
   await act(async () => { saving = trainingProps.rateCard("correct"); });
   expect(trainingProps.reviewPersistenceState).toBe("saving");
-  act(() => enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "foreground-independent", outcome: "correct", guided: false }));
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(idleCallbacks.size).toBe(0);
@@ -729,7 +730,7 @@ it("PR105 a later independent flush failure cannot erase the submitted persisted
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   let saving!: Promise<void>;
   await act(async () => { saving = trainingProps.rateCard("correct"); });
-  act(() => enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+  act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "later-independent-failed", outcome: "correct", guided: false }));
   queue = [queueCard("card-c", 14)];
   await act(async () => { finishSubmitted(Response.json({ persisted: true })); await saving; });
@@ -763,6 +764,7 @@ it("PR105 explicit legacy retry credits the normalized attempt without a new ide
   await readyHome();
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([{ ...suppressedReview,
     queueEntryId: 12, attemptId: undefined }]));
+  await initializeStudyIntentStorage(true);
   reviewResponse = async url => url.includes("/api/operations/") ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
   await act(async () => { trainingProps.retryReviewSave!(); });
   vi.useRealTimers();

@@ -72,9 +72,9 @@ describe("review attempt reliability", () => {
     expect(after.cardsLeft).toBe(1);
   });
   it("reload drains an earlier review before marking the next guided card", async () => {
-    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42,
+    await enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42,
       outcome: "correct", guided: false });
-    enqueueTrainingFailure(43, "next-card", 1);
+    await enqueueTrainingFailure(43, "next-card", 1);
     const originalReceiptPath = `/api/operations/${encodeURIComponent(`review-attempt:${pendingReviews()[0].attemptId}`)}`;
     const requestedPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -112,7 +112,7 @@ describe("review attempt reliability", () => {
     expect(debugErrors().at(-1)?.context).toMatchObject({ source: "training-queue", endpointPath: "/api/queue/window" });
   });
   it("stale guided failure replay completes before today's training queue opens", async () => {
-    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    await enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
     const originalReceiptPath = `/api/operations/${encodeURIComponent(`review-attempt:${pendingReviews()[0].attemptId}`)}`;
     const requestedPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -141,7 +141,7 @@ describe("review attempt reliability", () => {
 
   it("reload retains an unprovable result as a conflict and opens independent cards", async () => {
     localStorage.clear();
-    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    await enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
@@ -174,7 +174,7 @@ describe("review attempt reliability", () => {
   });
   it("issue186_conflicted_issued_head_waits_for_fresh_authority", async () => {
     localStorage.clear();
-    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    await enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
     let issueIndependentHead = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -360,7 +360,7 @@ describe("review attempt reliability", () => {
     store.setFeedback("complete");
     store.setAttemptPhase("feedbackPause");
     const completedAttempt = useTrainingStore.getState().attempt;
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
     vi.stubGlobal("fetch", vi.fn((_input, options) => new Promise<Response>((_resolve, reject) => {
       options.signal.addEventListener("abort", () => reject(options.signal.reason));
     })));

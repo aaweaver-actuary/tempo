@@ -1,3 +1,4 @@
+import { initializeStudyIntentStorage } from "../lib/study-intent-storage";
 import { API_URL } from "../const";
 import { isIPhoneHomeScreen, localDayKey, usesLocalApi } from "../utils/local";
 import { useTrainingStore } from "../state/training-store";
@@ -266,6 +267,7 @@ export async function fetchAndInitializeQueue(
   let failedEndpoint: string | undefined;
   let queueRequestFailed = false;
   try {
+    await awaitQueueStage(initializeStudyIntentStorage(), controller.signal);
     const pendingFailureContexts = pendingTrainingFailureContexts();
     const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
     let failureSaveError: string | null = null;

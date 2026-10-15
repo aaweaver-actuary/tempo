@@ -56,6 +56,7 @@ export async function navigate(page: Page, name: string) {
 }
 export async function prepareUI(page: Page) {
   await page.addInitScript(() => {
+    localStorage.setItem("tempo-study-intents-cutover-v1", "acknowledged");
     for (const key of [
       "tempo-stockfish-on",
       "tempo-maia-on",
