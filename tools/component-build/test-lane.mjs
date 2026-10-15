@@ -41,6 +41,15 @@ export function runLane(lane, filter, nameFilter) {
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { runLane(process.argv[2], process.argv[3], process.argv[4]); }
+  try {
+    const argumentsList = process.argv.slice(2);
+    if (argumentsList.some(argument => ["--component", "--suite"].includes(argument))) {
+      const { runComponentSelection } = await import("./component-tests.mjs");
+      runComponentSelection(argumentsList);
+    } else if (argumentsList.includes("--list")) {
+      const [lane, filter] = argumentsList.filter(argument => argument !== "--list");
+      console.log(JSON.stringify({ inventory: validateInventory(), lane, selectedFiles: selectFiles(lane, filter) }));
+    } else runLane(process.argv[2], process.argv[3], process.argv[4]);
+  }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

@@ -3,18 +3,29 @@ import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
 
 export const repository = resolve(new URL("../../", import.meta.url).pathname);
 const readJson = path => JSON.parse(readFileSync(path, "utf8"));
 const inside = (root, path) => path === root || path.startsWith(root + sep);
-export function validateManifest(manifest, root = repository) {
-  if (Object.keys(manifest).sort().join() !== "components,schemaVersion" || manifest.schemaVersion !== 1 || !Array.isArray(manifest.components) || !manifest.components.length) throw new Error("Invalid manifest");
+export function validateSuite(suite, root, defaultCwd) {
+  if (!suite.owner || !suite.kind || !suite.command || !Array.isArray(suite.inputs) || !suite.inputs.length) throw new Error("Unavailable implemented suite contract");
+  const cwd = resolve(root, suite.cwd ?? defaultCwd);
+  if (!inside(resolve(root), cwd) || !existsSync(cwd) || !inside(realpathSync(root), realpathSync(cwd))) throw new Error("Unavailable/escaping suite cwd: " + suite.cwd);
+  for (const input of suite.inputs) {
+    const path = resolve(cwd, input);
+    if (!inside(cwd, path) || !existsSync(path) || !inside(realpathSync(cwd), realpathSync(path))) throw new Error("Unavailable/escaping suite input: " + input);
+  }
+}
+export function validateManifest(manifest, root = repository, options = {}) {
+  if (Object.keys(manifest).some(key => !["components", "schemaVersion", "suites"].includes(key)) || manifest.schemaVersion !== 1 || !Array.isArray(manifest.components) || !manifest.components.length || (manifest.suites !== undefined && !Array.isArray(manifest.suites))) throw new Error("Invalid manifest");
   const schema = readJson(resolve(repository, "components.schema.json"));
   const fields = schema.properties.components.items;
   const identities = new Set();
   for (const component of manifest.components) {
     if (fields.required.some(key => !(key in component)) || Object.keys(component).some(key => !(key in fields.properties))) throw new Error("Missing/unknown component fields");
     for (const [key, rule] of Object.entries(fields.properties)) {
+      if (!(key in component)) continue;
       const value = component[key];
       const valueType = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
       if (rule.type && ![rule.type].flat().includes(valueType)) throw new Error("Invalid " + key);
@@ -27,11 +38,25 @@ export function validateManifest(manifest, root = repository) {
     if (!inside(resolve(root), resolve(root, component.root)) || component.root.startsWith("/")) throw new Error("Source root escape");
     if (component.status === "implemented") {
       if (!component.buildCommand || !component.artifact?.name || !component.artifact?.version || !component.tests.length || !component.publicExports.length) throw new Error("Implemented component lacks build/export/test contract");
+      if (options.componentIds && !options.componentIds.includes(component.id)) continue;
+      if (!existsSync(resolve(root, component.root)) || !component.buildInputs.length) throw new Error("Unavailable implemented source/build inputs: " + component.id);
       for (const input of component.buildInputs) {
         const inputPath = resolve(root, component.root, input);
         if (!inside(resolve(root, component.root), inputPath) || !existsSync(inputPath) || !inside(realpathSync(resolve(root, component.root)), realpathSync(inputPath))) throw new Error("Unavailable/escaping build input: " + input);
       }
+      if (component.testInventory && !existsSync(resolve(root, component.root, component.testInventory))) throw new Error("Unavailable component-local inventory");
+      if (component.type === "contract") {
+        const catalog = resolve(root, component.catalog ?? "contracts/catalog.json");
+        if (!inside(resolve(root), catalog) || !existsSync(catalog) || !inside(realpathSync(root), realpathSync(catalog))) throw new Error("Unavailable/escaping contract catalog");
+      }
+      for (const suite of component.tests) validateSuite(suite, root, component.root);
     } else if (component.buildCommand || component.tests.some(test => test.status !== "planned")) throw new Error("Planned component claims executable build/test");
+  }
+  const suites = new Set();
+  for (const suite of manifest.suites ?? []) {
+    if (!suite.id || suites.has(suite.id)) throw new Error("Missing/duplicate shared suite identity");
+    suites.add(suite.id);
+    if (!options.componentIds || options.suiteIds?.includes(suite.id)) validateSuite(suite, root);
   }
 }
 function sourceFiles(root) {
@@ -92,19 +117,24 @@ export function checkConsumer(source, artifact, exports) {
     if (bindings && ts.isNamedImports(bindings)) for (const imported of bindings.elements) if (!exports.includes((imported.propertyName ?? imported.name).text)) throw new Error("Unavailable export: " + imported.name.text);
   }
 }
-export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
-  const manifest = readJson(resolve(root, "components.json"));
-  validateManifest(manifest, root);
+export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
+  const manifest = readManifest(root);
+  const selected = selectComponents(manifest, options.componentIds);
+  validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
-  for (const component of manifest.components.filter(component => component.status === "implemented")) {
+  for (const component of selected) {
     const componentRoot = resolve(root, component.root);
     if (existsSync(resolve(componentRoot, "package.json"))) results.push({ id: component.id, ...checkTypeScript(componentRoot, component) });
     else {
-      const result = spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), componentRoot, JSON.stringify(component.dependencies), JSON.stringify(component.publicExports)], { encoding: "utf8" });
-      if (result.status !== 0) throw new Error(result.stdout + result.stderr);
+      const argumentsList = component.type === "contract"
+        ? [resolve(repository, "tools/component-build/check-contract.py"), componentRoot, JSON.stringify(component), resolve(root, component.catalog ?? "contracts/catalog.json")]
+        : [resolve(repository, "tools/component-build/check-python.py"), componentRoot, JSON.stringify(component.dependencies), JSON.stringify(component.publicExports), JSON.stringify(component.artifact)];
+      const result = spawnSync(python, argumentsList, { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+      if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
       results.push({ id: component.id, ...JSON.parse(result.stdout) });
     }
   }
+  if (!(options.consumers ?? options.componentIds === undefined)) return results;
   for (const file of sourceFiles(resolve(root, "app"))) {
     const source = readFileSync(file, "utf8");
     checkConsumer(source, "@tempo/chess-line", manifest.components.find(component => component.id === "chess-line").publicExports);
@@ -115,6 +145,19 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   return results;
 }
 if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
-  try { console.log(JSON.stringify(checkComponents(), null, 2)); }
+  try {
+    const options = parseSelection(process.argv.slice(2));
+    if (options.positional.length) throw new Error("Unexpected positional argument");
+    const root = process.env.TEMPO_COMPONENT_ROOT ?? repository;
+    if (options.list) {
+      const manifest = readManifest(root);
+      const selected = options.suiteIds ? selectSuites(manifest, options.suiteIds) : selectComponents(manifest, options.componentIds);
+      validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
+      console.log(JSON.stringify({ selected }, null, 2));
+    } else {
+      if (options.suiteIds) throw new Error("Use test-lane.mjs to execute shared suites");
+      console.log(JSON.stringify(checkComponents(root, undefined, options), null, 2));
+    }
+  }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
