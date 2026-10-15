@@ -4,7 +4,8 @@ Starting main: `6b99085f8978346a959b5d4a6ea44b6e56f05dd6`.
 Donor: closed/unmerged #212 at `d85be5989078f356c4ca18a53bf15614e25fed6d`.
 Implementation branch: `codex/frontend-browser-199`.
 
-The working local entry point is `node scripts/test-controlled-browser.mjs`.
+The supported local entry points are `npm run test:ui-isolated:list` and
+`npm run test:ui-isolated`. The direct Node runner remains supported.
 [Commands, runtime pin and limits](../../tests/controlled-browser/README.md),
 [regression ownership](../../tests/controlled-browser/REGRESSIONS.md),
 [exact native ledger](../../tests/fixtures/controlled-browser/pilot.json), and
@@ -69,14 +70,32 @@ are retained in logs. The required assets are explicitly staged and strict nativ
 runs verify their actual requests; warnings are not treated as missing-asset passes.
 No generalized timing improvement is claimed.
 
-## Remaining integration and scope
+## Supported command/discovery integration
 
-D retains the initial shared manifest/scripts/discovery edits. Its baseline was not
-merged when A completed private work. `tests/controlled-browser/registration.patch`
-is an apply-checked exact addition for A's two npm aliases, central unit-lane
-index and root regression backlink; the actual shared files remain untouched.
-Reconcile/apply it after D's convention/baseline merges. Until then the PR uses
-`Refs #199` and remains draft for this concrete remaining integration.
+Follow-up branch: `codex/browser-lane-wiring-199`, based on freshly fetched
+`f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4` after #278 merged. The registrations
+formerly held in an unapplied patch are now in the actual npm scripts, central
+compatibility index and root regression backlink. The pending patch is removed.
+
+`node tools/component-build/test-lane.mjs controlled-browser --list` validates
+the index against authoritative local discovery without setup. Execution delegates
+to the existing controlled Node configuration and sanitized runner; it does not
+use the generic frontend configuration or introduce another qualification system.
+The alias and missing-lane regressions each failed before these repairs.
+
+Unit execution compiles chess-line once before importing consumers, uses executed
+Vitest collection to expand parameterized identities, and requires every selected
+case to pass exactly once. Explicit file/name filters remain available. Browser
+listing and impossible browser selections remain provisioning-free; unit file
+listing is also setup-free. Unit case collection requires its JS prerequisite.
+
+Follow-up source-bound command logs, reports and cleanup evidence are retained at
+`/Users/andy/tempo/test-results/browser-lane-wiring-199/`. The completion PR records
+the exact tested revision and outcomes. The historical presentation proof above
+is reusable only for unchanged relevant sources, fixtures, assets and toolchain;
+command registration is tested freshly through the actual aliases.
+
+## Remaining scope
 
 No full gate, original PostgreSQL browser stack, producer Python generation,
 offline/service-worker suite, live deployment, migration, Maia plan change or

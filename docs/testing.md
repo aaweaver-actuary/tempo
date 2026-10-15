@@ -52,6 +52,14 @@ them.
 
 ## Commands currently defined in this repository
 
+For frontend browser work without backend services, use `npm run test:ui-isolated:list`
+and `npm run test:ui-isolated -- [spec] [filters]`. Run its owning isolation and
+cleanup regressions through `node tools/component-build/test-lane.mjs controlled-browser`;
+add `--list` for setup-free file discovery. See the
+[supported isolated browser lane](../tests/controlled-browser/README.md) for real
+asset inputs, runtime pins and limits. Service workers are blocked in this lane;
+real offline/service-worker semantics retain their separate proof owners.
+
 These are current monorepo commands, not proof that future component packages
 or independent runners are implemented. Check the Makefile and script entry
 points before relying on or documenting a command. Use one Make verification

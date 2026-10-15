@@ -2,7 +2,8 @@
 
 This feature owns `unit/*.test.ts`, collected by `vitest.config.ts` and executed by
 `node tests/controlled-browser/test-unit.mjs`. This local discovery is authoritative;
-`registration.patch` supplies D's pending root compatibility links.
+the central `controlled-browser` lane is a validated compatibility index and
+delegates execution to that same runner/configuration.
 
 The preserved donor ledger is `../fixtures/controlled-browser/pilot.json`; it records
 all original/new file/title/project identities, exact assertions/actions, fingerprints,
@@ -10,6 +11,19 @@ and retained full-stack/offline owners. The normal browser runner collects and
 accounts its nine native identities plus the three titles in `visual.spec.ts`.
 
 Named families in the owning unit suite:
+
+- `controlled_browser_supported_aliases_use_the_owned_runner_without_setup_hooks`,
+  `controlled_browser_registered_owning_suite_lists_without_setup`, and
+  `controlled_browser_listing_and_rejected_browser_selections_do_not_provision`:
+  actual command registrations, guarded listing and rejected selections cannot
+  build, allocate output or start a service.
+- `controlled_browser_discovery_rejects_missing_duplicate_and_extra_registration`,
+  `controlled_browser_central_dispatch_uses_dedicated_configuration_and_one_sanitized_build`,
+  `controlled_browser_unit_accounting_rejects_missing_duplicate_skipped_and_incomplete_selected_cases`,
+  and `controlled_browser_invalid_unit_file_selection_fails_before_build`:
+  local ownership, dedicated dispatch, one JS prerequisite, excluded environment,
+  exact selected cases, and pre-build invalid file rejection. The alias and missing
+  lane regressions failed against the merged implementation before integration.
 
 - `controlled_browser_unexpected_api_request_fails_without_live_fallback` and
   `controlled_browser_rejected_traffic_is_fatal_even_if_application_catches_*`:

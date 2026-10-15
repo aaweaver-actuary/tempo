@@ -1,6 +1,11 @@
 {
   "version": 1,
   "lanes": {
+    "controlled-browser": [
+      "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
+      "tests/controlled-browser/unit/registration-regressions.test.ts",
+      "tests/controlled-browser/unit/runner-regressions.test.ts"
+    ],
     "frontend": [
       "tests/unit/activity-control-pending-regressions.test.ts",
       "tests/unit/analysis-paste-pending-regressions.test.ts",
@@ -188,6 +193,7 @@
     ]
   },
   "notes": {
+    "controlled-browser": "Compatibility index only; controlled-browser local discovery and its Node runner own configuration, isolation and exact case accounting.",
     "producer-parity": "Existing TypeScript consumer assertions with genuine Python producers; legacy backend dependencies remain declared.",
     "legacy-runner-wrappers": "Preserved global Vitest wrappers; run the Node owners directly via runners for independent runner collection.",
     "integration": "Frontend adapter checks plus separately invoked backend scheduling seam. Implemented contracts use catalog-backed component suites and explicit shared exchange/native ownership suites in components.json.",

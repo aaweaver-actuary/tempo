@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runNodeFiles } from "./test-node.mjs";
+import { runControlledUnitSuite, validateControlledUnitInventory } from "../../tests/controlled-browser/test-unit.mjs";
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 export const inventory = JSON.parse(readFileSync(resolve(root, "tools/component-build/test-inventory.json"), "utf8"));
 export function validateInventory() {
@@ -12,6 +13,7 @@ export function validateInventory() {
   if (new Set(declared).size !== declared.length || declared.sort().join() !== actual.sort().join()) throw new Error("Missing/duplicate test ownership; update test-inventory.json");
   const runnerFiles = readdirSync(resolve(root, "tests/runner")).filter(name => /\.test\.mjs$/.test(name)).map(name => "tests/runner/" + name);
   if (runnerFiles.sort().join() !== [...inventory.lanes.runners].sort().join()) throw new Error("Missing runner test ownership");
+  validateControlledUnitInventory(inventory.lanes["controlled-browser"]);
   return { unitFiles: actual.length, runnerFiles: runnerFiles.length };
 }
 export function selectFiles(lane, filter) {
@@ -24,6 +26,10 @@ export function runLane(lane, filter, nameFilter) {
   console.log(JSON.stringify({ inventory: validateInventory() }));
   const files = selectFiles(lane, filter);
   console.log(JSON.stringify({ lane, selectedFiles: files }));
+  if (lane === "controlled-browser") {
+    runControlledUnitSuite({ files, nameFilter });
+    return;
+  }
   if (lane === "runners") {
     runNodeFiles(files, nameFilter, { cwd: root, lane });
     return;

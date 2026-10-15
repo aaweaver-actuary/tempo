@@ -69,6 +69,13 @@ New tooling regressions are owned by [REGRESSIONS.md](REGRESSIONS.md).
 - `npm run test:producer-parity -- [file-substring] [test-name]`
 - `npm run test:runners -- [file-substring] [test-name]`
 - `npm run test:component-integration -- [file-substring] [test-name]`
+- `node tools/component-build/test-lane.mjs controlled-browser [file-substring] [test-name]`
+
+The controlled-browser entry delegates to its owning Node runner/configuration,
+with a sanitized environment, one chess-line build and exact selected case accounting.
+Its local file discovery is authoritative; the compatibility index must agree.
+`controlled-browser --list` reads files only. Production native/visual execution
+uses `npm run test:ui-isolated`; see the [supported browser lane](../../tests/controlled-browser/README.md).
 
 These entry points print selected files and executed passing identities and reject
 empty file or case selection. Node runners require a successful child exit, a valid
