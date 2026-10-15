@@ -31,7 +31,7 @@ export function selectComponents(manifest, componentIds, defaults) {
     if (selected.has(id)) return;
     selected.set(id, component);
     for (const dependency of component.dependencies) {
-      const owner = manifest.components.find(candidate => candidate.id === dependency || candidate.artifact?.name === dependency);
+      const owner = manifest.components.find(candidate => candidate.id === dependency || candidate.artifact?.name === dependency || candidate.artifact?.name?.replaceAll("-", "_") === dependency);
       if (owner) include(owner.id);
     }
   }

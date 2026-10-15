@@ -1,0 +1,14 @@
+[
+  {
+    "id": "learning.runtime/0001",
+    "owner": "#224/#194",
+    "path": "0001_core.sql",
+    "depends_on": []
+  },
+  {
+    "id": "learning.runtime/0002",
+    "owner": "#224/#194",
+    "path": "0002_evidence_revisions.sql",
+    "depends_on": ["learning.runtime/0001"]
+  }
+]

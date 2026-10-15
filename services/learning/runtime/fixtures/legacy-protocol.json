@@ -1,0 +1,16 @@
+{
+  "protocol": "legacy-learning-http",
+  "schema_version": 1,
+  "authentication": {
+    "study": {"Authorization": "Bearer <workspace-study-credential>", "Origin": "http://localhost:5173", "X-Tempo-Workspace": "workspace-a"},
+    "publication": {"Authorization": "Bearer <distinct-publication-credential>"},
+    "evidence": {"Authorization": "Bearer <distinct-evidence-credential>"},
+    "denied": {"status": 401, "body": {"detail": "Learning workspace credential required"}}
+  },
+  "review": {"method": "POST", "path": "/api/cards/card-a/review", "headers": {"Idempotency-Key": "review-attempt:attempt-a"}, "request": {"outcome": "correct", "guided": false, "attempt_id": "attempt-a", "queue_entry_id": 1, "expected_revision": 1}},
+  "review_conflict": {"status": 409, "body": {"detail": "Operation ID was already used for another request", "code": "command_identity_reused", "retryable": false}},
+  "operation_unknown": {"operation_id": "missing", "state": "unknown"},
+  "operation_pending": {"status": 202, "headers": {"Location": "/api/operations/operation-a"}, "body": {"operation_id": "operation-a", "state": "queued"}},
+  "queue": {"cards": [], "local_date": "2026-10-15", "count": 0, "diagnostics": [], "projection": {"state": "refreshing", "generation": 0, "updated_at": null, "refresh_pending": 1, "last_error": null}},
+  "unavailable": {"status": 503, "headers": {"Retry-After": "1"}, "body": {"detail": "Learning database unavailable; retain the original operation identity and retry"}}
+}

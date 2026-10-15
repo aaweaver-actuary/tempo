@@ -43,20 +43,101 @@
       "id": "learning",
       "type": "service",
       "maintainer": "Tempo",
-      "status": "planned",
-      "root": "services/learning",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "status": "implemented",
+      "root": "services/learning/runtime",
+      "publicExports": [
+        "scheduling_review_application",
+        "scheduling_review_contracts",
+        "scheduling_review_store",
+        "study_grading",
+        "opening_decision_evidence",
+        "threat_models",
+        "threat_validation",
+        "threat_grading",
+        "queue_ordering",
+        "review_reconciliation",
+        "study_contracts",
+        "opening_evidence_contracts",
+        "Configuration",
+        "create_app",
+        "register_evidence_receiver",
+        "register_settlement"
+      ],
+      "dependencies": [
+        "tempo_learning_review",
+        "tempo_scheduling",
+        "tempo_chess_core",
+        "tempo_content_publication_contracts",
+        "tempo_game_evidence_contracts",
+        "pydantic",
+        "starlette",
+        "fastapi",
+        "uvicorn",
+        "psycopg",
+        "psycopg_pool",
+        "sqlglot",
+        "chess",
+        "fsrs",
+        "httpx"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "fixtures",
+        "tests",
+        "integration",
+        "browser",
+        "qualify.py",
+        "Dockerfile",
+        "Dockerfile.dockerignore",
+        "README.md",
+        "REGRESSIONS.md",
+        "INTERFACES.md",
+        "VALIDATION.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-learning-runtime",
+        "version": "0.1.0",
+        "format": "wheel + sdist + minimal service container"
+      },
+      "tests": [
+        {
+          "owner": "learning",
+          "kind": "postgres",
+          "cwd": ".",
+          "command": "python services/learning/runtime/integration/run_postgres.py",
+          "inputs": [
+            "services/learning/runtime",
+            "services/learning/application/qualification.py",
+            "app/lib",
+            "app/domain",
+            "app/const.ts"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ],
+        "postgresql": "18",
+        "node": ">=22.13.0",
+        "playwright": "1.63.0"
+      },
       "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": []
-      }
+        "authority": "#224/#194",
+        "databases": [
+          "dedicated workspace Learning database"
+        ],
+        "migrations": [
+          "src/tempo_learning_runtime/migrations/manifest.json"
+        ],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "content",

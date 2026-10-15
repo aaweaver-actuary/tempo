@@ -9,6 +9,7 @@ dependencies = [
     "tempo-scheduling==0.2.0",
     "tempo-chess-core==0.1.0",
     "tempo-learning-review==0.1.0",
+    "tempo-learning-runtime==0.1.0",
 ]
 
 [dependency-groups]
@@ -22,3 +23,4 @@ dev = [
 tempo-scheduling = { path = "../packages/scheduling" }
 tempo-chess-core = { path = "../packages/chess-core" }
 tempo-learning-review = { path = "../services/learning/application" }
+tempo-learning-runtime = { path = "../services/learning/runtime" }

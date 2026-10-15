@@ -4488,3 +4488,7 @@ requires noneditable installed Learning 0.1.0, scheduling 0.2.0 and chess-core 0
 verifies origins and explicit review command assembly, and rejects import-time
 service connections. Learning-owned qualification runner regressions are registered
 in `services/learning/application/REGRESSIONS.md` and its implemented component lane.
+
+## Independent Learning runtime
+
+`services/learning/runtime/REGRESSIONS.md` owns the installed/runtime, native PostgreSQL and focused Chromium client/API inventory. `backend/tests/test_durable_task_enqueue_identity.py` retains #144 coverage for event/result identity after concurrent UPSERT selection. The component manifest registers the runtime and real client/runner inputs; no complete Study UI or hosted gate qualification follows from these focused checks.
