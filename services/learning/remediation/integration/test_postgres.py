@@ -168,6 +168,25 @@ def test_native_withdrawal_is_source_specific_and_partial_omission_is_additive(w
         assert count(connection, "remediation_contributions", workspace) == 2
 
 
+def test_native_equivalent_publication_reanalysis_keeps_satisfied_incident_without_authorizing_stale_attempt(workspace):
+    first = scoped(delivery(), workspace)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        accept(repository, first)
+        bound = attempt(); repository.bind_attempt(bound, DECISION)
+        assert repository.settle(review(bound), DECISION)
+        data = scoped(delivery(revision=2, transport="reanalysis"), workspace).model_dump(mode="json")
+        data["obligations"][0]["publication_generation"] = 2
+        data["comparisons"][0]["publication_generation"] = 2
+        current = replace(DECISION, publication_generation=2)
+        assert accept(repository, v2.EvidenceDelivery.model_validate(data), accepted=current).status == "completed"
+        assert count(connection, "remediation_incident_versions", workspace) == 1
+        assert not repository.has_outstanding("card")
+        with pytest.raises(RemediationError, match="authority_changed"):
+            repository.settle(review(bound), current)
+        assert not repository.has_outstanding("card")
+
+
 def test_native_old_withdrawal_or_review_cannot_clear_corrected_revision(workspace):
     first = scoped(delivery(), workspace)
     with connect() as connection, connection.transaction():

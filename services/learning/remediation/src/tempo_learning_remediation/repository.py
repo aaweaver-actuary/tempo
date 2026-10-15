@@ -25,8 +25,6 @@ _OUTSTANDING = """
        AND incident.work_sequence<=attempt.frontier_sequence
        AND incident.accepted_at<=attempt.issued_at
        AND contribution.card_revision=attempt.card_revision
-       AND contribution.publication_id=attempt.publication_id
-       AND contribution.publication_generation=attempt.publication_generation
        AND EXISTS(SELECT 1 FROM remediation_game_heads game
            WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
              AND game.game_revision=contribution.game_revision)

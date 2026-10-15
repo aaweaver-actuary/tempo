@@ -58,13 +58,17 @@ reviews qualify. Again, guided, failed, invalidated and pre-issuance outcomes do
 not. Review invalidation calls `invalidate_settlement` in A's transaction.
 
 Logical work identity is canonical `(workspace, game, ply, card)`, with immutable
-semantic versions (position, observed action, accepted alternatives, content
-identity and occurrence time). Equivalent reanalysis and aliases reuse their
+semantic versions (position, observed action, accepted alternatives, exercise
+revision and occurrence time). Equivalent reanalysis and aliases reuse their
 work sequence, even under new transport/obligation IDs. Meaningful corrections
 receive a new sequence. Distinct games or plies remain distinct provenance.
 Settlement records cover only a bound sequence frontier and compatible content;
 they never update all incident rows. Late imports require a fresh bound attempt.
 Unknown times may settle only after durable acceptance precedes issuance.
+A new publication reference alone does not erase genuine completed study of an
+identical exercise revision. Historical satisfaction follows the immutable
+semantic work sequence; new review completion still requires exact current
+publication/attempt authority.
 
 `pending_page` scans 16 card identities, including rejected/settled cards, and
 returns the last scanned cursor. `prepare_admissions` scans at most four pages;
