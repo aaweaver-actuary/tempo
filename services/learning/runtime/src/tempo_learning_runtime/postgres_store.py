@@ -1,4 +1,5 @@
 """Learning-owned SQL compatibility adapter; no connection/commit authority."""
+
 from __future__ import annotations
 from collections.abc import Iterator
 from functools import lru_cache
@@ -7,6 +8,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import RowMaker
 import sqlglot
+
 
 class TempoRow:
     """Match the key and positional lookup used by existing sqlite3.Row code."""
@@ -57,13 +59,17 @@ _REPLACE_QUERIES = {
 def postgres_sql(sqlite_statement: str) -> str | None:
     stripped = sqlite_statement.strip().rstrip(";")
     stripped = re.sub(
-        r"\breal_game_instant\(([^()]*)\)", r"CAST(\1 AS TIMESTAMPTZ)",
-        stripped, flags=re.IGNORECASE,
+        r"\breal_game_instant\(([^()]*)\)",
+        r"CAST(\1 AS TIMESTAMPTZ)",
+        stripped,
+        flags=re.IGNORECASE,
     )
     if stripped.upper() == "BEGIN IMMEDIATE":
         return None
     if re.match(r"^PRAGMA\b", stripped, re.IGNORECASE):
-        raise ValueError(f"SQLite PRAGMA cannot run against PostgreSQL: {stripped[:80]}")
+        raise ValueError(
+            f"SQLite PRAGMA cannot run against PostgreSQL: {stripped[:80]}"
+        )
     replace_match = re.match(
         r"^INSERT\s+OR\s+REPLACE\s+INTO\s+([a-zA-Z_][a-zA-Z_0-9]*)\b",
         stripped,
@@ -76,18 +82,29 @@ def postgres_sql(sqlite_statement: str) -> str | None:
         return _REPLACE_QUERIES[table_name]
     ignore_insert = bool(re.match(r"^INSERT\s+OR\s+IGNORE\b", stripped, re.IGNORECASE))
     if ignore_insert:
-        stripped = re.sub(r"^INSERT\s+OR\s+IGNORE\b", "INSERT", stripped, count=1, flags=re.IGNORECASE)
+        stripped = re.sub(
+            r"^INSERT\s+OR\s+IGNORE\b", "INSERT", stripped, count=1, flags=re.IGNORECASE
+        )
     statements = sqlglot.transpile(stripped, read="sqlite", write="postgres")
     if len(statements) != 1:
         raise ValueError(f"Expected one SQL statement: {stripped[:100]}")
-    translated = re.sub(r"\bLIMIT -1\b", "LIMIT ALL", statements[0], flags=re.IGNORECASE)
+    translated = re.sub(
+        r"\bLIMIT -1\b", "LIMIT ALL", statements[0], flags=re.IGNORECASE
+    )
     # SQLGlot adds NULLS FIRST to conflict-target columns as though they were
     # ORDER BY expressions. PostgreSQL rejects null ordering in ON CONFLICT.
     translated = re.sub(
         r"\bON\s+CONFLICT\s*\(([^()]*)\)",
-        lambda match: "ON CONFLICT(" + re.sub(
-            r"\s+NULLS\s+(?:FIRST|LAST)\b", "", match.group(1), flags=re.IGNORECASE,
-        ) + ")",
+        lambda match: (
+            "ON CONFLICT("
+            + re.sub(
+                r"\s+NULLS\s+(?:FIRST|LAST)\b",
+                "",
+                match.group(1),
+                flags=re.IGNORECASE,
+            )
+            + ")"
+        ),
         translated,
         flags=re.IGNORECASE,
     )
@@ -97,7 +114,9 @@ def postgres_sql(sqlite_statement: str) -> str | None:
 
 
 class PostgresConnection:
-    def __init__(self, database: psycopg.Connection[TempoRow], *, read_only: bool = False):
+    def __init__(
+        self, database: psycopg.Connection[TempoRow], *, read_only: bool = False
+    ):
         self._database = database
         self.read_only = read_only
         self._background_metric_deltas: dict[tuple, dict] = {}
@@ -108,7 +127,9 @@ class PostgresConnection:
 
         return self._database
 
-    def execute_native(self, statement: str, parameters: tuple | list = ()) -> psycopg.Cursor[TempoRow]:
+    def execute_native(
+        self, statement: str, parameters: tuple | list = ()
+    ) -> psycopg.Cursor[TempoRow]:
         """Run an internal PostgreSQL statement without SQLite dialect translation."""
 
         return self._database.execute(statement, parameters)
@@ -116,10 +137,15 @@ class PostgresConnection:
     def execute_native_batch(self, statements):
         """Fetch a caller-bounded native read set without per-query round trips."""
         with self._database.pipeline():
-            cursors = [self.execute_native(statement, parameters) for statement, parameters in statements]
+            cursors = [
+                self.execute_native(statement, parameters)
+                for statement, parameters in statements
+            ]
         return cursors
 
-    def execute(self, statement: str, parameters: tuple | list = ()) -> psycopg.Cursor[TempoRow]:
+    def execute(
+        self, statement: str, parameters: tuple | list = ()
+    ) -> psycopg.Cursor[TempoRow]:
         translated = postgres_sql(statement)
         if translated is None:
             # Existing claims use BEGIN IMMEDIATE; the enclosing context has a
@@ -127,7 +153,9 @@ class PostgresConnection:
             return self._database.execute("SELECT 1 WHERE FALSE")
         return self._database.execute(translated, parameters)
 
-    def executemany(self, statement: str, parameters: list[tuple] | tuple[tuple, ...]) -> psycopg.Cursor[TempoRow]:
+    def executemany(
+        self, statement: str, parameters: list[tuple] | tuple[tuple, ...]
+    ) -> psycopg.Cursor[TempoRow]:
         translated = postgres_sql(statement)
         if translated is None:
             raise ValueError("Cannot executemany a transaction control statement")
@@ -136,9 +164,11 @@ class PostgresConnection:
         return cursor
 
 
+def configured():
+    return True
 
-def configured(): return True
 
-def connection(*,read_only=False,**kwargs):
+def connection(*, read_only=False, **kwargs):
     from .database import connection as owned_connection
-    return owned_connection(read_only=read_only,**kwargs)
+
+    return owned_connection(read_only=read_only, **kwargs)

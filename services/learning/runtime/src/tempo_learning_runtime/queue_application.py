@@ -4,6 +4,7 @@ from .durable_tasks import enqueue_task_in_transaction
 from .review_service import preserve_daily_queue_order
 from typing import Any
 
+
 def requeue(db, day, cid, after, attempt):
     cycle = db.execute(
         "SELECT COALESCE(MAX(cycle),-1)+1 FROM ("
@@ -18,7 +19,9 @@ def requeue(db, day, cid, after, attempt):
         ).fetchone()[0]
     else:
         row = db.execute(
-            available_attempt_sql().replace("SELECT q.id FROM", "SELECT q.position FROM", 1)
+            available_attempt_sql().replace(
+                "SELECT q.id FROM", "SELECT q.position FROM", 1
+            )
             + " ORDER BY q.position,q.id LIMIT 1 OFFSET ?",
             (day, max(0, after)),
         ).fetchone()
@@ -49,21 +52,31 @@ def requeue(db, day, cid, after, attempt):
     preserve_daily_queue_order(db, day)
     return inserted_entry_id
 
-def request_queue_refresh_in_transaction(database: PostgresConnection,
-                                         queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
+
+def request_queue_refresh_in_transaction(
+    database: PostgresConnection,
+    queue_date: str,
+    *,
+    preserve_through_entry_id: int | None = None,
+) -> dict[str, Any]:
     """Checkpoint a foreground mutation and its follow-up queue refresh together."""
 
     payload = {"queue_date": queue_date}
     if preserve_through_entry_id is not None:
         payload["preserve_through_entry_id"] = preserve_through_entry_id
     task = enqueue_task_in_transaction(
-        database, "daily_queue", "current", payload, priority=10,
+        database,
+        "daily_queue",
+        "current",
+        payload,
+        priority=10,
     )
     database.execute(
         _QUEUE_REFRESH_PROJECTION_SQL,
         (queue_date,),
     )
     return task
+
 
 _QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
            VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
@@ -96,3 +109,10 @@ def available_attempt_sql() -> str:
     # exposure sources do not exist in SQLite's recovery compatibility schema.
     return _AVAILABLE_ATTEMPT_SQL + " AND c.serving_active=1"
 
+
+from . import frozen_opening_order
+
+_AVAILABLE_ATTEMPT_SQL += (
+    frozen_opening_order.stale_queue_predicate()
+    + frozen_opening_order.legacy_queue_predicate()
+)

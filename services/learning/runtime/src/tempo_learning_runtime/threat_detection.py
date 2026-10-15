@@ -2,10 +2,14 @@ from __future__ import annotations
 import chess
 from .threat_models import ForkGeometry, ForkTarget
 
+
 def _color_name(color: chess.Color) -> str:
     return "white" if color == chess.WHITE else "black"
 
-def defensive_fork_geometry(position: chess.Board, move_uci: str) -> ForkGeometry | None:
+
+def defensive_fork_geometry(
+    position: chess.Board, move_uci: str
+) -> ForkGeometry | None:
     """Return king-and-major geometry only for a legal knight move."""
 
     try:
@@ -25,7 +29,8 @@ def defensive_fork_geometry(position: chess.Board, move_uci: str) -> ForkGeometr
     if king_square is None or king_square not in attacked:
         return None
     major_targets = sorted(
-        square for square in attacked
+        square
+        for square in attacked
         if (piece := after.piece_at(square)) is not None
         and piece.color == enemy_color
         and piece.piece_type in (chess.ROOK, chess.QUEEN)
@@ -48,6 +53,7 @@ def defensive_fork_geometry(position: chess.Board, move_uci: str) -> ForkGeometr
             ForkTarget(
                 chess.square_name(square),
                 "queen" if after.piece_at(square).piece_type == chess.QUEEN else "rook",
-            ) for square in major_targets[1:]
+            )
+            for square in major_targets[1:]
         ),
     )

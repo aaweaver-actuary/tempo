@@ -28,13 +28,20 @@ QueueOrderPlan = tuple[int, str, list[QueueOrderingRow]]
 
 def _queue_membership_hash(rows: Sequence[QueueOrderingRow]) -> str:
     return hashlib.sha256(
-        ("queue-mix-v2\0" + "\0".join(
-            f"{row['id']}:{row['card_id']}" for row in rows
-        )).encode()
+        (
+            "queue-mix-v2\0"
+            + "\0".join(f"{row['id']}:{row['card_id']}" for row in rows)
+        ).encode()
     ).hexdigest()
 
 
-def _plan_daily_queue_order(rows: Sequence[QueueOrderingRow], day: str, saved: SavedQueueOrder | None, *, preserve_through_entry_id: int | None = None) -> QueueOrderPlan:
+def _plan_daily_queue_order(
+    rows: Sequence[QueueOrderingRow],
+    day: str,
+    saved: SavedQueueOrder | None,
+    *,
+    preserve_through_entry_id: int | None = None,
+) -> QueueOrderPlan:
     """Compute the stable queue mix after its database read has closed."""
 
     membership_hash = _queue_membership_hash(rows)
@@ -56,7 +63,14 @@ def _plan_daily_queue_order(rows: Sequence[QueueOrderingRow], day: str, saved: S
             16,
         )
         random.Random(group_seed).shuffle(values)
-    category_order = ["opening", "tactic", "defense", "endgame", "middlegame", "study_exercise"]
+    category_order = [
+        "opening",
+        "tactic",
+        "defense",
+        "endgame",
+        "middlegame",
+        "study_exercise",
+    ]
     category_offset = seed % len(category_order)
     category_order = category_order[category_offset:] + category_order[:category_offset]
     cohort_order = ["review", "new"] if seed % 2 == 0 else ["new", "review"]
@@ -79,16 +93,24 @@ def _plan_daily_queue_order(rows: Sequence[QueueOrderingRow], day: str, saved: S
             progressed = True
         if not progressed:
             break
-    prioritized_misses = [row for row in ordered if row["gameplay_priority_reason"] == MISS_REASON]
+    prioritized_misses = [
+        row for row in ordered if row["gameplay_priority_reason"] == MISS_REASON
+    ]
     if prioritized_misses:
-        ordinary_cards = [row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON]
-        ordered = sorted(prioritized_misses, key=lambda row: (row["card_id"], row["id"])) + ordinary_cards
+        ordinary_cards = [
+            row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON
+        ]
+        ordered = (
+            sorted(prioritized_misses, key=lambda row: (row["card_id"], row["id"]))
+            + ordinary_cards
+        )
     if preserve_through_entry_id is not None:
         # A review can extend today's queue, but cannot move a surviving attempt.
         preserved_rows = sorted(
             (row for row in rows if row["id"] <= preserve_through_entry_id),
             key=lambda row: (row["position"], row["id"]),
         )
-        ordered = preserved_rows + [row for row in ordered if row["id"] > preserve_through_entry_id]
+        ordered = preserved_rows + [
+            row for row in ordered if row["id"] > preserve_through_entry_id
+        ]
     return seed, membership_hash, ordered
-

@@ -5,7 +5,13 @@ import random
 import chess
 
 
-PIECES = {"Q": chess.QUEEN, "R": chess.ROOK, "B": chess.BISHOP, "N": chess.KNIGHT, "P": chess.PAWN}
+PIECES = {
+    "Q": chess.QUEEN,
+    "R": chess.ROOK,
+    "B": chess.BISHOP,
+    "N": chess.KNIGHT,
+    "P": chess.PAWN,
+}
 
 
 def normalized_material(value: str) -> str:
@@ -15,7 +21,12 @@ def normalized_material(value: str) -> str:
     return "K" + "".join(sorted(pieces.replace("K", ""), key="QRBNP".index))
 
 
-def generate_position(white_material: str, black_material: str, trained_color: str, seed: int | None = None) -> str:
+def generate_position(
+    white_material: str,
+    black_material: str,
+    trained_color: str,
+    seed: int | None = None,
+) -> str:
     white = normalized_material(white_material)
     black = normalized_material(black_material)
     if len(white) + len(black) > 7:
@@ -31,7 +42,10 @@ def generate_position(white_material: str, black_material: str, trained_color: s
                 while symbol == "P" and chess.square_rank(square) in {0, 7}:
                     available.insert(0, square)
                     square = available.pop()
-                board.set_piece_at(square, chess.Piece(chess.KING if symbol == "K" else PIECES[symbol], color))
+                board.set_piece_at(
+                    square,
+                    chess.Piece(chess.KING if symbol == "K" else PIECES[symbol], color),
+                )
         board.turn = chess.WHITE if trained_color == "white" else chess.BLACK
         board.clear_stack()
         # is_valid() also rejects STATUS_OPPOSITE_CHECK: the non-moving king
@@ -52,5 +66,11 @@ def category_for_player(category: str) -> str:
 
 
 def move_preserves_target(current: str, next_category_for_opponent: str) -> bool:
-    resulting = "loss" if next_category_for_opponent == "win" else "win" if next_category_for_opponent == "loss" else "draw"
+    resulting = (
+        "loss"
+        if next_category_for_opponent == "win"
+        else "win"
+        if next_category_for_opponent == "loss"
+        else "draw"
+    )
     return resulting == current or (current == "draw" and resulting == "win")

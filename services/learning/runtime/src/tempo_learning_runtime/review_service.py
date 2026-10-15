@@ -1,16 +1,20 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from .clock import date
-import hashlib, json, sqlite3
+import hashlib, json
+from .postgres_store import PostgresConnection
 from .scheduler import schedule_review, unlock_ready
 from .opening_progression import unlock_legacy_children_after_review
 
-def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
-                             light_first_interval_days: int) -> None:
+
+def rebuild_defense_schedule(
+    database: PostgresConnection, card_id: str, light_first_interval_days: int
+) -> None:
     """Replay only valid reviews after a defective recognition rubric is retired."""
     rows = database.execute(
         """SELECT rating,reviewed_at FROM reviews WHERE card_id=? AND invalidated_at IS NULL
-           ORDER BY reviewed_at,id""", (card_id,),
+           ORDER BY reviewed_at,id""",
+        (card_id,),
     ).fetchall()
     if not rows:
         database.execute(
@@ -31,13 +35,17 @@ def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
     for row in rows:
         reviewed_at = datetime.fromisoformat(row["reviewed_at"])
         schedule = schedule_review(
-            row["rating"], interval_days=interval_days,
-            fsrs_card_json=fsrs_card_json, first_correct_at=first_correct_at,
+            row["rating"],
+            interval_days=interval_days,
+            fsrs_card_json=fsrs_card_json,
+            first_correct_at=first_correct_at,
             reinforcement_pending=reinforcement_pending,
-            scheduling_mode=scheduling_mode, hard_correct_streak=hard_correct_streak,
+            scheduling_mode=scheduling_mode,
+            hard_correct_streak=hard_correct_streak,
             recent_attempts=recent_attempts,
             light_first_interval_days=light_first_interval_days,
-            reviewed_at=reviewed_at, review_day=reviewed_at.date(),
+            reviewed_at=reviewed_at,
+            review_day=reviewed_at.date(),
         )
         interval_days = schedule.interval_days
         fsrs_card_json = schedule.fsrs_card_json
@@ -46,20 +54,36 @@ def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
         scheduling_mode = schedule.scheduling_mode
         hard_correct_streak = schedule.hard_correct_streak
         recent_attempts = list(schedule.recent_attempts)
-    successful_days = len({row["reviewed_at"][:10] for row in rows if row["rating"] == "correct"})
+    successful_days = len(
+        {row["reviewed_at"][:10] for row in rows if row["rating"] == "correct"}
+    )
     recent_outcomes = [row["rating"] for row in reversed(rows[-2:])]
-    state = "mature" if unlock_ready(schedule.stability, successful_days, recent_outcomes) else "learning"
+    state = (
+        "mature"
+        if unlock_ready(schedule.stability, successful_days, recent_outcomes)
+        else "learning"
+    )
     database.execute(
         """UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,
            reinforcement_pending=?,stability=?,guided_review=0,state=?,scheduling_mode=?,
            hard_correct_streak=?,recent_attempts_json=? WHERE id=? AND content_type='defense'""",
-        (schedule.due_date.isoformat(), schedule.interval_days, schedule.fsrs_card_json,
-         schedule.first_correct_at, int(schedule.reinforcement_pending), schedule.stability,
-         state, schedule.scheduling_mode, schedule.hard_correct_streak,
-         json.dumps(schedule.recent_attempts), card_id),
+        (
+            schedule.due_date.isoformat(),
+            schedule.interval_days,
+            schedule.fsrs_card_json,
+            schedule.first_correct_at,
+            int(schedule.reinforcement_pending),
+            schedule.stability,
+            state,
+            schedule.scheduling_mode,
+            schedule.hard_correct_streak,
+            json.dumps(schedule.recent_attempts),
+            card_id,
+        ),
     )
 
-def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) -> None:
+
+def preserve_daily_queue_order(database: PostgresConnection, queue_date: str) -> None:
     """Keep a manually positioned queue entry stable across projection rebuilds."""
     entries = database.execute(
         """SELECT id,card_id FROM daily_queue
@@ -67,9 +91,10 @@ def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) ->
         (queue_date,),
     ).fetchall()
     membership_hash = hashlib.sha256(
-        ("queue-mix-v2\0" + "\0".join(
-            f"{entry['id']}:{entry['card_id']}" for entry in entries
-        )).encode()
+        (
+            "queue-mix-v2\0"
+            + "\0".join(f"{entry['id']}:{entry['card_id']}" for entry in entries)
+        ).encode()
     ).hexdigest()
     seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
     database.execute(
@@ -79,8 +104,9 @@ def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) ->
         (queue_date, seed, membership_hash, datetime.now(timezone.utc).isoformat()),
     )
 
+
 def apply_scheduling_review(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     card_id: str,
     outcome: str,
     *,
@@ -91,33 +117,45 @@ def apply_scheduling_review(
     reviewed_at: datetime,
     review_day: date,
 ) -> dict:
-    from .scheduling_review_application import apply_scheduling_review as apply_review_to_store
+    from .scheduling_review_application import (
+        apply_scheduling_review as apply_review_to_store,
+    )
     from .scheduling_review_store import OwnedConnectionSchedulingReviewStore
 
     result = apply_review_to_store(
-        OwnedConnectionSchedulingReviewStore(database), card_id, outcome,
-        guided=guided, source_kind=source_kind, source_ref=source_ref,
+        OwnedConnectionSchedulingReviewStore(database),
+        card_id,
+        outcome,
+        guided=guided,
+        source_kind=source_kind,
+        source_ref=source_ref,
         light_first_interval_days=light_first_interval_days,
-        reviewed_at=reviewed_at, review_day=review_day,
+        reviewed_at=reviewed_at,
+        review_day=review_day,
     )
     if result["idempotent"]:
         return result
-    if source_kind == "study":
-        from .real_game_feedback import clear_satisfied_miss_priority
-        clear_satisfied_miss_priority(database, card_id)
     from .receivers import settle
-    review = database.execute("SELECT MAX(id) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0]
-    settle(database, card_id, review)
-    unlock_legacy_children_after_review(database, card_id, review_day.isoformat(), result["state"])
+
+    review = database.execute(
+        "SELECT MAX(id) FROM reviews WHERE card_id=?", (card_id,)
+    ).fetchone()[0]
+    if source_kind == "study":
+        settle(database, card_id, review)
+    unlock_legacy_children_after_review(
+        database, card_id, review_day.isoformat(), result["state"]
+    )
     return result
 
+
 def ensure_card_queued_after(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     card_id: str,
     after_cards: int = 4,
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
-    *, queue_date: str | None = None,
+    *,
+    queue_date: str | None = None,
 ) -> None:
     day = queue_date or date.today().isoformat()
     entry = database.execute(
@@ -138,13 +176,18 @@ def ensure_card_queued_after(
             "UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",
             (priority_reason, entry["id"]),
         )
-    ordered_ids = [row[0] for row in database.execute(
-        "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
-        (day, entry["id"]),
-    )]
+    ordered_ids = [
+        row[0]
+        for row in database.execute(
+            "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
+            (day, entry["id"]),
+        )
+    ]
     ordered_ids.insert(min(after_cards, len(ordered_ids)), entry["id"])
     for position, entry_id in enumerate(ordered_ids):
-        database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
+        database.execute(
+            "UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id)
+        )
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),

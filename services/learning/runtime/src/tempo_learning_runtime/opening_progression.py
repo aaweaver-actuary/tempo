@@ -9,7 +9,9 @@ PRACTICED_OPENING_PARENT_SQL = """EXISTS(
 )"""
 
 
-def unlock_legacy_children_after_review(database, card_id: str, review_day: str, state: str) -> None:
+def unlock_legacy_children_after_review(
+    database, card_id: str, review_day: str, state: str
+) -> None:
     """Preserve legacy links without overriding a published graph's route order."""
     database.execute(
         """UPDATE cards SET state='new',due_date=?

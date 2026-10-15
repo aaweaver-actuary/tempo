@@ -42,7 +42,7 @@ CREATE TABLE defense_attempts(attempt_id TEXT PRIMARY KEY,candidate_id TEXT NOT 
 CREATE TABLE defense_recognition_submissions(attempt_id TEXT PRIMARY KEY,candidate_id TEXT NOT NULL,queue_entry_id BIGINT NOT NULL,exercise_revision BIGINT NOT NULL,answer_json TEXT NOT NULL,recognition_correct BIGINT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE analysis_obligations(request_id TEXT PRIMARY KEY,candidate_id TEXT NOT NULL,request_json TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending');
 CREATE TABLE frozen_opening_runs(run_id TEXT PRIMARY KEY,reader_version TEXT NOT NULL);
-CREATE TABLE frozen_opening_ranks(run_id TEXT NOT NULL REFERENCES frozen_opening_runs(run_id),card_id TEXT NOT NULL,ordinal BIGINT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(run_id,card_id),UNIQUE(run_id,ordinal));
+CREATE TABLE frozen_opening_ranks(run_id TEXT NOT NULL REFERENCES frozen_opening_runs(run_id),card_id TEXT NOT NULL,ordinal BIGINT NOT NULL,fingerprint TEXT NOT NULL,memberships_json TEXT NOT NULL,definition_json TEXT NOT NULL,PRIMARY KEY(run_id,card_id),UNIQUE(run_id,ordinal));
 CREATE TABLE frozen_opening_activation(id INTEGER PRIMARY KEY CHECK(id=1),run_id TEXT REFERENCES frozen_opening_runs(run_id),epoch BIGINT NOT NULL DEFAULT 0);
 INSERT INTO frozen_opening_activation(id) VALUES(1);
 CREATE TABLE background_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,deduplication_key TEXT NOT NULL,generation BIGINT NOT NULL DEFAULT 1,payload_json TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'queued',priority BIGINT NOT NULL DEFAULT 10,phase TEXT NOT NULL DEFAULT 'queued',lease_token TEXT,lease_expires_at TIMESTAMPTZ,next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),attempt_count BIGINT NOT NULL DEFAULT 0,max_attempts BIGINT NOT NULL DEFAULT 5,last_error TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(kind,deduplication_key));
@@ -320,3 +320,7 @@ END $$;
 
 
 ALTER TABLE opening_evidence_attempts ADD COLUMN retired_operation_id TEXT;
+
+CREATE TABLE logical_request_bindings(family TEXT NOT NULL,attempt_id TEXT NOT NULL,request_hash TEXT NOT NULL,PRIMARY KEY(family,attempt_id));
+
+CREATE FUNCTION json_extract_path_text(document TEXT, VARIADIC path TEXT[]) RETURNS TEXT LANGUAGE SQL IMMUTABLE STRICT AS $$ SELECT jsonb_extract_path_text(document::jsonb, VARIADIC path) $$;

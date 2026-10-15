@@ -34,32 +34,48 @@ def _lock_attempt_card(database, entry_id: int) -> None:
     """Follow review's card-before-queue lock order for retained commands."""
     if not isinstance(database, PostgresConnection):
         return
-    entry = database.execute("SELECT card_id FROM daily_queue WHERE id=?", (entry_id,)).fetchone()
+    entry = database.execute(
+        "SELECT card_id FROM daily_queue WHERE id=?", (entry_id,)
+    ).fetchone()
     if entry:
-        database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                                (f"tempo:card-edit:{entry['card_id']}",))
-        database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (entry['card_id'],))
+        database.execute_native(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            (f"tempo:card-edit:{entry['card_id']}",),
+        )
+        database.execute(
+            "SELECT id FROM cards WHERE id=? FOR UPDATE", (entry["card_id"],)
+        )
 
 
 _AVAILABLE_ATTEMPT_SQL = queue_application._AVAILABLE_ATTEMPT_SQL
+
 
 def available_attempt_sql() -> str:
     return queue_application.available_attempt_sql()
 
 
-def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+def validate_available_attempt(
+    database, entry_id: int, card_id=None, expected_revision=None
+) -> None:
     """A retained, identified attempt remains operable after queue promotion."""
     identified = card_id is not None and expected_revision is not None
-    lock_clause = " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
+    lock_clause = (
+        " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
+    )
     available = database.execute(
         f"""{available_attempt_sql()}
               {"AND q.id=?" if identified else ""}
             ORDER BY q.position,q.id LIMIT 1{lock_clause}""",
-        (date.today().isoformat(), entry_id) if identified else (date.today().isoformat(),),
+        (date.today().isoformat(), entry_id)
+        if identified
+        else (date.today().isoformat(),),
     ).fetchone()
     if not available or available["id"] != entry_id:
-        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+        raise ReviewConflict(
+            "queue_attempt_inactive", "This queue attempt is no longer active"
+        )
     from .queue_attempt_origins import validate_failure_marker
+
     validate_failure_marker(database, entry_id, card_id, expected_revision)
     if identified:
         head = database.execute(
@@ -72,7 +88,10 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
             (entry_id, card_id, expected_revision),
         ).fetchone()
         if (not head or head["id"] != entry_id) and not issued_origin:
-            raise ReviewConflict("queue_attempt_inactive", "This queue attempt was never issued as the active attempt")
+            raise ReviewConflict(
+                "queue_attempt_inactive",
+                "This queue attempt was never issued as the active attempt",
+            )
 
 
 def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
@@ -90,7 +109,9 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
     if not head or head["id"] != entry_id:
         return {"issued": False}
     try:
-        validate_available_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
+        validate_available_attempt(
+            database, entry_id, payload["card_id"], payload["expected_revision"]
+        )
     except ReviewConflict:
         return {"issued": False}
     changed = database.execute(
@@ -101,25 +122,35 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
     return {"issued": bool(changed)}
 
 
-def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+def mark_attempt_failed(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, bool]:
     entry_id = int(payload["entry_id"])
     _lock_attempt_card(database, entry_id)
-    validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
+    validate_available_attempt(
+        database, entry_id, payload.get("card_id"), payload.get("expected_revision")
+    )
     changed = database.execute(
         "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
         (entry_id,),
     ).rowcount
     if not changed:
-        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+        raise ReviewConflict(
+            "queue_attempt_inactive", "This queue attempt is no longer active"
+        )
     return {"attempt_failed": True}
 
 
-def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def bury_queue_entry(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     entry_id = int(payload["entry_id"])
     queue_date = date.today().isoformat()
     _lock_attempt_card(database, entry_id)
     lock_queue_date_for_position(database, queue_date)
-    validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
+    validate_available_attempt(
+        database, entry_id, payload.get("card_id"), payload.get("expected_revision")
+    )
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
     database.execute(
@@ -132,7 +163,9 @@ def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> d
     return {"buried": True, "queue_entry_id": entry_id}
 
 
-def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def ensure_current_queue(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     """Request one durable queue refresh from the foreground Celery worker."""
 
     try:
@@ -155,29 +188,46 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
     # projection. A ready projection still needs no new task.
     projection_lock_clause = " FOR UPDATE" if active_task else ""
     projection = database.execute(
-        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?" + projection_lock_clause,
+        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?"
+        + projection_lock_clause,
         (queue_date,),
     ).fetchone()
-    if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
+    if (
+        projection
+        and projection["state"] == "ready"
+        and not projection["refresh_pending"]
+    ):
         return {"queue_date": queue_date, "refresh_pending": False}
-    if (active_task and active_task["state"] in {"queued", "leased", "retrying"}
-            and json.loads(active_task["payload_json"]).get("queue_date") == queue_date):
+    if (
+        active_task
+        and active_task["state"] in {"queued", "leased", "retrying"}
+        and json.loads(active_task["payload_json"]).get("queue_date") == queue_date
+    ):
         database.execute(
             """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,last_error)
                VALUES(?,'refreshing',0,1,?) ON CONFLICT(queue_date) DO UPDATE SET
                state='refreshing',refresh_pending=1,last_error=excluded.last_error""",
             (queue_date, active_task["last_error"]),
         )
-        return {"queue_date": queue_date, "refresh_pending": True,
-                "task_id": active_task["id"]}
+        return {
+            "queue_date": queue_date,
+            "refresh_pending": True,
+            "task_id": active_task["id"],
+        }
     task = request_queue_refresh_in_transaction(database, queue_date)
     return {"queue_date": queue_date, "refresh_pending": True, "task_id": task["id"]}
 
 
-def request_queue_refresh_in_transaction(database: PostgresConnection,
-                                         queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
+def request_queue_refresh_in_transaction(
+    database: PostgresConnection,
+    queue_date: str,
+    *,
+    preserve_through_entry_id: int | None = None,
+) -> dict[str, Any]:
     return queue_application.request_queue_refresh_in_transaction(
-        database, queue_date, preserve_through_entry_id=preserve_through_entry_id,
+        database,
+        queue_date,
+        preserve_through_entry_id=preserve_through_entry_id,
     )
 
 

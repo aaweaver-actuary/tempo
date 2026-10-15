@@ -1,0 +1,1 @@
+{"name":"tempo-learning-native-client-proofs","private":true,"type":"module","dependencies":{"@playwright/test":"1.63.0","esbuild":"0.27.3","zod":"4.5.4","chess.js":"1.4.0"}}

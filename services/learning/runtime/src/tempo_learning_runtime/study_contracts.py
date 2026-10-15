@@ -60,7 +60,13 @@ class ExplanationExercise(ExerciseText):
 
 
 ExerciseSpecification = Annotated[
-    Union[MoveExercise, SquareExercise, KnightExercise, ChoiceExercise, ExplanationExercise],
+    Union[
+        MoveExercise,
+        SquareExercise,
+        KnightExercise,
+        ChoiceExercise,
+        ExplanationExercise,
+    ],
     Field(discriminator="type"),
 ]
 

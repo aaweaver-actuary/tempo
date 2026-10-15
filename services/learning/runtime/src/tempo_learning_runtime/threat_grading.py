@@ -9,8 +9,13 @@ import chess
 
 from .threat_models import ExerciseAnchor, ThreatPolicy, ThreatSeed
 from .threat_validation import (
-    AnalysisLine, AnalysisReport, AnalysisRequest,
-    _fork_consequence, _learner_loss, _mate_outcome, _replay_line,
+    AnalysisLine,
+    AnalysisReport,
+    AnalysisRequest,
+    _fork_consequence,
+    _learner_loss,
+    _mate_outcome,
+    _replay_line,
 )
 
 
@@ -51,23 +56,34 @@ def _board_at_anchor(anchor: ExerciseAnchor) -> chess.Board:
 
 
 def _compatible_root_report(
-    exercise: DefenseExercise, move_uci: str, additional: AnalysisReport | None,
+    exercise: DefenseExercise,
+    move_uci: str,
+    additional: AnalysisReport | None,
 ) -> tuple[AnalysisLine, AnalysisReport] | None:
     best_request = exercise.best_report.request
-    reports = (exercise.best_report,) + exercise.evaluated_reports + ((additional,) if additional else ())
+    reports = (
+        (exercise.best_report,)
+        + exercise.evaluated_reports
+        + ((additional,) if additional else ())
+    )
     for report in reports:
         request = report.request
-        if (not report.complete
-                or request.position_start_fen != best_request.position_start_fen
-                or request.position_prefix_uci != best_request.position_prefix_uci
-                or request.engine_version != best_request.engine_version
-                or request.network_version != best_request.network_version
-                or request.depth < exercise.policy.minimum_depth):
+        if (
+            not report.complete
+            or request.position_start_fen != best_request.position_start_fen
+            or request.position_prefix_uci != best_request.position_prefix_uci
+            or request.engine_version != best_request.engine_version
+            or request.network_version != best_request.network_version
+            or request.depth < exercise.policy.minimum_depth
+        ):
             continue
         if request.root_move_uci not in (None, move_uci):
             continue
         for line in report.lines:
-            if line.root_move_uci == move_uci and line.depth >= exercise.policy.minimum_depth:
+            if (
+                line.root_move_uci == move_uci
+                and line.depth >= exercise.policy.minimum_depth
+            ):
                 return line, report
     return None
 
@@ -86,8 +102,10 @@ def _needed_request(exercise: DefenseExercise, move_uci: str) -> AnalysisRequest
 
 
 def grade_defense_move(
-    exercise: DefenseExercise, move_uci: str,
-    *, additional_analysis: AnalysisReport | None = None,
+    exercise: DefenseExercise,
+    move_uci: str,
+    *,
+    additional_analysis: AnalysisReport | None = None,
 ) -> MoveGrade:
     board = _board_at_anchor(exercise.anchor)
     try:
@@ -97,25 +115,37 @@ def grade_defense_move(
     if move not in board.legal_moves:
         return MoveGrade("illegal", "Move is illegal from this position", move_uci)
     best = exercise.best_report
-    if not best.complete or not best.lines or best.lines[0].depth < exercise.policy.minimum_depth:
+    if (
+        not best.complete
+        or not best.lines
+        or best.lines[0].depth < exercise.policy.minimum_depth
+    ):
         return MoveGrade("needs_analysis", "Best-move evidence is incomplete", move_uci)
     evaluated = _compatible_root_report(exercise, move_uci, additional_analysis)
     if evaluated is None:
         return MoveGrade(
-            "needs_analysis", "This legal move needs its own engine search", move_uci,
+            "needs_analysis",
+            "This legal move needs its own engine search",
+            move_uci,
             analysis_request=_needed_request(exercise, move_uci),
         )
     line, _ = evaluated
     try:
         states = _replay_line(board, line)
     except ValueError:
-        return MoveGrade("needs_analysis", "Saved line is illegal; retry analysis", move_uci,
-                         analysis_request=_needed_request(exercise, move_uci))
-    loss_cp = _learner_loss(best.lines[0].score, line.score,
-                            exercise.anchor.position.learner_color)
+        return MoveGrade(
+            "needs_analysis",
+            "Saved line is illegal; retry analysis",
+            move_uci,
+            analysis_request=_needed_request(exercise, move_uci),
+        )
+    loss_cp = _learner_loss(
+        best.lines[0].score, line.score, exercise.anchor.position.learner_color
+    )
     if loss_cp is None:
-        best_mate = _mate_outcome(best.lines[0].score,
-                                  exercise.anchor.position.learner_color)
+        best_mate = _mate_outcome(
+            best.lines[0].score, exercise.anchor.position.learner_color
+        )
         move_mate = _mate_outcome(line.score, exercise.anchor.position.learner_color)
         if move_mate == -1 and best_mate != -1:
             grade = "incorrect"
@@ -130,13 +160,22 @@ def grade_defense_move(
     else:
         grade = "ambiguous"
     if grade != "incorrect":
-        return MoveGrade(grade, "Sound defense" if grade == "correct" else
-                         "Engine evidence is too close to grade", move_uci, loss_cp)
+        return MoveGrade(
+            grade,
+            "Sound defense"
+            if grade == "correct"
+            else "Engine evidence is too close to grade",
+            move_uci,
+            loss_cp,
+        )
     consequence, net_gain = _fork_consequence(states, line, exercise.seed)
     allows_fork = consequence == "proved" and net_gain is not None and net_gain >= 200
     return MoveGrade(
         "incorrect",
-        "Move allows the tracked checking knight fork" if allows_fork
+        "Move allows the tracked checking knight fork"
+        if allows_fork
         else "Move loses value for another reason",
-        move_uci, loss_cp, allows_fork,
+        move_uci,
+        loss_cp,
+        allows_fork,
     )

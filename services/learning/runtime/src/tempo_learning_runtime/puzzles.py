@@ -1,5 +1,6 @@
 import chess
 
+
 def validate_puzzle_record(record: dict[str, object]) -> tuple[str, list[str]]:
     """Validate the canonical Lichess setup move and complete solution."""
     source_fen = str(record["FEN"])

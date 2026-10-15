@@ -36,13 +36,10 @@
       "app.services.scheduler",
       "app.services.scheduling_review_contracts",
       "datetime",
-      "json"
+      "tempo_learning_runtime"
     ],
     "app.services.scheduling_review_contracts": [
-      "__future__",
-      "dataclasses",
-      "datetime",
-      "typing"
+      "tempo_learning_runtime"
     ],
     "app.services.scheduler": [
       "datetime",
@@ -67,5 +64,6 @@
     "app.services.scheduling_review_application": "backend/app/services/scheduling_review_application.py",
     "app.services.scheduling_review_contracts": "backend/app/services/scheduling_review_contracts.py",
     "app.services.scheduler": "backend/app/services/scheduler.py"
-  }
+  },
+  "packaged_owner": "tempo_learning_runtime.scheduling_review_application"
 }
