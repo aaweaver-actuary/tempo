@@ -14,6 +14,12 @@ The #200 pure-package registration regression validates both actual implemented
 packages and lists their owning suites with Python disabled, preserving explicit
 working directories and discovery without setup.
 
+`F1 main adoption discovers Game Evidence alongside independent Learning and Study owners`
+checks both actual service artifacts and lists their regular unit/PostgreSQL suites
+without starting Python or services. It also preserves the merged browser-intents
+and study-session registrations. This catches the missing-main producer regression
+after #283 merged into its former dependency branch instead of main.
+
 `tests/boundaries.test.mjs` retains the #270 AST/dependency, public API, inventory,
 package prerequisite and structured Node reporter protections unchanged.
 
