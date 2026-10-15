@@ -1,3 +1,4 @@
+import { studyIntentStore } from "../../app/lib/study-intent-storage";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Chess, type Square } from "chess.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -221,7 +222,7 @@ it.each([
   await play(uci);
   expect(responseJournal).toHaveBeenLastCalledWith(0, uci, classification);
   expect(useTrainingStore.getState()).toMatchObject({ feedback, isAttemptFailed: failed });
-  expect(Boolean(localStorage.getItem("tempo-pending-training-failures-v1"))).toBe(failed);
+  await waitFor(async () => expect((await (await studyIntentStore()).list("failure")).length > 0).toBe(failed));
   expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(prepareCalls);
   if (classification !== "expected") expect(useTrainingStore.getState().currentFenString).toBe(startFen);
 });
@@ -402,4 +403,51 @@ it("issue36_demo_keeps_demo_branch_membership_without_loading_an_index", async (
   await play("e7e6");
   expect(useTrainingStore.getState()).toMatchObject({ feedback: "branch", isAttemptFailed: false });
   expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(0);
+});
+
+it("pr285_teaching_cross_tab_committed_facts_update_the_mounted_home", async () => {
+  const { openIntentStore } = await import("@tempo/browser-intents");
+  const { API_URL } = await import("../../app/const");
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  render(<Home />);
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  const other = await openIntentStore({ workspace: `${new URL(API_URL || "/", window.location.href).origin}:study` });
+  try {
+    await act(async () => {
+      await other.addTeachingFact({ key: "cross-tab-card:1:0", cardId: "cross-tab-card", revision: 1, ply: 0, kind: "seen" });
+      await other.addTeachingFact({ key: "first-clean:cross-tab-card", cardId: "cross-tab-card", revision: 1, kind: "first-clean" });
+    });
+    await waitFor(() => expect([...useTrainingStore.getState().seenMoves]).toContain("cross-tab-card:1:0"));
+    await waitFor(() => expect(useTrainingStore.getState().firstCleanPasses.has("cross-tab-card")).toBe(true));
+  } finally { other.close(); }
+});
+
+it("pr285_teaching_cross_tab_reload_keeps_indexeddb_only_facts_after_home_startup", async () => {
+  const { rememberTeachingFact } = await import("../../app/lib/study-intent-storage");
+  await rememberTeachingFact({ key: "offline-only:3:5", cardId: "offline-only", revision: 3, ply: 5, kind: "seen" });
+  await rememberTeachingFact({ key: "first-clean:offline-only", cardId: "offline-only", revision: 3, kind: "first-clean" });
+  expect(localStorage.getItem("tempo-seen-moves")).toBeNull(); expect(localStorage.getItem("tempo-first-clean-passes")).toBeNull();
+  const mounted = await readyHome();
+  expect([...useTrainingStore.getState().seenMoves]).toContain("offline-only:3:5");
+  mounted.unmount();
+  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../app/lib/study-intent-storage");
+  closeStudyIntentStorage(); await initializeStudyIntentStorage();
+  await readyHome();
+  expect([...useTrainingStore.getState().seenMoves]).toContain("offline-only:3:5");
+  expect(useTrainingStore.getState().firstCleanPasses.has("offline-only")).toBe(true);
+});
+it("pr285_teaching_cross_tab_stale_server_snapshot_cannot_erase_committed_seen_fact", async () => {
+  const { rememberTeachingFact } = await import("../../app/lib/study-intent-storage");
+  const key = `${card.backendId}:1:0`;
+  await rememberTeachingFact({ key, cardId: String(card.backendId), revision: 1, ply: 0, kind: "seen" });
+  let release!: (response: Response) => void, entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; }); const response = new Promise<Response>(resolve => { release = resolve; });
+  const originalFetch = fetch;
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith(`/api/cards/${card.backendId}/teaching`)) { entered(); return response; }
+    return originalFetch(input, init);
+  }));
+  render(<Home />); await started;
+  await act(async () => { release(Response.json({ states: [] })); await response; });
+  expect([...useTrainingStore.getState().seenMoves]).toContain(key);
 });

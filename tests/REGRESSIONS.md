@@ -4489,6 +4489,84 @@ verifies origins and explicit review command assembly, and rejects import-time
 service connections. Learning-owned qualification runner regressions are registered
 in `services/learning/application/REGRESSIONS.md` and its implemented component lane.
 
+## Durable Study intents (#219/#221 and #13)
+
+Installed owners: [browser-intents](../packages/browser-intents/REGRESSIONS.md)
+and [study-session](../packages/study-session/REGRESSIONS.md).
+`tests/unit/study-intent-storage-regressions.test.ts` owns the named migration,
+legacy-writer, storage, atomic-teaching and specialized boot-recovery cases.
+The regular frontend lane registers that file; existing outbox, lifecycle,
+pending-recovery, conflict, Study, defense and promotion suites retain their
+owning assertions with asynchronous storage barriers.
+
+`tests/controlled-browser/study-intents.spec.ts` is registered in E's existing
+controlled lane for native two-tab writes/claims, actual reload, retained legacy
+sources and old writers, storage denial/quota, committed-next-load recovery,
+wrong-tactic Again persistence, specialized lost responses after head advancement
+and competing outcomes. `tests/browser/post-review-progression.spec.ts` retains
+the real disposable PostgreSQL integration owner. See
+[adapter/cutover and invariant documentation](../docs/study/durable-intents.md).
+
+### PR #285 correctness repair owners
+
+- `study-intent-storage-regressions.test.ts`: named `pr285_rejected_answer_*`,
+  `pr285_storage_retry_*`, `pr285_legacy_conflict_*`,
+  `pr285_practice_generation_*`, `pr285_recovery_cursor_*`, and
+  `pr285_teaching_cross_tab_*` cases cover authoritative versus uncertain outcomes,
+  rejection storage abort, unexpired claims, real IndexedDB reset interruption,
+  migration monotonicity, shared generation and pending assessment guards,
+  persistent bounded wraparound/cancellation/dependency recovery, and incremental
+  cross-tab projections without full teaching enumeration.
+- `study-attempt-pending-regressions.test.tsx`: named `pr285_rejected_answer_*`
+  cases assert corrected fresh identities before/after remount and storage reopen,
+  immutable rejected evidence, and replacement self-assessment operation keys.
+  `pr285_practice_generation_new_self_assessment_cannot_reuse_the_old_attempt`
+  exercises a complete second practice cycle with a different rating.
+- `study-storage-boundary-regressions.test.tsx`: named `pr285_storage_retry_*`
+  cases exercise the actual retry button, initial/later denial, retained data,
+  superseded opening, unmount and database version change. This file is registered
+  in the regular frontend lane.
+- `repertoire-alternative-home-regressions.test.tsx`:
+  `pr285_teaching_cross_tab_committed_facts_update_the_mounted_home` verifies both
+  seen and first-clean changes in the mounted Home store projection; sibling
+  `pr285_teaching_cross_tab_*` cases preserve IndexedDB-only facts during startup
+  and stale server snapshots. `review-attempt-confirmation-regressions.test.tsx`
+  verifies modern demo completion does not write a legacy cutover source.
+- `review-outbox-regressions.test.ts`:
+  `pr285_discarded_review_race_never_reports_a_saved_grade_or_clears_failure_evidence`
+  places a terminal discard before an actual delayed successful network response.
+  Neither the losing response nor its caller may report persistence.
+- `study-intent-storage-regressions.test.ts` also owns malformed legacy review and
+  failure rejection, structured failed-operation detail after reopen, and the
+  distinction between a hidden factory and an already usable database connection.
+- `review-conflict-ui-regressions.test.tsx` owns
+  `pr285_storage_retry_conflict_dialog_reports_storage_closure_during_delivery`;
+  retry completion reports a closed store without an unhandled rejection.
+- `tests/controlled-browser/study-intents.spec.ts`: five `pr285` native identities
+  cover actual reload after rejection, late transaction failure and retry, legacy
+  sequence-two recovery, cross-tab practice reset and targeted teaching messages.
+  They are registered alongside all protected native and visual identities.
+
+### PR #285 recovery cancellation ownership follow-up
+
+- `study-intent-storage-regressions.test.ts`: `pr285_recovery_ownership_*` imports
+  production recovery with the actual IndexedDB adapter/session. Held receipt and
+  store-acquisition barriers cover cancelled A/live B, pending and rejected
+  originals, each caller's reason, signal identity and signal-less sharing,
+  pre-aborted/acquisition cancellation, one original POST, old-finalizer ownership,
+  competing cursor CAS with bounded eventual coverage, and replacement-store fencing.
+- `attempt-lifecycle-regressions.test.ts`: the same prefix owns the actual queue
+  loader chain, superseded/installed results, A/B/C overlap, pending originals,
+  genuine current failures, caller cancellation/deadline and explicit replay bypass.
+  Late durable settlement cannot replace the authoritative successor or board.
+- `tests/controlled-browser/study-intents.spec.ts`: `pr285 recovery ownership
+  replacement queue load survives cancelled receipt recovery` uses one mounted
+  document, two real reconnect handlers, native storage and a held receipt.
+  Pass-through browser witnesses establish replacement waiters before release;
+  the original settles with no repost, page error or optional provider/analysis traffic.
+
+Package-local inventories retain their ownership. Client/double tests do not
+establish PostgreSQL exactly-once effects or offline/service-worker behavior.
 ## Independent Learning runtime
 
 `services/learning/runtime/REGRESSIONS.md` owns the installed/runtime, native PostgreSQL and focused Chromium client/API inventory. `backend/tests/test_durable_task_enqueue_identity.py` retains #144 coverage for event/result identity after concurrent UPSERT selection. The component manifest registers the runtime and real client/runner inputs; no complete Study UI or hosted gate qualification follows from these focused checks.

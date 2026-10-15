@@ -2,7 +2,6 @@ import ts from "typescript";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, sep } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
 
 export const repository = resolve(new URL("../../", import.meta.url).pathname);
@@ -98,7 +97,8 @@ export function checkTypeScript(root, component) {
     } else {
       const packageName = imported.startsWith("@") ? imported.split("/").slice(0, 2).join("/") : imported.split("/")[0];
       if (!component.dependencies.includes(packageName)) throw new Error("Undeclared dependency: " + imported);
-      createRequire(resolve(root, "package.json")).resolve(imported);
+      if (!ts.resolveModuleName(imported, file, { moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext }, ts.sys, undefined, undefined, ts.ModuleKind.ESNext).resolvedModule)
+        throw new Error("Unavailable dependency: " + imported);
     }
   }
   const program = ts.createProgram(files, { strict: true, moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext, target: ts.ScriptTarget.ES2022, skipLibCheck: true, noEmit: true });
@@ -137,7 +137,8 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   if (!(options.consumers ?? options.componentIds === undefined)) return results;
   for (const file of sourceFiles(resolve(root, "app"))) {
     const source = readFileSync(file, "utf8");
-    checkConsumer(source, "@tempo/chess-line", manifest.components.find(component => component.id === "chess-line").publicExports);
+    for (const component of selected.filter(candidate => candidate.artifact?.name?.startsWith("@tempo/")))
+      checkConsumer(source, component.artifact.name, component.publicExports);
     for (const imported of imports(source, file, false)) if (imported.startsWith(".") && inside(resolve(root, "packages"), resolve(dirname(file), imported))) throw new Error("Consumer bypasses public package: " + file);
   }
   const consumerCheck = spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), "consumers", resolve(root, "backend/app"), "tempo_scheduling", JSON.stringify(manifest.components.find(component => component.id === "scheduling").publicExports)], { encoding: "utf8" });

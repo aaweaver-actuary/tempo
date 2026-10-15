@@ -1,3 +1,4 @@
+import { connectedReviewState } from "../browser/native-study-storage";
 import { test, expect, prepareControlledUI, openingCard } from "./fixtures";
 import { noPageOverflow } from "../browser/ui-fixtures";
 import { move } from "../browser/native-board";
@@ -86,7 +87,7 @@ test("Phone reload consumes a retained completed review receipt without another 
     completedAt: "2026-09-18T15:00:00Z",
   }])));
   await page.reload();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]").length)).toBe(0);
+  await expect.poll(() => connectedReviewState(page, "reload-original")).toBe("committed");
   await expect(page.locator(".phone-study-heading h2")).toHaveText("Ruy Lopez");
   expect(traffic).toEqual(["receipt"]);
   await noPageOverflow(page);

@@ -57,8 +57,17 @@ export function verifyPilotSource() {
   return identities;
 }
 export const visualTitles = ["Controlled visual board 1280", "Controlled visual phone 390", "Controlled visual tablet menu 768"];
+export const studyIntentTitles = ["issue221 native two-tab writes preserve both orders and competing claims", "issue221 native intent survives true reload with original payload and settlement", "issue221 legacy migration requires closed-tab acknowledgement and retains sources", "issue221 denied native storage cannot report saved success", "issue221 native quota failure aborts the intent and permits recovery", "issue186 committed review next-load retry and reload never resubmit the grade", "issue219 wrong tactic survives true reload and guided completion stays Again", "issue219 specialized lost response reload recovers after the issued head advances", "issue219 two tabs retain competing outcomes on one issued head", "issue219 defense recognition survives reload with its immutable assessment"];
+studyIntentTitles.push(
+  "pr285 rejected native answer permits corrected identity after true reload",
+  "pr285 native storage retry reopens after a later transaction failure",
+  "pr285 native legacy reimport recovers sequence two without rollback",
+  "pr285 native practice reset excludes both records across tabs and reload",
+  "pr285 native teaching notification carries committed seen and first clean facts",
+  "pr285 recovery ownership replacement queue load survives cancelled receipt recovery",
+);
 export function supportedIdentities() {
-  return [...verifyPilotSource(), ...visualTitles.map(title => `chromium|tests/controlled-browser/visual.spec.ts|${title}`)];
+  return [...verifyPilotSource(), ...visualTitles.map(title => `chromium|tests/controlled-browser/visual.spec.ts|${title}`), ...studyIntentTitles.map(title => `chromium|tests/controlled-browser/study-intents.spec.ts|${title}`)];
 }
 export function reportIdentities(report, executed = false) {
   if (!report || !Array.isArray(report.suites) || !Array.isArray(report.errors) || report.errors.length) throw new Error("Invalid Playwright report/errors");
@@ -68,7 +77,7 @@ export function reportIdentities(report, executed = false) {
     for (const spec of suite.specs ?? []) {
       if (typeof spec.title !== "string" || typeof spec.file !== "string" || !Array.isArray(spec.tests) || !spec.tests.length) throw new Error("Invalid Playwright spec");
       const file = spec.file.replaceAll("\\", "/").replace(/^tests\/controlled-browser\//, "");
-      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts"].includes(file)) throw new Error("Unexpected controlled file: " + spec.file);
+      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts", "study-intents.spec.ts"].includes(file)) throw new Error("Unexpected controlled file: " + spec.file);
       for (const test of spec.tests) {
         if (typeof test.projectName !== "string") throw new Error("Missing Playwright project identity");
         actual.push(`${test.projectName}|tests/controlled-browser/${file}|${spec.title}`);
@@ -106,7 +115,7 @@ export function parseSelection(args) {
       projects.push(project);
     } else {
       const file = argument.replace(/^tests\/controlled-browser\//, "");
-      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts"].includes(file) || files.includes(file)) throw new Error("Missing/unknown/duplicate controlled file: " + argument);
+      if (!["interaction.spec.ts", "phone.spec.ts", "visual.spec.ts", "study-intents.spec.ts"].includes(file) || files.includes(file)) throw new Error("Missing/unknown/duplicate controlled file: " + argument);
       files.push(file);
     }
   }

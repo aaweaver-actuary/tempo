@@ -28,15 +28,16 @@ export function openingCard(id: string, title: string, firstMove: string, queueE
     first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white" as const };
 }
 type ControlledQueueCard = { id: string; queue_entry_id: number; start_fen: string; moves: string[]; content_type: string; repertoire_name: string; repertoire_source: string; first_correct_at: string | null; trained_color: string | null };
-export async function prepareControlledUI(page: Page, trainingCards: ControlledQueueCard[] = examples["/api/queue/window"].cards, navigate = true) {
+export async function prepareControlledUI(page: Page, trainingCards: ControlledQueueCard[] = examples["/api/queue/window"].cards, navigate = true, acknowledgeLegacy = true) {
   const api = controlledApis.get(page.context());
   if (!api) throw new Error("Controlled fixture must be installed before navigation");
   await page.clock.setFixedTime(new Date("2026-09-18T16:00:00Z"));
-  await page.addInitScript(() => {
+  await page.addInitScript((acknowledge) => {
+    if (acknowledge) localStorage.setItem("tempo-study-intents-cutover-v1", "acknowledged");
     let seed = 42;
     Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
     for (const key of ["tempo-sound", "tempo-stockfish-on", "tempo-maia-on", "tempo-games-engine-on", "tempo-explorer-on"]) localStorage.setItem(key, "false");
-  });
+  }, acknowledgeLegacy);
   for (const [path, json] of Object.entries(examples)) {
     if (path === "/api/queue/window" || path === "/api/system/activity" || path === "/api/discoveries") continue;
     api.register({ method: "GET", path, query: {} }, route => route.fulfill({ json }));

@@ -1,3 +1,4 @@
+import { studyIntentStore } from "../../app/lib/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Home from "../../app/views/home_view";
@@ -95,7 +96,7 @@ it("AS-16 restarted opening attempt records displayed guidance as guided", async
   act(() => useBoardShellStore.getState().board.onHintExposure?.(restarted.currentFenString));
   expect(assistance).toHaveBeenLastCalledWith(0, "guided");
   expect(restarted.feedback).toBe("ready");
-  expect(localStorage.getItem("tempo-pending-training-failures-v1")).toContain("101");
+  await waitFor(async () => expect((await (await studyIntentStore()).list("failure")).some(record => (record.payload as { queueEntryId: number }).queueEntryId === 101)).toBe(true));
 });
 
 it("AS-16 wrong-response reveal remains revealed", async () => {

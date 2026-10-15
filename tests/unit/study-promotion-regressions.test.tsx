@@ -16,7 +16,7 @@ it.each(["q", "r", "b", "n"])("Study board promotion preserves the selected %s p
       prompt: "Promote on the board", hint: "", fen: promotionFen });
     if (String(input).endsWith("/attempts")) {
       submissions.push(JSON.parse(String(init?.body)));
-      return Response.json({ attempt_id: "promotion-attempt", assessment: { outcome: "correct", feedback: "Correct" } });
+      return Response.json({ attempt_id: JSON.parse(String(init?.body)).attempt_id, assessment: { outcome: "correct", feedback: "Correct" } });
     }
     return Response.json({ specification: { type: "move_line", prompt: "Promote on the board", mode: "single",
       accepted_lines: [[`a7a8${promotion}`]] } });
@@ -28,6 +28,7 @@ it.each(["q", "r", "b", "n"])("Study board promotion preserves the selected %s p
   const expectedBoard = new Chess(promotionFen);
   expectedBoard.move({ from: "a7", to: "a8", promotion });
   expect(useBoardShellStore.getState().board.fen).toBe(expectedBoard.fen());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   await screen.findByText("Correct");
   expect(submissions).toMatchObject([{ answer: { type: "move_line", moves: [`a7a8${promotion}`] } }]);

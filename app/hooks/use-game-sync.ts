@@ -43,7 +43,7 @@ function sameSyncState(left: GameSyncState, right: GameSyncState) {
     });
 }
 
-export function useGameSync() {
+export function useGameSync(enabled = true) {
   const [state, setState] = useState<GameSyncState>({ syncing: false, lastSuccess: "", error: "", imported: 0, providers: [], filterLabel: "Rated blitz, rapid, and classical · last 90 days" });
   // Track queued state and error ownership together, including updates before React commits.
   const requestedState = useRef({ state, errorOwner: "none" as SyncErrorOwner });
@@ -133,7 +133,7 @@ export function useGameSync() {
     }
   }, [publishState]);
   useEffect(() => {
-    if (!usesLocalApi()) return;
+    if (!enabled || !usesLocalApi()) return;
     let stopped = false;
     let automaticSyncTimer: number | undefined;
     let statusTimer: number | undefined;
@@ -271,6 +271,6 @@ export function useGameSync() {
       window.removeEventListener("offline", pauseStatus);
       document.removeEventListener("visibilitychange", recover);
     };
-  }, [sync, publishState]);
+  }, [enabled, sync, publishState]);
   return { state, sync };
 }

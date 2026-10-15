@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,8 +73,11 @@ export function runControlledUnitSuite(options = {}) {
     if (result.error || result.status !== 0) throw new Error(`Controlled unit ${stage} failed: ${result.error?.message ?? result.stderr ?? result.status}`);
     return result;
   }
-  // Collection imports current frontend consumers, so prepare their one JS prerequisite first.
-  runNode("package_build", ["node_modules/typescript/bin/tsc", "-p", "packages/chess-line/tsconfig.json"]);
+  // One compiler invocation prepares each installed frontend prerequisite once.
+  const projects = ["chess-line", "browser-intents", "study-session"]
+    .filter(name => name === "chess-line" || existsSync(join(directory, `packages/${name}/tsconfig.json`)))
+    .map(name => `packages/${name}/tsconfig.json`);
+  runNode("package_build", ["node_modules/typescript/bin/tsc", "--build", ...projects, "--force"]);
   const filters = [...files, ...(options.nameFilter === undefined ? [] : ["-t", options.nameFilter])];
   const collection = JSON.parse(runNode("collection", [vitest, "list", "--config", config, ...filters, "--json", "--staticParse=false"], true).stdout);
   if (!Array.isArray(collection) || !collection.length || collection.some(test => typeof test.name !== "string" || !files.some(file => resolve(directory, file) === test.file)))

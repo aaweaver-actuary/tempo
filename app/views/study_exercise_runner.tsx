@@ -12,7 +12,9 @@ import type { PracticeCard } from "../domain/cards";
 import { API_URL } from "../const";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
-import { confirmOperationResponse } from "../lib/operation-status";
+import { executeStudyRequest, retainedStudyRequest, startAnotherStudyPractice, studyPracticeBoundary, StudyRequestRejectedError } from "../lib/study-command-client";
+
+import { subscribeStudyIntents } from "../lib/study-intent-storage";
 
 type PresentedStudyExercise = {
   id: string; revision: number; type: "move_line" | "square_set" | "knight_path" | "choice" | "explanation";
@@ -55,11 +57,23 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const [hintSeen, setHintSeen] = useState(false);
   const [reply, setReply] = useState<AttemptReply | null>(null);
   const [feedback, setFeedback] = useState<Record<string, unknown> | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(!card?.studySnapshot);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const pendingRef = useRef<{ id: string; payload: Record<string, unknown> } | null>(null);
   const offlineAnswerRef = useRef<StudyAnswer | null>(null);
   const generationRef = useRef(0);
+  const practiceBoundaryRef = useRef<number | undefined>(undefined);
+  const [practiceRestoration, setPracticeRestoration] = useState(0);
+  const [uncertain, setUncertain] = useState(false);
+  const resetPracticeProjection = useCallback((boundary: number) => {
+    if (practiceBoundaryRef.current === boundary) return;
+    practiceBoundaryRef.current = boundary; generationRef.current++;
+    pendingRef.current = null; offlineAnswerRef.current = null;
+    setReply(null); setFeedback(null); setSaveError(""); setSelectedSquares([]); setMoveSequence([]); setChoiceIds([]);
+    setCoordinateInput(""); setAnswerText(""); setHintSeen(false); setUncertain(false); setBusy(true);
+    setPracticeRestoration(value => value + 1);
+  }, []);
+  const requestScope = `study:${studyId}:${exerciseId}:${card?.queueEntryId ?? "practice"}:${exercise?.revision ?? 0}`;
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -68,9 +82,10 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       if (generation !== generationRef.current) return;
       setExercise(null); setLoadError(""); setSaveError(""); setSelectedSquares([]);
       setMoveSequence([]); setCoordinateInput(""); setSelectedPromotion("q"); setChoiceIds([]); setReachable(true);
-      setAnswerText(""); setHintSeen(false); setReply(null); setFeedback(null);
+      setAnswerText(""); setHintSeen(false); setReply(null); setFeedback(null); setUncertain(false);
     });
     pendingRef.current = null;
+    practiceBoundaryRef.current = undefined;
     offlineAnswerRef.current = null;
     if (card?.studySnapshot) {
       const snapshot = card.studySnapshot;
@@ -100,7 +115,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     return () => { controller.abort(); generationRef.current += 1; };
   }, [studyId, exerciseId, card?.studySnapshot]);
 
-  const answerLocked = Boolean(reply);
+
+  const answerLocked = Boolean(reply) || uncertain;
   const currentFen = useMemo(() => {
     if (!exercise || exercise.type !== "move_line") return exercise?.fen ?? card?.startingFen ?? "8/8/8/8/8/8/8/8 w - - 0 1";
     try {
@@ -148,7 +164,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   useBoardPublisher("train", useSharedBoard && exercise?.id === exerciseId ? {
     keyboard,
     positionKey: studyPositionKey,
-    fen: boardHistory.fen, orientation, interactionMode: boardHistory.viewingHistory || blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
+    fen: boardHistory.fen, orientation, interactionMode: boardHistory.viewingHistory || blocked || answerLocked ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
     showHint: false, theme: boardTheme, pieceSet, shapes: answerShapes,
     lastMove: undefined, promotion: selectedPromotion, onMove, onSquareSelect: selectSquare,
   } : null);
@@ -180,12 +196,62 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     return { type: "explanation", text: answerText, ready: true };
   };
 
-  const revealFeedback = async (attemptId: string, generation: number) => {
+  const revealFeedback = useCallback(async (attemptId: string, generation: number) => {
     const feedbackResponse = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${attemptId}/feedback`);
     if (!feedbackResponse.ok) throw new Error("Answer saved, but feedback could not load. Retry feedback.");
     const revealed = await feedbackResponse.json() as { specification: Record<string, unknown> };
     if (generation === generationRef.current) { setFeedback(revealed.specification); setSaveError(""); }
-  };
+  }, [studyId, exerciseId]);
+
+  const exerciseRevision = exercise?.revision;
+  useEffect(() => {
+    if (!exerciseRevision || card?.studySnapshot) return;
+    const generation = generationRef.current;
+    let active = true;
+    queueMicrotask(() => { if (active) setBusy(true); });
+    const restore = async () => {
+      const retained = await retainedStudyRequest(requestScope);
+      const boundary = await studyPracticeBoundary(requestScope);
+      if (!active || generation !== generationRef.current) return;
+      if (retained && retained.practiceBoundary !== boundary) { resetPracticeProjection(boundary); return; }
+      practiceBoundaryRef.current = boundary;
+      if (!retained) return;
+      if (retained.state === "discarded") {
+        setSaveError((retained.receipt as { message: string }).message); setUncertain(false); return;
+      }
+      pendingRef.current = { id: retained.requestId, payload: retained.body }; setUncertain(true);
+      const restored = await executeStudyRequest({ scope: requestScope,
+        endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, requestId: retained.requestId, body: retained.body, practiceBoundary: boundary });
+      const body = await restored.json() as AttemptReply;
+      if (!active || generation !== generationRef.current) return;
+      setReply(body); pendingRef.current = null; setUncertain(false);
+      const assessment = await retainedStudyRequest(`${requestScope}:self-assess`, body.attempt_id);
+      if (assessment?.state === "discarded") setSaveError((assessment.receipt as { message: string }).message);
+      else if (assessment) {
+        const response = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
+          endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${body.attempt_id}/self-assess`,
+          requestId: assessment.requestId, attemptId: assessment.attemptId, revision: assessment.revision, body: assessment.body, practiceBoundary: boundary });
+        if (active && generation === generationRef.current) setReply(await response.json() as AttemptReply);
+      }
+      await revealFeedback(body.attempt_id, generation);
+      if (active && generation === generationRef.current && assessment?.state === "discarded") setSaveError((assessment.receipt as { message: string }).message);
+    };
+    void restore().catch(error => {
+      if (active && generation === generationRef.current) {
+        if (error instanceof StudyRequestRejectedError && !error.receipt.requestId.includes(":self-assess")) { pendingRef.current = null; setUncertain(false); }
+        setSaveError(String(error));
+      }
+    }).finally(() => { if (active && generation === generationRef.current) setBusy(false); });
+    const unsubscribe = subscribeStudyIntents(change => {
+      if (!change?.metadata) return;
+      void studyPracticeBoundary(requestScope).then(boundary => {
+        if (active && generation === generationRef.current && practiceBoundaryRef.current !== undefined && boundary !== practiceBoundaryRef.current)
+          resetPracticeProjection(boundary);
+      }).catch(error => { if (active && generation === generationRef.current) setSaveError(String(error)); });
+    });
+    return () => { active = false; unsubscribe(); };
+  // Recovery follows retained identities and the shared practice boundary.
+  }, [exerciseRevision, requestScope, studyId, exerciseId, card?.studySnapshot, revealFeedback, practiceRestoration, resetPracticeProjection]);
 
   const submit = async () => {
     if (!exercise || reply || busy || blocked) return;
@@ -223,23 +289,24 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       }
       return { id, payload };
     })();
-    pendingRef.current = pending;
+    pendingRef.current = pending; setUncertain(true);
     setBusy(true); setSaveError("");
     try {
-      const response = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.id },
-        body: JSON.stringify(pending.payload),
-      });
-      const confirmed = await confirmOperationResponse(response);
+      const confirmed = await executeStudyRequest({ scope: requestScope, endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`,
+        requestId: pending.id, body: pending.payload, practiceBoundary: practiceBoundaryRef.current });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) {
-        if (confirmed.status >= 400 && confirmed.status < 500) pendingRef.current = null;
         throw new Error(responseError(confirmed.status, body.detail));
       }
       if (generation !== generationRef.current) return;
-      setReply(body); pendingRef.current = null;
+      setReply(body); pendingRef.current = null; setUncertain(false);
       await revealFeedback(pending.id, generation);
-    } catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not save this attempt. Retry."); }
+    } catch (error) {
+      if (generation === generationRef.current) {
+        if (error instanceof StudyRequestRejectedError) { pendingRef.current = null; setUncertain(false); }
+        setSaveError(error instanceof Error ? error.message : "Could not save this attempt. Retry.");
+      }
+    }
     finally { if (generation === generationRef.current) setBusy(false); }
   };
 
@@ -256,11 +323,11 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     }
     setBusy(true); setSaveError("");
     try {
-      const response = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`, {
-        method: "POST", headers: { "Content-Type": "application/json",
-          "Idempotency-Key": `${reply.attempt_id}:self-assess` }, body: JSON.stringify({ rating }),
-      });
-      const confirmed = await confirmOperationResponse(response);
+      const previous = await retainedStudyRequest(`${requestScope}:self-assess`, reply.attempt_id);
+      const retained = previous?.state === "discarded" ? undefined : previous;
+      const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
+        endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
+        requestId: retained?.requestId ?? `${reply.attempt_id}:self-assess${previous?.state === "discarded" ? `:${crypto.randomUUID()}` : ""}`, attemptId: reply.attempt_id, revision: exercise.revision, body: retained?.body ?? { rating }, practiceBoundary: practiceBoundaryRef.current });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
       if (generation === generationRef.current) setReply(body);
@@ -289,8 +356,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     <p>{exercise.prompt}</p>
     {exercise.type === "square_set" && <p>{exercise.criterion}</p>}
     {exercise.type === "knight_path" && <p>Static, non-capturing knight route from {exercise.start_square} attacking {exercise.target_squares?.join(", ")}. {exercise.hop_rule === "exact" ? "Exactly" : "At most"} {exercise.maximum_hops} hops. Other pieces stay fixed.</p>}
-    {!useSharedBoard && <Chessboard keyboard={keyboard} positionKey={studyPositionKey} fen={boardHistory.fen} locked={boardHistory.viewingHistory || blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
-      selectOnly={selectionMode && !reply} promotion={selectedPromotion} onMove={onMove} onSquareSelect={selectSquare}
+    {!useSharedBoard && <Chessboard keyboard={keyboard} positionKey={studyPositionKey} fen={boardHistory.fen} locked={boardHistory.viewingHistory || blocked || answerLocked || !selectionMode && exercise.type !== "move_line"}
+      selectOnly={selectionMode && !answerLocked} promotion={selectedPromotion} onMove={onMove} onSquareSelect={selectSquare}
       showHint={false} theme={boardTheme} pieceSet={pieceSet} shapes={answerShapes}
       orientation={orientation} onFlip={() => setOrientation((value) => value === "white" ? "black" : "white")} />}
     {exercise.type === "choice" && <fieldset disabled={answerLocked}><legend>Choose an answer</legend>
@@ -317,7 +384,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     {!reply && <Button disabled={busy} onClick={() => void submit()}>{exercise.type === "explanation" ? "I have my answer" : "Submit"}</Button>}
     {saveError && <p role="alert">{saveError} {reply && !feedback
       ? <Button onClick={() => void revealFeedback(reply.attempt_id, generationRef.current).catch((error: unknown) => setSaveError(String(error)))}>Retry feedback</Button>
-      : !reply && <Button onClick={() => void submit()}>Retry save</Button>}</p>}
+      : !reply && uncertain && <Button onClick={() => void submit()}>Retry save</Button>}</p>}
     {reply && <div role="status"><p>{reply.assessment.feedback}</p>
       {reply.assessment.omitted?.length ? <p>Missing: {reply.assessment.omitted.join(", ")}</p> : null}
       {reply.assessment.extra?.length ? <p>Extra: {reply.assessment.extra.join(", ")}</p> : null}
@@ -327,6 +394,14 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       {reply.pending_self_assessment && <div><Button disabled={busy} onClick={() => void selfAssess("correct")}>Correct (self-assessed)</Button>
         <Button disabled={busy} onClick={() => void selfAssess("again")}>Again (self-assessed)</Button></div>}
       {!reply.pending_self_assessment && onAdvance && <Button onClick={() => void onAdvance()}>Continue</Button>}
+      {!reply.pending_self_assessment && !card && !onAdvance && <Button disabled={busy} onClick={() => {
+        const generation = generationRef.current;
+        setBusy(true);
+        void startAnotherStudyPractice(requestScope, practiceBoundaryRef.current).then(boundary => {
+          if (generationRef.current === generation) resetPracticeProjection(boundary);
+        }).catch(error => { if (generationRef.current === generation) setSaveError(String(error)); })
+          .finally(() => { if (generationRef.current === generation) setBusy(false); });
+      }}>Practice again</Button>}
     </div>}
   </section>;
 }

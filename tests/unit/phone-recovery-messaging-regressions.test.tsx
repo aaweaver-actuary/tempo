@@ -77,7 +77,7 @@ it("phone review diagnostics retain raw errors without publishing a second incid
 it("phone passive queue refresh leaves review delivery to bounded receipt recovery", async () => {
   const { fetchAndInitializeQueue } = await import("../../app/views/fetchAndInitializeQueue");
   const { enqueuePendingReview, pendingReviews } = await import("../../app/lib/review-outbox");
-  enqueuePendingReview({ backendId: "retained", queueEntryId: 81, attemptId: "passive", outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "retained", queueEntryId: 81, attemptId: "passive", outcome: "correct", guided: false });
   const fetcher = vi.fn<typeof fetch>(async () => Response.json({ cards: [], count: 0 }));
   vi.stubGlobal("fetch", fetcher);
   await fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false });

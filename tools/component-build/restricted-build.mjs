@@ -45,29 +45,49 @@ export function restrictedBuild(options) {
   try {
     report.sourceRevision = command("revision", "git", ["rev-parse", "HEAD"], root).trim();
     report.dirty = command("working-tree", "git", ["status", "--porcelain"], root).trim();
-    const chess = selected.find(component => component.id === "chess-line");
-    if (chess) {
-      const frontendBuild = join(workspace, "chess-build"); mkdirSync(frontendBuild);
-      for (const input of [...chess.buildInputs, "test.mjs", "tests", "README.md"]) copyInput(chess, input, frontendBuild);
-      report.sourceInputs.chessLock = fingerprint(join(frontendBuild, "package-lock.json"));
-      command("frontend-setup", "npm", ["ci", "--ignore-scripts", "--workspaces=false"], frontendBuild);
-      checkTypeScript(frontendBuild, chess);
-      command("frontend-build", "npm", ["run", "build"], frontendBuild);
-      const pack = JSON.parse(command("frontend-pack", "npm", ["pack", "--json", "--ignore-scripts"], frontendBuild))[0];
-      const tarball = join(frontendBuild, pack.filename); artifact(tarball);
-      const frontendConsumer = join(workspace, "chess-consumer"); mkdirSync(frontendConsumer);
-      writeFileSync(join(frontendConsumer, "package.json"), JSON.stringify({ private: true, type: "module", dependencies: { "@tempo/chess-line": "file:" + tarball, "chess.js": "1.4.0" } }));
-      // The artifact runtime tree is locked to the selected package's runtime versions.
-      command("frontend-install-artifact", "npm", ["install", "--ignore-scripts", "--workspaces=false"], frontendConsumer);
+    const npmComponents = selected.filter(component => existsSync(resolve(root, component.root, "package.json")));
+    const npmArtifacts = new Map();
+    const remaining = new Set(npmComponents);
+    while (remaining.size) {
+      const component = [...remaining].find(candidate => candidate.dependencies.every(dependency =>
+        !npmComponents.some(owner => owner.artifact.name === dependency) || npmArtifacts.has(dependency)));
+      if (!component) throw new Error("Circular npm artifact dependencies");
+      remaining.delete(component);
+      const prefix = component.id === "chess-line" ? "frontend" : component.id;
+      const frontendBuild = join(workspace, component.id + "-build"); mkdirSync(frontendBuild);
+      for (const input of [...component.buildInputs, "test.mjs", "tests", "README.md"]) copyInput(component, input, frontendBuild);
+      report.sourceInputs[component.id + "Lock"] = fingerprint(join(frontendBuild, "package-lock.json"));
+      // Local lockfile links resolve to installed dependency artifacts, never sibling sources.
+      for (const dependency of component.dependencies) {
+        const artifactPath = npmArtifacts.get(dependency);
+        if (!artifactPath) continue;
+        const owner = npmComponents.find(candidate => candidate.artifact.name === dependency);
+        const dependencyDirectory = join(workspace, owner.id);
+        if (!existsSync(dependencyDirectory)) {
+          mkdirSync(dependencyDirectory);
+          command(prefix + "-dependency-artifact", "tar", ["-xzf", artifactPath, "--strip-components=1", "-C", dependencyDirectory], frontendBuild);
+        }
+      }
+      command(prefix + "-setup", "npm", ["ci", "--ignore-scripts", "--workspaces=false"], frontendBuild);
+      checkTypeScript(frontendBuild, component);
+      command(prefix + "-build", "npm", ["run", "build"], frontendBuild);
+      const pack = JSON.parse(command(prefix + "-pack", "npm", ["pack", "--json", "--ignore-scripts"], frontendBuild))[0];
+      const tarball = join(frontendBuild, pack.filename); artifact(tarball); npmArtifacts.set(component.artifact.name, tarball);
+      const metadata = JSON.parse(readFileSync(join(frontendBuild, "package.json"), "utf8"));
+      const dependencies = { ...metadata.dependencies, [component.artifact.name]: "file:" + tarball };
+      for (const name of Object.keys(dependencies)) if (npmArtifacts.has(name)) dependencies[name] = "file:" + npmArtifacts.get(name);
+      const frontendConsumer = join(workspace, component.id + "-consumer"); mkdirSync(frontendConsumer);
+      writeFileSync(join(frontendConsumer, "package.json"), JSON.stringify({ private: true, type: "module", dependencies, devDependencies: metadata.devDependencies }));
+      command(prefix + "-install-artifact", "npm", ["install", "--ignore-scripts", "--workspaces=false"], frontendConsumer);
       cpSync(join(frontendBuild, "tests"), join(frontendConsumer, "tests"), { recursive: true });
       cpSync(join(frontendBuild, "test.mjs"), join(frontendConsumer, "test.mjs"));
       rmSync(join(frontendBuild, "src"), { recursive: true });
-      command("frontend-installed-tests", "node", ["test.mjs"], frontendConsumer);
-      command("frontend-zero-selected", "node", ["test.mjs", "no-such-test-identity"], frontendConsumer, 1);
-      command("frontend-dependencies", "npm", ["ls", "--all", "--json"], frontendConsumer);
+      command(prefix + "-installed-tests", "node", ["test.mjs"], frontendConsumer);
+      command(prefix + "-zero-selected", "node", ["test.mjs", "no-such-test-identity"], frontendConsumer, 1);
+      command(prefix + "-dependencies", "npm", ["ls", "--all", "--json"], frontendConsumer);
       artifactDirectories.push(frontendBuild);
     }
-    for (const pythonComponent of selected.filter(component => component.type === "library" && component.id !== "chess-line")) {
+    for (const pythonComponent of selected.filter(component => component.type === "library" && !npmComponents.includes(component))) {
       const pythonBuild = join(workspace, pythonComponent.id + "-build"); mkdirSync(pythonBuild);
       for (const input of [...pythonComponent.buildInputs, "tests", "README.md", "REGRESSIONS.md"]) copyInput(pythonComponent, input, pythonBuild);
       report.sourceInputs[pythonComponent.id + "Lock"] = fingerprint(join(pythonBuild, "uv.lock"));

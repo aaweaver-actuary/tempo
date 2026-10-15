@@ -73,19 +73,20 @@ export function OfflineReviewConflicts() {
   async function retryOnline(attemptId: string) {
     setRetrying(attemptId);
     try {
-      retryReviewConflict(attemptId);
+      await retryReviewConflict(attemptId);
       await flushPendingReviews();
       setError("");
     } catch (failure) {
       setError(`The result remains saved and will retry when connected. ${String(failure)}`);
     } finally {
-      setOnlineConflicts(conflictedReviews());
+      try { setOnlineConflicts(conflictedReviews()); }
+      catch (failure) { setError(`Could not read saved conflicts: ${String(failure)}`); }
       setRetrying(undefined);
     }
   }
 
-  function discardOnline(attemptId: string) {
-    try { discardReviewConflict(attemptId); setOnlineConflicts(conflictedReviews()); setError(""); }
+  async function discardOnline(attemptId: string) {
+    try { await discardReviewConflict(attemptId); setOnlineConflicts(conflictedReviews()); setError(""); }
     catch (failure) { setError(`Could not discard the saved attempt: ${String(failure)}`); }
   }
 

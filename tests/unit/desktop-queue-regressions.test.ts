@@ -1,3 +1,5 @@
+import { settleStudyStorageTasks, advanceStudyTimers, withMissingReceipts } from "./support/study-intent-fixtures";
+import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { fetchAndInitializeQueue, loadEligibleOfflineQueue } from "../../app/views/fetchAndInitializeQueue";
@@ -7,7 +9,7 @@ import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbo
 import { localDayKey } from "../../app/utils/local";
 import { OfflineReplayError, type PreparedTraining } from "../../app/lib/offline-training";
 import { clearNotificationHistory, notificationToastIds, notifications, publishNotification } from "../../app/lib/notifications";
-import { enqueueTrainingFailure, pendingTrainingFailures, flushTrainingFailures } from "../../app/lib/training-failure-outbox";
+import { enqueueTrainingFailure, pendingTrainingFailures, pendingTrainingFailureContexts, flushTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { asCardId, asFenString, asQueueEntryId, asSanMove, type PracticeCard } from "../../app/types";
 
 const offlineTrainingMocks = vi.hoisted(() => ({
@@ -41,7 +43,7 @@ beforeEach(() => {
     }], attempts: [], nextTemporaryId: -1,
   });
   offlineTrainingMocks.replayOfflineAttempts.mockResolvedValue(null);
-  vi.stubGlobal("indexedDB", {});
+
 });
 
 describe("desktop live queue isolation", () => {
@@ -59,7 +61,8 @@ describe("desktop live queue isolation", () => {
       vi.stubGlobal("fetch", request);
       const loading = fetchAndInitializeQueue();
       const settled = loading.then(() => null, error => error);
-      await vi.advanceTimersByTimeAsync(5_000);
+      await advanceStudyTimers(5_000);
+      await advanceStudyTimers(5_000);
       expect(await settled).toBeNull();
       expect(request).toHaveBeenCalledTimes(6);
       expect(request.mock.calls[0][1]?.headers).toBeUndefined();
@@ -77,7 +80,9 @@ describe("desktop live queue isolation", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 0, cards: [] })));
     const firstQueue = fetchAndInitializeQueue();
     expect(useTrainingStore.getState().queueReadiness).toBe("loading");
+    await settleStudyStorageTasks();
     const secondQueue = fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     firstRead(null);
     await firstQueue;
     expect(useTrainingStore.getState().queueReadiness).toBe("loading");
@@ -116,13 +121,14 @@ describe("desktop live queue isolation", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 0, cards: [] })));
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(notifications().find((record) => record.id === pendingNotice)?.resolvedAt).not.toBeNull();
     expect(notifications().find((record) => record.key === "phone-review-conflicts")).toMatchObject({ severity: "warning", resolvedAt: null });
   });
 
   it("guided attempt warnings clear quietly only after pending saves are confirmed", async () => {
     const legacy = publishNotification({ severity: "warning", source: "training queue", message: "Guided attempt save pending. Tempo will retry." });
-    enqueueTrainingFailure(801, "desktop-active", 1);
+    await enqueueTrainingFailure(801, "desktop-active", 1);
     let confirmAttempt: ((response: Response) => void) | undefined;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith("/fail")) return new Promise<Response>((resolve) => { confirmAttempt = resolve; });
@@ -130,6 +136,7 @@ describe("desktop live queue isolation", () => {
         start_fen: startingFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "Desktop active", repertoire_source: "PGN" }] });
     }));
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(pendingTrainingFailures()).toEqual([801]);
     expect(notifications().find((record) => record.key === "guided-attempt-save")).toMatchObject({ severity: "warning", resolvedAt: null });
     expect(notifications().find((record) => record.id === legacy)?.resolvedAt).toBeNull();
@@ -188,6 +195,7 @@ describe("desktop live queue isolation", () => {
     expect(debugErrors().at(-1)?.context.endpointPath).toBe("/api/cards/desktop-active/review");
     expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "warning", active: false, resolvedAt: null });
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "success", active: false });
     expect(notifications().find((record) => record.key === "phone-review-syncing")?.resolvedAt).not.toBeNull();
   });
@@ -195,7 +203,7 @@ describe("desktop live queue isolation", () => {
 
 
 it("pending old-card review cannot hide replacement content on the same queue ID", async () => {
-  enqueuePendingReview({ backendId: "old-card", queueEntryId: 801, outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "old-card", queueEntryId: 801, outcome: "correct", guided: false });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).endsWith("/review")
     ? Response.json({ detail: "busy" }, { status: 503 })
     : Response.json({ count: 1, cards: [{ id: "replacement-card", queue_entry_id: 801,
@@ -206,7 +214,7 @@ it("pending old-card review cannot hide replacement content on the same queue ID
 });
 
 it("old guided marker cannot label replacement content sharing its queue ID", async () => {
-  enqueueTrainingFailure(801, "old-card", 1);
+  await enqueueTrainingFailure(801, "old-card", 1);
   vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).endsWith("/fail")
     ? Response.json({ detail: "busy" }, { status: 503 })
     : Response.json({ count: 1, cards: [{ id: "replacement-card", revision: 1, queue_entry_id: 801,
@@ -229,7 +237,8 @@ it("iphone fallback applies conflict card identity pending pair identity and una
     state: "conflicted", reconciliationSequence: 1,
     conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } };
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict]));
-  enqueuePendingReview({ backendId: "pending-E", queueEntryId: 805, outcome: "correct", guided: false });
+  await initializeStudyIntentStorage(true);
+  await enqueuePendingReview({ backendId: "pending-E", queueEntryId: 805, outcome: "correct", guided: false });
   const prepared = { localDate: localDayKey(), preparedAt: new Date().toISOString(), nextTemporaryId: -1,
     cards: [rawCard("conflicted-A", 901), rawCard("independent-B", 802), rawCard("unsynced-C", 803),
       { ...rawCard("connected-D", 804), content_type: "defense" }, rawCard("pending-E", 805),
@@ -270,6 +279,7 @@ it("offline eligibility preserves only linked unchanged reinforcement while reta
     queueEntryId: 799, attemptId: "retained-conflict", completedAt: parent.completedAt, expectedRevision: 1,
     outcome: "correct", guided: false, state: "conflicted", reconciliationSequence: 1,
     conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } }]));
+  await initializeStudyIntentStorage(true);
   expect(await loadEligibleOfflineQueue(prepared)).toEqual([]);
 });
 
@@ -292,26 +302,31 @@ function expectNoCleanLegacyAttempt() {
 
 it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during delayed replay and reload", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   let resolveMarker!: (response: Response) => void;
   let serverFailed = false;
   const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? new Promise<Response>(resolve => { resolveMarker = resolve; })
     : Response.json(legacyMarkerQueuePayload("desktop-active", 1, serverFailed)));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   try {
     await fetchAndInitializeQueue().catch(() => undefined);
+    await settleStudyStorageTasks();
     expect(resolveMarker).toBeDefined();
     expectNoCleanLegacyAttempt();
     const normalized = JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!);
-    expect(normalized).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+    expect(normalized).toEqual(saved);
+    expect(pendingTrainingFailureContexts()).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
     useTrainingStore.setState(useTrainingStore.getInitialState(), true);
     await fetchAndInitializeQueue().catch(() => undefined);
     expectNoCleanLegacyAttempt();
     expect(JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!)).toEqual(normalized);
+    await settleStudyStorageTasks();
     serverFailed = true;
     resolveMarker(Response.json({ attempt_failed: true }));
     await waitFor(() => expect(pendingTrainingFailures()).toEqual([]));
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(useTrainingStore.getState().getCard().backendId).toBe("desktop-active");
     expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
     expect(useTrainingStore.getState().attempt.phase).toBe("guided");
@@ -323,11 +338,12 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during
 
 it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration when replay is deferred behind another review", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
-  enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 41, outcome: "correct", guided: false });
+  await initializeStudyIntentStorage(true);
+  await enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 41, outcome: "correct", guided: false });
   const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/review")
     ? Response.json({ detail: "Review transport unavailable" }, { status: 503 })
     : Response.json(legacyMarkerQueuePayload()));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await fetchAndInitializeQueue().catch(() => undefined);
   expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/fail"))).toBe(false);
   expectNoCleanLegacyAttempt();
@@ -342,20 +358,23 @@ it("authoritative legacy marker resolution guides a retained active attempt with
   useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
   const logicalAttempt = useTrainingStore.getState().attempt;
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify([801]));
+  await initializeStudyIntentStorage(true);
   let resolveMarker!: (response: Response) => void;
   let serverFailed = false;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? new Promise<Response>(resolve => { resolveMarker = resolve; })
     : Response.json({ ...legacyMarkerQueuePayload("desktop-active", 1, serverFailed), cards: [{
       ...legacyMarkerQueuePayload("desktop-active", 1, serverFailed).cards[0], moves: ["e2e4", "e7e5", "g1f3"],
-    }] })));
+    }] }))));
   try {
     await fetchAndInitializeQueue().catch(() => undefined);
     expectNoCleanLegacyAttempt();
+    await settleStudyStorageTasks();
     serverFailed = true;
     resolveMarker(Response.json({ attempt_failed: true }));
     await flushTrainingFailures();
     await fetchAndInitializeQueue();
+    await settleStudyStorageTasks();
     expect(useTrainingStore.getState().attempt).toMatchObject({ ...logicalAttempt, phase: "guided" });
     expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
     expect(useTrainingStore.getState().serviceError).toBe("");
@@ -367,6 +386,7 @@ it("authoritative legacy marker resolution guides a retained active attempt with
 
 it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or replacement content after ambiguous validation", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   for (const [cardId, revision] of [["desktop-active", 2], ["replacement-card", 1]] as const) {
     const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       if (String(input).endsWith("/fail")) {
@@ -375,35 +395,37 @@ it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or repla
       }
       return Response.json(legacyMarkerQueuePayload(cardId, revision));
     });
-    vi.stubGlobal("fetch", fetcher);
+    vi.stubGlobal("fetch", withMissingReceipts(fetcher));
     await fetchAndInitializeQueue().catch(() => undefined);
     await flushTrainingFailures().catch(() => undefined);
     expectNoCleanLegacyAttempt();
     expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
     expect(pendingTrainingFailures()).toEqual([801]);
     const normalized = JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!);
-    expect(normalized).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+    expect(normalized).toEqual(saved);
+    expect(pendingTrainingFailureContexts()).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
     useTrainingStore.setState(useTrainingStore.getInitialState(), true);
   }
 });
 
 it("modern guided markers hydrate only their exact card and revision", async () => {
-  enqueueTrainingFailure(801, "desktop-active", 1);
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  await enqueueTrainingFailure(801, "desktop-active", 1);
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
-    : Response.json(legacyMarkerQueuePayload())));
+    : Response.json(legacyMarkerQueuePayload()))));
   await fetchAndInitializeQueue();
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
   useTrainingStore.setState(useTrainingStore.getInitialState(), true);
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
-    : Response.json(legacyMarkerQueuePayload("desktop-active", 2))));
+    : Response.json(legacyMarkerQueuePayload("desktop-active", 2)))));
   await fetchAndInitializeQueue();
   expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
 });
 
 it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prepared offline attempt", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  await initializeStudyIntentStorage(true);
   useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
   useTrainingStore.getState().setOfflineQueue(true);
   await expect(loadEligibleOfflineQueue({ localDate: localDayKey(), preparedAt: new Date().toISOString(),
@@ -413,11 +435,12 @@ it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prep
 
 it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh authoritative guided queue in the same hydration", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  await initializeStudyIntentStorage(true);
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/fail")) return Response.json({ attempt_failed: true });
     await flushTrainingFailures();
     return Response.json(legacyMarkerQueuePayload("desktop-active", 1, true));
-  }));
+  })));
   await fetchAndInitializeQueue();
   expect(pendingTrainingFailures()).toEqual([]);
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
@@ -426,7 +449,7 @@ it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh aut
 
 
 it.each(["complete", "missing"])("PR105 initial queue recovery confirms retained reviews before replay receipt=%s", async receiptState => {
-  enqueuePendingReview({ backendId: "retained-card", queueEntryId: 811, attemptId: "reload-original", outcome: "correct", guided: false });
+  await enqueuePendingReview({ backendId: "retained-card", queueEntryId: 811, attemptId: "reload-original", outcome: "correct", guided: false });
   const original = pendingReviews()[0];
   const fetcher = vi.fn<typeof fetch>(async (input, options) => {
     if (String(input).includes("/api/operations/")) return receiptState === "complete"
