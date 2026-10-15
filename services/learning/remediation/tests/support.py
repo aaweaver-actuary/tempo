@@ -3,7 +3,8 @@ from tempo_game_evidence_contracts import v1, v2
 from tempo_learning_remediation import AcceptedDecision, ReceiveContext
 
 NOW = datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
-DECISION = AcceptedDecision("card", 1, "decision", "publication", 1, "position", ("e2e4", "c2c4"))
+DECISION = AcceptedDecision("card", 1, "decision", "publication", 1, "position", ("e2e4", "c2c4"),
+                            "workspace", aliases=("route-alias",))
 
 
 class Authority:

@@ -36,6 +36,8 @@ def test_forged_workspace_game_and_evidence_references_are_rejected(change, reas
     (replace(DECISION,decision_id="other"),"accepted_definition_mismatch"),
     (replace(DECISION,position_key="other"),"unsupported_decision_linkage"),
     (replace(DECISION,accepted_moves=("e2e4",)),"unsupported_decision_linkage"),
+    (replace(DECISION,workspace_id="foreign"),"accepted_workspace_mismatch"),
+    (replace(DECISION,card_id="unrelated",aliases=()),"unsupported_card_linkage"),
 ])
 def test_stale_or_incoherent_accepted_content_never_grants_permission(accepted,reason):
     value = delivery()

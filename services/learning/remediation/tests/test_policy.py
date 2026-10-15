@@ -38,3 +38,9 @@ def test_priority_overlay_deduplicates_shared_cards_and_preserves_head_and_ordin
     ordered=order_candidates((head,*ordinary,*misses))
     assert [value.card_id for value in ordered] == ["head","miss-a","miss-b","z","a","m"]
     assert propose_admission(head) is None
+
+
+def test_shared_card_uses_valid_alias_without_losing_frozen_card_position():
+    blocked = replace(BASE, route_id="blocked", content_valid=False)
+    valid = replace(BASE, route_id="valid")
+    assert order_candidates((blocked, valid)) == (valid,)

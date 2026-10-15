@@ -2,7 +2,6 @@
 from dataclasses import asdict
 import json
 
-from psycopg.pq import TransactionStatus
 from tempo_game_evidence_contracts import v1, v2
 
 from .models import (AcceptedDecision, AdmissionResult, AttemptAuthority, ReceiveContext,
@@ -28,6 +27,9 @@ _OUTSTANDING = """
        AND contribution.card_revision=attempt.card_revision
        AND contribution.publication_id=attempt.publication_id
        AND contribution.publication_generation=attempt.publication_generation
+       AND EXISTS(SELECT 1 FROM remediation_game_heads game
+           WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
+             AND game.game_revision=contribution.game_revision)
        AND settlement.reviewed_at>=attempt.issued_at
        AND (contribution.occurred_at IS NULL OR contribution.occurred_at<=settlement.reviewed_at))
 """
@@ -40,13 +42,14 @@ class PostgresRepository:
     No lock is retained across preparation pages or external work. B's lock must
     follow A's card/issuance locks; module callbacks must not acquire A's locks.
     """
-    def __init__(self, connection, workspace_id: str):
+    def __init__(self, connection, workspace_id: str, *, background: bool = False):
         self.connection = connection
         self.workspace_id = workspace_id
+        self.background = background
         self._transaction()
 
     def _transaction(self):
-        if self.connection.info.transaction_status != TransactionStatus.INTRANS:
+        if self.connection.info.transaction_status.name != "INTRANS":
             raise RuntimeError("remediation requires an explicit active outer transaction")
 
     def _execute(self, statement, parameters=()):
@@ -54,6 +57,11 @@ class PostgresRepository:
         return self.connection.execute(statement, parameters)
 
     def lock(self):
+        if self.background:
+            if not self._execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
+                                 ("tempo:learning-remediation:" + self.workspace_id,)).fetchone()[0]:
+                raise RemediationError("retryable_failure", "foreground_busy")
+            return
         self._execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                       ("tempo:learning-remediation:" + self.workspace_id,))
 
@@ -102,8 +110,8 @@ class PostgresRepository:
 
     def receive(self, delivery, context: ReceiveContext):
         """Validate completely before writes; acceptance and receipt share the caller's commit."""
-        self.lock()
         try:
+            self.lock()
             if (context.workspace_id, context.game_id, context.evidence_id) != (
                     self.workspace_id, delivery.game_id, delivery.evidence_id):
                 raise RemediationError("terminal_failure", "source_authority_mismatch")
@@ -196,12 +204,12 @@ class PostgresRepository:
                 WHERE workspace_id=%s AND card_id=%s RETURNING sequence""", (self.workspace_id, contribution.card_id)).fetchone()[0]
             self._execute("INSERT INTO remediation_incident_versions VALUES(%s,%s,%s,%s,%s,%s)",
                           (self.workspace_id, contribution.incident_id, fact_hash, contribution.card_id, sequence, received_at))
-        self._execute("""INSERT INTO remediation_contributions VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        self._execute("""INSERT INTO remediation_contributions VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT(workspace_id,obligation_id,obligation_revision) DO NOTHING""",
             (self.workspace_id, contribution.obligation_id, contribution.obligation_revision, delivery.evidence_id,
              delivery.evidence_revision, delivery.game_id, contribution.incident_id, fact_hash, contribution.card_id,
              contribution.card_revision, contribution.publication_id, contribution.publication_generation,
-             contribution.kind, contribution.occurred_at, contribution.payload_json))
+             contribution.kind, contribution.occurred_at, contribution.payload_json, delivery.game_revision))
         self._execute("""INSERT INTO remediation_obligation_heads VALUES(%s,%s,%s,%s,%s,%s,%s,true)
             ON CONFLICT(workspace_id,obligation_id) DO UPDATE SET obligation_revision=excluded.obligation_revision,active=true""",
             (self.workspace_id, contribution.obligation_id, contribution.obligation_revision, delivery.evidence_id,
@@ -209,6 +217,17 @@ class PostgresRepository:
 
     def has_outstanding(self, card_id: str) -> bool:
         return self._execute("SELECT EXISTS(SELECT 1" + _OUTSTANDING + ")", (self.workspace_id, card_id)).fetchone()[0]
+
+    def has_current_miss(self, candidate) -> bool:
+        """Retained stale obligations are visible but cannot grant admission."""
+        return self._execute("SELECT EXISTS(SELECT 1" + _OUTSTANDING + """
+            AND contribution.card_revision=%s AND contribution.publication_id=%s
+            AND contribution.publication_generation=%s
+            AND EXISTS(SELECT 1 FROM remediation_game_heads game
+                WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
+                  AND game.game_revision=contribution.game_revision))""",
+            (self.workspace_id, candidate.card_id, candidate.card_revision, candidate.publication_id,
+             candidate.publication_generation)).fetchone()[0]
 
     def pending_page(self, cursor: str = "") -> WorkPage:
         rows = self._execute("""SELECT card_id,sequence,work_state,reason FROM remediation_cards
@@ -227,9 +246,10 @@ class PostgresRepository:
             WHERE workspace_id=%s AND card_id=%s""",
             ("admitted" if result.status == "applied" else "deferred", result.reason, result.queue_entry_id, self.workspace_id, card_id))
 
-    @staticmethod
-    def _check_attempt(attempt: AttemptAuthority, current: AcceptedDecision):
+    def _check_attempt(self, attempt: AttemptAuthority, current: AcceptedDecision):
         instant(attempt.issued_at)
+        if current.workspace_id != self.workspace_id:
+            raise RemediationError("terminal_failure", "accepted_workspace_mismatch")
         if not current.active or (attempt.card_id, attempt.card_revision, attempt.publication_id, attempt.publication_generation) != (
                 current.card_id, current.card_revision, current.publication_id, current.publication_generation):
             raise RemediationError("stale_revision", "attempt_authority_changed")
@@ -280,6 +300,9 @@ class PostgresRepository:
                 AND incident.work_sequence<=%s AND incident.accepted_at<=%s
                 AND contribution.card_revision=%s AND contribution.publication_id=%s
                 AND contribution.publication_generation=%s
+                AND EXISTS(SELECT 1 FROM remediation_game_heads game
+                    WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
+                      AND game.game_revision=contribution.game_revision)
                 AND (contribution.occurred_at IS NULL OR contribution.occurred_at<=%s))""",
                 (self.workspace_id, review.attempt.card_id, attempt[5], instant(review.attempt.issued_at),
                  review.attempt.card_revision, review.attempt.publication_id, review.attempt.publication_generation,

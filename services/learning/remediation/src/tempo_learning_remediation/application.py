@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from .models import AdmissionPort, AdmissionResult, Candidate, WorkItem
-from .policy import MAX_PREPARATION_PAGES, order_candidates, propose_admission
+from .policy import MAX_PREPARATION_PAGES, PAGE_SIZE, evaluate_eligibility, order_candidates, propose_admission
 from .repository import PostgresRepository
 
 
@@ -28,11 +28,12 @@ def prepare_admissions(repository: PostgresRepository, facts: CandidateFactsPort
         cursor, has_more = page.cursor, page.has_more
         outstanding = {item.card_id for item in page.items}
         supplied = facts.candidates(page.items) if page.items else ()
-        if len(supplied) > 16:
+        if len(supplied) > PAGE_SIZE:
             raise ValueError("candidate facts must be bounded to one route per requested card")
         if any(candidate.card_id not in outstanding for candidate in supplied):
             raise ValueError("candidate facts escaped the requested page")
-        candidates.extend(replace(candidate, outstanding_miss=True) for candidate in supplied)
+        candidates.extend(replace(candidate, outstanding_miss=True) for candidate in supplied
+                          if repository.has_current_miss(candidate))
         if not has_more:
             break
     return Preparation(order_candidates(tuple(candidates)), cursor, has_more, page_index + 1)
@@ -46,11 +47,14 @@ def apply_admission(repository: PostgresRepository, candidate: Candidate,
     encompassing card/queue locks after the module lock (see README lock order).
     """
     repository.lock()
-    if not repository.has_outstanding(candidate.card_id):
-        return AdmissionResult("rejected", "obligation_no_longer_outstanding")
-    proposal = propose_admission(replace(candidate, outstanding_miss=True))
+    if not repository.has_current_miss(candidate):
+        result = AdmissionResult("rejected", "obligation_not_current")
+        repository.record_admission(candidate.card_id, result)
+        return result
+    current = replace(candidate, outstanding_miss=True)
+    proposal = propose_admission(current)
     if proposal is None:
-        result = AdmissionResult("deferred", "candidate_not_currently_admissible")
+        result = AdmissionResult("deferred", evaluate_eligibility(current).reason or "issued_head_preserved")
     else:
         result = writer.apply(proposal)
     repository.record_admission(candidate.card_id, result)

@@ -42,7 +42,7 @@ def base():
     return json.loads((ROOT/"fixtures/v2/delivery.json").read_text())["payload"]
 
 
-@pytest.mark.parametrize("change",["wrong_encounter","wrong_miss","wrong_publication","wrong_decision","lineage","duplicate","implicit_empty","mixed_withdrawal","oversized"])
+@pytest.mark.parametrize("change",["wrong_encounter","wrong_miss","wrong_publication","wrong_decision","lineage","duplicate","implicit_empty","mixed_withdrawal","oversized","oversized_alternatives"])
 def test_v2_rejects_incoherent_links_and_unbounded_or_implicit_withdrawals(change):
     data=base()
     if change == "wrong_encounter": data["obligations"][0]["encounter_id"]="forged"
@@ -54,6 +54,7 @@ def test_v2_rejects_incoherent_links_and_unbounded_or_implicit_withdrawals(chang
     if change == "implicit_empty": data.update(encounters=[],comparisons=[],misses=[],obligations=[])
     if change == "mixed_withdrawal": data["withdrawals"]=[dict(obligation_id="obligation-a",expected_obligation_revision=1,reason="reanalysis")]
     if change == "oversized": data["obligations"]*=129
+    if change == "oversized_alternatives": data["comparisons"][0]["expected_moves"]*=21
     with pytest.raises(ValidationError): v2.EvidenceDelivery.model_validate(data)
 
 

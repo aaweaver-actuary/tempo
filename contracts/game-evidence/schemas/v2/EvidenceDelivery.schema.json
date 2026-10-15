@@ -26,6 +26,7 @@
             "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
             "type": "string"
           },
+          "maxItems": 20,
           "minItems": 1,
           "title": "Expected Moves",
           "type": "array"

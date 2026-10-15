@@ -36,7 +36,7 @@ CREATE TABLE remediation_contributions (
     incident_id text NOT NULL, logical_hash text NOT NULL, card_id text NOT NULL,
     card_revision bigint NOT NULL, publication_id text NOT NULL, publication_generation bigint NOT NULL,
     kind text NOT NULL CHECK(kind IN ('real_game_miss','observed_encounter')),
-    occurred_at timestamptz, payload_json text NOT NULL,
+    occurred_at timestamptz, payload_json text NOT NULL, game_revision bigint NOT NULL,
     PRIMARY KEY(workspace_id,obligation_id,obligation_revision),
     FOREIGN KEY(workspace_id,incident_id,logical_hash)
       REFERENCES remediation_incident_versions(workspace_id,incident_id,logical_hash)

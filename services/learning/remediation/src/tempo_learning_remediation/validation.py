@@ -41,6 +41,8 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
         if occurred_at > received_at:
             raise RemediationError("terminal_failure", "occurrence_in_future")
     encounters = {item.encounter_id: item for item in delivery.encounters}
+    if any(len(item.expected_moves) > 20 for item in delivery.comparisons):
+        raise RemediationError("terminal_failure", "batch_limit_exceeded")
     contributions = []
     for obligation in delivery.obligations:
         comparisons = [item for item in delivery.comparisons if
@@ -57,6 +59,10 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
                                             comparison.publication_id, comparison.publication_generation)
         if accepted is None or not accepted.active:
             raise RemediationError("stale_revision", "publication_not_active")
+        if accepted.workspace_id != context.workspace_id:
+            raise RemediationError("terminal_failure", "accepted_workspace_mismatch")
+        if obligation.card_id not in (accepted.card_id, *accepted.aliases):
+            raise RemediationError("terminal_failure", "unsupported_card_linkage")
         if ((accepted.decision_id, accepted.publication_id, accepted.publication_generation)
                 != (obligation.decision_id, comparison.publication_id, comparison.publication_generation)
                 or (isinstance(delivery, v2.EvidenceDelivery) and accepted.card_revision != obligation.card_revision)):
@@ -67,12 +73,14 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
         actual_miss = encounter.observed_move not in accepted.accepted_moves
         if (comparison.status == "missed" and not actual_miss) or (comparison.status == "matched" and actual_miss):
             raise RemediationError("terminal_failure", "incoherent_comparison")
+        supporting_misses = []
         if obligation.kind == "real_game_miss":
             misses = [item for item in delivery.misses if
                       (item.encounter_id, item.decision_id) == (encounter.encounter_id, obligation.decision_id)
                       and (not isinstance(delivery, v2.EvidenceDelivery) or item.miss_id == obligation.miss_id)]
             if len(misses) != 1 or comparison.status != "missed" or not actual_miss:
                 raise RemediationError("terminal_failure", "unsupported_miss_provenance")
+            supporting_misses = misses
         elif comparison.status == "unknown":
             raise RemediationError("terminal_failure", "unknown_is_not_permission")
         # Stable across transport, source reanalysis, encounter aliases and route aliases.
@@ -84,8 +92,7 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
                 "obligation": obligation.model_dump(mode="json"),
                 "encounter": encounter.model_dump(mode="json"),
                 "comparison": comparison.model_dump(mode="json"),
-                "misses": [item.model_dump(mode="json") for item in delivery.misses
-                           if item.encounter_id == encounter.encounter_id],
+                "misses": [item.model_dump(mode="json") for item in supporting_misses],
                 "game_id": delivery.game_id, "game_revision": delivery.game_revision,
                 "occurred_at": occurred_at.isoformat() if occurred_at else None,
             })))

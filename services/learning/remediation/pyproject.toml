@@ -7,10 +7,10 @@ name = "tempo-learning-remediation"
 version = "0.1.0"
 description = "Durable Learning-owned game-miss obligations on a borrowed transaction"
 requires-python = ">=3.12,<3.15"
-dependencies = ["tempo-game-evidence-contracts==2.0.0", "psycopg[binary]==3.3.6"]
+dependencies = ["tempo-game-evidence-contracts==2.0.0"]
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0", "psycopg[binary]==3.3.6"]
 
 [tool.uv.sources]
 tempo-game-evidence-contracts = { path = "../../../contracts/game-evidence", editable = false }
