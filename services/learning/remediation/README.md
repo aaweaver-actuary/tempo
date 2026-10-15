@@ -1,8 +1,9 @@
 # Learning remediation 0.1.0
 
 An installable Learning library, not a service, queue writer, or production
-activation. It depends on the installed game-evidence 2.0.0 contract and psycopg
-3.3.6. Existing Learning review 0.1.0, scheduling 0.2.0 and chess-core 0.1.0
+activation. It depends on the installed game-evidence 2.0.0 contract and borrows
+the caller's psycopg connection (3.3.6 in native qualification). Existing Learning
+review 0.1.0, scheduling 0.2.0 and chess-core 0.1.0
 remain the owners of their existing behavior; no scheduler is copied here.
 
 ## A / C / F handoff
@@ -40,6 +41,10 @@ encompassing locks. F must adapt A's published runtime seam, not call a second
 writer or privately replace the legacy miss predicate. No such production
 adapter is included here. Background callers honor foreground admission and
 yield between bounded transactions, with no provider/network work under locks.
+Background callers construct the repository with `background=True`; its module
+lock is nonblocking and intake returns `retryable_failure/foreground_busy` when
+occupied. A's durable command/outbox retains retry intent; a rejected lock does
+not claim durable obligation acceptance.
 
 At initial authoritative attempt issuance, A calls `bind_attempt` in that same
 transaction. It must not bind an already-issued attempt retrospectively when
@@ -67,6 +72,12 @@ writer. New cards use introduction; studied/future-due cards use review promotio
 The real-game exception bypasses ordinary cap/progression only, including zero
 allowance; it cannot bypass validity, revisions, burial, retirement or deletion.
 Ordinary candidate input order, including frozen ranks, remains authoritative.
+
+Old game/content revisions remain visible as outstanding retained provenance,
+but `has_current_miss` fences them from gameplay admission. A raw game revision
+change does not silently withdraw omitted facts; C must publish current support
+or explicit withdrawals. This also prevents stale source facts from granting a
+curriculum/quota override through an otherwise current card proposal.
 
 `migrations/001_remediation.sql` is a packaged, module-local migration input. A
 registers it in the owning ordered migration system. F adopts artifacts only

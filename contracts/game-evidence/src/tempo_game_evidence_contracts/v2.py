@@ -5,13 +5,17 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from ._wire import Identifier, Model, Revision, Timestamp, UciMove, serialize_contract, validate_contract
-from .v1 import Comparison, Encounter, GameProvenance, RealGameMiss
+from .v1 import Comparison as V1Comparison, Encounter, GameProvenance, RealGameMiss
 
 MAX_BATCH_ITEMS = 128
 
 
 class WireModel(Model):
     contract_version: Literal[2]
+
+
+class Comparison(V1Comparison):
+    expected_moves: list[UciMove] = Field(min_length=1, max_length=20)
 
 
 class ImportedGame(WireModel):

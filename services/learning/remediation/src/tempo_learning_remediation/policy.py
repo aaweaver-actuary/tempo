@@ -23,10 +23,18 @@ def evaluate_eligibility(candidate: Candidate) -> Eligibility:
 
 def order_candidates(candidates: tuple[Candidate, ...]) -> tuple[Candidate, ...]:
     """Stable priority overlay after a protected prefix; never recompute ranks."""
-    protected = [candidate for candidate in candidates if candidate.protected]
+    protected = []
+    for candidate in candidates:
+        if candidate.protected and candidate.card_id not in {item.card_id for item in protected}:
+            protected.append(candidate)
     selected = {candidate.card_id for candidate in protected}
     movable = []
+    preferred = {}
     for candidate in candidates:
+        previous = preferred.get(candidate.card_id)
+        if previous is None or (not evaluate_eligibility(previous).eligible and evaluate_eligibility(candidate).eligible):
+            preferred[candidate.card_id] = candidate
+    for candidate in preferred.values():
         if candidate.card_id not in selected:
             movable.append(candidate)
             selected.add(candidate.card_id)

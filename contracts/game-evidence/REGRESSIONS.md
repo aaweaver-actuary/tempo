@@ -20,3 +20,13 @@ TypeScript consumers live in `../consumer-examples`.
 runs this package's own installed public envelope across 37 explicit validity cases,
 including fractions, offsets, Gregorian leap rules, year bounds and malformed input.
 Accepted strings retain their original offset and fractional representation.
+
+## V2 correction and chronology (#41 / #230–232)
+
+`tests/test_v2.py` owns independently authored v2 round trips/schema parity,
+withdrawal-only deliveries, required nullable occurrence time, explicit
+encounter/miss/publication/revision linkage, list bounds, and rejection of
+implicit withdrawals, inconsistent references and cross-version negotiation.
+Existing v1 fixtures, schema and producer output remain unchanged. The installed
+Learning remediation suite owns semantic validation against authoritative content;
+contract fixtures alone do not establish production adoption or supported misses.

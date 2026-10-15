@@ -22,9 +22,6 @@ def load(name, path):
 def main():
     qualification = load("learning_qualification", ROOT / "services/learning/application/qualification.py")
     fixture_module = load("ownership_fixture", ROOT / "contracts/database-ownership/fixture.py")
-    if len(sys.argv) > 2:
-        raise ValueError("expected only an evidence directory; external databases are unsupported")
-    external_junit = qualification.junit_destination(os.environ.get("PYTEST_ADDOPTS", ""), allow_junit=True)
     evidence = Path(sys.argv[1] if len(sys.argv) == 2 else os.environ.get(
         "TEMPO_REMEDIATION_EVIDENCE_DIR", ROOT / "test-results/learning-remediation")).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
@@ -37,6 +34,9 @@ def main():
     qualification.write_json(evidence / "native.json", report)
     creation_attempted = False
     try:
+        if len(sys.argv) > 2:
+            raise ValueError("expected only an evidence directory; external databases are unsupported")
+        external_junit = qualification.junit_destination(os.environ.get("PYTEST_ADDOPTS", ""), allow_junit=True)
         creation_attempted = True
         fixture.start()
         report["image"] = fixture.image_id

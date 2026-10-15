@@ -883,6 +883,115 @@
         "migrations": []
       },
       "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "learning-remediation",
+      "type": "library",
+      "maintainer": "Tempo / #230 #231 #232 #41",
+      "status": "implemented",
+      "root": "services/learning/remediation",
+      "publicExports": [
+        "AcceptedDecision",
+        "AdmissionPort",
+        "AdmissionProposal",
+        "AdmissionResult",
+        "AttemptAuthority",
+        "Candidate",
+        "CandidateFactsPort",
+        "ContentAuthority",
+        "Eligibility",
+        "ReceiveContext",
+        "RemediationError",
+        "ReviewOutcome",
+        "WorkItem",
+        "WorkPage",
+        "Preparation",
+        "PostgresRepository",
+        "PAGE_SIZE",
+        "MAX_PREPARATION_PAGES",
+        "evaluate_eligibility",
+        "order_candidates",
+        "propose_admission",
+        "validate_delivery",
+        "prepare_admissions",
+        "apply_admission"
+      ],
+      "dependencies": [
+        "tempo_game_evidence_contracts"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "migrations",
+        "tests",
+        "integration",
+        "run_suite.py",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
+      "artifact": {
+        "name": "tempo-learning-remediation",
+        "version": "0.1.0",
+        "format": "wheel + sdist + module-local migration"
+      },
+      "tests": [
+        {
+          "owner": "learning-remediation",
+          "kind": "python",
+          "cwd": ".",
+          "command": "python services/learning/remediation/run_suite.py pure",
+          "inputs": [
+            "services/learning/remediation/tests",
+            "services/learning/remediation/run_suite.py",
+            "services/learning/application/qualification.py"
+          ]
+        },
+        {
+          "owner": "learning-remediation",
+          "kind": "python",
+          "cwd": ".",
+          "command": "python services/learning/remediation/run_suite.py tooling",
+          "inputs": [
+            "services/learning/remediation/integration",
+            "services/learning/remediation/run_suite.py",
+            "services/learning/application/qualification.py",
+            "contracts/database-ownership/fixture.py"
+          ]
+        },
+        {
+          "owner": "learning-remediation",
+          "kind": "postgres",
+          "cwd": ".",
+          "command": "python services/learning/remediation/integration/run_postgres.py",
+          "inputs": [
+            "services/learning/remediation/integration",
+            "services/learning/remediation/migrations",
+            "services/learning/remediation/tests/support.py",
+            "services/learning/application/qualification.py",
+            "contracts/database-ownership/fixture.py"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "Learning remediation / A owns outer transaction and ordered registration",
+        "databases": [
+          "Learning (module-local ownership; no cutover)"
+        ],
+        "migrations": [
+          "services/learning/remediation/migrations/001_remediation.sql"
+        ],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
     }
   ],
   "suites": [

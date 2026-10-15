@@ -293,6 +293,58 @@ def test_native_admission_and_module_state_share_outer_rollback(workspace):
             assert count(connection, "remediation_test_queue", workspace) == 0
 
 
+@pytest.mark.parametrize("change", [dict(card_revision=2), dict(publication_id="replacement"), dict(publication_generation=2)])
+def test_native_stale_content_obligation_remains_visible_without_admission_authority(workspace, change):
+    class Writer:
+        def apply(self, proposal): raise AssertionError("stale obligation reached admission writer")
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        accept(repository, scoped(delivery(), workspace))
+        candidate = replace(Candidate("card", 1, "publication", 1, "route", False, True), **change)
+        assert apply_admission(repository, candidate, Writer()).reason == "obligation_not_current"
+        assert repository.has_outstanding("card")
+        assert repository.pending_page().items[0].reason == "obligation_not_current"
+
+
+def test_native_game_revision_change_defers_old_support_without_implicit_withdrawal(workspace):
+    class Writer:
+        def apply(self, proposal): raise AssertionError("obsolete game fact reached writer")
+    first = scoped(delivery(), workspace)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace); accept(repository, first)
+        newer = first.model_dump(mode="json")
+        newer.update(delivery_id="new-revision", evidence_revision=2, game_revision=2, obligations=[])
+        assert accept(repository, v2.EvidenceDelivery.model_validate(newer)).status == "completed"
+        candidate = Candidate("card", 1, "publication", 1, "route", False, True)
+        assert repository.has_outstanding("card")
+        assert apply_admission(repository, candidate, Writer()).reason == "obligation_not_current"
+        assert count(connection, "remediation_contributions", workspace) == 1
+        bound = attempt(); repository.bind_attempt(bound, DECISION)
+        assert not repository.settle(review(bound), DECISION)
+        assert repository.has_outstanding("card")
+
+
+@pytest.mark.parametrize("change,reason", [(dict(protected=True), "issued_head_preserved"), (dict(buried=True), "buried_today")])
+def test_native_issued_head_and_burial_never_call_admission_writer(workspace, change, reason):
+    class Writer:
+        def apply(self, proposal): raise AssertionError("protected work reached writer")
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace); accept(repository, scoped(delivery(), workspace))
+        candidate = replace(Candidate("card", 1, "publication", 1, "route", True, True), **change)
+        assert apply_admission(repository, candidate, Writer()).reason == reason
+        assert repository.has_outstanding("card")
+
+
+def test_native_unknown_time_cannot_settle_with_retrospectively_bound_old_issuance(workspace):
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        accept(repository, scoped(delivery(occurred_at=None), workspace))
+        old = attempt(issued_at=NOW-timedelta(seconds=1))
+        assert repository.bind_attempt(old, DECISION) == 1
+        assert not repository.settle(review(old), DECISION)
+        assert repository.has_outstanding("card")
+
+
 def wait_for_lock(connection, pid):
     deadline = time.monotonic()+5
     while time.monotonic() < deadline:
@@ -318,6 +370,17 @@ def test_native_concurrent_duplicate_delivery_is_exactly_once(workspace):
             assert future.result(timeout=10).learning_revision == receipt.learning_revision
         assert count(first, "remediation_incident_versions", workspace) == 1
         assert count(first, "remediation_contributions", workspace) == 1
+
+
+def test_native_background_intake_yields_instead_of_waiting_on_foreground(workspace):
+    with connect() as first, first.transaction():
+        PostgresRepository(first, workspace).lock()
+        with connect() as second, second.transaction():
+            repository = PostgresRepository(second, workspace, background=True)
+            response = accept(repository, scoped(delivery(), workspace))
+            assert response.status == "retryable_failure" and response.reason == "foreground_busy"
+            assert repository.receipt("delivery") is None
+            assert not repository.has_outstanding("card")
 
 
 @pytest.mark.parametrize("miss_first", [False, True])

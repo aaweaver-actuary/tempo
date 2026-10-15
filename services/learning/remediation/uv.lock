@@ -279,7 +279,6 @@ name = "tempo-learning-remediation"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "psycopg", extra = ["binary"] },
     { name = "tempo-game-evidence-contracts" },
 ]
 
@@ -287,19 +286,18 @@ dependencies = [
 dev = [
     { name = "build" },
     { name = "hatchling" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pytest" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
-    { name = "tempo-game-evidence-contracts", directory = "../../../contracts/game-evidence" },
-]
+requires-dist = [{ name = "tempo-game-evidence-contracts", directory = "../../../contracts/game-evidence" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "build", specifier = "==1.4.0" },
     { name = "hatchling", specifier = "==1.27.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
     { name = "pytest", specifier = "==9.1.1" },
 ]
 
