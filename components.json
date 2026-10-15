@@ -945,7 +945,13 @@
           "inputs": [
             "services/learning/remediation/tests",
             "services/learning/remediation/run_suite.py",
-            "services/learning/application/qualification.py"
+            "services/learning/application/qualification.py",
+            "services/learning/remediation/src",
+            "services/learning/remediation/pyproject.toml",
+            "services/learning/remediation/uv.lock",
+            "services/learning/remediation/migrations",
+            "contracts/game-evidence/src",
+            "contracts/game-evidence/pyproject.toml"
           ]
         },
         {
@@ -957,7 +963,14 @@
             "services/learning/remediation/integration",
             "services/learning/remediation/run_suite.py",
             "services/learning/application/qualification.py",
-            "contracts/database-ownership/fixture.py"
+            "contracts/database-ownership/fixture.py",
+            "services/learning/remediation/src",
+            "services/learning/remediation/pyproject.toml",
+            "services/learning/remediation/uv.lock",
+            "services/learning/remediation/migrations",
+            "contracts/game-evidence/src",
+            "contracts/game-evidence/pyproject.toml",
+            "services/learning/remediation/tests"
           ]
         },
         {
@@ -970,7 +983,12 @@
             "services/learning/remediation/migrations",
             "services/learning/remediation/tests/support.py",
             "services/learning/application/qualification.py",
-            "contracts/database-ownership/fixture.py"
+            "contracts/database-ownership/fixture.py",
+            "services/learning/remediation/src",
+            "services/learning/remediation/pyproject.toml",
+            "services/learning/remediation/uv.lock",
+            "contracts/game-evidence/src",
+            "contracts/game-evidence/pyproject.toml"
           ]
         }
       ],
