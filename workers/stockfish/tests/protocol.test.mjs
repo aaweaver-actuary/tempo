@@ -122,3 +122,28 @@ test('receipt count and serialized reservation exhaustion reject without evictio
   const bounded=await fixture(t,{retentionLimitBytes:65536}); send(bounded.worker,input);
   assert.equal(bounded.records.at(-1).payload.reason,'session_capacity_exhausted'); assert.equal(bounded.worker.logicalRequests.size,0);
 });
+
+test('unexpected engine exit is retryable and recovery never reuses its child', async t=>{
+  const f=await fixture(t);const input=job({max_nodes:666});const old=f.worker.child.pid;
+  send(f.worker,input);const failure=await f.record(isStatus('failed'));
+  assert.equal(failure.payload.reason,'worker_crashed');assert.equal(failure.payload.retryable,true);
+  await f.event(e=>e.event==='ready'&&e.pid!==old);
+  send(f.worker,input);assert.equal(f.records.at(-1).payload.reason,'worker_crashed');
+});
+test('unconfirmed owned termination rejects shutdown without a termination acknowledgement',async t=>{
+  const f=await fixture(t,{terminationTimeoutMs:30});const input=job({max_nodes:999999});
+  send(f.worker,input);await f.record(isStatus('running'));
+  const child=f.worker.child,originalKill=child.kill.bind(child);child.kill=()=>false;
+  cancel(f.worker,cancellation(input));
+  await assert.rejects(f.worker.close({drain:false}),{code:'termination_unconfirmed'});
+  assert.equal(f.records.some(isAck('terminated')),false);
+  child.kill=originalKill;originalKill('SIGKILL');await once(child,'exit');
+  // The deliberate failed close is preserved; cleanup has now independently proved exit.
+  f.worker.closePromise=Promise.resolve();
+});
+test('pre-job cancellation capacity exhaustion does not create authority or stop unrelated work',async t=>{
+  const f=await fixture(t,{retentionLimitBytes:65536});
+  cancel(f.worker,cancellation(job()));
+  assert.equal(f.records.at(-1).payload.reason,'session_capacity_exhausted');
+  assert.equal(f.worker.logicalRequests.size,0);assert.equal(f.worker.executions.size,0);
+});

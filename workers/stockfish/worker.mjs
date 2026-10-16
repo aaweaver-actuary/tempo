@@ -55,6 +55,7 @@ export class StockfishWorker extends EventEmitter {
     if (this.spawnPromise) return this.spawnPromise;
     this.spawnPromise = new Promise((resolve, reject) => {
       let settled = false;
+      const startupStarted = performance.now();
       const child = this.childFactory();
       this.child = child;
       this.childReady = false;
@@ -73,7 +74,7 @@ export class StockfishWorker extends EventEmitter {
           }
           settled = true; clearTimeout(startupTimer); this.identity = identity; this.childReady = true;
           child.stockfishInitialized = true;
-          this.emit('diagnostic', { event: 'ready', identity, resources: this.resources, pid: child.pid });
+          this.emit('diagnostic', { event: 'ready', identity, resources: this.resources, pid: child.pid, initialization_ms: performance.now() - startupStarted });
           resolve();
           if (this.replacement) {
             const replacement = this.replacement; this.replacement = null;
@@ -140,13 +141,13 @@ export class StockfishWorker extends EventEmitter {
     this.emitRecord('CancellationAcknowledgement', { ...request, status, acknowledged_at: new Date().toISOString() });
   }
 
-  rememberCancellation(record, request) {
+  rememberCancellation(record, request, reserved = false) {
     record.cancellations ??= new Map();
     if (!record.cancellations.has(request.cancellation_id) && record.cancellations.size >= CANCELLATION_RECORD_LIMIT) { this.rejectJob(request, 'cancellation_capacity_exhausted', true); return false; }
     const cancellationKey = JSON.stringify([request.workspace_id, request.cancellation_id]);
     const target = executionKey(request);
     if (this.cancellationIdentities.has(cancellationKey) && this.cancellationIdentities.get(cancellationKey) !== target) { this.rejectJob(request, 'cancellation_id_conflict'); return false; }
-    if (!record.cancellations.has(request.cancellation_id) && !this.reserve(record, 4096)) { this.rejectJob(request, 'session_capacity_exhausted', true); return false; }
+    if (!record.cancellations.has(request.cancellation_id) && !reserved && !this.reserve(record, 8192)) { this.rejectJob(request, 'session_capacity_exhausted', true); return false; }
     this.cancellationIdentities.set(cancellationKey, target);
     record.cancellations.set(request.cancellation_id, request);
     record.cancellation ??= request;
@@ -238,7 +239,7 @@ export class StockfishWorker extends EventEmitter {
     } catch (error) { this.rejectJob(job, errorCode(error, 'invalid_request')); return; }
     if (!record && this.executions.size >= this.recordLimit) { this.rejectJob(job, 'session_capacity_exhausted', true); return; }
     const candidate = record ?? { identity: identityOf(job), job: null, status: null, result: null, cancellation: null };
-    if (!this.reserve(candidate, 1024 * 1024 + (record ? 0 : 65536))) { this.rejectJob(job, 'session_capacity_exhausted', true); return; }
+    if (!this.reserve(candidate, 1024 * 1024 + (record ? 65536 : 131072))) { this.rejectJob(job, 'session_capacity_exhausted', true); return; }
     if (!logical) { logical = { fingerprint: null, highestGeneration: 0 }; this.logicalRequests.set(key, logical); }
     logical.fingerprint = fingerprint;
     if (!record) { record = candidate; this.executions.set(generationKey, record); }
@@ -313,9 +314,9 @@ export class StockfishWorker extends EventEmitter {
     if (!record) {
       if (this.executions.size >= this.recordLimit) { this.rejectJob(request, 'session_capacity_exhausted', true); return; }
       record = { identity: identityOf(request), job: null, status: null, result: null, cancellation: null };
-      if (!this.reserve(record, 65536)) { this.rejectJob(request, 'session_capacity_exhausted', true); return; }
+      if (!this.reserve(record, 65536 + 8192)) { this.rejectJob(request, 'session_capacity_exhausted', true); return; }
       this.executions.set(generationKey, record);
-      if (!this.rememberCancellation(record, request)) return;
+      if (!this.rememberCancellation(record, request, true)) return;
       if (logical && request.execution_generation < logical.highestGeneration) { this.settleCancellations(record, 'stale_generation'); this.acknowledge(request, 'stale_generation'); }
       else this.acknowledge(request, 'requested');
       return;

@@ -85,7 +85,10 @@ export class IterationCollector {
   receive(line) {
     if (typeof line !== 'string' || Buffer.byteLength(line) > 64 * 1024) throw new WireError('invalid_engine_output', 'Oversized UCI line');
     if (line.startsWith('bestmove ')) {
-      const move = line.trim().split(/\s+/)[1];
+      const best = /^bestmove ([a-h][1-8][a-h][1-8][qrbn]?)(?: ponder ([a-h][1-8][a-h][1-8][qrbn]?))?$/.exec(line.trim());
+      if (!best) throw new WireError('invalid_engine_output', 'Malformed bestmove');
+      const move = best[1];
+      if (best[2]) { const board = new Chess(this.prepared.board.fen()); try { applyUci(board, move); applyUci(board, best[2]); } catch { throw new WireError('invalid_engine_output', 'Illegal ponder move'); } }
       if (!this.prepared.roots.includes(move)) throw new WireError('invalid_engine_output', 'Illegal bestmove');
       if (!this.complete) throw new WireError('incomplete_engine_output', 'No complete exact iteration');
       return validateVariations(this.job, structuredClone(this.complete));
@@ -94,7 +97,7 @@ export class IterationCollector {
     const depth = Number(line.match(/\bdepth (\d+)/)?.[1]);
     const rank = Number(line.match(/\bmultipv (\d+)/)?.[1] ?? 1);
     const score = line.match(/\bscore (cp|mate) (-?\d+)\b/);
-    if (!Number.isSafeInteger(depth) || depth < 1 || !Number.isSafeInteger(rank) || rank < 1 || !score) throw new WireError('invalid_engine_output', 'Malformed scored PV');
+    if (!Number.isSafeInteger(depth) || depth < 1 || depth > 128 || (this.job.max_depth !== null && depth > this.job.max_depth) || !Number.isSafeInteger(rank) || rank < 1 || rank > this.prepared.multiPv || !score) throw new WireError('invalid_engine_output', 'Malformed scored PV');
     this.metrics = { last_reported_depth: depth, nodes: Number(line.match(/\bnodes (\d+)/)?.[1] ?? 0), engine_time_ms: Number(line.match(/\btime (\d+)/)?.[1] ?? 0) };
     if (/\b(?:lowerbound|upperbound)\b/.test(line)) { this.pending = []; return null; }
     if (rank === 1) this.pending = [];

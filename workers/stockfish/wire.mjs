@@ -73,7 +73,7 @@ export function identityOf(payload) {
 }
 
 export function stockfishInputDigest(job) {
-  const payload = { ...job };
+  const payload = { ...validatePayload('StockfishJob', { ...job, input_digest: 'digest-preimage' }) };
   delete payload.input_digest;
   delete payload.execution_generation;
   return 'sha256:' + createHash('sha256').update('tempo.stockfish.input.v1\n' + canonicalJson(payload)).digest('hex');

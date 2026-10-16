@@ -28,7 +28,9 @@ def docker(*arguments, check=True, timeout=40):
 
 class Qualification:
     def __init__(self, image):
-        self.image = docker("image", "inspect", image, "--format", "{{.Id}}").stdout.strip()
+        image_metadata=json.loads(docker("image","inspect",image).stdout)[0]
+        assert image_metadata["Os"] == "linux" and image_metadata["Architecture"] == "arm64", "Only Linux ARM64 is qualified"
+        self.image = image_metadata["Id"]
         self.run_id = str(uuid.uuid4())
         self.containers = []
         self.records = []
@@ -76,7 +78,8 @@ class Qualification:
         raise AssertionError("capacity did not recover")
 
     async def cancel_active(self, client, name, job):
-        await self.until(client, lambda item: isinstance(item, v1.JobStatus) and item.job_id == job.job_id and item.status == "running")
+        if not any(record["model"] == "JobStatus" and record["payload"]["job_id"] == job.job_id and record["payload"]["status"] == "running" for record in self.records):
+            await self.until(client, lambda item: isinstance(item, v1.JobStatus) and item.job_id == job.job_id and item.status == "running")
         started = next(event for event in reversed(client.diagnostics) if event.get("event") == "execution_started" and event.get("job_id") == job.job_id)
         pid = started["pid"]
         def ticks():
@@ -114,7 +117,9 @@ class Qualification:
             assert configuration["HostConfig"]["NetworkMode"] == "none"
             assert configuration["Mounts"] == []
             assert configuration["HostConfig"]["ReadonlyRootfs"] is True
-            self.passed("B_restricted_artifact", configuration={key: configuration["HostConfig"][key] for key in ("Memory", "MemorySwap", "NanoCpus", "PidsLimit", "NetworkMode", "ReadonlyRootfs")}, cold_initialization_ms=cold_ms)
+            files = json.loads(docker("exec", name, "node", "-e", "console.log(JSON.stringify(require('fs').readdirSync('/opt/stockfish')))" ).stdout)
+            assert not set(files) & {"app", "backend", "services", "contracts", ".git"}
+            self.passed("B_restricted_artifact", installed_files=files, configuration={key: configuration["HostConfig"][key] for key in ("Memory", "MemorySwap", "NanoCpus", "PidsLimit", "NetworkMode", "ReadonlyRootfs")}, cold_initialization_ms=cold_ms)
             cases = [
                 {},
                 {"moves": ["e2e4"], "search_moves": ["e7e5"]},
@@ -140,8 +145,18 @@ class Qualification:
             self.passed("B_exact_replay", observed=True)
             active = self.job(client, max_depth=128, max_nodes=None, constraints={"max_wall_time_ms":10000,"max_memory_mb":512})
             await self.send(client, active)
+            await self.until(client, lambda value: isinstance(value,v1.JobStatus) and value.job_id==active.job_id and value.status=="running")
+            busy = self.job(client)
+            await self.send(client,busy)
+            busy_status = await self.until(client, lambda value:isinstance(value,v1.JobStatus) and value.job_id==busy.job_id and value.status=="failed")
+            assert busy_status.reason == "worker_busy" and busy_status.retryable
             cancelled = await self.cancel_active(client, name, active)
             self.passed("B_cancel_during_search", **cancelled)
+            await self.send(client,busy)
+            assert await self.until(client,lambda value:isinstance(value,v1.JobStatus) and value.job_id==busy.job_id and value.status=="failed") == busy_status
+            retried_busy = busy.model_copy(update={"execution_generation":2})
+            await self.send(client,retried_busy); await self.result(client,retried_busy)
+            self.passed("real_busy_backpressure", retry_advanced_generation=True)
             recovered = self.job(client); await self.send(client, recovered); await self.result(client, recovered)
             wall = self.job(client, max_depth=128, max_nodes=None, constraints={"max_wall_time_ms":40,"max_memory_mb":512})
             old_pid = next(event["pid"] for event in reversed(client.diagnostics) if event.get("event")=="ready")
@@ -162,14 +177,11 @@ class Qualification:
             assert parse_events(after_events)["oom_kill"] > parse_events(before_events)["oom_kill"]
             self.passed("B_wall_memory_failure", timeout=wall_status.model_dump(mode="json"), pressure_exit=pressure.returncode, before=before_events, after=after_events, limitation="The pressure helper was OOM-killed; no engine-specific OOM cause is inferred.")
             # Finite fixture backlog uses the installed client; it is not a durable scheduler.
-            ages = [100+i for i in range(12)]
-            completions=[]
-            for index, age in enumerate(ages):
-                queued=time.monotonic(); item=self.job(client, max_depth=6)
-                await self.send(client,item); accepted=await self.result(client,item)
-                completions.append({"class":"foreground-like" if index%4==0 else "background", "original_age":age, "job_id":item.job_id, "actual_depth":accepted.variations[0].depth,"end_to_end_ms":(time.monotonic()-queued)*1000})
-            assert len(completions)==12
-            self.passed("B_finite_backlog_driver", completions=completions, scope="fixture caller ordering; no C scheduler or live Study claim")
+            spec=importlib.util.spec_from_file_location("fixture_backlog",ROOT/"backlog_driver.py")
+            driver=importlib.util.module_from_spec(spec);spec.loader.exec_module(driver)
+            template=json.loads((ROOT/"fixtures/synthetic/job.json").read_text())["payload"]
+            backlog=await driver.run_fixture(client,json.loads((ROOT/"fixtures/backlog.json").read_text()),template,self.records.append)
+            self.passed("B_finite_backlog_driver",**backlog)
             memory_peak=int(docker("exec",name,"cat","/sys/fs/cgroup/memory.peak").stdout)
             self.measurements.append({"kind":"whole_worker_memory_peak","bytes":memory_peak,"includes_deliberate_pressure":True})
             self.last_identity=client.identity
@@ -186,19 +198,71 @@ class Qualification:
         for cycle in range(5):
             name,command=self.command(); began=time.monotonic()
             async with StockfishClient(command) as client:
-                cold.append((time.monotonic()-began)*1000)
+                cold.append({"end_to_end_startup_ms":(time.monotonic()-began)*1000,"engine_initialization_ms":next(event["initialization_ms"] for event in client.diagnostics if event.get("event")=="ready")})
                 for index in range(4):
                     changes=[{}, {"moves":["e2e4"]}, {"search_moves":["e2e4"]}, {"multi_pv":3}][index]
                     job=self.job(client,max_depth=12,**changes)
                     began=time.monotonic();await self.send(client,job);result=await self.result(client,job)
-                    metric=next((event for event in reversed(client.diagnostics) if event.get("event")=="execution_finished" and event.get("job_id")==job.job_id),{})
-                    searches.append({"end_to_end_ms":(time.monotonic()-began)*1000,"actual_depth":result.variations[0].depth,"nodes":metric.get("nodes"),"engine_time_ms":metric.get("engine_time_ms"),"job":job.model_dump(mode="json")})
+                    end_to_end_ms=(time.monotonic()-began)*1000
+                    for _ in range(100):
+                        metric=next((event for event in reversed(client.diagnostics) if event.get("event")=="execution_finished" and event.get("job_id")==job.job_id),{})
+                        if metric: break
+                        await asyncio.sleep(.001)
+                    searches.append({"end_to_end_ms":end_to_end_ms,"actual_depth":result.variations[0].depth,"nodes":metric.get("nodes"),"engine_time_ms":metric.get("engine_time_ms"),"job":job.model_dump(mode="json")})
                 active=self.job(client,max_depth=128,max_nodes=None,constraints={"max_wall_time_ms":10000,"max_memory_mb":512})
                 await self.send(client,active);cancellations.append(await self.cancel_active(client,name,active))
                 peaks.append(int(docker("exec",name,"cat","/sys/fs/cgroup/memory.peak").stdout))
                 self.last_identity=client.identity
         self.measurements.append({"kind":"serial_benchmark","cold_initialization_ms":cold,"searches":searches,"cancellations":cancellations,"memory_peak_bytes":peaks,"sample_scope":"five isolated cold sessions, twenty depth-12 searches, five observed in-flight cancellations; no universal SLO"})
         self.passed("serial_benchmark", cold_starts=5,searches=20,cancellations=5)
+
+    async def slow_consumer(self):
+        name,command=self.command()
+        process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        diagnostics=[]
+        try:
+            while True:
+                line=await asyncio.wait_for(asyncio.to_thread(process.stderr.readline),35)
+                assert line, "worker failed before slow-consumer readiness"
+                event=json.loads(line); diagnostics.append(event)
+                if event.get("event")=="ready": break
+            payload=json.loads((ROOT/"fixtures/synthetic/job.json").read_text())
+            payload["payload"]["constraints"]["max_memory_mb"]=256
+            payload["payload"]["input_digest"]=stockfish_input_digest(payload["payload"])
+            line=(json.dumps(payload,separators=(",",":"))+"\n").encode()
+            os.set_blocking(process.stdin.fileno(),False)
+            written=0
+            deadline=time.monotonic()+1
+            while time.monotonic()<deadline:
+                try:
+                    written+=os.write(process.stdin.fileno(),line)
+                    await asyncio.sleep(.001)
+                except BlockingIOError:
+                    await asyncio.sleep(.005)
+                except (BrokenPipeError,OSError): break
+            process.stdin.close()
+            code=await asyncio.wait_for(asyncio.to_thread(process.wait),10)
+            output=process.stdout.read();stderr=process.stderr.read()
+            assert code != 0 and len(output)<=2*1024*1024+65536
+            self.passed("B_slow_consumer",exit_status=code,bytes_written=written,stdout_bytes=len(output),diagnostics=stderr.decode()[-2000:])
+        finally:
+            if process.poll() is None:
+                docker("kill",name,check=False); await asyncio.to_thread(process.wait)
+            process.stdout.close();process.stderr.close()
+
+    async def signal_shutdown(self):
+        name,command=self.command()
+        async with StockfishClient(command) as client:
+            job=self.job(client,max_depth=128,max_nodes=None,constraints={"max_wall_time_ms":10000,"max_memory_mb":512})
+            await self.send(client,job)
+            await self.until(client,lambda value:isinstance(value,v1.JobStatus) and value.job_id==job.job_id and value.status=="running")
+            docker("kill","--signal=TERM",name)
+            try:
+                await self.until(client,lambda _:False,timeout=5)
+            except WorkerSessionLost:
+                pass
+        assert docker("inspect",name,check=False).returncode != 0
+        self.passed("real_signal_shutdown",container_removed=True)
 
     def cleanup(self):
         removed=[]
@@ -219,7 +283,10 @@ async def run(arguments):
     failure=None
     try:
         if arguments.benchmark: await qualifier.benchmark()
-        else: await qualifier.acceptance()
+        else:
+            await qualifier.acceptance()
+            await qualifier.slow_consumer()
+            await qualifier.signal_shutdown()
         exchange={"scope":"actual installed Stockfish output","records":qualifier.records}
         Path(arguments.exchange).write_text(json.dumps(exchange,indent=2)+"\n")
         spec=importlib.util.spec_from_file_location("independent_stockfish_consumer",ROOT/"tests/contracts/consume_observed.py")

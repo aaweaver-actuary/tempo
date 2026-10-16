@@ -18,7 +18,7 @@ _OUTPUT_TYPES = {model.__name__: model for model in (
 
 
 def stockfish_input_digest(job: v1.StockfishJob | dict) -> str:
-    payload = job.model_dump(mode="json") if isinstance(job, v1.StockfishJob) else dict(job)
+    payload = job.model_dump(mode="json") if isinstance(job, v1.StockfishJob) else v1.StockfishJob.model_validate({**job, "input_digest": "digest-preimage"}).model_dump(mode="json")
     payload.pop("input_digest", None)
     payload.pop("execution_generation", None)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
@@ -90,8 +90,11 @@ class StockfishClient:
                 elif event.get("event") in {"startup_failed", "fatal"} and not self._ready.done():
                     self._ready.set_exception(WorkerSessionLost(event.get("reason", "startup_failed")))
         except Exception:
+            failure = WorkerSessionLost("worker readiness/diagnostic stream failed")
             if not self._ready.done():
-                self._ready.set_exception(WorkerSessionLost("worker readiness stream failed"))
+                self._ready.set_exception(failure)
+            else:
+                await self._records.put(failure)
 
     async def _send(self, model, payload):
         if self.process is None or self.process.returncode is not None or self._closing:

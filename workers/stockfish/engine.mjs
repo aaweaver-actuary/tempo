@@ -9,9 +9,14 @@ export async function inspectEngine() {
   const descriptor = JSON.parse(await readFile(new URL('./engine-descriptor.json', import.meta.url), 'utf8'));
   if (process.versions.node !== descriptor.node) throw new WireError('unsupported_runtime', 'Exact Node runtime required');
   for (const [name, expected] of Object.entries(descriptor.assets)) if (hash(await readFile(new URL('./assets/' + name, import.meta.url))) !== expected) throw new WireError('engine_asset_mismatch', 'Engine asset hash mismatch');
+  const dependencies = {};
+  for (const [name, expected] of Object.entries({ ajv: '8.20.0', 'chess.js': '1.4.0' })) {
+    dependencies[name] = JSON.parse(await readFile(new URL(import.meta.resolve(name + '/package.json')), 'utf8')).version;
+    if (dependencies[name] !== expected) throw new WireError('runtime_dependency_mismatch', 'Locked dependency version differs');
+  }
   const sources = {};
   for (const name of runtimeFiles) sources[name] = hash(await readFile(new URL('./' + name, import.meta.url)));
-  return { engine_version: 'stockfish-19-smallnet:sha256:' + hash(canonicalJson(descriptor)), implementation_version: 'sha256:' + hash(canonicalJson({ sources, node: process.versions.node, ajv: '8.20.0', chess: '1.4.0' })), runtime_name: 'node-stockfish-wasm', runtime_version: process.versions.node, descriptor };
+  return { engine_version: 'stockfish-19-smallnet:sha256:' + hash(canonicalJson(descriptor)), implementation_version: 'sha256:' + hash(canonicalJson({ sources, node: process.versions.node, dependencies })), runtime_name: 'node-stockfish-wasm', runtime_version: process.versions.node, descriptor };
 }
 
 export async function createEngine() {
@@ -19,6 +24,7 @@ export async function createEngine() {
   const { default: factory } = await import('./assets/sf_19_smallnet.js');
   let listener = () => {};
   const engine = await factory({ locateFile: name => new URL('./assets/' + name, import.meta.url).pathname, listen: line => listener(line), onError: () => { process.exitCode = 1; process.exit(1); }, print: () => {}, printErr: () => {} });
+  if (engine.getRecommendedNnue() !== 'nn-61e7af4bb97d.nnue') throw new WireError('engine_identity_mismatch', 'Unexpected engine network');
   engine.setNnueBuffer(new Uint8Array(await readFile(new URL('./assets/nn-61e7af4bb97d.nnue', import.meta.url))));
   const wait = (command, expected, before = () => {}) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new WireError('engine_initialization_timeout', 'UCI handshake timed out')), 10000);

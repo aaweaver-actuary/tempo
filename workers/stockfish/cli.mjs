@@ -19,7 +19,7 @@ export function serveProtocol(worker, { input, output, diagnostic = () => {}, ou
     void worker.close({ drain }).then(() => {
       if (blocked && drain) output.once('drain', () => { clearTimeout(stallTimer); settle({ success: !failed, reason }); });
       else { clearTimeout(stallTimer); settle({ success: !failed, reason }); }
-    });
+    }).catch(error => { failed = true; output.destroy(); clearTimeout(stallTimer); diagnostic({ event: 'fatal', reason: error.code ?? 'shutdown_failed' }); settle({ success: false, reason: error.code ?? 'shutdown_failed' }); });
   };
   const protocolFailure = reason => { failed = true; diagnostic({ event: 'protocol_error', reason }); if (finished) { output.destroy(); clearTimeout(stallTimer); void worker.close({ drain: false }).then(() => settle({ success: false, reason })); } else finish(false, reason); };
   worker.on('record', record => {
@@ -67,8 +67,8 @@ async function main() {
   if (command === 'identity') { process.stdout.write(JSON.stringify(await inspectEngine()) + '\n'); return; }
   const worker = new StockfishWorker();
   const diagnostic = event => { if (process.stderr.writableLength < 65536) process.stderr.write(JSON.stringify(event) + '\n'); };
-  worker.on('diagnostic', diagnostic);
   let protocol;
+  worker.on('diagnostic', event => { diagnostic(event); if (event.event === 'fatal') protocol?.stop(); });
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => { if (protocol) protocol.stop(); else void worker.close({ drain: false }); });
   try {
     const health = await worker.start();
@@ -81,4 +81,4 @@ async function main() {
     await worker.close({ drain: false }); process.exitCode = 1;
   }
 }
-if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) main().catch(() => { process.stderr.write('{"event":"fatal","reason":"worker_failed"}\n'); process.exitCode = 1; });
+if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) main().catch(error => { process.stderr.write(JSON.stringify({ event: 'fatal', reason: error.code ?? 'worker_failed' }) + '\n'); process.exitCode = 1; });

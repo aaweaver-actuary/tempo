@@ -75,3 +75,10 @@ test('Stockfish digest preserves full history, order, nulls and clocks; v1 remai
   for (const changes of [{contract_version:true}, {wdl:true}, {max_depth:'20'}, {execution_generation:2**53}, {moves:['e2e4\n']}]) assert.throws(()=>validatePayload('StockfishJob',{...sample,...changes}));
   assert.equal(canonicalJson({b:null,a:[]}), '{"a":[],"b":null}');
 });
+
+test('malformed bestmove and illegal ponder cannot turn a coherent iteration into success',()=>{
+  for(const bestmove of ['bestmove e2e4 unexpected','bestmove e2e4 ponder e2e5','bestmove 0000']){
+    const collector=new IterationCollector(job());collector.receive('info depth 2 score cp 10 pv e2e4');
+    assert.throws(()=>collector.receive(bestmove),{code:'invalid_engine_output'});
+  }
+});

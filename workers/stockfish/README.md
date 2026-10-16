@@ -92,12 +92,12 @@ Startup/recovery 30 s; termination confirmation 2 s; shutdown/output stall 5 s.
 EOF drains at most 5 s, then interrupts. Signals and supervisor IPC loss stop owned
 computation. Unconfirmed exit prevents replacement/readiness.
 
-## Qualification status
+## Qualification boundaries
 
-This initial interface commit is a handoff, not runtime completion or qualification.
-Subsequent commits register owning suites, restricted artifacts, actual exchanges,
-resource proofs and measurements. No fixture establishes deployment, current live
-Study latency, or C's durable scheduler acceptance.
+Owning suites and actual installed-container qualification are registered as
+`stockfish` in components.json. Exact source-bound results are recorded in
+VALIDATION.md and retained machine reports. No fixture establishes deployment,
+current live Study latency, or C's durable scheduler acceptance.
 
 ## Initial actual output
 
@@ -110,3 +110,100 @@ python-chess consumer accepted it. These initial fixtures are available before f
 harness registration and full qualification; final evidence will supersede the
 initial measurements. The memory-pressure helper, not the engine, was OOM-killed;
 its kernel event proves the cap without inventing an engine-specific failure cause.
+
+
+## Independent setup, build and commands
+
+From the checkout root, install only the worker and its test/client environment:
+
+```sh
+npm ci --prefix workers/stockfish --ignore-scripts --workspaces=false
+uv venv --python 3.14 /tmp/tempo-stockfish-check
+uv pip install --python /tmp/tempo-stockfish-check/bin/python --require-hashes -r contracts/requirements-test.lock
+uv pip install --python /tmp/tempo-stockfish-check/bin/python python-chess==1.999
+uv pip install --python /tmp/tempo-stockfish-check/bin/python --no-deps ./contracts/analysis-jobs ./workers/stockfish/python
+export TEMPO_STOCKFISH_PYTHON=/tmp/tempo-stockfish-check/bin/python
+export TEMPO_COMPONENT_PYTHON="$TEMPO_STOCKFISH_PYTHON"
+node workers/stockfish/test.mjs pure
+node workers/stockfish/test.mjs protocol
+node workers/stockfish/qualify.mjs restricted --report /tmp/tempo-stockfish-proof/restricted.json --artifacts /tmp/tempo-stockfish-proof/artifacts
+node workers/stockfish/qualify.mjs container --report /tmp/tempo-stockfish-proof/container.json --artifacts /tmp/tempo-stockfish-proof/artifacts --exchange /tmp/tempo-stockfish-proof/exchange.json
+# Run serially, after other heavy checks:
+node workers/stockfish/qualify.mjs benchmark --report /tmp/tempo-stockfish-proof/benchmark.json --artifacts /tmp/tempo-stockfish-proof/artifacts --exchange /tmp/tempo-stockfish-proof/benchmark-exchange.json
+```
+
+The restricted qualifier builds the npm tarball plus client/shared-contract wheels
+and sdists from allowlisted inputs, installs with repository sources absent, checks
+passive imports/assets/dependency closure and tests installed clients on Python
+3.12 and 3.14. It deliberately corrupts a disposable installed engine asset to
+prove identity rejection. The container qualifier builds only from its tarball
+and Dockerfile; the digest-pinned base image has no Tempo sources or services.
+Only labels/names created by the current run are eligible for container cleanup.
+Images and immutable artifacts are retained as evidence, not deployed.
+
+To install the runtime without a checkout, unpack the npm artifact into an empty
+directory and run `npm ci --ignore-scripts --omit=dev --workspaces=false` there.
+Its included npm-shrinkwrap fixes the production dependency graph. Run
+`node cli.mjs identity`. Native macOS identity/pure tests are supported inspection;
+`health` and `serve` reject an unavailable cgroup envelope. No bypass flag exists.
+Build the container from a directory containing only `Dockerfile` and the tarball
+renamed `artifact.tgz`. The supported execution command is:
+
+```sh
+docker run --rm -i --network=none --cpus=1 --memory=512m --memory-swap=512m --pids-limit=64 --read-only "$IMAGE_ID" serve
+```
+
+Use the exact image ID and artifact SHA-256 from qualification reports. Install
+`tempo_stockfish_client-1.0.0-py3-none-any.whl` and the shared contract wheel in C's
+own environment. Construct a complete v1 job, set engine_version from the pinned
+identity, compute input_digest with `stockfish_input_digest(payload)`, then validate
+with `v1.StockfishJob.model_validate(payload)`. The digest helper accepts a complete
+job dictionary without its own digest, validates other fields and preserves them.
+The client supports one records consumer; its bounded receive queue is transport
+buffering, not a scheduler. A valid result must still pass C's stored request,
+current generation, provenance and quality checks before durable acceptance.
+
+`backlog_driver.py --command-json '<argv JSON>' --report REPORT` runs the external
+fixture caller independently using installed client/contracts. Class and original
+age live in fixtures/backlog.json, outside strict shared job records. It reports
+real completions, queue wait and foreground-like latency without claiming live
+Study effects or durable fairness. Rendering a report never starts this driver.
+
+## Explicit outcomes and operational limits
+
+Nonretryable input/profile refusals: invalid_request, invalid_record, invalid_fen,
+illegal_history, illegal_search_move, duplicate_search_move, terminal_position,
+unsupported_search_limits, input_digest_mismatch, unsupported_engine,
+identity_payload_conflict, stale_generation, memory_budget_unsupported, and
+resource_envelope_unsupported. Invalid requests never advance generation authority.
+Retryable execution/admission outcomes: worker_busy, worker_not_ready,
+execution_timeout, worker_crashed, worker_shutdown, session_capacity_exhausted and
+cancellation_capacity_exhausted. Malformed/incomplete engine output is nonretryable;
+an unexplained process exit is worker_crashed, not an invented OOM diagnosis.
+Startup/asset/runtime failures prevent readiness and use explicit diagnostics.
+
+A refusal status rejects the received request; it does not rewrite a retained
+accepted receipt. Cancellation refusal reasons must not overwrite a completed
+execution in C. An excess cancellation ID receives no requested/final ack and is
+not retained. Cancellation IDs are bound within a workspace to their full target;
+reuse for another target is cancellation_id_conflict. A final failed/cancelled
+attempt cannot be revived in the same generation.
+
+The initial enforced platform uses Linux cgroup v2: exactly 512 MiB, finite <=1 CPU,
+zero swap. RSS/peak readings are observations, not the memory enforcement mechanism.
+Kernel memory reclaim/OOM and OS scheduling are not instantaneous exact-RSS or
+millisecond guarantees. UCI's node limit can overshoot between engine polling
+checks; report actual nodes, never claim a strict counted-node ceiling. Wall
+watchdogs fence results and kill the owned child at expiry, with a separate bounded
+termination-confirmation interval; readiness returns only after replacement startup.
+Missing bestmove eventually produces timeout or process failure, never a successful
+static eval. Complete iterations may precede a partial final iteration; the returned
+rank-1 root need not equal that later bestmove. The result explicitly describes the
+last coherent iteration, and C owns minimum-depth acceptance.
+
+EOF drains admitted work for up to five seconds, then interrupts; signals interrupt
+immediately. Abandoned unknown cancellation targets remain requested until their
+job is admitted, superseded, or the process/session is lost. The caller must advance
+execution generation after session loss. A lost Docker launcher can leave container
+ownership uncertain: operators/qualifiers must use the exact task-owned name/ID,
+never broad process-name kills or global cleanup.
