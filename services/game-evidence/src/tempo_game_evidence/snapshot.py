@@ -4,7 +4,7 @@ import hashlib
 import json
 
 import chess
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 from tempo_chess_core import canonical_fen_key
 from tempo_content_publication_contracts.v1 import Publication, ActivationAcknowledgement
 
@@ -12,10 +12,10 @@ from tempo_content_publication_contracts.v1 import Publication, ActivationAcknow
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    @model_validator(mode='before')
+    @field_validator('schema_version',mode='before',check_fields=False)
     @classmethod
     def integer_version(cls,value):
-        if isinstance(value,dict) and 'schema_version' in value and type(value['schema_version']) is not int:
+        if type(value) is not int:
             raise ValueError('schema_version must be an integer')
         return value
 
