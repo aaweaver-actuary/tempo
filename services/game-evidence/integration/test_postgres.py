@@ -74,7 +74,7 @@ def test_A_interrupted_export_resumes_frozen_input_after_game_revision_changes(s
     snapshot=json.loads((FIXTURES/'bridge-snapshot-v2.json').read_text())
     workspace=snapshot['publication']['workspace_id']
     store.load_snapshot(snapshot)
-    game=store.import_pgn(workspace,'pgn','resume-game','Learner',b'[White "Learner"]\n[Black "Opponent"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 *')
+    game=store.import_pgn(workspace,'pgn','resume-game','Learner',b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 2. Nf3 1-0')
     drain(store)
     output=tmp_path/'frozen-input'
     original_write=analysis_export.write_exact
@@ -88,7 +88,7 @@ def test_A_interrupted_export_resumes_frozen_input_after_game_revision_changes(s
             analysis_export.create_directory_export(store,workspace,[game],output)
     assert not (output/'manifest.json').exists()
     reserved=json.loads((output/'.tempo-analysis-export.json').read_text())
-    assert store.import_pgn(workspace,'pgn','resume-game','Learner',b'[White "Learner"]\n[Black "Opponent"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *')==game
+    assert store.import_pgn(workspace,'pgn','resume-game','Learner',b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0')==game
     drain(store)
     resumed=analysis_export.create_directory_export(store,workspace,[game],output)
     assert resumed['input_id']==reserved['input_id']

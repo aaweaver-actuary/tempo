@@ -109,10 +109,13 @@ def test_A_metadata_successor_preserves_issued_attempt_under_measured_foreground
     activate_v2(case,payload)
     with case.database.scope():
         for _ in range(100):
-            if not run_once():
+            run_once()
+            response=case.client.get('/api/queue/window?include_opening_evidence=true')
+            assert response.status_code==200,response.text
+            if response.json()['cards']:
                 break
         else:
-            raise AssertionError('Initial complete publication did not converge')
+            raise AssertionError('Initial complete publication did not issue foreground work')
     issued=head(case)
     payload=deepcopy(payload)
     payload['publication'].update(publication_generation=2,source_revision=2)
