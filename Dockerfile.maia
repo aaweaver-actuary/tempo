@@ -3,6 +3,7 @@ WORKDIR /app
 COPY workers/maia/package.json workers/maia/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --workspaces=false
 COPY scripts/maia-inference.mjs ./scripts/maia-inference.mjs
+COPY scripts/cancellable-maia.mjs scripts/maia-inference-child.mjs ./scripts/
 COPY scripts/maia-coverage-worker.mjs ./scripts/maia-coverage-worker.mjs
 COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
 COPY workers/maia/core.mjs workers/maia/model.mjs workers/maia/errors.mjs workers/maia/model-descriptor.json ./workers/maia/

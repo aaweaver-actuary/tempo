@@ -1,4 +1,6 @@
 import type { StudyTask } from "./study-computation";
+import { isBulkStudyTask, runBulkStudyTask } from './bulk-study';
+import { runOwnedStudyIndex } from './owned-study-index';
 import { createStudyPositionStore } from "./study-position-store";
 import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
@@ -33,6 +35,11 @@ export function runStudyTask<T>(
   signal?: AbortSignal,
   shouldPublishDiagnostics?: () => boolean,
 ): Promise<T> {
+  if (typeof Worker !== 'undefined' && isBulkStudyTask(task))
+    return runBulkStudyTask<T>(task, signal, shouldPublishDiagnostics);
+  if (typeof Worker !== 'undefined' && ['initializePositionIndex', 'findPositionMatches', 'releasePositionIndex',
+      'initializeComparisonIndex', 'findComparisonMatches', 'releaseComparisonIndex'].includes(task.kind))
+    return runOwnedStudyIndex<T>(task as import('./study-computation').StudyPositionTask, signal, shouldPublishDiagnostics);
   const id = ++nextId;
   const activityId = `study:${id}`;
   const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind === "repertoireAlternatives" ? "repertoire lines" : task.kind}`;
@@ -164,8 +171,8 @@ type CoalescedRequest = {
 type MatchSlot = { active?: CoalescedRequest; queued?: CoalescedRequest };
 const matchSlots = new Map<string, MatchSlot>();
 
-// Keep one computation in flight per repertoire. A synchronous worker computation
-// cannot be interrupted, but requests waiting behind it can be replaced.
+// Coalesce each repertoire's requests; the owned worker also terminates active
+// optional computation when its request is cancelled or study takes priority.
 export function runCoalescedStudyMatch<T>(task: MatchTask, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) return Promise.reject(new DOMException("Cancelled", "AbortError"));
   const key = task.repertoireId;
@@ -219,7 +226,7 @@ function startMatch(request: CoalescedRequest, slot: MatchSlot, key: string) {
   recordTempoDuration("study-match-coalesced-wait", performance.now() - request.enqueuedAt);
   let work: Promise<unknown>;
   try {
-    work = runStudyTask(request.task);
+    work = runStudyTask(request.task, request.signal);
   } catch (error) {
     settleError(request, error instanceof Error ? error : new Error(String(error)));
     advanceMatchSlot(slot, key);

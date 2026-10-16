@@ -13,7 +13,7 @@ export class PendingMaiaCommandError extends Error {
 export async function requestMaiaApi(apiUrl, path, options = {}, transport = {}) {
   const fetchImpl = transport.fetchImpl ?? fetch;
   const wait = transport.pause ?? pause;
-  const { operationId: suppliedOperationId, pollAttempts = 480, ...requestOptions } = options;
+  const { operationId: suppliedOperationId, pollAttempts = 480, requestAttempts = 3, ...requestOptions } = options;
   const operationId = options.method === "POST" ? (suppliedOperationId ?? randomUUID()) : undefined;
   const headers = {
     "X-Tempo-Work-Class": "background",
@@ -21,15 +21,17 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
     ...requestOptions.headers,
     ...(operationId ? { "Idempotency-Key": operationId } : {}),
   };
+  const attempts = Number.isInteger(requestAttempts) ? Math.max(1, Math.min(3,requestAttempts)) : 3;
   let response;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       response = await fetchImpl(`${apiUrl}${path}`, { ...requestOptions, headers });
       if (response.status !== 503) break;
     } catch (error) {
-      if (attempt === 2) throw error;
+      if (requestOptions.signal?.aborted || attempt === attempts-1) throw error;
     }
-    if (attempt < 2) await wait(250 * (attempt + 1));
+    requestOptions.signal?.throwIfAborted();
+    if (attempt < attempts-1) await wait(250 * (attempt + 1));
   }
   if (!response.ok) {
     const error = new Error(`${path}: HTTP ${response.status} ${await response.text()}`);

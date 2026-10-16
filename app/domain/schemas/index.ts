@@ -626,6 +626,7 @@ export const comparisonCardSchema = z.strictObject({
 });
 export const comparisonCardsSchema = z.strictObject({ cards: z.array(comparisonCardSchema) });
 export const studyTaskSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal('repertoirePreparation'), generation: z.number().int().nonnegative(), payload: z.unknown() }),
   z.strictObject({
     kind: z.literal("resolveTrainingRoute"),
     repertoireId: identifierSchema,

@@ -26,6 +26,7 @@ export type PureStudyTask =
   | { kind: "lines"; lines: AnalysisLine[] }
   | { kind: "index"; lines: AnalysisLine[] }
   | { kind: "repertoireAlternatives"; generation: number; lines: AnalysisLine[] }
+  | { kind: "repertoirePreparation"; generation: number; payload: unknown }
   | {
       kind: "similarity" | "matches";
       fen: string;
@@ -86,6 +87,12 @@ export function computeStudyTask(task: PureStudyTask) {
     case "repertoireAlternatives":
       return buildRepertoireAlternativeSnapshot(task.generation,
         indexRepertoirePositions(task.lines.map(canonicalizeLine)));
+    case 'repertoirePreparation': {
+      const decoded = typeof task.payload === 'string' ? JSON.parse(task.payload) : task.payload;
+      const validated = validateWorkspacePayload('/api/repertoire/lines', decoded);
+      const lines = repertoireLinesFromPayload(validated).map(canonicalizeLine);
+      return buildRepertoireAlternativeSnapshot(task.generation, indexRepertoirePositions(lines));
+    }
     case "matches":
     case "similarity": {
       const distanceToQuery = prepareChessPositionDistance(task.fen);

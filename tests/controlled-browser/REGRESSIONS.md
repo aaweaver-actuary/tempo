@@ -67,3 +67,16 @@ Named families in the owning unit suite:
   `controlled_browser_legacy_fixtures_validate_current_consumers_without_python`:
   honest pending/failure/completed legacy receipts, original identity and current
   frontend response shape without executing a producer.
+
+## Study priority v1 (#190, #218)
+
+`priority.spec.ts` is independently selectable through the regular controlled
+runner and inventory. Its four named cases use production modules and real
+Workers. Two prove actual cancellation, held-contact protection, stale work
+isolation and quiet-period resumption. Two measure native study input and
+prepared-next UI after a truthful confirmed response; the latter isolates browser
+work from separately measured real PostgreSQL/server/transport time. UI workload:
+12,000 eight-move repertoire lines, 500 retained diagnostic notifications, 20
+input samples per idle/loaded lane and ten prepared confirmations. Frame callbacks
+are presentation proxies, not physical-display measurements. No latency threshold
+or existing durability assertion is relaxed.

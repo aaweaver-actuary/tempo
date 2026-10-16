@@ -465,3 +465,14 @@ describe("notification regressions", () => {
     expect(notifications().find((item) => item.id === firstId)?.occurredAt).toBe(firstSeen);
   });
 });
+
+it("study_priority_routine_recovery_reopens_one_status_record_and_preserves_real_timeout_attention", () => {
+  const status = {key:"opening-evidence-recovery",severity:"info" as const,source:"opening evidence",message:"Waiting to sync",coalesceResolved:true,details:{error:"earlier connection failure"}};
+  const first = publishNotification(status);
+  resolveNotification(first,{message:"Recovered"});
+  expect(publishNotification(status)).toBe(first);
+  expect(notifications().find(record=>record.id===first)).toMatchObject({occurrenceCount:2,resolvedAt:null,details:{error:"earlier connection failure"}});
+  const failure = publishNotification({severity:"error",source:"queue",message:"Queue timed out",details:{error:"timeout"}});
+  expect(notificationNeedsAttention(notifications().find(record=>record.id===failure)!)).toBe(true);
+  expect(JSON.parse(buildNotificationExport("info")).unresolvedFailureCount).toBe(1);
+});

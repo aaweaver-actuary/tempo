@@ -1,7 +1,5 @@
 import { createEngineSearch } from "./engine-search.mjs";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import StockfishFactory from "../public/engines/sf_19_smallnet.js";
+import { createStockfishProcess } from "./stockfish-process.mjs";
 import { createDurableEngineRequest, migrateLegacyDefenseClaimJournal } from "./durable-engine-request.mjs";
 import { runEngineWorkerCycle } from "./engine-worker-cycle.mjs";
 
@@ -10,12 +8,7 @@ const journalPath = process.env.TEMPO_ENGINE_OUTBOX_PATH ?? "/tmp/tempo-engine-p
 await migrateLegacyDefenseClaimJournal(journalPath);
 const durableRequest = createDurableEngineRequest(api, journalPath);
 const defenseClaimRequest = createDurableEngineRequest(api, `${journalPath}.defense`);
-const assetDirectory = resolve(import.meta.dirname, "../public/engines");
-const engine = await StockfishFactory({
-  locateFile: (name) => resolve(assetDirectory, name),
-  listen: () => {},
-});
-engine.setNnueBuffer(new Uint8Array(await readFile(resolve(assetDirectory, "nn-61e7af4bb97d.nnue"))));
+const engine = await createStockfishProcess();
 engine.uci("uci");
 engine.uci("setoption name Threads value 1");
 engine.uci("setoption name Hash value 32");
