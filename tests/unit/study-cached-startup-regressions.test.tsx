@@ -41,3 +41,26 @@ it("pr291 R1 first connection without cache stays on the connection screen", asy
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
   await mount(); await waitFor(() => expect(screen.getByRole("heading", { name: "Connect Study to Learning" })).toBeTruthy()); expect(screen.queryByText("Cached Study fixture")).toBeNull();
 });
+
+it.each([true, false])("P3-C1/C4 post-header transport interruption opens cached local-only Study when navigator.onLine=%s", async online => {
+  await setup(); vi.spyOn(navigator, "onLine", "get").mockReturnValue(online);
+  const reading = Promise.withResolvers<void>(); let bodyController: ReadableStreamDefaultController<Uint8Array>;
+  const response = new Response(new ReadableStream<Uint8Array>({
+    start(controller) { bodyController = controller; controller.enqueue(new TextEncoder().encode('{"schema_version":')); },
+    pull() { reading.resolve(); },
+  }, { highWaterMark: 0 }), { status: 200 });
+  const session = sessionStorage.getItem("tempo-learning-connection-v1"); const registry = localStorage.getItem("tempo-learning-authorities-v1");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response)); await mount();
+  await reading.promise; bodyController!.error(new TypeError("Synthetic interrupted response body"));
+  expect(await screen.findByText("Cached Study fixture")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("saved attempts await Learning confirmation");
+  expect(sessionStorage.getItem("tempo-learning-connection-v1")).toBe(session); expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe(registry);
+});
+
+it.each(["malformed", "empty", "schema", "workspace", "timezone"])("P3-C2/C3 complete invalid %s response never mounts cached Home", async invalid => {
+  await setup();
+  const body = invalid === "malformed" ? '{"schema_version":' : invalid === "empty" ? "" : JSON.stringify({ ...bootstrap,
+    ...(invalid === "schema" ? { schema_version: 2 } : invalid === "workspace" ? { workspace_id: "wrong" } : { timezone: "Not/AZone" }) });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
+  await mount(); await screen.findByRole("alert"); expect(screen.queryByText("Cached Study fixture")).toBeNull();
+});

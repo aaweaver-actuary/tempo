@@ -10,7 +10,7 @@ beforeEach(() => {
   vi.resetModules(); vi.stubGlobal("__TEMPO_STUDY__", true);
   vi.stubGlobal("indexedDB", new IDBFactory()); localStorage.clear(); sessionStorage.clear();
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function retainAuthority(origin: string, requestId: string) {
   const workspace = `${origin}:study:workspace-a`;
@@ -276,4 +276,178 @@ it("pr291 R1 retained storage is revalidated after a transport outage", async ()
   const { client, fetcher } = await connected(); const reply = Promise.withResolvers<Response>(); fetcher.mockImplementationOnce(() => reply.promise);
   const pending = client.connectStudy("http://learning.test:8001", "workspace-a", credential); const outcome = expect(pending).rejects.toMatchObject({ kind: "authority", cachedPracticeAvailable: false }); await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   localStorage.setItem("tempo-pending-tactic-capture-v1", "unscoped-original"); reply.reject(new TypeError("Failed to fetch")); await outcome; expect(localStorage.getItem("tempo-pending-tactic-capture-v1")).toBe("unscoped-original");
+});
+
+function pendingBootstrapBody() {
+  const reading = Promise.withResolvers<void>();
+  let bodyController: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      bodyController = controller;
+      controller.enqueue(new TextEncoder().encode('{"schema_version":'));
+    },
+    pull() { reading.resolve(); },
+  }, { highWaterMark: 0 });
+  return { response: new Response(stream, { status: 200 }), reading: reading.promise,
+    fail: (cause: unknown = new TypeError("Synthetic interrupted body")) => bodyController.error(cause) };
+}
+
+async function savedConnectionState(client: typeof import("../../app/lib/study-connection")) {
+  return { connection: structuredClone(client.studyConnection()), origin: client.LEARNING_URL,
+    session: sessionStorage.getItem("tempo-learning-connection-v1"),
+    registry: localStorage.getItem("tempo-learning-authorities-v1"), retained: await client.retainedStudyData() };
+}
+
+it("P3-U1 post-header body transport failure retains original-authority cached practice and immutable commands", async () => {
+  const { client, fetcher } = await connected();
+  await retainAuthority(client.studyConnection()!.origin, "p3-original");
+  const before = await savedConnectionState(client);
+  const body = pendingBootstrapBody();
+  expect(body.response.status).toBe(200); expect(body.response.bodyUsed).toBe(false);
+  fetcher.mockResolvedValueOnce(body.response);
+  const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+  const outcome = expect(connecting).rejects.toMatchObject({ kind: "transport", cachedPracticeAvailable: true });
+  await body.reading; expect(body.response.bodyUsed).toBe(true); body.fail(); await outcome;
+  expect(await savedConnectionState(client)).toEqual(before);
+});
+
+it.each(["AbortError", "TimeoutError"])("P3-U2 %s during body consumption uses the original single five-second deadline", async name => {
+  const { client, fetcher } = await connected();
+  const before = await savedConnectionState(client);
+  const timeout = new AbortController();
+  const createTimeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+  const body = pendingBootstrapBody();
+  fetcher.mockImplementationOnce((_input, options: RequestInit) => {
+    expect(options.signal).toBe(timeout.signal);
+    options.signal!.addEventListener("abort", () => body.fail(options.signal!.reason), { once: true });
+    return Promise.resolve(body.response);
+  });
+  const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+  const outcome = expect(connecting).rejects.toMatchObject({ kind: "transport", cachedPracticeAvailable: true });
+  await body.reading; timeout.abort(new DOMException("Synthetic request deadline", name)); await outcome;
+  expect(createTimeout).toHaveBeenCalledExactlyOnceWith(5_000);
+  expect(await savedConnectionState(client)).toEqual(before);
+});
+
+it.each([
+  ["P3-U3 malformed JSON", '{"schema_version":'],
+  ["P3-U4 empty complete body", ""],
+  ["P3-U5 unsupported schema", JSON.stringify({ ...bootstrap, schema_version: 2 })],
+  ["P3-U5 missing setting", JSON.stringify({ ...bootstrap, settings: {} })],
+  ["P3-U5 wrong setting type", JSON.stringify({ ...bootstrap, settings: { ...bootstrap.settings, study_only_mode: "false" } })],
+  ["P3-U6 workspace mismatch", JSON.stringify({ ...bootstrap, workspace_id: "foreign" })],
+  ["P3-U7 invalid timezone", JSON.stringify({ ...bootstrap, timezone: "Not/A_Timezone" })],
+])("%s remains a fail-closed bootstrap error", async (_identity, text) => {
+  const { client, fetcher } = await connected();
+  const before = await savedConnectionState(client);
+  fetcher.mockResolvedValueOnce(new Response(text, { status: 200 }));
+  await expect(client.connectStudy("http://learning.test:8001", "workspace-a", credential))
+    .rejects.toMatchObject({ kind: "bootstrap", cachedPracticeAvailable: false });
+  expect(await savedConnectionState(client)).toEqual(before);
+});
+
+it.each([401, 403, 500])("P3-U8 HTTP %s never consumes an unreadable rejection body or permits cached practice", async status => {
+  const { client, fetcher } = await connected();
+  const before = await savedConnectionState(client);
+  const body = pendingBootstrapBody();
+  const response = new Response(body.response.body, { status });
+  const readText = vi.spyOn(response, "text"); const readJson = vi.spyOn(response, "json");
+  const authenticationRequired = vi.fn(); window.addEventListener("tempo:study-auth-required", authenticationRequired);
+  try {
+    fetcher.mockResolvedValueOnce(response);
+    await expect(client.connectStudy("http://learning.test:8001", "workspace-a", credential))
+      .rejects.toMatchObject({ kind: "http", status, cachedPracticeAvailable: false });
+    expect(readText).not.toHaveBeenCalled(); expect(readJson).not.toHaveBeenCalled();
+    expect(authenticationRequired).toHaveBeenCalledTimes(status === 500 ? 0 : 1);
+    expect(await savedConnectionState(client)).toEqual(before);
+  } finally { window.removeEventListener("tempo:study-auth-required", authenticationRequired); await response.body!.cancel(); }
+});
+
+it.each(["P3-U9 fresh authority", "P3-U10 different authority", "registered recovery without a saved session"])(
+  "%s cannot borrow cached authorization after a body interruption", async scenario => {
+    const client = await import("../../app/lib/study-connection");
+    const fetcher = vi.fn().mockImplementation(() => Promise.resolve(Response.json(bootstrap))); vi.stubGlobal("fetch", fetcher);
+    if (scenario !== "P3-U9 fresh authority") await client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+    if (scenario === "registered recovery without a saved session") client.disconnectStudy();
+    const before = await savedConnectionState(client); const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
+    const connecting = client.connectStudy(scenario === "P3-U10 different authority" ? "http://other.test" : "http://learning.test:8001", "workspace-a", credential);
+    const outcome = expect(connecting).rejects.toMatchObject({ kind: "transport", cachedPracticeAvailable: false });
+    await body.reading; body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(before);
+  });
+
+it.each(["used", "locked"])("P3-U11 a previously %s body is a protocol failure without cached authorization", async state => {
+  const { client, fetcher } = await connected(); const before = await savedConnectionState(client);
+  const response = Response.json(bootstrap); const reader = state === "locked" ? response.body!.getReader() : undefined;
+  if (state === "used") await response.text();
+  fetcher.mockResolvedValueOnce(response);
+  try {
+    await expect(client.connectStudy("http://learning.test:8001", "workspace-a", credential))
+      .rejects.toMatchObject({ kind: "bootstrap", cachedPracticeAvailable: false });
+    expect(await savedConnectionState(client)).toEqual(before);
+  } finally { reader?.releaseLock(); }
+});
+
+it.each(["replacement", "disconnect"])("P3-U12/U13 %s fences a delayed body failure without stale authentication or rebinding", async change => {
+  const { client, fetcher } = await connected(); const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
+  const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+  const outcome = expect(connecting).rejects.toMatchObject({ kind: "superseded", cachedPracticeAvailable: false });
+  await body.reading;
+  if (change === "replacement") await client.connectStudy("http://latest.test", "workspace-a", "new-credential-" + "y".repeat(32));
+  else client.disconnectStudy();
+  const beforeFailure = await savedConnectionState(client); const authenticationRequired = vi.fn();
+  window.addEventListener("tempo:study-auth-required", authenticationRequired);
+  try { body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(beforeFailure); expect(authenticationRequired).not.toHaveBeenCalled(); }
+  finally { window.removeEventListener("tempo:study-auth-required", authenticationRequired); }
+  if (change === "disconnect") { expect(client.studyConnection()).toBeUndefined(); expect(sessionStorage.getItem("tempo-learning-connection-v1")).toBeNull(); }
+});
+
+it.each(["unregistered intent", "legacy command", "corrupt registry", "incompatible database"])(
+  "P3-U14 body failure rechecks %s and preserves its rejection category and bytes", async changed => {
+    const { client, fetcher } = await connected(); const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
+    const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+    const expectedKind = ["corrupt registry", "incompatible database"].includes(changed) ? "storage" : "authority";
+    const outcome = expect(connecting).rejects.toMatchObject({ kind: expectedKind, cachedPracticeAvailable: false });
+    await body.reading;
+    if (changed === "unregistered intent") await retainAuthority("http://unregistered.test", "foreign-original");
+    if (changed === "legacy command") localStorage.setItem("tempo-pending-tactic-capture-v1", "original-bytes");
+    if (changed === "corrupt registry") localStorage.setItem("tempo-learning-authorities-v1", "original-corruption");
+    if (changed === "incompatible database") await new Promise<void>((resolve, reject) => {
+      const opening = indexedDB.open("tempo-study-intents", 2);
+      opening.onupgradeneeded = () => opening.result.createObjectStore("original-data");
+      opening.onsuccess = () => { opening.result.close(); resolve(); }; opening.onerror = () => reject(opening.error);
+    });
+    const session = sessionStorage.getItem("tempo-learning-connection-v1"); const registry = localStorage.getItem("tempo-learning-authorities-v1");
+    const retained = changed === "corrupt registry" ? undefined : await client.retainedStudyData();
+    body.fail(); await outcome;
+    expect(sessionStorage.getItem("tempo-learning-connection-v1")).toBe(session); expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe(registry);
+    if (retained) expect(await client.retainedStudyData()).toEqual(retained);
+    if (changed === "legacy command") expect(localStorage.getItem("tempo-pending-tactic-capture-v1")).toBe("original-bytes");
+  });
+
+it("P3-U15 original resumption with registered foreign pending work survives a body interruption without claiming foreign commands", async () => {
+  const { client, fetcher } = await connected(); await client.connectStudy("http://b.test", "workspace-a", credential);
+  await client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+  await retainAuthority("http://learning.test:8001", "a-original"); await retainAuthority("http://b.test", "b-original");
+  const before = await savedConnectionState(client); const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
+  const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+  const outcome = expect(connecting).rejects.toMatchObject({ kind: "transport", cachedPracticeAvailable: true });
+  await body.reading; body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(before);
+});
+
+it.each([new Error("Unknown body failure"), new DOMException("Body access denied", "SecurityError")])(
+  "P3 unknown body exception %s remains actionable and cannot authorize cached practice", async cause => {
+    const { client, fetcher } = await connected(); const before = await savedConnectionState(client);
+    const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
+    const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+    const outcome = expect(connecting).rejects.toMatchObject({ kind: "bootstrap", cachedPracticeAvailable: false, cause });
+    await body.reading; body.fail(cause); await outcome; expect(await savedConnectionState(client)).toEqual(before);
+  });
+
+it.each(["workspace", "schema", "timezone"])("P3 invalid cached %s cannot authorize a post-header transport failure", async invalid => {
+  const { client, fetcher } = await connected();
+  Object.assign(client.studyConnection()!.bootstrap!, invalid === "workspace" ? { workspace_id: "wrong" } : invalid === "schema" ? { schema_version: 2 } : { timezone: "Not/AZone" });
+  const before = await savedConnectionState(client); const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
+  const connecting = client.connectStudy("http://learning.test:8001", "workspace-a", credential);
+  const outcome = expect(connecting).rejects.toMatchObject({ kind: "bootstrap", cachedPracticeAvailable: false });
+  await body.reading; body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(before);
 });
