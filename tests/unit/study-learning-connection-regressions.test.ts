@@ -363,16 +363,21 @@ it.each([401, 403, 500])("P3-U8 HTTP %s never consumes an unreadable rejection b
   } finally { window.removeEventListener("tempo:study-auth-required", authenticationRequired); await response.body!.cancel(); }
 });
 
-it.each(["P3-U9 fresh authority", "P3-U10 different authority", "registered recovery without a saved session"])(
+it.each(["P3-U9 fresh authority", "P3-U10 different authority", "P3-U10 different authority with retained pending work", "registered recovery without a saved session"])(
   "%s cannot borrow cached authorization after a body interruption", async scenario => {
     const client = await import("../../app/lib/study-connection");
     const fetcher = vi.fn().mockImplementation(() => Promise.resolve(Response.json(bootstrap))); vi.stubGlobal("fetch", fetcher);
     if (scenario !== "P3-U9 fresh authority") await client.connectStudy("http://learning.test:8001", "workspace-a", credential);
     if (scenario === "registered recovery without a saved session") client.disconnectStudy();
     const before = await savedConnectionState(client); const body = pendingBootstrapBody(); fetcher.mockResolvedValueOnce(body.response);
-    const connecting = client.connectStudy(scenario === "P3-U10 different authority" ? "http://other.test" : "http://learning.test:8001", "workspace-a", credential);
-    const outcome = expect(connecting).rejects.toMatchObject({ kind: "transport", cachedPracticeAvailable: false });
-    await body.reading; body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(before);
+    const retainedPendingWork = scenario === "P3-U10 different authority with retained pending work";
+    const connecting = client.connectStudy(scenario.startsWith("P3-U10") ? "http://other.test" : "http://learning.test:8001", "workspace-a", credential);
+    const outcome = expect(connecting).rejects.toMatchObject({ kind: retainedPendingWork ? "authority" : "transport", cachedPracticeAvailable: false });
+    await body.reading;
+    expect(await savedConnectionState(client)).toEqual(before);
+    if (retainedPendingWork) await retainAuthority("http://learning.test:8001", "original-authority-command");
+    const beforeFailure = await savedConnectionState(client);
+    body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(beforeFailure);
   });
 
 it.each(["used", "locked"])("P3-U11 a previously %s body is a protocol failure without cached authorization", async state => {
@@ -394,6 +399,7 @@ it.each(["replacement", "disconnect"])("P3-U12/U13 %s fences a delayed body fail
   await body.reading;
   if (change === "replacement") await client.connectStudy("http://latest.test", "workspace-a", "new-credential-" + "y".repeat(32));
   else client.disconnectStudy();
+  await retainAuthority("http://learning.test:8001", "stale-original-command");
   const beforeFailure = await savedConnectionState(client); const authenticationRequired = vi.fn();
   window.addEventListener("tempo:study-auth-required", authenticationRequired);
   try { body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(beforeFailure); expect(authenticationRequired).not.toHaveBeenCalled(); }
