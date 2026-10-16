@@ -56,6 +56,8 @@ def parser():
     for name in ("reload", "revoke"):
         operation = credential_commands.add_parser(name)
         operation.add_argument("--file", type=Path, default=Path("-"))
+    from .analysis.cli import parser as analysis_parser
+    analysis_parser(commands)
     return command
 
 
@@ -94,7 +96,10 @@ def main(arguments=None):
 
             store = Store(configuration)
             store.validate_startup()
-            if options.command == "work":
+            if options.command == "analysis":
+                from .analysis.cli import execute
+                result = execute(options, store, read_document)
+            elif options.command == "work":
                 result = asyncio.run(bounded_work(store, configuration))
             elif options.command == "request":
                 result = store.submit(RequestInput.model_validate_json(read_document(options.file)))

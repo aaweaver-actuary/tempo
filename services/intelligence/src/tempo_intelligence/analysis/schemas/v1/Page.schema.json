@@ -1,0 +1,491 @@
+{
+  "$defs": {
+    "Context": {
+      "additionalProperties": false,
+      "properties": {
+        "after_divergence": {
+          "default": false,
+          "title": "After Divergence",
+          "type": "boolean"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "coverage": {
+          "default": "unknown",
+          "enum": [
+            "covered",
+            "uncovered",
+            "unknown"
+          ],
+          "title": "Coverage",
+          "type": "string"
+        },
+        "decision_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Id"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delivery"
+        },
+        "delivery_status": {
+          "default": "unknown",
+          "maxLength": 200,
+          "title": "Delivery Status",
+          "type": "string"
+        },
+        "evidence_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "expected_moves": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Expected Moves",
+          "type": "array"
+        },
+        "opponent_move": {
+          "anyOf": [
+            {
+              "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opponent Move"
+        },
+        "opponent_ply": {
+          "anyOf": [
+            {
+              "maximum": 999,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opponent Ply"
+        },
+        "ply": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Ply",
+          "type": "integer"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "proposal_anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalAnchor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "default": "coverage_unknown",
+          "maxLength": 200,
+          "title": "Reason",
+          "type": "string"
+        },
+        "reentry_authorized": {
+          "default": false,
+          "title": "Reentry Authorized",
+          "type": "boolean"
+        },
+        "repertoire_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Id",
+          "type": "string"
+        },
+        "route_established": {
+          "default": false,
+          "title": "Route Established",
+          "type": "boolean"
+        },
+        "route_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Route Ids",
+          "type": "array"
+        },
+        "scope_complete": {
+          "default": false,
+          "title": "Scope Complete",
+          "type": "boolean"
+        },
+        "scope_revision": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope Revision"
+        },
+        "status": {
+          "default": "unknown",
+          "enum": [
+            "matched",
+            "missed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ply",
+        "repertoire_id",
+        "policy_id",
+        "evidence_id"
+      ],
+      "title": "Context",
+      "type": "object"
+    },
+    "Game": {
+      "additionalProperties": false,
+      "properties": {
+        "contexts": {
+          "items": {
+            "$ref": "#/$defs/Context"
+          },
+          "maxItems": 2000,
+          "title": "Contexts",
+          "type": "array"
+        },
+        "game_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Game Id",
+          "type": "string"
+        },
+        "learner_color": {
+          "enum": [
+            "white",
+            "black"
+          ],
+          "title": "Learner Color",
+          "type": "string"
+        },
+        "learner_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Learner Id"
+        },
+        "moves": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Moves",
+          "type": "array"
+        },
+        "opponent_encounters": {
+          "items": {
+            "$ref": "#/$defs/OpponentEncounter"
+          },
+          "maxItems": 2000,
+          "title": "Opponent Encounters",
+          "type": "array"
+        },
+        "opponent_encounters_complete": {
+          "default": false,
+          "title": "Opponent Encounters Complete",
+          "type": "boolean"
+        },
+        "played_at": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Played At"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "provider_game_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Game Id"
+        },
+        "source_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "starting_fen": {
+          "maxLength": 120,
+          "title": "Starting Fen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "game_id",
+        "source_revision",
+        "source_digest",
+        "learner_color",
+        "starting_fen",
+        "moves"
+      ],
+      "title": "Game",
+      "type": "object"
+    },
+    "OpponentEncounter": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "fen": {
+          "maxLength": 120,
+          "title": "Fen",
+          "type": "string"
+        },
+        "ply": {
+          "maximum": 999,
+          "minimum": 0,
+          "title": "Ply",
+          "type": "integer"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "repertoire_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Id",
+          "type": "string"
+        },
+        "route_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Route Ids",
+          "type": "array"
+        },
+        "scope_complete": {
+          "title": "Scope Complete",
+          "type": "boolean"
+        },
+        "scope_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Scope Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ply",
+        "repertoire_id",
+        "policy_id",
+        "fen",
+        "route_ids",
+        "scope_complete",
+        "scope_revision",
+        "evidence_id"
+      ],
+      "title": "OpponentEncounter",
+      "type": "object"
+    },
+    "ProposalAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor_ply": {
+          "maximum": 999,
+          "minimum": 0,
+          "title": "Anchor Ply",
+          "type": "integer"
+        },
+        "policy_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Key",
+          "type": "string"
+        },
+        "repertoire_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Key",
+          "type": "string"
+        },
+        "route_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Route Key",
+          "type": "string"
+        },
+        "source_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_key",
+        "repertoire_key",
+        "policy_key",
+        "route_key",
+        "anchor_ply"
+      ],
+      "title": "ProposalAnchor",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "games": {
+      "items": {
+        "$ref": "#/$defs/Game"
+      },
+      "maxItems": 64,
+      "title": "Games",
+      "type": "array"
+    },
+    "input_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Input Id",
+      "type": "string"
+    },
+    "page_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Page Id",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "input_id",
+    "revision",
+    "page_id",
+    "games"
+  ],
+  "title": "Page",
+  "type": "object"
+}
