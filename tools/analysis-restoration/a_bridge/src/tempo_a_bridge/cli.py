@@ -140,6 +140,24 @@ class Operator:
             raise ValueError('invalid_learning_publication_status')
         return current
 
+    def verify_operation_receipt(self, operation, receipt):
+        delivery = operation['document']['delivery']
+        identifier = operation['id'] + (':retire' if delivery['retirement'] else ':activate')
+        if (not isinstance(receipt, dict) or receipt.get('operation_id') != identifier
+                or (delivery['request'].get('retirement_id') if delivery['retirement'] else delivery['request'].get('activation_id')) != identifier
+                or receipt.get('state') not in ('unknown', 'queued', 'complete', 'failed')):
+            raise ValueError('invalid_learning_operation_receipt')
+        if receipt['state'] == 'unknown':
+            return
+        try:
+            same_request = json.dumps(receipt.get('request'), sort_keys=True, separators=(',', ':'), allow_nan=False) == json.dumps(delivery['request'], sort_keys=True, separators=(',', ':'), allow_nan=False)
+        except (ValueError, TypeError):
+            same_request = False
+        if (receipt.get('workspace_id') != operation['draft']['source']['workspace_id']
+                or receipt.get('command_name') != ('publication.retire' if delivery['retirement'] else 'publication.activate.v2')
+                or not same_request):
+            raise ValueError('learning_operation_authority_mismatch')
+
     def apply(self, identifier, max_slices=64):
         operation = self.content("operation","show",identifier)
         if operation["state"] in ("completed", "failed"):
@@ -196,6 +214,7 @@ class Operator:
         request = delivery["request"]
         remote_id = request.get("activation_id") or request["retirement_id"]
         _, receipt = self.http("/internal/publications/operations/"+quote(remote_id,safe=""))
+        self.verify_operation_receipt(operation, receipt)
         if receipt["state"] == "failed":
             return self.record_failure(identifier)
         try:
@@ -224,6 +243,7 @@ class Operator:
             # A rejected HTTP response alone is not a terminal outcome. Read the
             # original durable operation; Content independently verifies failure.
             _, recovered = self.http("/internal/publications/operations/"+quote(remote_id,safe=""))
+            self.verify_operation_receipt(operation, recovered)
             if recovered.get("state") == "failed":
                 return self.record_failure(identifier)
             if recovered.get("state") == "complete":
@@ -252,10 +272,12 @@ class Operator:
         remote_id = request.get('activation_id') or request['retirement_id']
         path = '/internal/publications/operations/' + quote(remote_id, safe='')
         _, receipt = self.http(path)
+        self.verify_operation_receipt(operation, receipt)
         if receipt.get('state') not in ('complete', 'failed'):
             self.http(path + '/abort', {'workspace_id': operation['draft']['source']['workspace_id'],
                 'command_name': 'publication.retire' if delivery['retirement'] else 'publication.activate.v2', 'request': request})
             _, receipt = self.http(path)
+            self.verify_operation_receipt(operation, receipt)
         if receipt.get('state') == 'failed':
             return self.record_failure(operation['id'])
         if receipt.get('state') == 'complete':

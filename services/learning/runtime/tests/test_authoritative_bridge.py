@@ -710,7 +710,8 @@ def test_A_installed_concurrent_operators_preserve_one_authority(case, authored,
         (evidence / ('concurrent-' + action + '.json')).write_text(json.dumps({'content': persisted, 'remote': receipt}, indent=2, default=str))
 
 
-def test_A_installed_completion_cannot_substitute_checkpointed_request(case, authored, tmp_path):
+@pytest.mark.parametrize('remote_state', ['queued', 'complete'])
+def test_A_installed_completion_cannot_substitute_checkpointed_request(case, authored, tmp_path, remote_state):
     from test_content_bridge import content_bundle, request_for
     content_cli, bridge_cli, environment = authored
     token = tmp_path / 'operator-token'
@@ -736,15 +737,35 @@ def test_A_installed_completion_cannot_substitute_checkpointed_request(case, aut
         assert client.post('/internal/publications/v2/stage', json=other, headers=headers).status_code == 200
         assert client.post('/internal/publications/v2/activate', json=request_for(other), headers=headers).status_code == 200
         wrong_request = {**request, 'publication_id': other['publication']['publication_id']}
-        assert client.post('/internal/publications/retire', json=wrong_request, headers=headers).status_code == 200
+        if remote_state == 'queued':
+            # Persist the genuine HTTP intent, then time out only its execution
+            # at the real publication lock. No remote receipt is fabricated.
+            with psycopg.connect(case.admin) as blocker:
+                blocker.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                    ('learning:publication:' + other['publication']['publication_id'],))
+                assert client.post('/internal/publications/retire', json=wrong_request, headers=headers).status_code == 503
+        else:
+            assert client.post('/internal/publications/retire', json=wrong_request, headers=headers).status_code == 200
         remote = client.get('/internal/publications/operations/' + request['retirement_id'], headers=headers).json()
-        assert remote['state'] == 'complete' and remote['request'] != request
+        assert remote['state'] == remote_state and remote['request'] != request
+        if remote_state == 'complete':
+            proposed = tmp_path / 'wrong-completion.json'
+            proposed.write_text(json.dumps({'transport': 'authenticated_learning_http', 'endpoint': origin,
+                'acknowledgement': {'contract_version': 1, 'workspace_id': 'workspace-a', 'retirement_id': request['retirement_id'],
+                    'publication_id': publication_id, 'publication_generation': 1, 'reason': None, **remote['response']}}))
+            denied = run_cli(content_cli, ['operation', 'record', retirement['id'], '--file', proposed,
+                '--learning-origin', origin, '--operator-token-file', token], environment, tmp_path, success=False)
+            assert isinstance(denied, subprocess.CompletedProcess) and denied.returncode == 2
         for command in ('reconcile', 'abandon'):
             result = run_cli(bridge_cli, [*arguments, command, retirement['id']], environment, tmp_path, success=False)
             assert isinstance(result, subprocess.CompletedProcess) and result.returncode == 2
             persisted = run_cli(content_cli, ['operation', 'show', retirement['id']], environment, tmp_path)
             assert persisted['state'] == 'applying' and 'receipt' not in persisted['document']
+            actual = client.get('/internal/publications/operations/' + request['retirement_id'], headers=headers).json()
+            assert actual == remote
         assert client.get('/internal/publications/' + publication_id + '/status', headers=headers).json()['status'] == 'active'
+        other_status = client.get('/internal/publications/' + other['publication']['publication_id'] + '/status', headers=headers).json()
+        assert other_status['status'] == ('active' if remote_state == 'queued' else 'retired')
         evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True, exist_ok=True)
-        (evidence / 'conflicting-completion.json').write_text(json.dumps({'content': persisted, 'remote': remote}, indent=2, default=str))
+        (evidence / ('conflicting-authority-' + remote_state + '.json')).write_text(json.dumps({'content': persisted, 'remote': remote, 'other_serving': other_status}, indent=2, default=str))

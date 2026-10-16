@@ -74,10 +74,16 @@ def verify_operation_binding(operation, receipt):
     from .domain import stable_id
     publication_id = stable_id(workspace, operation['source_key'], 'publication', 'source')
     expected_generation = request['publication_generation'] if retirement else operation['document']['export']['publication']['publication_generation']
+    try:
+        same_request = json.dumps(receipt.get('request'), sort_keys=True, separators=(',', ':'), allow_nan=False) == json.dumps(request, sort_keys=True, separators=(',', ':'), allow_nan=False)
+    except (ValueError, TypeError):
+        same_request = False
     if (receipt.get('operation_id') != identifier
             or receipt.get('workspace_id') != workspace
             or receipt.get('command_name') != ('publication.retire' if retirement else 'publication.activate.v2')
-            or receipt.get('request') != request
+            or not same_request
+            or type(request.get('publication_generation')) is not int
+            or type(request.get('expected_activation_revision')) is not int
             or request.get('publication_id') != publication_id
             or request.get('publication_generation') != expected_generation):
         raise ContentError('failure_receipt_mismatch', 'Learning receipt does not bind the original workspace/publication request')

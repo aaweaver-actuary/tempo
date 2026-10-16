@@ -36,3 +36,9 @@ Regular `tests/test_operator.py` owns
 retired/unavailable state, malformed identity/date/generation/revision, HTTP
 rejection, transport loss, unconfirmed fence and genuine completion winning abort.
 These command-order proofs supplement the real installed/PostgreSQL owners above.
+
+`test_A_mismatched_queued_receipt_cannot_trigger_retry_or_fence` denies known
+receipt workspace/family/request/ID mismatches and JSON integer/boolean substitution
+before any POST. Every operation read, including recovery and fence reads, uses
+that validator. The installed conflicting-authority cases seed genuine complete
+and queued retirements for another publication and preserve both authorities.

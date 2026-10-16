@@ -463,3 +463,10 @@ operation never reports successful retirement or activation. Already admitted
 source revisions and immutable staged/publication data are retained; corrected
 source content follows normal generation advancement under a distinct operation.
 The operator remains database-free and imports no domain implementation.
+
+Before retrying any known Learning operation, the operator independently checks
+its operation ID, workspace, command family and exact canonical request against
+Content's checkpoint. The same check applies to terminal and fence reads. A
+conflicting queued operation is never retried, even if its ID matches; it remains
+inspectable without granting unrelated serving effects. JSON integer/boolean and
+floating-point substitutions are rejected.

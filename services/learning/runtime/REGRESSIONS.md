@@ -212,3 +212,8 @@ Abort/activation race parameters use the actual activation and retry HTTP routes
 transaction timings without changing production budgets or asserting a host SLO.
 `test_A_installed_completion_cannot_substitute_checkpointed_request` verifies a real
 wrong-publication completion cannot release the original reservation.
+
+The installed conflicting-authority regression also creates a genuine queued
+wrong-publication retirement by timing out execution behind its publication lock.
+Neither reconcile nor abandon may retry it or change either publication. The
+completed variant independently exercises Content's authenticated record CLI.

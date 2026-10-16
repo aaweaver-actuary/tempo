@@ -71,7 +71,7 @@ def test_A_proposal_is_not_approval_and_requires_legal_executable_content():
 
 @pytest.mark.parametrize('retirement', [False, True])
 @pytest.mark.parametrize('state', ['unknown', 'queued', 'complete', 'failed'])
-@pytest.mark.parametrize('mismatch', [None, 'workspace_id', 'command_name', 'request', 'operation_id'])
+@pytest.mark.parametrize('mismatch', [None, 'workspace_id', 'command_name', 'request', 'operation_id', 'integer_type'])
 def test_A_terminal_failure_requires_original_authenticated_request(monkeypatch, tmp_path, state, mismatch, retirement):
     from tempo_content import receipt_transport
     workspace, source_key = 'bridge-test', 'opening'
@@ -85,7 +85,9 @@ def test_A_terminal_failure_requires_original_authenticated_request(monkeypatch,
                      'export': {'publication': {'publication_generation': 2}}}}
     receipt = {'operation_id': remote_id, 'state': state, 'workspace_id': workspace,
                'command_name': 'publication.retire' if retirement else 'publication.activate.v2', 'request': request, 'error': {'status_code': 409, 'detail': 'secret remote data'}}
-    if mismatch:
+    if mismatch == 'integer_type':
+        receipt['request'] = {**request, 'expected_activation_revision': True}
+    elif mismatch:
         receipt[mismatch] = {'publication_id': 'wrong'} if mismatch == 'request' else 'wrong'
     class Response:
         def __enter__(self): return self
@@ -169,7 +171,7 @@ def test_A_bridge_scope_preflight_is_local_and_preserves_general_types(fault):
 
 
 @pytest.mark.parametrize('retirement', [False, True])
-@pytest.mark.parametrize('mismatch', [None, 'workspace_id', 'command_name', 'request', 'operation_id'])
+@pytest.mark.parametrize('mismatch', [None, 'workspace_id', 'command_name', 'request', 'operation_id', 'integer_type'])
 def test_A_completion_receipt_requires_exact_original_authority(monkeypatch, retirement, mismatch):
     from tempo_content import receipt_transport
     workspace, source_key = 'bridge-test', 'opening'
@@ -188,7 +190,9 @@ def test_A_completion_receipt_requires_exact_original_authority(monkeypatch, ret
     proposed = {'transport': 'authenticated_learning_http', 'endpoint': delivery['endpoint'], 'acknowledgement': acknowledgement}
     receipt = {'operation_id': remote_id, 'workspace_id': workspace, 'command_name': 'publication.retire' if retirement else 'publication.activate.v2',
         'request': deepcopy(request), 'state': 'complete', 'response': response}
-    if mismatch:
+    if mismatch == 'integer_type':
+        receipt['request']['expected_activation_revision'] = True
+    elif mismatch:
         receipt[mismatch] = {**request, 'publication_id': 'another-publication'} if mismatch == 'request' else 'wrong'
     monkeypatch.setattr(receipt_transport, 'authenticated_operation', lambda *args: receipt)
     if mismatch:

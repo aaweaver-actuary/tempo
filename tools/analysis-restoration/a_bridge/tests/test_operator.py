@@ -116,7 +116,7 @@ def test_A_terminal_learning_failure_is_reconciled_without_replay():
     operator = SnapshotOperator()
     operator.token_file = '/private/operator-token'
     delivery = {'endpoint': operator.endpoint, 'request': {'activation_id': 'operation:activate'}, 'retirement': False}
-    operation = {'state': 'applying', 'document': {'delivery': delivery}}
+    operation = {'id': 'operation', 'state': 'applying', 'draft': {'source': {'workspace_id': 'workspace'}}, 'document': {'delivery': delivery}}
     commands = []
     def content(*arguments):
         commands.append(arguments)
@@ -124,7 +124,8 @@ def test_A_terminal_learning_failure_is_reconciled_without_replay():
             return {'state': 'failed'}
         return operation
     operator.content = content
-    operator.http = lambda *args: (200, {'state': 'failed'})
+    operator.http = lambda *args: (200, {'operation_id': 'operation:activate', 'state': 'failed', 'workspace_id': 'workspace',
+        'command_name': 'publication.activate.v2', 'request': delivery['request']})
     assert operator.apply('operation')['state'] == 'failed'
     assert commands[-1][1] == 'record-failure'
 
@@ -195,7 +196,11 @@ class RecoveryOperator(Operator):
             assert document == self.operation['document']['delivery']['request'] or document == {}
             self.remote_state = 'complete'
             return 200, {'status': 'activated'}
-        return 200, {'state': self.remote_state, 'response': {'status': 'activated'}}
+        delivery = self.operation['document']['delivery']
+        request = deepcopy(delivery['request'])
+        return 200, {'operation_id': request.get('activation_id') or request['retirement_id'],
+            'state': self.remote_state, 'workspace_id': 'workspace', 'command_name': 'publication.retire' if delivery['retirement'] else 'publication.activate.v2',
+            'request': request, 'response': {'status': 'activated'}}
 
 
 def test_A_unsupported_execution_scope_fails_before_irreversible_apply():
@@ -305,3 +310,26 @@ def test_A_explicit_abandon_uses_original_owner_authority(delivered):
         operator.operation['state'] = 'applying'
     assert operator.abandon('operation')['state'] == 'failed'
     assert any(command[1] == ('record-failure' if delivered else 'fail-before-delivery') for command in operator.commands)
+
+
+@pytest.mark.parametrize('action', ['apply', 'abandon'])
+@pytest.mark.parametrize('mismatch', ['workspace_id', 'command_name', 'request', 'operation_id', 'integer_type'])
+def test_A_mismatched_queued_receipt_cannot_trigger_retry_or_fence(action, mismatch):
+    from tempo_a_bridge.cli import LearningHTTPError
+    operator = RecoveryOperator()
+    operator.stage_error = LearningHTTPError(503)
+    with pytest.raises(ValueError): operator.apply('operation')
+    operator.remote_state = 'queued'
+    operator.requests.clear()
+    original_http = operator.http
+    def mismatched(path, document=None):
+        code, response = original_http(path, document)
+        if '/operations/' in path and document is None:
+            if mismatch == 'integer_type': response['request']['expected_activation_revision'] = False
+            elif mismatch == 'request': response['request']['publication_id'] = 'unrelated-publication'
+            else: response[mismatch] = 'wrong'
+        return code, response
+    operator.http = mismatched
+    with pytest.raises(ValueError): getattr(operator, action)('operation')
+    assert operator.operation['state'] == 'applying'
+    assert not any(document is not None for _, document in operator.requests)

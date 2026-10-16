@@ -231,3 +231,6 @@ Completion verification applies the same exact original envelope binding as
 terminal failure. Retirement response fields alone cannot identify the retired
 publication; reconstruction is permitted only after the authenticated receipt's
 workspace, command, original request, publication, generation and ID all match.
+
+Exact request comparisons preserve canonical JSON primitive types: integer,
+boolean and floating-point substitutions do not compare equal.
