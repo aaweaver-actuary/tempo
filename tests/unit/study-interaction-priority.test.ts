@@ -77,3 +77,15 @@ it('study_priority_touch_only_hold_protects_stationary_contact_until_end_and_qui
   touch('touchstart');await vi.advanceTimersByTimeAsync(5000);expect(priority.studyInteractionActive()).toBe(true);
   touch('touchend');await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
 });
+
+it('B activity renewals preserve three genuine quiet seconds without extending the server lease',async()=>{
+  const priority=await import('../../app/lib/study-priority');priority.setStudyPriorityScope(true);
+  const pulses:{at:number;remaining:number}[]=[];
+  stop=priority.installStudyInteractionPriority(async(_session,remaining)=>{pulses.push({at:performance.now(),remaining});});
+  const release=priority.holdStudyPriority();await vi.advanceTimersByTimeAsync(5000);
+  const releasedAt=performance.now();release();await vi.advanceTimersByTimeAsync(3000);
+  const quietPulses=pulses.filter(pulse=>pulse.at>=releasedAt);
+  expect(quietPulses.length).toBeGreaterThan(0);
+  expect(quietPulses.every(pulse=>pulse.remaining>0 && pulse.at+pulse.remaining<=releasedAt+3001)).toBe(true);
+  expect(priority.studyInteractionActive()).toBe(false);
+});

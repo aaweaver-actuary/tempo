@@ -5,7 +5,115 @@ import {fileURLToPath} from 'node:url';
 import {createCancellableMaia} from '../../scripts/cancellable-maia.mjs';
 import {createStockfishProcess} from '../../scripts/stockfish-process.mjs';
 import {createEngineSearch} from '../../scripts/engine-search.mjs';
+import {EventEmitter} from 'node:events';
+import {createMaiaRelease} from '../../scripts/maia-coverage-client.mjs';
 const fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+function fakeMaia({exitDelay=0, missingExit=false, killFails=false, killThrows=false}={}) {
+  const child=new EventEmitter(); child.alive=true;
+  child.started=new Promise(resolve=>{child.send=(message,callback)=>{child.request=message;callback();resolve();};});
+  child.kill=()=>{
+    if(killThrows)throw new Error('kill unavailable');
+    if(killFails)return false;
+    child.alive=false;
+    if(!missingExit)setTimeout(()=>child.emit('exit',null,'SIGKILL'),exitDelay);
+    return true;
+  };
+  child.reply=moves=>child.emit('message',{id:child.request.id,moves});
+  return child;
+}
+const observe=promise=>promise.then(value=>({value}),error=>({error}));
+const fakeOwner=child=>createCancellableMaia({launch:()=>child,isProcessAlive:owned=>owned.alive});
+
+test('C1 normal Maia completion preserves the requested model rating and moves',async()=>{
+  const child=fakeMaia(),inference=fakeOwner(child);
+  const pending=inference.analyze(fen,1750,async()=>true);await child.started;
+  child.reply([{move_uci:'e2e4',probability:1}]);
+  assert.deepEqual(await pending,[{move_uci:'e2e4',probability:1}]);
+  assert.equal(child.request.elo,1750);assert.equal(child.request.fen,fen);inference.close();
+});
+
+for(const [name,configuration]of[['C2 ordinary exit',{}],['C3 delayed exit',{exitDelay:35}],['C4 missing exit',{missingExit:true}]]) {
+  test(`${name} settles Maia preemption after actual termination`,async()=>{
+    const child=fakeMaia(configuration),inference=fakeOwner(child);
+    const pending=observe(inference.analyze(fen,1500,async()=>true));await child.started;
+    const start=performance.now();inference.close();
+    assert.equal((await pending).error.code,'STUDY_PREEMPTED');
+    assert(performance.now()-start<250);assert.equal(child.alive,false);
+    assert.equal(inference.terminationVerified(),true);
+  });
+}
+
+for(const [name,configuration]of[['C5 failed kill',{killFails:true}],['C6 throwing kill',{killThrows:true}]]) {
+  test(`${name} bounds the caller and quarantines an unverified child`,async()=>{
+    const child=fakeMaia(configuration),inference=fakeOwner(child);
+    const pending=observe(inference.analyze(fen,1500,async()=>true));await child.started;inference.close();
+    assert.equal((await pending).error.code,'MAIA_TERMINATION_UNVERIFIED');
+    await assert.rejects(inference.analyze(fen,1500,async()=>true),{code:'MAIA_TERMINATION_UNVERIFIED'});
+    assert.equal(inference.terminationVerified(),false);
+    child.alive=false;assert.equal(inference.terminationVerified(),true);
+  });
+}
+
+test('C7 late Maia result after preemption is fenced and retry launches a fresh owner',async()=>{
+  const first=fakeMaia({missingExit:true}),second=fakeMaia();let launches=0;
+  const inference=createCancellableMaia({launch:()=>++launches===1?first:second,isProcessAlive:child=>child.alive});
+  const cancelled=observe(inference.analyze(fen,1500,async()=>true));await first.started;inference.close();
+  first.reply(['obsolete']);assert.equal((await cancelled).error.code,'STUDY_PREEMPTED');
+  const retry=inference.analyze(fen,1500,async()=>true);await second.started;
+  first.reply(['obsolete']);second.reply(['current']);assert.deepEqual(await retry,['current']);
+  assert.equal(launches,2);assert.equal(second.request.elo,1500);inference.close();
+});
+
+test('C8 control failure after completed inference denies publication',async()=>{
+  const child=fakeMaia(),inference=fakeOwner(child);let checks=0;
+  const pending=observe(inference.analyze(fen,1500,async()=>{if(++checks>1)throw new Error('control unavailable');return true;}));
+  await child.started;child.reply(['must not publish']);
+  assert.equal((await pending).error.code,'STUDY_PREEMPTED');assert.equal(child.alive,false);
+});
+
+test('C9 genuine child failure remains a failure after verified termination',async()=>{
+  const child=fakeMaia(),inference=fakeOwner(child);
+  const pending=observe(inference.analyze(fen,1500,async()=>true));await child.started;
+  child.emit('error',new Error('model process failed'));
+  assert.match((await pending).error.message,/model process failed/);
+});
+
+test('C10 concurrent initial control checks cannot launch two Maia requests',async()=>{
+  const child=fakeMaia(),inference=fakeOwner(child);let allow;
+  const first=observe(inference.analyze(fen,1500,()=>new Promise(resolve=>{allow=resolve;})));
+  await Promise.resolve();await assert.rejects(inference.analyze(fen,1500,async()=>true),/active inference/);
+  allow(false);assert.equal((await first).error.code,'STUDY_PREEMPTED');assert.equal(child.request,undefined);
+});
+
+test('C11 unavailable control is bounded even without a control notification',async()=>{
+  const child=fakeMaia(),inference=fakeOwner(child);let checks=0;
+  const pending=observe(inference.analyze(fen,1500,()=>++checks===1?true:new Promise(()=>{})));
+  await child.started;child.reply(['obsolete']);
+  assert.equal((await pending).error.code,'STUDY_PREEMPTED');assert.equal(child.alive,false);
+});
+
+test('C12 failed release is visible and retry preserves one immutable operation identity',async()=>{
+  const calls=[];
+  const release=createMaiaRelease(async(path,options)=>{calls.push({path,options});if(calls.length===1)throw new Error('release unavailable');return {released:true};},
+    {node_id:'node',lease_id:'lease'});
+  await assert.rejects(release(),/release unavailable/);assert.deepEqual(await release(),{released:true});
+  assert.equal(calls[0].options.operationId,calls[1].options.operationId);
+  assert.equal(calls[0].options.body,calls[1].options.body);
+  assert.equal(calls[0].path,'/api/repertoire-coverage/maia/release');
+});
+
+test('C13 a completed current result cannot be killed by an older concurrent control probe',async()=>{
+  const child=fakeMaia(),inference=fakeOwner(child);let checks=0,finishProbe,startedProbe;
+  const probing=new Promise(resolve=>{startedProbe=resolve;});
+  const pending=inference.analyze(fen,1500,()=>{
+    if(++checks===2)return new Promise(resolve=>{finishProbe=resolve;startedProbe();});
+    return true;
+  });
+  await child.started;await probing;child.reply(['current']);assert.deepEqual(await pending,['current']);
+  finishProbe(false);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(child.alive,true);inference.close();
+});
 
 test('real Maia inference yields to study and resumes the same full-quality legal distribution', {timeout:60_000}, async()=>{
   let priority=false, startedAt, child;

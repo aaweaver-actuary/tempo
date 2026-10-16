@@ -1,3 +1,17 @@
+## Study Priority v1 browser and inference repairs
+
+- `tests/runner/inference-priority.test.mjs`: C1–C13 cover normal completion,
+  delayed/missing exit, failed termination, quarantine, late results, control
+  failure, child failure, admission/probe races and immutable release retries.
+  Existing real inference cases retain requested depth/full legal output.
+- `tests/unit/study-interaction-priority.test.ts`: B remaining-quiet-time pulses
+  prevent renewal from extending the server pause beyond three seconds.
+- `tests/unit/study-learning-connection-regressions.test.ts`: B optional reporting
+  preserves authentication/authority boundaries; delayed success, rejection and
+  synchronous transport errors retain and release essential request holds.
+- `tests/unit/maia-coverage-client-regressions.test.ts`: C uncertain delivery
+  remains pending under its original operation identity, never a model failure.
+
 ## Study Priority v1 host activity producer
 
 - `backend/tests/test_study_priority_control.py` owns

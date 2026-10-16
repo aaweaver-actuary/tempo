@@ -10,7 +10,40 @@ beforeEach(() => {
   vi.resetModules(); vi.stubGlobal("__TEMPO_STUDY__", true);
   vi.stubGlobal("indexedDB", new IDBFactory()); localStorage.clear(); sessionStorage.clear();
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it('B independent activity authenticates without changing authority or prompting recovery on rejection', async () => {
+  const {client,fetcher}=await connected();
+  const original=client.studyConnection();
+  const authentication=vi.fn();window.addEventListener('tempo:study-auth-required',authentication);
+  try {
+    fetcher.mockResolvedValueOnce(new Response('',{status:401}));
+    await expect(client.sendStudyActivity('tab-a')).rejects.toThrow('HTTP 401');
+    expect(authentication).not.toHaveBeenCalled();expect(client.studyConnection()).toEqual(original);
+    const [address,options]=fetcher.mock.calls.at(-1)!;
+    expect(String(address)).toBe('http://learning.test:8001/api/study/activity?session_id=tab-a&expires_in_ms=3000');
+    expect(options.headers.get('Authorization')).toBe(`Bearer ${credential}`);
+    expect(options.headers.get('X-Tempo-Workspace')).toBe('workspace-a');
+    expect(options.method).toBe('POST');expect(options.credentials).toBe('omit');
+  } finally {window.removeEventListener('tempo:study-auth-required',authentication);}
+});
+
+it.each(['resolve','reject','throw'])('B essential request hold covers delayed %s and always releases into the quiet period',async outcome=>{
+  const {client,fetcher}=await connected();
+  vi.useFakeTimers();
+  const priority=await import('../../app/lib/study-priority');priority.setStudyPriorityScope(true);
+  let complete:(value:Response)=>void=()=>{},fail:(error:Error)=>void=()=>{};
+  fetcher.mockImplementationOnce(()=>outcome==='throw'?(()=>{throw new Error('synchronous transport failure');})():
+    new Promise<Response>((resolve,reject)=>{complete=resolve;fail=reject;}));
+  const pending=client.learningFetch('http://learning.test:8001/api/cards/card-a/review',{method:'POST'}).catch(error=>error);
+  if(outcome!=='throw') {
+    await vi.advanceTimersByTimeAsync(5000);expect(priority.studyInteractionActive()).toBe(true);
+    if(outcome==='resolve')complete(Response.json({persisted:true}));else fail(new Error('transport failure'));
+  }
+  await pending;
+  expect(priority.studyInteractionActive()).toBe(true);
+  await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
+});
 
 async function retainAuthority(origin: string, requestId: string) {
   const workspace = `${origin}:study:workspace-a`;

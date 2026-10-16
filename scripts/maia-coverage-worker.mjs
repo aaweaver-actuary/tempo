@@ -1,6 +1,6 @@
-import { createCancellableMaia, StudyPreemptedError } from "./cancellable-maia.mjs";
+import { createCancellableMaia, StudyPreemptedError, MaiaTerminationUnverifiedError } from "./cancellable-maia.mjs";
 import { analyzeMaiaPosition } from "./maia-inference.mjs";
-import { PendingMaiaCommandError, requestMaiaApi } from "./maia-coverage-client.mjs";
+import { PendingMaiaCommandError, requestMaiaApi, createMaiaRelease } from "./maia-coverage-client.mjs";
 const apiUrl = process.env.TEMPO_API_URL ?? "http://api:8000";
 const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 async function request(path, options = {}) {
@@ -23,9 +23,18 @@ async function allowed() {
   } catch { return false; }
 }
 
+let pendingRelease;
 while (true) {
   let job;
   try {
+    if (!inference.terminationVerified()) { await sleep(1_000); continue; }
+    if (pendingRelease) {
+      try { await pendingRelease(); pendingRelease = undefined; }
+      catch (error) {
+        console.error('Maia release remains unconfirmed:', pendingRelease.operationId, error);
+        await sleep(1_000); continue;
+      }
+    }
     if (!await allowed()) { await sleep(1_000); continue; }
     if (!(await request("/api/repertoire-coverage/maia/available")).available) {
       await sleep(5_000); continue;
@@ -45,9 +54,9 @@ while (true) {
       job = undefined;
     } finally { clearInterval(heartbeat); }
   } catch (error) {
-    if (error instanceof StudyPreemptedError) {
-      if (job) await request("/api/repertoire-coverage/maia/release", { method: "POST",
-        body: JSON.stringify({ node_id: job.node_id, lease_id: job.lease_id }) }).catch(() => {});
+    if (error instanceof StudyPreemptedError || error instanceof MaiaTerminationUnverifiedError) {
+      if (job) pendingRelease = createMaiaRelease(request, job);
+      if (error instanceof MaiaTerminationUnverifiedError) console.error(error);
       await sleep(1_000); continue;
     }
     console.error("Maia coverage failed:", error);

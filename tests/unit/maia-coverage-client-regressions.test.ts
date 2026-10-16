@@ -6,6 +6,17 @@ const response = (status: number, body: unknown) => new Response(JSON.stringify(
 });
 
 describe("Maia background command receipts", () => {
+  it('C unconfirmed transport retains the supplied operation identity instead of reporting a model failure',async()=>{
+    const fetchImpl=vi.fn().mockRejectedValue(new TypeError('response lost'));
+    await expect(requestMaiaApi('http://tempo','/api/repertoire-coverage/maia/release',
+      {method:'POST',operationId:'original-release'},{fetchImpl,pause:async()=>{}}))
+      .rejects.toMatchObject({name:'PendingMaiaCommandError',operationId:'original-release'});
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    for(const [,options]of fetchImpl.mock.calls) {
+      expect(options.headers['Idempotency-Key']).toBe('original-release');
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
   it("Docker engine callback waits for its PostgreSQL receipt with the worker header", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(202, { operation_id: "position-save", state: "pending" }))

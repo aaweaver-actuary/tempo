@@ -80,7 +80,15 @@ export function learningDayKey(date = new Date()) {
   return zone ? new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date)
     : `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 }
-const learningPaths = /^\/api\/(?:study\/(?:bootstrap|settings)|queue\/(?:window|today|prepared|entries\/)|cards\/[^/]+\/(?:review|teaching|move-membership)|operations\/|opening-evidence\/|studies\/[^/]+\/exercises\/|tactics\/(?:attempt|progress)|defense-exercises\/|endgames\/)/;
+const learningPaths = /^\/api\/(?:study\/(?:bootstrap|settings|activity)|queue\/(?:window|today|prepared|entries\/)|cards\/[^/]+\/(?:review|teaching|move-membership)|operations\/|opening-evidence\/|studies\/[^/]+\/exercises\/|tactics\/(?:attempt|progress)|defense-exercises\/|endgames\/)/;
+/** Optional activity delivery cannot change authority or manufacture a Study request hold. */
+export async function sendStudyActivity(session: string, remainingMs = 3000): Promise<void> {
+  const connection = studyConnection();
+  if (!connection) return;
+  const response = await authenticatedLearningFetch(`${connection.origin}/api/study/activity?session_id=${encodeURIComponent(session)}&expires_in_ms=${remainingMs}`,
+    {method: 'POST', signal: AbortSignal.timeout(500)}, connection, false);
+  if (!response.ok) throw new Error(`Study host activity unavailable (HTTP ${response.status})`);
+}
 export function learningFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
   const address = input instanceof Request ? input.url : String(input);
   const path = new URL(address, typeof window === "undefined" ? "http://tempo.local" : window.location.href).pathname;

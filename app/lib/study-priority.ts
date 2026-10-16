@@ -69,7 +69,7 @@ export function waitForStudyIdle(signal?: AbortSignal): Promise<void> {
 }
 
 /** Own listeners/pulses for one tab; other tabs retain independent expiring leases. */
-export function installStudyInteractionPriority(sendActivity?: (session: string) => Promise<unknown>) {
+export function installStudyInteractionPriority(sendActivity?: (session: string, remainingMs: number) => Promise<unknown>) {
   const session = crypto.randomUUID();
   const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel('tempo-study-priority-v1');
   if (channel) channel.onmessage = ({ data }) => {
@@ -91,10 +91,11 @@ export function installStudyInteractionPriority(sendActivity?: (session: string)
       return;
     }
     lastSent = performance.now();
-    channel?.postMessage({ version: 1, session, until: Date.now() + (holds.size ? STUDY_QUIET_MS : Math.max(0, activeUntil - performance.now())) });
+    const remainingMs = Math.max(1, Math.ceil(holds.size ? STUDY_QUIET_MS : activeUntil - performance.now()));
+    channel?.postMessage({ version: 1, session, until: Date.now() + remainingMs });
     if (sendActivity) {
       sending = true;
-      void sendActivity(session).catch(() => undefined).finally(() => { sending = false; });
+      void sendActivity(session, remainingMs).catch(() => undefined).finally(() => { sending = false; });
     }
   };
   const unsubscribe = subscribeStudyPriority(pulse);
