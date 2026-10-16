@@ -1,5 +1,12 @@
 # PR #294 repair and qualification report
 
+This is the historical five-finding repair report for reviewed head
+`607084d87896fdfcfc1a8f88c3c18af26b6b6015`. Its stage-only recovery limitation and
+readiness conclusion are superseded by the
+[pre-activation recovery report](a-bridge-preactivation-recovery.md), which retains
+this evidence and adds Content preflight, empty-source safety and Learning terminal
+fencing. Read the newer report for the current executable and qualification.
+
 ## A. Verdict
 
 **READY TO MERGE for the requested scoped local acceptance.** All required local suites passed, and independent review found no actionable P1/P2 issue. PR #294 remains unmerged and undeployed. Hosted workflows did not run; this is not hosted or full-system qualification. Direct GitHub inspection returned no legacy branch protection and no applicable branch rules; no Actions configuration was changed. Real-data migration/rehearsal remains unverified and outside this repair.

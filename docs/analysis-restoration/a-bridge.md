@@ -470,3 +470,9 @@ Content's checkpoint. The same check applies to terminal and fence reads. A
 conflicting queued operation is never retried, even if its ID matches; it remains
 inspectable without granting unrelated serving effects. JSON integer/boolean and
 floating-point substitutions are rejected.
+
+The [pre-activation recovery qualification report](a-bridge-preactivation-recovery.md)
+records the final state-transition matrix, exact executable and consumer identities,
+fresh suite outcomes, retained baseline failures, performance, independent review,
+publication and cleanup. The [earlier repair report](a-bridge-repair.md) remains
+historical qualification for its original inputs.
