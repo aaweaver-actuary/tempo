@@ -101,6 +101,15 @@ durable rejected-content identity and acceptance only under a fresh transport.
 
 ## F2 actual Study adoption
 
+Post-merge P3 adds `bootstrap-body-interruption-browser-online` to the existing
+`test_production_study_learning_native` inventory. The forwarder sends partial
+bytes from a real authenticated HTTP-200 bootstrap with its full Content-Length.
+Browser observers prove native fetch resolved and body consumption began before
+the connection is cut. With browser online, real cached issued-head practice stays
+local until the original command receives Learning confirmation, its offline
+record is acknowledged, and PostgreSQL contains exactly one review. The existing
+request allowlist and disposable-resource cleanup remain authoritative.
+
 `test_study_bootstrap_teaching.py` owns strict settings/bootstrap/progress,
 unsupported patches before acceptance, original teaching time and transport
 identity, concurrent incremental facts, lifecycle/revision/deletion/learner-turn

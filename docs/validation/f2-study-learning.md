@@ -233,3 +233,98 @@ checkout removal and process/readback verification are in the external handoff.
 Historical migration, production cutover, publication scale, separately extracted
 frontend artifacts and cross-device/browser offline release qualification remain
 outside F2. Local results do not establish hosted or full-system merge qualification.
+
+## Post-merge P3 — bootstrap body transport recovery, October 16, 2026
+
+Base: merged F2/current main `0edf566ad48f51846a43d3341809379ff0469ada`.
+Branch: `codex/study-bootstrap-body-read-p3`. Qualified executable source:
+`dda0ab11c9c21252629e5b0fd488572cb70cd09d`. Publication identity and final
+documentation-only source comparison are retained in the external handoff.
+This is a separate follow-up to merged PR #291; its historical records above
+remain unchanged.
+
+`response.json()` combined network body consumption and JSON parsing under a
+bootstrap-error catch. A stream interruption after HTTP 200 therefore denied
+otherwise authorized cached practice. This was a nonblocking F2 availability
+defect: it failed closed and did not grant authority or corrupt retained data.
+The client now reads the body once with `response.text()`, classifies recognized
+stream/abort/timeout failures through the existing transport eligibility helper,
+then parses and validates the completed text separately. One original five-second
+signal governs both acquisition and consumption. Used/locked bodies, unknown body
+exceptions, completed malformed/empty JSON, schema/workspace/timezone failures,
+explicit HTTP rejection and unsafe retained storage remain blocked.
+
+The only changed production file is `app/lib/study-connection.ts`; the existing
+connection boundary is unchanged. The other changes are its two existing frontend
+test owners, `scripts/prove-study-learning.mjs`, the existing native Python
+parameter inventory, the two owning regression documents and this appendix.
+Original resume/recover/cutover meaning, dual authority inventory, generation
+fences, immutable commands, issued-head restrictions and Learning-only settlement
+remain intact. There is no migration or deployment.
+
+The named red regression is `P3-U1 post-header body transport failure retains
+original-authority cached practice and immutable commands` in the existing
+connection suite. At test-only commit `c3a9873289e942740598cf21986ed72e636de572`,
+an actual HTTP-200 `Response` delivered a chunk and then errored while being read:
+the expected `transport`/cached-available result was instead
+`bootstrap`/cached-unavailable. The same regression passes after repair.
+P3-U1–U15 and additional unknown-exception/cache/recovery cases retain their
+frontend owner; P3-C1–C4 retain the startup owner. No selected assertion, timeout
+or existing case was removed or weakened.
+
+Evidence directory: `/Users/andy/tempo/test-results/study-bootstrap-body-p3-20261016-a1`.
+`command-ledger.json` retains exact ordered argument vectors, revisions, overlays,
+exit codes and logs. `qualification-summary.json`, `inventory-validation.json`,
+`input-equivalence.json`, `adversarial-review.json` and `handoff.json` retain the
+compact qualification, source binding, independent self-review and cleanup.
+In the commands below, `$taskEvidence` is that absolute directory and
+`$taskPython` is the isolated checkout's `services/learning/runtime/.venv/bin/python`.
+
+| Check / command | Result and source |
+| --- | --- |
+| Focused connection/startup, intent, pending-attempt, offline/recovery and authoring owners; exact ten-file `vitest run` arguments in `focused-final.json` | **247/247**, at `ba371631`; its consumed inputs are unchanged at the qualified executable SHA. |
+| `TEMPO_TEST_LANE=frontend node_modules/.bin/vitest run --config vitest.lanes.config.ts --reporter=default --reporter=json --outputFile="$taskEvidence/frontend-qualified-vitest.json"` | **1,739/1,739**, 156 files, at `ba371631`; the later native-harness change is outside this lane's inputs. |
+| `TEMPO_TEST_LANE=frontend node_modules/.bin/vitest list --config vitest.lanes.config.ts --json --staticParse=false` | **1,739** collected; the complete execution multiset agrees, with no failed, skipped or TODO cases. |
+| `$taskPython services/learning/runtime/integration/run_study.py "$taskEvidence/native-study-final"` | **42/42**, production Study/real Learning/restricted PostgreSQL, at the qualified executable SHA. |
+| `TEMPO_COMPONENT_PYTHON="$taskPython" node tools/component-build/test-lane.mjs --suite learning-full-study` | **42/42**, same collected/executed/JUnit inventory; registered dispatch repeats coverage and is not counted again. |
+| `$taskPython services/learning/runtime/integration/run_postgres.py "$taskEvidence/learning-final"` | **160/160**, fresh complete Learning-native qualification at the executable SHA; matching collection/execution/JUnit. |
+| `$taskPython services/learning/runtime/qualify.py "$taskEvidence/installed-qualified"` | **3/3** in each of Python 3.12/3.14 wheel/sdist consumers; **14 artifacts**, source removed, four required empty-selection probes returned 5. All 236 package inputs remain identical to the fresh `5571e2a2` run. |
+| `npm run test:ui-isolated:list`; `npm run test:ui-isolated` | **28/28**, fresh at `5571e2a2`; consumed production/browser inputs remain identical. |
+| `node tools/component-build/test-lane.mjs --component browser-intents --component study-session` | **15/15** and **10/10**, fresh at the qualified executable SHA. |
+| `npm run typecheck`; changed-file ESLint; component/consumer boundary checks | Passed. Exact commands and source equivalence are retained in their receipts. |
+| `npm run build:study` through the native runner; `npm run build`; demo Vite build with task-owned `TEMPO_BROWSER_BUILD_DIR` | Passed production compilation; unchanged default/demo consumed inputs are checked against their fresh `5571e2a2` runs. This is not SSR runtime acceptance. |
+| `npm run check:conflicts`; `git diff origin/main --check` | Passed; final publication checks are retained separately. |
+
+The new `bootstrap-body-interruption-browser-online` scenario uses real Learning
+HTTP, restricted disposable PostgreSQL, production Study, native board interaction,
+the service worker and an actual issued head. For both interrupted reloads,
+Chromium observed HTTP 200 and began body consumption before the proxy cut the
+response after 144 of 288 actual upstream bytes. Browser online status remained
+true. The answer stayed local without a committed review or invented successor.
+Reconnect preserved its command identity/payload, received a real Learning receipt,
+and observed its acknowledgement transaction commit before normal queue replacement.
+The owning Python case independently requires exactly one PostgreSQL review.
+The retained request inventory rejects unrelated origins and the evidence audit
+also checks that no legacy frontend API or optional Learning path was used.
+
+Failed attempts remain explicit: two setup runs selected no tests because the
+copied dependencies lacked local links and pinned `fake-indexeddb`; the first
+native run exposed an acknowledgement-observation race in the new test; the next
+run passed the P3 case but an existing remediation fixture's Learning process did
+not become ready, leaving an empty server log. Its cause is unestablished. The
+complete suite was rerun without changing budgets, selection or assertions.
+An initial Learning-only run passed 157 cases but its three browser proofs lacked
+their component-local TypeScript compiler. Only that browser package's locked
+dependencies were installed before rerunning the complete 160-case owner.
+
+Cleanup receipts verify removal of six PostgreSQL fixture containers, two runtime
+API test containers, six volumes and six temporary image tags. All 362 observed
+ports were closed and no task-owned process remained. Four native Study build
+directories, the demo output, controlled-browser output and installed-consumer
+scratch were removed; raw evidence is retained outside the checkout. Final
+checkout/build cleanup follows pushed-ref verification and is recorded in the
+external handoff. Primary main remains clean at the original base; live Study,
+other worktrees, historical evidence and shared caches were preserved.
+Native offline evidence is Chromium/macOS only. There is no cross-device offline
+release qualification, live data conversion, production deployment, hosted CI pass,
+whole-product gate or merge claim.

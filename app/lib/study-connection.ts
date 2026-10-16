@@ -199,11 +199,7 @@ export async function connectStudy(origin: string, workspace: string, credential
     : authorities()[identity] ? "recover" : "cutover";
   await assertStudyAuthority(candidate.origin, candidate.workspace, transition);
   requireCurrent();
-  let response: Response;
-  try {
-    // Bootstrap errors notify only after the candidate's generation is checked.
-    response = await authenticatedLearningFetch(`${candidate.origin}/api/study/bootstrap`, { signal: AbortSignal.timeout(5_000) }, candidate, false);
-  } catch (cause) {
+  const failForTransport = async (cause: unknown): Promise<never> => {
     requireCurrent();
     await assertStudyAuthority(candidate.origin, candidate.workspace, transition);
     requireCurrent();
@@ -216,14 +212,35 @@ export async function connectStudy(origin: string, workspace: string, credential
       } catch (cause) { throw new StudyConnectionError("bootstrap", "The cached Study bootstrap is invalid. Reconnect to the original Learning service.", false, undefined, { cause }); }
     }
     throw new StudyConnectionError("transport", "Learning is unavailable. Reconnect to its original service; saved attempts await confirmation.", cachedPracticeAvailable, undefined, { cause });
+  };
+  const bootstrapSignal = AbortSignal.timeout(5_000);
+  let response: Response;
+  try {
+    // Bootstrap errors notify only after the candidate's generation is checked.
+    response = await authenticatedLearningFetch(`${candidate.origin}/api/study/bootstrap`, { signal: bootstrapSignal }, candidate, false);
+  } catch (cause) {
+    return failForTransport(cause);
   }
   requireCurrent();
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) window.dispatchEvent(new Event("tempo:study-auth-required"));
     throw new StudyConnectionError("http", `Learning connection was rejected (HTTP ${response.status}). Check the Study credential, workspace and allowed Origin.`, false, response.status);
   }
+  // A consumed/locked body is a protocol error, not evidence of an outage.
+  if (response.bodyUsed || response.body?.locked)
+    throw new StudyConnectionError("bootstrap", "Learning returned an unavailable bootstrap response body. Reconnect to its original service.");
+  let rawBootstrap: string;
+  try { rawBootstrap = await response.text(); }
+  catch (cause) {
+    requireCurrent();
+    if (bootstrapSignal.aborted || cause instanceof TypeError ||
+        cause instanceof DOMException && ["AbortError", "TimeoutError"].includes(cause.name))
+      return failForTransport(cause);
+    throw new StudyConnectionError("bootstrap", String(cause), false, undefined, { cause });
+  }
+  requireCurrent();
   let bootstrap: StudyBootstrap;
-  try { bootstrap = validatedBootstrap(await response.json(), candidate.workspace); }
+  try { bootstrap = validatedBootstrap(JSON.parse(rawBootstrap), candidate.workspace); }
   catch (cause) { requireCurrent(); throw new StudyConnectionError("bootstrap", String(cause), false, undefined, { cause }); }
   requireCurrent();
   // Another tab may write while bootstrap is in flight. Preserve the transition,
