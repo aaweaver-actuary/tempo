@@ -106,11 +106,19 @@ The benchmark command was `services/content/.venv/bin/python services/content/in
 
 ## H. Independent review
 
-Separate reviewer `independent_review` inspected all changed production paths and actual consumers at `75be0e48`, then reviewed proof/harness changes through `759b5ededee94de4e8f2ee24559e5229fdc1379e`. No actionable P1/P2 remains. Initial material proof gaps were corrected and reviewed: rollback/retry, transport/retirement and actual retired-snapshot consumption. The later native fixture correction retains accepted-evidence assertions. Independent pure/installed checks and all initial failures are recorded in `independent-review.txt`. The reviewer ran no native/database/browser qualification and does not substitute for the table above.
+Separate reviewer `independent_review` inspected all changed production paths and actual consumers at `75be0e48`, then reviewed proof/harness changes through `759b5ededee94de4e8f2ee24559e5229fdc1379e`. No actionable P1/P2 remains. Initial material proof gaps were corrected and reviewed: rollback/retry, transport/retirement and actual retired-snapshot consumption. The later native fixture correction retains accepted-evidence assertions. Independent pure/installed checks and all initial failures are recorded in `independent-review.txt`. The reviewer also verified merge `759b5ededee94de4e8f2ee24559e5229fdc1379e` had no conflict-resolution changes and preserved all selected A inputs. This integration review did not assess PR #293 internals. The reviewer ran no native/database/browser qualification and does not substitute for the table above.
 
 ## I. GitHub review disposition
 
-All three original defects are repaired. Thread replies identify implementation and owning regression evidence: terminal failure/source release, generation-aware snapshot identity, and alias-aware Study membership. Final thread resolution/open state is recorded after publication in the external handoff. Public comments use repository-relative paths and contain no private local paths or credentials.
+GitHub confirms all three original threads resolved, with sanitized implementation and regression replies; no other unresolved review thread was present at this verification.
+
+| Thread | Implementation | Regression evidence | State |
+| --- | --- | --- | --- |
+| [Terminal failure/source reservation](https://github.com/aaweaver-actuary/tempo/pull/294#discussion_r4299017746) | Fixed in `75be0e48ed65a85229bf5c2eeebbfe516859166c` | Content native 82/82 (`test_A_terminal_learning_rejection_releases_source_reservation`, terminal races/replay); installed rejected/corrected activation in Learning 176/176 | Resolved |
+| [Snapshot identities](https://github.com/aaweaver-actuary/tempo/pull/294#discussion_r4299018240) | Fixed in `75be0e48ed65a85229bf5c2eeebbfe516859166c` | Operator 8 per artifact consumer; Learning 176/176 real concurrent checkpoint and both installation orders; Game Evidence 68/68 installation/retirement owners | Resolved |
+| [Historical aliases](https://github.com/aaweaver-actuary/tempo/pull/294#discussion_r4299018728) | Fixed in `75be0e48ed65a85229bf5c2eeebbfe516859166c` | Learning 176/176 including `test_A_historical_alias_move_membership_accepts_new_alternative`; production Home/Study 41/41 | Resolved |
+
+The exact remote snapshot is retained in `github-review-threads-final.json`. Neither parent issue #193 nor #266 was closed.
 
 ## J. Remaining work
 
