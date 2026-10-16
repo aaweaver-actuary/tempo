@@ -4643,3 +4643,5 @@ ready-publication and practiced-parent eligibility. SQLite's useful sparse
 algorithm and the existing review/evidence/history/receipt transaction owners are
 retained. Original literal SQL fixtures remain a transitional compatibility owner;
 they do not select the retired native parent-wide query.
+
+The existing native `test_postgres_priority_unlock_rejected_pages_and_restart` case now forces a real 250 ms PostgreSQL transaction cutoff, verifies the durable checkpoint did not move, and retries a finite number of fresh slices without extending deadlines or changing page/write bounds. Natural deadline aborts remain visible in `checkpoint-retries.jsonl`; exhaustion fails the proof.
