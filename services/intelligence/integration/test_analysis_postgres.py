@@ -448,6 +448,9 @@ def test_R2_legacy_revision_preserves_identity_until_explicit_replacement(state)
     owner.derive('repair');retained=owner.report('repair')
     assert retained['derivation_version']==1 and retained['items'][0]['finding_id']==legacy['finding_id']
     assert retained['items'][0]['dismissal_state']=='dismissed' and retained['items'][0]['evidence_revision']==legacy['evidence_revision']
+    owner.dismiss('repair',legacy['finding_id'],retained['generation'],Command(command_id='legacy-reopen',action='reopen',expected_revision=retained['items'][0]['finding_revision']))
+    owner.derive('repair');retained=owner.report('repair')
+    assert retained['items'][0]['dismissal_state']=='open' and retained['items'][0]['finding_id']==legacy['finding_id']
     for action in ['continue','retry','resume']:
         with pytest.raises(DomainError,match='legacy_analysis_revision_required'):
             owner.command('repair',Command(command_id='legacy-'+action,action=action,expected_revision=1))
@@ -459,3 +462,28 @@ def test_R2_legacy_revision_preserves_identity_until_explicit_replacement(state)
     assert corrected['derivation_version']==2 and corrected['items'][0]['lineage'] is None
     assert corrected['items'][0]['finding_id']!=legacy['finding_id'] and corrected['items'][0]['dismissal_state']=='open'
     assert owner.report('repair',generation=retained['generation'])['items'][0]['finding_id']==legacy['finding_id']
+
+
+def test_R2_unpublished_legacy_run_does_not_starve_new_reports(state):
+    import psycopg
+    owner=repair_scope(state,run_id='legacy-empty')
+    with psycopg.connect(os.environ['TEMPO_INTELLIGENCE_TEST_OWNER_URL']) as db:
+        db.execute("UPDATE intelligence.analysis_runs SET payload=payload-'derivation_version' WHERE run_id='legacy-empty'")
+    repair_scope(state,run_id='corrected')
+    assert owner.derive_next()
+    assert owner.report('corrected')['generation'] is not None
+    assert owner.report('legacy-empty')['generation'] is None
+    assert owner.report('legacy-empty')['reasons']==['legacy_analysis_revision_required']
+    assert owner.status('legacy-empty')['recovery_required']=='legacy_analysis_revision_required'
+
+
+def test_R5_legacy_cancellation_reaps_expired_execution_without_new_work(state):
+    import psycopg
+    owner=repair_scope(state);claim=owner.claim('repair',builder)
+    with psycopg.connect(os.environ['TEMPO_INTELLIGENCE_TEST_OWNER_URL']) as db:
+        db.execute("UPDATE intelligence.analysis_runs SET payload=payload-'derivation_version' WHERE run_id='repair'")
+        db.execute("UPDATE intelligence.analysis_positions SET leased_until=now()-interval '1 second' WHERE state='running'")
+    owner.command('repair',Command(command_id='legacy-cancel',action='cancel',expected_revision=1))
+    assert owner.claim('repair',builder) is None
+    assert owner.status('repair')['state']=='cancelled'
+    with pytest.raises(DomainError,match='stale_analysis_execution'):owner.accept(claim,result(claim))

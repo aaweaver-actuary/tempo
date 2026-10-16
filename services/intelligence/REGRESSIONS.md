@@ -353,3 +353,9 @@ replaces the revision without transferring a false attribution's dismissal.
 `test_R5_compatible_session_restart_at_played_stage_and_replay_conflict` owns
 compatible played-stage loss/recovery and changed replay bytes. The pure legacy
 contract case includes the original borrowed-lineage/null-ID engine shape.
+
+Legacy follow-up edges are owned by the same regular native suite:
+`test_R2_unpublished_legacy_run_does_not_starve_new_reports` and
+`test_R5_legacy_cancellation_reaps_expired_execution_without_new_work`. The legacy
+identity test includes explicit dismissal → reopening → publication. These keep
+legacy recovery from blocking corrected runs or retaining orphaned capacity.

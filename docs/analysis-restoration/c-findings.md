@@ -282,3 +282,9 @@ history regression. B advanced during qualification to `099fa1fbc29efdf747af5da6
 with a separately accepted image `sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f`.
 The computational profile/client wheel remain unchanged. Earlier final-image
 acceptance remains distinct; current-image acceptance is recorded separately.
+
+The follow-up review also checked legacy reopen, unpublished heads and expired
+cancellation leases. Their focused corrections reset user state from authoritative
+dismissals, exclude unpublished legacy heads from background derivation while
+exposing a revision-required read status, and reap cancellation before rejecting
+new legacy work. Named native regressions cover all three paths.

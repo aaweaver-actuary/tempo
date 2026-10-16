@@ -134,7 +134,7 @@ class AnalysisStore:
 
     def _status(self,db,run):
         counts={r["state"]:r["count"] for r in db.execute("SELECT state,count(*) FROM analysis_positions WHERE run_id=%s AND revision=%s GROUP BY state",(run["run_id"],run["revision"]))}
-        return public({"schema_version":1,"workspace_id":self.workspace,"run_id":run["run_id"],"revision":run["revision"],"state":run["state"],"scope":{key:value for key,value in run["payload"].items() if key!="derivation_version"},"derivation_version":run["payload"].get("derivation_version",1),"progress":counts,"requested_generation":run["requested_generation"],"published_generation":run["published_generation"],"last_complete_generation":run["last_complete_generation"],"engine_scan_complete":sum(v for k,v in counts.items() if k!="complete")==0})
+        return public({"schema_version":1,"workspace_id":self.workspace,"run_id":run["run_id"],"revision":run["revision"],"state":run["state"],"scope":{key:value for key,value in run["payload"].items() if key!="derivation_version"},"derivation_version":run["payload"].get("derivation_version",1),"recovery_required":"legacy_analysis_revision_required" if run["payload"].get("derivation_version",1)!=2 else None,"progress":counts,"requested_generation":run["requested_generation"],"published_generation":run["published_generation"],"last_complete_generation":run["last_complete_generation"],"engine_scan_complete":sum(v for k,v in counts.items() if k!="complete")==0})
 
     def status(self,run_id):
         with self.owner.transaction(read_only=True) as db:
@@ -282,6 +282,7 @@ class AnalysisStore:
         for item in findings:incident_findings[item["incident_id"]].append({"finding_id":item["finding_id"],"category":item["category"]})
         for item in findings:
             item["related_findings"]=[other for other in incident_findings[item["incident_id"]] if other["finding_id"]!=item["finding_id"]]
+            item["dismissal_state"]="open"
             dismissed=dismissals.get(item["finding_id"])
             if legacy_metadata is None:
                 item["evidence_revision"]=digest(item)
@@ -343,7 +344,7 @@ class AnalysisStore:
                 historical=db.execute("SELECT revision FROM analysis_reports WHERE run_id=%s AND generation=%s",(run_id,selected)).fetchone()
                 if historical:report_revision=historical["revision"]
             if selected is None:
-                return {"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"status":"pending","items":[],"next_cursor":None,"generation":None}
+                return {"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"status":"pending","items":[],"next_cursor":None,"generation":None,"derivation_version":run["payload"].get("derivation_version",1),"reasons":["legacy_analysis_revision_required"] if run["payload"].get("derivation_version",1)!=2 else []}
             report=db.execute("SELECT payload FROM analysis_reports WHERE run_id=%s AND revision=%s AND generation=%s",(run_id,report_revision,selected)).fetchone()
             if not report:
                 raise DomainError("analysis_generation_not_found",404)
@@ -414,8 +415,6 @@ class AnalysisStore:
         """build_job is a pure B client helper; it performs no process/network I/O."""
         with self.owner.transaction(background=True) as db:
             run=self._head(db,run_id,True)
-            if run["payload"].get("derivation_version",1)!=2:
-                raise DomainError("legacy_analysis_revision_required")
             if run["state"] in {"cancel_requested","cancelled"}:
                 # Expired executions have lost their owning session; late results remain fenced.
                 db.execute("UPDATE analysis_positions SET state='cancelled',lease_token=NULL,leased_until=NULL WHERE run_id=%s AND revision=%s AND state='running' AND leased_until<=now()",(run_id,run["revision"]))
@@ -423,6 +422,8 @@ class AnalysisStore:
                 if not running and run["state"]=="cancel_requested":
                     db.execute("UPDATE analysis_runs SET state='cancelled',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
                 return None
+            if run["payload"].get("derivation_version",1)!=2:
+                raise DomainError("legacy_analysis_revision_required")
             row=db.execute("SELECT * FROM analysis_positions WHERE run_id=%s AND revision=%s AND ((state IN ('pending','retry_wait') AND (next_attempt_at IS NULL OR next_attempt_at<=now())) OR (state='running' AND leased_until<=now())) ORDER BY created_at,ordinal,position_id FOR UPDATE SKIP LOCKED LIMIT 1",(run_id,run["revision"])).fetchone()
             if not row:
                 return None
@@ -529,7 +530,7 @@ class AnalysisStore:
 
     def derive_next(self):
         with self.owner.transaction(background=True,read_only=True) as db:
-            row=db.execute("SELECT r.run_id FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) WHERE r.state<>'staging' AND r.requested_generation IS DISTINCT FROM r.published_generation ORDER BY r.created_at,r.run_id LIMIT 1").fetchone()
+            row=db.execute("SELECT r.run_id FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) WHERE r.state<>'staging' AND (r.payload->>'derivation_version'='2' OR r.published_generation IS NOT NULL) AND r.requested_generation IS DISTINCT FROM r.published_generation ORDER BY r.created_at,r.run_id LIMIT 1").fetchone()
         return self.derive(row["run_id"]) if row else False
 
     def mark_engine_unavailable(self,run_id):
