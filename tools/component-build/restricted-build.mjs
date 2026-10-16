@@ -7,6 +7,7 @@ import { performance } from "node:perf_hooks";
 import { repository, checkTypeScript, validateManifest } from "./check-components.mjs";
 import { parseSelection, readManifest, selectComponents } from "./selection.mjs";
 import { buildRestrictedContracts } from "./restricted-contracts.mjs";
+import { buildWorker } from "./worker-qualifier.mjs";
 
 export function restrictedBuild(options) {
   const root = process.env.TEMPO_COMPONENT_ROOT ?? repository;
@@ -15,7 +16,7 @@ export function restrictedBuild(options) {
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id) });
   if (options.suiteIds || options.consumers || options.positional.length > 1) throw new Error("Unexpected restricted build argument");
   if (options.list) { console.log(JSON.stringify({ selected }, null, 2)); return; }
-  for (const component of selected) if (!["library", "contract"].includes(component.type)) throw new Error("No restricted artifact builder for " + component.id);
+  for (const component of selected) if (!["library", "contract", "worker"].includes(component.type)) throw new Error("No restricted artifact builder for " + component.id);
   const started = performance.now();
   const workspace = mkdtempSync(join(tmpdir(), "tempo-m02-restricted-"));
   const report = { node: process.version, stages: [], artifacts: [], sourceRevision: "", sourceInputs: {}, selectedComponents: selected.map(component => component.id), complete: false };
@@ -45,7 +46,14 @@ export function restrictedBuild(options) {
   try {
     report.sourceRevision = command("revision", "git", ["rev-parse", "HEAD"], root).trim();
     report.dirty = command("working-tree", "git", ["status", "--porcelain"], root).trim();
-    const npmComponents = selected.filter(component => existsSync(resolve(root, component.root, "package.json")));
+    for (const worker of selected.filter(component => component.type === "worker")) {
+      const workerDirectory = join(workspace, worker.id + "-artifacts"); mkdirSync(workerDirectory);
+      const workerReport = buildWorker(root, worker, join(workspace, worker.id + "-report.json"), workerDirectory);
+      report.stages.push({ label: worker.id + "-restricted", ...workerReport });
+      report.artifacts.push(...workerReport.artifacts);
+      artifactDirectories.push(workerDirectory);
+    }
+    const npmComponents = selected.filter(component => component.type !== "worker" && existsSync(resolve(root, component.root, "package.json")));
     const npmArtifacts = new Map();
     const remaining = new Set(npmComponents);
     while (remaining.size) {

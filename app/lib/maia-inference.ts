@@ -1,95 +1,17 @@
 import { Chess, type Move } from "chess.js";
 import * as ort from "onnxruntime-web/wasm";
+import { decodePredictions, preparePosition } from "../../workers/maia/core.mjs";
 import moveIndex from "./all_moves_maia3.json";
 import reversedMoveIndex from "./all_moves_maia3_reversed.json";
 import type { EngineMove } from "./analysis-engines";
-import type { FenString, SquareName, UciMove } from "../types";
-import { asFenString, asSanMove, asSquareName, asUciMove } from "../types";
+import type { FenString } from "../types";
+import { asSanMove, asUciMove } from "../types";
 
 let assetRoot = "";
 
 function assetUrl(path: string) {
   return new URL(path, assetRoot).href;
 }
-const allMoves = moveIndex as Record<string, number>;
-const reversedMoves = reversedMoveIndex as Record<string, string>;
-
-function mirrorSquare(square: SquareName): SquareName {
-  return asSquareName(`${square[0]}${9 - Number(square[1])}`);
-}
-
-function mirrorMove(uci: UciMove): UciMove {
-  return asUciMove(
-    `${mirrorSquare(asSquareName(uci.slice(0, 2)))}${mirrorSquare(asSquareName(uci.slice(2, 4)))}${uci.slice(4)}`,
-  );
-}
-
-function mirrorFen(fen: FenString): FenString {
-  const [placement, active, castling, ep, halfmove, fullmove] = fen.split(" ");
-  const swap = (rank: string) =>
-    [...rank]
-      .map((char) =>
-        /[a-z]/.test(char)
-          ? char.toUpperCase()
-          : /[A-Z]/.test(char)
-            ? char.toLowerCase()
-            : char,
-      )
-      .join("");
-  const rights =
-    castling === "-"
-      ? "-"
-      : [
-          castling.includes("k") ? "K" : "",
-          castling.includes("q") ? "Q" : "",
-          castling.includes("K") ? "k" : "",
-          castling.includes("Q") ? "q" : "",
-        ].join("") || "-";
-  return asFenString(`${placement.split("/").reverse().map(swap).join("/")} ${active === "w" ? "b" : "w"} ${rights} ${ep === "-" ? "-" : mirrorSquare(asSquareName(ep))} ${halfmove} ${fullmove}`);
-}
-
-function preprocessMaia(fen: FenString) {
-  const isBlack = fen.split(" ")[1] === "b";
-  const normalizedFen = isBlack ? mirrorFen(fen) : fen;
-  const chess = new Chess(normalizedFen);
-  const pieceTypes = [
-    "P",
-    "N",
-    "B",
-    "R",
-    "Q",
-    "K",
-    "p",
-    "n",
-    "b",
-    "r",
-    "q",
-    "k",
-  ];
-  const tokens = new Float32Array(64 * 12);
-  normalizedFen
-    .split(" ")[0]
-    .split("/")
-    .forEach((rankText, rankFromTop) => {
-      let file = 0;
-      for (const char of rankText) {
-        if (/\d/.test(char)) file += Number(char);
-        else {
-          const square = (7 - rankFromTop) * 8 + file;
-          tokens[square * 12 + pieceTypes.indexOf(char)] = 1;
-          file += 1;
-        }
-      }
-    });
-  const legalMoves = new Float32Array(Object.keys(allMoves).length);
-  for (const move of chess.moves({ verbose: true })) {
-    const uci = `${move.from}${move.to}${move.promotion ?? ""}`;
-    const index = allMoves[uci];
-    if (index !== undefined) legalMoves[index] = 1;
-  }
-  return { tokens, legalMoves, isBlack };
-}
-
 let maiaReady: Promise<ort.InferenceSession> | undefined;
 const MAIA_INITIALIZATION_TIMEOUT_MS = 45_000;
 
@@ -166,45 +88,26 @@ export async function runMaiaInference(
 ): Promise<EngineMove[]> {
   assetRoot = root;
   const session = await loadMaia(onProgress);
-  const { tokens, legalMoves, isBlack } = preprocessMaia(fen);
+  const position = new Chess(fen);
+  const requestedMoves = position.moves({ verbose: true }).map((move) =>
+    `${move.from}${move.to}${move.promotion ?? ""}`);
+  // Terminal legacy callers retain their established empty-list response.
+  if (!requestedMoves.length) return [];
+  const prepared = preparePosition(fen, requestedMoves, moveIndex, reversedMoveIndex);
   const result = await session.run({
-    tokens: new ort.Tensor("float32", tokens, [1, 64, 12]),
+    tokens: new ort.Tensor("float32", prepared.tokens, [1, 64, 12]),
     elo_self: new ort.Tensor("float32", Float32Array.of(elo), [1]),
     elo_oppo: new ort.Tensor("float32", Float32Array.of(elo), [1]),
   });
-  const logits = result.logits_move?.data;
-  if (!(logits instanceof Float32Array))
-    throw new Error(
-      "Maia model/runtime output mismatch: expected float32 move logits",
-    );
-  const legalIndices = [...legalMoves.keys()].filter(
-    (index) => legalMoves[index] > 0,
-  );
-  const max = Math.max(...legalIndices.map((index) => logits[index]));
-  const weights = legalIndices.map((index) => Math.exp(logits[index] - max));
-  const total = weights.reduce((sum, value) => sum + value, 0);
-  const position = new Chess(fen);
+  const logits = result.logits_move;
+  if (logits?.type !== "float32" || logits.dims.join(",") !== "1,4352")
+    throw new Error("Maia model/runtime output mismatch: expected float32 move logits [1,4352]");
   const moves: EngineMove[] = [];
-  for (const [itemIndex, index] of legalIndices.entries()) {
-    const raw = asUciMove(reversedMoves[String(index)]);
-    const uci = isBlack ? mirrorMove(raw) : raw;
-    let move: Move | null = null;
-    try {
-      move = position.move({
-        from: uci.slice(0, 2),
-        to: uci.slice(2, 4),
-        promotion: uci[4] || "q",
-      });
-      position.undo();
-    } catch {
-      /* filtered below */
-    }
-    if (!move) continue;
-    moves.push({
-      uci,
-      san: asSanMove(move.san),
-      probability: weights[itemIndex] / total,
-    });
+  for (const prediction of decodePredictions(logits.data, prepared)) {
+    const uci = asUciMove(prediction.move);
+    const move: Move = position.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+    position.undo();
+    moves.push({ uci, san: asSanMove(move.san), probability: prediction.probability });
   }
   return moves.sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0));
 }

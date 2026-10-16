@@ -1,0 +1,13 @@
+[
+  {"name":"opening-white","fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","rating":1100},
+  {"name":"opening-black","fen":"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1","rating":1900},
+  {"name":"white-castling","fen":"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1","rating":1500},
+  {"name":"black-castling","fen":"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1","rating":1500},
+  {"name":"white-en-passant","fen":"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1","rating":1500},
+  {"name":"black-en-passant","fen":"4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1","rating":1500},
+  {"name":"white-promotion","fen":"4k3/P7/8/8/8/8/8/4K3 w - - 0 1","rating":1500},
+  {"name":"black-promotion","fen":"4k3/8/8/8/8/8/p7/4K3 b - - 0 1","rating":1500},
+  {"name":"opening-subset","fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","rating":1500,"moves":["e2e4","d2d4"]},
+  {"name":"uncapturable-en-passant","fen":"4k3/8/8/3p4/8/8/8/4K3 w - d6 0 1","rating":1500},
+  {"name":"pinned-en-passant","fen":"k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1","rating":1500}
+]

@@ -1,10 +1,11 @@
-FROM node:22-slim
+FROM node:26.10.0-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY workers/maia/package.json workers/maia/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --workspaces=false
 COPY scripts/maia-inference.mjs ./scripts/maia-inference.mjs
 COPY scripts/maia-coverage-worker.mjs ./scripts/maia-coverage-worker.mjs
 COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
+COPY workers/maia/core.mjs workers/maia/model.mjs workers/maia/errors.mjs workers/maia/model-descriptor.json ./workers/maia/
 COPY app/lib/all_moves_maia3.json app/lib/all_moves_maia3_reversed.json ./app/lib/
 COPY public/maia3/parts ./public/maia3/parts
 CMD ["node", "scripts/maia-coverage-worker.mjs"]

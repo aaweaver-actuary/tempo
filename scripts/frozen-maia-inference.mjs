@@ -2,12 +2,15 @@
 import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { analyzeMaiaPosition } from './maia-inference.mjs';
+import { analyzeMaiaPosition, getMaiaIdentity } from './maia-inference.mjs';
+const identity = await getMaiaIdentity();
+// Keep the historical nine path-keyed checksums consumed by frozen-plan
+// validation; the shared identity additionally binds the extracted core.
 const files = ['scripts/maia-inference.mjs','app/lib/all_moves_maia3.json','app/lib/all_moves_maia3_reversed.json',
   ...Array.from({length:6}, (_, index) => `public/maia3/parts/part-${String(index).padStart(2,'0')}`)];
 const checksums = {};
-for (const file of files) checksums[file] = createHash('sha256').update(await readFile(new URL(`../${file}`,import.meta.url))).digest('hex');
-const provenance = {checksums, node:process.version, runtime:JSON.parse(await readFile(new URL('../node_modules/onnxruntime-web/package.json',import.meta.url))).version};
+for (const file of files) checksums[file] = createHash('sha256').update(await readFile(new URL(`../${file}`, import.meta.url))).digest('hex');
+const provenance = { ...identity, checksums, node: process.version, runtime: identity.runtime_version };
 for await (const line of createInterface({input:process.stdin})) {
   try {
     const request = JSON.parse(line);

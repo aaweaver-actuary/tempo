@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
+import { checkWorker } from "./worker-qualifier.mjs";
 
 export const repository = resolve(new URL("../../", import.meta.url).pathname);
 const readJson = path => JSON.parse(readFileSync(path, "utf8"));
@@ -124,7 +125,8 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   const results = [];
   for (const component of selected) {
     const componentRoot = resolve(root, component.root);
-    if (existsSync(resolve(componentRoot, "package.json"))) results.push({ id: component.id, ...checkTypeScript(componentRoot, component) });
+    if (component.type === "worker") results.push({ id: component.id, ...checkWorker(root, component) });
+    else if (existsSync(resolve(componentRoot, "package.json"))) results.push({ id: component.id, ...checkTypeScript(componentRoot, component) });
     else {
       const argumentsList = component.type === "contract"
         ? [resolve(repository, "tools/component-build/check-contract.py"), componentRoot, JSON.stringify(component), resolve(root, component.catalog ?? "contracts/catalog.json")]

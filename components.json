@@ -297,21 +297,121 @@
     {
       "id": "maia",
       "type": "worker",
-      "maintainer": "Tempo",
-      "status": "planned",
+      "maintainer": "Tempo / #110",
+      "status": "implemented",
       "root": "workers/maia",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "MaiaWorker",
+        "PROBABILITY_TOLERANCE",
+        "SUPPORTED_RATINGS",
+        "VOCABULARY_SIZE",
+        "createModel",
+        "decodePredictions",
+        "inspectModel",
+        "mirrorFen",
+        "mirrorMove",
+        "mirrorSquare",
+        "preparePosition",
+        "validatePosition",
+        "validateRating",
+        "validateVocabularies"
+      ],
+      "dependencies": [
+        "ajv",
+        "chess.js",
+        "onnxruntime-web"
+      ],
+      "buildInputs": [
+        "package.json",
+        "package-lock.json",
+        "index.mjs",
+        "core.mjs",
+        "model.mjs",
+        "errors.mjs",
+        "worker.mjs",
+        "child.mjs",
+        "cli.mjs",
+        "wire.mjs",
+        "resources.mjs",
+        "model-descriptor.json",
+        "build-inputs.json",
+        "build.mjs",
+        "qualify.mjs",
+        "Dockerfile",
+        "fixtures",
+        "tests",
+        "test.mjs",
+        "benchmark.mjs",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "node qualify.mjs restricted",
+      "artifact": {
+        "name": "@tempo/maia-worker",
+        "version": "1.0.0",
+        "qualifier": "qualify.mjs",
+        "formats": [
+          "npm-tarball",
+          "container"
+        ],
+        "contract": "tempo-analysis-jobs-contracts 1.0.0 / wire v1",
+        "immutableInputs": "build-inputs.json",
+        "modelDescriptor": "model-descriptor.json"
+      },
+      "tests": [
+        {
+          "owner": "maia",
+          "kind": "node",
+          "command": "node test.mjs pure",
+          "inputs": [
+            "tests",
+            "fixtures",
+            "test.mjs",
+            "core.mjs",
+            "model.mjs",
+            "resources.mjs",
+            "model-descriptor.json",
+            "build-inputs.json"
+          ]
+        },
+        {
+          "owner": "maia",
+          "kind": "node",
+          "command": "node test.mjs protocol",
+          "inputs": [
+            "tests",
+            "fixtures",
+            "test.mjs",
+            "worker.mjs",
+            "child.mjs",
+            "cli.mjs",
+            "wire.mjs"
+          ]
+        },
+        {
+          "owner": "maia",
+          "kind": "python",
+          "command": "python -I -m pytest tests/contracts/test_exchange.py --import-mode=importlib -q",
+          "inputs": [
+            "tests/contracts"
+          ]
+        }
+      ],
+      "toolchain": {
+        "node": "26.10.0",
+        "runtime": "onnxruntime-web/wasm 1.23.0",
+        "chess": "chess.js 1.4.0",
+        "normalConcurrency": 1,
+        "minimumMemoryMiB": 1024,
+        "qualificationCPU": 1,
+        "resourcePolicy": "Verified finite kernel cgroup cap required for supervised jobs; startup reported separately."
+      },
       "dataOwnership": {
-        "authority": null,
+        "authority": "#110 computation; #109 durable jobs and accepted results",
         "databases": [],
         "migrations": []
-      }
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "tempo-cli",

@@ -4570,3 +4570,15 @@ establish PostgreSQL exactly-once effects or offline/service-worker behavior.
 ## Independent Learning runtime
 
 `services/learning/runtime/REGRESSIONS.md` owns the installed/runtime, native PostgreSQL and focused Chromium client/API inventory. `backend/tests/test_durable_task_enqueue_identity.py` retains #144 coverage for event/result identity after concurrent UPSERT selection. The component manifest registers the runtime and real client/runner inputs; no complete Study UI or hosted gate qualification follows from these focused checks.
+
+## Independent Maia worker (#110)
+
+[`workers/maia/REGRESSIONS.md`](../workers/maia/REGRESSIONS.md) owns the registered
+pure, protocol/resource, installed-contract and actual-model regressions. Named
+cases protect phantom castling, king coherence, en-passant legality, exact requested
+move support, generation/replay identity and truthful termination. Shared qualifier
+routing, containment, failure propagation and zero-case proofs remain in
+`tools/component-build/tests/workers.test.mjs`. Existing frozen-helper and
+browser/Node parity cases retain their root registration and now exercise the
+shared computation owner. These proofs do not establish Intelligence persistence,
+Learning behavior, or full-system qualification.
