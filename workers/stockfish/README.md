@@ -207,3 +207,17 @@ job is admitted, superseded, or the process/session is lost. The caller must adv
 execution generation after session loss. A lost Docker launcher can leave container
 ownership uncertain: operators/qualifiers must use the exact task-owned name/ID,
 never broad process-name kills or global cleanup.
+
+
+## Client environment boundary
+
+`StockfishClient(command, env=mapping)` passes an explicit complete environment to
+its owned launcher. The default reads and forwards only PATH, HOME, TMPDIR, LANG,
+and LC_* values. It does not inherit TEMPO_, PG*, DATABASE_URL, provider secrets,
+NODE_OPTIONS or PYTHONPATH. An explicit mapping is copied; C should supply only
+its safe launcher environment. This applies to a direct native worker command as
+well as the Docker CLI. Docker containers do not receive C environment variables
+implicitly. No C configuration file or database/provider credential is required.
+The named `test_B_client_environment_isolation` uses synthetic secret canaries;
+it never reads real provider credentials. Callers using the earlier interface
+wheel should reinstall the final wheel before passing `env=`.

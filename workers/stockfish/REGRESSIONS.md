@@ -59,3 +59,12 @@ Input digest, strict schemas, timestamp chronology, reservation exhaustion,
 reentrant cancellation, memory/CPU/swap admission, passive imports, installed
 Python 3.12/3.14 clients and restricted dependency closure have additional owning
 cases. Shared v1/schema/reference tests remain owned by contracts/analysis-jobs.
+
+
+## Client credential isolation reported by C
+
+`tests/contracts/test_exchange.py::test_B_client_environment_isolation` launches a
+real subprocess through the public client with synthetic private-config, PG and
+provider canaries in the parent. Both default-whitelist and explicit-env cases
+prove those names are absent in the child, while intentional safe entries remain.
+C owns constructing its safe map; B owns passing it without ambient inheritance.

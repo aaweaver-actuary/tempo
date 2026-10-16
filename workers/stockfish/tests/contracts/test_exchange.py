@@ -83,3 +83,33 @@ def test_startup_timeout_is_typed_session_loss_and_reaps_its_launcher():
                 pass
         assert client.process.returncode is not None
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["default_whitelist", "explicit_mapping"])
+def test_B_client_environment_isolation(monkeypatch, explicit):
+    import os
+    for key in ("TEMPO_PRIVATE_C_CONFIG", "PGPASSWORD", "DATABASE_URL", "PROVIDER_API_KEY"):
+        monkeypatch.setenv(key, "synthetic-secret-canary")
+    script = '''import os,sys,json
+print(json.dumps({"event":"ready","identity":{"engine_version":"fixture"}}),file=sys.stderr,flush=True)
+record=json.loads(sys.stdin.readline())["payload"]
+private=("TEMPO_PRIVATE_C_CONFIG","PGPASSWORD","DATABASE_URL","PROVIDER_API_KEY")
+safe=not any(key in os.environ for key in private)
+if len(sys.argv)>1:safe=safe and os.environ.get("TEST_ALLOWED")=="yes"
+fields={key:record[key] for key in ("contract_version","workspace_id","job_id","request_revision","execution_generation")}
+print(json.dumps({"model":"JobStatus","payload":{**fields,"status":"failed","retryable":False,"reason":"isolated" if safe else "environment_leak"}}),flush=True)
+sys.stdin.read()
+'''
+    async def scenario():
+        command = [sys.executable, "-u", "-c", script, *(["explicit"] if explicit else [])]
+        mapping = {"PATH": os.environ.get("PATH", ""), "LANG": "C", "TEST_ALLOWED": "yes"} if explicit else None
+        async with StockfishClient(command, env=mapping) as client:
+            if mapping is not None:
+                assert client.env == mapping
+                mapping["TEST_ALLOWED"] = "mutated-after-start"
+            payload = json.loads((ROOT / "fixtures/synthetic/job.json").read_text())["payload"]
+            await client.send_job(v1.StockfishJob.model_validate(payload))
+            async for record in client.records():
+                assert record.reason == "isolated"
+                break
+    asyncio.run(scenario())

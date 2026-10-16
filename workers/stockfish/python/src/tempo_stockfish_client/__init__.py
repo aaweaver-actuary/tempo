@@ -5,7 +5,8 @@ import asyncio
 from collections import deque
 import hashlib
 import json
-from typing import AsyncIterator, Sequence
+import os
+from typing import AsyncIterator, Mapping, Sequence
 
 from tempo_analysis_jobs_contracts import v1
 
@@ -30,10 +31,14 @@ class WorkerSessionLost(RuntimeError):
 
 
 class StockfishClient:
-    def __init__(self, command: Sequence[str], *, startup_timeout: float = 35):
+    def __init__(self, command: Sequence[str], *, startup_timeout: float = 35, env: Mapping[str, str] | None = None):
         if not command or isinstance(command, str):
             raise ValueError("command must be a nonempty argument sequence")
         self.command = list(command)
+        # Read values only for allowed names; never copy domain credential values.
+        self.env = ({name: os.environ[name] for name in os.environ if name in {"PATH", "HOME", "TMPDIR", "LANG"} or name.startswith("LC_")} if env is None else dict(env))
+        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in self.env.items()):
+            raise TypeError("env requires string names and values")
         self.startup_timeout = startup_timeout
         self.process = None
         self.identity = None
@@ -50,7 +55,7 @@ class StockfishClient:
         self._ready = asyncio.get_running_loop().create_future()
         self.process = await asyncio.create_subprocess_exec(
             *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE, limit=1024 * 1024 + 1,
+            stderr=asyncio.subprocess.PIPE, limit=1024 * 1024 + 1, env=self.env,
         )
         self._tasks = [asyncio.create_task(self._read_records()), asyncio.create_task(self._read_diagnostics())]
         try:

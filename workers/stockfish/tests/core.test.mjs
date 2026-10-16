@@ -82,3 +82,7 @@ test('malformed bestmove and illegal ponder cannot turn a coherent iteration int
     assert.throws(()=>collector.receive(bestmove),{code:'invalid_engine_output'});
   }
 });
+
+test('FEN control whitespace never enters the UCI command stream',()=>{
+  for(const fen of [job().fen+'\n',job().fen.replace(' KQkq ',' KQkq\n '),job().fen.replace(' w ',' w\t ')]) assert.throws(()=>prepareJob(job({fen})),{code:'invalid_fen'});
+});

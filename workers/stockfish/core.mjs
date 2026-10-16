@@ -6,7 +6,7 @@ function invalidFen(message, cause) { throw new WireError("invalid_fen", message
 export function validatePosition(fen) {
   if (typeof fen !== "string" || fen.length > 120) invalidFen("FEN must be a string of at most 120 characters");
   const fields = fen.split(" ");
-  if (fields.length !== 6 || fields.some((field) => !field) || !/^[1-8prnbqkPRNBQK/]+$/.test(fields[0]) || !/^(0|[1-9]\d*)$/.test(fields[4]) || !Number.isSafeInteger(Number(fields[4])) || !/^[1-9]\d*$/.test(fields[5]) || !Number.isSafeInteger(Number(fields[5])) || !/^(?:K?Q?k?q?|-)$/.test(fields[2])) {
+  if (fields.length !== 6 || fields.some((field) => !field || /\s/.test(field)) || !/^[1-8prnbqkPRNBQK/]+$/.test(fields[0]) || !/^(0|[1-9]\d*)$/.test(fields[4]) || !Number.isSafeInteger(Number(fields[4])) || !/^[1-9]\d*$/.test(fields[5]) || !Number.isSafeInteger(Number(fields[5])) || !/^(?:K?Q?k?q?|-)$/.test(fields[2])) {
     invalidFen("FEN requires six fields, integer counters, and distinct ordered castling rights");
   }
   let board;
