@@ -3,6 +3,41 @@
 Release candidate: `study-priority-v1.0.0-rc.1`. Base: `0edf566a` (schema 48).
 No live settings, services, study records, or deployment were changed.
 
+The repair qualification integrates current main `ac38f92f`, including the
+post-header bootstrap recovery and independent Stockfish work. Historical results
+below retain their original identities; fresh commands and source receipts belong
+to the appended validation record.
+
+Independent native Study/Learning can publish an authenticated optional host
+activity signal without PostgreSQL, Redis, Celery or Node. Configure the same
+`TEMPO_STUDY_ACTIVITY_DIRECTORY` for Learning and development admission; native CLI
+defaults share the user's temporary `tempo-study-activity-v1` directory. Separate
+sessions and pending essential requests retain priority. Renewals carry remaining
+quiet time, so a final pulse does not begin another three-second interval.
+Snapshots expire unavailable after 15 seconds. Clean shutdown removes only the
+owning producer; crashed producers remain blocked for explicit reconciliation.
+This file adapter requires a shared kernel monotonic clock. VM/remote placement
+needs a colocated reader and is not native-host qualification.
+
+Legacy control refusal is unavailable evidence. A host intentionally without the
+legacy service declares `TEMPO_STUDY_ACTIVITY_LEGACY=absent`; independent registered
+sources are still checked. Hosted ephemeral GitHub runners use their explicit
+hosted-runner identity. Setting `CI=true` locally does not disable protection.
+
+Builders record ownership before creation, carry their owner in driver metadata
+and container environment, and verify builder/container absence before releasing
+their journal or exclusive execution lane. Ambiguous create/remove outcomes are
+reconciled. If cleanup remains uncertain, use the exact retained directory and
+owner token with `node scripts/development-budget.mjs --reconcile-owner <token>`
+only after the owner has stopped. The command verifies recorded resources and
+refuses foreign/unknown resources; a missing PID alone never releases capacity.
+
+Maia cancellation fences results immediately, bounds termination verification
+with a 75 ms watchdog, and quarantines an unverified process. A normal preemption
+is separate from a genuine model failure. Unconfirmed release delivery stays
+visible and retries the original immutable operation identity before another
+claim. Requested model/rating behavior and legal-move output remain unchanged.
+
 ## Behavior and ownership
 
 Study input synchronously stops active optional browser computation. Pointer,
