@@ -1751,7 +1751,9 @@
         "app/domain",
         "app/const.ts",
         "services/learning/remediation",
-        "services/game-evidence"
+        "services/game-evidence",
+        "services/content",
+        "tools/analysis-restoration/a_bridge"
       ]
     },
     {
