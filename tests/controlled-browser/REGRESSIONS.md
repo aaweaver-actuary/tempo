@@ -80,3 +80,5 @@ work from separately measured real PostgreSQL/server/transport time. UI workload
 input samples per idle/loaded lane and ten prepared confirmations. Frame callbacks
 are presentation proxies, not physical-display measurements. No latency threshold
 or existing durability assertion is relaxed.
+
+The strict Study activity contract accepts exactly one bounded session and a decimal remaining expiry from 1 through 3,000 ms. Its owning named contract regression rejects malformed/out-of-range expiry, duplicates, and extra fields. All controlled consumers use the shared query declaration.
