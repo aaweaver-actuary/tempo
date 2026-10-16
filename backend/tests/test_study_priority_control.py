@@ -90,6 +90,7 @@ def test_study_activity_sessions_extend_independently(control):
 
 def test_study_activity_final_pulse_preserves_remaining_quiet_time(control, monkeypatch):
     from app import main
+    monkeypatch.setattr(main, 'activity_gate', ApplicationActivityGate())
     now = [100.0]
     monkeypatch.setattr(redis_admission_gate.time, 'time', lambda: now[0])
     main.record_browser_activity(session_id='released', expires_in_ms=3000)
