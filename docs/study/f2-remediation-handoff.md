@@ -15,6 +15,8 @@ Publication staging/activation uses a third operator credential. Configure exact
 Learning Host and browser Origin allowlists. Optional `X-Tempo-Workspace` must
 match the configured database workspace; CORS permits that header,
 `Authorization`, `Content-Type` and `Idempotency-Key`.
+The exact environment-variable names and private-file rules are in the
+[runtime configuration](../../services/learning/runtime/README.md#install-and-run).
 
 ## Selection, completion and receipts
 
@@ -37,6 +39,16 @@ the old answer cannot settle it retrospectively. Unaided correct controlled stud
 qualifies; Again, guided/failed, stale, invalidated or unbound work does not.
 Same-day reinforcement remains under the existing scheduler and may precede the
 next ordinary card. No new remediation-specific review submission is needed.
+
+Exact retained request/response examples are in
+[`legacy-protocol.json`](../../services/learning/runtime/fixtures/legacy-protocol.json).
+The native [review fixtures](../../services/learning/runtime/tests/test_runtime.py)
+and [checkpoint/prepared-next fixtures](../../services/learning/runtime/tests/test_transactions.py)
+exercise those shapes against the actual application. The
+[remediation cases](../../services/learning/runtime/tests/test_remediation.py)
+add current priority, prepared issuance, receipt replay and unchanged-frontier
+assertions. These executable fixtures use real server-issued identities; copy the
+shape and preserve the actual response values instead of inventing identifiers.
 
 ## Work F2 must implement or validate
 

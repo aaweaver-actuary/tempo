@@ -71,8 +71,69 @@ native runners refuse external databases and remove only their owned resources.
 Installed consumers build only declared component inputs and use isolated Python
 imports after copied producer source removal.
 
-Final revision, exact commands, executed inventories, outcomes and cleanup are
-appended after qualification. A missing final result is not a pass.
+Final tested source: `9d1331872a538fc1780903f68fea0d6da6144b06` (implementation
+`3b369830`, then explicit issuance regressions). Later root-document-only evidence
+updates change no tested executable, package, fixture, lockfile or runner input.
+The adjacent [machine record](f1-game-evidence-learning.json) binds the exact
+commands, inventories, artifact/report hashes and toolchain to that source.
+
+| Owning proof | Executed result |
+| --- | --- |
+| Learning native, final issuance inventory | **112 passed**, 52.49 s; complete collection/setup/call/teardown/JUnit agreement; one existing Starlette warning. Includes real producer/HTTP/Chromium, independent restart and restricted image. |
+| Remediation registered lane | **58 pure + 10 runner + 49 PostgreSQL passed**, no skips; original query-plan bound unchanged. |
+| Game Evidence registered lane | **37 unit + 51 PostgreSQL passed**, no skips. |
+| Legacy review application registered lane | **43 application + 101 tooling + 24 PostgreSQL passed**, no skips; imports remain in the separate legacy environment. |
+| Actual scheduling/chess dependencies | **55 + 105 passed**, no skips. |
+| Affected publication/Game Evidence v1/v2 contracts | **99 + 99 passed**, no skips. |
+| Component tooling | **77 passed**, zero failures/skips/TODOs. |
+| Source-removed Learning closure | Seven wheel/sdist artifacts built. **2 installation/import/migration checks per consumer** for Python 3.12.12/3.14.8 × wheel/sdist; all four zero-selected probes exited 5 as required. Remediation is an installed dependency in each. |
+| Source-removed Game Evidence | **37 passed per consumer** for both Python versions × wheel/sdist; copied build sources removed, installed migration/CLI guards passed. |
+| Restricted component/export/resource checks | Learning, Game Evidence and their actual dependency closure passed. Native restricted-user image also passed real PostgreSQL load/issue/review/replay with no producer/backend/broker/model modules. |
+| Focused undefined-name, conflict and whitespace checks | Passed; these are not a full-product lint/build gate. |
+
+Exact final invocations (the `checkout` and `evidence` values identify the actual
+execution directories, not live data):
+
+```sh
+checkout=/Users/andy/tempo/.dev-copies/f1-remediation-integration
+evidence=/Users/andy/tempo/test-results/f1-integration-20261015
+export UV_CACHE_DIR=/private/tmp/tempo-f1-integration-uv-cache
+cd "$checkout"
+services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py "$evidence/native-issuance-final"
+services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py "$evidence/installed-issuance-final"
+TEMPO_COMPONENT_PYTHON="$checkout/services/learning/runtime/.venv/bin/python" TEMPO_REMEDIATION_EVIDENCE_DIR="$evidence/registered-remediation-final" node tools/component-build/test-lane.mjs --component learning-remediation --component scheduling --component chess-core --component content-publication-contracts
+TEMPO_COMPONENT_PYTHON="$checkout/backend/.venv/bin/python" TEMPO_LEARNING_EVIDENCE_DIR="$evidence/registered-legacy-qualified" node tools/component-build/test-lane.mjs --component learning-review-application
+TEMPO_COMPONENT_PYTHON="$checkout/services/game-evidence/.venv/bin/python" TEMPO_GAME_EVIDENCE_EVIDENCE_DIR="$evidence/registered-game-evidence-final" node tools/component-build/test-lane.mjs --component game-evidence
+services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py "$evidence/game-evidence-artifacts-final"
+TEMPO_COMPONENT_PYTHON="$checkout/backend/.venv/bin/python" node tools/component-build/check-components.mjs --component learning --component game-evidence
+TEMPO_COMPONENT_PYTHON="$checkout/backend/.venv/bin/python" node tools/component-build/test-node.mjs tools/component-build/tests
+/Users/andy/.local/bin/ruff check --select F821,F822,F823 services/learning/runtime services/learning/remediation services/game-evidence
+npm run check:conflicts
+git diff --check
+```
+
+The initial registered `--component learning` dispatch passed its 109-case native
+inventory and 43 application cases, then stopped in the legacy tooling suite at a
+missing Redis client import. The legacy native transition proof additionally
+imports the full retained HTTP assembly and required Celery/Kombu and multipart
+imports. Failed setup attempts remain in `registered-learning.log`,
+`registered-legacy-final.log` and `registered-legacy-complete.log`; they are not
+reported as passes. The final complete constituent suites above use separate
+correctly provisioned environments. The independent runtime/image/clean consumers
+never acquire these optional legacy service dependencies. No registration was
+removed and no test was skipped or weakened.
+
+Setup was scoped to locked runtime/Game Evidence components, the declared backend
+seam and pinned contract requirements. Only the legacy transition test required
+`backend/requirements.txt`; no analysis/model requirements or whole-repository
+frontend dependencies were installed. Browser/tooling dependencies used their
+local lockfiles. Node was 26.10.0, uv 0.12.22, Ruff 0.15.17, Playwright 1.63.0;
+PostgreSQL 18.6 image digest is in every native resource receipt.
+
+The 77-case tooling and component boundary results were obtained at `3b369830`;
+the subsequent `9d133187` change adds only runtime tests and their prose inventory.
+Those checker/tooling inputs and production sources are identical. The final
+112-case native and four-consumer artifact results bind to `9d133187` directly.
 
 Development failures are retained in `native-development*` and their logs:
 
@@ -94,6 +155,18 @@ Development failures are retained in `native-development*` and their logs:
   now statically imports only the declared remediation package; no checker rule
   was relaxed. A sandbox-only package refresh failed DNS and was repeated with
   network access; no test passed on that failure.
+
+Every successful and failed native invocation records ownership-verified cleanup.
+The final Learning report confirms its container, volume, restricted image tag and
+temporary test data are absent; remediation and legacy reports confirm their
+owned containers are removed; Game Evidence confirms container/volume removal.
+Its native reports were copied outside the checkout and byte-verified before
+removing generated originals. Raw inventories, JUnit, logs, distributions, source
+hashes and a recoverable source bundle are retained in the evidence root. The
+external `cleanup.json` records durable remote refs and final checkout/cache
+removal. A stopped unrelated Learning container predating this task was observed
+without mounts and left untouched because no F1 evidence established ownership.
+The live checkout and two unrelated worktrees remain preserved.
 
 ## Independence proof and limits
 

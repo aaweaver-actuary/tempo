@@ -1,0 +1,247 @@
+{
+  "base_revision": "18543f08a77618f76f97be61deb2d444c95e7934",
+  "tested_revision": "9d1331872a538fc1780903f68fea0d6da6144b06",
+  "implementation_revision": "3b369830",
+  "root_document_only_updates_after_tests": true,
+  "checkout": "/Users/andy/tempo/.dev-copies/f1-remediation-integration",
+  "evidence_root": "/Users/andy/tempo/test-results/f1-integration-20261015",
+  "toolchain": {
+    "python": [
+      "3.12.12",
+      "3.14.8"
+    ],
+    "node": "26.10.0",
+    "uv": "0.12.22",
+    "ruff": "0.15.17",
+    "playwright": "1.63.0",
+    "postgresql": "18.6-trixie",
+    "postgresql_image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+  },
+  "registered_suites": [
+    {
+      "suite": "learning",
+      "command": "services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py /Users/andy/tempo/test-results/f1-integration-20261015/native-issuance-final",
+      "passed": 112,
+      "failed": 0,
+      "skipped": 0,
+      "report": "native-issuance-final/native.json",
+      "inventory_sha256": "4a59021a896779e5c727aa3e063ab79ccd7666822923a612dcf23ef64d3609d9"
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/run_suite.py pure",
+      "cwd": ".",
+      "passed": 58,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "d47b025469ff3bef0862e4e91a4c878681c37065e4b84b9b84151351c9510ceb"
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/run_suite.py tooling",
+      "cwd": ".",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "bf403d3300156aab20d3c2a10190c842075230818efa40c8a0c6f3a9e969d4f9"
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/integration/run_postgres.py",
+      "cwd": ".",
+      "passed": 49,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "798c7b3bd4cc592ef43c073376eebf1f38eddff68f3724af46605672a22d06cf"
+    },
+    {
+      "suite": "game-evidence-contracts",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "cwd": "contracts/game-evidence",
+      "passed": 99,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "393900e34a06f0a159de002a1101b9065df77acc3661b96882f69ede62492a7e"
+    },
+    {
+      "suite": "scheduling",
+      "command": "uv run --locked --no-editable python -m pytest tests",
+      "cwd": "packages/scheduling",
+      "passed": 55,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "160d565881c1db1d0bc8118b4b773e714ed4232247c8b649042d6c4bb2a8ce00"
+    },
+    {
+      "suite": "chess-core",
+      "command": "uv run --locked --no-editable python -m pytest tests",
+      "cwd": "packages/chess-core",
+      "passed": 105,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "92623112f4551ecfd1c1713b53cfcec66c71ce51f235c73e6f61423a9a8fed69"
+    },
+    {
+      "suite": "content-publication-contracts",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "cwd": "contracts/content-publication",
+      "passed": 99,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "bc785e5493982a4dc3640bc8ec443d93b416f7a6392d1b834cfb3d37c0c8d453"
+    },
+    {
+      "suite": "learning-review-application",
+      "command": "python run_suite.py application",
+      "cwd": "services/learning/application",
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-legacy-qualified.log",
+      "inventory_sha256": "b05e71d610d2640a7f28f7e1673db48da788d35cc665a9da059f6077ee4e7556"
+    },
+    {
+      "suite": "learning-review-application",
+      "command": "python services/learning/application/run_suite.py tooling",
+      "cwd": ".",
+      "passed": 101,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-legacy-qualified.log",
+      "inventory_sha256": "ecf7b723917a67859c594c24865bd8e7f214f682e29aa328c5c6bd881bde0ec0"
+    },
+    {
+      "suite": "learning-review-application",
+      "command": "python services/learning/application/integration/run_postgres.py",
+      "cwd": ".",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-legacy-qualified.log",
+      "inventory_sha256": "b029b2f4248264c2b6898d99e138e1884d956d8542304da20c6f0523d8b1596f"
+    },
+    {
+      "suite": "game-evidence",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "cwd": "services/game-evidence",
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-game-evidence-final.log",
+      "inventory_sha256": "1d83861f9e4039b2f3d8879c33b5c957668725cfedec98aa471107c9f8710911"
+    },
+    {
+      "suite": "game-evidence",
+      "command": "python services/game-evidence/integration/run_postgres.py",
+      "cwd": ".",
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-game-evidence-final.log",
+      "inventory_sha256": "e63697d8a604555d4eb61d86d35f5735932cc50d9ce66a268f95231791b9a285"
+    }
+  ],
+  "component_tooling": {
+    "passed": 77,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0,
+    "source": "3b369830",
+    "reused_reason": "Only runtime tests and prose changed in 9d133187; component-tooling/checker and production inputs unchanged."
+  },
+  "learning_consumers": {
+    "3.12-wheel": {
+      "artifact_kind": "wheel",
+      "runtime": "Python 3.12.12",
+      "passed": 2
+    },
+    "3.12-sdist": {
+      "artifact_kind": "sdist",
+      "runtime": "Python 3.12.12",
+      "passed": 2
+    },
+    "3.14-wheel": {
+      "artifact_kind": "wheel",
+      "runtime": "Python 3.14.8",
+      "passed": 2
+    },
+    "3.14-sdist": {
+      "artifact_kind": "sdist",
+      "runtime": "Python 3.14.8",
+      "passed": 2
+    }
+  },
+  "learning_artifacts": {
+    "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+    "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+    "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+    "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+    "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a",
+    "tempo_learning_remediation-0.1.0-py3-none-any.whl": "06decf69244aa47e257ee5897085f0d34984b21fc3696544708f60ef298856f9",
+    "tempo_learning_remediation-0.1.0.tar.gz": "fc87fa7ed9d8e15f597ce0dfb9c0691698dd02824809c472573b304fa7e7b579",
+    "tempo_learning_review-0.1.0-py3-none-any.whl": "f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce",
+    "tempo_learning_review-0.1.0.tar.gz": "38d432ee798f2184aa62aac64527448fc7f89e28bbcb9add1fd0ecb5c446db1e",
+    "tempo_learning_runtime-0.1.0-py3-none-any.whl": "f74fa4ddbf70e69ca38f30fc7a27520890d830b6562d229a713b73da634608e0",
+    "tempo_learning_runtime-0.1.0.tar.gz": "927543d677c84dcec39f4b24012d1438f552bc7f6424f908af33513948576865",
+    "tempo_scheduling-0.2.0-py3-none-any.whl": "7fd727f381877ef8e80e11fc3d56f1e75b872db4969c59ae218c30856d6a649d",
+    "tempo_scheduling-0.2.0.tar.gz": "718cc1d3f90d19b53f6c6d0014befdae0e68605bcf7e57aa6754e520e96b5e3c"
+  },
+  "producer_consumers": {
+    "python-3.12-wheel": 37,
+    "python-3.12-sdist": 37,
+    "python-3.14-wheel": 37,
+    "python-3.14-sdist": 37
+  },
+  "producer_build_sources_removed": true,
+  "producer_artifacts": {
+    "tempo_game_evidence-0.1.0-py3-none-any.whl": "905f21c742ebcb71ceed4aac076f94f94f91430572c4a085e6da252f595c36f4",
+    "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+    "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+    "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a",
+    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+    "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+    "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+    "tempo_game_evidence-0.1.0.tar.gz": "d39530052ebc3ae32b3fdbd2442526c9e72d16333c8e290eeeedcf8278797fb1"
+  },
+  "reports_sha256": {
+    "native-issuance-final/native.json": "7e9083933f7630a4a5915fa2bba7c406a305a56d4079801a6333e7daa2e42c63",
+    "installed-issuance-final/installed.json": "013d6572402cbb7d1018b8e894ef2158919b678dda75ff826c563fc5bf4eb514",
+    "game-evidence-artifacts-final/artifacts.json": "d0e5349c08cdd99b38b4b2953b84863d2206bd344b38beabd188a16634d0b238",
+    "registered-remediation-final/native.json": "5f567f55d711b9ebe29167cf099b4416be77318da5ee4f5876e7b74a759295fb",
+    "registered-legacy-qualified/native.json": "2795ca1cfc22f3e1c4730967455510c37586610665f9d8969fbe620c49dbc09f",
+    "registered-game-evidence-native/native-resource.json": "45bea6f99d17da53ca434138db47fb1779bd7cb8e2afdad0678281d9dc2e40f2",
+    "tooling-final.log": "bd24da69db2843b32f5620a8811b175d157f3ad351f02300cfc456cfaa26f284",
+    "component-boundaries-final.log": "d1a54a2e69223e9a0b78758f58c58b26e5f5c06d32e0456f85ce20c322e67106",
+    "executed-inventory.json": "6bef626a22cc9ba3206f2fc6d90143e58674cee013bd27a9a2a49af22513371b"
+  },
+  "limits": [
+    "No deployment/live migration/history conversion.",
+    "No full Study application routing, teaching route adoption, two-tab UI or service-worker qualification.",
+    "Independent Learning has no review invalidation command; a future writer must invalidate settlement in its transaction.",
+    "No hosted merge qualification claimed. #194/#224 remain open."
+  ],
+  "cleanup_receipts": {
+    "learning": {
+      "container_absent": true,
+      "volume_absent": true,
+      "runtime_image_tag_removed": true,
+      "temporary_test_data_removed": true
+    },
+    "remediation": true,
+    "legacy": true,
+    "producer": {
+      "container_removed": true,
+      "volume_removed": true
+    },
+    "unrelated_stopped_container_retained": "tempo-learning-f63e01195e88b5e4",
+    "final_ref_and_checkout_record": "/Users/andy/tempo/test-results/f1-integration-20261015/cleanup.json"
+  }
+}
