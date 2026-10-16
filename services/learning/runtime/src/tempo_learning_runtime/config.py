@@ -20,6 +20,7 @@ class Configuration:
 
     operator_token: str | None = field(default=None, repr=False)
     evidence_token: str | None = field(default=None, repr=False)
+    host_activity_directory: Path | None = None
 
     def __post_init__(self):
         if not self.workspace_id or len(self.workspace_id) > 200:
@@ -62,12 +63,14 @@ class Configuration:
 
     @classmethod
     def environment(cls):
+        from .host_activity import default_directory
         token_file = Path(os.environ["TEMPO_LEARNING_TOKEN_FILE"])
         return cls(
             workspace_id=os.environ["TEMPO_LEARNING_WORKSPACE"],
             database_url=os.environ["TEMPO_LEARNING_DATABASE_URL"],
             reader_url=os.environ["TEMPO_LEARNING_READER_URL"],
             token=token_file.read_text().strip(),
+            host_activity_directory=default_directory(),
             origins=tuple(os.environ["TEMPO_LEARNING_ORIGINS"].split(",")),
             hosts=tuple(
                 os.environ.get("TEMPO_LEARNING_HOSTS", "localhost,127.0.0.1").split(",")

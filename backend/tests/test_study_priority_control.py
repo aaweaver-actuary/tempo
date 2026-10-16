@@ -88,6 +88,17 @@ def test_study_activity_sessions_extend_independently(control):
     assert control.leases['browser-activity:desktop'] == previous
 
 
+def test_study_activity_final_pulse_preserves_remaining_quiet_time(control, monkeypatch):
+    from app import main
+    now = [100.0]
+    monkeypatch.setattr(redis_admission_gate.time, 'time', lambda: now[0])
+    main.record_browser_activity(session_id='released', expires_in_ms=3000)
+    assert control.leases['browser-activity:released'] == 103_000
+    now[0] = 102.5
+    main.record_browser_activity(session_id='released', expires_in_ms=500)
+    assert control.leases['browser-activity:released'] == 103_000
+
+
 def test_study_priority_background_policy_poll_never_opens_database_and_unknown_pauses_optional_work(monkeypatch):
     from app.services import study_mode, study_priority, redis_admission_gate
     from app.services.activity_gate import activity_gate

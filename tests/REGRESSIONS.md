@@ -1,3 +1,12 @@
+## Study Priority v1 host activity producer
+
+- `backend/tests/test_study_priority_control.py` owns
+  `test_study_activity_final_pulse_preserves_remaining_quiet_time`: legacy
+  control retains the remaining quiet lease instead of restarting three seconds.
+- Independent Learning's local `REGRESSIONS.md` owns `test_host_activity.py`:
+  authenticated broker-free host reporting, independent expiry, pending essential
+  operations, optional failures and owned producer cleanup.
+
 ## Independent Study connection (F2)
 
 Post-merge P3: `study-learning-connection-regressions.test.ts` owns P3-U1–U15:

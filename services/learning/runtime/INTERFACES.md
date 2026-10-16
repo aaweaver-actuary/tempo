@@ -1,5 +1,27 @@
 # Learning runtime integration surface
 
+`POST /api/study/activity?session_id=<session>&expires_in_ms=<1..3000>` uses the
+existing Study authentication and Origin policy. It reports an optional host
+activity lease without opening PostgreSQL or creating a durable operation.
+Missing configuration or unavailable storage returns 503 without changing Study
+authority. Pending authenticated essential requests retain independent host holds
+until their handlers settle, including when browser timers are suspended.
+
+The CLI registers its native host signal in `TEMPO_STUDY_ACTIVITY_DIRECTORY`
+(default: the current user's temporary directory plus `tempo-study-activity-v1`).
+The managed development runner reads this same private directory. Version-one
+snapshots carry monotonic nanosecond deadlines, separate sessions, pending-request
+holds and a 15-second producer lease renewed every five seconds. The directory
+must be shared by colocated processes using the same kernel clock; a VM with a
+different clock is unavailable control and must use its own colocated admission
+reader. Clean service shutdown removes only its producer record. An interrupted
+producer retains stale evidence, blocking admission until its exact ownership
+and service absence are reconciled. Essential Learning needs no Node or broker.
+
+Programmatic `Configuration.host_activity_directory=None` disables this optional
+adapter; applications embedding Learning must configure the shared directory to
+claim host-level development protection. Browser-local priority remains separate.
+
 Artifact: `tempo-learning-runtime` 0.1.0; workspace: one configured identity per database.
 All API routes except health require a workspace-scoped bearer credential. Study routes use the study token; `/internal/publications/*` requires the separate operator token and `/internal/evidence` requires the separate evidence token. Missing integration tokens disable those endpoints.
 Browser requests also require an exact configured Origin. Existing request bodies,

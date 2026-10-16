@@ -895,9 +895,10 @@ def foreground_requests_active():
 
 
 @app.post("/api/system/browser-activity")
-def record_browser_activity(session_id: str = Query(default='legacy', pattern=r'^[A-Za-z0-9_-]{1,80}$')):
-    activity_gate.record_browser_activity(session_id=session_id)
-    return {"active": True, "session_id": session_id, "expires_in_ms": 3000}
+def record_browser_activity(session_id: str = Query(default='legacy', pattern=r'^[A-Za-z0-9_-]{1,80}$'),
+                            expires_in_ms: int = Query(default=3000, ge=1, le=3000)):
+    activity_gate.record_browser_activity(expires_in_ms / 1000, session_id=session_id)
+    return {"active": True, "session_id": session_id, "expires_in_ms": expires_in_ms}
 
 
 @app.get("/api/system/tasks")

@@ -4,6 +4,7 @@ The complete native inventory is discovered by `integration/run_postgres.py` fro
 
 | Regular file | Proof |
 | --- | --- |
+| `test_host_activity.py` | Independent session expiry and remaining quiet time; pending essential request holds; own-producer cleanup; authenticated/origin-scoped activity without PostgreSQL; optional filesystem failure retains evidence and no broker dependency |
 | `test_runtime.py` | Load/issue/review, immutable logical and transport replay, scope/origin/role denial, authoritative concurrent first enqueue |
 | `test_transactions.py` | Opening evidence atomicity; handler and handled-reconciliation rollback; competing payloads; bounded current-card contention; nonblocking optional successor; stale/deleted/retired definitions; retained quota; finite-contention maintenance; local-day boundary |
 | `test_families.py` | All five typed specifications, practice/review/self-assessment/feedback; tactical discovery and binding; defense recognition, covered grading and uncovered durable intent |
