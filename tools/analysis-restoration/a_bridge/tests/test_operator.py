@@ -222,6 +222,8 @@ def test_A_initial_empty_source_without_active_publication_is_recoverable(status
 def test_A_unavailable_retirement_preflight_preserves_original_operation(fault):
     from tempo_a_bridge.cli import LearningHTTPError
     operator = RecoveryOperator(empty=True)
+    if fault == 'version':
+        operator.current.update(status='active', publication_generation=1, activation_revision=1)
     if fault.isdigit():
         operator.http = lambda *args: (_ for _ in ()).throw(LearningHTTPError(int(fault)))
     elif fault == 'offline':
