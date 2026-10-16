@@ -234,9 +234,6 @@ def main():
                 database.execute("INSERT INTO gameplay_card_priorities(card_id,source_game_id,finding_id,priority_date,reason,created_at) VALUES(?,'reader-page-game',?,?,?,?)",(identifier,finding,day,'fixture',day))
                 database.execute("INSERT INTO queue_attempt_origins(queue_entry_id,card_id,revision,queue_date,cycle,admission_kind,attempt_failed,last_status,legacy,start_fen,moves_json,content_type) VALUES(?,?,?,?,0,'new',0,'queued',1,?,'[]','opening')",(100000+index,identifier,1,day,chess.STARTING_FEN))
 
-        from contextlib import contextmanager
-from datetime import date
-from unittest.mock import patch
         @contextmanager
         def reader_factory():
             with psycopg.connect(reader_url,row_factory=tempo_row_factory) as raw:
