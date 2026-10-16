@@ -195,3 +195,12 @@ test("D checker and restricted builder listing never invoke a toolchain", contex
   }
   assert.equal(existsSync(join(fixture.root, "test-results")), false);
 });
+
+test('standalone Learning suite retains its native owner without the legacy dependency graph', async () => {
+  const {selectSuites}=await import('../selection.mjs');
+  const nativeOwner=original.components.find(component=>component.id==='learning').tests[0];
+  const [selected]=selectSuites(original,['learning']);
+  const {id,...registration}=selected;
+  assert.equal(id,'learning');
+  assert.deepEqual(registration,nativeOwner);
+});

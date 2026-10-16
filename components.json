@@ -1739,6 +1739,22 @@
   ],
   "suites": [
     {
+      "id": "learning",
+      "owner": "learning",
+      "kind": "postgres",
+      "cwd": ".",
+      "command": "python services/learning/runtime/integration/run_postgres.py",
+      "inputs": [
+        "services/learning/runtime",
+        "services/learning/application/qualification.py",
+        "app/lib",
+        "app/domain",
+        "app/const.ts",
+        "services/learning/remediation",
+        "services/game-evidence"
+      ]
+    },
+    {
       "id": "contract-exchange",
       "owner": "#264",
       "kind": "contract-exchange",
