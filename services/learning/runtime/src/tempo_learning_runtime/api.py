@@ -126,7 +126,7 @@ def register_handlers():
 def create_app(configuration: Configuration):
     register_handlers()
     database = Database(configuration)
-    activity = HostActivity(configuration.host_activity_directory)
+    activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
     @asynccontextmanager
     async def lifespan(app):

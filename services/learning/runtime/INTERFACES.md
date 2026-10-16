@@ -152,3 +152,5 @@ delivery to its configured Learning origin, rejects redirects and removes legacy
 work-class headers. Browser Origin is browser generated. Credentials stay in
 session storage, outside command envelopes, bundles and evidence. The existing
 Host/Origin/CORS allowlists and restricted database roles remain authoritative.
+
+Before starting an expected independent Learning runtime on the protected host, register its workspace identity in the managed runners’ `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` JSON array, for example `["workspace-a"]`. Learning snapshots include that stable `source` alongside the unique process producer. Missing first publication, total reporting failure, and clean shutdown remain unavailable until an operator explicitly changes the expected-source configuration. Essential Learning progress remains independent of reporting success.
