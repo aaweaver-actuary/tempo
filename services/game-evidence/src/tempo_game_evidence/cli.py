@@ -9,7 +9,7 @@ import threading
 import uvicorn
 
 from .api import create_app
-from .delivery import deliver_one, learning_token
+from .delivery import AuthRetryRefused, deliver_one, learning_token, retry_auth_delivery
 from .providers import AccountImport, enqueue_import, import_one, cancel_import
 from .snapshot import ComparisonSnapshot
 from .store import EvidenceStore
@@ -45,13 +45,25 @@ def main(arguments=None):
     worker.add_argument("--once",action="store_true")
     worker.add_argument("--max-jobs",type=int,default=64)
     worker.add_argument("--poll",action="store_true")
-    worker.add_argument("--learning-endpoint",default=os.environ.get("TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT"))
-    worker.add_argument("--learning-token-file",type=Path,default=os.environ.get("TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE"))
+    auth_retry = commands.add_parser("retry-auth-delivery")
+    auth_retry.add_argument("--workspace",required=True)
+    auth_retry.add_argument("--delivery-id",required=True)
+    for command in (worker, auth_retry):
+        command.add_argument("--learning-endpoint",default=os.environ.get("TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT"))
+        command.add_argument("--learning-token-file",type=Path,default=os.environ.get("TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE"))
     serve = commands.add_parser("serve")
     serve.add_argument("--host",default="127.0.0.1")
     serve.add_argument("--port",type=int,default=8041)
     options = parser.parse_args(arguments)
     try:
+        token = None
+        if options.command in {"work", "retry-auth-delivery"}:
+            if options.command == "retry-auth-delivery" and not options.learning_endpoint:
+                raise ValueError("learning_endpoint_required")
+            if options.learning_endpoint:
+                if not options.learning_token_file:
+                    raise ValueError("learning_credential_required")
+                token = learning_token(options.learning_token_file)
         store = EvidenceStore(options.database_url)
         if options.command == "migrate":
             # A separate owner credential is used only for this command.
@@ -76,6 +88,8 @@ def main(arguments=None):
             result = {"requested":options.game_id}
         elif options.command == "report":
             result = store.report(options.workspace,options.game_id)
+        elif options.command == "retry-auth-delivery":
+            result = retry_auth_delivery(store,options.workspace,options.delivery_id)
         elif options.command == "serve":
             uvicorn.run(create_app(store),host=options.host,port=options.port)
             return 0
@@ -83,7 +97,6 @@ def main(arguments=None):
             if not 1<=options.max_jobs<=10000 or options.once and options.poll:
                 raise ValueError("invalid_worker_bounds")
             stopped = threading.Event()
-            token = learning_token(options.learning_token_file) if options.learning_token_file else None
             signal.signal(signal.SIGTERM,lambda *_:stopped.set())
             signal.signal(signal.SIGINT,lambda *_:stopped.set())
             processed = 0
@@ -107,7 +120,8 @@ def main(arguments=None):
         return 0
     except Exception as error:
         # Provider responses, connection strings and raw PGNs never enter errors.
-        print(json.dumps({"error":type(error).__name__,"message":"operation_failed; inspect component readiness and configuration"}))
+        message = str(error) if isinstance(error, AuthRetryRefused) else "operation_failed; inspect component readiness and configuration"
+        print(json.dumps({"error":type(error).__name__,"message":message}))
         return 1
 
 

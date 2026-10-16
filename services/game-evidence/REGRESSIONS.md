@@ -63,3 +63,21 @@ The regular unit suite owns canonical UTC windows, offset/month/year transitions
 `test_equivalent_windows_share_persisted_identity_and_utc_month` proves durable
 identity deduplication and archive selection. Test-only Learning dependencies are
 development inputs; production imports remain confined to shared contracts.
+
+## PR #287 authentication recovery
+
+`tests/test_credentials.py` owns
+`test_work_with_learning_endpoint_requires_private_credential_before_mutation`
+(missing configuration/file, invalid value and shared permissions),
+`test_work_without_learning_endpoint_remains_producer_only`, and
+`test_direct_delivery_missing_credential_never_claims`.
+
+The regular native suite owns
+`test_learning_401_retries_original_delivery_after_credential_correction`,
+`test_retry_auth_delivery_recovers_only_legacy_401_block`,
+`test_retry_auth_delivery_rejects_other_states_and_active_leases`, and
+`test_auth_retry_preserves_predecessor_and_acknowledgement_fences`.
+Existing strict receiver calls and subprocesses use an explicit synthetic private
+credential, retaining production preflight. No existing replay/withdrawal/lease
+assertions are removed. Learning's native suite separately exercises actual
+installed CLI -> authenticated Learning HTTP -> independent databases.

@@ -17,7 +17,11 @@ def learning_token(path):
     if credential.stat().st_mode & 0o077:
         raise ValueError("learning_credential_file_must_be_private")
     token = credential.read_text().strip()
-    if len(token) < 32 or "\n" in token or "\r" in token:
+    return validate_learning_token(token)
+
+
+def validate_learning_token(token):
+    if not isinstance(token, str) or len(token) < 32 or "\n" in token or "\r" in token:
         raise ValueError("invalid_learning_credential")
     return token
 
@@ -25,6 +29,7 @@ def learning_token(path):
 def deliver_one(store, endpoint, *, client=None, token=None):
     if not endpoint:
         return False
+    token = validate_learning_token(token)
     with store.connect() as database:
         # The game lock serializes claims, comparisons, receipt projection and
         # reconciliation. An in-flight attempt fences every later game delivery.
@@ -78,8 +83,9 @@ def deliver_one(store, endpoint, *, client=None, token=None):
         status,reason = acknowledgement.status,acknowledgement.reason
     except RemoteFailure as error:
         # HTTP rejection/bounds are not a validated receipt of non-acceptance.
-        status = 'blocked' if error.terminal else 'retryable_failure'
-        reason,delay = error.reason,max(delay,error.retry_after)
+        authentication_failure = error.reason == 'remote_rejected_401'
+        status = 'blocked' if error.terminal and not authentication_failure else 'retryable_failure'
+        reason,delay = error.reason,max(delay,error.retry_after,60 if authentication_failure else 0)
         acknowledgement = None
     except httpx.HTTPError:
         status,reason = 'retryable_failure','learning_unreachable_or_response_lost'
@@ -100,3 +106,32 @@ def deliver_one(store, endpoint, *, client=None, token=None):
                 apply_completed(database,changed)
             request_reconciliation(database,game['workspace_id'],row['game_id'])
     return True
+
+
+class AuthRetryRefused(ValueError):
+    """Only fixed, sanitized refusal reasons may be exposed by the recovery CLI."""
+
+
+def retry_auth_delivery(store, workspace, delivery_id):
+    """Requeue one original legacy 401 delivery, never infer non-acceptance."""
+    with store.connect() as database:
+        identity = database.execute('SELECT game_id FROM outbox WHERE delivery_id=%s', (delivery_id,)).fetchone()
+        if identity is None:
+            raise AuthRetryRefused('auth_delivery_not_found')
+        game = database.execute('SELECT * FROM games WHERE game_id=%s FOR UPDATE', (identity['game_id'],)).fetchone()
+        if game['workspace_id'] != workspace:
+            raise AuthRetryRefused('auth_delivery_workspace_mismatch')
+        row = database.execute('SELECT * FROM outbox WHERE delivery_id=%s AND game_id=%s FOR UPDATE',
+                               (delivery_id, game['game_id'])).fetchone()
+        if row['leased_until'] and row['leased_until'] > utc_now():
+            raise AuthRetryRefused('auth_delivery_active_lease')
+        if row['status'] == 'completed':
+            raise AuthRetryRefused('auth_delivery_already_completed')
+        if (row['reason'] != 'remote_rejected_401' or row['acknowledgement'] is not None
+                or row['attempts'] < 1 or row['status'] not in {'blocked', 'retryable_failure'}):
+            raise AuthRetryRefused('auth_delivery_not_legacy_401_block')
+        if row['status'] == 'retryable_failure':
+            return {'delivery_id': delivery_id, 'status': row['status'], 'requeued': False}
+        database.execute("""UPDATE outbox SET status='retryable_failure',next_attempt_at=now(),
+            lease_token=NULL,leased_until=NULL WHERE delivery_id=%s""", (delivery_id,))
+    return {'delivery_id': delivery_id, 'status': 'retryable_failure', 'requeued': True}
