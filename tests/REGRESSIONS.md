@@ -4596,3 +4596,10 @@ routing, containment, failure propagation and zero-case proofs remain in
 browser/Node parity cases retain their root registration and now exercise the
 shared computation owner. These proofs do not establish Intelligence persistence,
 Learning behavior, or full-system qualification.
+
+## PR #291 independent Study review repairs
+
+- `study-learning-connection-regressions.test.ts` owns authenticated original-authority resumption/registered recovery with multiple retained authorities, conservative cutover/workspace fencing, pre/post-bootstrap races, generation/disconnect fencing, storage validation and read-only legacy capture/deletion inventory.
+- `study-cached-startup-regressions.test.tsx` owns browser-online and browser-offline transport startup, HTTP/auth rejection, invalid cache identity/schema/timezone, unavailable storage and first-connect blocking.
+- `study-authoring-capability-regressions.test.tsx` owns read-only pack selection and command-level capture/deletion rejection before pending-data access, mutation or network. Existing catalog, capture, deletion, endgame, intent, attempt and offline regressions retain their legacy/Workbench assertions.
+- The regular `learning-full-study` native suite owns the browser-online Learning outage, same-context/two-origin recovery (including lost sessionStorage), real settings receipt reconciliation and Study authoring request inventory. Two forwarding origins share one installed Learning database; this is not a multi-database proof.

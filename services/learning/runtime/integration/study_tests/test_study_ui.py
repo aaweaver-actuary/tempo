@@ -88,7 +88,7 @@ def study_assets(control=None, control_key=None):
         thread.join(timeout=5)
 
 
-@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "endgame-cached", "endgame-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect"])
+@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "endgame-cached", "endgame-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect", "service-unavailable-browser-online", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary"])
 def test_production_study_learning_native(case, tmp_path, scenario):
     activate(case, publication_for(scenario))
     extra = cached_mate(case) if scenario == "endgame-cached" else {}
@@ -115,7 +115,16 @@ def test_production_study_learning_native(case, tmp_path, scenario):
         assert proof["complete"] is True
         assert not proof["unexpected_requests"]
     reviews = case.query("SELECT COUNT(*) FROM learning.reviews")[0][0]
-    assert reviews == (0 if scenario in ["storage-denied", "origin-transition", "defense-uncovered", "endgame-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss"] else 1)
+    assert reviews == (0 if scenario in ["storage-denied", "origin-transition", "defense-uncovered", "endgame-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary"] else 1)
+    if scenario in ["multi-authority-resume", "registered-authority-recovery"]:
+        # The two browser authorities forward to one installed Learning database;
+        # this proves origin isolation and real receipt recovery, not two DBs.
+        assert len(proof["confirmed_receipts"]) == 2
+        for receipt in proof["confirmed_receipts"]:
+            actual = case.client.get("/api/operations/" + receipt["operation_id"]).json()
+            assert actual["state"] == "complete" and actual["response"] == receipt["response"]
+            assert case.query("SELECT COUNT(*) FROM learning.operation_receipts WHERE operation_id=%s AND state='complete'", (receipt["operation_id"],))[0][0] == 1
+        assert case.client.get("/api/study/settings").json()["tactics_new_per_day"] == 3
     if scenario == "teaching":
         assert case.query("SELECT COUNT(*) FROM learning.teaching_states")[0][0] == 1
     if reviews and not scenario.startswith(("typed-", "defense")):

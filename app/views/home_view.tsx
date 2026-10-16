@@ -584,6 +584,7 @@ function StudyComposition() {
     }
   }, [refreshDatabaseQueue, invalidateBranchEvidence]);
   const recoverCardDeletion = useCallback(async () => {
+    if (independentStudy) return;
     try {
       const pending = pendingCardDeletion();
       if (!pending) { setDeletionRecoveryError(""); return; }
@@ -593,7 +594,7 @@ function StudyComposition() {
     } catch (failure) { setDeletionRecoveryError(failure instanceof Error ? failure.message : "Could not confirm the earlier card deletion."); }
   }, [finishPermanentDeletion]);
   useEffect(() => {
-    if (!databaseQueue || offlineQueue || deletionRecoveryStarted.current) return;
+    if (independentStudy || !databaseQueue || offlineQueue || deletionRecoveryStarted.current) return;
     deletionRecoveryStarted.current = true;
     void recoverCardDeletion();
   }, [databaseQueue, offlineQueue, recoverCardDeletion]);

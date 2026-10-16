@@ -1,4 +1,4 @@
-import { LEARNING_URL as API_URL } from "../lib/study-connection";
+import { LEARNING_URL as API_URL, independentStudy } from "../lib/study-connection";
 import { useBoardHistory } from "../hooks/use-board-history";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
@@ -131,7 +131,7 @@ export default function EndgamesView({
   }, [scheduledCard]);
 
   async function admitTemplate() {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi() || independentStudy) return;
     const template = templates[selected];
     try {
       const data = await admitEndgameTemplate({
@@ -395,7 +395,7 @@ export default function EndgamesView({
         <div>
           <h1>Endgames</h1>
         </div>
-        {!scheduledCard && (
+        {!scheduledCard && !independentStudy && (
           <Button
             variant="primary"
             className="primary-button"

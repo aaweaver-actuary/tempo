@@ -91,13 +91,13 @@ type TacticsViewProps = { theme: BoardTheme; pieceSet: PieceSet; onQueueChanged:
 export default function TacticsView(props: TacticsViewProps) {
   const [captureOpen, setCaptureOpen] = useState(false);
   return <>
-    <div className="tactic-capture-launch"><Button onClick={(event) => {
+    {!independentStudy && <div className="tactic-capture-launch"><Button onClick={(event) => {
       // Safari pointer clicks do not focus buttons; the dialog restores this trigger.
       event.currentTarget.focus();
       setCaptureOpen(true);
-    }}>Capture tactic</Button></div>
+    }}>Capture tactic</Button></div>}
     <TacticsWorkspace {...props} captureOpen={captureOpen} />
-    {captureOpen && <TacticCaptureDialog theme={props.theme} pieceSet={props.pieceSet}
+    {!independentStudy && captureOpen && <TacticCaptureDialog theme={props.theme} pieceSet={props.pieceSet}
       onQueueChanged={props.onQueueChanged} onClose={() => setCaptureOpen(false)} />}
   </>;
 }
@@ -560,7 +560,7 @@ function TacticsWorkspace({
           progress={progress}
           selectedPackId={selectedPackId}
           onSelect={selectPack}
-          onActivate={(ids, active) => void activatePacks(ids, active)}
+          onActivate={independentStudy ? undefined : (ids, active) => void activatePacks(ids, active)}
           busy={activationBusy}
           recommendations={recommendations}
           onStartSuggested={(recommendation) => {
@@ -568,7 +568,7 @@ function TacticsWorkspace({
               (pack) => pack.id === recommendation.recommended_pack_id,
             );
             if (!suggestedPack) return;
-            if (!suggestedPack.active)
+            if (!independentStudy && !suggestedPack.active)
               void activatePacks([suggestedPack.id], true);
             selectPack(suggestedPack);
           }}
@@ -601,7 +601,7 @@ function TacticsWorkspace({
             progress={progress}
             selectedPackId={selectedPackId}
             onSelect={selectPack}
-            onActivate={(ids, active) => void activatePacks(ids, active)}
+            onActivate={independentStudy ? undefined : (ids, active) => void activatePacks(ids, active)}
             busy={activationBusy}
             recommendations={recommendations}
             onStartSuggested={(recommendation) => {
@@ -609,7 +609,7 @@ function TacticsWorkspace({
                 (pack) => pack.id === recommendation.recommended_pack_id,
               );
               if (!suggestedPack) return;
-              if (!suggestedPack.active) {
+              if (!independentStudy && !suggestedPack.active) {
                 void activatePacks([suggestedPack.id], true);
               }
               selectPack(suggestedPack);

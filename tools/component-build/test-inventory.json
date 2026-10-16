@@ -128,6 +128,8 @@
       "tests/unit/status-polling-regressions.test.tsx",
       "tests/unit/storage-cache-regressions.test.ts",
       "tests/unit/study-attempt-pending-regressions.test.tsx",
+      "tests/unit/study-authoring-capability-regressions.test.tsx",
+      "tests/unit/study-cached-startup-regressions.test.tsx",
       "tests/unit/study-exercise-grading.test.ts",
       "tests/unit/study-intent-storage-regressions.test.ts",
       "tests/unit/study-learning-connection-regressions.test.ts",

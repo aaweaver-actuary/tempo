@@ -124,3 +124,16 @@ Regular frontend ownership is in `tests/REGRESSIONS.md` and
 `tools/component-build/test-inventory.json`; connection and delivery, connected
 snapshot grading, matching teaching/operation receipts and existing queue/claim/
 older-writer/cancellation tests remain in their normal suites.
+
+## PR #291 Study review repair acceptance
+
+The existing `learning-full-study` suite adds `service-unavailable-browser-online`,
+`multi-authority-resume`, `registered-authority-recovery`, and
+`study-authoring-boundary`. Transport loss preserves an actual issued head and its
+original offline answer until a real Learning receipt and one PostgreSQL review
+confirm it. Two pages share one browser context/frontend storage and use separate
+session bindings and forwarding origins. Real settings commands commit with lost
+replies, then reconcile only through their original origins; an unrelated C is
+blocked. The forwarding origins share one installed Learning database, so this
+proves origin/storage isolation and actual receipts, not separate-database isolation.
+Existing F1, restart, storage, exercise-family and offline-shell cases remain selected.
