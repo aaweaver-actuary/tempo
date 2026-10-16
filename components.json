@@ -29,6 +29,8 @@
       "publicExports": [
         "IntelligenceClient",
         "PendingCommands",
+        "PendingMutation",
+        "RunCreationRequest",
         "mountWorkbench"
       ],
       "dependencies": [
