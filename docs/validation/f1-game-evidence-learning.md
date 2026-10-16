@@ -1,5 +1,122 @@
 # F1: Game Evidence to authoritative Learning remediation
 
+## PR #287 recovery qualification — October 16, 2026
+
+The three review findings were reproduced and repaired. Tested executable and
+packaged inputs are commit `52d7b5c5d2cf34233723184315119ae6897af942`, containing
+producer recovery commit `33185fa9` and Learning/remediation commit `52d7b5c5`.
+The starting reviewed head remains `4dd771e60cd26da2e6134ca265e4fb440810ade2`;
+remote main and merge base are `18543f08a77618f76f97be61deb2d444c95e7934`.
+Task branch: `codex/f1-recovery-repairs-20261016`; publication targets the existing
+`codex/f1-remediation-integration` branch without force-push or rewritten history.
+
+Raw command ledgers, collected/executed inventories, JUnit, logs, artifact hashes,
+source bundle and reproduction patch are preserved outside both task checkouts at
+`/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65`.
+The JSON record's `repair_qualification` is the current machine record. Original
+F1 evidence and counts below remain historical, including their original archive.
+
+### Repair disposition and concurrency
+
+- **R1:** `durable_tasks.enqueue_task_in_transaction` selects remediation-specific
+  marker coalescing. Same-day unfinished work preserves cursor, lease, generation,
+  attempts and ready ordering; completed/new-day sweeps restart, delayed old days
+  do not. `maintenance.finish_slice` reads current durable rescan state under a
+  late fenced task lock, advances one-card slices and schedules follow-up work
+  atomically. Release preserves concurrent requests. Review adapter requests flush
+  after prepared issuance inside the original transaction, daily before remediation
+  and projection last. Actual PostgreSQL locks are observed at continuation binding.
+- **R2:** Runtime shortcuts move into `PostgresRepository.receive`, with optional
+  trusted `historical_evidence_revision` and `v1_transport_stale` keyword arguments.
+  Existing-ID digest checks precede stale policy under module serialization.
+  Stale receipts, including content-stale rejection, bind payload identity without
+  accepting evidence or requesting work; exact stale replay survives reconnect and
+  cannot be overwritten by `record_status`. V1 transport-first behavior, v2 historical
+  semantic replay and read-only historical receipts retain their deliberate differences.
+  Historical same-frontier requests retain HTTP 409 for either wire. No conversion.
+- **R3:** Producer `cli.main` preflights endpoint credentials before processing or
+  claiming. `delivery.deliver_one` validates direct calls before claiming and maps
+  only Learning HTTP 401 to durable retryable failure, with the same immutable ID,
+  payload, null acknowledgement and minimum 60-second backoff. `retry-auth-delivery`
+  requeues only an attempted, acknowledgement-free legacy 401 block under game-then-
+  outbox locks, rejects live leases/unrelated states, and repeats safely as a no-op.
+  Credentials reload on process restart. No HTTP runs under these locks.
+
+Named regression ownership is in the three component REGRESSIONS.md inventories.
+Both request/finalizer commit orders, concurrent transport reuse across independent
+source identities, reconnect/client recreation, arrivals behind cursor, day/lease
+fencing and receipt-write rollback pass. Actual installed producer -> authenticated
+Learning HTTP -> separate databases confirms wrong-token rejection, corrected-token
+restart and exactly one acceptance of the original delivery. Native producer cases
+cover narrow old 401 recovery, predecessor fences and validated accepted history.
+The frontier-first query-plan bounds and existing issuance/settlement invariants
+remain unchanged.
+
+Initial regressions were added before production repairs. The final identical
+runtime tests also ran against reviewed production source in a separate task copy:
+**115 passed / 20 failed**, versus **135 passed / 0 failed** after repair. The new API's
+unsupported-keyword failure and an additional content-receipt absent-row diagnostic
+are excluded from primary reproduction claims. Explicit primary assertions reproduce
+cursor replacement/starvation, absent stale receipts/conflicting reuse, both legacy
+stale branches, and a producer delivery remaining blocked after credential correction.
+Pure credential preflight failed before repair; native library stale persistence
+failed while its other 49 cases passed. No unavailable setup counted as reproduction.
+
+### Final results and exact commands
+
+All selected final cases pass without skips or deselection. Commands below run
+from the isolated repair checkout; interpreter paths identify separate environments.
+`E` denotes the external evidence root above. Every command's expanded argv, cwd,
+exit status, source identity and log are also in the machine record.
+
+| Lane | Actual command | Result |
+| --- | --- | --- |
+| Learning native | `services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py E/native-final` | 135 passed; includes 3 real Chromium cases, response loss/reload, producer-stopped Learning, restricted roles/image and new repairs. |
+| Remediation native | `services/learning/remediation/.venv/bin/python services/learning/remediation/integration/run_postgres.py E/remediation-final` | 50 passed; original query-plan/frontier bounds retained. |
+| Remediation pure/tooling | `services/learning/remediation/.venv/bin/python services/learning/remediation/run_suite.py pure` and separate `tooling` invocation | 58 / 10 passed. |
+| Producer native | `services/game-evidence/.venv/bin/python services/game-evidence/integration/run_postgres.py E/producer-coherent` | 64 passed; input-equivalent evidence verified against 52d7b5c for every producer and receiver input, unchanged command/environment/toolchain/image. |
+| Producer unit/CLI | Artifact runner's installed `python -I -m pytest tests --import-mode=importlib -q` | 46 passed on each of four consumers; standalone development unit run also46 passed. |
+| Legacy compatibility | `TEMPO_COMPONENT_PYTHON=$PWD/backend/.venv/bin/python TEMPO_LEARNING_EVIDENCE_DIR=E/legacy-final node tools/component-build/test-lane.mjs --component learning-review-application` | 43 application + 101 tooling + 24 PostgreSQL passed. Changed packages reinstalled into the separate declared legacy environment. |
+| Dependencies/contracts | `TEMPO_COMPONENT_PYTHON=$PWD/backend/.venv/bin/python node tools/component-build/test-lane.mjs --component scheduling --component chess-core --component content-publication-contracts --component game-evidence-contracts` | 55 / 105 / 99 / 99 passed. |
+| Learning wheel/sdist | `services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py E/learning-artifacts` |Python 3.12.12 and 3.14.8; 3 installed checks per consumer, including new receipt API replay/conflict. These are installation checks, not four complete native inventories. |
+| Producer wheel/sdist | `services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py E/producer-artifacts` |Python 3.12.12 and 3.14.8; 46 owning unit/CLI cases per consumer; copied build sources removed. Actual recovery command behavior is additionally native installed-CLI proof. |
+| Boundaries | `TEMPO_COMPONENT_PYTHON=$PWD/backend/.venv/bin/python node tools/component-build/check-components.mjs --component learning --component game-evidence` |Passed affected component closure, exports/resources/dependencies. |
+| Component tooling | `TEMPO_COMPONENT_PYTHON=$PWD/backend/.venv/bin/python node tools/component-build/test-node.mjs tools/component-build/tests` | 77 passed;0 failed/skipped/TODO. |
+| Static | `/Users/andy/.local/bin/ruff check --select F821,F822,F823 services/learning/runtime services/learning/remediation services/game-evidence` |Passed focused undefined-name checks; not full lint/type qualification. |
+| Repository text | `npm run check:conflicts`; `git diff --check` |Passed; modified local documentation links checked with no missing files. |
+
+Toolchain: Node 26.10.0, uv 0.12.22, Ruff 0.15.17, Playwright 1.63.0,
+PostgreSQL 18.6-trixie image
+`sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`.
+One existing Starlette/AnyIO deprecation warning remains; no selected failure is hidden.
+
+### Review, qualification limits and preservation
+
+A separate read-only reviewer found **no actionable findings** in
+`4dd771e…52d7b5c`, after tracing the surrounding lock/transaction paths and inspecting
+final native/artifact evidence. This is independent code/evidence review, not a
+second independent test execution. Earlier setup failures, fixture corrections and
+failed runs remain in the external archive and are distinguished in the JSON record.
+
+Local technical readiness is established for this repair's selected boundary.
+GitHub Actions is disabled as observed through its settings API; hosted qualification
+is **not established**. The branch-protection endpoint reported 404/branch not protected;
+no settings, required checks or workflows were changed. Mechanical mergeability is
+read back separately after publishing. No merge or deployment occurs.
+
+Final native receipts verify owned container/volume/image/temp cleanup. Source
+and final-test patches are preserved outside the checkout in a verified bundle and
+reports. After publication, preservation and process/mount inspection, eligible task
+checkouts are removed; external `cleanup.json` records actual removals and durable
+published refs. Live study data, original F1 evidence, unrelated worktrees and shared
+images/caches remain untouched. Any root validation-only commit after 52d7b5c must
+be verified to change no executable or packaged input.
+
+F2 full Study routing and teaching, historical conversion/live cutover, service-worker
+or full-product offline qualification remain deferred. #194 and #224 remain open.
+
+---
+
 ## Revision and ownership
 
 The producer prerequisite was PR #286, merging the existing #283 merge commit
