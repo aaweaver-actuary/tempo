@@ -102,7 +102,7 @@ class AnalysisStore:
         positions=ordered_positions(games)
         if len(positions)>10000:
             raise DomainError("analysis_scope_exceeds_position_limit",422)
-        payload=value.model_dump(mode="json")
+        payload={**value.model_dump(mode="json"), "derivation_version":2}
         with self.owner.transaction() as db:
             # Per-run transaction lock prevents concurrent first submissions/head replacement.
             db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("analysis:"+value.run_id,))
@@ -134,7 +134,7 @@ class AnalysisStore:
 
     def _status(self,db,run):
         counts={r["state"]:r["count"] for r in db.execute("SELECT state,count(*) FROM analysis_positions WHERE run_id=%s AND revision=%s GROUP BY state",(run["run_id"],run["revision"]))}
-        return public({"schema_version":1,"workspace_id":self.workspace,"run_id":run["run_id"],"revision":run["revision"],"state":run["state"],"scope":run["payload"],"progress":counts,"requested_generation":run["requested_generation"],"published_generation":run["published_generation"],"last_complete_generation":run["last_complete_generation"],"engine_scan_complete":sum(v for k,v in counts.items() if k!="complete")==0})
+        return public({"schema_version":1,"workspace_id":self.workspace,"run_id":run["run_id"],"revision":run["revision"],"state":run["state"],"scope":{key:value for key,value in run["payload"].items() if key!="derivation_version"},"derivation_version":run["payload"].get("derivation_version",1),"progress":counts,"requested_generation":run["requested_generation"],"published_generation":run["published_generation"],"last_complete_generation":run["last_complete_generation"],"engine_scan_complete":sum(v for k,v in counts.items() if k!="complete")==0})
 
     def status(self,run_id):
         with self.owner.transaction(read_only=True) as db:
@@ -174,6 +174,8 @@ class AnalysisStore:
                 raise DomainError("stale_analysis_run")
             if run["state"]=="cancel_requested" and command.action!="cancel" or run["state"]=="cancelled" and command.action!="resume" and command.action!="cancel":
                 raise DomainError("analysis_cancellation_incomplete")
+            if command.action in {"continue","resume","retry"} and run["payload"].get("derivation_version",1)!=2:
+                raise DomainError("legacy_analysis_revision_required")
             if command.action in {"continue","resume","retry"}:
                 if command.action=="continue":
                     db.execute("UPDATE analysis_runs SET budget=budget+%s WHERE run_id=%s AND revision=%s",(command.budget,run_id,run["revision"]))
@@ -205,10 +207,7 @@ class AnalysisStore:
         source,games=self._input(run["payload"]["input_id"],run["payload"]["input_revision"])
         return run,rows,results,dismissals,source,games
 
-    def derive(self,run_id,before_publish=None):
-        run,rows,results,dismissals,source,games=self.capture(run_id)
-        if run["published_generation"]==run["requested_generation"]:
-            return False
+    def _derive_evidence(self,run,rows,results,source,games):
         findings,unknown=source_findings(source["payload"],games)
         from .sources import source_advice
         source_records=self.evidence_records(run["payload"]["source_evidence_ids"],background=True)
@@ -260,13 +259,32 @@ class AnalysisStore:
                 item["uncertainty"].append("ambiguous_repertoire_association" if associations else "repertoire_association_unknown")
             findings.append(item)
         findings.sort(key=lambda finding:rank_key(finding,run["payload"]["ranking_source"],run["payload"].get("ranking_evidence_id")))
+        return findings,unknown,incompatible_positions
+
+    def derive(self,run_id,before_publish=None):
+        run,rows,results,dismissals,source,games=self.capture(run_id)
+        if run["published_generation"]==run["requested_generation"]:
+            return False
+        legacy_metadata=None
+        if run["payload"].get("derivation_version",1)!=2:
+            with self.owner.transaction(background=True,read_only=True) as db:
+                saved=db.execute("SELECT payload FROM analysis_reports WHERE run_id=%s AND revision=%s AND generation=%s",(run_id,run["revision"],run["published_generation"])).fetchone()
+                if not saved:
+                    raise DomainError("legacy_analysis_revision_required")
+                legacy_metadata=saved["payload"]
+                findings=[row["payload"] for row in db.execute("SELECT payload FROM analysis_report_items WHERE run_id=%s AND revision=%s AND generation=%s ORDER BY ordinal",(run_id,run["revision"],run["published_generation"]))]
+            unknown=legacy_metadata.get("unknown_coverage",[])
+            incompatible_positions=set()
+        else:
+            findings,unknown,incompatible_positions=self._derive_evidence(run,rows,results,source,games)
         automatic_reopens=[]
         incident_findings=defaultdict(list)
         for item in findings:incident_findings[item["incident_id"]].append({"finding_id":item["finding_id"],"category":item["category"]})
         for item in findings:
             item["related_findings"]=[other for other in incident_findings[item["incident_id"]] if other["finding_id"]!=item["finding_id"]]
             dismissed=dismissals.get(item["finding_id"])
-            item["evidence_revision"]=digest(item)
+            if legacy_metadata is None:
+                item["evidence_revision"]=digest(item)
             item["finding_revision"]=run["requested_generation"]
             if dismissed and dismissed["state"]=="dismissed" and len(set(item["supporting_games"])-set(dismissed["supporting_games"]))<3:
                 item["dismissal_state"]="dismissed"
@@ -284,6 +302,9 @@ class AnalysisStore:
                     db.execute("INSERT INTO analysis_report_items VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(run_id,run["revision"],generation,item["finding_id"],ordinal,Jsonb(item)))
         complete=not incompatible_positions and source["payload"]["completeness"]=="complete" and all(r["state"]=="complete" and r["error_code"] is None for r in rows)
         metadata={"derivation_version":2,"ordering":"source-rank-semantic-v2","schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"revision":run["revision"],"generation":generation,"input_id":source["input_id"],"input_revision":source["revision"],"input_producer":source["payload"]["producer"],"source_provenance":(source["payload"].get("producer_manifest") or {}).get("provenance",{"kind":"synthetic"}),"scope":{key:source["payload"][key] for key in ("game_ids","window_start","window_end","selections","producer_version","source_artifact_digest")},"source_completeness":source["payload"]["completeness"],"reasons":source["payload"]["reasons"]+(["incompatible_engine_profile"] if incompatible_positions or any(row["error_code"]=="incompatible_engine_profile" for row in rows) else []),"unknown_coverage":unknown[:100],"unknown_coverage_count":len(unknown),"engine_scan_complete":not incompatible_positions and all(r["state"]=="complete" for r in rows),"unprocessed_count":sum(r["state"]!="complete" or r["position_id"] in incompatible_positions for r in rows),"engine_availability":"unavailable" if any(r["error_code"]=="engine_unavailable" for r in rows) else "pending_or_available","insufficient_quality_count":sum(r["error_code"]=="insufficient_quality" for r in rows),"finding_count":len(findings),"complete":complete,"policy_version":"c-analysis-v1"}
+        if legacy_metadata is not None:
+            complete=legacy_metadata["complete"]
+            metadata={**legacy_metadata,"generation":generation,"derivation_version":1,"ordering":legacy_metadata.get("ordering","category-source-rank-semantic-v1")}
         if before_publish:
             before_publish()
         with self.owner.transaction(background=True) as db:
@@ -339,9 +360,6 @@ class AnalysisStore:
                     raise DomainError("invalid_analysis_cursor",422) from None
                 if cursor!=cursor_scope:
                     raise DomainError("stale_analysis_cursor")
-            report=db.execute("SELECT payload FROM analysis_reports WHERE run_id=%s AND revision=%s AND generation=%s",(run_id,report_revision,selected)).fetchone()
-            if not report:
-                raise DomainError("analysis_generation_not_found",404)
             rows=db.execute("SELECT ordinal,payload FROM analysis_report_items WHERE run_id=%s AND revision=%s AND generation=%s AND ordinal>%s AND (%s::text IS NULL OR payload->>'category'=%s) AND (%s::text IS NULL OR payload->>'dismissal_state'=%s) ORDER BY ordinal LIMIT %s",(run_id,report_revision,selected,last,category,category,dismissal,dismissal,limit+1)).fetchall()
         next_cursor=base64.urlsafe_b64encode(canonical_json({**cursor_scope,"last":rows[limit-1]["ordinal"]}).encode()).decode() if len(rows)>limit else None
         from .read_models import ReportPage
@@ -383,6 +401,8 @@ class AnalysisStore:
 
     def export(self,run_id,finding_id,generation,kind):
         item=self.finding(run_id,finding_id,generation)["finding"]
+        if kind=="response-proposal" and self.report(run_id,generation=generation)["derivation_version"]!=2:
+            raise DomainError("legacy_analysis_revision_required")
         if kind=="response-proposal" and item["actions"]["response_proposal"]["available"]:
             return item["response_proposal"]
         if kind!="context":
@@ -394,6 +414,8 @@ class AnalysisStore:
         """build_job is a pure B client helper; it performs no process/network I/O."""
         with self.owner.transaction(background=True) as db:
             run=self._head(db,run_id,True)
+            if run["payload"].get("derivation_version",1)!=2:
+                raise DomainError("legacy_analysis_revision_required")
             if run["state"] in {"cancel_requested","cancelled"}:
                 # Expired executions have lost their owning session; late results remain fenced.
                 db.execute("UPDATE analysis_positions SET state='cancelled',lease_token=NULL,leased_until=NULL WHERE run_id=%s AND revision=%s AND state='running' AND leased_until<=now()",(run_id,run["revision"]))
@@ -513,6 +535,8 @@ class AnalysisStore:
     def mark_engine_unavailable(self,run_id):
         with self.owner.transaction(background=True) as db:
             run=self._head(db,run_id,True)
+            if run["payload"].get("derivation_version",1)!=2:
+                raise DomainError("legacy_analysis_revision_required")
             changed=db.execute("UPDATE analysis_positions SET error_code='engine_unavailable' WHERE run_id=%s AND revision=%s AND state='pending' AND error_code IS NULL RETURNING position_id",(run_id,run["revision"])).fetchall()
             if changed:
                 db.execute("UPDATE analysis_runs SET requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))

@@ -345,3 +345,11 @@ stale-generation regressions retain ownership. Native producer output now includ
 actual reopen receipts and an unscoped engine finding/dismissal for browser tests.
 Actual A/B success requires accepted executions; a typed failure is not successful
 artifact integration.
+
+`test_R2_legacy_revision_preserves_identity_until_explicit_replacement` seeds the
+reviewed fallback association, verifies dismissal preserves its ID/evidence and
+legacy ordering, fences old execution/control/proposal use, then explicitly
+replaces the revision without transferring a false attribution's dismissal.
+`test_R5_compatible_session_restart_at_played_stage_and_replay_conflict` owns
+compatible played-stage loss/recovery and changed replay bytes. The pure legacy
+contract case includes the original borrowed-lineage/null-ID engine shape.

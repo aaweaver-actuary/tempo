@@ -76,8 +76,6 @@ class Finding(StrictModel):
         identities = (self.repertoire_id, self.policy_id, self.lineage)
         if self.category != 'engine_opportunity' and any(value is None for value in identities):
             raise ValueError('source_finding_lineage_required')
-        if any(value is None for value in identities) and any(value is not None for value in identities):
-            raise ValueError('partial_finding_association')
         return self
 
 class ReportPage(StrictModel):

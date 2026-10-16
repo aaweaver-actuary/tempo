@@ -124,3 +124,6 @@ def test_R1_R2_legacy_report_contract_retains_historical_fields():
     legacy=ReportPage.model_validate(payload)
     assert legacy.derivation_version==1 and legacy.ordering=='category-source-rank-semantic-v1'
     assert legacy.items[0].model_dump(mode='json')==item
+    # Reviewed historical engine records sometimes borrowed lineage with null IDs.
+    borrowed={**item,'category':'engine_opportunity','repertoire_id':None,'policy_id':None}
+    assert Finding.model_validate(borrowed).lineage is not None

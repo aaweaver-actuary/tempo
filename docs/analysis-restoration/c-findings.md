@@ -272,3 +272,13 @@ and a real exported response draft passes the installed A Content inspector.
 This supersedes neither historical artifact bytes nor producer ownership. C3 and
 live-data usefulness remain unverified. Final source-bound package/browser/native
 qualification and cleanup accounting are recorded in the completion supplement.
+
+Independent review at `b35dbf10` found one additional P2: ordinary dismissal could
+upgrade a legacy revision's attribution and lose its semantic dismissal identity.
+The follow-up pins legacy revisions, republishes only their retained user-state
+changes, blocks further analysis/proposal use until explicit replacement, and
+preserves the reviewed partial legacy read shape. It has a named native seeded-
+history regression. B advanced during qualification to `099fa1fbc29efdf747af5da6a1c9a30cbfa189d3`,
+with a separately accepted image `sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f`.
+The computational profile/client wheel remain unchanged. Earlier final-image
+acceptance remains distinct; current-image acceptance is recorded separately.

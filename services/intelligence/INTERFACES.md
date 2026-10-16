@@ -508,3 +508,13 @@ new revision; original results/generations remain inspectable. Completed unequal
 depths remain insufficient quality; mate stays typed. Pending/incompatible
 comparisons cannot produce executable response drafts. Work receipts include the
 connected public `engine_identity` when configured.
+
+Legacy revisions are pinned: run payloads created before the correction have no
+internal derivation marker. Their dismissal/reopen generations copy the retained
+finding identities/evidence and ordering; they never silently upgrade attribution.
+Continue/retry/resume, engine work, and executable proposal export instead return
+`legacy_analysis_revision_required`. An explicit new RunRequest revision selects
+corrected derivation. Legacy read contracts also accept the reviewed borrowed-
+lineage/null-ID engine shape, with the legacy warning; new derivation never emits
+that shape. The internal marker is exposed separately in run status, not injected
+into the public RunRequest scope or its immutable digest.

@@ -426,3 +426,36 @@ def test_R5_compatible_session_restart_at_played_stage_and_replay_conflict(state
     owner.accept(retried,result(retried));assert owner.engine_result(root_receipt['result_id'])['result']==wire
     changed=deepcopy(wire);changed['variations'][0]['score']['value']+=1
     with pytest.raises(DomainError,match='analysis_result_replay_conflict'):owner.accept(root,changed)
+
+
+def test_R2_legacy_revision_preserves_identity_until_explicit_replacement(state):
+    import psycopg
+    from psycopg.types.json import Jsonb
+    from tempo_intelligence.analysis.classify import base_finding
+    owner=repair_scope(state);game=json.loads((FIXTURES/'games-0.json').read_text())['games'][0]['game_id']
+    finish_repair_positions(owner,'repair',game)
+    report=owner.report('repair');item=report['items'][0]
+    # Seed the reviewed legacy representation, including its unsupported same-color association.
+    manifest=json.loads((FIXTURES/'manifest.json').read_text());selection={**manifest['selections'][0],'workspace_id':'fixture'}
+    original=base_finding('engine_opportunity',selection,item['representative'],item['representative']['actual_move'],'legacy')
+    legacy={**item,'finding_id':digest({'semantic':original['finding_id'],'game':game,'history':item['representative']['history'],'starting_fen':item['representative']['starting_fen'],'ply':item['representative']['ply']}),'incident_id':original['incident_id'],'repertoire_id':selection['repertoire_id'],'policy_id':selection['policy_id'],'lineage':selection['lineage']}
+    with psycopg.connect(os.environ['TEMPO_INTELLIGENCE_TEST_OWNER_URL']) as db:
+        db.execute("UPDATE intelligence.analysis_runs SET payload=payload-'derivation_version' WHERE run_id='repair'")
+        db.execute("UPDATE intelligence.analysis_reports SET payload=payload-'derivation_version'-'ordering' WHERE run_id='repair'")
+        db.execute("UPDATE intelligence.analysis_report_items SET finding_id=%s,payload=%s WHERE run_id='repair' AND finding_id=%s",(legacy['finding_id'],Jsonb(legacy),item['finding_id']))
+    assert owner.report('repair')['derivation_version']==1
+    owner.dismiss('repair',legacy['finding_id'],report['generation'],Command(command_id='legacy-dismiss',action='dismiss',expected_revision=legacy['finding_revision']))
+    owner.derive('repair');retained=owner.report('repair')
+    assert retained['derivation_version']==1 and retained['items'][0]['finding_id']==legacy['finding_id']
+    assert retained['items'][0]['dismissal_state']=='dismissed' and retained['items'][0]['evidence_revision']==legacy['evidence_revision']
+    for action in ['continue','retry','resume']:
+        with pytest.raises(DomainError,match='legacy_analysis_revision_required'):
+            owner.command('repair',Command(command_id='legacy-'+action,action=action,expected_revision=1))
+    with pytest.raises(DomainError,match='legacy_analysis_revision_required'):owner.claim('repair',builder)
+    with pytest.raises(DomainError,match='legacy_analysis_revision_required'):owner.export('repair',legacy['finding_id'],retained['generation'],'response-proposal')
+    owner.submit(RunRequest(schema_version=1,workspace_id='fixture',run_id='repair',revision=2,expected_revision=1,input_id='repair',input_revision=1,position_budget=250))
+    finish_repair_positions(owner,'repair',game)
+    corrected=owner.report('repair')
+    assert corrected['derivation_version']==2 and corrected['items'][0]['lineage'] is None
+    assert corrected['items'][0]['finding_id']!=legacy['finding_id'] and corrected['items'][0]['dismissal_state']=='open'
+    assert owner.report('repair',generation=retained['generation'])['items'][0]['finding_id']==legacy['finding_id']
