@@ -120,7 +120,7 @@ From the checkout root, install only the worker and its test/client environment:
 npm ci --prefix workers/stockfish --ignore-scripts --workspaces=false
 uv venv --python 3.14 /tmp/tempo-stockfish-check
 uv pip install --python /tmp/tempo-stockfish-check/bin/python --require-hashes -r contracts/requirements-test.lock
-uv pip install --python /tmp/tempo-stockfish-check/bin/python python-chess==1.999
+uv pip install --python /tmp/tempo-stockfish-check/bin/python python-chess==1.999 chess==1.11.2
 uv pip install --python /tmp/tempo-stockfish-check/bin/python --no-deps ./contracts/analysis-jobs ./workers/stockfish/python
 export TEMPO_STOCKFISH_PYTHON=/tmp/tempo-stockfish-check/bin/python
 export TEMPO_COMPONENT_PYTHON="$TEMPO_STOCKFISH_PYTHON"

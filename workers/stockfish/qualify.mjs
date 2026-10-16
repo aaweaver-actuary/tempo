@@ -94,6 +94,7 @@ export async function qualifyRestricted({ reportPath, artifactsDirectory }) {
       const uvEnv = { UV_CACHE_DIR: join(temporary, 'uv-cache') };
       execute('uv', ['venv', '--python', version, environment], temporary, 0, uvEnv);
       execute('uv', ['pip', 'install', '--python', interpreter, '--require-hashes', '-r', resolve(componentRoot, '../../contracts/requirements-test.lock')], temporary, 0, uvEnv);
+      execute('uv', ['pip', 'install', '--python', interpreter, 'chess==1.11.2'], temporary, 0, uvEnv);
       execute('uv', ['pip', 'install', '--python', interpreter, '--no-deps', contractWheel, clientWheel], temporary, 0, uvEnv);
       const tests = join(temporary, 'client-tests-' + version); await mkdir(tests);
       await cp(join(componentRoot, 'tests/contracts'), join(tests, 'tests/contracts'), { recursive: true });
