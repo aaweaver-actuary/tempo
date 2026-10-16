@@ -7,7 +7,7 @@ const { frontend, learning, credential, replacement_credential, scenario, operat
 const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [], queueResponses=[];
 let evidenceDelivered=false, priorityHead=false, learningUnavailable=false, originalOfflineAttempt;
 let interruptBootstrapBody=false, pendingBootstrapFault;
-const bootstrapBodyFaults=[];
+const bootstrapBodyFaults=[], offlineAcknowledgements=[];
 const heldAuthorities = new Set();
 const offlineScenario = ['offline-shell','service-unavailable-browser-online','bootstrap-body-interruption-browser-online'].includes(scenario);
 function interruptObservedBootstrap() {
@@ -165,6 +165,7 @@ let page;
 try {
   page = await context.newPage();
   if (scenario==='bootstrap-body-interruption-browser-online') {
+    await page.exposeBinding('__tempoObserveOfflineAcknowledgement',(_source,attempts)=>offlineAcknowledgements.push(...attempts));
     await page.exposeBinding('__tempoObserveBootstrap',(_source,event)=>{
       if (!pendingBootstrapFault) return;
       assert.equal(event.status,200);
@@ -175,6 +176,17 @@ try {
       interruptObservedBootstrap();
     });
     await page.addInitScript(endpoint=>{
+      const nativePut=IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put=function(value,...keys) {
+        const request=nativePut.call(this,value,...keys);
+        if (this.name==='training' && keys[0]==='prepared-daily-queue') {
+          const acknowledged=structuredClone(value?.attempts?.filter(attempt=>attempt.serverAcknowledged)??[]);
+          if (acknowledged.length) this.transaction.addEventListener('complete',()=>{
+            void window.__tempoObserveOfflineAcknowledgement(acknowledged);
+          },{once:true});
+        }
+        return request;
+      };
       const nativeFetch=window.fetch;
       window.fetch=async(...argumentsList)=>{
         const response=await nativeFetch(...argumentsList);
@@ -438,11 +450,11 @@ try {
       assert.equal(posts[0].body.outcome,originalOfflineAttempt.outcome);
       assert.equal(posts[0].body.expected_revision,originalOfflineAttempt.expectedRevision);
       if (scenario==='bootstrap-body-interruption-browser-online') {
-        await expect.poll(()=>page.evaluate(attemptId=>new Promise(resolve=>{
-          const registry=JSON.parse(localStorage.getItem('tempo-learning-authorities-v1'));
-          const opening=indexedDB.open(Object.values(registry)[0].offlineDatabase);
-          opening.onsuccess=()=>{const database=opening.result;const read=database.transaction('training').objectStore('training').get('prepared-daily-queue');read.onsuccess=()=>{resolve(Boolean(read.result?.attempts?.find(attempt=>(attempt.attemptId??`phone:${attempt.localEntryId}:${attempt.completedAt}`)===attemptId)?.serverAcknowledged));database.close();};};
-        }),originalId)).toBe(true);
+        // Observe the acknowledgement transaction itself: a later authoritative
+        // queue refresh may legitimately replace the prepared-queue record.
+        const acknowledgedOriginal=()=>offlineAcknowledgements.find(attempt=>(attempt.attemptId??`phone:${attempt.localEntryId}:${attempt.completedAt}`)===originalId);
+        await expect.poll(()=>Boolean(acknowledgedOriginal()?.serverAcknowledged)).toBe(true);
+        assert.equal(acknowledgedOriginal().serverReviewId,confirmedReceipts.at(-1).response.review_id);
         assert.ok(bootstrapBodyFaults.every(proof=>proof.fetch_resolved&&proof.body_read_started&&proof.bytes_written&&proof.interrupted&&proof.body_read_failed&&proof.sent_bytes<proof.declared_bytes));
       }
     } else await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length,{timeout:20000}).toBeGreaterThan(0);
@@ -466,12 +478,13 @@ try {
     }
   }
   assert.deepEqual(unexpected,[]);
-  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,original_offline_attempt:originalOfflineAttempt,bootstrap_body_faults:bootstrapBodyFaults,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
+  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,original_offline_attempt:originalOfflineAttempt,bootstrap_body_faults:bootstrapBodyFaults,acknowledged_offline_attempts:offlineAcknowledgements,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
 } catch (error) {
   // Do not record form input, credentials, authenticated headers or raw traces.
   console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]").replaceAll(replacement_credential??'unused-replacement-secret',"[redacted]"));
   console.error((await page?.locator("body").innerText().catch(()=>"") ?? "").slice(0,3000).replaceAll(credential,"[redacted]"));
   console.error(JSON.stringify(traffic)); process.exitCode=1;
+  console.error(JSON.stringify({bootstrap_body_faults:bootstrapBodyFaults,acknowledged_offline_attempts:offlineAcknowledgements}));
 } finally {
   releaseDelayedQueue();
   if(replacementProxy) {replacementProxy.closeAllConnections();await new Promise(resolve=>replacementProxy.close(resolve));}
