@@ -17,6 +17,16 @@ From the repository root:
 - `node tools/component-build/check-components.mjs --component learning-contracts`: only that implemented owner and declared component dependencies; no application source is needed. Repeat `--component` to select more owners. Add `--consumers` to request legacy current-source consumer checks explicitly.
 - `node tools/component-build/test-node.mjs tools/component-build/tests`: deliberate negative boundary and discovery tests.
 - `node tools/component-build/restricted-build.mjs [report-path]`: allowlisted builds, npm tarball / Python wheel and sdist, installed tests in clean consumers, runtime guards, dependency inventories, zero-selection probes. Requires Node, npm, uv and available Python 3.12/3.14; creates no Docker/service/model/Rust environment. Reports stage times, commands, results, runtimes, hashes and source state; removes its temporary source/consumer directories on success or failure. Artifacts are retained next to the report.
+
+Implemented workers declare an `artifact.qualifier` entry point beneath their own
+component root. The checker calls its static `boundary` mode; the restricted
+builder calls `restricted --report <path> --artifacts <directory>`. The shared
+harness rejects missing or escaping hooks, failed/empty reports, zero executed
+cases, and mismatched artifact hashes. Worker-specific asset staging and runtime
+qualification stay with that component. Selecting a worker explicitly may load
+its model for its declared proof; default library selection is unchanged. A
+worker's separate container qualification owns Docker and kernel resource-limit
+evidence. `--list` executes no qualifier or setup.
 - Restricted builds retain the existing chess-line/scheduling default. Add `--component analysis-jobs-contracts` for selected contract builds, wheel and sdist installs, versioned public namespaces and packaged schema resources on both Python runtimes. Unrelated component source is absent. This does not replace `contracts/qualify_artifacts.py` and its separate five-package synthetic-patch proof.
 - `node tools/component-build/test-lane.mjs --component learning-contracts`: execute the declared owning suite from its explicit repository-relative `cwd`, using a prepared installed-package environment selected by `TEMPO_COMPONENT_PYTHON`. Python cases use JUnit identities; Node cases retain the existing structured reporter.
 - Add `--list` to checker, restricted-builder, component tests or an existing lane to list targets without installing, building or running producers/tests. Unknown, empty and planned executable selections fail before setup.

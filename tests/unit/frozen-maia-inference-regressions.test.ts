@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Chess } from 'chess.js';
 import { expect, it } from 'vitest';
 
@@ -22,5 +24,13 @@ it('bounded Maia helper emits all legal moves for colors castling promotions and
     expect(result.moves.every((move: {probability:number}) => Number.isFinite(move.probability) && move.probability >= 0)).toBe(true);
     expect(result.moves.reduce((sum:number, move:{probability:number}) => sum+move.probability,0)).toBeCloseTo(1,10);
     expect(Object.keys(result.provenance.checksums)).toHaveLength(9);
+    expect(result.provenance.model_id).toBe('maia3-onnx');
+    expect(result.provenance.model_version).toMatch(/^maia3-v1-[0-9a-f]{16}$/);
+    expect(result.provenance.implementation_version).toBe(`maia-worker-v1-${result.provenance.implementation_sha256.slice(0, 16)}`);
+    expect(result.provenance.runtime_context.node).toBe(process.version);
+    for (const file of ['core.mjs', 'model.mjs', 'errors.mjs', 'model-descriptor.json']) {
+      const expected = createHash('sha256').update(readFileSync(`workers/maia/${file}`)).digest('hex');
+      expect(result.provenance.implementation_files[file]).toBe(expected);
+    }
   }
 },30_000);

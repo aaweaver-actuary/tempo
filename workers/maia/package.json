@@ -1,0 +1,49 @@
+{
+  "name": "@tempo/maia-worker",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Independent offline Maia inference worker using Tempo's immutable bundled ONNX model",
+  "engines": {
+    "node": "26.10.0"
+  },
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "bin": {
+    "tempo-maia": "./cli.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "core.mjs",
+    "model.mjs",
+    "errors.mjs",
+    "worker.mjs",
+    "child.mjs",
+    "cli.mjs",
+    "wire.mjs",
+    "resources.mjs",
+    "model-descriptor.json",
+    "assets",
+    "schemas",
+    "README.md",
+    "npm-shrinkwrap.json"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test.mjs pure && node test.mjs protocol",
+    "test:pure": "node test.mjs pure",
+    "test:protocol": "node test.mjs protocol",
+    "test:model": "node test.mjs model",
+    "qualify": "node qualify.mjs container",
+    "benchmark": "node benchmark.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "chess.js": "1.4.0",
+    "onnxruntime-web": "1.23.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
