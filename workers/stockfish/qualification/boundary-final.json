@@ -1,0 +1,12 @@
+[
+  {
+    "id": "stockfish",
+    "success": true,
+    "files": 8,
+    "exports": [
+      "StockfishWorker",
+      "inspectEngine",
+      "stockfishInputDigest"
+    ]
+  }
+]
