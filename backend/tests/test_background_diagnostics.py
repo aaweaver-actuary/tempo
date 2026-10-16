@@ -608,7 +608,8 @@ def test_background_delivery_preflight_uses_primary_and_read_only_transaction(di
         @contextmanager
         def connection(self,**kwargs):
             yield Primary()
-    def select_pool(read_only):
+    def select_pool(read_only, *, background=False):
+        assert background
         pools.append(read_only)
         assert not read_only, 'preflight must never consult a replica'
         return Pool()
