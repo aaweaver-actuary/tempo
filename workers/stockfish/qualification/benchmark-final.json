@@ -16,11 +16,11 @@
   "cleanup": {
     "removed_remaining_owned_containers": [],
     "all_created_names": [
-      "tempo-stockfish-b-acbcd0d0fc39",
-      "tempo-stockfish-b-feb74f99b334",
-      "tempo-stockfish-b-e87c2e132a3c",
-      "tempo-stockfish-b-f5bf09df203b",
-      "tempo-stockfish-b-90aa7c2352ee"
+      "tempo-stockfish-b-6cb11744e73a",
+      "tempo-stockfish-b-3fe851109732",
+      "tempo-stockfish-b-7989186d2b62",
+      "tempo-stockfish-b-21544c950085",
+      "tempo-stockfish-b-924a840a6cc7"
     ]
   },
   "last_diagnostics": [
@@ -95,7 +95,7 @@
         }
       },
       "pid": 17,
-      "initialization_ms": 503.61991699999993
+      "initialization_ms": 453.555584
     },
     {
       "event": "execution_started",
@@ -105,7 +105,7 @@
       "request_revision": 1,
       "execution_generation": 1,
       "pid": 17,
-      "started_at": "2026-10-16T18:17:30.413Z"
+      "started_at": "2026-10-16T18:20:40.222Z"
     },
     {
       "event": "execution_finished",
@@ -116,7 +116,7 @@
       "execution_generation": 1,
       "last_reported_depth": 12,
       "nodes": 12743,
-      "engine_time_ms": 130
+      "engine_time_ms": 186
     },
     {
       "event": "execution_started",
@@ -126,7 +126,7 @@
       "request_revision": 1,
       "execution_generation": 1,
       "pid": 17,
-      "started_at": "2026-10-16T18:17:30.631Z"
+      "started_at": "2026-10-16T18:20:40.447Z"
     },
     {
       "event": "execution_finished",
@@ -137,7 +137,7 @@
       "execution_generation": 1,
       "last_reported_depth": 12,
       "nodes": 23297,
-      "engine_time_ms": 150
+      "engine_time_ms": 111
     },
     {
       "event": "execution_started",
@@ -147,7 +147,7 @@
       "request_revision": 1,
       "execution_generation": 1,
       "pid": 17,
-      "started_at": "2026-10-16T18:17:30.802Z"
+      "started_at": "2026-10-16T18:20:40.625Z"
     },
     {
       "event": "execution_finished",
@@ -158,7 +158,7 @@
       "execution_generation": 1,
       "last_reported_depth": 12,
       "nodes": 8780,
-      "engine_time_ms": 33
+      "engine_time_ms": 86
     },
     {
       "event": "execution_started",
@@ -168,7 +168,7 @@
       "request_revision": 1,
       "execution_generation": 1,
       "pid": 17,
-      "started_at": "2026-10-16T18:17:30.895Z"
+      "started_at": "2026-10-16T18:20:40.730Z"
     },
     {
       "event": "execution_finished",
@@ -179,7 +179,7 @@
       "execution_generation": 1,
       "last_reported_depth": 12,
       "nodes": 70353,
-      "engine_time_ms": 148
+      "engine_time_ms": 179
     },
     {
       "event": "execution_started",
@@ -189,7 +189,7 @@
       "request_revision": 1,
       "execution_generation": 1,
       "pid": 17,
-      "started_at": "2026-10-16T18:17:31.061Z"
+      "started_at": "2026-10-16T18:20:40.936Z"
     },
     {
       "event": "child_exited",
@@ -268,7 +268,7 @@
         }
       },
       "pid": 42,
-      "initialization_ms": 289.98745799999983
+      "initialization_ms": 321.5970840000002
     },
     {
       "event": "child_exited",
@@ -300,32 +300,32 @@
       "kind": "serial_benchmark",
       "cold_initialization_ms": [
         {
-          "end_to_end_startup_ms": 964.6081249957206,
-          "engine_initialization_ms": 406.561167
+          "end_to_end_startup_ms": 674.9858749972191,
+          "engine_initialization_ms": 355.522
         },
         {
-          "end_to_end_startup_ms": 662.3734159948071,
-          "engine_initialization_ms": 341.81391699999995
+          "end_to_end_startup_ms": 616.1199170019245,
+          "engine_initialization_ms": 302.934375
         },
         {
-          "end_to_end_startup_ms": 727.5503749988275,
-          "engine_initialization_ms": 389.30829200000005
+          "end_to_end_startup_ms": 981.6354160138872,
+          "engine_initialization_ms": 525.9378330000001
         },
         {
-          "end_to_end_startup_ms": 741.0244580096332,
-          "engine_initialization_ms": 387.632875
+          "end_to_end_startup_ms": 1531.1469589942135,
+          "engine_initialization_ms": 614.104541
         },
         {
-          "end_to_end_startup_ms": 984.3510829959996,
-          "engine_initialization_ms": 503.61991699999993
+          "end_to_end_startup_ms": 943.0683749960735,
+          "engine_initialization_ms": 453.555584
         }
       ],
       "searches": [
         {
-          "end_to_end_ms": 290.50691600423306,
+          "end_to_end_ms": 173.95420899265446,
           "actual_depth": 12,
           "nodes": 12743,
-          "engine_time_ms": 165,
+          "engine_time_ms": 97,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -348,10 +348,10 @@
           }
         },
         {
-          "end_to_end_ms": 223.87450000678655,
+          "end_to_end_ms": 115.05204100103583,
           "actual_depth": 12,
           "nodes": 23297,
-          "engine_time_ms": 180,
+          "engine_time_ms": 98,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -376,10 +376,10 @@
           }
         },
         {
-          "end_to_end_ms": 84.12283299549017,
+          "end_to_end_ms": 71.95820900960825,
           "actual_depth": 12,
           "nodes": 8780,
-          "engine_time_ms": 64,
+          "engine_time_ms": 59,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -404,10 +404,10 @@
           }
         },
         {
-          "end_to_end_ms": 227.4056659953203,
+          "end_to_end_ms": 149.21883300121408,
           "actual_depth": 12,
           "nodes": 70353,
-          "engine_time_ms": 207,
+          "engine_time_ms": 135,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -430,10 +430,10 @@
           }
         },
         {
-          "end_to_end_ms": 202.7428329893155,
+          "end_to_end_ms": 187.79483399703167,
           "actual_depth": 12,
           "nodes": 12743,
-          "engine_time_ms": 118,
+          "engine_time_ms": 110,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -456,10 +456,10 @@
           }
         },
         {
-          "end_to_end_ms": 192.6462499977788,
+          "end_to_end_ms": 122.90487499558367,
           "actual_depth": 12,
           "nodes": 23297,
-          "engine_time_ms": 129,
+          "engine_time_ms": 104,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -484,10 +484,10 @@
           }
         },
         {
-          "end_to_end_ms": 74.26704099634662,
+          "end_to_end_ms": 85.83162499417085,
           "actual_depth": 12,
           "nodes": 8780,
-          "engine_time_ms": 58,
+          "engine_time_ms": 27,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -512,10 +512,10 @@
           }
         },
         {
-          "end_to_end_ms": 212.98495899827685,
+          "end_to_end_ms": 194.31579200318083,
           "actual_depth": 12,
           "nodes": 70353,
-          "engine_time_ms": 192,
+          "engine_time_ms": 173,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -538,10 +538,10 @@
           }
         },
         {
-          "end_to_end_ms": 189.2938750097528,
+          "end_to_end_ms": 196.7790420021629,
           "actual_depth": 12,
           "nodes": 12743,
-          "engine_time_ms": 104,
+          "engine_time_ms": 110,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -564,10 +564,10 @@
           }
         },
         {
-          "end_to_end_ms": 136.2264170020353,
+          "end_to_end_ms": 132.7305000013439,
           "actual_depth": 12,
           "nodes": 23297,
-          "engine_time_ms": 110,
+          "engine_time_ms": 112,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -592,10 +592,10 @@
           }
         },
         {
-          "end_to_end_ms": 79.75016599812079,
+          "end_to_end_ms": 79.61204100865871,
           "actual_depth": 12,
           "nodes": 8780,
-          "engine_time_ms": 56,
+          "engine_time_ms": 64,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -620,10 +620,10 @@
           }
         },
         {
-          "end_to_end_ms": 205.9948340029223,
+          "end_to_end_ms": 164.48554101225454,
           "actual_depth": 12,
           "nodes": 70353,
-          "engine_time_ms": 180,
+          "engine_time_ms": 148,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -646,10 +646,10 @@
           }
         },
         {
-          "end_to_end_ms": 196.1029160011094,
+          "end_to_end_ms": 212.04891699017026,
           "actual_depth": 12,
           "nodes": 12743,
-          "engine_time_ms": 113,
+          "engine_time_ms": 116,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -672,10 +672,10 @@
           }
         },
         {
-          "end_to_end_ms": 174.22016701311804,
+          "end_to_end_ms": 194.4308749953052,
           "actual_depth": 12,
           "nodes": 23297,
-          "engine_time_ms": 142,
+          "engine_time_ms": 117,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -700,10 +700,10 @@
           }
         },
         {
-          "end_to_end_ms": 200.51295800658409,
+          "end_to_end_ms": 85.13408301223535,
           "actual_depth": 12,
           "nodes": 8780,
-          "engine_time_ms": 174,
+          "engine_time_ms": 65,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -728,10 +728,10 @@
           }
         },
         {
-          "end_to_end_ms": 203.24595799320377,
+          "end_to_end_ms": 226.05158299847972,
           "actual_depth": 12,
           "nodes": 70353,
-          "engine_time_ms": 178,
+          "engine_time_ms": 205,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -754,10 +754,10 @@
           }
         },
         {
-          "end_to_end_ms": 226.9302499917103,
+          "end_to_end_ms": 272.4027499934891,
           "actual_depth": 12,
           "nodes": 12743,
-          "engine_time_ms": 130,
+          "engine_time_ms": 186,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -780,10 +780,10 @@
           }
         },
         {
-          "end_to_end_ms": 171.53920800774358,
+          "end_to_end_ms": 179.00520800321829,
           "actual_depth": 12,
           "nodes": 23297,
-          "engine_time_ms": 150,
+          "engine_time_ms": 111,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -808,10 +808,10 @@
           }
         },
         {
-          "end_to_end_ms": 92.29579201200977,
+          "end_to_end_ms": 104.45333299867343,
           "actual_depth": 12,
           "nodes": 8780,
-          "engine_time_ms": 33,
+          "engine_time_ms": 86,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -836,10 +836,10 @@
           }
         },
         {
-          "end_to_end_ms": 167.69933300383855,
+          "end_to_end_ms": 205.97129200177733,
           "actual_depth": 12,
           "nodes": 70353,
-          "engine_time_ms": 148,
+          "engine_time_ms": 179,
           "job": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
@@ -864,27 +864,27 @@
       ],
       "cancellations": [
         {
-          "cpu_ticks_before": 113,
-          "cpu_ticks_after": 130,
-          "termination_ms": 9.251916999346577,
-          "capacity_recovery_ms": 321.2689999927534,
-          "pid": 16,
+          "cpu_ticks_before": 81,
+          "cpu_ticks_after": 97,
+          "termination_ms": 12.507000006735325,
+          "capacity_recovery_ms": 249.39891599933617,
+          "pid": 17,
           "ack": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
             "job_id": "observed-5",
             "request_revision": 1,
             "execution_generation": 1,
-            "cancellation_id": "6210d968-8eec-4439-9408-565bb7621777",
+            "cancellation_id": "b3593efc-ae00-436d-90da-265fb341552d",
             "status": "terminated",
-            "acknowledged_at": "2026-10-16T18:17:22.503Z"
+            "acknowledged_at": "2026-10-16T18:20:31.156Z"
           }
         },
         {
-          "cpu_ticks_before": 98,
-          "cpu_ticks_after": 114,
-          "termination_ms": 11.580457998206839,
-          "capacity_recovery_ms": 321.72241699299775,
+          "cpu_ticks_before": 84,
+          "cpu_ticks_after": 100,
+          "termination_ms": 13.669374995515682,
+          "capacity_recovery_ms": 535.84745900298,
           "pid": 17,
           "ack": {
             "contract_version": 1,
@@ -892,33 +892,33 @@
             "job_id": "observed-10",
             "request_revision": 1,
             "execution_generation": 1,
-            "cancellation_id": "265997e3-9d18-466e-aa55-b30788a1c9c3",
+            "cancellation_id": "56ef1673-acf3-4723-8f96-fe8bdfc72a9a",
             "status": "terminated",
-            "acknowledged_at": "2026-10-16T18:17:24.609Z"
+            "acknowledged_at": "2026-10-16T18:20:33.009Z"
           }
         },
         {
-          "cpu_ticks_before": 95,
-          "cpu_ticks_after": 111,
-          "termination_ms": 19.067624991293997,
-          "capacity_recovery_ms": 326.8581659940537,
-          "pid": 16,
+          "cpu_ticks_before": 104,
+          "cpu_ticks_after": 119,
+          "termination_ms": 8.561374997952953,
+          "capacity_recovery_ms": 323.5326660069404,
+          "pid": 17,
           "ack": {
             "contract_version": 1,
             "workspace_id": "workspace-a",
             "job_id": "observed-15",
             "request_revision": 1,
             "execution_generation": 1,
-            "cancellation_id": "2d40b9d2-a989-4151-870b-03236073bb9f",
+            "cancellation_id": "6bda95f0-3b88-46fd-9c20-57bb8240b46d",
             "status": "terminated",
-            "acknowledged_at": "2026-10-16T18:17:26.680Z"
+            "acknowledged_at": "2026-10-16T18:20:35.565Z"
           }
         },
         {
-          "cpu_ticks_before": 111,
-          "cpu_ticks_after": 127,
-          "termination_ms": 13.269667004351504,
-          "capacity_recovery_ms": 320.4074590030359,
+          "cpu_ticks_before": 121,
+          "cpu_ticks_after": 140,
+          "termination_ms": 9.018083001137711,
+          "capacity_recovery_ms": 327.7701250044629,
           "pid": 17,
           "ack": {
             "contract_version": 1,
@@ -926,16 +926,16 @@
             "job_id": "observed-20",
             "request_revision": 1,
             "execution_generation": 1,
-            "cancellation_id": "a771fc1c-6c6a-493a-bce1-cdfa54ea9677",
+            "cancellation_id": "ea611abe-45fd-4a44-93d1-279c5859e662",
             "status": "terminated",
-            "acknowledged_at": "2026-10-16T18:17:28.953Z"
+            "acknowledged_at": "2026-10-16T18:20:38.672Z"
           }
         },
         {
-          "cpu_ticks_before": 111,
-          "cpu_ticks_after": 129,
-          "termination_ms": 12.19074999971781,
-          "capacity_recovery_ms": 307.1000829950208,
+          "cpu_ticks_before": 117,
+          "cpu_ticks_after": 135,
+          "termination_ms": 13.349750006454997,
+          "capacity_recovery_ms": 339.29241700388957,
           "pid": 17,
           "ack": {
             "contract_version": 1,
@@ -943,18 +943,25 @@
             "job_id": "observed-25",
             "request_revision": 1,
             "execution_generation": 1,
-            "cancellation_id": "f38bd647-e00f-45b7-bb76-f6b120144843",
+            "cancellation_id": "9382de34-d749-4dcf-b946-d3e51f3e21dc",
             "status": "terminated",
-            "acknowledged_at": "2026-10-16T18:17:31.345Z"
+            "acknowledged_at": "2026-10-16T18:20:41.244Z"
           }
         }
       ],
       "memory_peak_bytes": [
-        187138048,
-        185524224,
-        184086528,
-        188116992,
-        188612608
+        199749632,
+        184221696,
+        211390464,
+        213299200,
+        203030528
+      ],
+      "exit_statuses": [
+        0,
+        0,
+        0,
+        0,
+        0
       ],
       "sample_scope": "five isolated cold sessions, twenty depth-12 searches, five observed in-flight cancellations; no universal SLO"
     }
@@ -1008,7 +1015,7 @@
       "swap": false
     }
   },
-  "source_revision": "df54723a05facae761539480dad58f3b74ef50ad",
+  "source_revision": "c1ccba8dc35881e668809788ab9f39be7091f656",
   "source_dirty": false,
   "artifacts": [
     {
@@ -1017,8 +1024,8 @@
     }
   ],
   "host_before": {
-    "uptime": "14:17  up 1 day,  1:39, 2 users, load averages: 7.37 18.74 56.11",
-    "swap": "vm.swapusage: total = 6144.00M  used = 4742.69M  free = 1401.31M  (encrypted)"
+    "uptime": "14:20  up 1 day,  1:42, 2 users, load averages: 2.83 11.51 45.76",
+    "swap": "vm.swapusage: total = 6144.00M  used = 4734.69M  free = 1409.31M  (encrypted)"
   },
   "command": [
     "/private/tmp/tempo-analysis-b-stockfish/python-env/bin/python",
