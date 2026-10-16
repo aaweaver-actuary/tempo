@@ -1,5 +1,7 @@
 # C — Source-backed findings / analysis-v1
 
+Current handoff: [final R6–R8 corrective repair](#final-corrective-repair--r6r8-2026-10-16). Earlier sections retain their dated source and qualification history.
+
 ## Ownership and checkpoint
 
 Branch `codex/analysis-c-findings`; base `0edf566ad48f51846a43d3341809379ff0469ada`.
@@ -582,3 +584,99 @@ After the foundation is accepted, separately authorize an A-produced export of
 50–100 explicitly selected real games for C3, evaluate attribution and usefulness,
 and inspect drafts through Content's normal approval path. Do not infer Content
 publication or Learning admission from findings.
+
+
+## Final corrective repair — R6–R8 (2026-10-16)
+
+### A. Verdict
+
+**READY TO MERGE — qualified foundation scope.** R6 and R7 have retained behavioral red/green proofs; R1–R5 remain green, current main is incorporated, and the scoped installed/native/browser/current-artifact checks passed. Independent exact-executable re-review found no remaining actionable P1/P2 after its scope-validation finding was reproduced and repaired. This establishes foundation acceptance, not C3 or full-system/production qualification.
+
+### B. PR identity
+
+- Existing PR: https://github.com/aaweaver-actuary/tempo/pull/295; remote branch `codex/analysis-c-findings`.
+- Starting head: `10b8a6368c128910b5a7e28a6a2609696b015418`.
+- Starting and final incorporated main: `ac38f92f3b8164fd5296f623a9d30c605b67f27c`; merge base `0edf566ad48f51846a43d3341809379ff0469ada`.
+- Main merge: `4e0aa6e553172fccc0f9566effe6229aad64ee93`; no textual conflicts.
+- Final reviewed executable: `b7e8fc605b5be9378ffb0c5c2e5d0a79924c940a`.
+- Repair checkout: `/private/tmp/tempo-pr295-final-20261016`; task branch `codex/pr295-final-corrective-20261016`.
+- Publication SHA, refreshed mergeability/draft state and final cleanup are recorded in the external `publication.json` / `cleanup.json` after publication. Any successor to the executable changes documentation only.
+
+### C. R6 repair
+
+`services/intelligence/src/tempo_intelligence/analysis/store.py` previously assigned `eligible_encounter_games=1, actual_frequency=1` to each significant engine incident. Both are now null. The genuinely observed supporting game/count remains 1, and the root/played scores, depth, variations, result identities, provenance and exact repertoire association remain intact. Global support-first source-specific ranking is unchanged. Unknown frequency is not zero. No semantic finding identity, migration or immutable historical row changed; an explicit new revision obtains corrected derivations under undeployed derivation version 2.
+
+Owning changes: that store, `tests/test_repairs.py`, `integration/test_analysis_postgres.py`, `INTERFACES.md` and `REGRESSIONS.md` under `services/intelligence/`.
+
+Named regressions: `test_R6_engine_opportunity_has_no_invented_encounter_frequency`, `test_R6_equal_support_cross_category_ranking`, `test_R6_support_count_still_dominates_frequency`, `test_R6_source_native_rankings_remain_separate`, and `test_R6_new_revision_preserves_historical_report_and_dismissal`. The equal-support case checks a genuine 1/10 miss against accepted significant engine evidence, actual published pagination, stale cursor rejection and historical ordering. Existing R1/R2 tests remain selected.
+
+Original red evidence: `red-r6-native` (2 intended failures, 35 passing existing native cases); green: `green-r6-r7-native-02` (40/40), full matrix below. Historical storage is checked byte-for-byte while the read response correctly labels it stale. The initial test expectation for that read status failed and is retained in `green-r6-r7-native`; no production behavior or historical payload assertion was weakened.
+
+### D. R7 repair
+
+Start analysis formerly generated a new UUID for each direct POST, allowing duplicate runs after response loss or repeated clicks. `PendingCommands` now owns creation in the existing origin/workspace slot and synchronous mutation fence. New v3 records discriminate `command` and `run_create`; v2 commands and credential-free v1 migration remain recoverable. Creation retains origin, workspace, endpoint, exact serialized body, run ID and SHA-256 of encoded `[path, body]`; persistence/readback precede transmission. No credential is stored in the mutation document.
+
+`submitRun`, `recoverRun` and `retryRun` verify authoritative GET status, the complete normalized immutable request scope, and current saved-record ownership before clearing intent. Missing status, conflicts, authentication failure and ambiguous transport retain it. Retry preserves original bytes/UUID. Request defaults are normalized only on the client request side; status must explicitly supply every normalized scope field. Commands and creation block each other for one authority. Reload and origin/workspace switching preserve intent and connection fencing. No server endpoint/table/receipt framework or backend submission implementation changed; committed and controlled-staging replay tests establish backend idempotency.
+
+Changed Workbench files: `src/commands.ts`, `src/contracts.ts`, `src/index.ts`, `src/workbench.ts`, `tests/client.test.mjs`, `tests/browser.mjs`, new `tests/run-creation.mjs`, `README.md`, `REGRESSIONS.md`. Public type registration is updated in `components.json`.
+
+All requested R7-A–H names are registered in the client inventory. Additional named cases cover malformed records, disconnect, v2 recovery and incomplete authoritative scope. Browser identities are `R7 browser response-loss`, `R7 browser repeated-click`, and `R7 browser authority-switch`, alongside preserved `C_native_workbench`.
+
+Original red evidence: `red-r7-browser` retains actual pairs of distinct UUIDs for response loss and repeated clicks, plus absent durable creation state. Its tracked overlay and `red-r7-browser-overlay.mjs` preserve the proof. Green: final 27 client / 4 browser cases, repeated from the installed source-removed package. Independent review's P2 omission proof is separately retained in `red-review-scope-*`; its same named regression passes after correction. Two initial asynchronous unit-fixture waits failed and are retained in `green-workbench-unit`; those fixtures now wait for actual transmission before asserting in-flight behavior.
+
+### E. Current-main integration
+
+Current main merged normally with no conflict resolution or history rewrite. Entry-by-entry verification established that the implemented Stockfish registry exactly matches main, while Workbench, Intelligence and pilot registrations remain present. Newly exported Workbench request/mutation types are registered. The worker implementation, Learning runtime, Study bootstrap and current-main Study proof scripts are byte-identical to main. No shared contracts or migration chain changed. Workbench selection contains only its two Node/browser suites; the complete 81-case boundary/discovery suite and final selected boundary check passed.
+
+### F. Validation matrix
+
+Commands below ran from the isolated checkout. Artifact/native subprocess arguments, cwd, source/input hashes, case identities and exit codes are retained in the linked JSON/XML/log evidence under `/Users/andy/.codex/artifacts/analysis-pr295-final-20261016`. Python 3.12.12/3.14.8, Node 26.10.0 and PostgreSQL 18.6 were used. Counts represent each stated execution environment; the native analysis, installed and actual-artifact rows overlap and must not be summed as unique tests. Negative controls are separately identified, not skipped required cases.
+
+| Qualification | Exact command | Selected | Passed | Failed | Skipped | Evidence |
+|---|---|---:|---:|---:|---:|---|
+| Intelligence pure | `services/intelligence/.venv/bin/python -I -m pytest -c services/intelligence/pyproject.toml services/intelligence/tests -q -o addopts= --junitxml=/Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-intelligence-pure.xml` | 250 | 250 | 0 | 0 | `final-intelligence-pure.xml` |
+| Intelligence native | `services/intelligence/.venv/bin/python services/intelligence/integration/run_postgres.py /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-intelligence-native` | 139 | 139 | 0 | 0 | `final-intelligence-native/native-resource.json` |
+| Python installed matrix | `services/intelligence/.venv/bin/python services/intelligence/integration/qualify_artifacts.py /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-intelligence-artifacts` | 250 × 4; 139 × 2 native | 250 × 4; 139 × 2 native | 0 | 0 | `final-intelligence-artifacts/artifacts.json` |
+| Pilot installed matrix | `services/intelligence/.venv/bin/python tools/analysis-restoration/c_pilot/qualify.py --c-artifacts /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-intelligence-artifacts/distributions --b-client /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/inputs/tempo_stockfish_client-1.0.0-py3-none-any.whl --requirements /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/requirements-qualification.txt /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-pilot-artifacts` | 16 × 4 | 16 × 4 | 0 | 0 | `final-pilot-artifacts/artifacts.json` |
+| Workbench unit / browser | `node tools/component-build/test-lane.mjs --component workbench-web` | 27 / 4 | 27 / 4 | 0 | 0 | `final-workbench-registered.log` |
+| Workbench installed unit / browser | `node apps/workbench-web/qualify.mjs /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-workbench-artifacts` | 27 / 4 | 27 / 4 | 0 | 0 | `final-workbench-artifacts/restricted.json` |
+| Actual A/B/C native | `services/intelligence/.venv/bin/python services/intelligence/integration/run_postgres.py /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-actual-native` | 42 | 42 | 0 | 0 | `final-actual-native/native-resource.json` |
+| Actual serialized A/B | `services/intelligence/.venv/bin/python -I -m pytest tools/analysis-restoration/c_pilot/integration/test_actual_consumers.py --import-mode=importlib -q --junitxml=/Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-actual-serialized.xml` | 1 | 1 | 0 | 0 | `actual-consumer.json` |
+| Current A proposal inspector | `/private/tmp/tempo-pr295-final-A-inspector/bin/tempo-content proposal inspect /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/response-proposal.json` | 1 inspection | 1 inspection | 0 | 0 | `final-current-A-inspection.log` |
+| Current B replay/cancellation | `services/intelligence/.venv/bin/python /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/direct_b_boundary.py` | 1 proof | 1 proof | 0 | 0 | `direct-b-boundary.json` |
+| Shared contracts / chess-core | `services/intelligence/.venv/bin/python -I -m pytest contracts/analysis-jobs/tests packages/chess-core/tests --import-mode=importlib -q --junitxml=/Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-shared-contracts-chess.xml` | 92 + 105 | 92 + 105 | 0 | 0 | `final-shared-contracts-chess.xml` |
+| Study optional-off | `services/learning/runtime/.venv/bin/python tools/analysis-restoration/c_pilot/integration/run_study_off.py /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-study-optional-off /Users/andy/.codex/artifacts/analysis-pr295-final-20261016/final-actual-native/optional-stop.json` | 1 | 1 | 0 | 0 | `final-study-optional-off/native.json` |
+| Component boundary/discovery suite | `node tools/component-build/test-node.mjs tools/component-build/tests` | 81 | 81 | 0 | 0 | `final-discovery-tests.log` |
+| Selected component boundaries | `node tools/component-build/check-components.mjs --component workbench-web --component intelligence --component analysis-pilot --component stockfish` | 6 owners | 6 owners | 0 | 0 | `final-boundaries-reviewed.log` |
+
+
+The Intelligence pure/native/artifact matrix executed on clean `e4ed8f9bcfce9410882ef10e221a5776b3c7888d`. Its 124 package source/dependency/test input hashes are identical on final `b7e8fc6`; only Workbench schema/tests/inventory changed. `intelligence-evidence-reuse.json` proves this correspondence without relabeling the earlier execution SHA. Final Workbench, actual A/B/C, shared and Study proofs executed on clean `b7e8fc6`. No successful required execution had failures/skips/zero selection. The Workbench qualifier's deliberately nonexistent selector correctly exited 1.
+
+### G. A/B artifact identity
+
+- A current source: `607084d87896fdfcfc1a8f88c3c18af26b6b6015` (still open/unmerged). Its rebuilt external Content wheel is byte-identical to final A handoff SHA-256 `9e512594ee80ad9cca5a8f38f6564e2f1a7d7587fe001e8fc4323fad2062d003`; build source was removed before installed inspection.
+- Immutable A synthetic export producer: `4d132d0d984b36cd027f967cd3ecb11a1fe27ae0`; manifest/all seven pages verified through installed normalization, digest `924b65aa373b5305816daf5a2ddfc2fcf26640f03a15259a34048d03033c267b`; exactly four explicitly synthetic games. This retained export is historical producer output, not a newly generated current-A export.
+- A's current installed proposal inspector accepted the fresh C response draft. Later A database proposal-identity/provenance enforcement does not change the inspected wire shape; no A implementation is imported into C, and no A draft was approved/published.
+- B merged source: `099fa1fbc29efdf747af5da6a1c9a30cbfa189d3`, merge `710292013e0af3ea3b3fec270b7d8978f330b17f`.
+- B client wheel: `7acac937976ca97aa02d7b449829243d9bedfb66e5dc23e8a32550dad8aa3a17`.
+- Current B image: `sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f`; actual ready-worker/result implementation `sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64`.
+- Computational profile: `stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4`.
+- Fresh consumers accepted ten actual B results; an independent serialized consumer validated original positions/histories/restrictions/legal PVs. Separate current-image public-client exact replay and in-flight cancellation terminated successfully.
+- B remained Linux ARM64, one CPU, hard 512 MiB, memory-swap equal to memory (no extra swap), network-none, read-only, no application/database mounts or inherited provider credentials, one thread and 32 MiB Hash. Historical B images were not substituted.
+- New C wheel `1eb2887a914d6b99a32ef509bae2c31e5539930c826e18442c505f9f8596f53e`; sdist `59792c0422dea63e05bf4a8652d41e56caeab9803e4b91bfcc65db8f471d23d1`. Workbench tarball `2c3482ed330469f02a78f0061633ebe99712c58a80543c0bfcb9c84a518afc15`. Full package closure is in `validation-summary.json`.
+
+### H. Architecture preservation
+
+A retains Content/Learning/publication/activation authority; B retains engine execution; C retains analysis runs/results/findings. Study remains independent of optional Intelligence. Shared contracts, migrations, worker implementation and Learning authority are unchanged. No live state, real game history, recurring execution, deployment, merge, Actions settings or branch protection changed.
+
+### I. Remaining limitations
+
+C3 real-game rehearsal and real-game finding quality remain unverified. This proof qualifies the existing Linux ARM64 B platform/profile only. Current A's inspector was exercised with its final wheel, while its retained four-game export was produced at the separately recorded historical revision. No unavailable artifact was substituted or reported as current. Hosted CI and full-system qualification were not executed: repository Actions is disabled and PR checks are empty. Direct branch-rule/ruleset reads returned no active rules; main is unprotected. Deployment and production migrations were not performed.
+
+### J. Cleanup
+
+Created only task-owned checkout, component virtual environments, minimal frontend dependency tree, external A producer/inspector, and invocation-owned disposable PostgreSQL/Learning/B resources. Native/installed runners report their disposable containers, volumes, source stages and applicable runtime-image tags removed. Evidence, wheel/sdist/tarball artifacts, request overlays, red/green logs, review and exact commands are retained outside the checkout. Final checkout/dependency removal is recorded after safe publication in `cleanup.json`; existing checkouts, historical artifacts, shared base images/caches and live resources remain untouched.
+
+### K. Final recommendation
+
+The corrected foundation can move from draft to review and be merged through the normal workflow, subject to any subsequently applicable repository checks. The PR remains draft and unmerged; this task does not change that state. There is no remaining identified implementation blocker within R6/R7/R8. Preserve the explicit C3, platform, hosted and production limitations above.
