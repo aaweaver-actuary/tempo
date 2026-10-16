@@ -1,3 +1,167 @@
+# PR #293 repair qualification
+
+Verdict: **READY FOR INDEPENDENT RE-REVIEW**. This qualifies the repaired B
+component for re-review; it does not establish hosted/full-system merge qualification.
+No merge, live deployment, Actions change or domain-service change occurred.
+
+## Repair source and disposition
+
+Reviewed/starting runtime: `603822b2c2f3618ddd2055001a6c5afdfecde3f8`.
+Clean qualified executable/build/test source:
+`c652abadc9a0abcd022995447014d42e9e88d411`.
+Remote main/base remained `0edf566ad48f51846a43d3341809379ff0469ada`;
+`git merge-tree --write-tree origin/main HEAD` succeeded. Final publication adds
+only this validation/evidence; `qualification/pr293-repair/qualified-inputs.json`
+records the exact input tree that must remain unchanged. The final published SHA
+is recorded in the PR and external publication/cleanup receipts.
+
+| Finding | Original proof | Repair and ordinary owner | Final result |
+| --- | --- | --- | --- |
+| P1 repeated startup orphaned active engine | `B_repeated_start_preserves_active_child`: spawned children 2, expected 1 | worker.mjs:55–125 retains initial-start promise; prewarm refuses to overwrite an owned live child; protocol lifecycle regressions | Pass; actual CPU-active installed engine, confirmed cancellation, replacement and one later completion also pass |
+| P2 stale staged inputs | `B_test_runner_refreshes_staged_contract_inputs`: stale schema SHA `02d4bd4d…`, manifest SHA `b81564a9…` survived another runner invocation | test.mjs:14–64 uses invocation-owned verified copies; pure runner regressions cover all inputs, source mismatch, missing/partial stages, parallelism and selection | Pass |
+| P2 rejected commands falsely failed execution | Four protocol regressions observed shared `JobStatus failed` for active/completed conflicts and cancellation ID/capacity refusal | worker.mjs:168–175,226–251,338–350 throws typed command rejection; cli.mjs:46–47 closes session; protocol and installed-client owners | Pass; all four real CLI/client cases exit 1 with typed loss, no false failures/acks, and explicit generation-2 restart |
+
+Before/after commands from the repository root:
+
+```sh
+node workers/stockfish/test.mjs protocol 'B_repeated_start_preserves_active_child|B_conflicting_duplicate|B_cancellation_identity_conflict_does_not_fail_target_execution|B_cancellation_capacity_refusal_is_not_execution_failure'
+node workers/stockfish/test.mjs pure B_test_runner_refreshes_staged_contract_inputs
+```
+
+Against the reviewed production bytes plus the preserved regression patch, the
+first command had five intended assertion failures and the second had one intended
+freshness assertion failure. These were not setup/import failures. The regular
+repaired suites now execute and pass every selected case. `red.json` retains names,
+actual assertions, source and patch hash. Full original red logs/patch are preserved
+outside the checkout. Fake children are independently tracked and reaped even when
+the baseline loses its child pointer.
+
+Startup is idempotent after successful initialization, including busy/stopping/
+recovering children. Concurrent callers share inspection and initial child startup;
+closing/closed calls reject explicitly. Existing crash recovery remains owned and
+bounded. Genuine execution failures still emit retained JobStatus. A refused
+command targeting an accepted execution, or a refused cancellation command, emits
+no execution failure. Direct callers catch CommandRejection; NDJSON callers lose
+the session after owned-child shutdown. Python raises WorkerSessionLost and never
+retries automatically. C fences the old session and advances generation. This
+availability tradeoff preserves strict shared v1 without inventing a command ack.
+
+## Final commands and results
+
+Exact private-path invocations and complete raw output are preserved externally;
+`qualification/pr293-repair/checks.json` contains path-redacted command/exit records.
+`<EVIDENCE>` and `<PYTHON>` below mean the task-owned locations from those records.
+No repeated execution is counted as additional distinct coverage.
+
+| Command | Result |
+| --- | --- |
+| `node workers/stockfish/test.mjs pure` | 21 passed, 0 failed/skipped |
+| `node workers/stockfish/test.mjs protocol` | 32 passed, 0 failed/skipped |
+| `node tools/component-build/check-components.mjs --component stockfish` | 8 runtime sources; unchanged 3 public exports |
+| `node tools/component-build/test-lane.mjs --component stockfish --list` | Four nonempty owning suites |
+| `node tools/component-build/test-lane.mjs --component stockfish` with explicit installed client/runtime environment | All four suites executed: 21 pure, 32 protocol, 16 Python, 17 actual-container cases; no failures/skips |
+| `node --input-type=module -e 'import {runNodeFiles} from "./tools/component-build/test-node.mjs"; runNodeFiles(["tools/component-build/tests/workers.test.mjs"]);'` | 4 worker-hook cases passed; includes negative registration/empty proof rejection |
+| `<PYTHON> -I -m pytest contracts/analysis-jobs/tests --import-mode=importlib -q --junitxml=<EVIDENCE>/shared-contract-final.xml` | 92 passed |
+| `<PYTHON> -I contracts/export_schemas.py --check --package analysis-jobs` | 7 exports verified; all shared contract bytes unchanged |
+| `node workers/stockfish/qualify.mjs restricted --report <EVIDENCE>/restricted-final-report.json --artifacts <EVIDENCE>/artifacts-restricted-final` | 35 proofs: 3 artifact/import/corruption plus 16 installed cases each on Python 3.12 and 3.14 |
+| `node qualify.mjs container` from workers/stockfish, executed by registered dispatcher | 17 actual installed cases; source absent; one CPU, 512 MiB, zero swap, no network/mounts/socket; all 13 created containers absent after cleanup |
+| `<PYTHON> -I workers/stockfish/qualify_container.py --image sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f --report <EVIDENCE>/benchmark-accepted-image-report.json --exchange <EVIDENCE>/benchmark-accepted-image-exchange.json --benchmark` | Five cold sessions, 20 depth-12 searches, five CPU-observed cancellations; installed consumer passed; all exits 0 |
+| Changed JS `node --check`, Python AST parsing, component import/export boundary | Pass |
+| `npm run check:conflicts`; `git diff --check 603822b2 HEAD` | Pass |
+
+The actual successful exchange independently validated 27 results (26 distinct
+executions), 104 statuses and 12 cancellation acknowledgements. Four conflicting
+command sessions are separately recorded under container.json/rejection_exchanges;
+they intentionally contain conflicting inputs and are not presented as ordinary
+immutable successful exchanges. fixtures/repaired retains the initial repair
+actual exchanges/provenance separately from synthetic, observed and qualified
+historical fixtures. Independent consumption now also rejects false terminal
+statuses after a valid completed result.
+
+## Exact replacement artifacts and C integration
+
+- npm 1.0.0 SHA-256: `d9491edfb5834eb6530519f79a1800302fa86ede1c34f48a454bd9f6edb14e34`.
+- Accepted image: `sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f`.
+- Runtime implementation: `sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64`.
+- Engine profile remains `stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4`.
+- Python client 1.0.0 wheel remains byte-identical: `7acac937976ca97aa02d7b449829243d9bedfb66e5dc23e8a32550dad8aa3a17`.
+- Contract wheel remains `d313afc9df5284d93ced4619254d44d99e0f110c63a62e6e60406f617d42851c`.
+
+Wheel/sdist and Dockerfile hashes are in summary.json and the external immutable
+release MANIFEST.json. There is no registry upload or deployment claim. C can keep
+its existing final safe-env client wheel when its digest matches; earlier interface
+wheels should adopt the wheel above. Pin the replacement image/npm digest explicitly,
+preserve old pinned images, and handle session loss before retrying. There are no
+new wire fields, cancellation states, service dependencies or database permissions.
+
+```sh
+uv pip install --python "$C_PYTHON" --no-deps "$RELEASE/tempo_analysis_jobs_contracts-1.0.0-py3-none-any.whl" "$RELEASE/tempo_stockfish_client-1.0.0-py3-none-any.whl"
+docker run --pull=never --rm -i --network=none --cpus=1 --memory=512m --memory-swap=512m --pids-limit=64 --read-only sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f serve
+```
+
+RELEASE is the verified digest-named directory supplied in the private handoff;
+C_PYTHON is C's own interpreter with locked contract dependencies. StockfishClient
+receives the Docker command as argv and its explicit safe environment. Complete
+actual job/result/status/cancellation examples are in fixtures/repaired/exchange.json
+and the final external exchange. README documents the digest and typed API.
+
+## Serial measurements and limits
+
+These measurements use the exact accepted image after other acceptance work.
+Five cold worker sessions reuse a cached image; they are not cold image pulls.
+All 20 searches returned depth 12, with 8,780–70,353 actual nodes.
+
+| Measurement (ms) | min | median | nearest-rank p95 | max |
+| --- | ---: | ---: | ---: | ---: |
+| Cold startup | 575.50 | 660.78 | 944.14 | 944.14 |
+| Engine initialization | 291.36 | 349.19 | 471.60 | 471.60 |
+| End-to-end search | 38.94 | 121.14 | 183.37 | 184.20 |
+| Engine-reported search | 26.00 | 91.50 | 166.00 | 167.00 |
+| Cancellation to confirmed termination | 6.45 | 7.73 | 14.58 | 14.58 |
+| Cancellation to replacement readiness | 234.56 | 249.20 | 285.01 | 285.01 |
+
+Peak observed whole-worker memory was 224,714,752 bytes (214.30 MiB); hard cap
+536,870,912 bytes, one CPU, zero swap. All five sessions exited 0. The host was
+contended (load averages 13.20/10.38/6.86; host swap used 4,604.44 MiB). These are
+fixture samples, not product latency/SLO, saturation or live Study measurements.
+The benchmark wrapper also passed on a separately rebuilt image with identical
+npm/runtime digests; its report remains external and is not substituted for these
+same-image measurements.
+
+Exploratory failures are retained: the intended six red assertions; one 18-pass/
+one-fail pure run exposing file-wrapper counting in the new empty-selection probe;
+and one manual conflict command used an absent script pathname before the supported
+package script passed. Early recorder metadata used started_at for completion time;
+subsequent records have separate actual start/end timestamps. An overwritten
+intermediate npm filename was deterministically recovered and verified against its
+original recorded SHA-256 (ARTIFACT-PRESERVATION.json). No failed required check was
+removed, skipped or weakened. Final required component checks have no failures.
+
+Separate source self-review covered lifecycle/reentrancy, receipts, transport,
+freshness, resources and integration; no remaining actionable repair finding was
+identified. Full repository/producer exchange, hosted checks, other architectures,
+C durable scheduler/acceptance, broader #43 fairness/saturation and production
+cutover remain unverified or outside B. Learning, Maia and all domain services are
+unchanged. No issue is closed by this component proof.
+
+## Preservation and cleanup
+
+Raw logs, tests-only red patch, all source-bound exploratory/final reports, immutable
+release files and saved repair images are preserved outside the disposable checkout.
+The previous task's evidence and C-pinned images remain untouched. Cleanup is owned
+by this repair after verifying pushed refs, artifacts, declared-input identity,
+process/container mounts, ignored/untracked/stashed work and exact resource ownership.
+The external CLEANUP.json records actual removed/retained resources and final remote
+SHA. This repository retains path-redacted qualification reports; raw exchanges
+are never rewritten to manufacture desired protocol output.
+
+---
+
+# Historical qualification at the reviewed PR head
+
+The following original report is preserved as historical source-bound evidence.
+Its artifact IDs, case counts and timings are not the repaired worker's results.
+
 # Stockfish B qualification and handoff
 
 ## Revisions and scope

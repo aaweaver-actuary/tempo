@@ -1,0 +1,54 @@
+{
+  "runtime_revision": "603822b2c2f3618ddd2055001a6c5afdfecde3f8",
+  "test_patch_sha256": "8e1f3d8a2d77458f01942757c4f9a9a5f266cced12326e8f79034a8fcff9b68e",
+  "failed_cases": [
+    {
+      "name": "B_repeated_start_preserves_active_child",
+      "file": "workers/stockfish/tests/protocol.test.mjs",
+      "line": 170,
+      "failure": "repeated startup spawned a second owned engine\n\n2 !== 1\n",
+      "actual": 2,
+      "expected": 1
+    },
+    {
+      "name": "B_conflicting_duplicate_does_not_fail_active_execution",
+      "file": "workers/stockfish/tests/protocol.test.mjs",
+      "line": 246,
+      "failure": "command refusal emitted a false terminal execution status: [{\"model\":\"JobStatus\",\"payload\":{\"contract_version\":1,\"workspace_id\":\"workspace-a\",\"job_id\":\"job-a\",\"request_revision\":1,\"execution_generation\":1,\"status\":\"failed\",\"retryable\":false,\"reason\":\"identity_payload_conflict\"}}]\n\ntrue !== false\n",
+      "actual": true,
+      "expected": false
+    },
+    {
+      "name": "B_conflicting_duplicate_preserves_completed_receipt",
+      "file": "workers/stockfish/tests/protocol.test.mjs",
+      "line": 256,
+      "failure": "command refusal emitted a false terminal execution status: [{\"model\":\"JobStatus\",\"payload\":{\"contract_version\":1,\"workspace_id\":\"workspace-a\",\"job_id\":\"job-a\",\"request_revision\":1,\"execution_generation\":1,\"status\":\"failed\",\"retryable\":false,\"reason\":\"identity_payload_conflict\"}}]\n\ntrue !== false\n",
+      "actual": true,
+      "expected": false
+    },
+    {
+      "name": "B_cancellation_identity_conflict_does_not_fail_target_execution",
+      "file": "workers/stockfish/tests/protocol.test.mjs",
+      "line": 266,
+      "failure": "command refusal emitted a false terminal execution status: [{\"model\":\"JobStatus\",\"payload\":{\"contract_version\":1,\"workspace_id\":\"workspace-a\",\"job_id\":\"job-a\",\"request_revision\":1,\"execution_generation\":1,\"status\":\"failed\",\"retryable\":false,\"reason\":\"cancellation_id_conflict\"}}]\n\ntrue !== false\n",
+      "actual": true,
+      "expected": false
+    },
+    {
+      "name": "B_cancellation_capacity_refusal_is_not_execution_failure",
+      "file": "workers/stockfish/tests/protocol.test.mjs",
+      "line": 276,
+      "failure": "command refusal emitted a false terminal execution status: [{\"model\":\"JobStatus\",\"payload\":{\"contract_version\":1,\"workspace_id\":\"workspace-a\",\"job_id\":\"job-a\",\"request_revision\":1,\"execution_generation\":1,\"status\":\"failed\",\"retryable\":true,\"reason\":\"cancellation_capacity_exhausted\"}}]\n\ntrue !== false\n",
+      "actual": true,
+      "expected": false
+    },
+    {
+      "name": "B_test_runner_refreshes_staged_contract_inputs",
+      "file": "workers/stockfish/tests/artifact.test.mjs",
+      "failure": "stale staged input: schemas/v1/StockfishJob.schema.json",
+      "actual_digest": "02d4bd4dad02c03c2f054124757a140ed326de1018f74814a8525feabdc210bc",
+      "expected_digest": "b81564a9f3d1009e88d79f90bd34baae525863fd13ceb6d17406a6cc6a4afb8e"
+    }
+  ],
+  "cleanup": "Every spawned fake child independently tracked and reaped; disposable freshness repositories removed."
+}
