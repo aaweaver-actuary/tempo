@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "workspace_id": "content-example",
+  "source_key": "structured-example",
+  "title": "Independent Content example",
+  "repertoires": [
+    {"key": "white-repertoire", "title": "White repertoire", "learner_color": "white"},
+    {"key": "black-repertoire", "title": "Black repertoire", "learner_color": "black"}
+  ],
+  "policies": [
+    {"key": "white-policy", "repertoire_key": "white-repertoire"},
+    {"key": "black-policy", "repertoire_key": "black-repertoire"}
+  ],
+  "routes": [
+    {
+      "key": "shared-open-game",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "moves": ["e2e4", "e7e5", "g1f3"]
+    },
+    {
+      "key": "white-sicilian",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "moves": ["e2e4", "c7c5", "g1f3"]
+    }
+  ],
+  "memberships": [
+    {"repertoire_key": "white-repertoire", "policy_key": "white-policy", "route_key": "shared-open-game"},
+    {"repertoire_key": "black-repertoire", "policy_key": "black-policy", "route_key": "shared-open-game"},
+    {"repertoire_key": "white-repertoire", "policy_key": "white-policy", "route_key": "white-sicilian"}
+  ],
+  "exercises": [
+    {
+      "key": "white-first-move", "decision_key": "opening-first-choice", "policy_key": "white-policy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "prompt": "Play the authored first move.",
+      "specification": {"type": "move_line", "accepted_lines": [["e2e4"]], "mode": "single", "grading_policy": "reference"}
+    },
+    {
+      "key": "black-first-move", "decision_key": "opening-first-choice", "policy_key": "black-policy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      "prompt": "Answer White's first move.",
+      "specification": {"type": "move_line", "accepted_lines": [["e7e5"]], "mode": "single", "grading_policy": "reference"}
+    },
+    {
+      "key": "center-squares", "decision_key": "center-awareness", "policy_key": "white-policy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "prompt": "Mark the central squares.",
+      "specification": {"type": "square_set", "required": ["d4", "e4", "d5", "e5"], "optional": [], "criterion": "The four central squares."}
+    },
+    {
+      "key": "knight-development", "decision_key": "knight-awareness", "policy_key": "white-policy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "prompt": "Can the b1 knight attack d5 after exactly one static non-capturing hop?",
+      "specification": {"type": "knight_path", "start_square": "b1", "target_squares": ["d5"], "minimum_hops": 1, "maximum_hops": 1, "hop_rule": "exact", "occupancy_rule": "static_non_capturing"}
+    },
+    {
+      "key": "opening-choice", "decision_key": "opening-principle", "policy_key": "white-policy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "prompt": "Choose the development principle.",
+      "specification": {"type": "choice", "options": [{"id": "develop", "text": "Develop pieces toward useful squares."}, {"id": "repeat", "text": "Move one knight repeatedly."}], "correct_option_ids": ["develop"]}
+    },
+    {
+      "key": "opening-explanation", "decision_key": "opening-explanation", "policy_key": "white-policy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "prompt": "Explain why e4 helps development.",
+      "specification": {"type": "explanation", "rubric": "The move occupies the center and opens lines for the queen and bishop."}
+    }
+  ],
+  "bindings": [
+    {"route_key": "shared-open-game", "policy_key": "white-policy", "ply": 0, "exercise_key": "white-first-move"},
+    {"route_key": "white-sicilian", "policy_key": "white-policy", "ply": 0, "exercise_key": "white-first-move"},
+    {"route_key": "shared-open-game", "policy_key": "black-policy", "ply": 1, "exercise_key": "black-first-move"}
+  ]
+}
