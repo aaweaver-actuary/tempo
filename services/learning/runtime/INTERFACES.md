@@ -162,3 +162,29 @@ Host/Origin/CORS allowlists and restricted database roles remain authoritative.
 The operator-only `GET /internal/publications/operations/{operation_id}` adds `workspace_id`, `command_name` and the original persisted `request` for known publication operations. These let Content independently verify terminal failure against its immutable delivery checkpoint. Unknown operations remain `unknown`; Study/evidence credentials cannot read or retry publication operations. Generic Study receipt responses and shared publication wire contracts are unchanged.
 
 Study move-membership resolves a physical historical card through its publication-scoped Content alias before reading current accepted definitions. Physical IDs, reviews, FSRS state and attempts stay with Learning; all existing executable-revision and serving-state fences still apply.
+
+## Publication terminal fence
+
+Operator-only `POST /internal/publications/operations/{operation_id}/abort` accepts
+`{"workspace_id": WORKSPACE, "command_name": FAMILY, "request": ORIGINAL_REQUEST}`.
+FAMILY is `publication.activate.v2` or `publication.retire`; ORIGINAL_REQUEST has
+exactly publication_id, publication_generation, expected_activation_revision and
+activation_id or retirement_id. Integers are strict, generation positive and
+expected revision nonnegative. The request ID equals the path ID (1–128 characters).
+Workspace must equal this installed Learning authority. Other families are denied.
+
+The same operation advisory lock and receipt row lock as execution bind the
+original command/request hash. An absent identity is inserted; unknown/queued
+operations become immutable failed receipts with code
+`publication_abandoned_before_execution`. Existing complete or failed receipts are
+returned unchanged. Conflicting requests fail. A successful abort response may
+therefore report genuine completion; consumers must reconcile that outcome.
+The authenticated GET port exposes the exact original request and terminal receipt.
+No independent cancellation table or new migration is used.
+
+V2 activation rediscovers matching terminal receipts before requiring staging.
+Activation and retirement reject differing header/body operation identities.
+Gateway execution and maintenance re-read terminal state under the same locks,
+including workers selected before fencing. Staging alone never grants serving
+authority. Fencing neither deletes immutable staged bundles nor retires old serving
+content; corrected sources use the ordinary new generation/revision workflow.

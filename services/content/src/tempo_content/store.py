@@ -215,6 +215,10 @@ class ContentService:
         with self._transaction() as database:
             from .bridge import lock_scope
             lock_scope(database,source_id,operation_id)
+            if operation_id is not None:
+                authority = database.execute('SELECT state,source_id FROM content.bridge_operations WHERE id=%s FOR UPDATE', (operation_id,)).fetchone()
+                if authority is None or authority['source_id'] != source_id or authority['state'] != 'applying':
+                    raise ContentError('application_not_authorized', 'Source admission requires the original still-applying operation')
             database.execute('INSERT INTO content.sources(id,source_key,publication_id) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING',(source_id,snapshot.source_key,publication_id))
             source = self._lock_source(database,source_id,hook)
             previous = database.execute('SELECT digest FROM content.source_revisions WHERE source_id=%s AND revision=%s',(source_id,source['requested_revision'])).fetchone()

@@ -143,3 +143,26 @@ def test_A_failure_transport_rejects_uncertain_http_outcomes(tmp_path, failure):
         assert not redirected
     finally:
         server.shutdown(); server.server_close(); worker.join(timeout=3)
+
+
+@pytest.mark.parametrize('fault', ['explanation', 'engine', 'unbound', 'terminal', 'alias_merge'])
+def test_A_bridge_scope_preflight_is_local_and_preserves_general_types(fault):
+    from tempo_content.bridge import validate_bridge_execution_scope
+    from tempo_content.models import SourceSnapshot
+    raw = authored_pgn()
+    description = manifest(raw)
+    description['complete'] = True
+    description['route_assignments'] = [{'fingerprint': digest([chess.STARTING_FEN, ['e2e4', 'e7e5', 'g1f3']]), 'route_key': 'route', 'policy_key': 'main'}]
+    source, parsed = map_import(raw, description)
+    document = source.model_dump(mode='json')
+    description = parsed.model_dump(mode='json')
+    if fault == 'explanation': document['exercises'][0]['specification'] = {'type': 'explanation', 'rubric': 'Explain central control'}
+    elif fault == 'engine': document['exercises'][0]['specification']['grading_policy'] = 'open_judgment'
+    elif fault == 'unbound': document['bindings'] = [binding for binding in document['bindings'] if binding['exercise_key'] != document['exercises'][0]['key']]
+    elif fault == 'terminal':
+        document['bindings'][0]['ply'] = len(document['routes'][0]['moves'])
+    else: description['legacy_aliases'] = {exercise['key']: 'same-physical-card' for exercise in document['exercises']}
+    valid_source = SourceSnapshot.model_validate(document)
+    with pytest.raises(ContentError) as rejected:
+        validate_bridge_execution_scope(valid_source, description)
+    assert rejected.value.code == 'bridge_scope_unsupported'

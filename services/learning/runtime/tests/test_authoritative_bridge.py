@@ -479,3 +479,216 @@ def test_A_cli_timeout_terminates_owned_descendants(tmp_path):
     assert started.exists(), 'The descendant must have actually started before testing its termination'
     time.sleep(2.1)
     assert not marker.exists()
+
+
+def approve_authored(content_cli, environment, directory, source, revision):
+    source_path = directory / ('source-' + uuid.uuid4().hex + '.json')
+    source_path.write_text(json.dumps(source))
+    manifest_path = source_path.with_suffix('.manifest.json')
+    manifest_path.write_text(json.dumps(manifest_for(source, source_path)))
+    draft = run_cli(content_cli, ['import', 'plan', source_path, '--manifest', manifest_path,
+        '--expected-revision', revision], environment, directory)
+    return run_cli(content_cli, ['draft', 'approve', draft['id'], '--digest', draft['digest']], environment, directory)
+
+
+@contextmanager
+def publication_fault_proxy(origin, mode, controls=None, study_token=None):
+    """Forward real requests; only lose responses or create a real stage conflict."""
+    observed = []
+    class Forward(BaseHTTPRequestHandler):
+        def forward(self):
+            current_mode = (controls or {}).get('mode', mode)
+            raw = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+            headers = {'Authorization': self.headers['Authorization'], 'Content-Type': 'application/json'}
+            is_stage = self.path == '/internal/publications/v2/stage'
+            is_abort = self.path.endswith('/abort')
+            if is_abort and current_mode == 'blocked_abort':
+                headers['Authorization'] = 'Bearer ' + study_token
+            if is_stage and current_mode in ('stage_conflict', 'lost_abort', 'blocked_abort') and not observed:
+                conflicting = json.loads(raw)
+                conflicting['facts'][0]['due_date'] = '2001-01-01'
+                accepted = httpx.post(origin + self.path, json=conflicting, headers=headers, timeout=15)
+                assert accepted.status_code == 200, accepted.text
+                observed.append({'prior_staging': accepted.json()})
+            response = httpx.request(self.command, origin + self.path, content=raw or None, headers=headers, timeout=15)
+            if self.path.endswith('/status') and current_mode == 'retire_after_status' and not observed:
+                current = response.json()
+                retirement = {'retirement_id': 'other-retirement-' + uuid.uuid4().hex,
+                    'publication_id': current['publication_id'], 'publication_generation': current['publication_generation'],
+                    'expected_activation_revision': current['activation_revision']}
+                retired = httpx.post(origin + '/internal/publications/retire', json=retirement, headers=headers, timeout=15)
+                assert retired.status_code == 200, retired.text
+                observed.append({'concurrent_retirement': retired.json()})
+            if (is_stage and current_mode == 'lost_stage' and not observed) or (is_abort and current_mode == 'lost_abort' and len(observed) == 1):
+                assert response.status_code == 200, response.text
+                observed.append({'lost_response': response.json()})
+                self.connection.shutdown(socket.SHUT_RDWR)
+                self.connection.close()
+                return
+            self.send_response(response.status_code)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(response.content)))
+            self.end_headers()
+            self.wfile.write(response.content)
+        do_GET = forward
+        do_POST = forward
+        def log_message(self, *arguments):
+            pass
+    proxy = ThreadingHTTPServer(('127.0.0.1', 0), Forward)
+    thread = Thread(target=proxy.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield 'http://127.0.0.1:' + str(proxy.server_port), observed
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+        thread.join(timeout=3)
+
+
+@pytest.mark.parametrize('scenario', ['unsupported', 'empty', 'stage_conflict', 'lost_stage', 'lost_abort'])
+def test_A_installed_pre_activation_recovery(case, authored, tmp_path, scenario):
+    content_cli, bridge_cli, environment = authored
+    token = tmp_path / 'operator-token'
+    token.write_text(case.configuration.operator_token)
+    token.chmod(0o600)
+    valid = source_document()
+    source = deepcopy(valid)
+    if scenario == 'unsupported':
+        source['exercises'][0]['specification'] = {'type': 'explanation', 'rubric': 'Control the center'}
+    if scenario == 'empty':
+        source.update(routes=[], memberships=[], exercises=[], bindings=[])
+    original = approve_authored(content_cli, environment, tmp_path, source, 0)
+    headers = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+    with server(case, tmp_path) as (client, process), publication_fault_proxy(str(client.base_url).rstrip('/'), scenario) as (origin, observed):
+        arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
+        result = run_cli(bridge_cli, [*arguments, 'apply', original['id']], environment, tmp_path, success=False)
+        persisted = run_cli(content_cli, ['operation', 'show', original['id']], environment, tmp_path)
+        before = deepcopy(persisted)
+        assert inspect_rows(case, 'SELECT count(*) FROM learning.cards')[0][0] == 0
+        if scenario in ('unsupported', 'empty'):
+            assert isinstance(result, subprocess.CompletedProcess) and result.returncode == 2
+            assert persisted['state'] == ('approved' if scenario == 'empty' else 'failed'), persisted
+            with psycopg.connect(environment['TEMPO_CONTENT_DATABASE_URL']) as database:
+                assert database.execute('SELECT count(*) FROM content.sources').fetchone()[0] == 0
+            assert inspect_rows(case, 'SELECT count(*) FROM learning.accepted_publications')[0][0] == 0
+            if scenario == 'empty':
+                assert run_cli(content_cli, ['operation', 'cancel', original['id']], environment, tmp_path)['cancelled']
+            revision = 0
+        else:
+            if scenario == 'lost_stage':
+                assert persisted['state'] == 'applying' and len(observed) == 1
+                remote = client.get('/internal/publications/operations/' + original['id'] + ':activate', headers=headers).json()
+                assert remote['state'] == 'unknown'
+                process.restart_service()
+                completed = run_cli(bridge_cli, [*arguments, 'reconcile', original['id']], environment, tmp_path)
+                assert completed['state'] == 'completed'
+                assert inspect_rows(case, 'SELECT count(*) FROM learning.activation_receipts')[0][0] == 1
+                return
+            if scenario == 'lost_abort':
+                assert persisted['state'] == 'applying' and len(observed) == 2
+                process.restart_service()
+                run_cli(bridge_cli, [*arguments, 'reconcile', original['id']], environment, tmp_path, success=False)
+                persisted = run_cli(content_cli, ['operation', 'show', original['id']], environment, tmp_path)
+            assert persisted['state'] == 'failed', persisted
+            remote = client.get('/internal/publications/operations/' + original['id'] + ':activate', headers=headers).json()
+            assert remote['state'] == 'failed'
+            assert remote['request'] == persisted['document']['delivery']['request']
+            assert remote['error']['code'] == 'publication_abandoned_before_execution'
+            revision = run_cli(content_cli, ['source', 'show', source['source_key']], environment, tmp_path)['requested_revision']
+            assert revision == 1
+        process.restart_service()
+        valid['title'] = 'Corrected source after ' + scenario
+        corrected = approve_authored(content_cli, environment, tmp_path, valid, revision)
+        completed = run_cli(bridge_cli, [*arguments, 'apply', corrected['id']], environment, tmp_path)
+        assert completed['state'] == 'completed' and corrected['id'] != original['id']
+        if scenario in ('stage_conflict', 'lost_abort'):
+            stale = client.post('/internal/publications/v2/activate', json=persisted['document']['delivery']['request'], headers=headers)
+            assert stale.status_code == 409
+            assert client.post('/internal/publications/operations/' + original['id'] + ':activate/retry', json={}, headers=headers).status_code == 409
+        assert inspect_rows(case, 'SELECT count(*) FROM learning.activation_receipts')[0][0] == 1
+        assert run_cli(content_cli, ['operation', 'show', original['id']], environment, tmp_path)['state'] == ('cancelled' if scenario == 'empty' else 'failed')
+        evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence / ('preactivation-' + scenario + '.json')).write_text(json.dumps({'initial': before, 'recovered': persisted, 'corrected': completed, 'observed': observed}, indent=2, default=str))
+
+
+@pytest.mark.parametrize('scenario', ['unsupported_successor', 'retired_empty', 'retirement_race'])
+def test_A_installed_preflight_preserves_previous_serving_authority(case, authored, tmp_path, scenario):
+    content_cli, bridge_cli, environment = authored
+    token = tmp_path / 'operator-token'
+    token.write_text(case.configuration.operator_token); token.chmod(0o600)
+    source = source_document()
+    first = approve_authored(content_cli, environment, tmp_path, source, 0)
+    headers = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+    with server(case, tmp_path) as (client, process):
+        endpoint = str(client.base_url).rstrip('/')
+        direct = ['--content-cli', content_cli, '--learning-origin', endpoint, '--operator-token-file', token]
+        first = run_cli(bridge_cli, [*direct, 'apply', first['id']], environment, tmp_path)
+        publication_id = first['document']['export']['publication']['publication_id']
+        previous = client.get('/internal/publications/' + publication_id + '/status', headers=headers).json()
+        successor = deepcopy(source)
+        successor['title'] = scenario
+        if scenario == 'unsupported_successor':
+            successor['exercises'][0]['specification'] = {'type': 'explanation', 'rubric': 'Explain'}
+        else:
+            successor.update(routes=[], memberships=[], exercises=[], bindings=[])
+        if scenario == 'retired_empty':
+            response = client.post('/internal/publications/retire', json={'retirement_id': uuid.uuid4().hex,
+                'publication_id': publication_id, 'publication_generation': previous['publication_generation'],
+                'expected_activation_revision': previous['activation_revision']}, headers=headers)
+            assert response.status_code == 200
+        operation = approve_authored(content_cli, environment, tmp_path, successor, 1)
+        with publication_fault_proxy(endpoint, 'retire_after_status' if scenario == 'retirement_race' else 'pass') as (origin, observed):
+            arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
+            result = run_cli(bridge_cli, [*arguments, 'apply', operation['id']], environment, tmp_path, success=False)
+            assert isinstance(result, subprocess.CompletedProcess) and result.returncode == 2
+            persisted = run_cli(content_cli, ['operation', 'show', operation['id']], environment, tmp_path)
+            revision = run_cli(content_cli, ['source', 'show', source['source_key']], environment, tmp_path)['requested_revision']
+            assert revision == (2 if scenario == 'retirement_race' else 1)
+            assert persisted['state'] == ('approved' if scenario == 'retired_empty' else 'failed')
+            if scenario == 'unsupported_successor':
+                status = client.get('/internal/publications/' + publication_id + '/status', headers=headers).json()
+                assert (status['status'], status['activation_revision']) == ('active', previous['activation_revision'])
+                assert inspect_rows(case, 'SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0] == 2
+            if scenario == 'retirement_race':
+                assert len(observed) == 1
+                receipt = client.get('/internal/publications/operations/' + operation['id'] + ':retire', headers=headers).json()
+                assert receipt['state'] == 'failed' and receipt['request']['expected_activation_revision'] == previous['activation_revision']
+            if scenario == 'retired_empty':
+                process.restart_service()
+                assert run_cli(content_cli, ['operation', 'cancel', operation['id']], environment, tmp_path)['cancelled']
+            source['title'] = 'Corrected after ' + scenario
+            corrected = approve_authored(content_cli, environment, tmp_path, source, revision)
+            assert run_cli(bridge_cli, [*arguments, 'apply', corrected['id']], environment, tmp_path)['state'] == 'completed'
+
+
+@pytest.mark.parametrize('action', ['apply', 'abandon'])
+def test_A_installed_concurrent_operators_preserve_one_authority(case, authored, tmp_path, action):
+    content_cli, bridge_cli, environment = authored
+    token = tmp_path / 'operator-token'
+    token.write_text(case.configuration.operator_token); token.chmod(0o600)
+    operation = approve_authored(content_cli, environment, tmp_path, source_document(), 0)
+    controls = {'mode': 'blocked_abort' if action == 'abandon' else 'pass'}
+    with server(case, tmp_path) as (client, process), publication_fault_proxy(str(client.base_url).rstrip('/'), 'pass', controls, case.configuration.token) as (origin, observed):
+        arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
+        if action == 'abandon':
+            run_cli(bridge_cli, [*arguments, 'apply', operation['id']], environment, tmp_path, success=False)
+            persisted = run_cli(content_cli, ['operation', 'show', operation['id']], environment, tmp_path)
+            assert persisted['state'] == 'applying' and 'delivery' in persisted['document']
+            controls['mode'] = 'pass'
+        barrier = Barrier(2)
+        def invoke():
+            barrier.wait(timeout=5)
+            return run_cli(bridge_cli, [*arguments, action, operation['id']], environment, tmp_path, success=False)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = [future.result() for future in [executor.submit(invoke), executor.submit(invoke)]]
+        persisted = run_cli(content_cli, ['operation', 'show', operation['id']], environment, tmp_path)
+        assert persisted['state'] == ('completed' if action == 'apply' else 'failed'), outcomes
+        assert inspect_rows(case, 'SELECT count(*) FROM learning.activation_receipts')[0][0] == int(action == 'apply')
+        remote_id = operation['id'] + ':activate'
+        receipt = client.get('/internal/publications/operations/' + remote_id, headers={'Authorization': 'Bearer ' + case.configuration.operator_token}).json()
+        assert receipt['state'] == ('complete' if action == 'apply' else 'failed')
+        process.restart_service()
+        replay = run_cli(bridge_cli, [*arguments, action, operation['id']], environment, tmp_path, success=False)
+        if action == 'apply': assert replay['document'] == persisted['document']
+        else: assert isinstance(replay, subprocess.CompletedProcess) and replay.returncode == 2

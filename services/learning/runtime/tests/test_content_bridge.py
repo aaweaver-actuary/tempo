@@ -300,3 +300,173 @@ def test_A_historical_alias_move_membership_accepts_new_alternative(case):
             'reviews_before':history, 'reviews_after':[tuple(row) for row in case.query('SELECT * FROM learning.reviews')],
             'schedule_before':schedule, 'schedule_after':[tuple(row) for row in case.query('SELECT state,due_date,fsrs_card_json FROM learning.cards WHERE id=%s',(physical_id,))],
             'accepted_moves':['e2e4','d2d4'], 'rejected_legal_move':'c2c4', 'obsolete_revision_status':409}, indent=2, default=str))
+
+
+def abort_document(request, retirement=False):
+    return {'workspace_id': 'workspace-a', 'command_name': 'publication.retire' if retirement else 'publication.activate.v2', 'request': request}
+
+
+def abort_publication(case, request, retirement=False, document=None, credential=None):
+    identifier = request['retirement_id' if retirement else 'activation_id']
+    return case.client.post('/internal/publications/operations/' + identifier + '/abort',
+        json=document or abort_document(request, retirement),
+        headers={'Authorization': 'Bearer ' + (credential or case.configuration.operator_token)})
+
+
+@pytest.mark.parametrize('queued', [False, True])
+@pytest.mark.parametrize('retirement', [False, True])
+def test_A_abort_before_activation_fences_original_identity(case, queued, retirement):
+    from tempo_learning_runtime import gateway
+    from tempo_learning_runtime.maintenance import safe_run_once
+    payload = content_bundle()
+    request = request_for(payload)
+    if retirement:
+        activate_v2(case, payload)
+        request = {'retirement_id': request.pop('activation_id'), **request, 'expected_activation_revision': 1}
+    if queued:
+        with case.database.scope():
+            gateway.record_intent(request.get('activation_id') or request['retirement_id'], abort_document(request, retirement)['command_name'], request)
+    before = [tuple(row) for row in case.query('SELECT * FROM learning.serving_publications')]
+    fenced = abort_publication(case, request, retirement)
+    assert fenced.status_code == 200, fenced.text
+    receipt = fenced.json()
+    assert receipt['state'] == 'failed' and receipt['request'] == request
+    assert receipt['error']['code'] == 'publication_abandoned_before_execution'
+    assert 'response' not in receipt
+    assert abort_publication(case, request, retirement).json() == receipt
+    identifier = request.get('activation_id') or request['retirement_id']
+    operator = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+    path = '/internal/publications/retire' if retirement else '/internal/publications/v2/activate'
+    # No stage is required to rediscover a fenced activation's terminal result.
+    assert case.client.post(path, json=request, headers=operator).status_code == 409
+    assert case.client.post('/internal/publications/operations/' + identifier + '/retry', headers=operator).status_code == 409
+    with case.database.scope():
+        gateway.execute(identifier, publication=True)
+        safe_run_once()
+    assert case.client.get('/internal/publications/operations/' + identifier, headers=operator).json() == receipt
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.serving_publications')] == before
+    assert case.query('SELECT count(*) FROM learning.activation_receipts')[0][0] == (1 if retirement else 0)
+
+
+@pytest.mark.parametrize('completed', [False, True])
+def test_A_activation_before_abort_preserves_real_completion(case, completed):
+    payload = content_bundle()
+    if not completed:
+        payload['legacy_aliases'] = {payload['publication']['definitions'][0]['card_id']: 'missing-physical-card'}
+    assert stage_v2(case, payload).status_code == 200
+    request = request_for(payload)
+    operator = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+    response = case.client.post('/internal/publications/v2/activate', json=request, headers=operator)
+    assert response.status_code == (200 if completed else 409)
+    original = case.client.get('/internal/publications/operations/' + request['activation_id'], headers=operator).json()
+    assert abort_publication(case, request).json() == original
+    assert original['state'] == ('complete' if completed else 'failed')
+    assert case.query('SELECT count(*) FROM learning.activation_receipts')[0][0] == int(completed)
+
+
+@pytest.mark.parametrize('mismatch', ['workspace', 'publication', 'generation', 'revision', 'identity', 'family', 'extra'])
+def test_A_publication_abort_rejects_conflicting_request(case, mismatch):
+    from tempo_learning_runtime import gateway
+    payload = content_bundle()
+    request = request_for(payload)
+    with case.database.scope():
+        gateway.record_intent(request['activation_id'], 'publication.activate.v2', request)
+    document = abort_document(deepcopy(request))
+    if mismatch == 'workspace': document['workspace_id'] = 'another-workspace'
+    elif mismatch == 'publication': document['request']['publication_id'] = 'another-publication'
+    elif mismatch == 'generation': document['request']['publication_generation'] += 1
+    elif mismatch == 'revision': document['request']['expected_activation_revision'] += 1
+    elif mismatch == 'identity': document['request']['activation_id'] = 'another-operation'
+    elif mismatch == 'family': document['command_name'] = 'cards.review'
+    else: document['request']['prepared_manifest'] = {'forged': True}
+    response = abort_publication(case, request, document=document)
+    assert response.status_code in (403, 409, 422), response.text
+    with case.database.scope():
+        receipt = gateway.read_operation(request['activation_id'], publication=True)
+    assert receipt['state'] == 'queued' and receipt['request'] == request
+
+
+@pytest.mark.parametrize('credential', ['study', 'evidence', 'invalid'])
+def test_A_publication_abort_requires_operator_credential(case, credential):
+    request = request_for(content_bundle())
+    token = {'study': case.configuration.token, 'evidence': case.configuration.evidence_token, 'invalid': 'invalid'}[credential]
+    assert abort_publication(case, request, credential=token).status_code == 401
+    assert case.query('SELECT count(*) FROM learning.operation_receipts')[0][0] == 0
+
+
+def test_A_publication_abort_is_idempotent_after_restart(case):
+    from fastapi.testclient import TestClient
+    from tempo_learning_runtime import create_app
+    request = request_for(content_bundle())
+    receipt = abort_publication(case, request).json()
+    before = [tuple(row) for row in case.query('SELECT * FROM learning.operation_receipts')]
+    with TestClient(create_app(case.configuration)) as restarted:
+        response = restarted.post('/internal/publications/operations/' + request['activation_id'] + '/abort',
+            json=abort_document(request), headers={'Authorization': 'Bearer ' + case.configuration.operator_token})
+        assert response.status_code == 200 and response.json() == receipt
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.operation_receipts')] == before
+
+
+@pytest.mark.parametrize('first', ['activate', 'abort'])
+@pytest.mark.parametrize('retry', [False, True])
+def test_A_publication_abort_serializes_with_activation(case, monkeypatch, first, retry):
+    from threading import Event, local
+    from tempo_learning_runtime import gateway, publication_bridge
+    from tempo_learning_runtime.postgres_store import PostgresConnection
+    payload = content_bundle()
+    assert stage_v2(case, payload).status_code == 200
+    request = request_for(payload)
+    identifier = request['activation_id']
+    if retry:
+        with case.database.scope():
+            gateway.record_intent(identifier, 'publication.activate.v2', request)
+    entered, contending, release = Event(), Event(), Event()
+    role = local()
+    original_execute = PostgresConnection.execute_native
+    def execute_native(database, statement, parameters=()):
+        tracked = statement.startswith('SELECT pg_advisory_xact_lock') and parameters == (identifier,)
+        if tracked and role.action != first:
+            contending.set()
+        result = original_execute(database, statement, parameters)
+        if tracked and role.action == first:
+            entered.set()
+            assert release.wait(timeout=2)
+        return result
+    monkeypatch.setattr(PostgresConnection, 'execute_native', execute_native)
+    def perform(action):
+        role.action = action
+        with case.database.scope():
+            if action == 'abort':
+                return gateway.fence_publication(identifier, 'publication.activate.v2', request)
+            try:
+                return publication_bridge.dispatch_activation(request, identifier)
+            except Exception as error:
+                from tempo_learning_runtime.review_conflicts import ReviewConflict
+                assert isinstance(error, ReviewConflict)
+                return {'state': 'failed', 'code': error.code}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        winner = executor.submit(perform, first)
+        try:
+            assert entered.wait(timeout=3)
+            loser = executor.submit(perform, 'abort' if first == 'activate' else 'activate')
+            assert contending.wait(timeout=3)
+        finally:
+            release.set()
+        winner.result(); loser.result()
+    receipt = case.client.get('/internal/publications/operations/' + identifier,
+        headers={'Authorization': 'Bearer ' + case.configuration.operator_token}).json()
+    assert receipt['state'] == ('complete' if first == 'activate' else 'failed')
+    assert case.query('SELECT count(*) FROM learning.activation_receipts')[0][0] == int(first == 'activate')
+    assert case.query('SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0] == int(first == 'activate')
+
+
+@pytest.mark.parametrize('retirement', [False, True])
+def test_A_publication_transport_key_cannot_bypass_fenced_identity(case, retirement):
+    request = request_for(content_bundle())
+    if retirement:
+        request['retirement_id'] = request.pop('activation_id')
+    abort_publication(case, request, retirement)
+    path = '/internal/publications/retire' if retirement else '/internal/publications/v2/activate'
+    response = case.client.post(path, json=request, headers={'Authorization': 'Bearer ' + case.configuration.operator_token, 'Idempotency-Key': uuid.uuid4().hex})
+    assert response.status_code == 422
+    assert case.query('SELECT count(*) FROM learning.operation_receipts')[0][0] == 1

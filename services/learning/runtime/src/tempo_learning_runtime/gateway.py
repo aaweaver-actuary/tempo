@@ -121,6 +121,32 @@ def execute(operation_id, *, background=False, publication=None):
             )
 
 
+def fence_publication(operation_id, name, payload):
+    """Terminate one publication identity under execution's exact lock discipline.
+
+    An executing handler holds this advisory lock through effects and receipt
+    commit. Intent insertion alone holds no execution authority. A queued worker
+    that was selected before this fence must re-read the terminal row in execute.
+    The publication boundary validates the request before calling this method.
+    """
+    if name not in ('publication.activate.v2', 'publication.retire'):
+        raise HTTPException(422, 'Unsupported publication fence family')
+    fingerprint = request_digest(name, payload)
+    with connection() as database:
+        database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (operation_id,))
+        database.execute_native(
+            'INSERT INTO operation_receipts(operation_id,command_name,request_hash,payload_json) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING',
+            (operation_id, name, fingerprint, json.dumps(payload)))
+        row = database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
+        if (row['command_name'], row['request_hash']) != (name, fingerprint):
+            raise ReviewConflict('command_identity_reused', 'Operation ID was already used for another request')
+        if row['state'] not in ('complete', 'failed'):
+            error = {'status_code': 409, 'code': 'publication_abandoned_before_execution',
+                     'detail': 'Publication operation was durably abandoned before execution', 'retryable': False}
+            database.execute_native("UPDATE operation_receipts SET state='failed',error_json=%s,updated_at=NOW() WHERE operation_id=%s", (json.dumps(error), operation_id))
+    return read_operation(operation_id, publication=True)
+
+
 def read_operation(operation_id, *, publication=None):
     with connection(read_only=True) as database:
         row = database.execute_native(

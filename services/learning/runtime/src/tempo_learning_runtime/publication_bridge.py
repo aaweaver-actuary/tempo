@@ -146,6 +146,14 @@ def dispatch_activation(payload, operation_id):
     """Compute/legal validation after closing the read, before the writer locks."""
     from .database import connection
     from . import gateway
+    validate_operation_request('publication.activate.v2', payload, operation_id)
+    receipt = gateway.read_operation(operation_id, publication=True)
+    if receipt['state'] != 'unknown':
+        if receipt['command_name'] != 'publication.activate.v2' or receipt['request'] != payload:
+            from .review_conflicts import ReviewConflict
+            raise ReviewConflict('command_identity_reused', 'Operation ID was already used for another request')
+        if receipt['state'] in ('complete', 'failed'):
+            return gateway.operation_result(operation_id)
     with connection(read_only=True) as database:
         row=database.execute('SELECT digest,payload_json FROM accepted_publications WHERE publication_id=? AND generation=?',
             (payload['publication_id'],payload['publication_generation'])).fetchone()
@@ -157,6 +165,30 @@ def dispatch_activation(payload, operation_id):
         return gateway.dispatch('publication.activate.v2',payload,operation_id)
     finally:
         prepared_activation.reset(token)
+
+
+def validate_operation_request(command_name, payload, operation_id):
+    if command_name not in ('publication.activate.v2', 'publication.retire'):
+        raise HTTPException(422, 'Unsupported publication operation family')
+    identity_field = 'activation_id' if command_name == 'publication.activate.v2' else 'retirement_id'
+    required = {'publication_id', 'publication_generation', 'expected_activation_revision', identity_field}
+    if (not isinstance(payload, dict) or set(payload) != required
+            or any(type(payload[key]) is not int or payload[key] < (0 if key == 'expected_activation_revision' else 1)
+                   for key in ('publication_generation', 'expected_activation_revision'))
+            or any(not isinstance(payload[key], str) or not payload[key] for key in ('publication_id', identity_field))
+            or not isinstance(operation_id, str) or not 1 <= len(operation_id) <= 128
+            or operation_id != payload[identity_field]):
+        raise HTTPException(422, 'Publication operation identity and exact request are required')
+
+
+def abort_operation(operation_id, document, workspace_id):
+    from . import gateway
+    if set(document) != {'workspace_id', 'command_name', 'request'}:
+        raise HTTPException(422, 'Exact publication fence identity is required')
+    if document['workspace_id'] != workspace_id:
+        raise HTTPException(403, 'Publication belongs to another workspace')
+    validate_operation_request(document['command_name'], document['request'], operation_id)
+    return gateway.fence_publication(operation_id, document['command_name'], document['request'])
 
 
 def status(database, publication_id, workspace_id, generation=None):

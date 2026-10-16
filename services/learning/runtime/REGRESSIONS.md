@@ -177,3 +177,29 @@ The installed bridge proof also loads the real post-retirement generation-2 obse
 `test_A_cli_timeout_terminates_owned_descendants` prevents a timed-out installed operator from leaving a Content child connected to the disposable database. Large installed-source cases retain the original 10,000 total slices and 300-second child limit, using 64-slice resumable invocations; total duration and invocation counts are reported without changing production budgets.
 
 The installed bridge uses a two-party barrier after genuine Learning status reads to race two installed operators against actual Content snapshot checkpoints; both must return exactly the same persisted observation. The alias regression saves its exact before/after review and FSRS tuples in `bridge/alias-membership.json` for audit.
+
+## PR #294 publication fencing
+
+Regular `tests/test_content_bridge.py` owns:
+
+- `test_A_abort_before_activation_fences_original_identity`: absent/queued
+  activation and retirement, terminal replay, retry, selected gateway work and
+  maintenance with unchanged serving effects.
+- `test_A_activation_before_abort_preserves_real_completion`: genuine completion
+  and original failed activation remain immutable.
+- `test_A_publication_abort_rejects_conflicting_request`,
+  `test_A_publication_abort_requires_operator_credential`, and
+  `test_A_publication_transport_key_cannot_bypass_fenced_identity`: exact family,
+  workspace/request/ID binding and Study/evidence credential denial.
+- `test_A_publication_abort_is_idempotent_after_restart` and
+  `test_A_publication_abort_serializes_with_activation`: durable receipt equality,
+  both lock winners and queued retry authority using separate sessions.
+
+Regular installed `tests/test_authoritative_bridge.py` owns
+`test_A_installed_pre_activation_recovery` (unsupported source, impossible initial
+retirement, real stage conflict, lost stage/abort response),
+`test_A_installed_preflight_preserves_previous_serving_authority` (active predecessor,
+already retired source, retirement changing after preflight), and
+`test_A_installed_concurrent_operators_preserve_one_authority` (two installed apply
+or abandon commands). All use actual restricted databases, installed CLIs and
+Learning HTTP authority, including corrected approval and stale-operation denial.

@@ -836,6 +836,10 @@ def create_app(configuration: Configuration):
     def publication_operation(operation_id: str):
         return gateway.read_operation(operation_id,publication=True)
 
+    @app.post('/internal/publications/operations/{operation_id}/abort')
+    def publication_abort(operation_id: str, payload: dict):
+        return publication_bridge.abort_operation(operation_id, payload, configuration.workspace_id)
+
     @app.post("/internal/publications/operations/{operation_id}/retry")
     def publication_retry(operation_id: str):
         receipt = gateway.read_operation(operation_id,publication=True)
@@ -862,10 +866,9 @@ def create_app(configuration: Configuration):
 
     @app.post("/internal/publications/v2/activate")
     def publication_activate_v2(payload: dict, idempotency_key: str | None = Header(None)):
-        required = {"publication_id", "publication_generation", "expected_activation_revision", "activation_id"}
-        if set(payload) != required or any(type(payload[key]) is not int or payload[key] < (0 if key == "expected_activation_revision" else 1) for key in ("publication_generation", "expected_activation_revision")) or any(not isinstance(payload[key],str) or not payload[key] for key in ("publication_id", "activation_id")):
-            raise HTTPException(422, "Invalid activation request")
-        return publication_bridge.dispatch_activation(payload,idempotency_key or payload['activation_id'])
+        operation_id = idempotency_key if idempotency_key is not None else payload.get('activation_id')
+        publication_bridge.validate_operation_request('publication.activate.v2', payload, operation_id)
+        return publication_bridge.dispatch_activation(payload, operation_id)
 
     @app.post("/internal/publications/stage")
     def publication_stage(payload: PublicationBundle):
@@ -882,8 +885,10 @@ def create_app(configuration: Configuration):
 
     @app.post("/internal/publications/retire")
     def publication_retire(payload: dict, idempotency_key: str | None = Header(None)):
+        operation_id = idempotency_key if idempotency_key is not None else payload.get('retirement_id')
+        publication_bridge.validate_operation_request('publication.retire', payload, operation_id)
         return gateway.dispatch(
-            "publication.retire", payload, idempotency_key or payload["retirement_id"]
+            "publication.retire", payload, operation_id
         )
 
     @app.post("/internal/evidence")

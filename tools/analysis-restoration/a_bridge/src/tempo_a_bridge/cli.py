@@ -19,6 +19,16 @@ class ContentCommandError(ValueError):
         super().__init__("content_command_failed:" + code)
 
 
+class LearningHTTPError(ValueError):
+    def __init__(self, status_code):
+        self.status_code = status_code
+        super().__init__('learning_http_' + str(status_code))
+
+
+class ExecutionScopeError(ValueError):
+    pass
+
+
 def snapshot_identity(publication):
     identity = ["tempo-a-snapshot", 1, publication["workspace_id"],
                 publication["publication_id"], publication["publication_generation"]]
@@ -45,7 +55,7 @@ def execution_bundle(export, due_date):
     for index, definition in enumerate(definitions):
         routes = [route for route in export["routes"] if any(binding["card_id"] == definition["card_id"] for binding in route["bindings"])]
         if not routes or definition["specification"]["type"] != "move_line":
-            raise ValueError("bridge_requires_bound_opening_move_lines")
+            raise ExecutionScopeError("bridge_requires_bound_opening_move_lines")
         facts.append({"card_id": definition["card_id"], "content_type": "opening",
             "memberships": sorted({route["repertoire_id"] for route in routes}),
             "trained_color": routes[0]["learner_color"], "due_date": due_date, "route_order": index})
@@ -105,31 +115,82 @@ class Operator:
                     raise ValueError("learning_response_byte_bound")
                 return response.status,json.loads(raw)
         except HTTPError as error:
-            raise ValueError("learning_http_"+str(error.code)) from None
+            raise LearningHTTPError(error.code) from None
+
+    def publication_status(self, operation):
+        publication_id = operation.get('publication_id') or operation['document'].get('export', {}).get('publication', {}).get('publication_id')
+        if publication_id is None:
+            publication_id = self.content('source', 'show', operation['source_key'])['publication_id']
+        _, current = self.http('/internal/publications/' + quote(publication_id, safe='') + '/status')
+        if (not isinstance(current, dict) or current.get('schema_version') != 1
+                or current.get('workspace_id') != operation['draft']['source']['workspace_id']
+                or current.get('publication_id') != publication_id
+                or current.get('status') not in ('active', 'retired', 'unavailable')
+                or type(current.get('activation_revision')) is not int
+                or current['activation_revision'] < 0):
+            raise ValueError('invalid_learning_publication_status')
+        try:
+            if date.fromisoformat(current['local_date']).isoformat() != current['local_date']:
+                raise ValueError()
+        except (ValueError, TypeError, KeyError):
+            raise ValueError('invalid_learning_publication_status') from None
+        if ((current['status'] == 'unavailable' and (current.get('publication_generation') is not None or current['activation_revision'] != 0))
+                or (current['status'] != 'unavailable' and (type(current.get('publication_generation')) is not int
+                    or current['publication_generation'] < 1 or current['activation_revision'] < 1))):
+            raise ValueError('invalid_learning_publication_status')
+        return current
 
     def apply(self, identifier, max_slices=64):
         operation = self.content("operation","show",identifier)
         if operation["state"] in ("completed", "failed"):
             return operation
-        operation = self.content("operation","prepare",identifier,"--max-slices",max_slices)
+        if operation['state'] == 'cancelled':
+            raise ValueError('operation_cancelled')
+        current = None
+        if not operation['document'].get('delivery'):
+            if not operation['draft']['source']['exercises']:
+                current = self.publication_status(operation)
+                if current['status'] != 'active':
+                    if operation['state'] == 'applying':
+                        return self.content('operation', 'fail-before-delivery', identifier)
+                    raise ValueError('retirement_requires_an_active_publication;operation_remains_approved_and_cancellable')
+            try:
+                operation = self.content("operation","prepare",identifier,"--max-slices",max_slices)
+            except ContentCommandError:
+                actual = self.content('operation', 'show', identifier)
+                if actual['state'] == 'failed':
+                    return actual
+                raise
+        if operation['state'] in ('completed', 'failed'):
+            return operation
+        if operation['state'] != 'applying':
+            raise ValueError('application_not_authorized')
         prepared = operation["document"]
         if prepared.get("pending") and "export" not in prepared and not prepared.get("retirement_required"):
             return {"operation_id":identifier,"state":"pending_validation","inventory":self.content('inventory','status',operation['source_key'])}
         delivery = prepared.get("delivery")
         if delivery is None:
-            publication_id = prepared.get("export",{}).get("publication",{}).get("publication_id")
-            if publication_id is None:
-                # Source-owned publication identity is part of the existing source read.
-                publication_id = self.content("source","show",operation["source_key"])["publication_id"]
-            _, current = self.http("/internal/publications/"+quote(publication_id,safe="")+"/status")
+            current = current or self.publication_status(operation)
+            publication_id = current['publication_id']
             retirement = bool(prepared.get("retirement_required"))
             if retirement and current["status"] != "active":
-                raise ValueError("retirement_requires_an_active_publication")
+                return self.content('operation', 'fail-before-delivery', identifier)
+            if not retirement:
+                try:
+                    execution_bundle(prepared['export'], current['local_date'])
+                except ExecutionScopeError:
+                    return self.content('operation', 'fail-before-delivery', identifier)
             request = {"publication_id":publication_id,"publication_generation":current["publication_generation"] if retirement else prepared["export"]["publication"]["publication_generation"],
                 "expected_activation_revision":current["activation_revision"],
                 "retirement_id" if retirement else "activation_id":identifier+(":retire" if retirement else ":activate")}
             delivery = {"endpoint":self.endpoint,"request":request,"retirement":retirement,"due_date":current['local_date']}
-            operation = self.save(identifier,"checkpoint",{"delivery":delivery})
+            try:
+                operation = self.save(identifier,"checkpoint",{"delivery":delivery})
+            except ContentCommandError as error:
+                if error.code != 'checkpoint_conflict':
+                    raise
+                operation = self.content('operation', 'show', identifier)
+            delivery = operation['document']['delivery']
         if delivery["endpoint"] != self.endpoint:
             raise ValueError("original_learning_authority_required")
         request = delivery["request"]
@@ -142,7 +203,14 @@ class Operator:
                 acknowledgement = receipt["response"]
             elif receipt["state"] == "unknown":
                 if not delivery["retirement"]:
-                    self.http("/internal/publications/v2/stage",execution_bundle(prepared["export"],delivery["due_date"]))
+                    try:
+                        self.http("/internal/publications/v2/stage",execution_bundle(prepared["export"],delivery["due_date"]))
+                    except LearningHTTPError as error:
+                        if error.status_code not in (409, 413, 422):
+                            raise
+                        # A rejected response is only a trigger. Learning must
+                        # serialize a durable terminal outcome before release.
+                        return self.fence_and_reconcile(operation)
                 code, acknowledgement = self.http("/internal/publications/retire" if delivery["retirement"] else "/internal/publications/v2/activate",request)
                 if code == 202:
                     return {"operation_id":identifier,"state":"pending_activation","learning_operation_id":remote_id}
@@ -162,12 +230,55 @@ class Operator:
                 acknowledgement = recovered["response"]
             else:
                 raise
+        return self.record_completion(operation, acknowledgement)
+
+    def record_completion(self, operation, acknowledgement):
+        identifier = operation['id']
+        delivery = operation['document']['delivery']
+        request = delivery['request']
+        remote_id = request.get('activation_id') or request['retirement_id']
         if delivery["retirement"]:
             acknowledgement = {"contract_version":1,"workspace_id":operation["draft"]["source"]["workspace_id"],
                 "retirement_id":remote_id,"publication_id":request["publication_id"],"publication_generation":request["publication_generation"],
                 "reason":None,**acknowledgement}
         receipt = {"transport":"authenticated_learning_http","endpoint":self.endpoint,"acknowledgement":acknowledgement}
         return self.save(identifier,"record",receipt)
+
+    def fence_and_reconcile(self, operation):
+        delivery = operation['document']['delivery']
+        if delivery['endpoint'] != self.endpoint:
+            raise ValueError('original_learning_authority_required')
+        request = delivery['request']
+        remote_id = request.get('activation_id') or request['retirement_id']
+        path = '/internal/publications/operations/' + quote(remote_id, safe='')
+        _, receipt = self.http(path)
+        if receipt.get('state') not in ('complete', 'failed'):
+            self.http(path + '/abort', {'workspace_id': operation['draft']['source']['workspace_id'],
+                'command_name': 'publication.retire' if delivery['retirement'] else 'publication.activate.v2', 'request': request})
+            _, receipt = self.http(path)
+        if receipt.get('state') == 'failed':
+            return self.record_failure(operation['id'])
+        if receipt.get('state') == 'complete':
+            return self.record_completion(operation, receipt['response'])
+        raise ValueError('learning_terminal_outcome_not_confirmed')
+
+    def abandon(self, identifier):
+        operation = self.content('operation', 'show', identifier)
+        if operation['state'] in ('completed', 'failed'):
+            return operation
+        if operation['state'] != 'applying':
+            raise ValueError('abandon_requires_applying;approved_operations_use_content_cancel')
+        if not operation['document'].get('delivery'):
+            try:
+                return self.content('operation', 'fail-before-delivery', identifier)
+            except ContentCommandError:
+                # A checkpoint may have won the same Content scope lock.
+                operation = self.content('operation', 'show', identifier)
+                if operation['state'] in ('completed', 'failed'):
+                    return operation
+                if not operation['document'].get('delivery'):
+                    raise
+        return self.fence_and_reconcile(operation)
 
     def record_failure(self, identifier):
         return self.content("operation", "record-failure", identifier,
@@ -211,12 +322,12 @@ def main(arguments=None):
     parser.add_argument("--learning-origin",required=True)
     parser.add_argument("--operator-token-file",type=Path,required=True)
     commands = parser.add_subparsers(dest="command",required=True)
-    for name in ("apply","reconcile","snapshot"):
+    for name in ("apply","reconcile","snapshot","abandon"):
         command = commands.add_parser(name)
         command.add_argument("operation_id")
         if name == "snapshot":
             command.add_argument("--output",type=Path,required=True)
-        else:
+        elif name != 'abandon':
             command.add_argument("--max-slices",type=int,default=64)
     options = parser.parse_args(arguments)
     try:
@@ -230,6 +341,8 @@ def main(arguments=None):
             else:
                 with options.output.open("x") as output:
                     output.write(encoded)
+        elif options.command == 'abandon':
+            result = operator.abandon(options.operation_id)
         else:
             if not 1<=options.max_slices<=10000:
                 raise ValueError("invalid_slice_bound")

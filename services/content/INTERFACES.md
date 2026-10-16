@@ -204,3 +204,25 @@ runtime startup never migrates. Historical migration SQL/checksums are unchanged
 Timeouts, HTTP errors, unknown/queued operations and stage-only rejection retain the reservation. The stage endpoint has no durable terminal operation receipt; reconcile the original delivery after restoring its original authority/staged inputs. An unresolved stage rejection remains an explicit operator recovery boundary, not permission to cancel an already authorized operation.
 
 Migration `0004_bridge_proposal_identity` adds database uniqueness for `(proposal.workspace_id, source_key, proposal.proposal_id)` on proposal drafts. Existing duplicates stop migration without deletion. Runtime grants do not expand. Identical proposals return the durable winner; changed proposal bytes raise `proposal_identity_conflict`. A semantic draft ID with changed immutable provenance raises `immutable_draft_identity_conflict`, preserving both stable exercise identity and the original draft.
+
+## A pre-activation recovery
+
+`operation show` additionally returns the source-owned `publication_id`, even
+before source admission. `operation prepare` checks the frozen draft's A scope
+before application authorization: complete, at most 2,048 reference-graded opening
+move lines, real bindings within authored routes, and distinct physical aliases.
+General Content v1 still accepts typed exercises including explanation.
+Unsupported A scope commits `failed` with a fixed error code and no source revision
+advance. Correct a draft at the actual current revision; never reuse a failed ID.
+
+`tempo-content operation fail-before-delivery OPERATION_ID` durably abandons an
+`applying` operation only while its document has no delivery checkpoint or receipt.
+It shares the source-scope and operation locks with checkpointing. Identical replay
+returns the same failure, including after successor approval. Source admission
+rechecks still-applying authority under those locks so stale preparation cannot
+advance the source after release. Already admitted source revisions are retained.
+
+Checkpointed operations require the original authenticated Learning terminal
+receipt, including a Learning publication fence. `record-failure` independently
+fetches and binds that receipt; no caller-supplied HTTP error or failed-state claim
+releases a reservation. No new state, migration or shared wire contract is added.

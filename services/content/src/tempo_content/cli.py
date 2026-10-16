@@ -33,7 +33,7 @@ def parser():
     approval.add_argument('identifier')
     approval.add_argument('--digest',required=True)
     operations = subcommands.add_parser('operation').add_subparsers(dest='operation',required=True)
-    for name in ('show','cancel','prepare','record','record-failure','checkpoint'):
+    for name in ('show','cancel','prepare','record','record-failure','checkpoint','fail-before-delivery'):
         operation = operations.add_parser(name)
         operation.add_argument('identifier')
         if name=='prepare':
@@ -128,6 +128,8 @@ def main(argv=None):
                         from .receipt_transport import verified_receipt
                         verified=verified_receipt(bridge.operation(arguments.identifier),json.loads(arguments.file.read_text()),arguments.learning_origin,arguments.operator_token_file)
                         result=bridge.record(arguments.identifier,verified)
+                    elif operation=='fail-before-delivery':
+                        result=bridge.fail_before_delivery(arguments.identifier)
                     else:
                         result = bridge.prepare(arguments.identifier,arguments.max_slices) if operation=='prepare' else bridge.checkpoint(arguments.identifier,json.loads(arguments.file.read_text())) if operation=='checkpoint' else bridge.cancel(arguments.identifier) if operation=='cancel' else bridge.operation(arguments.identifier)
                 elif arguments.command=='source':

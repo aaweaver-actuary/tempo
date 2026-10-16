@@ -183,6 +183,38 @@ def lock_scope(database, source_id, operation_id=None):
         raise ContentError("source_reserved", "An approved operation owns this source; inspect/reconcile it first")
 
 
+def validate_bridge_execution_scope(source, manifest):
+    """Cheap A-only compatibility checks; general Content v1 remains unchanged.
+
+    Route traversal, chess legality and inventory construction retain their
+    bounded worker owner. This checks declared execution scope, not readiness.
+    """
+    source = SourceSnapshot.model_validate(source)
+    manifest = ImportManifest.model_validate(manifest)
+    if not manifest.complete:
+        raise ContentError('bridge_scope_unsupported', 'A requires a complete source')
+    if len(source.exercises) > 2048:
+        raise ContentError('bridge_scope_unsupported', 'A supports at most 2048 complete opening definitions')
+    exercises = {exercise.key: exercise for exercise in source.exercises}
+    if any(exercise.specification.type != 'move_line' or exercise.specification.grading_policy != 'reference'
+           for exercise in exercises.values()):
+        raise ContentError('bridge_scope_unsupported', 'A requires reference-graded opening move lines; general Content v1 supports other exercise types')
+    routes = {route.key: route for route in source.routes}
+    covered = set()
+    for binding in source.bindings:
+        if binding.ply >= len(routes[binding.route_key].moves):
+            raise ContentError('bridge_scope_unsupported', 'A bindings require an executable move within an authored route')
+        covered.add(binding.exercise_key)
+    if covered != exercises.keys():
+        raise ContentError('bridge_scope_unsupported', 'Every A definition requires an actual policy/repertoire route binding')
+    # SourceSnapshot already verifies policy ownership, membership, unique
+    # bindings and repertoire/color declarations. Preserve its general model.
+    aliases = manifest.legacy_aliases
+    identities = [aliases.get(key, stable_id(source.workspace_id, source.source_key, 'card', key)) for key in exercises]
+    if not aliases.keys() <= exercises.keys() or len(set(identities)) != len(identities):
+        raise ContentError('bridge_scope_unsupported', 'A historical aliases must identify distinct executable objects')
+
+
 class Bridge:
     def __init__(self, service):
         self.service = service
@@ -254,7 +286,26 @@ class Bridge:
         row = self.service._one("SELECT o.*,d.digest,d.source_key,d.expected_revision,d.document AS draft FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.id=%s", (identifier,))
         if not row:
             raise ContentError("operation_not_found", "No durable approved operation exists")
-        return row
+        return {**row, 'publication_id': stable_id(self.service.workspace_id, row['source_key'], 'publication', 'source')}
+
+    def _fail_before_delivery(self, identifier, failure, *, approved=False):
+        operation = self.operation(identifier)
+        with self.service._transaction() as database:
+            database.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('content:scope:' + operation['source_id'],))
+            row = database.execute('SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE', (identifier,)).fetchone()
+            if row['state'] == 'failed':
+                if row['document'].get('failure') != failure:
+                    raise ContentError('terminal_failure_conflict', 'Terminal failure is immutable')
+            elif row['state'] in (('approved', 'applying') if approved else ('applying',)) and 'delivery' not in row['document'] and 'receipt' not in row['document']:
+                lock_scope(database, operation['source_id'], identifier)
+                database.execute("UPDATE content.bridge_operations SET state='failed',document=document || %s,updated_at=now() WHERE id=%s", (Jsonb({'failure': failure}), identifier))
+            else:
+                raise ContentError('pre_delivery_failure_not_authorized', 'Only a proven undelivered application can fail locally; reconcile checkpointed Learning authority')
+        return self.operation(identifier)
+
+    def fail_before_delivery(self, identifier):
+        """Supported operator abandonment; checkpoint and admission use this lock."""
+        return self._fail_before_delivery(identifier, {'code': 'operator_abandoned_before_delivery'})
 
     def cancel(self, identifier):
         operation = self.operation(identifier)
@@ -282,6 +333,12 @@ class Bridge:
 
     def _prepare(self, identifier, max_slices):
         operation = self.operation(identifier)
+        if operation['state'] not in ('completed', 'failed', 'cancelled'):
+            try:
+                validate_bridge_execution_scope(operation['draft']['source'], operation['draft']['manifest'])
+            except ContentError as error:
+                self._fail_before_delivery(identifier, {'code': error.code, 'message': error.message}, approved=True)
+                raise
         with self.service._transaction() as database:
             lock_scope(database, operation["source_id"], identifier)
             row = database.execute("SELECT state FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
