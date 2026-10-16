@@ -13,6 +13,8 @@ from typing import Any
 from kombu.exceptions import OperationalError as BrokerUnavailable
 import psycopg
 from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
+from psycopg_pool import PoolTimeout
+from functools import wraps
 
 from .celery_app import celery_app
 from .command_gateway import (
@@ -272,7 +274,32 @@ def execute_background_command(
             raise
 
 
+_maintenance_cooldowns = {}
+
+
+def bounded_maintenance(function):
+    """Setup failures retain durable work and release worker capacity with backoff."""
+    @wraps(function)
+    def bounded(*args, **kwargs):
+        failures, retry_at = _maintenance_cooldowns.get(function.__name__, (0, 0))
+        if time.monotonic() < retry_at:
+            return False
+        try:
+            result = function(*args, **kwargs)
+        except (TransactionTimeout, psycopg.OperationalError, psycopg.InterfaceError, PoolTimeout) as error:
+            failures += 1
+            delay = min(60, 2 ** min(failures - 1, 6))
+            _maintenance_cooldowns[function.__name__] = (failures, time.monotonic() + delay)
+            _LOGGER.warning('maintenance=%s deferred=%s retry_seconds=%s; durable work retained',
+                            function.__name__, type(error).__name__, delay)
+            return False
+        _maintenance_cooldowns.pop(function.__name__, None)
+        return result
+    return bounded
+
+
 @celery_app.task(name="app.tasks.recover_operations", base=CoalescedWakeTask)
+@bounded_maintenance
 def recover_operations() -> bool:
     with activity_gate.background_job("operation_recovery", "one-run", yielding=True), \
             activity_gate.background_control():
@@ -296,6 +323,7 @@ def recover_operations() -> bool:
 
 
 @celery_app.task(name="app.tasks.poll_background_tasks", bind=True, base=CoalescedWakeTask)
+@bounded_maintenance
 def poll_background_tasks(self) -> bool:
     """Claim and run one slice at worker capacity, then yield to the broker."""
 

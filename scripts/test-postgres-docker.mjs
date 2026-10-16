@@ -972,6 +972,8 @@ const actions = {
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_study_priority.py", "--owned-stack"]);
     await verifyStudyOpeningAdmission();
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
@@ -1183,6 +1185,8 @@ const actions = {
   study_only: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_study_priority.py", "--owned-stack"]);
     await verifyStudyOpeningAdmission();
   },
   study_queue_receipts: async () => {
