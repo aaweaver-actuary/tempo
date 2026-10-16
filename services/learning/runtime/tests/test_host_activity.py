@@ -73,7 +73,9 @@ def test_host_activity_endpoint_authenticates_and_needs_no_database(tmp_path):
         assert client.post("/api/study/activity?session_id=tab-a", headers=headers).json()["available"]
         assert client.post("/api/study/activity?session_id=../foreign", headers=headers).status_code == 422
         assert client.post("/api/study/activity?session_id=tab-b", headers={**headers, "Origin": "http://foreign.test"}).status_code == 403
-        assert set(json.loads(next(tmp_path.glob("*.json")).read_text())["sessions"]) == {"tab-a"}
+        snapshot = json.loads(next(tmp_path.glob("*.json")).read_text())
+        assert set(snapshot["sessions"]) == {"tab-a"}
+        assert snapshot["source"] == configuration.workspace_id
     assert not list(tmp_path.glob("*.json"))
     disabled = create_app(replace(configuration, host_activity_directory=None))
     with TestClient(disabled) as client:

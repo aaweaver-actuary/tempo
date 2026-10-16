@@ -19,9 +19,10 @@ def default_directory():
 
 
 class HostActivity:
-    def __init__(self, directory, *, clock=time.monotonic_ns):
+    def __init__(self, directory, *, source=None, clock=time.monotonic_ns):
         self.directory = Path(directory) if directory is not None else None
         self.producer = str(uuid.uuid4())
+        self.source = source or self.producer
         self.clock = clock
         self.sessions = {}
         self.requests = set()
@@ -33,7 +34,7 @@ class HostActivity:
         now = self.clock()
         self.sessions = {session: until for session, until in self.sessions.items() if until > now}
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        snapshot = {"version": 1, "producer": self.producer, "pid": os.getpid(),
+        snapshot = {"version": 1, "producer": self.producer, "source": self.source, "pid": os.getpid(),
                     "validUntilNs": str(now + POLICY_NS),
                     "pendingRequests": bool(self.requests),
                     "sessions": {session: str(until) for session, until in self.sessions.items()}}

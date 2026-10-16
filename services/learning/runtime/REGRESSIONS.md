@@ -147,3 +147,5 @@ replies, then reconcile only through their original origins; an unrelated C is
 blocked. The forwarding origins share one installed Learning database, so this
 proves origin/storage isolation and actual receipts, not separate-database isolation.
 Existing F1, restart, storage, exercise-family and offline-shell cases remain selected.
+
+The authenticated activity endpoint regression verifies its stable workspace source identity; managed admission separately requires configured expected identities even before their first successful publication.
