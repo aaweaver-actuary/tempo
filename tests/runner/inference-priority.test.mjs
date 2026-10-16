@@ -115,6 +115,19 @@ test('C13 a completed current result cannot be killed by an older concurrent con
   assert.equal(child.alive,true);inference.close();
 });
 
+test('C14 an idle child exit launches a fresh Maia process for the next job',async()=>{
+  const first=fakeMaia(),second=fakeMaia();let launches=0,retry;
+  const inference=createCancellableMaia({launch:()=>++launches===1?first:second,isProcessAlive:child=>child.alive});
+  try {
+    const completed=inference.analyze(fen,1500,async()=>true);await first.started;first.reply(['first']);await completed;
+    first.alive=false;first.emit('exit',1,null);
+    retry=observe(inference.analyze(fen,1500,async()=>true));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(launches,2,'An exited idle process must never receive a new job');
+    second.reply(['second']);assert.deepEqual((await retry).value,['second']);
+  } finally {inference.close();await retry;}
+});
+
 test('real Maia inference yields to study and resumes the same full-quality legal distribution', {timeout:60_000}, async()=>{
   let priority=false, startedAt, child;
   const inference=createCancellableMaia({launch:()=>{

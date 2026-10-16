@@ -30,6 +30,20 @@ export function createCancellableMaia({ launch = () => fork(fileURLToPath(new UR
     quarantine = owned;
     try { owned.kill('SIGKILL'); } catch { /* Watchdog independently verifies termination. */ }
   }
+  function launchOwned() {
+    const owned = launch();
+    owned.once('exit', () => {
+      if (child === owned) child = undefined;
+      if (quarantine === owned) quarantine = undefined;
+    });
+    owned.on('error', error => {
+      if (child === owned && pending?.owned !== owned) {
+        console.error('Idle Maia subprocess failed:', error);
+        terminate(owned);
+      }
+    });
+    return owned;
+  }
   async function controlAllowed(allowed) {
     let timeout;
     try {
@@ -44,8 +58,10 @@ export function createCancellableMaia({ launch = () => fork(fileURLToPath(new UR
     pending = request;
     try {
       if (!await controlAllowed(allowed) || request.stopped) throw new StudyPreemptedError();
+      if (!terminationVerified()) throw new MaiaTerminationUnverifiedError();
       return await new Promise((resolve, reject) => {
-        const owned = child ??= launch();
+        const owned = child ??= launchOwned();
+        request.owned = owned;
         const id = ++sequence;
         let probing = false, settled = false, watchdog, failure;
         const finish = (error, moves) => {
@@ -89,6 +105,6 @@ export function createCancellableMaia({ launch = () => fork(fileURLToPath(new UR
   }
   return {analyze, terminationVerified, close() {
     if (pending) pending.stop();
-    else if (child) terminate(child);
+    if (child) terminate(child);
   }};
 }
