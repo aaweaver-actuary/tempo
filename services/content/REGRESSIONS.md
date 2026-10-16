@@ -19,6 +19,17 @@ publication preservation, validation rollback and foreign database denial.
 Deletion must retain a durable collector, and deletion/reconciliation must obey
 one lock order. These substantive donor #117 invariants remain native regressions.
 
+Named donor replacements:
+`test_deletion_leaves_durable_bounded_collector_and_cleanup_resumes` and
+`test_source_and_task_lock_order_serializes_deletion_versus_inventory`, with
+both `inventory` and `deletion` first-holder schedules. Related native owners
+include `test_orphan_collection_between_route_read_and_registration_is_fenced`,
+`test_registration_holds_artifact_lock_collector_yields_without_lost_wakeup`,
+`test_active_source_lease_does_not_starve_unscoped_work_for_another_source`, and
+`test_runtime_readiness_rejects_drifted_grants_and_owner_migration_repairs_them`.
+The installed subprocess acceptance owner is
+`test_complete_source_cli_acceptance_restarts_and_preserves_both_publications`.
+
 `integration/test_consumers.py` and its standalone `consumer_probe.py` own actual
 installed Learning/Game Evidence adapter compatibility, complete executable kinds,
 unchanged publication identities, source/learner-color provenance, null activation,

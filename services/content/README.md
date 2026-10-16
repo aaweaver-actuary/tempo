@@ -43,6 +43,12 @@ CONNECT/TEMP and public schema/function access. The migration command uses
 `TEMPO_CONTENT_RUNTIME_ROLE` for the selected database. Do not reuse another
 service's database or credentials.
 
+Grant the runtime role CONNECT to Content explicitly after revoking PUBLIC
+access; the owner migration then grants Content table permissions. Runtime must
+have no membership permitting owner-role assumption and no CREATE/TEMP database
+privileges. Readiness rejects privilege drift; reapplying the owner migration
+repairs unsupported immutable-table grants.
+
 Migrations are explicit. Runtime readiness checks the exact migration identities
 and checksums, workspace binding, and role restrictions. It does not repair or
 migrate the database. Existing migration payloads must never be rewritten.
