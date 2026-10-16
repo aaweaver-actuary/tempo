@@ -338,6 +338,10 @@ try {
     if (scenario==='database-interruption') {
       await expect.poll(()=>traffic.some(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path))).toBe(true);
       assert.equal((await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length,0);
+      // A request observed by the proxy is still in flight. Let the failed
+      // delivery release its persisted claim before reloading; a crashed tab's
+      // unexpired claim deliberately prevents a second mutation owner.
+      await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='review'&&item.state==='pending'&&!item.claim).length).toBe(1);
       await fixture('start-database');
       await page.reload();
     }
