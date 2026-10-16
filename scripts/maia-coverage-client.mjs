@@ -37,6 +37,7 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
     signal.throwIfAborted();
     return fetchImpl(url, {...delivery, signal});
   };
+  let receiptId;
   try {
   let response;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -57,7 +58,7 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
   if (response.status !== 202) return response.json();
 
   const pending = await response.json();
-  const receiptId = pending.operation_id;
+  receiptId = pending.operation_id;
   if (!receiptId) throw new Error(`${path}: pending command did not return an operation ID`);
   for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
     await wait(250);
@@ -83,8 +84,8 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
   throw new PendingMaiaCommandError(path, receiptId,
     `remains pending after ${(pollAttempts * 250) / 1000} seconds`);
   } catch (error) {
-    if (operationId && !error.terminal && !(error instanceof PendingMaiaCommandError))
-      throw new PendingMaiaCommandError(path, operationId, `has an unconfirmed delivery: ${String(error)}`);
+    if (operationId && !error?.terminal && !(error instanceof PendingMaiaCommandError))
+      throw new PendingMaiaCommandError(path, receiptId ?? operationId, `has an unconfirmed delivery: ${String(error)}`);
     throw error;
   }
 }

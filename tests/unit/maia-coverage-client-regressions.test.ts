@@ -6,6 +6,13 @@ const response = (status: number, body: unknown) => new Response(JSON.stringify(
 });
 
 describe("Maia background command receipts", () => {
+  it('C failed receipt lookup retains the authoritative receipt identity already returned by the server',async()=>{
+    const fetchImpl=vi.fn().mockResolvedValueOnce(response(202,{operation_id:'server-receipt'}))
+      .mockRejectedValueOnce(new TypeError('receipt connection lost'));
+    await expect(requestMaiaApi('http://tempo','/api/repertoire-coverage/maia/release',
+      {method:'POST',operationId:'original-release'},{fetchImpl,pause:async()=>{}}))
+      .rejects.toMatchObject({name:'PendingMaiaCommandError',operationId:'server-receipt'});
+  });
   it('C unconfirmed transport retains the supplied operation identity instead of reporting a model failure',async()=>{
     const fetchImpl=vi.fn().mockRejectedValue(new TypeError('response lost'));
     await expect(requestMaiaApi('http://tempo','/api/repertoire-coverage/maia/release',

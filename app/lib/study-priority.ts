@@ -81,6 +81,7 @@ export function installStudyInteractionPriority(sendActivity?: (session: string,
   const pointers = new Map<number, () => void>();
   const touches = new Map<number, () => void>();
   let sending = false;
+  let activityUnavailable = false;
   let stopped = false;
   let lastSent = -Infinity;
   let pulseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -95,7 +96,10 @@ export function installStudyInteractionPriority(sendActivity?: (session: string,
     channel?.postMessage({ version: 1, session, until: Date.now() + remainingMs });
     if (sendActivity) {
       sending = true;
-      void sendActivity(session, remainingMs).catch(() => undefined).finally(() => { sending = false; });
+      void sendActivity(session, remainingMs).then(() => { activityUnavailable = false; }).catch(error => {
+        if (!activityUnavailable) console.warn('Study host activity is unavailable; managed work must defer.', error);
+        activityUnavailable = true;
+      }).finally(() => { sending = false; });
     }
   };
   const unsubscribe = subscribeStudyPriority(pulse);

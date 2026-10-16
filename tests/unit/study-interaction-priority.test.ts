@@ -89,3 +89,17 @@ it('B activity renewals preserve three genuine quiet seconds without extending t
   expect(quietPulses.every(pulse=>pulse.remaining>0 && pulse.at+pulse.remaining<=releasedAt+3001)).toBe(true);
   expect(priority.studyInteractionActive()).toBe(false);
 });
+
+it('B activity reporting failures remain visible once per outage without changing local priority',async()=>{
+  const warning=vi.spyOn(console,'warn').mockImplementation(()=>{});
+  try {
+    const priority=await import('../../app/lib/study-priority');priority.setStudyPriorityScope(true);
+    const send=vi.fn().mockRejectedValue(new Error('activity unavailable'));
+    stop=priority.installStudyInteractionPriority(send);const release=priority.holdStudyPriority();
+    await vi.advanceTimersByTimeAsync(1200);expect(warning).toHaveBeenCalledTimes(1);
+    expect(priority.studyInteractionActive()).toBe(true);
+    send.mockResolvedValue(undefined);await vi.advanceTimersByTimeAsync(600);
+    send.mockRejectedValue(new Error('second outage'));await vi.advanceTimersByTimeAsync(600);
+    expect(warning).toHaveBeenCalledTimes(2);release();
+  } finally {warning.mockRestore();}
+});
