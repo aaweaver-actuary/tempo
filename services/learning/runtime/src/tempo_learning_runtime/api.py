@@ -150,18 +150,6 @@ def create_app(configuration: Configuration):
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
     app.state.database = database
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(configuration.origins),
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=[
-            "Authorization",
-            "Content-Type",
-            "Idempotency-Key",
-            "X-Tempo-Workspace",
-        ],
-    )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(configuration.hosts))
 
     @app.middleware("http")
     async def authority(request: Request, call_next):
@@ -201,6 +189,22 @@ def create_app(configuration: Configuration):
                 )
         with database.scope():
             return await call_next(request)
+
+    # Host validation covers preflight too; CORS must wrap authority failures so
+    # an allowed browser can observe 401/403 and reconnect without losing work.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(configuration.origins),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Tempo-Workspace",
+        ],
+    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(configuration.hosts))
+
 
     @app.exception_handler(ReviewConflict)
     async def conflict(request, error):

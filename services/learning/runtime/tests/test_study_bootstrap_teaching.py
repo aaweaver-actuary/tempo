@@ -152,3 +152,25 @@ def test_study_startup_authentication_rejects_before_database_mutation(case, pat
     assert case.client.get(path, headers={"X-Tempo-Workspace": "other"}).status_code == 403
     assert case.client.get(path, headers={"Origin": "https://disallowed.invalid"}).status_code == 403
     assert case.query("SELECT COUNT(*) FROM learning.operation_receipts")[0][0] == 0
+
+
+def test_allowed_browser_can_observe_authentication_failures_and_host_checks_cover_preflight(case):
+    origin = case.configuration.origins[0]
+    for path in ["/api/study/bootstrap", "/api/study/settings"]:
+        response = case.client.get(path, headers={"Authorization": "Bearer expired"})
+        assert response.status_code == 401
+        assert response.headers["access-control-allow-origin"] == origin
+        response = case.client.get(path, headers={"X-Tempo-Workspace": "other"})
+        assert response.status_code == 403
+        assert response.headers["access-control-allow-origin"] == origin
+    response = case.client.post("/api/study/settings", json={"study_only_mode": True},
+        headers={"Authorization": "Bearer expired", "Idempotency-Key": "denied-settings"})
+    assert response.status_code == 401 and response.headers["access-control-allow-origin"] == origin
+    response = case.client.options("/api/study/settings", headers={
+        "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,x-tempo-workspace,idempotency-key,content-type"})
+    assert response.status_code == 200 and response.headers["access-control-allow-origin"] == origin
+    assert case.client.options("/api/study/settings", headers={"Host": "disallowed.invalid", "Access-Control-Request-Method": "POST"}).status_code == 400
+    denied = case.client.options("/api/study/settings", headers={"Origin": "https://disallowed.invalid", "Access-Control-Request-Method": "POST"})
+    assert denied.status_code == 400 and "access-control-allow-origin" not in denied.headers
+    assert case.query("SELECT COUNT(*) FROM learning.queue_attempt_origins")[0][0] == 0
+    assert case.query("SELECT COUNT(*) FROM learning.operation_receipts")[0][0] == 0
