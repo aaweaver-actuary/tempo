@@ -453,9 +453,11 @@ def test_A_corrected_source_activates_after_original_terminal_failure(case, auth
 
 def test_A_cli_timeout_terminates_owned_descendants(tmp_path):
     marker = tmp_path / 'orphan-finished'
-    child_code = "import time; from pathlib import Path; time.sleep(1); Path(" + repr(str(marker)) + ").write_text('unexpected surviving child')"
+    started = tmp_path / 'child-started'
+    child_code = "import time; from pathlib import Path; Path(" + repr(str(started)) + ").write_text('started'); time.sleep(2); Path(" + repr(str(marker)) + ").write_text('unexpected surviving child')"
     parent_code = "import subprocess,sys; subprocess.run([sys.executable,'-c'," + repr(child_code) + "])"
     with pytest.raises(subprocess.TimeoutExpired):
-        run_cli(sys.executable, ['-c', parent_code], os.environ.copy(), tmp_path, timeout=0.2)
-    time.sleep(1.1)
+        run_cli(sys.executable, ['-c', parent_code], os.environ.copy(), tmp_path, timeout=1)
+    assert started.exists(), 'The descendant must have actually started before testing its termination'
+    time.sleep(2.1)
     assert not marker.exists()
