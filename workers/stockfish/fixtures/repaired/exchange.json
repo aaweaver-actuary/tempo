@@ -1,0 +1,3572 @@
+{
+  "scope": "actual installed Stockfish output",
+  "records": [
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:b2616f4581ea23fc6e96d3718951ccccb5bf3cfec485f64c0fbe45a731efbe42",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:b2616f4581ea23fc6e96d3718951ccccb5bf3cfec485f64c0fbe45a731efbe42",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.207Z",
+          "finished_at": "2026-10-16T19:27:13.282Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 26
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:366710bea7f96554cd4dea5a5e385278452e9208ed8ac536f85f39a5a4d30099",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [
+          "e2e4"
+        ],
+        "search_moves": [
+          "e7e5"
+        ],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:366710bea7f96554cd4dea5a5e385278452e9208ed8ac536f85f39a5a4d30099",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.290Z",
+          "finished_at": "2026-10-16T19:27:13.369Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e7e5",
+              "d2d4",
+              "e5d4",
+              "d1d4",
+              "b8c6",
+              "d4e3",
+              "g8f6"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": -26
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:8a38c0574b84b6a3898df806bb169662ce3523f600a9c8ae3e8c69eb5e60e0ec",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [
+          "e2e4",
+          "d2d4",
+          "c2c4"
+        ],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 3,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:8a38c0574b84b6a3898df806bb169662ce3523f600a9c8ae3e8c69eb5e60e0ec",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.375Z",
+          "finished_at": "2026-10-16T19:27:13.407Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "b1c3"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 31
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          },
+          {
+            "rank": 2,
+            "moves": [
+              "c2c4",
+              "e7e5",
+              "b1c3",
+              "b8c6"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 23
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          },
+          {
+            "rank": 3,
+            "moves": [
+              "d2d4",
+              "d7d5",
+              "g1f3",
+              "e7e6",
+              "c2c4",
+              "c7c5",
+              "d4c5",
+              "f8c5"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 23
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:6406906987deafbde6ef1a125dee4ff6748bb45d64c6ba1515460c49f568479b",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [
+          "e1g1"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:6406906987deafbde6ef1a125dee4ff6748bb45d64c6ba1515460c49f568479b",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.417Z",
+          "finished_at": "2026-10-16T19:27:13.494Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e1g1",
+              "a8d8",
+              "f1d1",
+              "h8g8",
+              "g1f2"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": -3
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:f401b5c3f5a090af44302106e62dc5cf9bc87591b2c0e27cd547807b1ef97aa4",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 10",
+        "moves": [],
+        "search_moves": [
+          "e5d6"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:f401b5c3f5a090af44302106e62dc5cf9bc87591b2c0e27cd547807b1ef97aa4",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.502Z",
+          "finished_at": "2026-10-16T19:27:13.511Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e5d6",
+              "e8d7",
+              "e1d1"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": -4
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:6dc49466efef34048758ca522cac8043b7f8f1c8ed13a208d8cf598385a3e05e",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+        "moves": [],
+        "search_moves": [
+          "a7a8q"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:6dc49466efef34048758ca522cac8043b7f8f1c8ed13a208d8cf598385a3e05e",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.515Z",
+          "finished_at": "2026-10-16T19:27:13.524Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "a7a8q",
+              "e8f7"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 711
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:03088c1f1f8595e0fd52f075ed67ba7bba28ce6fa41bc222483f54b8bd6da64a",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1",
+        "moves": [],
+        "search_moves": [
+          "f7f8"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:03088c1f1f8595e0fd52f075ed67ba7bba28ce6fa41bc222483f54b8bd6da64a",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.572Z",
+          "finished_at": "2026-10-16T19:27:13.599Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "f7f8"
+            ],
+            "score": {
+              "kind": "mate",
+              "value": 1
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:12fd7001a5fbef88801e9ec78baaa0124c47cd9b7b637ef98ffd59d16b78b365",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "8/8/8/8/8/6k1/5q2/7K b - - 0 1",
+        "moves": [],
+        "search_moves": [
+          "f2f1"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:12fd7001a5fbef88801e9ec78baaa0124c47cd9b7b637ef98ffd59d16b78b365",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.608Z",
+          "finished_at": "2026-10-16T19:27:13.672Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "f2f1"
+            ],
+            "score": {
+              "kind": "mate",
+              "value": 1
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 20,
+        "max_nodes": 10000,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.679Z",
+          "finished_at": "2026-10-16T19:27:13.718Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "c7c5",
+              "g1f3",
+              "b8c6",
+              "b1c3",
+              "e7e6",
+              "d2d4",
+              "c5d4",
+              "f3d4",
+              "g8f6",
+              "d4c6",
+              "b7c6"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 31
+            },
+            "score_perspective": "side_to_move",
+            "depth": 12
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 20,
+        "max_nodes": 10000,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:13.679Z",
+          "finished_at": "2026-10-16T19:27:13.718Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "c7c5",
+              "g1f3",
+              "b8c6",
+              "b1c3",
+              "e7e6",
+              "d2d4",
+              "c5d4",
+              "f3d4",
+              "g8f6",
+              "d4c6",
+              "b7c6"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 31
+            },
+            "score_perspective": "side_to_move",
+            "depth": 12
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:1b309faca88ba74a09424c8407ad69eaf03a062c78a37c9eadb84fd6f628eebe",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:c67a17791a2de7f6fc839291ae553f2f7771a88a2d9e81a35b7b19c231def64e",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "failed",
+        "retryable": true,
+        "reason": "worker_busy"
+      }
+    },
+    {
+      "model": "CancellationRequest",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "82c3ff5d-3672-4ab8-b3bc-fa1f4eeefce5"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "82c3ff5d-3672-4ab8-b3bc-fa1f4eeefce5",
+        "status": "requested",
+        "acknowledged_at": "2026-10-16T19:27:13.964Z"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "cancelled",
+        "retryable": false,
+        "reason": "cancelled_by_request"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "82c3ff5d-3672-4ab8-b3bc-fa1f4eeefce5",
+        "status": "terminated",
+        "acknowledged_at": "2026-10-16T19:27:13.970Z"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:c67a17791a2de7f6fc839291ae553f2f7771a88a2d9e81a35b7b19c231def64e",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "failed",
+        "retryable": true,
+        "reason": "worker_busy"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:c67a17791a2de7f6fc839291ae553f2f7771a88a2d9e81a35b7b19c231def64e",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:c67a17791a2de7f6fc839291ae553f2f7771a88a2d9e81a35b7b19c231def64e",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:14.251Z",
+          "finished_at": "2026-10-16T19:27:14.290Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 26
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-12",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:e31eed7e477acbd0c9653672e211174e30292770ccc6e75445e49a0d3abebf2a",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-11",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-12",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-12",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-12",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:e31eed7e477acbd0c9653672e211174e30292770ccc6e75445e49a0d3abebf2a",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:14.295Z",
+          "finished_at": "2026-10-16T19:27:14.376Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 26
+            },
+            "score_perspective": "side_to_move",
+            "depth": 8
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-13",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:755a6ffef47f5e2a240f11f73ecd7afaef0ea33f3bad364b9fd6b756bb5c4906",
+        "constraints": {
+          "max_wall_time_ms": 40,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-12",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-13",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-13",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-13",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "failed",
+        "retryable": true,
+        "reason": "execution_timeout"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-14",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:52fb5be53dfb046bd2011dd0022c5a324601ea007d2d23d1aead6a7c852e0700",
+        "constraints": {
+          "max_wall_time_ms": 1000,
+          "max_memory_mb": 256
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-14",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "failed",
+        "retryable": false,
+        "reason": "memory_budget_unsupported"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:3773a6df31a32851005d1789a39e57daa4497f7c13d8368c95735b9a082eb1cd",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:a73b6f45db2eccd77d747f7927d73a1258c654f297a5b750ef3cf27b06bd7bc7",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "failed",
+        "retryable": true,
+        "reason": "worker_busy"
+      }
+    },
+    {
+      "model": "CancellationRequest",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "663a02a2-040a-49a4-be44-372caa321fb7"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "663a02a2-040a-49a4-be44-372caa321fb7",
+        "status": "requested",
+        "acknowledged_at": "2026-10-16T19:27:15.003Z"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "cancelled",
+        "retryable": false,
+        "reason": "cancelled_by_request"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-cancel-probe",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "663a02a2-040a-49a4-be44-372caa321fb7",
+        "status": "terminated",
+        "acknowledged_at": "2026-10-16T19:27:15.008Z"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:a73b6f45db2eccd77d747f7927d73a1258c654f297a5b750ef3cf27b06bd7bc7",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:a73b6f45db2eccd77d747f7927d73a1258c654f297a5b750ef3cf27b06bd7bc7",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.228Z",
+          "finished_at": "2026-10-16T19:27:15.303Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:b7dc6c2005cc2086bd57f41900d82d8e60dc50a35df51909aa9cb820dec23cf4",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-0",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:b7dc6c2005cc2086bd57f41900d82d8e60dc50a35df51909aa9cb820dec23cf4",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.368Z",
+          "finished_at": "2026-10-16T19:27:15.389Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:e0d4e9b53b565b3a6c87dd4ae63d0291e879d4bdfc7834ececf6cd6ac2751aa1",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:e0d4e9b53b565b3a6c87dd4ae63d0291e879d4bdfc7834ececf6cd6ac2751aa1",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.395Z",
+          "finished_at": "2026-10-16T19:27:15.470Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:574ad1c5308ef6e3d618f6c17354887eb44658f2acd307093c83bd70e1cd2936",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:574ad1c5308ef6e3d618f6c17354887eb44658f2acd307093c83bd70e1cd2936",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.475Z",
+          "finished_at": "2026-10-16T19:27:15.488Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:a2bd53316c1e99c38e5bc64138b9798c42cccbbad70ba11129d8444a70f5cdb3",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:a2bd53316c1e99c38e5bc64138b9798c42cccbbad70ba11129d8444a70f5cdb3",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.493Z",
+          "finished_at": "2026-10-16T19:27:15.505Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:f97d1f3a64d198fb2b296bb9526d74459c4b1a61f304f4d618c667d1f3980aee",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:f97d1f3a64d198fb2b296bb9526d74459c4b1a61f304f4d618c667d1f3980aee",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.510Z",
+          "finished_at": "2026-10-16T19:27:15.521Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:48b4410651aad51ba8f9a2493c5d306227617a4134605bbdd874dfadf1d567b9",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:48b4410651aad51ba8f9a2493c5d306227617a4134605bbdd874dfadf1d567b9",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.525Z",
+          "finished_at": "2026-10-16T19:27:15.537Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:b3e60e86082131e78d2c950f392bd52345310ad778a81e56e9c6f7caa3bcdc2f",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:b3e60e86082131e78d2c950f392bd52345310ad778a81e56e9c6f7caa3bcdc2f",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.541Z",
+          "finished_at": "2026-10-16T19:27:15.553Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:522ab7b533c9477d50f7ac4c1717e9af6d7430de1fc2c21f5b4327caedb283a5",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:522ab7b533c9477d50f7ac4c1717e9af6d7430de1fc2c21f5b4327caedb283a5",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.557Z",
+          "finished_at": "2026-10-16T19:27:15.574Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:78930f97fd272cde8a132fdff072e1b0a4762c8f7678e3d335719e5cb66879ee",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:78930f97fd272cde8a132fdff072e1b0a4762c8f7678e3d335719e5cb66879ee",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.578Z",
+          "finished_at": "2026-10-16T19:27:15.590Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:834e934d5f8eedb681222c1b392ab150c4e0cb38c317693da0256af978eb9770",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:834e934d5f8eedb681222c1b392ab150c4e0cb38c317693da0256af978eb9770",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.594Z",
+          "finished_at": "2026-10-16T19:27:15.605Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:99ef02c5086987241cb88a474009742f6d4eb9f4b99d7a602db80f9a81b1d62a",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 6,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-10",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "fixture-backlog-11",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:99ef02c5086987241cb88a474009742f6d4eb9f4b99d7a602db80f9a81b1d62a",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:15.609Z",
+          "finished_at": "2026-10-16T19:27:15.621Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "d2d4",
+              "e5d4"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 17
+            },
+            "score_perspective": "side_to_move",
+            "depth": 6
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 20,
+        "max_nodes": 10000,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:16.315Z",
+          "finished_at": "2026-10-16T19:27:16.429Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e4",
+              "c7c5",
+              "g1f3",
+              "b8c6",
+              "b1c3",
+              "e7e6",
+              "d2d4",
+              "c5d4",
+              "f3d4",
+              "g8f6",
+              "d4c6",
+              "b7c6"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 31
+            },
+            "score_perspective": "side_to_move",
+            "depth": 12
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:7cf52c98b0e5a09ce14debda305a1abaace3470706e01c22998040c475256598",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "CancellationRequest",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "installed-cancel"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "installed-cancel",
+        "status": "requested",
+        "acknowledged_at": "2026-10-16T19:27:17.227Z"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "cancelled",
+        "retryable": false,
+        "reason": "cancelled_by_request"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "job-a",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "cancellation_id": "installed-cancel",
+        "status": "terminated",
+        "acknowledged_at": "2026-10-16T19:27:17.232Z"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "installed-after-start",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:93ebdbb994f67b3e436c8ad418878ab676d137953a4e14b7766efeee0a982ef4",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "installed-after-start",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "installed-after-start",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "installed-after-start",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "worker": "stockfish",
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "provenance": {
+          "input_digest": "sha256:93ebdbb994f67b3e436c8ad418878ab676d137953a4e14b7766efeee0a982ef4",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:17.437Z",
+          "finished_at": "2026-10-16T19:27:17.518Z"
+        },
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e3",
+              "e7e5",
+              "d2d4",
+              "b8c6",
+              "d4e5",
+              "c6e5"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 18
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "installed-after-start",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "completed",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:07cb4dc55437f1a6365139614c02fadcc39237d3908bc38158184cdba5c6ab77",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "CancellationRequest",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "3dc6a948-d589-4c90-86f6-380f8d1b2ef1"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "3dc6a948-d589-4c90-86f6-380f8d1b2ef1",
+        "status": "requested",
+        "acknowledged_at": "2026-10-16T19:27:18.969Z"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "cancelled",
+        "retryable": false,
+        "reason": "cancelled_by_request"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-15",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "3dc6a948-d589-4c90-86f6-380f8d1b2ef1",
+        "status": "terminated",
+        "acknowledged_at": "2026-10-16T19:27:18.975Z"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-16",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:4b7c8dd3a25b7035b0ddf8956fcb1342cc994d3152a925613384457b2f03996f",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-16",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-16",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "StockfishResult",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-16",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "worker": "stockfish",
+        "provenance": {
+          "input_digest": "sha256:4b7c8dd3a25b7035b0ddf8956fcb1342cc994d3152a925613384457b2f03996f",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "implementation_version": "sha256:c9c9a625c099b58f0c05b103d68c84f1a25cc1b6c374694ae2ca74ea6c93cd64",
+          "started_at": "2026-10-16T19:27:20.427Z",
+          "finished_at": "2026-10-16T19:27:20.506Z"
+        },
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "variations": [
+          {
+            "rank": 1,
+            "moves": [
+              "e2e3",
+              "e7e5",
+              "d2d4",
+              "b8c6",
+              "d4e5",
+              "c6e5"
+            ],
+            "score": {
+              "kind": "centipawns",
+              "value": 18
+            },
+            "score_perspective": "side_to_move",
+            "depth": 4
+          }
+        ]
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:f7bbc8ef7d7832b7bc0cf29bcf2ee5deb273c06896780baadd36dfb6e4dcff8d",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "CancellationRequest",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "10660943-ad9e-4e8c-a610-634a3f40c275"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "10660943-ad9e-4e8c-a610-634a3f40c275",
+        "status": "requested",
+        "acknowledged_at": "2026-10-16T19:27:21.936Z"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "cancelled",
+        "retryable": false,
+        "reason": "cancelled_by_request"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-17",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "10660943-ad9e-4e8c-a610-634a3f40c275",
+        "status": "terminated",
+        "acknowledged_at": "2026-10-16T19:27:21.942Z"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "input_digest": "sha256:4e31eafe99b68b1bb68dcf919c84b90f6db613e6682fddb371bcd2ae4eea42e7",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "CancellationRequest",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "0c01c969-14e0-4bbb-baa9-7e576bb05393"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "0c01c969-14e0-4bbb-baa9-7e576bb05393",
+        "status": "requested",
+        "acknowledged_at": "2026-10-16T19:27:23.662Z"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "status": "cancelled",
+        "retryable": false,
+        "reason": "cancelled_by_request"
+      }
+    },
+    {
+      "model": "CancellationAcknowledgement",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-18",
+        "request_revision": 1,
+        "execution_generation": 2,
+        "cancellation_id": "0c01c969-14e0-4bbb-baa9-7e576bb05393",
+        "status": "terminated",
+        "acknowledged_at": "2026-10-16T19:27:23.669Z"
+      }
+    },
+    {
+      "model": "StockfishJob",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-19",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:70562b2bd718252e1eb22effc0fbbcbf0eb3bf3ae2bde6efefcbc17078767c5c",
+        "constraints": {
+          "max_wall_time_ms": 10000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 128,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-19",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "pending",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-19",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "running",
+        "retryable": false,
+        "reason": null
+      }
+    },
+    {
+      "model": "JobStatus",
+      "payload": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-19",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "status": "failed",
+        "retryable": true,
+        "reason": "worker_shutdown"
+      }
+    }
+  ]
+}

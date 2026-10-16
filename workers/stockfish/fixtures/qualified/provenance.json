@@ -1,0 +1,68 @@
+{
+  "scope": "Actual final installed-container exchange; independently validated using installed shared v1 and python-chess.",
+  "tested_source_sha": "df54723a05facae761539480dad58f3b74ef50ad",
+  "artifact_sha256": "fd12c15fc5f539e327a124086be21ae425e8ae316b04761f4c4a92fc333962d3",
+  "image_id": "sha256:21172218ef8fb1c5d1edf6dabae11ab7de13f829b0cdb2c001974a4fdbe07f81",
+  "identity": {
+    "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+    "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+    "runtime_name": "node-stockfish-wasm",
+    "runtime_version": "26.10.0",
+    "descriptor": {
+      "schema_version": 1,
+      "engine": "Stockfish 19 smallnet",
+      "node": "26.10.0",
+      "assets": {
+        "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+        "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+        "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+      },
+      "upstream": {
+        "package": "@lichess-org/stockfish-web",
+        "version": "0.5.0",
+        "package_license_metadata": "AGPL-3.0-or-later",
+        "shipped_license": "GPL-3.0",
+        "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+        "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+        "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+        "patches": [
+          "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+          "patches/sf_19_smallnet/0002-stockfish-web.patch"
+        ],
+        "emscripten": "5.0.7"
+      },
+      "options": {
+        "Threads": 1,
+        "Hash": 32,
+        "Ponder": false,
+        "Skill Level": 20,
+        "UCI_LimitStrength": false,
+        "UCI_Chess960": false,
+        "UCI_ShowWDL": false,
+        "SyzygyPath": "",
+        "SyzygyProbeLimit": 0,
+        "nodestime": 0,
+        "Move Overhead": 10
+      },
+      "hash_reset": "ucinewgame-before-each-attempt",
+      "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+      "supported_platform": "linux/arm64",
+      "cpu_limit": 1,
+      "memory_mib": 512,
+      "swap": false
+    }
+  },
+  "independent_consumer": {
+    "success": true,
+    "results": 25,
+    "statuses": 87,
+    "acknowledgements": 4,
+    "distinct_accepted_executions": 24
+  },
+  "resource_profile": {
+    "platform": "linux/arm64",
+    "cpu": 1,
+    "memory_mib": 512,
+    "swap": false
+  }
+}

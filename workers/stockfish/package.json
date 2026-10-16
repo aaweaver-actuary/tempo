@@ -1,0 +1,40 @@
+{
+  "name": "@tempo/stockfish-worker",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Independent bounded Stockfish 19 smallnet execution worker",
+  "engines": {
+    "node": "26.10.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs"
+    }
+  },
+  "bin": {
+    "tempo-stockfish": "./cli.mjs"
+  },
+  "files": [
+    "*.mjs",
+    "index.d.ts",
+    "engine-descriptor.json",
+    "assets",
+    "schemas",
+    "licenses",
+    "README.md",
+    "npm-shrinkwrap.json"
+  ],
+  "scripts": {
+    "test": "node test.mjs pure && node test.mjs protocol",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "chess.js": "1.4.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

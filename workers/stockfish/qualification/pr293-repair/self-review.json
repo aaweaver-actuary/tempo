@@ -1,0 +1,13 @@
+{
+  "reviewed_revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+  "review_kind": "separate source-level self-review after implementation; no external approval claimed",
+  "findings": [],
+  "areas": {
+    "lifecycle": "Reviewed start/prewarm/child exit/close, shared promise publication before injectable callbacks, live-child guards and shutdown checks. Named protocol and actual CPU-active installed regressions pass.",
+    "receipts": "Audited every rejectJob call; accepted records trigger typed refusal, all cancellation refusals avoid JobStatus, genuine setStatus failures remain. Completed bytes and current-generation replay preserved.",
+    "transport": "Reviewed typed error sanitization and serveProtocol failure flag before interrupting close. NDJSON output is suppressed after failure, shutdown awaits exit, installed Python observes typed loss and higher-generation restart.",
+    "inputs": "Reviewed private copy creation, full hash validation using existing stager, source containment, manifest capture, source-file case normalization, empty/skip/TODO failure checks and temporary cleanup.",
+    "resources": "Existing cgroup enforcement, profile/asset hashes, cancellation-before-reuse and unconfirmed-termination regression remain. Actual child ownership and all task-created container cleanup pass.",
+    "integration": "No changes to shared v1, Maia, services or apps; only Stockfish component registration test inputs changed. C owns durable scheduling and accepted effects."
+  }
+}

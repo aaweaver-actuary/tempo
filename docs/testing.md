@@ -952,3 +952,16 @@ Optional/legacy services are absent from this test assembly. Live services elsew
 on the host are neither used nor stopped. Fault injection forwards real traffic;
 no essential API response is fabricated. See the source-bound
 [F2 acceptance map](validation/f2-study-learning.md) for exact results and limits.
+
+
+## Independent Stockfish execution worker (#43, workstream B)
+
+Stockfish is registered as `stockfish`. Install only `workers/stockfish` and the
+installed Python client/shared contracts environment described in its
+[README](../workers/stockfish/README.md). `node tools/component-build/test-lane.mjs
+--component stockfish --list` lists owning pure, protocol, Python client/contract,
+and real installed-container suites. Container qualification requires Docker and
+runs only labeled task-owned offline, read-only, hard-capped containers. It does
+not access Study, providers or domain databases. The separate serial benchmark is
+not an SLO or C's durable scheduler acceptance. See the local regression inventory
+for all 25 B8 regression identities and actual versus fake-engine proof owners.
