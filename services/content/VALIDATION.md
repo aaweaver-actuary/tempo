@@ -117,3 +117,163 @@ Read-only GitHub checks reported Actions disabled, no main branch protection
 (404), and no repository rulesets. Settings were unchanged. Focused local
 qualification is complete; hosted/full-system, deployment and Learning activation
 qualification are not claimed.
+
+
+## PR #288 repair qualification — October 16, 2026
+
+### Revision and evidence binding
+
+Reviewed starting head: `22db9b5198cc97f37ca8c4ed05449cfa1c7129aa`.
+Main/base: `0c7ef737bb2daacd8f671f252ce5a1d0787b1871`. Main remained unchanged at final refresh.
+Repair commit: `0f78f6672e0a11cee42dfbdd9381a8dfac728f1a`. Final tested executable:
+`ccfcbe71e7db3f4b7f517545e8324e58f0708948`. The subsequent commit adds only this validation report;
+its exact final pushed SHA, GitHub readback and cleanup state are recorded in
+`HANDOFF.json` at the evidence location and in PR #288. This avoids treating a
+self-referential documentation SHA as executable evidence.
+
+Durable evidence directory:
+`/Users/andy/.codex/visualizations/2026/10/16/01a1449b-29f3-7261-8c0b-f89c42289acf/content-288-repair-evidence`.
+`qualification-commands.json`, `qualification-summary.json`, `self-review.json`,
+`hosted-settings.json`, regular/native collection/execution JSON and JUnit,
+artifact reports/hashes and logs bind commands and results to the tested source.
+The source/artifact hash inventory describes the executable commit above; the
+later validation-only documentation commit was not rebuilt into these artifacts.
+
+### Findings, repair and regression proof
+
+| Finding | Cause and substantive repair | Named regular owner |
+| --- | --- | --- |
+| R1 | Readers previously selected generations and queried rows through unrelated transactions. Read-only repeatable-read sections now share one connection across all contributing queries. Source-scoped pages have strict versioned workspace/source/kind/revision/generation cursors; coverage and pages expose matching metadata. Missing mandatory inventory fails explicitly. | `test_coverage_snapshot_survives_generation_replacement_and_collection`; `test_inventory_cursor_rejects_changed_source_generation` (both readers); cursor validation, corruption, transaction rollback and CLI cases in REGRESSIONS.md |
+| R2 | Known-stale payloads staged before final rejection. One coherent read-only preflight now rejects before writes and returns identical replay without staging, while final source-locked CAS remains. | `test_stale_revision_is_rejected_before_any_input_staging`; identical replay, unknown-source, concurrent-editor and original interrupted-stage cases |
+| R3 | Unscoped lookups returned the first matching source. A bounded current-revision query detects zero/one/two matches; ambiguity requires `--source-key`. | `test_unscoped_repertoire_lookup_rejects_ambiguous_source_keys`; `test_unique_and_missing_repertoire_lookups` |
+| R4 | Readiness rejected excess powers but ignored absent required grants. Owner migration/readiness now share one 18-table privilege specification; every required privilege is checked independently. | `test_runtime_readiness_rejects_missing_required_grant_and_owner_repairs_it` (INSERT/UPDATE/SELECT); original forbidden-grant owner retained |
+
+Baseline: all original 32 native cases passed; 12 new cases failed (34 total
+passing, 12 failing). `baseline/instrumentation.patch` contains only the optional
+coverage pause hook; its SHA-256 was verified against the runner's source hash.
+The baseline G1 reader returned its previously covered authored reply as
+uncovered after actual collection. Stale-edit row counts, unscoped ambiguity and
+three missing grants each independently reproduced their defects. The additional
+nested-JSON regression recorded `RecursionError` before the guard, then passed
+with structured `invalid_cursor`; see `cursor-nesting-baseline.log`.
+
+The R1 schedule publishes G1 with covered e7e5/Nf3 continuation, establishes the
+reader snapshot and pauses after its opponent occurrence. A separate service
+admits/completes/publishes G2 with materially different d4 inventory. Collection
+removes G1 memberships, occurrences and its artifact, verified through fresh
+committed queries. Releasing the reader returns complete G1 with the covered
+reply and G1 revision/generation. Fresh G2 reads identify G2; its incomplete stage
+returns unavailable with G2 metadata. Events have bounded waits and finally
+release; no sleep establishes correctness. Existing lock-order first-holder
+schedules remain selected and passing.
+
+The editor regression barriers both distinct writers after staging and before
+final admission. Exactly one succeeds; the other gets `stale_source_revision`.
+Only one successor revision/generation exists and its complete publication
+contains the winner's payload. Partial/crash staging recovery remains selected.
+
+### Executed commands and exact results
+
+Run from `/private/tmp/tempo-content-288-repair`, with
+`UV_CACHE_DIR=/private/tmp/tempo-content-288-repair-uv-cache` and
+`TEMPO_COMPONENT_PYTHON=$PWD/services/content/.venv/bin/python`.
+The evidence journal records absolute argv, environment overrides, exit codes,
+UTC timestamps, source state and durations for every command:
+
+```sh
+uv sync --project services/content --locked --no-editable --python 3.12 --reinstall-package tempo-content
+services/content/.venv/bin/python services/content/run_suite.py pure --evidence "$EVIDENCE/regular-final"
+services/content/.venv/bin/python services/content/integration/run_postgres.py "$EVIDENCE/native-final" --benchmark
+services/content/.venv/bin/python services/content/integration/qualify_artifacts.py "$EVIDENCE/artifacts-final" --consumers
+node tools/component-build/check-components.mjs --component content
+node tools/component-build/test-lane.mjs --component content --list
+node tools/component-build/test-lane.mjs --component content
+npm run check:conflicts
+git diff --check
+```
+
+| Proof | Newly executed result |
+| --- | --- |
+| Content regular | 103 passed; retained exact collection/execution/JUnit |
+| Native PostgreSQL | 55 passed; 146.00 s including benchmark/setup/cleanup |
+| Chess-core | 105 passed in registered lane |
+| Content v1 publication contracts | 99 passed in registered lane |
+| Complete registered lane | 362 passed = 103 + 55 + 105 + 99 |
+| Python 3.12 wheel / sdist | 103 / 103 passed |
+| Python 3.14 wheel / sdist | 103 / 103 passed |
+| Installed artifacts combined | 412 case executions; matching identities, source-free installation |
+| Installed Learning/Game Evidence | 1 named regression plus standalone adapter assertions passed |
+| Component boundaries/discovery | Content, chess-core and seven-schema Content contract selected and validated |
+| Conflict / whitespace | Passed |
+
+No selected skip, deselection, missing/duplicate identity or failed phase was
+accepted. Existing strict inventory checks and zero-selection probes remain.
+Only Content dependencies and the component checker's pinned TypeScript package
+were installed; no frontend or whole-repository installation was performed.
+
+Installed Content artifact SHA-256:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Wheel | `235e1a16b969eceaa7513622237e84af121a5decf2e2703b0c19e66eb9f36c70` |
+| Sdist | `52902ba81cae5a8d2613a1147906eb3f927edc12b35103bb51c13f07410b0ce6` |
+
+Other dependency and consumer artifact hashes and full input inventories remain
+in `artifacts-final/artifacts.json` and `qualification-summary.json`.
+
+### Representative benchmark and preservation
+
+Same fixture: 512 routes, up to 64 plies, 2,048 exercises, 31,859 canonical route
+positions and 494,581 legal replies. 4604 reconciliation slices;
+111.144 s summed processing; 10.93 ms median and
+1788.44 ms maximum slice. Recorded writer median/maximum:
+2.07/1777.80 ms. Peak driver RSS:
+82,460,672 bytes. Readiness:
+0.0366 s; registration:
+1.408 s; publication:
+0.336 s; restart/replay:
+0.110 s.
+
+Historical comparison: 104.849 s summed processing, 274.78 ms maximum slice,
+243.98 ms maximum writer and 84,197,376 bytes driver RSS. These are observations
+from separate runs on one host, without a statistical performance threshold;
+maximum variation alone does not establish a regression. Earlier repair-run
+measurements are retained under `first-qualification/`, not substituted for this
+final executable's measurements. Read sections are excluded from writer metrics.
+
+Stable source/decision/card identities, canonical legal inventories, immutable
+v1 publications, independent packaging, Content-only database ownership,
+16-ply slices, 64-occurrence collection and collector lock ordering remain.
+Migration SQL SHA-256 remains
+`79655bc42742f7c22089f8ae4c80e166e35ae3980983e90bfb9e420214225b3a`.
+No production Learning/Game Evidence dependency, activation or live migration
+was introduced. Consumer proof preserves all five kinds and Content IDs, both
+colors/provenance, null activation, explicit 129-versus-128 rejection and the
+legacy opening identity incompatibility.
+
+### Limits, resources and GitHub state
+
+No known remaining R1–R4 defect was found in final self-review; no independent
+review is claimed. Known-stale preflight does not reclaim all unadmitted input:
+writers losing a later race and crashed writers can leave resumable stages.
+[#292](https://github.com/aaweaver-actuary/tempo/issues/292) owns retention,
+reference/fencing integrity, shared retries, bounded cleanup and authorized
+immutable-table access. No DELETE privilege was granted for that future work.
+#193 still owns acceptance/approval/history bridging/atomic activation,
+large-publication staging and empty retirement; #265 owns full import execution.
+
+Final benchmark/native owner: `tempo-content-108-67affda85cec2007`; runtime/owner credentials
+were generated inside its disposable cluster. Container and volume removal were
+verified. Baseline, development, earlier qualification and registered-lane native
+resources have their own retained removal receipts. Artifact temporary build and
+consumer environments were removed. The task checkout, its virtual environments
+and component tooling are removed after remote preservation; final cleanup
+verification is recorded in `HANDOFF.json`. Reusable caches and unrelated/live
+Study resources are preserved.
+
+GitHub read-only settings: Actions disabled, no repository rulesets, and main
+protection returned the explicit “Branch not protected” 404. Settings were not
+changed. PR #288 remains open, unmerged and undeployed; final remote head and
+structural mergeability are verified after push in `HANDOFF.json` and the PR
+summary. Local component qualification is complete; hosted/full-system tests,
+deployment/cutover and Learning activation were not performed or claimed.
