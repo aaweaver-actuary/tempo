@@ -11,7 +11,7 @@ import uvicorn
 from .api import create_app
 from .delivery import AuthRetryRefused, deliver_one, learning_token, retry_auth_delivery
 from .providers import AccountImport, enqueue_import, import_one, cancel_import
-from .snapshot import ComparisonSnapshot
+from .snapshot import ComparisonSnapshotV2, parse_snapshot
 from .store import EvidenceStore
 from .source import MAX_SOURCE_BYTES
 
@@ -21,6 +21,19 @@ def main(arguments=None):
     parser.add_argument("--database-url",default=os.environ.get("TEMPO_GAME_EVIDENCE_DATABASE_URL"))
     commands = parser.add_subparsers(dest="command",required=True)
     commands.add_parser("migrate")
+    commands.add_parser('snapshot-schema')
+    exports = commands.add_parser("analysis-export").add_subparsers(dest="export_command",required=True)
+    exports.add_parser('schema')
+    exports.add_parser('verify').add_argument('directory',type=Path)
+    create = exports.add_parser("create")
+    create.add_argument("--workspace",required=True)
+    create.add_argument("--game-id",action="append")
+    create.add_argument("--output",type=Path,required=True)
+    page = exports.add_parser("page")
+    page.add_argument("input_id")
+    page.add_argument("--workspace",required=True)
+    page.add_argument("--kind",required=True)
+    page.add_argument("--after")
     pgn = commands.add_parser("import-pgn")
     pgn.add_argument("file",type=Path)
     pgn.add_argument("--workspace",required=True)
@@ -56,6 +69,14 @@ def main(arguments=None):
     serve.add_argument("--port",type=int,default=8041)
     options = parser.parse_args(arguments)
     try:
+        if options.command=='snapshot-schema':
+            print(json.dumps(ComparisonSnapshotV2.model_json_schema(),sort_keys=True))
+            return 0
+        if options.command=='analysis-export' and options.export_command in ('schema','verify'):
+            from .analysis_schema import AnalysisManifest,AnalysisPage,verify_directory
+            result={'manifest':AnalysisManifest.model_json_schema(),'page':AnalysisPage.model_json_schema()} if options.export_command=='schema' else verify_directory(options.directory)
+            print(json.dumps(result,sort_keys=True))
+            return 0
         token = None
         if options.command in {"work", "retry-auth-delivery"}:
             if options.command == "retry-auth-delivery" and not options.learning_endpoint:
@@ -69,7 +90,7 @@ def main(arguments=None):
             # A separate owner credential is used only for this command.
             migration_url = os.environ.get("TEMPO_GAME_EVIDENCE_MIGRATION_URL") or options.database_url
             EvidenceStore(migration_url).migrate()
-            result = {"migration_version":2}
+            result = {"migration_version":3}
         elif options.command == "import-pgn":
             if options.file.stat().st_size>MAX_SOURCE_BYTES:
                 raise ValueError("source_byte_bound_exceeded")
@@ -82,7 +103,13 @@ def main(arguments=None):
         elif options.command == "import-status":
             result = store.import_status(options.workspace,options.import_id)
         elif options.command == "load-snapshot":
-            result = {"snapshot_digest":store.load_snapshot(ComparisonSnapshot.model_validate_json(options.file.read_bytes()))}
+            result = {"snapshot_digest":store.load_snapshot(parse_snapshot(json.loads(options.file.read_bytes())))}
+        elif options.command == "analysis-export":
+            from .analysis_export import create_directory_export, export_page
+            if options.export_command == "create":
+                result = create_directory_export(store,options.workspace,options.game_id,options.output)
+            else:
+                result = export_page(store,options.workspace,options.input_id,options.kind,options.after)
         elif options.command == "compare":
             store.request_comparison(options.game_id)
             result = {"requested":options.game_id}

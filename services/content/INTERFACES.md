@@ -1,5 +1,44 @@
 # Content interfaces and ownership
 
+## Authoritative bridge operator surface
+
+`schema --model import-manifest|response-proposal` exports service-local schema 1
+without database access. `proposal inspect FILE` is also pure. Import planning
+persists an immutable draft; it cannot publish or activate. The approved workflow
+and serialized consumer boundary are in
+[A bridge](../../docs/analysis-restoration/a-bridge.md).
+
+| Input field | Content mapping / authority |
+| --- | --- |
+| workspace/source/entity keys | Existing stable UUID identities; titles and input order do not identify cards |
+| PGN SetUp/FEN and ordered paths | Exact authored starting FEN and legal UCI routes; every variation requires a manifest assignment |
+| explicit repertoire/policy/color | Authored memberships and policy-scoped learner decisions; never inferred from titles |
+| structured exercise/decision keys | Retained unchanged; PGN derives decision keys from explicit policy and exact decision FEN |
+| accepted lines | Every authored learner alternative, preserved in order within each line |
+| binding/re-entry manifest | Exact route/policy/ply/card binding; re-entry defaults false |
+| source SHA/completeness/provenance | Retained original export evidence; incomplete scope cannot be approved for replacement |
+| legacy_aliases | Exercise-key to historical Learning-card linkage, validated by Learning; missing history remains absent |
+
+Draft IDs deduplicate semantic source permutations while retaining the first
+original-byte provenance. Draft digest approval binds that exact retained record.
+Source admission, approval and cancellation share a source-scope advisory lock.
+Approved/applying operations reserve the whole source. Cancellation is effective
+only before the committed `applying` transition; afterwards it returns
+`application_started` and requires reconciliation. Runtime cannot modify drafts.
+
+`operation record` is a local operator port requiring the original Learning origin
+and private operator credential file. It independently reads the original
+authenticated Learning operation receipt before recording matching bytes. Merely
+asserting an `activated` status or transport label cannot confirm completion.
+Delivery requests and snapshot observations are immutable Content checkpoints.
+No operator credential is supplied to Game Evidence or serialized into documents.
+
+`publication export ID --generation N` returns source/publication lineage, actual
+routes/bindings, policy-scoped complete legal reply support, provenance and digest.
+Coverage conditions replies on established route prefixes, preserving unknown
+terminal scopes and distinct policies. Completed operation exports remain readable
+after source/cache replacement. Shared Publication v1 itself is unchanged.
+
 ## Structured authored source v1
 
 `tempo_content.SourceSnapshot` is the supported authored-input model. It rejects
@@ -157,3 +196,41 @@ individually, schema USAGE, and all existing prohibited role/schema/database and
 immutable-table powers. Missing grants fail before service operations, naming the
 table/privilege without credentials. Explicit owner migration restores the grants;
 runtime startup never migrates. Historical migration SQL/checksums are unchanged.
+
+## Terminal Learning failure reconciliation
+
+`tempo-content operation record-failure OPERATION_ID --learning-origin ORIGIN --operator-token-file FILE` independently retrieves the original operator-authenticated Learning operation. No caller-provided failure document is accepted. The receipt must bind the original workspace, exact request, command family, publication/generation and delivery authority, and be durably `failed`. Under source/operation locks, Content records a fingerprint and sanitized error status/code then changes `applying` to terminal `failed`. Identical replay is valid after restart or a successor approval; conflicting terminal outcomes are refused. Source revisions are never rolled back.
+
+Timeouts, HTTP errors, unknown/queued operations and stage-only rejection retain the reservation. The stage endpoint has no durable terminal operation receipt; reconcile the original delivery after restoring its original authority/staged inputs. An unresolved stage rejection remains an explicit operator recovery boundary, not permission to cancel an already authorized operation.
+
+Migration `0004_bridge_proposal_identity` adds database uniqueness for `(proposal.workspace_id, source_key, proposal.proposal_id)` on proposal drafts. Existing duplicates stop migration without deletion. Runtime grants do not expand. Identical proposals return the durable winner; changed proposal bytes raise `proposal_identity_conflict`. A semantic draft ID with changed immutable provenance raises `immutable_draft_identity_conflict`, preserving both stable exercise identity and the original draft.
+
+## A pre-activation recovery
+
+`operation show` additionally returns the source-owned `publication_id`, even
+before source admission. `operation prepare` checks the frozen draft's A scope
+before application authorization: complete, at most 2,048 reference-graded opening
+move lines, real bindings within authored routes, and distinct physical aliases.
+General Content v1 still accepts typed exercises including explanation.
+Unsupported A scope commits `failed` with a fixed error code and no source revision
+advance. Correct a draft at the actual current revision; never reuse a failed ID.
+
+`tempo-content operation fail-before-delivery OPERATION_ID` durably abandons an
+`applying` operation only while its document has no delivery checkpoint or receipt.
+It shares the source-scope and operation locks with checkpointing. Identical replay
+returns the same failure, including after successor approval. Source admission
+rechecks still-applying authority under those locks so stale preparation cannot
+advance the source after release. Already admitted source revisions are retained.
+
+Checkpointed operations require the original authenticated Learning terminal
+receipt, including a Learning publication fence. `record-failure` independently
+fetches and binds that receipt; no caller-supplied HTTP error or failed-state claim
+releases a reservation. No new state, migration or shared wire contract is added.
+
+Completion verification applies the same exact original envelope binding as
+terminal failure. Retirement response fields alone cannot identify the retired
+publication; reconstruction is permitted only after the authenticated receipt's
+workspace, command, original request, publication, generation and ID all match.
+
+Exact request comparisons preserve canonical JSON primitive types: integer,
+boolean and floating-point substitutions do not compare equal.

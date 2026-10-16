@@ -1,5 +1,17 @@
 # Content regression ownership
 
+## A bridge
+
+`tests/test_bridge.py` owns source/rename/permutation mapping, explicit provenance
+and color, legal executable proposals, informational-context rejection, and the
+accepted-alternative board-copy regression. `integration/test_postgres.py` owns
+the named `test_A_*` approval-not-persisted, restart/replay, cancellation orders,
+source reservation/CAS, incomplete count/digest manifest, and conflicting-page
+replay cases. Existing source concurrency, failed-generation preservation,
+retirement-required, immutability and foreign-database tests remain selected.
+The actual installed cross-service producer/receipt proof belongs to Learning's
+regular `test_authoritative_bridge.py`, not a fabricated Content fixture.
+
 Content's regular installed `tests/` suite owns strict authored-input validation,
 legal-state canonicalization, both colors, castling/en-passant, promotions,
 terminal positions, complete reply identities, shared/transposed position reuse,
@@ -79,3 +91,46 @@ Native owners in `integration/test_postgres.py`:
 
 The original donor lock-order, collector, interrupted-stage, stale-worker,
 publication, legal-reply, policy and consumer owners above remain selected.
+
+## PR #294 repair regressions
+
+Regular native `integration/test_postgres.py` owns:
+
+- `test_A_terminal_learning_rejection_releases_source_reservation`: durable failure, current source revision, corrected approval, restart and replay after successor reservation.
+- `test_A_terminal_outcomes_cannot_overwrite_each_other` and `test_A_terminal_failure_and_corrected_approval_serialize`: immutable outcomes and independent-session races.
+- `test_A_concurrent_proposal_identity_is_unique_across_sessions` and `test_A_response_proposal_concurrency_and_restart`: identical/conflicting concurrent requests, actual proposal validation and restart.
+- `test_A_proposal_unique_index_rejects_legacy_duplicates_without_deletion`: actual owner migration from pre-0004 history, duplicate refusal with rollback preserving both drafts, incompatible readiness, successful upgrade after fixture-only duplicate cleanup, immutable draft replay and unchanged checksum history on migration replay.
+- `test_A_semantic_draft_collision_rejects_changed_raw_provenance`, `test_A_exact_draft_replay_returns_original_immutable_document`, and `test_A_approved_draft_cannot_be_relabelled_by_reimport`: exact immutable provenance.
+
+Regular installed pure `tests/test_bridge.py::test_A_terminal_failure_requires_original_authenticated_request` covers terminal state and request/workspace/command/operation mismatches, and safe failure details. Real authenticated rejection and corrected activation are owned by Learning's installed `test_A_corrected_source_activates_after_original_terminal_failure`.
+
+`test_A_success_and_terminal_failure_race_preserves_one_outcome` owns concurrent competing terminal records; `test_A_proposal_identity_is_scoped_to_workspace_and_source` owns permitted source scoping.
+
+`test_A_proposal_insert_rollback_allows_legitimate_retry_after_restart` owns aborted insertion and durable retry. Pure `test_A_failure_transport_rejects_uncertain_http_outcomes` uses real local HTTP for redirect/authentication/unavailability/malformed/oversized boundaries. Terminal request-binding parameters include retirement and wrong original origin.
+
+## PR #294 pre-activation recovery
+
+Native `integration/test_postgres.py` owns:
+
+- `test_A_unsupported_bridge_exercise_does_not_authorize_application` and
+  `test_A_general_content_explanation_remains_publishable`: A rejection without
+  source admission, corrected approval, and general v1 explanation publication.
+- `test_A_preflight_rejection_cannot_race_into_applying`: independent callers
+  observe the same frozen failure and no admitted source.
+- `test_A_known_pre_delivery_failure_releases_source_without_remote_receipt`:
+  exported but uncheckpointed abandonment, retained revision, restart and exact
+  replay after successor reservation.
+- `test_A_pre_activation_failure_recovery_survives_restart`: stale preparation
+  waits after immutable staging; failure and optional successor approval win
+  before its final source admission, which must be rejected.
+- `test_A_undelivered_failure_and_checkpoint_serialize`: both actual PostgreSQL
+  lock-winning orders, with only one persisted authority.
+
+Pure installed `test_A_bridge_scope_preflight_is_local_and_preserves_general_types`
+checks explanation, open judgment, missing/terminal bindings and alias collisions.
+
+`test_A_completion_receipt_requires_exact_original_authority` shares success/failure
+workspace/family/request/publication/generation binding. The real installed
+`test_A_installed_completion_cannot_substitute_checkpointed_request` completes a
+different publication's retirement under the same remote ID and proves that both
+reconcile and abandon retain the original Content reservation and serving content.

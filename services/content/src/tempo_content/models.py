@@ -22,6 +22,13 @@ Specification = ExecutableExercise.model_fields["specification"].rebuild_annotat
 class SourceModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
 
+    @model_validator(mode='before')
+    @classmethod
+    def strict_version(cls,value):
+        if isinstance(value,dict) and 'schema_version' in value and type(value['schema_version']) is not int:
+            raise ValueError('schema_version must be an integer')
+        return value
+
 
 class SourceRepertoire(SourceModel):
     key: SourceKey

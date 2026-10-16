@@ -1,0 +1,230 @@
+{
+  "$defs": {
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "synthetic",
+            "authored_export",
+            "public_reference"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source_sha256",
+        "description"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "Reentry": {
+      "additionalProperties": false,
+      "properties": {
+        "ply": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Ply",
+          "type": "integer"
+        },
+        "policy_key": {
+          "title": "Policy Key",
+          "type": "string"
+        },
+        "route_key": {
+          "title": "Route Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route_key",
+        "policy_key",
+        "ply"
+      ],
+      "title": "Reentry",
+      "type": "object"
+    },
+    "RouteAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint": {
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "policy_key": {
+          "title": "Policy Key",
+          "type": "string"
+        },
+        "route_key": {
+          "title": "Route Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fingerprint",
+        "route_key",
+        "policy_key"
+      ],
+      "title": "RouteAssignment",
+      "type": "object"
+    },
+    "SourcePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "repertoire_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "repertoire_key"
+      ],
+      "title": "SourcePolicy",
+      "type": "object"
+    },
+    "SourceRepertoire": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "learner_color": {
+          "enum": [
+            "white",
+            "black"
+          ],
+          "title": "Learner Color",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "title",
+        "learner_color"
+      ],
+      "title": "SourceRepertoire",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "kind": {
+      "const": "authored_import",
+      "title": "Kind",
+      "type": "string"
+    },
+    "legacy_aliases": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "maxProperties": 2048,
+      "title": "Legacy Aliases",
+      "type": "object"
+    },
+    "policies": {
+      "items": {
+        "$ref": "#/$defs/SourcePolicy"
+      },
+      "title": "Policies",
+      "type": "array"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "reentry": {
+      "items": {
+        "$ref": "#/$defs/Reentry"
+      },
+      "maxItems": 10000,
+      "title": "Reentry",
+      "type": "array"
+    },
+    "repertoires": {
+      "items": {
+        "$ref": "#/$defs/SourceRepertoire"
+      },
+      "title": "Repertoires",
+      "type": "array"
+    },
+    "route_assignments": {
+      "items": {
+        "$ref": "#/$defs/RouteAssignment"
+      },
+      "maxItems": 10000,
+      "title": "Route Assignments",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_key": {
+      "title": "Source Key",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "workspace_id",
+    "source_key",
+    "title",
+    "complete",
+    "provenance"
+  ],
+  "title": "ImportManifest",
+  "type": "object"
+}

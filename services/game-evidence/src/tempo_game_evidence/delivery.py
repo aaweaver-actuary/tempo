@@ -12,6 +12,18 @@ from .source import utc_now
 from .transport import RemoteFailure, request_bytes
 
 
+def inspect_delivery(database, game_id, comparison_revision, reconciliation_status, reconciliation_reason, *, has_report=True):
+    """The report/export read port; existing outbox and receipts remain authority."""
+    batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (comparison_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
+                               (game_id,comparison_revision)).fetchall()
+    priority = ['blocked','terminal_failure','conflict','stale_revision','retryable_failure','waiting_predecessor','accepted_pending','pending','completed']
+    status = next((status for status in priority if any(batch['status']==status for batch in batches)), 'not_required' if has_report else 'not_ready')
+    if reconciliation_status in {'pending','waiting_predecessor','blocked'}:
+        status = reconciliation_status
+    return {'status':status,'reason':reconciliation_reason or next((batch['reason'] for batch in batches if batch['reason']),None),
+            'attempts':sum(batch['attempts'] for batch in batches),'batches':batches}
+
+
 def learning_token(path):
     credential = Path(path)
     if credential.stat().st_mode & 0o077:

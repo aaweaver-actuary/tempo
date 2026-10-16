@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 import hashlib, json
-from typing import Literal
+from typing import ClassVar, Literal
 import chess
 from fastapi import HTTPException
 from pydantic import (
@@ -52,6 +52,7 @@ class ExecutionFacts(BaseModel):
 
 
 class PublicationBundle(BaseModel):
+    legacy_card_identity: ClassVar[bool] = True
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal[1]
     publication: Publication
@@ -120,7 +121,7 @@ class PublicationBundle(BaseModel):
                         or ("white" if position.turn else "black") == fact.trained_color
                     ):
                         raise ValueError("Opening must finish on a learner move")
-                if (
+                if self.legacy_card_identity and (
                     card_id(
                         definition.starting_fen,
                         definition.specification.accepted_lines[0],

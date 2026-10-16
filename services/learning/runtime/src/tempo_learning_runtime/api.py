@@ -40,6 +40,7 @@ from .endgames import generate_position, category_for_player
 from .receivers import receive
 from .receivers import EvidenceDelivery
 from . import study_bootstrap, teaching_commands
+from . import publication_bridge
 
 
 def reconcile(database, payload):
@@ -115,6 +116,7 @@ def register_handlers():
         "opening_evidence.checkpoint": lambda db, p: evidence.persist_checkpoint(db, p),
         "endgames.attempt.create": save_endgame_attempt,
         "publication.activate": activate,
+        "publication.activate.v2": publication_bridge.activate,
         "publication.retire": retire,
     }
     for name, handler in handlers.items():
@@ -187,6 +189,13 @@ def create_app(configuration: Configuration):
                 return JSONResponse(
                     status_code=403, content={"detail": "Browser origin is not allowed"}
                 )
+            if request.url.path=='/internal/publications/v2/stage' and request.method=='POST':
+                body=bytearray()
+                async for chunk in request.stream():
+                    body.extend(chunk)
+                    if len(body)>publication_bridge.MAX_BUNDLE_BYTES:
+                        return JSONResponse(status_code=413,content={'detail':'Publication bundle exceeds 8 MiB'})
+                request._body=bytes(body)
         with database.scope():
             return await call_next(request)
 
@@ -256,7 +265,7 @@ def create_app(configuration: Configuration):
 
     @app.get("/api/operations/{operation_id}")
     def operation(operation_id: str):
-        return gateway.read_operation(operation_id)
+        return gateway.read_operation(operation_id,publication=False)
 
     @app.get("/api/study/bootstrap")
     def bootstrap():
@@ -302,14 +311,14 @@ def create_app(configuration: Configuration):
 
     @app.post("/api/operations/{operation_id}/retry")
     def retry(operation_id: str):
-        receipt = gateway.read_operation(operation_id)
+        receipt = gateway.read_operation(operation_id,publication=False)
         if receipt["state"] == "unknown":
             raise HTTPException(404, "Unknown operation")
         if receipt["state"] == "failed":
             raise HTTPException(
                 409, "Terminal failed operations require a new reconciliation operation"
             )
-        gateway.execute(operation_id)
+        gateway.execute(operation_id,publication=False)
         return gateway.operation_result(operation_id)
 
     def queue_payload(limit=20, include_opening_evidence=False):
@@ -823,6 +832,44 @@ def create_app(configuration: Configuration):
             operation_id,
         )
 
+    @app.get("/internal/publications/operations/{operation_id}")
+    def publication_operation(operation_id: str):
+        return gateway.read_operation(operation_id,publication=True)
+
+    @app.post('/internal/publications/operations/{operation_id}/abort')
+    def publication_abort(operation_id: str, payload: dict):
+        return publication_bridge.abort_operation(operation_id, payload, configuration.workspace_id)
+
+    @app.post("/internal/publications/operations/{operation_id}/retry")
+    def publication_retry(operation_id: str):
+        receipt = gateway.read_operation(operation_id,publication=True)
+        if receipt["state"] == "unknown":
+            raise HTTPException(404, "Unknown operation")
+        if receipt["state"] == "failed":
+            raise HTTPException(409, "Terminal publication failure")
+        with connection(read_only=True) as db:
+            intent=db.execute('SELECT command_name,payload_json FROM operation_receipts WHERE operation_id=?',(operation_id,)).fetchone()
+        if intent and intent[0]=='publication.activate.v2':
+            return publication_bridge.dispatch_activation(json.loads(intent[1]),operation_id)
+        gateway.execute(operation_id,publication=True)
+        return gateway.operation_result(operation_id)
+
+    @app.get("/internal/publications/{publication_id}/status")
+    def publication_status(publication_id: str, generation: int | None = Query(None,ge=1)):
+        with connection(read_only=True) as db:
+            return publication_bridge.status(db, publication_id, configuration.workspace_id,generation)
+
+    @app.post("/internal/publications/v2/stage")
+    def publication_stage_v2(payload: publication_bridge.PublicationBundleV2):
+        with connection() as db:
+            return publication_bridge.stage(db, payload, configuration.workspace_id)
+
+    @app.post("/internal/publications/v2/activate")
+    def publication_activate_v2(payload: dict, idempotency_key: str | None = Header(None)):
+        operation_id = idempotency_key if idempotency_key is not None else payload.get('activation_id')
+        publication_bridge.validate_operation_request('publication.activate.v2', payload, operation_id)
+        return publication_bridge.dispatch_activation(payload, operation_id)
+
     @app.post("/internal/publications/stage")
     def publication_stage(payload: PublicationBundle):
         with connection() as db:
@@ -838,8 +885,10 @@ def create_app(configuration: Configuration):
 
     @app.post("/internal/publications/retire")
     def publication_retire(payload: dict, idempotency_key: str | None = Header(None)):
+        operation_id = idempotency_key if idempotency_key is not None else payload.get('retirement_id')
+        publication_bridge.validate_operation_request('publication.retire', payload, operation_id)
         return gateway.dispatch(
-            "publication.retire", payload, idempotency_key or payload["retirement_id"]
+            "publication.retire", payload, operation_id
         )
 
     @app.post("/internal/evidence")

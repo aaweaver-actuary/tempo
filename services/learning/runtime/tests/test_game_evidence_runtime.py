@@ -89,8 +89,8 @@ class Producer:
         return self.run("work", "--max-jobs", "32", "--learning-endpoint", endpoint)
 
 
-@pytest.fixture
-def producer(case, tmp_path):
+@contextmanager
+def installed_producer(case, tmp_path):
     python = os.environ.get("TEMPO_LEARNING_TEST_GAME_EVIDENCE_PYTHON")
     assert python and Path(python).is_file(), (
         "Owning runner must install the separate producer"
@@ -169,6 +169,12 @@ def producer(case, tmp_path):
             )
             for role in [runtime, owner]:
                 database.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+@pytest.fixture
+def producer(case, tmp_path):
+    with installed_producer(case, tmp_path) as value:
+        yield value
 
 
 def activate_without_queue_work(case, payload=None):

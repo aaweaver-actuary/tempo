@@ -1,5 +1,19 @@
 # Game Evidence regression ownership
 
+`tests/test_analysis_schema.py` owns offline immutable manifest/page integrity,
+replay, mixed input/workspace/version rejection, missing pages/counts, corruption
+and non-overwriting output. Learning's regular `test_authoritative_bridge.py`
+owns producer-created snapshot v2 and analysis fixtures from genuine activation,
+covered/opponent-deviation denominator contexts and proposal consumption.
+`tests/test_bridge_snapshot.py` owns accepted v2 source/route/policy generation
+and reconstructed response-scope rejection using a genuine installed synthetic
+fixture. `integration/test_postgres.py` additionally owns interrupted frozen-export
+resumption after a game revision changes, exact cursor scope and immutable-table
+runtime update denial. The installed proof exports the existing outbox inspection
+and genuine acknowledgements, without introducing another remediation producer.
+`tests/test_providers.py` retains JSON datetime round trips when version validation
+is shared with provider inputs.
+
 `tests/test_credentials.py` owns private Learning credential-file validation.
 The Learning runtime's regular `test_game_evidence_runtime.py` owns actual bearer
 delivery, separate database credentials, lost acknowledgement/restart and producer
@@ -81,3 +95,9 @@ Existing strict receiver calls and subprocesses use an explicit synthetic privat
 credential, retaining production preflight. No existing replay/withdrawal/lease
 assertions are removed. Learning's native suite separately exercises actual
 installed CLI -> authenticated Learning HTTP -> independent databases.
+
+## PR #294 snapshot repair
+
+`integration/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.
+
+`test_A_post_retirement_snapshot_cannot_claim_current_serving` installs a genuine retired observation, recomputes comparison readiness and preserves the original snapshot and delivery records.

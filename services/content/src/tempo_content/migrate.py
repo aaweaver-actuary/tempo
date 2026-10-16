@@ -12,9 +12,9 @@ RUNTIME_TABLE_PRIVILEGES = {
     **{table: (('SELECT',), ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'))
        for table in ('migration_history','instance')},
     **{table: (('SELECT','INSERT'), ('UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'))
-       for table in ('input_items','input_manifests','source_revisions','exercise_identities','exercise_versions','publications')},
+       for table in ('input_items','input_manifests','source_revisions','exercise_identities','exercise_versions','publications','bridge_drafts')},
     **{table: (('SELECT','INSERT','UPDATE','DELETE'), ())
-       for table in ('sources','tasks','artifacts','generation_routes','positions','legal_replies','occurrences','generation_exercises','responses','collector')},
+       for table in ('sources','tasks','artifacts','generation_routes','positions','legal_replies','occurrences','generation_exercises','responses','collector','bridge_operations')},
 }
 
 

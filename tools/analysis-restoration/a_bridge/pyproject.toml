@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-a-bridge"
+version = "0.1.0"
+requires-python = ">=3.12,<3.15"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+
+[project.scripts]
+tempo-a-bridge = "tempo_a_bridge.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_a_bridge"]

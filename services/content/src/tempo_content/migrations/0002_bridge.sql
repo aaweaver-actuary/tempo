@@ -1,0 +1,3 @@
+CREATE TABLE content.bridge_drafts(id text PRIMARY KEY, source_id text NOT NULL, source_key text NOT NULL, expected_revision integer NOT NULL, digest text NOT NULL, document jsonb NOT NULL);
+CREATE TABLE content.bridge_operations(id text PRIMARY KEY, draft_id text UNIQUE NOT NULL REFERENCES content.bridge_drafts(id), source_id text NOT NULL, state text NOT NULL CHECK(state IN ('approved','applying','completed','cancelled')), document jsonb NOT NULL DEFAULT '{}', updated_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX bridge_reserved_source ON content.bridge_operations(source_id) WHERE state IN ('approved','applying');
