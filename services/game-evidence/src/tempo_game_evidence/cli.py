@@ -105,10 +105,9 @@ def main(arguments=None):
         elif options.command == "load-snapshot":
             result = {"snapshot_digest":store.load_snapshot(parse_snapshot(json.loads(options.file.read_bytes())))}
         elif options.command == "analysis-export":
-            from .analysis_export import create_export, export_page, write_export
+            from .analysis_export import create_directory_export, export_page
             if options.export_command == "create":
-                result = create_export(store,options.workspace,options.game_id)
-                write_export(store,result,options.output)
+                result = create_directory_export(store,options.workspace,options.game_id,options.output)
             else:
                 result = export_page(store,options.workspace,options.input_id,options.kind,options.after)
         elif options.command == "compare":

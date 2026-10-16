@@ -63,6 +63,7 @@ def test_A_proposal_is_not_approval_and_requires_legal_executable_content():
         "decision_fen":"rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
         "accepted_lines":[["g1f3"]],"provenance":{"kind":"synthetic","evidence_refs":["game:1"]}}
     assert ResponseProposal.model_validate(proposal).status=="draft"
-    for mutation in ({"kind":"gap_context"},{"status":"approved"},{"accepted_lines":[]},{"accepted_lines":[["g1g5"]]}):
+    for mutation in ({"kind":"gap_context"},{"status":"approved"},{"accepted_lines":[]},{"accepted_lines":[["g1g5"]]},
+                     {'provenance':{}},{'provenance':{'kind':'synthetic','evidence_refs':[]}}):
         with pytest.raises(ValueError):
             ResponseProposal.model_validate({**proposal,**mutation})

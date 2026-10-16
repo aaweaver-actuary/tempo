@@ -81,6 +81,11 @@ class ResponseProposal(SourceModel):
 
     @model_validator(mode="after")
     def legal_lines(self):
+        references = self.provenance.get('evidence_refs')
+        if (not isinstance(self.provenance.get('kind'),str) or not self.provenance['kind'].strip()
+                or not isinstance(references,list) or not references or len(references)>100
+                or any(not isinstance(reference,str) or not reference.strip() for reference in references)):
+            raise ValueError('proposal_provenance_and_evidence_references_required')
         board = chess.Board(self.decision_fen)
         if not board.is_valid() or board.turn != (self.learner_color == "white"):
             raise ValueError("proposal_decision_color_or_fen_invalid")

@@ -1,5 +1,7 @@
 """A's real PostgreSQL publication/identity/receipt regression owners."""
 from copy import deepcopy
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 import os
@@ -89,7 +91,8 @@ def test_A_complete_large_publication_measured_without_truncation(case,count,tmp
         assert case.query('SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0]==count
         assert case.query('SELECT count(*) FROM learning.opening_graph_steps WHERE generation=%s',(generation,))[0][0]==count
         assert case.client.get('/api/study/bootstrap').status_code==200
-    measurement={'definitions':count,'memberships':count,'route_lengths':[1,count],'serialized_bytes':len(json.dumps(payload).encode()),
+    measurement={'definitions':count,'memberships':count,'route_lengths':{'minimum':1,'maximum':1},
+        'accepted_alternatives':{'minimum':1,'maximum':1},'serialized_bytes':len(json.dumps(payload).encode()),
         'stage_seconds':staging,'activation_seconds':timings,'driver_max_rss':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         'statement_timeout_ms':1500,'transaction_timeout_ms':2500,'lock_timeout_ms':250}
     (tmp_path/'capacity.json').write_text(json.dumps(measurement,indent=2))
@@ -97,6 +100,69 @@ def test_A_complete_large_publication_measured_without_truncation(case,count,tmp
     if destination:
         Path(destination).mkdir(parents=True,exist_ok=True)
         (Path(destination)/f'capacity-{count}.json').write_text(json.dumps(measurement,indent=2))
+
+
+def test_A_metadata_successor_preserves_issued_attempt_under_measured_foreground_load(case,monkeypatch):
+    from tempo_learning_runtime.maintenance import run_once
+    from tempo_learning_runtime.postgres_store import PostgresConnection
+    payload=content_bundle(2048)
+    activate_v2(case,payload)
+    with case.database.scope():
+        for _ in range(100):
+            if not run_once():
+                break
+        else:
+            raise AssertionError('Initial complete publication did not converge')
+    issued=head(case)
+    payload=deepcopy(payload)
+    payload['publication'].update(publication_generation=2,source_revision=2)
+    for definition in payload['publication']['definitions']:
+        definition.update(publication_generation=2,source_revision=2,prompt='Renamed metadata')
+    assert stage_v2(case,payload).status_code==200
+    transaction_durations=[]
+    lock_durations=[]
+    lock_starts={}
+    original_transaction=case.database.transaction
+    original_native=PostgresConnection.execute_native
+    @contextmanager
+    def measured_transaction(**options):
+        started=time.perf_counter()
+        database=None
+        with original_transaction(**options) as database:
+            yield database
+        if database in lock_starts:
+            finished=time.perf_counter()
+            transaction_durations.append(finished-started)
+            lock_durations.append(finished-lock_starts.pop(database))
+    def measured_native(database,statement,parameters=()):
+        result=original_native(database,statement,parameters)
+        if statement.startswith('SELECT pg_advisory_xact_lock') and parameters==('learning:publication:publication-a',):
+            lock_starts[database]=time.perf_counter()
+        return result
+    foreground=[]
+    with monkeypatch.context() as patch:
+        patch.setattr(case.database,'transaction',measured_transaction)
+        patch.setattr(PostgresConnection,'execute_native',measured_native)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future=executor.submit(case.client.post,'/internal/publications/v2/activate',json=request_for(payload,1),headers={'Authorization':'Bearer '+case.configuration.operator_token})
+            while not future.done():
+                started=time.perf_counter()
+                response=case.client.get('/api/study/bootstrap')
+                foreground.append(time.perf_counter()-started)
+                assert response.status_code==200,response.text
+            activated=future.result()
+    assert activated.status_code==200,activated.text
+    assert foreground and len(transaction_durations)==len(lock_durations)==1
+    assert transaction_durations[0]<2.5
+    response=submit(case,issued,review_payload(issued))
+    assert response.status_code==200,response.text
+    assert case.query('SELECT count(*) FROM learning.reviews')[0][0]==1
+    measurement={'definitions':2048,'metadata_successor_transaction_seconds':transaction_durations,
+        'publication_lock_held_seconds':lock_durations,'concurrent_foreground_bootstrap_seconds':foreground,
+        'predecessor_attempt_review_status':response.status_code,'transaction_timeout_ms':2500,'lock_timeout_ms':250}
+    destination=os.environ.get('TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE')
+    if destination:
+        (Path(destination)/'foreground-capacity-2048.json').write_text(json.dumps(measurement,indent=2))
 
 
 def test_A_activation_response_loss_replays_original_operator_receipt(case):

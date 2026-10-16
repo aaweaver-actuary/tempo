@@ -176,9 +176,37 @@ def export_page(store, workspace, input_id, kind, after=None):
         "next_cursor": canonical({**expected,"page_index":index+1}) if index+1<len(references) else None}
 
 
+def create_directory_export(store, workspace, game_ids, directory):
+    """An interrupted directory retains its first frozen input, even after edits."""
+    marker = Path(directory) / '.tempo-analysis-export.json'
+    if marker.exists():
+        if marker.is_symlink() or marker.stat().st_size > 4096:
+            raise ValueError('analysis_export_resume_marker_invalid')
+        reservation = json.loads(marker.read_bytes())
+        if set(reservation) != {'workspace_id','input_id','manifest_digest'} or reservation['workspace_id'] != workspace:
+            raise ValueError('analysis_export_resume_scope_conflict')
+        with store.connect() as database:
+            row = database.execute('SELECT manifest FROM analysis_exports WHERE input_id=%s AND workspace_id=%s',
+                                   (reservation['input_id'],workspace)).fetchone()
+            if row is None or row['manifest']['manifest_digest'] != reservation['manifest_digest']:
+                raise ValueError('analysis_export_resume_input_unavailable')
+            manifest = row['manifest']
+            if game_ids is not None:
+                pages = database.execute("SELECT document FROM analysis_export_pages WHERE input_id=%s AND kind='games'", (manifest['input_id'],)).fetchall()
+                frozen_games = {item['game_id'] for page in pages for item in page['document']['items']}
+                if len(game_ids) != len(set(game_ids)) or set(game_ids) != frozen_games:
+                    raise ValueError('analysis_export_resume_selection_conflict')
+    else:
+        manifest = create_export(store,workspace,game_ids)
+    write_export(store,manifest,directory)
+    return manifest
+
+
 def write_export(store, manifest, directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
+    write_exact(directory / '.tempo-analysis-export.json',
+                {key:manifest[key] for key in ('workspace_id','input_id','manifest_digest')})
     for reference in manifest["pages"]:
         with store.connect() as database:
             page = database.execute("SELECT document FROM analysis_export_pages WHERE input_id=%s AND kind=%s AND page_index=%s", (manifest["input_id"],reference["kind"],reference["page_index"])).fetchone()["document"]

@@ -44,7 +44,7 @@ def state(tmp_path, monkeypatch):
     monkeypatch.setenv('TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE', str(credential))
     # This is exclusively the fresh cluster provisioned by run_postgres.py.
     with psycopg.connect(os.environ["TEMPO_GAME_EVIDENCE_MIGRATION_URL"]) as database:
-        database.execute("TRUNCATE accepted_heads,import_pages,import_cursors,provider_leases,outbox,comparisons,jobs,game_sources,games,snapshots,workspace_inputs CASCADE")
+        database.execute("TRUNCATE analysis_export_pages,analysis_exports,accepted_heads,import_pages,import_cursors,provider_leases,outbox,comparisons,jobs,game_sources,games,snapshots,workspace_inputs CASCADE")
     workspace=uuid.uuid4().hex
     value=json.loads((FIXTURES/"snapshot.json").read_text())
     value["publication"]["workspace_id"]=workspace
@@ -65,6 +65,42 @@ def imported(state,source="miss"):
     game=store.import_pgn(workspace,"pgn",source,"Learner",(FIXTURES/(source+".pgn")).read_bytes())
     drain(store)
     return game
+
+
+def test_A_interrupted_export_resumes_frozen_input_after_game_revision_changes(state,tmp_path,monkeypatch):
+    from tempo_game_evidence import analysis_export
+    from tempo_game_evidence.analysis_schema import verify_directory
+    store,_,_ = state
+    snapshot=json.loads((FIXTURES/'bridge-snapshot-v2.json').read_text())
+    workspace=snapshot['publication']['workspace_id']
+    store.load_snapshot(snapshot)
+    game=store.import_pgn(workspace,'pgn','resume-game','Learner',b'[White "Learner"]\n[Black "Opponent"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 *')
+    drain(store)
+    output=tmp_path/'frozen-input'
+    original_write=analysis_export.write_exact
+    def interrupt(path,value):
+        if path.name.startswith('routes-'):
+            raise OSError('synthetic output interruption')
+        original_write(path,value)
+    with monkeypatch.context() as patch:
+        patch.setattr(analysis_export,'write_exact',interrupt)
+        with pytest.raises(OSError,match='synthetic output interruption'):
+            analysis_export.create_directory_export(store,workspace,[game],output)
+    assert not (output/'manifest.json').exists()
+    reserved=json.loads((output/'.tempo-analysis-export.json').read_text())
+    assert store.import_pgn(workspace,'pgn','resume-game','Learner',b'[White "Learner"]\n[Black "Opponent"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *')==game
+    drain(store)
+    resumed=analysis_export.create_directory_export(store,workspace,[game],output)
+    assert resumed['input_id']==reserved['input_id']
+    assert verify_directory(output)['status']=='verified'
+    current=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'current-input')
+    assert current['input_id']!=resumed['input_id']
+    with pytest.raises(ValueError,match='resume_scope_conflict'):
+        analysis_export.create_directory_export(store,'foreign-workspace',[game],output)
+    page=analysis_export.export_page(store,workspace,resumed['input_id'],'positions')
+    assert page['items'][0]['game_revision']==1
+    with pytest.raises(ValueError):
+        analysis_export.export_page(store,workspace,resumed['input_id'],'positions','{"page_index":1}')
 
 
 def ready_outbox(store):
