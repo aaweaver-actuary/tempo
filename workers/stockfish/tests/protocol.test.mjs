@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once, EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
-import { resources, fixture, job, cancellation, send, cancel, isResult, isStatus, isAck, waitFor } from './helpers.mjs';
+import { resources, fixture, trackedWorker, fakeChild, job, cancellation, send, cancel, isResult, isStatus, isAck, waitFor } from './helpers.mjs';
 import { serveProtocol, MAX_QUEUE_BYTES } from '../cli.mjs';
 import { StockfishWorker } from '../worker.mjs';
 
@@ -15,7 +15,7 @@ test('B_exact_replay', async t => {
 });
 test('B_payload_conflict', async t => {
   const fixtureState=await fixture(t); const input=job(); send(fixtureState.worker,input); await fixtureState.record(isResult());
-  send(fixtureState.worker,job({max_depth:5})); assert.equal(fixtureState.records.at(-1).payload.reason,'identity_payload_conflict');
+  rejectsWithoutExecutionFailure(fixtureState, () => send(fixtureState.worker,job({max_depth:5})), 'identity_payload_conflict');
   send(fixtureState.worker,{...job({job_id:'invalid'}), input_digest:'bad'}); assert.equal(fixtureState.records.at(-1).payload.reason,'input_digest_mismatch');
   assert.equal(fixtureState.worker.logicalRequests.size,1);
 });
@@ -27,7 +27,7 @@ test('B_stale_generation', async t => {
   fixtureState.worker.handleChildMessage(oldChild,{type:'result',token:active.token,variations:[]});
   await fixtureState.event(e=>e.event==='ready'&&e.pid!==oldChild.pid); await fixtureState.record(isStatus('running',2));
   assert.equal(fixtureState.records.some(isResult(1)),false);
-  send(fixtureState.worker,input); assert.equal(fixtureState.records.at(-1).payload.reason,'stale_generation');
+  rejectsWithoutExecutionFailure(fixtureState, () => send(fixtureState.worker,input), 'stale_generation');
   cancel(fixtureState.worker,cancellation({...input,execution_generation:2})); await fixtureState.record(isAck('terminated',2));
 });
 test('B_cancel_before_job', async t => {
@@ -57,12 +57,10 @@ test('B_cancel_complete_race', async t => {
 test('B_multiple_cancellation_ids', async t => {
   const fixtureState=await fixture(t); const input=job({max_nodes:999999}); send(fixtureState.worker,input); await fixtureState.record(isStatus('running'));
   for(let i=0;i<64;i++) cancel(fixtureState.worker,cancellation(input,{cancellation_id:'id-'+i}));
-  cancel(fixtureState.worker,cancellation(input,{cancellation_id:'excess'}));
-  assert.equal(fixtureState.records.at(-1).payload.reason,'cancellation_capacity_exhausted');
+  rejectsWithoutExecutionFailure(fixtureState, () => cancel(fixtureState.worker,cancellation(input,{cancellation_id:'excess'})), 'cancellation_capacity_exhausted');
   await fixtureState.record(r=>isAck('terminated')(r)&&r.payload.cancellation_id==='id-63');
   assert.equal(new Set(fixtureState.records.filter(isAck('terminated')).map(r=>r.payload.cancellation_id)).size,64);
-  cancel(fixtureState.worker,cancellation(job({job_id:'other'}),{cancellation_id:'id-0'}));
-  assert.equal(fixtureState.records.at(-1).payload.reason,'cancellation_id_conflict');
+  rejectsWithoutExecutionFailure(fixtureState, () => cancel(fixtureState.worker,cancellation(job({job_id:'other'}),{cancellation_id:'id-0'})), 'cancellation_id_conflict');
 });
 test('B_superseded_queued_work', async t => {
   const fixtureState=await fixture(t); const input=job({max_nodes:999999}); send(fixtureState.worker,input); await fixtureState.record(isStatus('running'));
@@ -144,8 +142,7 @@ test('unconfirmed owned termination rejects shutdown without a termination ackno
 });
 test('pre-job cancellation capacity exhaustion does not create authority or stop unrelated work',async t=>{
   const fixtureState=await fixture(t,{retentionLimitBytes:65536});
-  cancel(fixtureState.worker,cancellation(job()));
-  assert.equal(fixtureState.records.at(-1).payload.reason,'session_capacity_exhausted');
+  rejectsWithoutExecutionFailure(fixtureState, () => cancel(fixtureState.worker,cancellation(job())), 'session_capacity_exhausted');
   assert.equal(fixtureState.worker.logicalRequests.size,0);assert.equal(fixtureState.worker.executions.size,0);
 });
 
@@ -162,7 +159,192 @@ test('subscriber mutations cannot rewrite completed receipts or terminal statuse
 
 test('shutdown during asynchronous resource inspection cannot spawn a late child',async()=>{
   let spawned=0;
-  const worker=new StockfishWorker({resourceInspector:async()=>{await new Promise(resolve=>setTimeout(resolve,20));return resources;},childFactory:()=>{spawned++;throw Error('late child');}});
-  const startup=worker.start();await worker.close({drain:false});
+  let inspected, releaseInspection;
+  const inspectionStarted=new Promise(resolve=>{inspected=resolve;});
+  const inspectionPending=new Promise(resolve=>{releaseInspection=resolve;});
+  const worker=new StockfishWorker({resourceInspector:async()=>{inspected();await inspectionPending;return resources;},childFactory:()=>{spawned++;throw Error('late child');}});
+  const startup=worker.start();await inspectionStarted;await worker.close({drain:false});releaseInspection();
   await assert.rejects(startup,{code:'worker_shutting_down'});assert.equal(spawned,0);
+});
+
+test('B_start_reentrant_inspection_and_factory_share_initial_authority', { timeout: 10000 }, async t => {
+  let inspectionStart, factoryStart, factoryWarm;
+  const state = trackedWorker(t, {
+    resourceInspector: async () => { inspectionStart = state.worker.start(); return resources; },
+    childFactory: () => { factoryStart = state.worker.start(); factoryWarm = state.worker.prewarm(); return fakeChild(); },
+  });
+  const initial = state.worker.start(); await initial; await factoryWarm;
+  assert.equal(inspectionStart, initial); assert.equal(factoryStart, initial);
+  assert.equal(state.children.length, 1); assert.equal(state.worker.initialized, true);
+});
+
+test('B_start_during_initial_child_warmup_cannot_resurrect_shutdown', { timeout: 10000 }, async t => {
+  let announceSpawn;
+  const spawned = new Promise(resolve => { announceSpawn = resolve; });
+  const state = trackedWorker(t, { childFactory: () => { const child = fakeChild(100); announceSpawn(child); return child; } });
+  const initial = state.worker.start(); const observedFailure = assert.rejects(initial, { code: 'engine_loading_failed' });
+  const child = await spawned;
+  assert.equal(state.worker.start(), initial);
+  await state.worker.close({ drain: false }); await observedFailure;
+  assert.equal(state.children.length, 1); assert.equal(state.worker.closed, true);
+  assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+});
+
+test('B_repeated_start_preserves_active_child', async t => {
+  const state = await fixture(t);
+  const input = job({ max_nodes: 999999 });
+  send(state.worker, input); await state.record(isStatus('running'));
+  const active = state.worker.active, child = state.worker.child;
+  assert.doesNotThrow(() => process.kill(child.pid, 0));
+  await state.worker.start();
+  assert.equal(state.children.length, 1, 'repeated startup spawned a second owned engine');
+  assert.equal(state.worker.child, child); assert.equal(state.worker.active, active);
+  assert.deepEqual(active.record.job, input);
+  // Even the internal helper must never replace an initialized busy child.
+  await state.worker.prewarm(); assert.equal(state.children.length, 1);
+  cancel(state.worker, cancellation(input)); await state.record(isAck('terminated'));
+  assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+  await state.event(event => event.event === 'ready' && event.pid !== child.pid);
+  const next = job({ job_id: 'after-repeated-start' }); send(state.worker, next);
+  await state.record(record => isStatus('completed')(record) && record.payload.job_id === next.job_id);
+  assert.equal(state.records.filter(record => isResult()(record) && record.payload.job_id === next.job_id).length, 1);
+  await state.worker.close({ drain: false });
+  for (const owned of state.children) assert.throws(() => process.kill(owned.pid, 0), { code: 'ESRCH' });
+});
+
+test('B_concurrent_initial_start_and_idle_reentry', { timeout: 10000 }, async t => {
+  let inspections = 0;
+  const state = trackedWorker(t, { resourceInspector: async () => { inspections++; return resources; }, childFactory: () => fakeChild(30) });
+  const first = state.worker.start(), second = state.worker.start();
+  assert.equal(first, second, 'initial callers must share the complete startup operation');
+  const [one, two] = await Promise.all([first, second]); assert.deepEqual(one, two);
+  await state.worker.start();
+  assert.equal(inspections, 1); assert.equal(state.children.length, 1);
+  assert.equal(state.diagnostics.filter(event => event.event === 'ready').length, 1);
+});
+
+test('B_initial_start_failure_is_shared_and_cannot_retry_after_close', async t => {
+  let inspections = 0;
+  const state = trackedWorker(t, { resourceInspector: async () => {
+    inspections++; throw Object.assign(new Error('fixture resource failure'), { code: 'fixture_resource_failure' });
+  } });
+  const first = state.worker.start(), second = state.worker.start(); assert.equal(first, second);
+  await Promise.all([assert.rejects(first, { code: 'fixture_resource_failure' }), assert.rejects(second, { code: 'fixture_resource_failure' })]);
+  assert.equal(inspections, 1); assert.equal(state.children.length, 0); assert.equal(state.worker.closed, true);
+  await assert.rejects(state.worker.start(), { code: 'worker_shutting_down' });
+});
+
+test('B_start_during_cancellation_and_replacement', { timeout: 10000 }, async t => {
+  let replacementSpawned;
+  const replacement = new Promise(resolve => { replacementSpawned = resolve; });
+  let count = 0;
+  const state = await fixture(t, { childFactory: () => {
+    const child = fakeChild(count++ ? 100 : 0);
+    if (count === 2) replacementSpawned(child);
+    return child;
+  } });
+  const input = job({ max_nodes: 999999 }); send(state.worker, input); await state.record(isStatus('running'));
+  const active = state.worker.active, original = state.worker.child;
+  cancel(state.worker, cancellation(input));
+  const startup = state.worker.start();
+  assert.equal(state.worker.active, active); assert.equal(state.worker.child, original);
+  await startup; await state.record(isAck('terminated'));
+  const warming = await replacement;
+  assert.equal(state.worker.childReady, false);
+  await state.worker.start();
+  assert.equal(state.worker.child, warming); assert.equal(state.children.length, 2);
+  await state.event(event => event.event === 'ready' && event.pid === warming.pid);
+  assert.equal(state.diagnostics.filter(event => event.event === 'ready').length, 2);
+});
+
+test('B_start_during_shutdown_and_after_closed', async t => {
+  const state = await fixture(t);
+  const closing = state.worker.close({ drain: false });
+  await assert.rejects(state.worker.start(), { code: 'worker_shutting_down' });
+  await closing;
+  await assert.rejects(state.worker.start(), { code: 'worker_shutting_down' });
+  assert.equal(state.children.length, 1);
+});
+
+function rejectsWithoutExecutionFailure(state, action, reason) {
+  const before = state.records.length;
+  let rejection;
+  try { action(); } catch (error) { rejection = error; }
+  const emitted = state.records.slice(before);
+  assert.equal(emitted.some(record => record.model === 'JobStatus' && record.payload.status === 'failed'), false,
+    'command refusal emitted a false terminal execution status: ' + JSON.stringify(emitted));
+  assert.equal(rejection?.name, 'CommandRejection'); assert.equal(rejection.code, reason);
+  assert.equal(emitted.length, 0, 'refused commands must not fabricate receipts');
+}
+
+test('B_conflicting_duplicate_does_not_fail_active_execution', async t => {
+  const state = await fixture(t), input = job({ max_nodes: 999999 });
+  send(state.worker, input); await state.record(isStatus('running'));
+  const active = state.worker.active;
+  rejectsWithoutExecutionFailure(state, () => send(state.worker, job({ max_nodes: 999999, max_depth: 5 })), 'identity_payload_conflict');
+  assert.equal(state.worker.active, active); assert.deepEqual(active.record.job, input);
+  assert.equal(active.record.status.status, 'running');
+  cancel(state.worker, cancellation(input)); await state.record(isAck('terminated'));
+});
+
+test('B_conflicting_duplicate_preserves_completed_receipt', async t => {
+  const state = await fixture(t), input = job(); send(state.worker, input);
+  await state.record(isStatus('completed'));
+  const record = [...state.worker.executions.values()][0], bytes = JSON.stringify(record.result);
+  rejectsWithoutExecutionFailure(state, () => send(state.worker, job({ max_depth: 5 })), 'identity_payload_conflict');
+  assert.equal(JSON.stringify(record.result), bytes); assert.equal(record.status.status, 'completed');
+  send(state.worker, input);
+  assert.equal(JSON.stringify(state.records.filter(isResult()).at(-1).payload), bytes);
+});
+
+test('B_cancellation_identity_conflict_does_not_fail_target_execution', async t => {
+  const state = await fixture(t), input = job({ max_nodes: 999999 });
+  cancel(state.worker, cancellation(job({ job_id: 'future-target' }), { cancellation_id: 'bound-id' }));
+  send(state.worker, input); await state.record(isStatus('running'));
+  const active = state.worker.active;
+  rejectsWithoutExecutionFailure(state, () => cancel(state.worker, cancellation(input, { cancellation_id: 'bound-id' })), 'cancellation_id_conflict');
+  assert.equal(state.worker.active, active); assert.equal(active.stopping, null);
+  cancel(state.worker, cancellation(input)); await state.record(isAck('terminated'));
+});
+
+test('B_cancellation_capacity_refusal_is_not_execution_failure', async t => {
+  const state = await fixture(t), input = job({ max_nodes: 999999 });
+  send(state.worker, input); await state.record(isStatus('running'));
+  const record = state.worker.active.record;
+  for (let index = 0; index < 64; index++) cancel(state.worker, cancellation(input, { cancellation_id: 'retained-' + index }));
+  rejectsWithoutExecutionFailure(state, () => cancel(state.worker, cancellation(input, { cancellation_id: 'unretained' })), 'cancellation_capacity_exhausted');
+  assert.equal(record.cancellations.size, 64); assert.equal(record.cancellations.has('unretained'), false);
+  await state.record(value => isAck('terminated')(value) && value.payload.cancellation_id === 'retained-63');
+  assert.equal(state.records.some(value => value.model === 'CancellationAcknowledgement' && value.payload.cancellation_id === 'unretained'), false);
+});
+
+test('B_invalid_commands_and_shutdown_cannot_fail_accepted_receipts', async t => {
+  const state = await fixture(t), input = job({ max_nodes: 999999 });
+  send(state.worker, input); await state.record(isStatus('running'));
+  rejectsWithoutExecutionFailure(state, () => send(state.worker, { ...input, fen: 42 }), 'invalid_request');
+  rejectsWithoutExecutionFailure(state, () => cancel(state.worker, { ...cancellation(input), extra: true }), 'invalid_request');
+  state.worker.retentionLimitBytes = state.worker.retainedBytes;
+  rejectsWithoutExecutionFailure(state, () => cancel(state.worker, cancellation(input)), 'session_capacity_exhausted');
+  assert.equal(state.worker.active.stopping, null);
+  const closing = state.worker.close({ drain: false });
+  rejectsWithoutExecutionFailure(state, () => send(state.worker, input), 'worker_shutting_down');
+  await closing;
+});
+
+test('B_cli_command_rejection_fails_closed_without_false_receipts', async t => {
+  const state = await fixture(t), input = new PassThrough(), output = new PassThrough();
+  const lines = [], diagnostics = [];
+  output.on('data', chunk => lines.push(...chunk.toString().trim().split('\n').filter(Boolean).map(JSON.parse)));
+  const protocol = serveProtocol(state.worker, { input, output, diagnostic: event => diagnostics.push(event) });
+  const original = job({ max_nodes: 999999 });
+  input.write(JSON.stringify({ model: 'StockfishJob', payload: original }) + '\n');
+  await state.record(isStatus('running'));
+  input.write(JSON.stringify({ model: 'StockfishJob', payload: job({ max_nodes: 999999, max_depth: 5 }) }) + '\n');
+  const outcome = await Promise.race([protocol.done, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('rejection transport hung')), 3000); timer.unref(); })]);
+  assert.deepEqual(outcome, { success: false, reason: 'identity_payload_conflict' });
+  assert.equal(lines.some(value => value.model === 'JobStatus' && value.payload.status === 'failed'), false);
+  assert.equal(lines.some(value => value.model === 'CancellationAcknowledgement'), false);
+  assert.deepEqual(diagnostics, [{ event: 'protocol_error', reason: 'identity_payload_conflict' }]);
+  assert.equal(state.worker.closed, true);
+  for (const child of state.children) assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
 });

@@ -65,6 +65,13 @@ bound-only output and process failure have explicit failures.
 
 ## Identity and lifecycle
 
+`StockfishWorker.start()` shares one initial operation, including resource
+inspection, child initialization and identity capture. Successful startup is
+idempotent while idle, executing, cancelling or recovering; it neither reinspects
+resources nor emits another readiness event. It is not a fresh readiness probe
+during recovery. Closing/closed instances reject startup with
+`worker_shutting_down`. Only confirmed child exit permits an owned replacement.
+
 Workspace/job/request_revision binds all immutable contents. Execution generation
 identifies attempts. Invalid/conflicting/resource-invalid requests and speculative
 future cancellations cannot advance authority. A valid newer admitted attempt
@@ -182,12 +189,26 @@ cancellation_capacity_exhausted. Malformed/incomplete engine output is nonretrya
 an unexplained process exit is worker_crashed, not an invented OOM diagnosis.
 Startup/asset/runtime failures prevent readiness and use explicit diagnostics.
 
-A refusal status rejects the received request; it does not rewrite a retained
-accepted receipt. Cancellation refusal reasons must not overwrite a completed
-execution in C. An excess cancellation ID receives no requested/final ack and is
-not retained. Cancellation IDs are bound within a workspace to their full target;
-reuse for another target is cancellation_id_conflict. A final failed/cancelled
-attempt cannot be revived in the same generation.
+A new unaccepted job attempt can receive a failed refusal status. A refused
+command addressing an already accepted execution instead throws a component-local
+`CommandRejection` with a stable `code` and `retryable` flag; it emits no execution
+status and leaves retained request/result/status bytes intact. This includes
+malformed/conflicting duplicates, stale accepted generations and late shutdown
+commands. Refused cancellation commands use the same exception, including
+identity/capacity/schema failures. No refused cancellation receives an acknowledgement
+or becomes retained. Cancellation IDs remain workspace-scoped and bound to their
+full target; the per-target limit remains 64.
+
+In `serve`, these exceptions close the transport with exit status 1 after owned
+child termination. A sanitized diagnostic preserves the reason where delivery is
+possible; transport loss is the reliable refusal signal. The installed Python
+client raises `WorkerSessionLost` without inventing JobStatus or cancellation
+acknowledgements. The session's outcome is unknown: C must fence its old session
+and advance execution generation before retrying. This can interrupt healthy work
+after a bad command; v1 has no command-correlated rejection envelope. Direct
+in-process callers may catch the exception and continue using truthful retained
+receipts. Genuine accepted execution failures still emit their terminal statuses.
+A final failed/cancelled attempt cannot be revived in the same generation.
 
 The initial enforced platform uses Linux cgroup v2: exactly 512 MiB, finite <=1 CPU,
 zero swap. RSS/peak readings are observations, not the memory enforcement mechanism.
@@ -221,3 +242,34 @@ implicitly. No C configuration file or database/provider credential is required.
 The named `test_B_client_environment_isolation` uses synthetic secret canaries;
 it never reads real provider credentials. Callers using the earlier interface
 wheel should reinstall the final wheel before passing `env=`.
+
+## Repair test inputs and installed transport fixture
+
+Every pure/protocol invocation validates all eight external inputs against the
+current manifest in a private temporary component/repository copy. Existing ignored
+schemas/assets are neither trusted nor rewritten. Artifact tests consume the same
+verified source closure; parallel runs own separate copies. A mismatch fails before
+tests launch. Filtered file-wrapper events do not count as executed cases, and empty,
+failed, cancelled, skipped or TODO selections cannot report success.
+
+Restricted qualification automatically supplies an installed runtime to the
+independent Python transport tests. For direct Python tests or the registered
+component dispatcher, additionally prepare a task-owned installed runtime:
+
+```sh
+node workers/stockfish/build.mjs --out /tmp/tempo-stockfish-proof/artifacts
+mkdir -p /tmp/tempo-stockfish-proof/runtime
+tar -xzf /tmp/tempo-stockfish-proof/artifacts/tempo-stockfish-worker-1.0.0.tgz --strip-components=1 -C /tmp/tempo-stockfish-proof/runtime
+npm ci --prefix /tmp/tempo-stockfish-proof/runtime --ignore-scripts --omit=dev --workspaces=false
+export TEMPO_STOCKFISH_TEST_RUNTIME=/tmp/tempo-stockfish-proof/runtime
+export TEMPO_STOCKFISH_TEST_NODE="$(command -v node)"
+node tools/component-build/test-lane.mjs --component stockfish
+```
+
+The installed-client transport fixture uses a deterministic child and the installed
+supervisor/NDJSON implementation; it is labeled fixture evidence. Container
+qualification separately exercises repeated startup with actual Stockfish CPU
+activity and all four rejection/session-loss scenarios against the real engine.
+Rejected-command exchanges remain separately labeled because they intentionally
+contain conflicting command payloads; ordinary successful exchanges remain legal
+immutable request/result evidence. Shared schemas and Python client code stay v1.

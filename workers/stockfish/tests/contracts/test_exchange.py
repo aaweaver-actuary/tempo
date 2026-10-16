@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import os
 from pathlib import Path
 import sys
 import pytest
@@ -39,6 +40,79 @@ def test_client_reports_loss_and_does_not_retry():
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('refusal', ['active_conflict', 'completed_conflict', 'cancellation_conflict', 'cancellation_capacity'])
+def test_B_installed_client_command_rejection_is_typed_session_loss(refusal):
+    runtime = Path(os.environ['TEMPO_STOCKFISH_TEST_RUNTIME'])
+    node = os.environ['TEMPO_STOCKFISH_TEST_NODE']
+    payload = json.loads((ROOT / 'fixtures/synthetic/job.json').read_text())['payload']
+    payload.update(max_depth=4, max_nodes=100000 if refusal == 'completed_conflict' else 999999, search_moves=[], multi_pv=1)
+    payload['input_digest'] = stockfish_input_digest(payload)
+    original = v1.StockfishJob.model_validate(payload)
+    command = [node, str(ROOT / 'tests/contracts/rejection_server.mjs'), str(runtime), original.engine_version]
+
+    async def scenario():
+        records = []
+        changed = asyncio.Event()
+        async with StockfishClient(command) as client:
+            async def collect():
+                try:
+                    async for value in client.records():
+                        records.append(value); changed.set()
+                except WorkerSessionLost as error:
+                    changed.set()
+                    return error
+            collector = asyncio.create_task(collect())
+            async def until(predicate):
+                while not any(predicate(value) for value in records):
+                    changed.clear()
+                    if collector.done():
+                        raise AssertionError('session ended before expected receipt')
+                    await changed.wait()
+            await client.send_job(original)
+            await until(lambda value: isinstance(value, v1.JobStatus) and value.status == ('completed' if refusal == 'completed_conflict' else 'running'))
+            if refusal.endswith('conflict') and refusal != 'cancellation_conflict':
+                conflict = original.model_dump(); conflict['max_depth'] = 5
+                conflict['input_digest'] = stockfish_input_digest(conflict)
+                await client.send_job(v1.StockfishJob.model_validate(conflict))
+                reason = 'identity_payload_conflict'
+            else:
+                fields = {key: payload[key] for key in ('contract_version','workspace_id','job_id','request_revision','execution_generation')}
+                if refusal == 'cancellation_conflict':
+                    bound = v1.CancellationRequest(**{**fields, 'job_id': 'future-target'}, cancellation_id='bound-id')
+                    await client.send_cancellation(bound)
+                    await until(lambda value: isinstance(value, v1.CancellationAcknowledgement) and value.cancellation_id == 'bound-id')
+                    await client.send_cancellation(v1.CancellationRequest(**fields, cancellation_id='bound-id'))
+                    reason = 'cancellation_id_conflict'
+                else:
+                    for index in range(64):
+                        await client.send_cancellation(v1.CancellationRequest(**fields, cancellation_id=f'retained-{index}'))
+                    await client.send_cancellation(v1.CancellationRequest(**fields, cancellation_id='unretained'))
+                    reason = 'cancellation_capacity_exhausted'
+            assert isinstance(await collector, WorkerSessionLost)
+            await asyncio.wait_for(client.process.wait(), 3)
+            assert client.process.returncode == 1
+            assert not any(isinstance(value, v1.JobStatus) and value.status == 'failed' for value in records)
+            assert not any(isinstance(value, v1.CancellationAcknowledgement) and value.cancellation_id == 'unretained' for value in records)
+            assert any(event.get('reason') == reason for event in client.diagnostics)
+            assert 'synthetic-secret-canary' not in json.dumps(list(client.diagnostics))
+        # A new session receives only the explicitly advanced generation.
+        async with StockfishClient(command) as restarted:
+            retry = original.model_copy(update={'execution_generation': 2})
+            await restarted.send_job(retry)
+            async for value in restarted.records():
+                assert value.execution_generation == 2
+                if isinstance(value, v1.JobStatus) and value.status == 'running':
+                    break
+            await restarted.send_cancellation(v1.CancellationRequest(
+                contract_version=1, workspace_id=retry.workspace_id, job_id=retry.job_id,
+                request_revision=retry.request_revision, execution_generation=2, cancellation_id='retry-cancel'))
+            async for value in restarted.records():
+                assert value.execution_generation == 2
+                if isinstance(value, v1.CancellationAcknowledgement) and value.status in {'terminated', 'already_completed'}:
+                    break
+    asyncio.run(asyncio.wait_for(scenario(), 10))
+
+
 def test_synthetic_examples_validate_without_becoming_actual_evidence():
     for file in (ROOT / "fixtures/synthetic").glob("*.json"):
         record = json.loads(file.read_text())
@@ -53,7 +127,7 @@ def _consumer():
     return module
 
 
-@pytest.mark.parametrize("fixture_directory", ["observed", "qualified"])
+@pytest.mark.parametrize("fixture_directory", ["observed", "qualified", "repaired"])
 def test_B_installed_consumer(fixture_directory):
     exchange = json.loads((ROOT / "fixtures" / fixture_directory / "exchange.json").read_text())
     result = _consumer().consume(exchange)
@@ -74,6 +148,16 @@ def test_independent_consumer_rejects_illegal_pv_and_cancellation_identity():
     acknowledgement["payload"]["execution_generation"] += 1
     with pytest.raises(AssertionError):
         _consumer().consume(invalid_ack)
+
+
+def test_B_independent_consumer_rejects_false_terminal_execution_status():
+    exchange = json.loads((ROOT / 'fixtures/repaired/exchange.json').read_text())
+    index = next(index for index, record in enumerate(exchange['records']) if record['model'] == 'StockfishResult')
+    result = exchange['records'][index]['payload']
+    fields = {key:result[key] for key in ('contract_version','workspace_id','job_id','request_revision','execution_generation')}
+    exchange['records'].insert(index+1, {'model':'JobStatus','payload':{**fields,'status':'failed','retryable':False,'reason':'identity_payload_conflict'}})
+    with pytest.raises(AssertionError, match='failed/cancelled status after an accepted result'):
+        _consumer().consume(exchange)
 
 
 def test_startup_timeout_is_typed_session_loss_and_reaps_its_launcher():

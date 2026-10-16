@@ -232,6 +232,88 @@ class Qualification:
         self.measurements.append({"kind":"serial_benchmark","cold_initialization_ms":cold,"searches":searches,"cancellations":cancellations,"memory_peak_bytes":peaks,"exit_statuses":exits,"sample_scope":"five isolated cold sessions, twenty depth-12 searches, five observed in-flight cancellations; no universal SLO"})
         self.passed("serial_benchmark", cold_starts=5,searches=20,cancellations=5)
 
+    async def installed_lifecycle(self):
+        name, _ = self.command()
+        harness = (ROOT / 'tests/fixtures/installed-lifecycle.mjs').read_text()
+        template = json.loads((ROOT / 'fixtures/synthetic/job.json').read_text())['payload']
+        arguments = ['run', '--pull=never', '--rm', '--name', name, '--label', f'tempo.task={TASK}',
+                     '--label', f'tempo.run={self.run_id}', '--network=none', '--cpus=1', '--memory=512m',
+                     '--memory-swap=512m', '--pids-limit=64', '--read-only', '--entrypoint', 'node', self.image,
+                     '--input-type=module', '-e', harness, json.dumps(template)]
+        observed = json.loads((await asyncio.to_thread(docker, *arguments, timeout=55)).stdout)
+        assert observed['success'] and len(observed['children']) == observed['ready_events'] == 2
+        self.records.extend(observed.pop('records'))
+        self.passed('B_installed_repeated_start_preserves_active_child', **observed)
+
+    async def rejection_sessions(self):
+        self.rejection_exchanges = []
+        for refusal in ('active_conflict', 'completed_conflict', 'cancellation_conflict', 'cancellation_capacity'):
+            name, command = self.command()
+            exchange = {'case': refusal, 'records': []}
+            async with self.client(command) as client:
+                job = self.job(client, max_depth=4 if refusal == 'completed_conflict' else 128,
+                               max_nodes=None, multi_pv=1, constraints={'max_wall_time_ms':10000,'max_memory_mb':512})
+                received = []; changed = asyncio.Event()
+                async def collect():
+                    try:
+                        async for value in client.records():
+                            received.append(value)
+                            exchange['records'].append({'model': type(value).__name__, 'payload': value.model_dump(mode='json')})
+                            changed.set()
+                    except WorkerSessionLost as error:
+                        changed.set(); return error
+                collector = asyncio.create_task(collect())
+                async def until(predicate):
+                    while not any(predicate(value) for value in received):
+                        changed.clear()
+                        assert not collector.done(), 'session ended before required receipt'
+                        await changed.wait()
+                async def send_job(value):
+                    exchange['records'].append({'model':'StockfishJob','payload':value.model_dump(mode='json')})
+                    await client.send_job(value)
+                async def cancel(value):
+                    exchange['records'].append({'model':'CancellationRequest','payload':value.model_dump(mode='json')})
+                    await client.send_cancellation(value)
+                await send_job(job)
+                target_status = 'completed' if refusal == 'completed_conflict' else 'running'
+                await asyncio.wait_for(until(lambda value:isinstance(value,v1.JobStatus) and value.status==target_status), 15)
+                if refusal in ('active_conflict', 'completed_conflict'):
+                    conflict = job.model_dump(); conflict['max_depth'] = 5 if refusal == 'completed_conflict' else 127
+                    conflict['input_digest'] = stockfish_input_digest(conflict)
+                    await send_job(v1.StockfishJob.model_validate(conflict)); reason = 'identity_payload_conflict'
+                else:
+                    fields = {key:getattr(job,key) for key in ('contract_version','workspace_id','job_id','request_revision','execution_generation')}
+                    if refusal == 'cancellation_conflict':
+                        await cancel(v1.CancellationRequest(**{**fields,'job_id':'future-'+job.job_id}, cancellation_id='bound-id'))
+                        await asyncio.wait_for(until(lambda value:isinstance(value,v1.CancellationAcknowledgement)), 5)
+                        await cancel(v1.CancellationRequest(**fields,cancellation_id='bound-id')); reason='cancellation_id_conflict'
+                    else:
+                        for index in range(64):
+                            await cancel(v1.CancellationRequest(**fields,cancellation_id=f'retained-{index}'))
+                        await cancel(v1.CancellationRequest(**fields,cancellation_id='unretained')); reason='cancellation_capacity_exhausted'
+                assert isinstance(await asyncio.wait_for(collector, 5), WorkerSessionLost)
+                await asyncio.wait_for(client.process.wait(), 5)
+                assert client.process.returncode == 1
+                assert not any(isinstance(value,v1.JobStatus) and value.status=='failed' for value in received)
+                assert not any(isinstance(value,v1.CancellationAcknowledgement) and value.cancellation_id=='unretained' for value in received)
+                assert any(event.get('reason')==reason for event in client.diagnostics)
+                exchange.update(reason=reason, exit_status=client.process.returncode, session_lost=True,
+                                diagnostics=list(client.diagnostics))
+            # Retry authority is explicit, never inferred from a lost session.
+            retry_name, retry_command = self.command()
+            async with self.client(retry_command) as restarted:
+                retry = job.model_copy(update={'execution_generation':job.execution_generation+1})
+                await self.send(restarted,retry)
+                if refusal == 'completed_conflict':
+                    await self.result(restarted,retry)
+                else:
+                    await self.until(restarted,lambda value:isinstance(value,v1.JobStatus) and value.status=='running')
+                    await self.cancel_active(restarted,retry_name,retry)
+            assert restarted.process.returncode == 0
+            self.rejection_exchanges.append(exchange)
+            self.passed('B_actual_command_rejection_'+refusal, reason=reason, session_lost=True,
+                        failed_session_exit=1, retry_generation=retry.execution_generation, retry_exit=0)
+
     async def slow_consumer(self):
         # Put the unread pipe beside the server; Docker attach buffering cannot hide it.
         name,command=self.command()
@@ -338,6 +420,8 @@ async def run(arguments):
         if arguments.benchmark: await qualifier.benchmark()
         else:
             await qualifier.acceptance()
+            await qualifier.installed_lifecycle()
+            await qualifier.rejection_sessions()
             await qualifier.slow_consumer()
             await qualifier.signal_shutdown()
         exchange={"scope":"actual installed Stockfish output","records":qualifier.records}
@@ -361,6 +445,7 @@ async def run(arguments):
         report["last_diagnostics"]=list(getattr(getattr(qualifier,"current_client",None),"diagnostics",[]))
         report["slow_consumer"]=getattr(qualifier,"last_slow_consumer",None)
         report["cases"]=qualifier.cases;report["measurements"]=qualifier.measurements
+        report['rejection_exchanges']=getattr(qualifier,'rejection_exchanges',[])
         report["identity"]=getattr(qualifier,"last_identity",None)
         Path(arguments.report).parent.mkdir(parents=True,exist_ok=True)
         Path(arguments.report).write_text(json.dumps(report,indent=2)+"\n")

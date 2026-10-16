@@ -5,7 +5,7 @@ import { canonicalJson } from '../../wire.mjs';
 import { prepareJob } from '../../core.mjs';
 const descriptor = JSON.parse(readFileSync(new URL('../../engine-descriptor.json', import.meta.url)));
 const identity = { engine_version: 'stockfish-19-smallnet:sha256:' + createHash('sha256').update(canonicalJson(descriptor)).digest('hex'), runtime_name: 'fixture', runtime_version: '1', implementation_version: 'fixture-only' };
-process.send({ type: 'ready', identity });
+setTimeout(() => process.send({ type: 'ready', identity }), Number(process.argv[2] ?? 0));
 process.on('disconnect', () => process.exit(0));
 process.on('message', message => {
   if (message.type !== 'search') return;

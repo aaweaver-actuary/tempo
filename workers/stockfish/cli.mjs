@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { StockfishWorker } from './worker.mjs';
+import { StockfishWorker, CommandRejection } from './worker.mjs';
 import { inspectEngine } from './engine.mjs';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
@@ -44,7 +44,7 @@ export function serveProtocol(worker, { input, output, diagnostic = () => {}, ou
       try { record = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)); }
       catch { protocolFailure('invalid_record'); return; }
       try { worker.receive(record); }
-      catch { protocolFailure('invalid_record'); return; }
+      catch (error) { protocolFailure(error instanceof CommandRejection ? error.code : 'invalid_record'); return; }
     } finally { processing = false; }
     if (!finished && !blocked && (buffer.length || inputEnded)) setImmediate(processBuffered);
   };

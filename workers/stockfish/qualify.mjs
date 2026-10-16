@@ -100,7 +100,8 @@ export async function qualifyRestricted({ reportPath, artifactsDirectory }) {
       await cp(join(componentRoot, 'tests/contracts'), join(tests, 'tests/contracts'), { recursive: true });
       await cp(join(componentRoot, 'fixtures'), join(tests, 'fixtures'), { recursive: true });
       const junit = join(temporary, 'client-' + version + '.xml');
-      const output = execute(interpreter, ['-I', '-m', 'pytest', join(tests, 'tests/contracts/test_exchange.py'), '--import-mode=importlib', '-q', '--junitxml=' + junit], temporary);
+      const output = execute(interpreter, ['-I', '-m', 'pytest', join(tests, 'tests/contracts/test_exchange.py'), '--import-mode=importlib', '-q', '--junitxml=' + junit], temporary, 0,
+        { TEMPO_STOCKFISH_TEST_RUNTIME: runtime, TEMPO_STOCKFISH_TEST_NODE: process.execPath });
       const cases = JSON.parse(execute(interpreter, ['-I', '-c', 'import json,sys,xml.etree.ElementTree as E; root=E.parse(sys.argv[1]).getroot(); print(json.dumps([{**case.attrib,"failed":case.find("failure") is not None or case.find("error") is not None,"skipped":case.find("skipped") is not None} for case in root.iter("testcase")]))', junit], temporary));
       if (!cases.length || cases.some(item => item.failed || item.skipped)) throw new Error('Installed Python suite lacks complete passing case evidence');
       (report.pythonSuites ??= []).push({ version, output: output.trim(), cases });

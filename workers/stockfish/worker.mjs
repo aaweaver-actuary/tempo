@@ -15,6 +15,14 @@ function productionChild() {
 }
 function errorCode(error, fallback) { return typeof error?.code === 'string' && error.code.length > 0 && error.code.length <= 200 ? error.code : fallback; }
 
+// Component-local command error, deliberately not a shared execution record.
+export class CommandRejection extends Error {
+  constructor(code, retryable = false) {
+    super('Worker command rejected: ' + code);
+    this.name = 'CommandRejection'; this.code = code; this.retryable = retryable;
+  }
+}
+
 /** One prewarmed execution process; bounded process-local receipts, no durable queue. */
 export class StockfishWorker extends EventEmitter {
   constructor({ childFactory = productionChild, resourceInspector = inspectResources, recordLimit = SESSION_RECORD_LIMIT, startupTimeoutMs = 30000, retentionLimitBytes = 64 * 1024 * 1024, terminationTimeoutMs = 2000 } = {}) {
@@ -39,23 +47,36 @@ export class StockfishWorker extends EventEmitter {
     this.interrupting = false;
     this.closed = false;
     this.spawnPromise = null;
+    this.initialStartPromise = null;
+    this.initialized = false;
     this.closePromise = null;
   }
 
-  async start() {
-    if (this.closing) throw new Error('Worker is closing');
-    this.resources = validateResourceBudget(null, await this.resourceInspector());
-    if (this.closing || this.closed) throw Object.assign(new Error('Worker shut down during resource inspection'), { code: 'worker_shutting_down' });
-    try { await this.prewarm(); if (this.closing || this.closed) throw Object.assign(new Error('Worker shut down during initialization'), { code: 'worker_shutting_down' }); }
-    catch (error) { await this.close({ drain: false }); throw error; }
-    return { identity: this.identity, resources: this.resources };
+  start() {
+    if (this.closing || this.closed) return Promise.reject(new CommandRejection('worker_shutting_down'));
+    // Publish the promise before invoking user-supplied inspection or child factories.
+    // Retain successful startup independently of whether its child is idle or busy.
+    this.initialStartPromise ??= Promise.resolve().then(async () => {
+      try {
+        if (this.closing || this.closed) throw new CommandRejection('worker_shutting_down');
+        this.resources = validateResourceBudget(null, await this.resourceInspector());
+        if (this.closing || this.closed) throw new CommandRejection('worker_shutting_down');
+        await this.prewarm();
+        if (this.closing || this.closed) throw new CommandRejection('worker_shutting_down');
+        this.initialized = true;
+        return { identity: this.identity, resources: this.resources };
+      } catch (error) { await this.close({ drain: false }); throw error; }
+    });
+    return this.initialStartPromise;
   }
 
   prewarm() {
-    if (this.interrupting || this.closed) return Promise.reject(Object.assign(new Error('Worker is stopping'), { code: 'worker_shutting_down' }));
-    if (this.childReady) return Promise.resolve();
+    if (this.interrupting || this.closed || (this.closing && !this.replacement)) return Promise.reject(new CommandRejection('worker_shutting_down'));
     if (this.spawnPromise) return this.spawnPromise;
-    this.spawnPromise = new Promise((resolve, reject) => {
+    if (this.child) return this.child.stockfishInitialized ? Promise.resolve() : Promise.reject(new CommandRejection('child_already_owned'));
+    this.spawnPromise = Promise.resolve().then(() => new Promise((resolve, reject) => {
+      if (this.interrupting || this.closed || (this.closing && !this.replacement)) { reject(new CommandRejection('worker_shutting_down')); return; }
+      if (this.child) { reject(new CommandRejection('child_already_owned')); return; }
       let settled = false;
       const startupStarted = performance.now();
       const child = this.childFactory();
@@ -100,7 +121,7 @@ export class StockfishWorker extends EventEmitter {
         if (!settled) { settled = true; reject(Object.assign(new Error(`Engine process exited during initialization (${code ?? signal})`), { code: 'engine_loading_failed' })); }
         this.onChildExit(child, code, signal);
       });
-    }).finally(() => { this.spawnPromise = null; });
+    })).finally(() => { this.spawnPromise = null; });
     return this.spawnPromise;
   }
 
@@ -146,11 +167,11 @@ export class StockfishWorker extends EventEmitter {
 
   rememberCancellation(record, request, reserved = false) {
     record.cancellations ??= new Map();
-    if (!record.cancellations.has(request.cancellation_id) && record.cancellations.size >= CANCELLATION_RECORD_LIMIT) { this.rejectJob(request, 'cancellation_capacity_exhausted', true); return false; }
+    if (!record.cancellations.has(request.cancellation_id) && record.cancellations.size >= CANCELLATION_RECORD_LIMIT) throw new CommandRejection('cancellation_capacity_exhausted', true);
     const cancellationKey = JSON.stringify([request.workspace_id, request.cancellation_id]);
     const target = executionKey(request);
-    if (this.cancellationIdentities.has(cancellationKey) && this.cancellationIdentities.get(cancellationKey) !== target) { this.rejectJob(request, 'cancellation_id_conflict'); return false; }
-    if (!record.cancellations.has(request.cancellation_id) && !reserved && !this.reserve(record, 8192)) { this.rejectJob(request, 'session_capacity_exhausted', true); return false; }
+    if (this.cancellationIdentities.has(cancellationKey) && this.cancellationIdentities.get(cancellationKey) !== target) throw new CommandRejection('cancellation_id_conflict');
+    if (!record.cancellations.has(request.cancellation_id) && !reserved && !this.reserve(record, 8192)) throw new CommandRejection('session_capacity_exhausted', true);
     this.cancellationIdentities.set(cancellationKey, target);
     record.cancellations.set(request.cancellation_id, request);
     record.cancellation ??= request;
@@ -203,23 +224,29 @@ export class StockfishWorker extends EventEmitter {
   }
 
   rejectJob(job, reason, retryable = false) {
+    if (this.executions.get(executionKey(job))?.job) throw new CommandRejection(reason, retryable);
     this.emitRecord('JobStatus', { ...identityOf(job), status: 'failed', retryable, reason });
   }
 
   receive(input) {
     try { validateRecord(input, { input: true }); }
     catch (error) {
+      if (input?.model === 'CancellationRequest') throw new CommandRejection(errorCode(error, 'invalid_request'));
       const identity = input?.payload && identityOf(input.payload);
       try {
         validatePayload('JobStatus', { ...identity, status: 'failed', retryable: false, reason: errorCode(error, 'invalid_request') });
-        this.rejectJob(identity, errorCode(error, 'invalid_request'));
       } catch {
         this.emit('diagnostic', { event: 'protocol_error', reason: errorCode(error, 'invalid_request'), message: error.message });
         throw error;
       }
+      // A typed refusal must escape rather than be caught as schema validation.
+      this.rejectJob(identity, errorCode(error, 'invalid_request'));
       return;
     }
-    if (this.closing) { this.rejectJob(input.payload, 'worker_shutting_down', true); return; }
+    if (this.closing) {
+      if (input.model === 'CancellationRequest') throw new CommandRejection('worker_shutting_down', true);
+      this.rejectJob(input.payload, 'worker_shutting_down', true); return;
+    }
     if (input.model === 'StockfishJob') this.receiveJob(structuredClone(input.payload));
     else this.receiveCancellation(structuredClone(input.payload));
   }
@@ -312,12 +339,12 @@ export class StockfishWorker extends EventEmitter {
     const key = logicalKey(request), generationKey = executionKey(request);
     const logical = this.logicalRequests.get(key);
     const cancellationKey = JSON.stringify([request.workspace_id, request.cancellation_id]);
-    if (this.cancellationIdentities.has(cancellationKey) && this.cancellationIdentities.get(cancellationKey) !== generationKey) { this.rejectJob(request, 'cancellation_id_conflict'); return; }
+    if (this.cancellationIdentities.has(cancellationKey) && this.cancellationIdentities.get(cancellationKey) !== generationKey) throw new CommandRejection('cancellation_id_conflict');
     let record = this.executions.get(generationKey);
     if (!record) {
-      if (this.executions.size >= this.recordLimit) { this.rejectJob(request, 'session_capacity_exhausted', true); return; }
+      if (this.executions.size >= this.recordLimit) throw new CommandRejection('session_capacity_exhausted', true);
       record = { identity: identityOf(request), job: null, status: null, result: null, cancellation: null };
-      if (!this.reserve(record, 65536 + 8192)) { this.rejectJob(request, 'session_capacity_exhausted', true); return; }
+      if (!this.reserve(record, 65536 + 8192)) throw new CommandRejection('session_capacity_exhausted', true);
       this.executions.set(generationKey, record);
       if (!this.rememberCancellation(record, request, true)) return;
       if (logical && request.execution_generation < logical.highestGeneration) { this.settleCancellations(record, 'stale_generation'); this.acknowledge(request, 'stale_generation'); }

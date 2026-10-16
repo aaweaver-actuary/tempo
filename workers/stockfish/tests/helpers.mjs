@@ -19,10 +19,29 @@ export function waitFor(worker, collection, predicate, event = 'record', timeout
     worker.on(event, listener);
   });
 }
-export async function fixture(t, options = {}) {
-  const worker = new StockfishWorker({ childFactory: () => fork(new URL('./fixtures/fake-child.mjs', import.meta.url), [], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }), resourceInspector: async () => resources, ...options });
+export function trackedWorker(t, options = {}) {
+  const children = [];
+  const { childFactory = () => fakeChild(), ...settings } = options;
+  const worker = new StockfishWorker({ resourceInspector: async () => resources, ...settings, childFactory: () => {
+    const child = childFactory(); children.push(child); return child;
+  } });
   const records = [], diagnostics = [];
   worker.on('record', record => records.push(record)); worker.on('diagnostic', value => diagnostics.push(value));
-  t.after(() => worker.close({ drain: false })); await worker.start();
-  return { worker, records, diagnostics, record: predicate => waitFor(worker, records, predicate), event: predicate => waitFor(worker, diagnostics, predicate, 'diagnostic') };
+  t.after(async () => {
+    try { await worker.close({ drain: false }); }
+    finally {
+      // Independently retain every child: the repeated-start baseline can orphan one.
+      await Promise.all(children.map(child => child.exitCode !== null || child.signalCode !== null ? undefined : new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Fixture child did not exit: ' + child.pid)), 2000);
+        child.once('exit', () => { clearTimeout(timer); resolve(); }); child.kill('SIGKILL');
+      })));
+    }
+  });
+  return { worker, children, records, diagnostics, record: predicate => waitFor(worker, records, predicate), event: predicate => waitFor(worker, diagnostics, predicate, 'diagnostic') };
+}
+export function fakeChild(readyDelayMs = 0) {
+  return fork(new URL('./fixtures/fake-child.mjs', import.meta.url), [String(readyDelayMs)], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'], execArgv: [] });
+}
+export async function fixture(t, options = {}) {
+  const state = trackedWorker(t, options); await state.worker.start(); return state;
 }

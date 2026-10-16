@@ -13,6 +13,7 @@ def consume(exchange):
     accepted = {}
     cancellations = {}
     terminated = set()
+    terminal_statuses = {}
     counts = {"results": 0, "statuses": 0, "acknowledgements": 0}
     for record in exchange["records"]:
         model = getattr(v1, record["model"])
@@ -27,6 +28,7 @@ def consume(exchange):
             jobs[key] = payload
         elif isinstance(payload, v1.StockfishResult):
             assert key not in terminated
+            assert terminal_statuses.get(key, 'completed') == 'completed'
             job = jobs[key]
             assert payload.engine_version == job.engine_version
             assert payload.provenance.input_digest == job.input_digest
@@ -55,6 +57,14 @@ def consume(exchange):
             accepted[key] = canonical
             counts["results"] += 1
         elif isinstance(payload, v1.JobStatus):
+            if key in terminal_statuses:
+                assert payload.status == terminal_statuses[key], 'contradictory terminal execution status'
+            if payload.status in {'completed', 'failed', 'cancelled'}:
+                terminal_statuses[key] = payload.status
+                if payload.status == 'completed':
+                    assert key in accepted
+                else:
+                    assert key not in accepted, 'failed/cancelled status after an accepted result'
             counts["statuses"] += 1
         elif type(payload) is v1.CancellationRequest:
             identity = (payload.workspace_id, payload.cancellation_id)

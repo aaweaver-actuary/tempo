@@ -448,7 +448,10 @@
             "child.mjs",
             "cli.mjs",
             "wire.mjs",
-            "core.mjs"
+            "core.mjs",
+            "build.mjs",
+            "build-inputs.json",
+            "engine-descriptor.json"
           ]
         },
         {
@@ -458,7 +461,15 @@
           "inputs": [
             "tests/contracts",
             "fixtures",
-            "python"
+            "python",
+            "worker.mjs",
+            "cli.mjs",
+            "core.mjs",
+            "wire.mjs",
+            "build.mjs",
+            "build-inputs.json",
+            "package.json",
+            "package-lock.json"
           ]
         },
         {
@@ -487,7 +498,8 @@
             "index.d.ts",
             "core.mjs",
             "python",
-            "licenses"
+            "licenses",
+            "tests/fixtures"
           ]
         }
       ],
