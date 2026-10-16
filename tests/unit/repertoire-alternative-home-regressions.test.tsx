@@ -159,6 +159,10 @@ async function readyHome() {
 }
 async function play(uci: string) {
   await act(async () => useBoardShellStore.getState().board.onMove?.(uci.slice(0, 2) as Square, uci.slice(2, 4) as Square));
+  // The board callback starts durable failure persistence without returning it.
+  // Finish that write before the fixture closes its store and the next case opens one.
+  if (useTrainingStore.getState().isAttemptFailed && useTrainingStore.getState().isDatabaseQueueActive)
+    await waitFor(async () => expect((await (await studyIntentStore()).list("failure")).length).toBeGreaterThan(0));
 }
 async function finishPreparation(count: number) {
   const prepare = vi.mocked(study.runStudyTask);
