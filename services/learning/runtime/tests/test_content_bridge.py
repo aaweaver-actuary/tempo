@@ -470,3 +470,30 @@ def test_A_publication_transport_key_cannot_bypass_fenced_identity(case, retirem
     response = case.client.post(path, json=request, headers={'Authorization': 'Bearer ' + case.configuration.operator_token, 'Idempotency-Key': uuid.uuid4().hex})
     assert response.status_code == 422
     assert case.query('SELECT count(*) FROM learning.operation_receipts')[0][0] == 1
+
+
+def test_A_publication_fence_measured_under_existing_budgets(case, monkeypatch):
+    from contextlib import contextmanager
+    from tempo_learning_runtime import gateway
+    timings = []
+    original_connection = gateway.connection
+    @contextmanager
+    def measured_connection(**options):
+        started = time.perf_counter()
+        try:
+            with original_connection(**options) as database:
+                yield database
+        finally:
+            timings.append({'read_only': options.get('read_only', False), 'seconds': time.perf_counter() - started})
+    monkeypatch.setattr(gateway, 'connection', measured_connection)
+    request = request_for(content_bundle())
+    started = time.perf_counter()
+    response = abort_publication(case, request)
+    elapsed = time.perf_counter() - started
+    assert response.status_code == 200 and response.json()['state'] == 'failed'
+    assert len([timing for timing in timings if not timing['read_only']]) == 1
+    assert case.query('SELECT count(*) FROM learning.cards')[0][0] == 0
+    evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / 'fence-timing.json').write_text(json.dumps({'api_seconds': elapsed, 'transactions': timings,
+        'lock_timeout_ms': 250, 'statement_timeout_ms': 1500, 'foreground_transaction_timeout_ms': 2500}, indent=2))

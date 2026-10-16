@@ -498,6 +498,7 @@ def publication_fault_proxy(origin, mode, controls=None, study_token=None):
     class Forward(BaseHTTPRequestHandler):
         def forward(self):
             current_mode = (controls or {}).get('mode', mode)
+            started = time.perf_counter()
             raw = self.rfile.read(int(self.headers.get('Content-Length', '0')))
             headers = {'Authorization': self.headers['Authorization'], 'Content-Type': 'application/json'}
             is_stage = self.path == '/internal/publications/v2/stage'
@@ -511,6 +512,8 @@ def publication_fault_proxy(origin, mode, controls=None, study_token=None):
                 assert accepted.status_code == 200, accepted.text
                 observed.append({'prior_staging': accepted.json()})
             response = httpx.request(self.command, origin + self.path, content=raw or None, headers=headers, timeout=15)
+            if controls is not None:
+                controls.setdefault('requests', []).append({'method': self.command, 'path': self.path, 'status': response.status_code, 'seconds': time.perf_counter() - started})
             if self.path.endswith('/status') and current_mode == 'retire_after_status' and not observed:
                 current = response.json()
                 retirement = {'retirement_id': 'other-retirement-' + uuid.uuid4().hex,
@@ -559,7 +562,8 @@ def test_A_installed_pre_activation_recovery(case, authored, tmp_path, scenario)
         source.update(routes=[], memberships=[], exercises=[], bindings=[])
     original = approve_authored(content_cli, environment, tmp_path, source, 0)
     headers = {'Authorization': 'Bearer ' + case.configuration.operator_token}
-    with server(case, tmp_path) as (client, process), publication_fault_proxy(str(client.base_url).rstrip('/'), scenario) as (origin, observed):
+    controls = {'mode': scenario}
+    with server(case, tmp_path) as (client, process), publication_fault_proxy(str(client.base_url).rstrip('/'), scenario, controls) as (origin, observed):
         arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
         result = run_cli(bridge_cli, [*arguments, 'apply', original['id']], environment, tmp_path, success=False)
         persisted = run_cli(content_cli, ['operation', 'show', original['id']], environment, tmp_path)
@@ -586,7 +590,7 @@ def test_A_installed_pre_activation_recovery(case, authored, tmp_path, scenario)
                 evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
                 evidence.mkdir(parents=True, exist_ok=True)
                 (evidence / 'preactivation-lost_stage.json').write_text(json.dumps({'initial': before,
-                    'remote_before_restart': remote, 'recovered': completed, 'observed': observed}, indent=2, default=str))
+                    'remote_before_restart': remote, 'recovered': completed, 'observed': observed, 'requests': controls['requests']}, indent=2, default=str))
                 return
             if scenario == 'lost_abort':
                 assert persisted['state'] == 'applying' and len(observed) == 2
@@ -613,7 +617,7 @@ def test_A_installed_pre_activation_recovery(case, authored, tmp_path, scenario)
         assert run_cli(content_cli, ['operation', 'show', original['id']], environment, tmp_path)['state'] == ('cancelled' if scenario == 'empty' else 'failed')
         evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True, exist_ok=True)
-        (evidence / ('preactivation-' + scenario + '.json')).write_text(json.dumps({'initial': before, 'recovered': persisted, 'corrected': completed, 'observed': observed}, indent=2, default=str))
+        (evidence / ('preactivation-' + scenario + '.json')).write_text(json.dumps({'initial': before, 'recovered': persisted, 'corrected': completed, 'observed': observed, 'requests': controls['requests']}, indent=2, default=str))
 
 
 @pytest.mark.parametrize('scenario', ['unsupported_successor', 'retired_empty', 'retirement_race'])
