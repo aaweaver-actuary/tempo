@@ -5,6 +5,14 @@ replay, mixed input/workspace/version rejection, missing pages/counts, corruptio
 and non-overwriting output. Learning's regular `test_authoritative_bridge.py`
 owns producer-created snapshot v2 and analysis fixtures from genuine activation,
 covered/opponent-deviation denominator contexts and proposal consumption.
+`tests/test_bridge_snapshot.py` owns accepted v2 source/route/policy generation
+and reconstructed response-scope rejection using a genuine installed synthetic
+fixture. `integration/test_postgres.py` additionally owns interrupted frozen-export
+resumption after a game revision changes, exact cursor scope and immutable-table
+runtime update denial. The installed proof exports the existing outbox inspection
+and genuine acknowledgements, without introducing another remediation producer.
+`tests/test_providers.py` retains JSON datetime round trips when version validation
+is shared with provider inputs.
 
 `tests/test_credentials.py` owns private Learning credential-file validation.
 The Learning runtime's regular `test_game_evidence_runtime.py` owns actual bearer

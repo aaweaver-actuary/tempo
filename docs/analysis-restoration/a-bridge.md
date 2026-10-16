@@ -11,9 +11,10 @@ Branch: `codex/analysis-a-bridge`. Base:
 `/Users/andy/.codex/worktrees/analysis-a-bridge/tempo`. Main/live study checkout was
 not used for development. Interface checkpoint:
 `cae8280da7b551044f27b9d3ae74448aaad04285`; implementation/fixture checkpoint:
-`a23b8cbff5d8ec3cf680f7bb94301646546a99d1`. Final tested/published refs are recorded
-in the qualification handoff below; a documentation-only successor does not change
-artifact qualification.
+`a23b8cbff5d8ec3cf680f7bb94301646546a99d1`. Final production code tested: `423b4e0877e00c210ea5bfd0673bd5bcaaf1b9dd`;
+published fixture successor: `4d132d0d984b36cd027f967cd3ecb11a1fe27ae0`.
+The PR head identifies the documentation-only handoff successor; it does not
+change artifact qualification.
 
 Content owns import mapping, immutable drafts, approval/source reservations,
 cancellation, bounded legal validation, publication/export and delivery records.
@@ -171,6 +172,18 @@ two eligible encounters after `e4`: covered `e5` and deviation `c5`. Off-route l
 Game Evidence reconstructs all response scopes from accepted routes/definitions;
 recomputing an export checksum cannot authorize false coverage.
 
+The successor `fixtures/installed-synthetic-delivery/` additionally contains
+`comparisons[].delivery`, using the same existing outbox/receipt inspection as
+the report endpoint, read within the export's repeatable-read snapshot. It carries
+original delivery IDs/status/reasons/attempts and genuine acknowledgements, with
+`inspection_source=game_evidence_outbox` and observed comparison revision. The
+delivery-state digest participates in immutable input identity. Its input ID is
+`22de0c7c92fcecc176d4fe7acd956aae66fd77ddeba86db4a0e4ea3b738b373e`,
+manifest digest `924b65aa373b5305816daf5a2ddfc2fcf26640f03a15259a34048d03033c267b`.
+The learner miss has one completed batch; other games are explicitly not required.
+The first fixture is unchanged. Neither C nor another consumer creates remediation
+from these serialized delivery facts.
+
 Historical activation and currently observed serving status are distinct. A
 snapshot binds the requested generation's accepted source/route digests even if a
 newer generation serves. Older snapshot promotion is rejected. Not-current or
@@ -265,8 +278,44 @@ Fresh commands, source/artifact hashes, complete collected/executed/JUnit
 identities, benchmark measurements, failures and cleanup receipts are retained
 outside the disposable checkout under
 `/Users/andy/tempo/test-results/analysis-a-bridge/`. Initial validation records are
-background evidence only. The final command/outcome record is added after the
-ongoing qualification completes.
+background evidence only. The final recorded commands below use the component-local `.venv/bin/python`
+interpreter unless the installed CLI or Node command is stated. Evidence directory
+arguments are relative to that preserved evidence root in this table. Each report
+also retains actual resolved command arguments, source inputs and artifact hashes.
+
+| Command (from checkout root) | Evidence suffix | Outcome |
+| --- | --- | --- |
+| `services/content/.venv/bin/python services/content/integration/run_postgres.py EVIDENCE --benchmark` | `final-content-native/` | 66/66 native; benchmark complete; container/volume removed |
+| `services/content/.venv/bin/python services/content/integration/qualify_artifacts.py EVIDENCE --consumers` | `final-content-artifacts/` | 107/107 pure in each of four source-removed consumers; actual v1 consumer interoperability 1/1; zero-selection exit 5 |
+| `services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py EVIDENCE` | `final-learning-serial/` | 173/173 regular native, restricted container and installed/browser acceptance; all owned resources removed |
+| Same native entry, explicit `test_content_bridge.py` file through supported runner function | `final-learning-capacity-refreshed/` | 9/9; measured 2,048-definition transaction/foreground and attempt compatibility |
+| `services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py EVIDENCE` | `final-learning-current-artifacts/` | 3/3 installed closure/migration cases in each Python 3.12/3.14 wheel/sdist consumer; zero-selection exit 5 |
+| `services/game-evidence/.venv/bin/python services/game-evidence/integration/run_postgres.py EVIDENCE` | `final-game-evidence-current-native/` | 65/65 native, including frozen export resume and immutable-table update denial; container/volume removed |
+| `services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py EVIDENCE` | `final-game-evidence-current-artifacts/` | 61/61 pure in each Python 3.12/3.14 wheel/sdist consumer |
+| `tools/analysis-restoration/a_bridge/.venv/bin/python tools/analysis-restoration/a_bridge/qualify.py EVIDENCE` | `final-operator-current-artifacts/` | 3/3 pure in each Python 3.12/3.14 wheel/sdist consumer; zero-selection exit 5 |
+| `contracts/.venv/bin/python -m pytest contracts/content-publication/tests contracts/game-evidence/tests --import-mode=importlib -q --junitxml=EVIDENCE` | `final-contracts.xml` | 198/198 unchanged shared-wire cases |
+| `services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_study.py EVIDENCE` | `final-production-study-linked/` | 41/41 production Home/Study browser cases; assets and owned container/volume/image cleaned |
+| `node tools/component-build/check-components.mjs --component content --component learning --component game-evidence --component analysis-a-bridge` | `final-boundaries.log` | all selected owners and real dependency boundaries pass |
+| Absolute `TEMPO_COMPONENT_PYTHON`, `node tools/component-build/test-lane.mjs --component analysis-a-bridge`; same owners plus `--suite learning-full-study --list` | `final-registration.json` | normal registered operator 3/3; nonzero discovery passes |
+| Five installed schema commands; changed-Python compile; conflict-marker scan; `git diff --check BASE` | `final-static.json` | generated schemas match, compile passes, no conflict markers/whitespace errors |
+
+Content native was recorded at `a23b8cbf`; its subsequent proposal provenance
+validation is covered by current source-removed pure consumers and the final
+installed Learning path. Production Study was recorded at `d33896c1`; later
+changes affect the alias rejection/read port and have their owning native proofs.
+GE/Learning final artifacts and current native source record `423b4e08`; the
+complete serial Learning repeat records `4d132d0d` with identical production code.
+Operator fixture artifact qualification also records `4d132d0d`. These are bounded component proofs,
+not an assertion that every repository or hosted required check passed.
+
+Selected wheel / sdist SHA256 pairs (complete dependency hashes stay in reports):
+
+| Artifact | Wheel | Sdist |
+| --- | --- | --- |
+| Content | `7949f9bd56115fdb326276de5cf57f26f9f2ac75d24a14b2bb2562d1b4fd8ae5` | `736be29ec07e2c248d184b71b12f558e6000c6f7dae8beb6f34bb4f37f8c0d64` |
+| Learning runtime | `45e54d57f7fd97ae24907ff793c9beb4d4499424fffbec654e46f7c36ea3fc91` | `4b3d18f61f3117d7bf32bd665544ebc7df29fa2bff0c86b07bcd07c60e7a1baf` |
+| Game Evidence | `172b33603b42f808ed13400cca20d10eeb69183d2773301e057c8466dc44e9b3` | `d628b2862749b7ecba00326cc0d42e1f6c1c0a9c70b1c90774745816f6c9b579` |
+| Operator | `98f0e277d92852ce6637e94d776308a1482ad3a3d5bc2432dd9ab5ef7089fc07` | `5216e6404af5d1a3b373bc13685914b803ffc1f1ec3183bbc8d11befe7855f29` |
 
 The installed four-case run under `bridge-coherent/` passed in 183.14 s. Complete
 synthetic custom-position sources had one route/membership/accepted line per
@@ -281,9 +330,23 @@ validation/publication/delivery measurements were:
 
 These are complete synthetic sources, not production latency guarantees or a
 real-data rehearsal. Actual alternatives and three-ply routes are additionally
-covered by the installed two-definition scenario. Repeated activation,
-transaction/lock duration and concurrent foreground measurements are retained
-separately; do not confuse whole validation time with activation lock duration.
+covered by the installed two-definition scenario. The final repeated bundle-v2 measurements at 129/512/2,048 definitions were
+respectively 120,457 / 478,009 / 1,914,939 bytes, staging 0.065 / 0.146 / 0.641 s,
+and three activation requests each at 0.078–0.098 / 0.214–0.259 / 0.793–1.024 s.
+The 2,048-definition metadata successor's measured writer section (including pool
+acquisition/commit) was 0.638 s; the publication lock held 0.629 s. Forty-five
+concurrent foreground bootstrap reads took 0.004–0.338 s (median 0.008 s); the
+predecessor-issued attempt saved with HTTP 200. Process RSS was 232,456,192 bytes
+for the repeated-publication driver. These measurements retain unchanged budgets.
+
+The separate Content benchmark covers 512 routes up to 64 plies, 2,048 explanation
+definitions, 33,127 route occurrences, 15,793 opponent positions and 494,581 legal
+replies. Its 4,604 inventory slices had median 0.020 s / maximum 0.659 s; recorded
+writer transactions had median 0.003 s / maximum 0.619 s; publication 0.728 s;
+peak driver RSS 88,178,688 bytes. This validates Content's larger legal inventory,
+not opening-v2 activation of explanation definitions. Full samples stay in
+`final-content-native/benchmark.json` and `final-learning-current/…/bridge/`.
+Do not confuse whole validation time with activation lock duration.
 
 Exploratory failures are retained: test-only transaction inspector omission,
 stale installed packages, a concurrent test-environment dependency removal,
@@ -292,7 +355,18 @@ import timeout under shared-host load. Corrections preserve selected assertions
 and product budgets. Native Learning runner now refreshes actual installed test
 inputs, keeps producer dev tests available, and records bounded startup readiness
 and sanitized owned logs. No other owner's processes or Docker resources were
-modified. Final successful results supersede only their matching input scope.
+modified. Final successful results supersede only their matching input scope. In
+`final-learning-current/`, 172/173 passed; the existing recreated-client
+remediation-cursor regression exceeded its unchanged 250 ms background budget
+at commit. The complete suite was repeated serially in `final-learning-serial/`;
+that repeat passed all 173 in 274.22 s, without changing the selected test or
+budgets. Both reports and their cleanup receipts are retained.
+The new provider JSON timestamp regression is fixed and covered by all 61 pure
+artifact cases and 65 native cases. Test-only fixture corrections and missing
+immutable-table grants are retained in the exploratory reports. The first Study
+build lacked local workspace links; the locked offline install restored the three
+declared workspaces and the repeated production acceptance passed. No unrelated
+processes were stopped to obtain these results.
 
 Real-data rehearsal remains unverified: no appropriate existing identified
 repertoire/history export was available. General importer/history migration and
@@ -300,4 +374,7 @@ live conversion remain #265/#267 work. Broader authoring/findings UI, engines,
 pilot assembly and live cutover remain with #193/#266 and their owning workstreams.
 No deployment, merge, recurring import, Actions change or broad issue closure is
 included. Cleanup removes only verified A-owned disposable resources after
-preserving evidence, unique work and durable branch refs; branches are retained.
+preserving evidence, unique work and durable branch refs; branches are retained. Each native report records verified resource removal.
+The final worktree/ignored-file/stash/process audit and checkout archival receipt
+are preserved as `cleanup.json` outside the checkout; the pre-existing main stash
+is unrelated and remains untouched.

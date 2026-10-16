@@ -6,6 +6,9 @@
 and replacement, original receipt replay and credential separation, genuine
 review/schedule retention through explicit aliases and metadata successors,
 identity conflict rollback, historical status versus replacement, and retirement.
+Accepted historical aliases cannot be silently dropped by a successor. The
+2,048-definition metadata successor test measures actual writer/lock durations,
+concurrent foreground reads and a predecessor-issued attempt saving after commit.
 `test_authoritative_bridge.py` owns actual installed Content import/approval,
 authenticated operator activation with real response loss/restart, installed
 producer delivery to the existing receiver, late-evidence and qualifying Study
