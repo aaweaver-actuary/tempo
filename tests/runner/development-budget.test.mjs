@@ -146,7 +146,7 @@ async function builderFixture(run) {
     }
     throw new Error(`Unexpected Docker operation: ${JSON.stringify(args)}`);
   };
-  try { await run({directory, state, docker, options: {directory, docker, quiet: async () => {}}}); }
+  try { await run({directory, state, docker, options: {directory, docker, token:null, quiet: async () => {}}}); }
   finally { await rm(parent, {recursive: true, force: true}); }
 }
 

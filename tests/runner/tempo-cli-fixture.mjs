@@ -77,6 +77,9 @@ async function fixtureNetwork() {
   const budgetTemporary = directory + '/budget-temporary'; fs.mkdirSync(budgetTemporary,{recursive:true});
   os.default.tmpdir = () => budgetTemporary;
   (await import('node:module')).syncBuiltinESMExports();
+  delete process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
+  delete process.env.TEMPO_DEVELOPMENT_BUDGET_DIRECTORY;
+  process.env.TEMPO_STUDY_ACTIVITY_DIRECTORY = budgetTemporary + '/host-activity';
   globalThis.fetch = async (url, options = {}) => {
     if (String(url).endsWith('/api/system/foreground-active')) return Response.json({ active: false, available: true, study_only_mode: false });
     const fixture = JSON.parse(fs.readFileSync(directory + "/fixture.json", "utf8"));
@@ -146,9 +149,27 @@ async function fakeCommand() {
     process.exit(0);
   }
   if (args.includes('ps') && args.includes('label=tempo.resource-class=development')) process.exit(0);
-  if (args.includes('buildx')) { output('fixture bounded builder'); process.exit(0); }
+  if (args.includes('buildx')) {
+    const index=args.indexOf('buildx'), operation=args[index+1];
+    machine.builders ??= {};
+    if(operation==='create') {
+      const name=args[args.indexOf('--name')+1];
+      const owner=args.find(argument=>argument.startsWith('env.TEMPO_RESOURCE_OWNER='))?.split('=')[1];
+      machine.builders[name]={owner,bootstrapped:false};save();output(name);
+    } else if(operation==='inspect') {
+      const name=args[index+2],builder=machine.builders[name];
+      if(!builder){console.error(`no builder "${name}" found`);process.exit(1);}
+      if(args.includes('--bootstrap')){builder.bootstrapped=true;save();}
+      output(`Driver Options: env.TEMPO_RESOURCE_OWNER="${builder.owner}"`);
+    } else if(operation==='rm') {delete machine.builders[args[index+2]];save();}
+    else output('fixture bounded builder');
+    process.exit(0);
+  }
   if (args.includes('inspect') && args.some(argument => argument.startsWith('buildx_buildkit_'))) {
-    output([{ Config:{User:"1000:1000"}, HostConfig: { Memory: 2147483648, CpuQuota: 200000, CpuPeriod: 100000 } }]); process.exit(0);
+    const container=args.find(argument=>argument.startsWith('buildx_buildkit_'));
+    const builder=machine.builders?.[container.slice('buildx_buildkit_'.length,-1)];
+    if(!builder?.bootstrapped){console.error(`No such container: ${container}`);process.exit(1);}
+    output([{ Config:{User:"1000:1000",Env:[`TEMPO_RESOURCE_OWNER=${builder.owner}`]}, HostConfig: { Memory: 2147483648, CpuQuota: 200000, CpuPeriod: 100000 } }]); process.exit(0);
   }
   if (args.includes("info")) {
     if (args.includes("--format")) {
