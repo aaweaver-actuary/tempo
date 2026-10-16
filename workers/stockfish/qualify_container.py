@@ -296,7 +296,7 @@ const {spawn}=require('node:child_process');const fs=require('node:fs');
 
     def cleanup(self):
         removed=[]
-        missing=lambda result:result.returncode and ("No such object" in result.stderr or "No such container" in result.stderr)
+        missing=lambda result:result.returncode and ("no such object" in result.stderr.lower() or "no such container" in result.stderr.lower())
         for name in self.containers:
             state=docker("inspect",name,check=False)
             if missing(state): continue
