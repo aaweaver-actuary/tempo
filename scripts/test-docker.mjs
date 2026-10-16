@@ -1,4 +1,5 @@
-import { spawnSync } from "node:child_process";
+import { runWithDevelopmentBudget, managedComposeBuild, composeResourceLimits, resourceBudgets, assertDevelopmentCapacity, recordBudgetResource, waitForStudyQuiet } from './development-budget.mjs';
+import { spawnSync, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -20,6 +21,7 @@ if (process.argv.includes("--list")) {
   process.exit(0);
 }
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN) process.exit(await runWithDevelopmentBudget(process.execPath, process.argv.slice(1)));
 const timingDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
 const timingFilename = skipBrowser ? "docker-stages-recovery.json" : "docker-stages.json";
 const timingReport = {
@@ -33,6 +35,7 @@ function saveTimingReport() {
   writeFileSync(join(timingDirectory, timingFilename), `${JSON.stringify(timingReport, null, 2)}\n`);
 }
 async function timeStage(stageName, operation) {
+  if (stageName !== "container_stop") await waitForStudyQuiet();
   const startedAt = performance.now();
   let exitCode = 0;
   try {
@@ -65,8 +68,13 @@ const env = createIsolatedTestEnvironment(process.env, {
   TEMPO_TEST_PORT: String(testPort),
 });
 const composeArgs = ["compose", "-p", project, "-f", "docker-compose.test.yml"];
+const resourceFile = join(directory, 'resource-limits.json');
+writeFileSync(resourceFile, JSON.stringify(composeResourceLimits(Object.keys(resourceBudgets.legacyDevelopmentServices),process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,resourceBudgets.legacyDevelopmentServices)));
+composeArgs.push('-f',resourceFile);
 let resourcesCreated = false;
+let cleanupVerified = false;
 function run(command, args, extra = {}) {
+  if(command === 'docker' && args.includes('up')) assertDevelopmentCapacity(Object.keys(resourceBudgets.legacyDevelopmentServices),project,undefined,resourceBudgets.legacyDevelopmentServices);
   const result = spawnSync(command, args, { stdio: "inherit", env: { ...env, ...extra } });
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
 }
@@ -217,10 +225,12 @@ async function verifyStudySurvivesContainerRecreation() {
 try {
   await timeStage("compose_config", verifyTempoDataVolumeIsExternal);
   await timeStage("test_stack_isolation", verifyTestStackIsolation);
+  await recordBudgetResource(`compose:${project}`, true);
   resourcesCreated = true;
   await timeStage("container_start", async () => {
     run("docker", ["info", "--format", "{{.ServerVersion}}"]);
-    run("docker", [...composeArgs, "up", "--build", "-d"]);
+    await managedComposeBuild(()=>execFileSync('docker',[...composeArgs,'build','--print'],{encoding:'utf8',env}),args=>run('docker',args));
+    run("docker", [...composeArgs, "up", "--no-build", "-d"]);
     await waitForHealth();
   });
   if (!skipBrowser) {
@@ -234,11 +244,15 @@ try {
 } catch (error) { console.error(error.message); exitCode = 1; }
 finally {
   if (resourcesCreated) {
-    await timeStage("container_stop", () => {
+    await timeStage("container_stop", async () => {
       const result = spawnSync("docker", [...composeArgs, "down", "--rmi", "local"], { stdio: "inherit", env });
       if (result.error || result.status !== 0) throw new Error("Docker test containers could not stop");
+      cleanupVerified = true;
     }).catch((error) => { console.error(error.message); exitCode = 1; });
   }
-  rmSync(directory, { recursive: true });
+  if (!resourcesCreated || cleanupVerified) {
+    await recordBudgetResource(`compose:${project}`, false);
+    rmSync(directory, { recursive: true });
+  }
 }
 process.exit(exitCode);
