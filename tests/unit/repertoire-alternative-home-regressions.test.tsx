@@ -16,6 +16,7 @@ import { buildRepertoireAlternativeSnapshot } from "../../app/lib/repertoire-alt
 import { computeStudyTask } from "../../app/lib/study-computation";
 import * as local from "../../app/utils/local";
 import * as workspace from "../../app/lib/workspace-data";
+import * as priority from "../../app/lib/study-priority";
 import { demoCards } from "../../app/samples";
 
 // Main ignores the result; PR #172 explicitly consumes successful installation.
@@ -69,6 +70,8 @@ beforeEach(() => {
   sourceLines = [line("alternative")]; lineRequests = 0; nextLineRead = undefined;
   studyOnlyMode = false;
   membershipRead = undefined;
+  // Existing direct board-callback cases have no browser input event.
+  vi.spyOn(priority, "studyInteractionActive").mockReturnValue(false);
   responseJournal = vi.fn();
   vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ response: responseJournal,
@@ -147,9 +150,9 @@ it.each(["wrong", "unavailable", "cancelled"])("study_only_move_verification_pre
 async function readyHome() {
   const prepare = vi.spyOn(study, "runStudyTask");
   const mounted = render(<Home />);
-  await waitFor(() => expect(prepare.mock.calls.some(([task]) => task.kind === "index" || task.kind === "repertoireAlternatives")).toBe(true));
+  await waitFor(() => expect(prepare.mock.calls.some(([task]) => task.kind === "index" || task.kind === "repertoirePreparation")).toBe(true));
   await act(async () => {
-    const indexCall = prepare.mock.calls.findIndex(([task]) => task.kind === "index" || task.kind === "repertoireAlternatives");
+    const indexCall = prepare.mock.calls.findIndex(([task]) => task.kind === "index" || task.kind === "repertoirePreparation");
     const prepared = await prepare.mock.results[indexCall].value;
     expect(Array.isArray(prepared) ? prepared.length : prepared.positions.length).toBeGreaterThan(0);
   });
@@ -166,8 +169,8 @@ async function play(uci: string) {
 }
 async function finishPreparation(count: number) {
   const prepare = vi.mocked(study.runStudyTask);
-  await waitFor(() => expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(count));
-  const preparationCalls = prepare.mock.calls.flatMap(([task], index) => task.kind === "repertoireAlternatives" ? [index] : []);
+  await waitFor(() => expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(count));
+  const preparationCalls = prepare.mock.calls.flatMap(([task], index) => task.kind === "repertoirePreparation" ? [index] : []);
   await act(async () => { await prepare.mock.results[preparationCalls.at(-1)!].value; });
 }
 async function mutate(kind: string) {
@@ -224,12 +227,12 @@ it.each([
   ["e2e5", "illegal", "wrong", true],
 ] as const)("issue36_move_classification_preserves_attempt_grading (%s)", async (uci, classification, feedback, failed) => {
   await readyHome();
-  const prepareCalls = vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives").length;
+  const prepareCalls = vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation").length;
   await play(uci);
   expect(responseJournal).toHaveBeenLastCalledWith(0, uci, classification);
   expect(useTrainingStore.getState()).toMatchObject({ feedback, isAttemptFailed: failed });
   await waitFor(async () => expect((await (await studyIntentStore()).list("failure")).length > 0).toBe(failed));
-  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(prepareCalls);
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(prepareCalls);
   if (classification !== "expected") expect(useTrainingStore.getState().currentFenString).toBe(startFen);
 });
 
@@ -249,7 +252,7 @@ it("issue36_failed_loading_never_grades_unverified_moves_wrong", async () => {
   expect(useTrainingStore.getState().feedback).toBe("correct");
   await act(async () => { screen.getByRole("button", { name: "Retry loading lines" }).click(); });
   await finishPreparation(1);
-  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Retry loading lines" })).toBeNull();
 });
 
@@ -263,7 +266,7 @@ it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_cu
   let heldGeneration = 0;
   if (stage === "fetch") nextLineRead = heldOld as Promise<Response>;
   const prepare = vi.spyOn(study, "runStudyTask").mockImplementation((task, signal) => {
-    if (stage === "preparation" && task.kind === "repertoireAlternatives" && !heldGeneration) {
+    if (stage === "preparation" && task.kind === "repertoirePreparation" && !heldGeneration) {
       heldGeneration = task.generation;
       return heldOld;
     }
@@ -290,7 +293,7 @@ it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_cu
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "wrong");
   expect(lineReadyEvents()).toHaveLength(currentReadyCount);
-  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(stage === "fetch" ? 1 : 2);
+  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(stage === "fetch" ? 1 : 2);
 });
 
 it("issue36_obsolete_preparation_failure_cannot_hide_a_new_success", async () => {
@@ -299,7 +302,7 @@ it("issue36_obsolete_preparation_failure_cannot_hide_a_new_success", async () =>
   const originalRun = study.runStudyTask;
   let held = false;
   vi.spyOn(study, "runStudyTask").mockImplementation((task, signal) => {
-    if (task.kind === "repertoireAlternatives" && !held) { held = true; return obsoletePreparation; }
+    if (task.kind === "repertoirePreparation" && !held) { held = true; return obsoletePreparation; }
     return originalRun(task, signal);
   });
   render(<Home />);
@@ -337,7 +340,7 @@ it("issue36_unmount_cancels_preparation_and_ignores_its_late_failure", async () 
   const originalRun = study.runStudyTask;
   let heldSignal: AbortSignal | undefined;
   vi.spyOn(study, "runStudyTask").mockImplementation((task, signal) => {
-    if (task.kind === "repertoireAlternatives") { heldSignal = signal; return obsoletePreparation; }
+    if (task.kind === "repertoirePreparation") { heldSignal = signal; return obsoletePreparation; }
     return originalRun(task, signal);
   });
   const mounted = render(<Home />);
@@ -367,7 +370,7 @@ it("issue36_ordinary_queue_and_card_updates_do_not_rebuild_evidence", async () =
   act(() => useTrainingStore.getState().setReviewed(1));
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate");
-  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
 });
 
 it("issue36_loading_evicts_only_lines_and_review_refresh_keeps_workspace_invalidation", async () => {
@@ -385,7 +388,7 @@ it("issue36_loading_evicts_only_lines_and_review_refresh_keeps_workspace_invalid
   act(() => screen.getByRole("button", { name: "Retry sync" }).click());
   await waitFor(() => expect(vi.mocked(fetchAndInitializeQueue).mock.calls.length).toBeGreaterThan(queueReads));
   expect(invalidate.mock.calls).toEqual([[]]);
-  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
 });
 
 it("issue36_offline_missing_evidence_keeps_the_existing_practice_card_fallback", async () => {
@@ -412,7 +415,7 @@ it("issue36_demo_keeps_demo_branch_membership_without_loading_an_index", async (
   await waitFor(() => expect(useTrainingStore.getState().step).toBe(1));
   await play("e7e6");
   expect(useTrainingStore.getState()).toMatchObject({ feedback: "branch", isAttemptFailed: false });
-  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(0);
+  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(0);
 });
 
 it("pr285_teaching_cross_tab_committed_facts_update_the_mounted_home", async () => {
@@ -460,4 +463,34 @@ it("pr285_teaching_cross_tab_stale_server_snapshot_cannot_erase_committed_seen_f
   render(<Home />); await started;
   await act(async () => { release(Response.json({ states: [] })); await response; });
   expect([...useTrainingStore.getState().seenMoves]).toContain(key);
+});
+
+it("study_priority_non_opening_wrong_move_does_not_request_opening_membership_or_fabricate_evidence", async () => {
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  studyOnlyMode = true;
+  const tactic = mapQueueCardToPracticeCard({id:"priority-tactic",revision:1,queue_entry_id:3699,
+    start_fen:startFen,moves:["e2e4"],content_type:"tactic",repertoire_id:"unused",repertoire_name:"Tactic",repertoire_source:"Tactic",trained_color:"white"});
+  initializeQueueMock.mockImplementation(async()=>{
+    useTrainingStore.getState().hydrateLocalQueue([tactic],true);
+    useTrainingStore.setState({queueReadiness:"ready"}); return "installed";
+  });
+  render(<Home />);
+  await waitFor(()=>expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  expect(useTrainingStore.getState().getCard().kind).toBe("puzzle");
+  await play("d2d4");
+  expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes('/move-membership?'))).toBe(false);
+  expect(responseJournal).not.toHaveBeenCalled();
+});
+
+it('study_priority_opening_membership_remains_essential_while_optional_index_is_paused', async () => {
+  vi.spyOn(local, 'usesLocalApi').mockReturnValue(true);
+  nextLineRead = new Promise(() => {});
+  render(<Home />);
+  await waitFor(() => expect(lineRequests).toBe(1));
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf('function'));
+  vi.mocked(priority.studyInteractionActive).mockReturnValue(true);
+  await play('d2d4');
+  await waitFor(() => expect(responseJournal).toHaveBeenLastCalledWith(0, 'd2d4', 'alternate'));
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/move-membership?'))).toBe(true);
 });

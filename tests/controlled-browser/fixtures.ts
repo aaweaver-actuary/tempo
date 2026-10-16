@@ -44,7 +44,7 @@ export async function prepareControlledUI(page: Page, trainingCards: ControlledQ
   }
   for (const query of ([{ limit: "20" }, { limit: "20", include_opening_evidence: "true" }] as Record<string, string>[]))
     api.register({ method: "GET", path: "/api/queue/window", query }, route => route.fulfill({ json: { cards: trainingCards, count: trainingCards.length } }));
-  api.register({ method: "POST", path: "/api/system/browser-activity", query: {}, validate: request => {
+  api.register({ method: "POST", path: "/api/system/browser-activity", query: {session_id:/^[A-Za-z0-9_-]{1,80}$/}, validate: request => {
     if (request.body !== null) throw new Error("Browser activity must have no body");
   } }, route => route.fulfill({ json: { active: true } }));
   api.register({ method: "GET", path: "/api/system/activity", query: { offset: "0", limit: "50" } }, route => route.fulfill({ json: examples["/api/system/activity"] }));

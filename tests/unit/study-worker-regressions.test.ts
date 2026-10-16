@@ -30,7 +30,7 @@ it("schema-invalid study worker reply rejects all callers and replaces the worke
   const firstCleanup = vi.spyOn(firstController.signal, "removeEventListener");
   const secondCleanup = vi.spyOn(secondController.signal, "removeEventListener");
   const first = runTask({ kind: "queue", payload: { cards: [], count: 0 } }, firstController.signal);
-  const second = runTask({ kind: "workspace", url: "/api/repertoire/lines", payload: [] }, secondController.signal);
+  const second = runTask({ kind: "workspace", url: "/api/settings", payload: {} }, secondController.signal);
   const settled = Promise.allSettled([first, second]);
   const staleMessage = workers[0].onmessage!;
   const staleError = workers[0].onerror!;
@@ -134,7 +134,7 @@ it("phone worker message decoding failure releases every caller and permits a fr
   }
   vi.stubGlobal("Worker", ControlledWorker);
   const first = runTask({ kind: "queue", payload: { cards: [], count: 0 } });
-  const second = runTask({ kind: "workspace", url: "/api/repertoire/lines", payload: [] });
+  const second = runTask({ kind: "workspace", url: "/api/settings", payload: {} });
   const failures = Promise.all([expect(first).rejects.toThrow("Reopen Tempo while connected"),
     expect(second).rejects.toThrow("Reopen Tempo while connected")]);
   workers[0].onmessageerror!();

@@ -4643,3 +4643,26 @@ ready-publication and practiced-parent eligibility. SQLite's useful sparse
 algorithm and the existing review/evidence/history/receipt transaction owners are
 retained. Original literal SQL fixtures remain a transitional compatibility owner;
 they do not select the retired native parent-wide query.
+
+Browser/inference owners: `tests/unit/study-interaction-priority.test.ts`,
+`study-bulk-priority-regressions.test.ts`, `study-owned-index-priority.test.ts`,
+`maia-interaction-priority.test.ts`, the existing defensive cancellation suite,
+and `tests/runner/inference-priority.test.mjs`. Named cases prove held pointers
+and touch, elapsed-time quiet windows, overlapping operations and independent
+remote leases; termination of confirmed running computation, stale reply fencing,
+retained confirmed indexes after replacement cancellation, filtered comparison
+ownership, serial optional index execution, and real Stockfish/Maia preemption
+followed by unchanged depth/full legal distributions. The Home regression
+`study_priority_non_opening_wrong_move_does_not_request_opening_membership_or_fabricate_evidence`
+keeps tactic grading independent of opening evidence. The notification regression
+`study_priority_routine_recovery_reopens_one_status_record_and_preserves_real_timeout_attention`
+retains genuine failures while coalescing ordinary recovery status.
+`study_priority_opening_membership_remains_essential_while_optional_index_is_paused`
+keeps authoritative alternative-move verification available during interaction.
+
+Real browser owner: `tests/controlled-browser/priority.spec.ts`, registered in the
+controlled inventory. It covers running workers, held dragging, repeated actual
+cancellation, essential queue capacity, useful quiet progress, paired native UI
+input and prepared-next presentation proxies. Existing native phone/recovery
+cases remain registered and unchanged. Dynamic activity sessions have a strict
+owning contract regression in `tests/controlled-browser/unit/controlled-browser-regressions.test.ts`.

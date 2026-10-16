@@ -21,13 +21,14 @@ function loadModel() {
 
 export async function getMaiaIdentity() { return inspectModel(options); }
 
-export async function analyzeMaiaPosition(fen, elo) {
+export async function analyzeMaiaPosition(fen, elo, { onInferenceStarted } = {}) {
   // chess.js historically accepted missing move counters in legacy tooling.
   const fields = typeof fen === "string" ? fen.split(" ") : [];
   const completeFen = fields.length === 4 ? `${fen} 0 1` : fields.length === 5 ? `${fen} 1` : fen;
   const position = validatePosition(completeFen);
   if (position.terminal) return [];
   const model = await loadModel();
+  onInferenceStarted?.();
   const predictions = await model.infer({ fen: completeFen, rating: elo, legal_moves: position.legalMoves, model_id: model.identity.model_id, model_version: model.identity.model_version });
   return predictions.map(({ move, probability }) => ({ move_uci: move, probability })).sort((left, right) => right.probability - left.probability);
 }
