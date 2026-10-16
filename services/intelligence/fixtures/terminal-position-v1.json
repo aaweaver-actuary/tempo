@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "workspace_id": "fixture",
+  "snapshot_id": "terminal-position",
+  "source_id": "content-fixture",
+  "source_revision": 1,
+  "publication_id": "publication-fixture",
+  "publication_generation": 1,
+  "fen": "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1",
+  "position_key": "7k/6Q1/6K1/8/8/8/8/8 b - -",
+  "legal_universe_version": "standard-chess-v1",
+  "legal_universe_digest": "sha256:0e655ebda8b9439bb7d2030e5d15393db37e27283684e3dd9091dd069abceebc",
+  "complete": true,
+  "legal_moves": [],
+  "policy_context": {
+    "policy_id": "policy-a"
+  }
+}

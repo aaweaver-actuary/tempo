@@ -1,0 +1,100 @@
+{
+  "contract_version": 1,
+  "workspace_id": "fixture",
+  "job_id": "maia:045e94c2bd6a93d36fd7865dbb6ccb51ec2a5e62bb3756ae066302dce437e563",
+  "request_revision": 1,
+  "execution_generation": 1,
+  "provenance": {
+    "input_digest": "sha256:babcb370a503b0b988e62214966424546866ced482a75623f39e753ff9861488",
+    "runtime_name": "offline-fixture",
+    "runtime_version": "1",
+    "implementation_version": "1",
+    "started_at": "2026-10-16T12:00:00Z",
+    "finished_at": "2026-10-16T12:00:01Z"
+  },
+  "worker": "maia",
+  "model_id": "maia-2",
+  "model_version": "fixture-1",
+  "predictions": [
+    {
+      "move": "a2a3",
+      "probability": 0.0
+    },
+    {
+      "move": "a2a4",
+      "probability": 0.0
+    },
+    {
+      "move": "b1a3",
+      "probability": 0.0
+    },
+    {
+      "move": "b1c3",
+      "probability": 0.0
+    },
+    {
+      "move": "b2b3",
+      "probability": 0.0
+    },
+    {
+      "move": "b2b4",
+      "probability": 0.0
+    },
+    {
+      "move": "c2c3",
+      "probability": 0.0
+    },
+    {
+      "move": "c2c4",
+      "probability": 0.0
+    },
+    {
+      "move": "d2d3",
+      "probability": 0.0
+    },
+    {
+      "move": "d2d4",
+      "probability": 0.0
+    },
+    {
+      "move": "e2e3",
+      "probability": 0.0
+    },
+    {
+      "move": "e2e4",
+      "probability": 1.0
+    },
+    {
+      "move": "f2f3",
+      "probability": 0.0
+    },
+    {
+      "move": "f2f4",
+      "probability": 0.0
+    },
+    {
+      "move": "g1f3",
+      "probability": 0.0
+    },
+    {
+      "move": "g1h3",
+      "probability": 0.0
+    },
+    {
+      "move": "g2g3",
+      "probability": 0.0
+    },
+    {
+      "move": "g2g4",
+      "probability": 0.0
+    },
+    {
+      "move": "h2h3",
+      "probability": 0.0
+    },
+    {
+      "move": "h2h4",
+      "probability": 0.0
+    }
+  ]
+}

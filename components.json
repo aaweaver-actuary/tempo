@@ -259,21 +259,89 @@
     {
       "id": "intelligence",
       "type": "service",
-      "maintainer": "Tempo",
-      "status": "planned",
+      "maintainer": "Tempo / #109",
+      "status": "implemented",
       "root": "services/intelligence",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "Configuration",
+        "create_app"
+      ],
+      "dependencies": [
+        "chess",
+        "tempo_chess_core",
+        "tempo_analysis_jobs_contracts",
+        "fastapi",
+        "starlette",
+        "uvicorn",
+        "httpx",
+        "psycopg",
+        "psycopg_pool",
+        "pydantic"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "integration",
+        "fixtures",
+        "README.md",
+        "REGRESSIONS.md",
+        "INTERFACES.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-intelligence",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "intelligence",
+          "kind": "python",
+          "cwd": "services/intelligence",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "fixtures",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        },
+        {
+          "owner": "intelligence",
+          "kind": "postgres",
+          "cwd": ".",
+          "command": "python services/intelligence/integration/run_postgres.py",
+          "inputs": [
+            "services/intelligence/integration",
+            "services/intelligence/src",
+            "services/intelligence/fixtures",
+            "services/intelligence/pyproject.toml",
+            "services/intelligence/uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ],
+        "postgresql": "18"
+      },
       "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": []
-      }
+        "authority": "#109",
+        "databases": [
+          "dedicated workspace Intelligence database"
+        ],
+        "migrations": [
+          "src/tempo_intelligence/migrations/manifest.json"
+        ],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "stockfish",
