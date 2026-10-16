@@ -1,3 +1,15 @@
+## Study Priority v1 development resource repairs
+
+- `tests/runner/development-budget.test.mjs`: A1–A11 cover journal-before-create,
+  ambiguous creation/removal, verified absence, retained cleanup ownership,
+  independent owners, ownership mismatch, interrupted owners, preparation errors
+  and exclusive builder lanes under inherited ownership.
+- B cases in the same regular suite cover independent host sessions, stale or
+  malformed expected control, pending requests, explicit service absence and
+  refused legacy control. A local CI flag cannot bypass protected activity.
+- The actual rootless RUN cgroup proof and a real post-create disconnection
+  rehearsal retain kernel limits, exact identities and verified resource absence.
+
 ## Study Priority v1 browser and inference repairs
 
 - `tests/runner/inference-priority.test.mjs`: C1–C14 cover normal completion,
@@ -4680,6 +4692,19 @@ cancellation, essential queue capacity, useful quiet progress, paired native UI
 input and prepared-next presentation proxies. Existing native phone/recovery
 cases remain registered and unchanged. Dynamic activity sessions have a strict
 owning contract regression in `tests/controlled-browser/unit/controlled-browser-regressions.test.ts`.
+
+Resource owner: `tests/runner/development-budget.test.mjs` and existing runner
+suites. Named regressions cover independent process serialization, cancellation
+without stealing ownership, unavailable/active control deferral, aggregate
+service budgets, rootless build confinement and bounded/labelled component Docker
+invocations. The policy is `config/resource-budgets.json`; ordinary lightweight
+checks and listing do not acquire a heavy-work lease.
+
+`scripts/check-inference-priority-images.mjs` additionally runs actual engine and
+Maia images at their optional-service kernel limits. Stockfish may require the
+hard-stop fallback at its CPU ceiling; the proof retains the 250 ms yield target,
+restarts its owned engine and requires the original requested depth afterward.
+Maia must resume its complete legal distribution with the unchanged model.
 
 Study Priority v1: `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` retains serialized bulk ownership and probes a saved late handler. Invalidated bulk failures stay diagnostic without publishing notifications; current diagnostics and workspace publication remain authoritative. Home lifecycle regressions await the existing three-second quiet period before idle recovery.
 

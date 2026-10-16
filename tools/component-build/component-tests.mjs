@@ -1,10 +1,21 @@
+import {managedDockerEnvironment} from '../../scripts/development-docker.mjs';
+import {recordBudgetResourceSync} from '../../scripts/development-budget.mjs';
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { repository, validateManifest, validateSuite } from "./check-components.mjs";
 import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
+
+export function componentSelectionNeedsBudget(argumentsList, root = process.env.TEMPO_COMPONENT_ROOT ?? repository) {
+  const options = parseSelection(argumentsList);
+  if(options.list) return false;
+  const manifest = readManifest(root);
+  const suites = [...(options.componentIds ? selectComponents(manifest,options.componentIds).flatMap(component=>component.tests) : []),
+    ...(options.suiteIds ? selectSuites(manifest,options.suiteIds) : [])];
+  return suites.some(suite=>suite.kind === 'postgres');
+}
 
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 export function runComponentSelection(argumentsList, root = process.env.TEMPO_COMPONENT_ROOT ?? repository) {
@@ -22,10 +33,15 @@ export function runComponentSelection(argumentsList, root = process.env.TEMPO_CO
   for (const suite of selected) {
     const reports = mkdtempSync(join(tmpdir(), "tempo-d-cases-"));
     const started = performance.now();
+    let managedEnvironment;
     try {
-      const environment = { ...process.env, PYTHONPATH: "", PYTHONDONTWRITEBYTECODE: "1", PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1" };
+      let environment = { ...process.env, PYTHONPATH: "", PYTHONDONTWRITEBYTECODE: "1", PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1" };
       delete environment.NODE_TEST_CONTEXT;
       delete environment.PYTHONHOME;
+      if (suite.kind === 'postgres' && process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN) {
+        environment = managedDockerEnvironment(environment,reports); managedEnvironment=environment;
+        recordBudgetResourceSync('component-suite:'+suite.id,true);
+      }
       let command = suite.command.replace(/^python(?=\s)/, quote(python));
       if (suite.kind === "python") command += " --junitxml=" + quote(join(reports, "cases.xml"));
       if (suite.kind === "postgres") environment.PYTEST_ADDOPTS = "--junitxml=" + join(reports, "cases.xml");
@@ -44,6 +60,13 @@ export function runComponentSelection(argumentsList, root = process.env.TEMPO_CO
         report = JSON.parse(parsed.stdout);
       }
       console.log(JSON.stringify({ suite: suite.id, cwd: suite.cwd, command: suite.command, seconds: (performance.now() - started) / 1000, ...report }));
-    } finally { rmSync(reports, { recursive: true, force: true }); }
+    } finally {
+      if(managedEnvironment) {
+        const remaining=execFileSync(managedEnvironment.TEMPO_REAL_DOCKER,['ps','-aq','--filter',`label=tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`],{encoding:'utf8'}).trim();
+        if(remaining) throw new Error('Managed component resources still need verified cleanup; retaining the development budget');
+        recordBudgetResourceSync('component-suite:'+suite.id,false);
+      }
+      rmSync(reports, { recursive: true, force: true });
+    }
   }
 }

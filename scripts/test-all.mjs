@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { runWithDevelopmentBudget, waitForStudyQuiet } from './development-budget.mjs';
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform, release, arch } from "node:os";
@@ -35,6 +36,8 @@ if (listOnly) {
   console.log(JSON.stringify({ tier, stages: selectedStages.map(([name, command, args]) => ({ name, command, args })) }, null, 2));
   process.exit(0);
 }
+if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
+  process.exit(await runWithDevelopmentBudget(process.execPath, process.argv.slice(1)));
 const commit = version("git", ["rev-parse", "HEAD"]);
 const report = {
   schema_version: 1,
@@ -51,6 +54,7 @@ function saveReport() {
   console.log(`Test stage timings: ${outputPath}`);
 }
 for (const [name, command, args] of selectedStages) {
+  await waitForStudyQuiet();
   console.log(`\nRunning ${name}: ${command} ${args.join(" ")}`);
   if (name === "unit") {
     mkdirSync(outputDirectory, { recursive: true });

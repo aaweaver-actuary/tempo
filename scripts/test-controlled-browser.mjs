@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
+import { runWithDevelopmentBudget, waitForStudyQuiet } from './development-budget.mjs';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,6 +97,7 @@ export async function runControlledBrowser(selection, options = {}) {
     evidence.stages.setup = (performance.now() - invocationStarted) / 1000;
     await runNode("package_build", ["node_modules/typescript/bin/tsc", "-p", "packages/chess-line/tsconfig.json"]);
     for (const name of ["browser-intents", "study-session"]) await runNode(`package_build_${name}`, ["node_modules/typescript/bin/tsc", "-p", `packages/${name}/tsconfig.json`]);
+    await waitForStudyQuiet();
     await runNode("production_build", ["node_modules/vite/bin/vite.js", "build", "--config", "vite.controlled.config.ts"], { TEMPO_CONTROLLED_BUILD_DIR: buildDirectory, TEMPO_CONTROLLED_PUBLIC_DIR: publicDirectory });
     await writeFile(manifestPath, JSON.stringify(["/", ...await assetPaths(buildDirectory)]));
     await stage("host_startup", async () => {
@@ -141,6 +143,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const identities = collectSelection(selection);
     console.log(JSON.stringify({ selectedIdentities: identities, cases: identities.length }));
     if (!selection.list) {
+      if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
+        process.exit(await runWithDevelopmentBudget(process.execPath, process.argv.slice(1)));
       const evidence = await runControlledBrowser(selection);
       console.log(`Controlled browser evidence: ${evidence.runDirectory}`);
       if (!evidence.success) throw new Error(evidence.error ?? evidence.cleanup_error);

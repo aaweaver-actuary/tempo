@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "development": {
+    "cpus": 2,
+    "memoryMiB": 2048,
+    "concurrentInvocations": 1,
+    "buildParallelism": 1
+  },
+  "optionalServices": {
+    "background-worker": {
+      "cpus": 0.35,
+      "memoryMiB": 448
+    },
+    "defense-engine": {
+      "cpus": 0.25,
+      "memoryMiB": 384
+    },
+    "maia-worker": {
+      "cpus": 0.3,
+      "memoryMiB": 1024
+    },
+    "background-scheduler": {
+      "cpus": 0.05,
+      "memoryMiB": 96
+    },
+    "postgres-backup": {
+      "cpus": 0.05,
+      "memoryMiB": 96
+    }
+  },
+  "developmentServices": {
+    "postgres": {
+      "cpus": 0.4,
+      "memoryMiB": 352
+    },
+    "redis": {
+      "cpus": 0.05,
+      "memoryMiB": 64
+    },
+    "api": {
+      "cpus": 0.2,
+      "memoryMiB": 192
+    },
+    "foreground-worker": {
+      "cpus": 0.35,
+      "memoryMiB": 192
+    },
+    "background-worker": {
+      "cpus": 0.15,
+      "memoryMiB": 128
+    },
+    "background-scheduler": {
+      "cpus": 0.05,
+      "memoryMiB": 64
+    },
+    "defense-engine": {
+      "cpus": 0.3,
+      "memoryMiB": 224
+    },
+    "maia-worker": {
+      "cpus": 0.25,
+      "memoryMiB": 512
+    },
+    "web": {
+      "cpus": 0.05,
+      "memoryMiB": 64
+    },
+    "schema": {
+      "cpus": 0.2,
+      "memoryMiB": 256
+    }
+  },
+  "legacyDevelopmentServices": {
+    "api": {
+      "cpus": 0.5,
+      "memoryMiB": 512
+    },
+    "web": {
+      "cpus": 0.1,
+      "memoryMiB": 64
+    },
+    "analysis-worker": {
+      "cpus": 0.8,
+      "memoryMiB": 448
+    },
+    "maia-worker": {
+      "cpus": 0.6,
+      "memoryMiB": 1024
+    }
+  },
+  "priorityRehearsalServices": {
+    "postgres": {
+      "cpus": 0.4,
+      "memoryMiB": 352
+    },
+    "redis": {
+      "cpus": 0.05,
+      "memoryMiB": 64
+    },
+    "schema": {
+      "cpus": 1.5,
+      "memoryMiB": 1536
+    }
+  }
+}

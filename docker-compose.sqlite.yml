@@ -31,6 +31,8 @@ services:
     restart: unless-stopped
 
   defense-engine:
+    cpus: 0.25
+    mem_limit: 384m
     build:
       context: .
       dockerfile: Dockerfile.engine
@@ -38,11 +40,11 @@ services:
       TEMPO_API_URL: http://api:8000
     depends_on:
       - api
-    mem_limit: 512m
-    cpus: 1
     restart: unless-stopped
 
   analysis-worker:
+    cpus: 0.45
+    mem_limit: 640m
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -57,10 +59,11 @@ services:
       - tempo-data:/data
     depends_on:
       - api
-    cpus: 1
     restart: unless-stopped
 
   maia-worker:
+    cpus: 0.3
+    mem_limit: 1024m
     build:
       context: .
       dockerfile: Dockerfile.maia
@@ -68,8 +71,6 @@ services:
       TEMPO_API_URL: http://api:8000
     depends_on:
       - api
-    mem_limit: 768m
-    cpus: 1
     restart: unless-stopped
 
 volumes:
