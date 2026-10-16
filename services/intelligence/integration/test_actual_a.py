@@ -45,6 +45,7 @@ def test_actual_A_export_and_B_dispatch_through_C(state):
             owner.derive('actual-A-B');report=client.get('/v1/analysis/runs/actual-A-B/report').json()
             misses=[item for item in report['items'] if item['category']=='repertoire_miss'];gaps=[item for item in report['items'] if item['category']=='practical_gap']
             assert len(misses)==1 and set(misses[0]['expected_moves'])=={'e2e4','d2d4'}
+            assert misses[0]['delivery_status']=='completed' and misses[0]['learning_settlement']=='unknown'
             assert len(gaps)==1 and gaps[0]['opponent_move']=='c7c5' and gaps[0]['eligible_encounter_games']==2 and gaps[0]['actual_frequency']==0.5
         worker_outcome='accepted_result'
         try:run_analysis_work(configuration,'actual-A-B',8,client=connect(Path(os.environ['TEMPO_C_STOCKFISH_PROFILE'])))
