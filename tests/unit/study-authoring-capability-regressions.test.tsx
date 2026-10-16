@@ -34,7 +34,7 @@ it("pr291 R3 independent Endgames reads accepted templates and permits local exp
   }); vi.stubGlobal("fetch", fetcher);
   const client = await import("../../app/lib/study-connection"); await client.connectStudy("http://learning.test", "workspace-a", "synthetic-credential-" + "x".repeat(32));
   const { default: Endgames } = await import("../../app/views/endgames_view"); render(<Endgames theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
-  fireEvent.click(screen.getByRole("tab", { name: "Positions", exact: true }));
+  fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /KBNN vs K/ })).toBeTruthy());
   expect(screen.queryByRole("button", { name: /Add to daily training/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Edit material/ })); fireEvent.click(screen.getByRole("button", { name: "Practice material" }));
