@@ -152,3 +152,20 @@ it("F2 malformed authority metadata blocks connection without replacing the reta
   expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe("incompatible-original");
   expect(fetcher).not.toHaveBeenCalled();
 });
+
+it("F2 bootstrap never changes the active authority and rechecks an older writer before accepting a switch", async () => {
+  const { client, fetcher } = await connected();
+  const bootstrapReply = Promise.withResolvers<Response>();
+  fetcher.mockImplementationOnce(() => bootstrapReply.promise);
+  const switching = client.connectStudy("http://new-learning.test", "workspace-a", credential);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  expect(client.LEARNING_URL).toBe("http://learning.test:8001");
+  const prior = await openIntentStore({ workspace: client.studyWorkspace() });
+  await prior.put({ key: "review:older-writer", kind: "review", attemptId: "older-writer", requestId: "original",
+    endpoint: "/api/cards/original/review", createdAt: "original-time", payload: { outcome: "again" } });
+  prior.close();
+  bootstrapReply.resolve(Response.json(bootstrap));
+  await expect(switching).rejects.toThrow("original service");
+  expect(client.studyConnection()?.origin).toBe("http://learning.test:8001");
+  expect(JSON.parse(sessionStorage.getItem("tempo-learning-connection-v1")!).origin).toBe("http://learning.test:8001");
+});

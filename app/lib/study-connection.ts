@@ -53,8 +53,7 @@ export function learningFetch(input: RequestInfo | URL, options: RequestInit = {
   if (!independentStudy) return globalThis.fetch(input, options);
   return authenticatedLearningFetch(input, options);
 }
-async function authenticatedLearningFetch(input: RequestInfo | URL, options: RequestInit): Promise<Response> {
-  const connection = studyConnection();
+async function authenticatedLearningFetch(input: RequestInfo | URL, options: RequestInit, connection = studyConnection()): Promise<Response> {
   if (!connection) throw new Error("Connect to Learning before studying.");
   const original = input instanceof Request ? input.url : String(input);
   const url = new URL(original, connection.origin);
@@ -137,14 +136,15 @@ export async function connectStudy(origin: string, workspace: string, credential
   await assertStudyAuthority(parsed.origin, workspace.trim());
   const candidate = { origin: parsed.origin, workspace: workspace.trim(), credential };
   const previous = current;
-  current = candidate; LEARNING_URL = candidate.origin;
   try {
-    const response = await learningFetch(`${candidate.origin}/api/study/bootstrap`, { signal: AbortSignal.timeout(5_000) });
+    const response = await authenticatedLearningFetch(`${candidate.origin}/api/study/bootstrap`, { signal: AbortSignal.timeout(5_000) }, candidate);
     if (!response.ok) throw new Error(`Learning connection was rejected (HTTP ${response.status}). Check the Study credential, workspace and allowed Origin.`);
     const bootstrap = studyBootstrapSchema.parse(await response.json());
     if (bootstrap.workspace_id !== candidate.workspace) throw new Error("Learning returned another workspace.");
     new Intl.DateTimeFormat("en-CA", { timeZone: bootstrap.timezone });
-    current = { ...candidate, bootstrap };
+    // An older writer may have added retained work while bootstrap was in flight.
+    await assertStudyAuthority(candidate.origin, candidate.workspace);
+    current = { ...candidate, bootstrap }; LEARNING_URL = candidate.origin;
     const registered = authorities();
     localStorage.setItem(authoritiesKey, JSON.stringify({ ...registered, [studyWorkspace()]: {
       origin: candidate.origin, workspace: candidate.workspace, offlineDatabase: studyOfflineDatabaseName() } }));
