@@ -316,6 +316,138 @@ def test_R1_global_cross_category_priority_and_pagination(state):
     assert owner.report('repair',limit=1,after=first['next_cursor'],generation=report['generation'])['items'][0]==items[1]
 
 
+def test_R6_engine_opportunity_has_no_invented_encounter_frequency(state):
+    owner=repair_scope(state)
+    finish_repair_positions(owner,'repair','miss')
+    report=owner.report('repair')
+    item=next(item for item in report['items'] if item['category']=='engine_opportunity')
+    run,positions,results,_,_,_=owner.capture('repair')
+    position=next(position for position in positions if position['payload']['game_id']=='miss')
+    root,played=(results[position[key]] for key in ('accepted_root','accepted_played'))
+    assert item['engine']['significant'] and item['engine']['loss_cp']==200
+    assert item['supporting_games']==['miss'] and item['supporting_game_count']==1
+    assert item['representative']==position['payload']
+    assert {position['accepted_root'],position['accepted_played']}<=set(item['evidence_ids'])
+    assert item['engine']['best']==root['variations'][0]
+    assert item['engine']['played']==played['variations'][0]
+    assert item['engine']['root_provenance']==root['provenance']
+    assert item['engine']['played_provenance']==played['provenance']
+    assert item['engine']['engine_version']==root['engine_version']==played['engine_version']
+    assert report['complete'] and report['engine_scan_complete']
+    assert item['eligible_encounter_games'] is None
+    assert item['actual_frequency'] is None
+
+
+def test_R6_equal_support_cross_category_ranking(state):
+    games=json.loads((FIXTURES/'games-0.json').read_text())['games']
+    selected=[deepcopy(games[0])]
+    for index in range(9):
+        game=deepcopy(games[2]);game['game_id']='matched-'+str(index)
+        game['contexts'][0]['evidence_id']='matched-evidence-'+str(index)
+        selected.append(game)
+    owner=repair_scope(state,games=selected)
+    finish_repair_positions(owner,'repair','miss')
+    report=owner.report('repair');items=report['items']
+    miss=next(item for item in items if item['category']=='repertoire_miss')
+    engine=next(item for item in items if item['category']=='engine_opportunity')
+    assert miss['supporting_game_count']==engine['supporting_game_count']==1
+    assert miss['eligible_encounter_games']==10 and miss['actual_frequency']==.1
+    assert engine['engine']['significant']
+    assert items.index(miss)<items.index(engine)
+    first=owner.report('repair',limit=1)
+    second=owner.report('repair',limit=1,after=first['next_cursor'])
+    assert first['items']==[miss] and second['items']==[engine] and second['next_cursor'] is None
+    assert len({item['finding_id'] for item in first['items']+second['items']})==len(items)==2
+    owner.command('repair',Command(command_id='R6-refresh',action='continue',expected_revision=1,budget=1))
+    owner.derive('repair')
+    with pytest.raises(DomainError,match='stale_analysis_cursor'):
+        owner.report('repair',limit=1,after=first['next_cursor'])
+    assert owner.report('repair',limit=1,after=first['next_cursor'],generation=report['generation'])['items']==[engine]
+
+
+def test_R6_new_revision_preserves_historical_report_and_dismissal(state,monkeypatch):
+    owner=repair_scope(state)
+    corrected=owner._derive_evidence
+    def reviewed_derivation(*arguments):
+        findings,unknown,incompatible=corrected(*arguments)
+        for item in findings:
+            if item['category']=='engine_opportunity':
+                item.update(eligible_encounter_games=1,actual_frequency=1)
+        return findings,unknown,incompatible
+    monkeypatch.setattr(owner,'_derive_evidence',reviewed_derivation)
+    finish_repair_positions(owner,'repair','miss')
+    historical=owner.report('repair')
+    engine=next(item for item in historical['items'] if item['category']=='engine_opportunity')
+    owner.dismiss('repair',engine['finding_id'],historical['generation'],Command(command_id='R6-dismiss',action='dismiss',expected_revision=engine['finding_revision']))
+    owner.derive('repair')
+    owner.submit(RunRequest(schema_version=1,workspace_id='fixture',run_id='repair',revision=2,
+                            expected_revision=1,input_id='repair',input_revision=1,position_budget=250))
+    monkeypatch.setattr(owner,'_derive_evidence',corrected)
+    finish_repair_positions(owner,'repair','miss')
+    current=next(item for item in owner.report('repair')['items'] if item['category']=='engine_opportunity')
+    assert current['finding_id']==engine['finding_id'] and current['dismissal_state']=='dismissed'
+    assert current['actual_frequency'] is None and current['eligible_encounter_games'] is None
+    assert current['evidence_revision']!=engine['evidence_revision']
+    retained=owner.report('repair',generation=historical['generation'])
+    assert retained=={**historical,'status':'stale'}
+    with state[0].transaction(read_only=True) as db:
+        saved=db.execute('SELECT payload FROM analysis_report_items WHERE run_id=%s AND revision=1 AND generation=%s AND finding_id=%s',
+                         ('repair',historical['generation'],engine['finding_id'])).fetchone()['payload']
+    assert saved==engine
+
+
+def test_R7_identical_run_submission_preserves_committed_state(state):
+    owner=repair_scope(state)
+    finish_repair_positions(owner,'repair','miss')
+    report=owner.report('repair');item=report['items'][0]
+    owner.dismiss('repair',item['finding_id'],report['generation'],Command(command_id='R7-dismiss',action='dismiss',expected_revision=item['finding_revision']))
+    owner.derive('repair')
+    request=RunRequest(schema_version=1,workspace_id='fixture',run_id='repair',revision=1,
+                       input_id='repair',input_revision=1,position_budget=250)
+    before=owner.capture('repair');before_report=owner.report('repair')
+    status=owner.submit(request)
+    assert status==owner.status('repair') and status['revision']==1
+    assert owner.capture('repair')==before and owner.report('repair')==before_report
+    with pytest.raises(DomainError,match='analysis_run_conflict'):
+        owner.submit(request.model_copy(update={'position_budget':251}))
+    assert owner.capture('repair')==before
+
+
+def test_R7_concurrent_creation_replays_during_staging(state,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import contextmanager
+    from threading import Event,current_thread
+    owner=setup(state,budget=0)
+    source=owner.status('run')['scope']
+    request=RunRequest(schema_version=1,workspace_id='fixture',run_id='R7-staging',revision=1,
+                       input_id=source['input_id'],input_revision=source['input_revision'],position_budget=2)
+    transaction=state[0].transaction;staged=Event();release=Event()
+    @contextmanager
+    def controlled_transaction(*arguments,**keywords):
+        with transaction(*arguments,**keywords) as db:
+            yield db
+        if current_thread().name.startswith('R7-original') and not staged.is_set():
+            with transaction(read_only=True) as db:
+                row=db.execute('SELECT state FROM analysis_runs WHERE run_id=%s',(request.run_id,)).fetchone()
+            if row and row['state']=='staging':
+                staged.set()
+                assert release.wait(10),'concurrent replay did not release original creation'
+    monkeypatch.setattr(state[0],'transaction',controlled_transaction)
+    with ThreadPoolExecutor(max_workers=1,thread_name_prefix='R7-original') as executor:
+        original=executor.submit(owner.submit,request)
+        try:
+            assert staged.wait(10),'original run did not reach durable staging'
+            with pytest.raises(DomainError,match='analysis_run_not_found'):owner.status(request.run_id)
+            replay=owner.submit(request)
+            assert replay['run_id']==request.run_id and replay['revision']==1
+        finally:release.set()
+        assert original.result(timeout=10)==replay
+    with transaction(read_only=True) as db:
+        assert db.execute('SELECT count(*) FROM analysis_runs WHERE run_id=%s',(request.run_id,)).fetchone()['count']==1
+        positions=db.execute('SELECT count(*),count(DISTINCT position_id) AS distinct_count FROM analysis_positions WHERE run_id=%s',(request.run_id,)).fetchone()
+        assert positions['count']==positions['distinct_count']==sum(replay['progress'].values())
+
+
 def test_R2_same_color_without_exact_context_has_no_lineage(state):
     owner=repair_scope(state,extra_selection=True)
     game=json.loads((FIXTURES/'games-0.json').read_text())['games'][0]['game_id']

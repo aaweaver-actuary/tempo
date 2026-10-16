@@ -1,5 +1,21 @@
 # Intelligence regression ownership
 
+## PR295 R6/R7 corrective regressions
+
+`integration/test_analysis_postgres.py` owns the native cases:
+
+- `test_R6_engine_opportunity_has_no_invented_encounter_frequency`
+- `test_R6_equal_support_cross_category_ranking` (also generation-bound pagination)
+- `test_R6_new_revision_preserves_historical_report_and_dismissal`
+- `test_R7_identical_run_submission_preserves_committed_state`
+- `test_R7_concurrent_creation_replays_during_staging`
+
+`tests/test_repairs.py` owns `test_R6_support_count_still_dominates_frequency` and
+`test_R6_source_native_rankings_remain_separate` (actual/Lichess/Masters/Maia).
+The existing R1/R2/R3/R4/R5 cases retain their original assertions. R7 backend
+proofs preserve positions, accepted results, reports, dismissals, input, budget
+and revision; no backend submission change was necessary.
+
 The regular owning suites below retain the named #109 regressions. Parameterized
 cases expand these test names; actual case identities, counts, outcomes and tested
 revision come from preserved JUnit/runner reports, not from this inventory. Unit

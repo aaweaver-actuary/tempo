@@ -253,7 +253,7 @@ class AnalysisStore:
             item=base_finding("engine_opportunity",{**selection,"workspace_id":self.workspace},row["payload"],row["payload"]["actual_move"],"stronger_continuation_supported_by_search")
             # Engine incidents are game/history specific; do not aggregate incompatible roots.
             item["finding_id"]=digest({"semantic":item["finding_id"],"game":row["payload"]["game_id"],"history":row["payload"]["history"],"starting_fen":row["payload"]["starting_fen"],"ply":row["payload"]["ply"]})
-            item.update(engine=evidence,evidence_ids=[row["accepted_root"]]+([row["accepted_played"]] if row["accepted_played"] else []),eligible_encounter_games=1,actual_frequency=1)
+            item.update(engine=evidence,evidence_ids=[row["accepted_root"]]+([row["accepted_played"]] if row["accepted_played"] else []),eligible_encounter_games=None,actual_frequency=None)
             item["source_evidence"] = [{"kind": "repertoire_association", **association} for association in associations]
             item["evidence_ids"] = sorted(set(item["evidence_ids"] + [identity for association in associations for identity in association["evidence_ids"]]))
             if selection["lineage"] is None:

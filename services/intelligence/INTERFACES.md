@@ -480,6 +480,23 @@ publication, activation, admission, or a second remediation-obligation path.
 
 ### PR295 corrective derivation and recovery
 
+Engine opportunities retain their observed supporting game/count, significant
+root/played comparison, exact attribution and worker provenance. They have
+`eligible_encounter_games:null` and `actual_frequency:null`: an analyzed position
+does not establish an eligible repertoire-encounter population. Global ordering
+still compares distinct support first, then known selected-source frequency,
+supported engine significance/loss, proposal cost and stable identity. Selected
+Lichess, Masters and Maia evidence identities remain independent populations.
+The R6 correction stays within undeployed derivation version 2 and applies to new
+derivations. Immutable historical report rows and semantic dismissal identities
+are preserved; an explicit new run revision obtains corrected historical analyses.
+
+Run creation remains `POST /v1/analysis/runs`, recovered through the existing GET
+run-status endpoint, without a command receipt or new table. Identical immutable
+run ID/revision submission is idempotent, including concurrent staging replay;
+changed scope conflicts. Workbench verifies the status workspace, run/revision and
+complete normalized immutable request scope before clearing its saved creation.
+
 New report generations carry `derivation_version:2` and
 `ordering:source-rank-semantic-v2`. Ranking applies globally across categories.
 Old immutable generations retain their ordinals and legacy cursor ordering;

@@ -25,6 +25,34 @@ def test_R1_global_priority_known_unknown_frequency_and_significance():
     assert rank_key(finding('large',cost=3)) < rank_key(finding('unknown'))
 
 
+def test_R6_support_count_still_dominates_frequency():
+    engine=dict(finding_id='engine',category='engine_opportunity',supporting_games=['a','b','c'],
+                supporting_game_count=3,actual_frequency=None,engine={'significant':True,'loss_cp':200})
+    miss=dict(finding_id='miss',category='repertoire_miss',supporting_games=['d'],
+              supporting_game_count=1,actual_frequency=1,engine=None)
+    assert sorted([miss,engine],key=rank_key)==[engine,miss]
+
+
+@pytest.mark.parametrize('source',['actual','lichess','masters','maia'])
+def test_R6_source_native_rankings_remain_separate(source):
+    actual=dict(finding_id='z-actual',supporting_game_count=1,actual_frequency=.9,
+                source_evidence=[{'kind':kind,'evidence_id':kind+'-chosen','frequency':.1}
+                                 for kind in ('lichess','masters','maia')])
+    population=dict(finding_id='z-population',supporting_game_count=1,actual_frequency=.1,
+                    source_evidence=[{'kind':kind,'evidence_id':kind+'-chosen','frequency':.8}
+                                     for kind in ('lichess','masters','maia')]+
+                                    [{'kind':source,'evidence_id':'unselected','frequency':1}])
+    engine=dict(finding_id='a-engine',supporting_game_count=1,actual_frequency=None,
+                source_evidence=[],engine={'significant':True,'loss_cp':200})
+    items=[engine,population,actual]
+    ranked=sorted(items,key=lambda item:rank_key(item,source,source+'-chosen'))
+    assert ranked==([actual,population,engine] if source=='actual' else [population,actual,engine])
+    assert engine['actual_frequency'] is None
+    if source!='actual':
+        # An unrelated evidence identity makes every selected-population frequency unknown.
+        assert sorted(items,key=lambda item:rank_key(item,source,'missing'))[0] is engine
+
+
 @pytest.mark.parametrize('source',['actual','lichess','masters','maia'])
 def test_R1_only_selected_population_ranks(source):
     items=[dict(finding_id=identity,supporting_game_count=1,actual_frequency=actual,

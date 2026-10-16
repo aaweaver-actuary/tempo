@@ -3,6 +3,7 @@ import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, relative } from 'node:path';
 import assert from 'node:assert/strict';
 import { chromium, expect } from '@playwright/test';
+import {runCreationScenarios} from './run-creation.mjs';
 const root=resolve(new URL('../',import.meta.url).pathname);
 const fixturePath=process.argv[2];const evidence=resolve(process.argv[3]??root+'/test-results/browser');
 if(!fixturePath)throw new Error('Explicit actual Intelligence producer fixture required; no live fallback');
@@ -20,7 +21,7 @@ const host=createServer(async(request,response)=>{
 });
 await mkdir(evidence,{recursive:true});
 await new Promise(resolve=>host.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+host.address().port;
-let passed=false;
+let passed=false;let creationCases=[];
 try{
   browser=await chromium.launch({headless:true});const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1280,height:900}});
   await context.route('**/*',async route=>{
@@ -88,10 +89,13 @@ try{
   await expect(page.getByRole('button',{name:'Resume',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Cancel',exact:true})).toHaveCount(1);
   await expect(page.getByText('This older analysis requires a new revision before continuing. Cancel remains available.',{exact:true})).toBeVisible();
-  await context.close();assert.deepEqual(unexpected,[]);passed=true;
+  await context.close();assert.deepEqual(unexpected,[]);
+  creationCases=await runCreationScenarios(browser,origin,fixtures,evidence);
+  assert.ok(creationCases.every(result=>result.passed),JSON.stringify(creationCases.map(({case:identity,passed,error,run_ids})=>({identity,passed,error,run_ids}))));
+  passed=true;
 }finally{
-  if(!passed&&page){await writeFile(resolve(evidence,"failure.html"),await page.content());await page.screenshot({path:resolve(evidence,"failure.png"),fullPage:true});}
+  if(!passed&&page&&!page.isClosed()){await writeFile(resolve(evidence,"failure.html"),await page.content());await page.screenshot({path:resolve(evidence,"failure.png"),fullPage:true});}
   await browser?.close();await new Promise(resolve=>host.close(resolve));
-  console.log(JSON.stringify({executedIdentities:passed?['C_native_workbench']:[],passed:passed?1:0,failed:passed?0:1,skipped:0,success:passed}));
+  console.log(JSON.stringify({executedIdentities:passed?['C_native_workbench',...creationCases.map(item=>item.case)]:[],passed:passed?1+creationCases.length:creationCases.filter(item=>item.passed).length,failed:passed?0:Math.max(1,creationCases.filter(item=>!item.passed).length),skipped:0,success:passed}));
   await writeFile(resolve(evidence,'browser.json'),JSON.stringify({case:'C_native_workbench',passed,fixture:fixturePath,traffic,unexpected,port_closed:!host.listening},null,2)+'\n');
 }

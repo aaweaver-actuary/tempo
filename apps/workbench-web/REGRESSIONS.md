@@ -19,3 +19,24 @@ C-produced null-lineage engine finding with board rendering/dismissal/reload.
 The native browser scenario also verifies legacy run controls omit Continue,
 Retry and Resume, retain Cancel, and explain revision recovery. These predictable
 rejections must never create an unrecoverable pending command.
+
+R7 owning client regressions in `tests/client.test.mjs`:
+
+- `R7 run creation survives response loss with original identity`
+- `R7 repeated Start analysis cannot create a second run`
+- `R7 missing run status preserves original creation`
+- `R7 conflicting run identity fails closed`
+- `R7 run creation and command mutations share authority gate`
+- `R7 origin and workspace switching preserve pending creation`
+- `R7 storage failure prevents run creation transmission`
+- `R7 authentication rejection retains creation evidence`
+- `R7 malformed or changed pending creation retains evidence and sends nothing`
+- `R7 disconnected response cannot clear pending creation or another authority`
+- `R7 original v2 command records remain recoverable`
+
+`tests/browser.mjs` invokes the strict real-browser scenarios in
+`tests/run-creation.mjs`: `R7 browser response-loss`, `R7 browser repeated-click`,
+and `R7 browser authority-switch`. They prove one logical run, original input and
+budget, real storage/reload recovery, retained 404 uncertainty, and origin/workspace
+isolation. Unexpected service traffic fails. These cases also run from the
+source-removed package qualifier and registered Workbench component lane.

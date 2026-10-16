@@ -104,3 +104,164 @@ for(const action of ['continue','retry','cancel','resume'])test(`R4 ${action} co
   const h=commandHarness();await assert.rejects(()=>h.commands.submit(h.client,runPath,{...durableCommand,action}));
   const pending=await h.commands.pending(h.client);await h.commands.recover(h.client,pending);assert.equal(h.receipts.size,1);
 });
+
+const creation={schema_version:1,workspace_id:'fixture',revision:1,input_id:'accepted-input',input_revision:2,position_budget:250};
+function runHarness(){
+  const saved=storage(),calls=[],runs=new Map(),receipts=new Map();
+  let transmitted;const transmission=new Promise(resolve=>{transmitted=resolve;});
+  let postMode='lost',getMode='success',hold,transform=value=>value;
+  const client=new IntelligenceClient(connection,async(url,options)=>{
+    calls.push({url,method:options.method,body:options.body});
+    transmitted();
+    const path=new URL(url).pathname;
+    if(options.method==='GET'){
+      if(getMode==='auth')return Response.json({error:'unauthorized'},{status:401});
+      const id=decodeURIComponent(path.split('/').at(-1));
+      if(path.startsWith('/v1/analysis/commands/'))return receipts.has(id)?Response.json(receipts.get(id)):Response.json({error:'missing'},{status:404});
+      if(getMode==='missing'||!runs.has(id))return Response.json({error:'analysis_run_not_found'},{status:404});
+      return Response.json(transform(structuredClone(runs.get(id))));
+    }
+    if(postMode==='auth')return Response.json({error:'unauthorized'},{status:401});
+    if(hold)await hold;
+    const request=JSON.parse(options.body);
+    let result;
+    if(path==='/v1/analysis/runs'){
+      const scope={expected_revision:null,policy_version:'c-analysis-v1',ranking_source:'actual',source_evidence_ids:[],ranking_evidence_id:null,...request};
+      if(runs.has(request.run_id))assert.deepEqual(runs.get(request.run_id).scope,scope);
+      result={schema_version:1,workspace_id:request.workspace_id,run_id:request.run_id,revision:request.revision,scope};
+      runs.set(request.run_id,result);
+    }else{
+      const payload={run_id:path.split('/')[4],schema_version:1,budget:250,...request};
+      result={schema_version:1,workspace_id:'fixture',accepted:true,command_id:request.command_id,
+        request_digest:'sha256:'+createHash('sha256').update(JSON.stringify(payload,Object.keys(payload).sort())).digest('hex')};
+      receipts.set(request.command_id,result);
+    }
+    if(postMode==='lost')throw new Error('response lost after commit');
+    return Response.json(transform(structuredClone(result)));
+  });
+  return {saved,calls,runs,client,transmission,commands:new PendingCommands(saved),
+    mode:({post,get,gate,change}={})=>{if(post)postMode=post;if(get)getMode=get;if(gate!==undefined)hold=gate;if(change)transform=change;}};
+}
+
+test('R7 run creation survives response loss with original identity',async()=>{
+  const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation),/response lost/);
+  const pending=await h.commands.pending(h.client);assert.equal(pending.kind,'run_create');
+  assert.equal(h.runs.size,1);assert.ok(h.runs.has(pending.run_id));
+  const coordinator=new PendingCommands(h.saved);
+  assert.equal(await coordinator.recoverRun(h.client,pending),pending.run_id);
+  assert.equal(await coordinator.pending(h.client),null);
+  assert.equal(h.calls.filter(call=>call.method==='POST').length,1);
+});
+
+test('R7 repeated Start analysis cannot create a second run',async()=>{
+  const h=runHarness();let release;h.mode({post:'success',gate:new Promise(resolve=>{release=resolve;})});
+  const original=crypto.randomUUID;let generated=0;
+  crypto.randomUUID=()=>{generated++;return original.call(crypto);};
+  try{
+    const first=h.commands.submitRun(h.client,creation);
+    await h.transmission;
+    await assert.rejects(()=>h.commands.submitRun(h.client,creation),/creation is unconfirmed/);
+    assert.equal(h.calls.length,1);assert.equal(generated,1);
+    release();const id=await first;assert.ok(h.runs.has(id));assert.equal(h.runs.size,1);
+  }finally{crypto.randomUUID=original;release();}
+});
+
+test('R7 missing run status preserves original creation',async()=>{
+  const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation));
+  const pending=await h.commands.pending(h.client);h.mode({get:'missing'});
+  await assert.rejects(()=>h.commands.recoverRun(h.client,pending),/analysis_run_not_found/);
+  assert.deepEqual(await h.commands.pending(h.client),pending);
+  h.mode({post:'success',get:'success'});
+  assert.equal(await h.commands.retryRun(h.client,pending),pending.run_id);
+  const posts=h.calls.filter(call=>call.method==='POST');assert.equal(posts.length,2);
+  assert.equal(posts[0].body,posts[1].body);assert.equal(h.runs.size,1);
+});
+
+test('R7 conflicting run identity fails closed',async()=>{
+  const changes={schema_version:2,workspace_id:'foreign',run_id:'different',revision:2,expected_revision:1,input_id:'different',input_revision:3,position_budget:251,
+    policy_version:'different',ranking_source:'lichess',ranking_evidence_id:'different',source_evidence_ids:['different']};
+  for(const [field,value] of Object.entries(changes)){
+    const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation));
+    const pending=await h.commands.pending(h.client);
+    h.mode({change:status=>({...status,scope:{...status.scope,[field]:value}})});
+    await assert.rejects(()=>h.commands.recoverRun(h.client,pending),undefined,field);
+    assert.deepEqual(await h.commands.pending(h.client),pending,field);
+    assert.equal(h.calls.filter(call=>call.method==='POST').length,1);
+  }
+});
+
+test('R7 run creation and command mutations share authority gate',async()=>{
+  const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation));
+  const run=await h.commands.pending(h.client);
+  await assert.rejects(()=>h.commands.submit(h.client,runPath,durableCommand),/creation is unconfirmed/);
+  assert.equal(h.calls.length,1);await h.commands.recoverRun(h.client,run);
+  await assert.rejects(()=>h.commands.submit(h.client,runPath,durableCommand),/response lost/);
+  const command=await h.commands.pending(h.client);
+  await assert.rejects(()=>h.commands.submitRun(h.client,creation),/pending command/);
+  await h.commands.recover(h.client,command);h.mode({post:'success'});
+  await h.commands.submitRun(h.client,creation);assert.equal(h.runs.size,2);
+});
+
+test('R7 origin and workspace switching preserve pending creation',async()=>{
+  const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation));
+  const pending=await h.commands.pending(h.client),bytes=JSON.stringify([...h.saved.values]);
+  for(const change of [{origin:'http://127.0.0.1:8050'},{workspace:'foreign'}]){
+    const foreign=new IntelligenceClient({...connection,...change},async()=>assert.fail('Foreign authority received the original creation'));
+    assert.equal(await h.commands.pending(foreign),null);
+    await assert.rejects(()=>h.commands.recoverRun(foreign,pending),/another authority/);
+    await assert.rejects(()=>h.commands.retryRun(foreign,pending),/another authority/);
+    assert.equal(JSON.stringify([...h.saved.values]),bytes);
+  }
+  assert.ok(!bytes.includes('synthetic-caller'));
+  assert.equal(await h.commands.recoverRun(h.client,pending),pending.run_id);
+});
+
+test('R7 storage failure prevents run creation transmission',async()=>{
+  for(const failure of ['write','readback']){
+    const h=runHarness();
+    if(failure==='write')h.saved.setItem=()=>{throw new Error('storage unavailable');};
+    else h.saved.setItem=()=>{};
+    await assert.rejects(()=>h.commands.submitRun(h.client,creation),/storage unavailable|Nothing was sent/);
+    assert.equal(h.calls.length,0);assert.equal(h.runs.size,0);
+  }
+});
+
+test('R7 authentication rejection retains creation evidence',async()=>{
+  const h=runHarness();h.mode({post:'auth'});
+  await assert.rejects(()=>h.commands.submitRun(h.client,creation),/Reconnect/);
+  const pending=await h.commands.pending(h.client);h.mode({get:'auth'});
+  await assert.rejects(()=>h.commands.recoverRun(h.client,pending),/Reconnect/);
+  assert.deepEqual(await h.commands.pending(h.client),pending);
+  h.mode({post:'success',get:'success'});
+  assert.equal(await h.commands.retryRun(h.client,pending),pending.run_id);
+  assert.equal(h.runs.size,1);
+});
+
+test('R7 malformed or changed pending creation retains evidence and sends nothing',async()=>{
+  const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation));
+  const pending=await h.commands.pending(h.client),key=[...h.saved.values.keys()][0],original=h.saved.getItem(key);
+  for(const changed of [{...pending,path:'https://foreign.invalid/v1/analysis/runs'},
+    {...pending,body:pending.body.replace('accepted-input','changed-input')},{...pending,run_id:'changed'},
+    {...pending,kind:'unknown'},{...pending,origin:'http://foreign.invalid'}]){
+    const raw=JSON.stringify(changed);h.saved.setItem(key,raw);
+    await assert.rejects(()=>h.commands.retryRun(h.client,pending));
+    assert.equal(h.saved.getItem(key),raw);assert.equal(h.calls.length,1);
+  }
+  h.saved.setItem(key,original);await h.commands.recoverRun(h.client,pending);
+});
+
+test('R7 disconnected response cannot clear pending creation or another authority',async()=>{
+  const h=runHarness();let release;h.mode({post:'success',gate:new Promise(resolve=>{release=resolve;})});
+  const sent=h.commands.submitRun(h.client,creation);await h.transmission;
+  const pending=await h.commands.pending(h.client);h.client.disconnect();release();
+  await assert.rejects(()=>sent,/response ignored/);assert.deepEqual(await h.commands.pending(h.client),pending);
+});
+
+test('R7 original v2 command records remain recoverable',async()=>{
+  const h=commandHarness();await assert.rejects(()=>h.commands.submit(h.client,runPath,durableCommand));
+  const pending=await h.commands.pending(h.client),key=[...h.saved.values.keys()][0];
+  const {kind,...old}=pending;old.version=2;h.saved.setItem(key,JSON.stringify(old));
+  const restored=await new PendingCommands(h.saved).pending(h.client);
+  assert.equal(restored.version,2);assert.equal(restored.body,JSON.stringify(durableCommand));
+  await h.commands.recover(h.client,restored);assert.equal(await h.commands.pending(h.client),null);
+});

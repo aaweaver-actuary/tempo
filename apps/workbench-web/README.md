@@ -34,6 +34,18 @@ conflicting/malformed records remain retained and block transmission. The public
 client's `requestSerialized` method preserves saved request bytes and its existing
 connection-generation fences. Storage failure prevents transmission.
 
+Run creation uses that same mutation slot and fence. `submitRun` generates one
+run ID, retains exact POST bytes and a path/body digest in a credential-free v3
+`run_create` record, and verifies persistence before dispatch. `recoverRun` reads
+`GET /v1/analysis/runs/{run_id}` and compares its complete immutable request scope,
+including normalized defaults. A matching status resolves creation without
+another POST; 404, rejected authentication, lost responses and scope conflicts
+retain the original intent. `retryRun` replays identical bytes and the original
+run ID, then confirms through GET. The existing authority storage key is retained;
+v2 commands and v1 migration remain supported. Commands and creation block each
+other until resolution. Reload recovery navigates only after confirmation, and
+switching origin/workspace retains the original record for reconnection.
+
 Unknown engine repertoire/lineage is displayed explicitly. Old report generations
 remain readable with a legacy attribution notice. A report or response draft does
 not approve, publish, activate or admit training content.

@@ -23,6 +23,7 @@ export function mountWorkbench(root:HTMLElement){
   function error(value:unknown){status(value instanceof Error?value.message:"Analysis unavailable. Retry explicitly.");}
   function history(){const url=new URL(location.href);for(const [key,value]of Object.entries({run:runId,category,dismissal})){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key);}window.history.replaceState({},"",url);}
   function connectionForm(saved?:Partial<Connection>){
+    renderGeneration++;
     board?.destroy();board=undefined;content.replaceChildren();
     const panel=node("section");panel.className="connection";panel.append(node("h2","Connect to Intelligence"),node("p","Use the caller credential for this workspace. Study connects separately."));
     const origin=field("Intelligence origin",saved?.origin??"http://127.0.0.1:8049"),workspace=field("Workspace",saved?.workspace),credential=field("Caller credential",saved?.credential,"password");
@@ -39,6 +40,21 @@ export function mountWorkbench(root:HTMLElement){
     const authority=client!;
     const saved=await commands.pending(authority);
     if(!saved)return;
+    if(saved.kind==='run_create'){
+      try{
+        const confirmed=await commands.recoverRun(authority,saved);
+        if(client===authority&&toolbar.isConnected){runId=confirmed;history();status('Analysis creation confirmed by Intelligence.');}
+      }catch{
+        if(client!==authority||!toolbar.isConnected)return;
+        status('Analysis creation is unconfirmed. Recover or retry the existing request before starting another.');
+        toolbar.append(button('Retry analysis creation',async()=>{
+          const generation=renderGeneration;
+          try{const confirmed=await commands.retryRun(authority,saved);if(client===authority&&generation===renderGeneration){runId=confirmed;history();status('Analysis creation confirmed by Intelligence.');await home();}}
+          catch(value){if(client===authority&&generation===renderGeneration)error(value);}
+        }));
+      }
+      return;
+    }
     try{await commands.recover(authority,saved);status("Saved command confirmed by Intelligence.");}
     catch{status("Command persistence is unconfirmed. Recover it before another change.");toolbar.append(button("Retry pending command",async()=>{try{await commands.retry(authority,saved);status("Command confirmed by Intelligence.");if(client===authority)await home();}catch(value){error(value);}}));}
   }
@@ -52,11 +68,26 @@ export function mountWorkbench(root:HTMLElement){
       const importPanel=node("section");importPanel.append(node("h3","Explicit game scope"),node("p","Choose an accepted export. Import is a manual operator command; this page does not fetch account history."));
       const inputChoices:Record<string,string>={"":"Choose an imported scope"};for(const item of inputs.items){if(item.state==="accepted")inputChoices[String(item.input_id)+":"+String(item.revision)]=`${String(item.input_id)} · ${(item.game_ids as string[]).length} games · ${String(item.completeness)}`;}
       let selected="";importPanel.append(select("Imported input",inputChoices,"",value=>{selected=value;}),button("Start analysis · 250 decisions",async()=>{
+        const authority=client!,generation=renderGeneration;
+        try{await commands.assertAvailable(authority);}catch(value){if(client===authority)error(value);return;}
         if(!selected){status("Choose an accepted input first.");return;}
         const input=inputs.items.find(item=>String(item.input_id)+":"+String(item.revision)===selected)!;
-        try{await commands.assertAvailable(client!);}catch(value){error(value);return;}
-        const id=crypto.randomUUID();const payload={schema_version:1,workspace_id:client!.connection.workspace,run_id:id,revision:1,input_id:input.input_id,input_revision:input.revision,position_budget:250};
-        status("Saving analysis request…");try{const saved=await client!.request("/v1/analysis/runs",z.object({schema_version:z.literal(1),workspace_id:z.string(),run_id:z.string()}).passthrough(),payload);if(saved.run_id!==id)throw new Error("Created run identity mismatch");runId=id;history();status("Request saved. Findings and engine progress are separate.");await home();}catch(value){error(value);}
+        status('Saving analysis request…');
+        try{
+          const confirmed=await commands.submitRun(authority,{schema_version:1,workspace_id:authority.connection.workspace,revision:1,input_id:String(input.input_id),input_revision:Number(input.revision),position_budget:250});
+          if(client!==authority||generation!==renderGeneration)return;
+          runId=confirmed;history();status('Request saved. Findings and engine progress are separate.');await home();
+        }catch(value){
+          if(client!==authority||generation!==renderGeneration)return;
+          error(value);
+          try{
+            const pending=await commands.pending(authority);
+            if(pending?.kind==='run_create'){
+              await pendingCommand(toolbar);
+              if(client===authority&&generation===renderGeneration&&runId===pending.run_id)await home();
+            }
+          }catch(persistenceError){if(client===authority&&generation===renderGeneration)error(persistenceError);}
+        }
       }));content.append(importPanel);
       const choices:Record<string,string>={"":"Choose a run"};for(const item of runs.items)choices[String(item.run_id)]=`${String(item.run_id)} · ${String(item.state)}`;
       content.append(select("Run",choices,runId,value=>{runId=value;history();void home();}));
