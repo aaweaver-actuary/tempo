@@ -308,8 +308,9 @@ export class MaiaWorker extends EventEmitter {
         this.status(record, 'cancelled', 'cancelled_before_execution'); this.acknowledgeTermination(record); this.emit('idle');
         return;
       }
-      this.acknowledge(request, 'requested');
+      // Fence output before acknowledgement listeners can synchronously reenter.
       this.stopActive({ status: 'cancelled', reason: 'cancelled_by_request', retryable: false });
+      this.acknowledge(request, 'requested');
       return;
     }
     if (!this.isTerminal(record)) {

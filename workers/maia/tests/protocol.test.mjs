@@ -593,3 +593,16 @@ test('repair C5: synchronous interrupt fences child result before deferred close
   await closing;
   assert.equal(f.records.some(isResult()), false); assert.equal(f.records.find(isStatus('failed')).payload.reason, 'execution_interrupted');
 });
+
+test('repair C6: requested cancellation fences reentrant child output before acknowledgement callbacks', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job({ fen: 'hang' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  const active = f.worker.active;
+  f.worker.on('record', record => {
+    if (isAck('requested')(record)) f.worker.handleChildMessage(active.child, { type: 'result', token: active.token, predictions: input.legal_moves.map(move => ({ move, probability: 0.5 })) });
+  });
+  cancel(f.worker, cancellation(input));
+  assert.equal(f.records.some(isResult()), false, 'result published after cancellation processing began');
+  await f.record(isAck('terminated'));
+  assert.equal(f.records.find(isStatus('cancelled')).payload.reason, 'cancelled_by_request');
+});

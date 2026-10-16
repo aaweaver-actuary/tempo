@@ -25,5 +25,5 @@ All cases are discovered by `node test.mjs protocol` in `tests/protocol.test.mjs
 - Existing `response loss exact replay`, `completed generation replay`, and `worker crash` cases own C3 result/provenance and final-failure replay.
 - `repair C4`: conflicts in digest, ordered moves, constraints and model, invalid records and receipt-capacity rejection preserve valid active authority.
 - `repair C5`: drain/interrupt close during predecessor termination, queued replacement, warmup and supersession; drain-to-interrupt wakeup; immediate dispatch/result shutdown fences and synchronous readiness interruption.
-- `repair C6`: reentrant advancement sees completed tombstone settlement; pending dispatch, admission cancellation and shutdown remain coherent.
+- `repair C6`: reentrant advancement sees completed tombstone settlement; pending dispatch, admission cancellation and shutdown remain coherent. A synchronous result injected by a `requested` acknowledgement listener is fenced; its named regression also failed before the cancellation fence was moved ahead of notification.
 - `repair C7` plus existing resource/protocol suites: admitted early model failure still invalidates queued work; limits, memory, deadlines including warmup, busy behavior, crash recovery and unsupported context retain their regular coverage.
