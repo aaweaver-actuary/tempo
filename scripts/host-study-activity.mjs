@@ -4,10 +4,16 @@ import { tmpdir } from 'node:os';
 
 /** Registered producers expire unavailable; only explicit clean teardown removes one. */
 export async function readHostStudyActivity({directory = process.env.TEMPO_STUDY_ACTIVITY_DIRECTORY ?? join(tmpdir(), 'tempo-study-activity-v1'),
-  now = process.hrtime.bigint()} = {}) {
+  now = process.hrtime.bigint(), expectedSources} = {}) {
+  try {
+    expectedSources ??= JSON.parse(process.env.TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES ?? "[]");
+    if (!Array.isArray(expectedSources) || expectedSources.some(source => typeof source !== "string" || !source || source.length > 200))
+      return {available: false, active: false};
+  } catch { return {available: false, active: false}; }
+  const seenSources = new Set();
   let entries;
   try { entries = await readdir(directory); }
-  catch (error) { return {available: error.code === 'ENOENT', active: false}; }
+  catch (error) { return {available: error.code === 'ENOENT' && expectedSources.length === 0, active: false}; }
   let active = false;
   for (const name of entries.filter(name => name.endsWith('.json'))) {
     try {
@@ -19,6 +25,9 @@ export async function readHostStudyActivity({directory = process.env.TEMPO_STUDY
       if (snapshot.version !== 1 || name !== `${snapshot.producer}.json` ||
           !snapshot.sessions || Array.isArray(snapshot.sessions) || typeof snapshot.sessions !== 'object')
         return {available: false, active};
+      const source = snapshot.source ?? snapshot.producer;
+      if (typeof source !== "string" || !source || source.length > 200) return {available: false, active};
+      seenSources.add(source);
       const validUntil = deadline(snapshot.validUntilNs);
       if (validUntil <= now || validUntil > now + 16_000_000_000n) return {available: false, active};
       if (typeof snapshot.pendingRequests !== 'boolean') return {available: false, active};
@@ -34,5 +43,5 @@ export async function readHostStudyActivity({directory = process.env.TEMPO_STUDY
       if (error.code !== 'ENOENT') return {available: false, active};
     }
   }
-  return {available: true, active};
+  return {available: expectedSources.every(source => seenSources.has(source)), active};
 }

@@ -112,3 +112,5 @@ reported, not skipped or weakened. The release procedure is in
 [study-priority-release.md](study-priority-release.md).
 
 Docker-backed component suites may declare `requiresDocker: true` independently of their result reporter kind. Stockfish retains its registered Node container suite; managed dispatch acquires the shared lease and injects the same ownership/capacity adapter used by PostgreSQL suites. Listing remains read-only.
+
+Register expected independent workspace identities before service startup using `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES`, a JSON string array inherited by managed commands. Missing initial or renewed evidence denies admission even if legacy service absence is explicitly configured. Clean service shutdown does not remove that operator expectation. Remove an expectation only when that service is intentionally absent.

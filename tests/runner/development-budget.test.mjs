@@ -295,3 +295,15 @@ test('registered Stockfish container qualification acquires Docker admission whi
   assert.equal(componentSelectionNeedsBudget(['--component','stockfish']),true);
   assert.equal(componentSelectionNeedsBudget(['--component','stockfish','--list']),false);
 });
+
+test('expected independent control cannot be mistaken for absence before its first successful publication', async () => {
+  const directory=await mkdtemp(join(tmpdir(),'tempo-expected-activity-'));
+  const now=100_000_000_000n;
+  try {
+    assert.equal((await readHostStudyActivity({directory,now,expectedSources:['learning-a']})).available,false);
+    await writeFile(join(directory,'owner.json'),JSON.stringify({version:1,producer:'owner',source:'learning-a',pendingRequests:false,validUntilNs:String(now+15_000_000_000n),sessions:{}}));
+    assert.deepEqual(await readHostStudyActivity({directory,now,expectedSources:['learning-a']}),{available:true,active:false});
+    assert.equal((await readHostStudyActivity({directory,now,expectedSources:['learning-a','learning-b']})).available,false);
+    assert.equal((await readHostStudyActivity({directory,now,expectedSources:'malformed'})).available,false);
+  } finally {await rm(directory,{recursive:true,force:true});}
+});
