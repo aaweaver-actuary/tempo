@@ -12,7 +12,7 @@ from tempo_stockfish_client import stockfish_input_digest
 
 def main(arguments=None):
     parser=argparse.ArgumentParser()
-    
+
     for flag,variable in (('a-export','TEMPO_C_A_EXPORT'),('game-ids','TEMPO_C_GAME_IDS_FILE'),('b-exchange','TEMPO_C_B_EXCHANGE'),('output','TEMPO_C_ACTUAL_EVIDENCE')):
         parser.add_argument('--'+flag,type=Path,default=os.environ.get(variable),required=variable not in os.environ)
     args=parser.parse_args(arguments);raw=json.loads((args.a_export/'manifest.json').read_text());ids=json.loads(args.game_ids.read_text())

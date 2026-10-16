@@ -27,6 +27,7 @@ def main():
             root=Path(temporary);build=root/'build';shutil.copytree(source,build,ignore=shutil.ignore_patterns('.venv','__pycache__','.pytest_cache','test-results','dist'))
             run([sys.executable,'-m','build','--no-isolation','--outdir',destination],build,'build');shutil.rmtree(build);report['build_source_removed']=True
             dependencies=[args.c_artifacts/name for name in ('tempo_chess_core-0.1.0-py3-none-any.whl','tempo_analysis_jobs_contracts-1.0.0-py3-none-any.whl','tempo_intelligence-0.1.0-py3-none-any.whl')]
+            report['C_dependency_artifacts']={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in dependencies}
             for version in ('3.12','3.14'):
                 for kind,filename in (('wheel','tempo_analysis_pilot-0.1.0-py3-none-any.whl'),('sdist','tempo_analysis_pilot-0.1.0.tar.gz')):
                     label='python-'+version+'-'+kind;consumer=root/label;consumer.mkdir();shutil.copytree(source/'tests',consumer/'tests',ignore=shutil.ignore_patterns('__pycache__'))
