@@ -282,7 +282,7 @@ export async function qualifyBenchmark({ reportPath, artifactsDirectory }) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === import.meta.filename) {
   try {
     const command = process.argv[2];
     if (command === 'boundary') console.log(JSON.stringify(checkBoundary(JSON.parse(readFileSync(0, 'utf8')))));

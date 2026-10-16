@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, writeFile, mkdir, cp, rm, appendFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir, cp, rm, appendFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { stageExternalInputs, runtimeFiles, componentRoot } from '../build.mjs';
 import { checkBoundary } from '../qualify.mjs';
 import * as publicInterface from '../index.mjs';
@@ -42,5 +43,21 @@ test('packaged boundary rejects transitive lazy escapes and unlisted local helpe
     await appendFile(join(temporary, 'core.mjs'), '\nimport "./unlisted-helper.mjs";\n');
     await writeFile(join(temporary, 'unlisted-helper.mjs'), 'export async function escape() { return import("../../app/private.mjs"); }\n');
     assert.throws(() => checkBoundary(registration, { root: temporary }), /transitive source.*declared runtime/);
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+});
+
+test('qualifier entrypoint executes through symlinked paths and retains strict boundary reporting', async () => {
+  const temporary = await mkdtemp(join(tmpdir(), 'tempo-maia-qualifier-symlink-'));
+  try {
+    const alias = join(temporary, 'qualify.mjs');
+    await symlink(join(componentRoot, 'qualify.mjs'), alias);
+    const metadata = JSON.parse(await readFile(join(componentRoot, 'package.json'), 'utf8'));
+    const registration = { artifact: { name: metadata.name, version: metadata.version }, dependencies: Object.keys(metadata.dependencies), publicExports: Object.keys(publicInterface) };
+    const child = spawnSync(process.execPath, [alias, 'boundary'], { input: JSON.stringify(registration), encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr);
+    const report = JSON.parse(child.stdout);
+    assert.equal(report.success, true);
+    assert(report.files > 0);
+    assert.deepEqual(report.exports, Object.keys(publicInterface).sort());
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });

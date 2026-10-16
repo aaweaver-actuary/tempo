@@ -1,4 +1,5 @@
 import { readFile, writeFile, mkdir, mkdtemp, cp, rm } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { resolve, join, dirname, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -54,7 +55,7 @@ export async function buildArtifact({ outputDirectory = join(componentRoot, 'dis
   } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === import.meta.filename) {
   const outputIndex = process.argv.indexOf('--out');
   try { console.log(JSON.stringify(await buildArtifact({ outputDirectory: outputIndex < 0 ? undefined : resolve(process.argv[outputIndex + 1]) }))); }
   catch (error) { console.error(error.stack); process.exitCode = 1; }

@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fork } from 'node:child_process';
+import { fork, spawnSync } from 'node:child_process';
 import { PassThrough, Writable } from 'node:stream';
+import { mkdtemp, symlink, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MaiaWorker } from '../worker.mjs';
 import { serveProtocol, MAX_LINE_BYTES } from '../cli.mjs';
 import { validatePayload, validateRecord, fingerprintJob } from '../wire.mjs';
@@ -42,6 +46,19 @@ test('strict v1 schemas and independent semantic invariants reject malformed env
   assert.throws(() => validatePayload('JobStatus', { contract_version: 1, workspace_id: 'w', job_id: 'j', request_revision: 1, execution_generation: 1, status: 'completed', retryable: true, reason: null }));
   assert.equal(fingerprintJob(job()), fingerprintJob(job({ execution_generation: 2 })));
   assert.notEqual(fingerprintJob(job()), fingerprintJob(job({ legal_moves: ['d2d4', 'e2e4'] })));
+});
+
+test('CLI executes through a symlinked artifact directory and imports without starting', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tempo-maia-cli-symlink-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const linkedArtifact = join(directory, 'artifact');
+  await symlink(fileURLToPath(new URL('../', import.meta.url)), linkedArtifact, 'dir');
+  const executed = spawnSync(process.execPath, [join(linkedArtifact, 'cli.mjs'), 'identity'], { encoding: 'utf8' });
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(JSON.parse(executed.stdout).model_id, 'maia3-onnx');
+  const imported = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(new URL('../cli.mjs', import.meta.url).href)}); process.stdout.write("imported");`], { encoding: 'utf8' });
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(imported.stdout, 'imported');
 });
 
 test('independent timestamp validation preserves exact microseconds and rejects malformed complete forms', () => {

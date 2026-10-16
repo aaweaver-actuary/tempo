@@ -2,6 +2,7 @@
 import { MaiaWorker } from './worker.mjs';
 import { inspectResources, validateResourceBudget } from './resources.mjs';
 import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
 
 export const MAX_LINE_BYTES = 64 * 1024;
 const MAX_BUFFER_BYTES = 2 * MAX_LINE_BYTES;
@@ -108,7 +109,7 @@ async function main() {
   if (!(await protocol.done).success) process.exitCode = 1;
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main().catch((error) => {
+if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) main().catch((error) => {
   process.stderr.write(`${JSON.stringify({ event: 'unavailable', reason: error.code ?? 'worker_start_failed', message: error.message })}\n`);
   process.exitCode = 1;
 });
