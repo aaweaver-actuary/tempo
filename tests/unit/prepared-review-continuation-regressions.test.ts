@@ -225,7 +225,7 @@ it("async_reconciliation_preserves_active_attempt_and_excludes_completed_entries
   const activeAttempt = useTrainingStore.getState().attempt;
   let releaseOld!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn().mockImplementationOnce(() => new Promise(resolve => { releaseOld = resolve; }))
-    .mockImplementation(() => Response.json({ cards: queue, count: 3, local_date: localDayKey() })));
+    .mockImplementation(async () => Response.json({ cards: queue, count: 3, local_date: localDayKey() })));
   const oldRead = fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });
   await vi.waitFor(() => expect(releaseOld).toBeTypeOf("function"));
   await fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });

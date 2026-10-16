@@ -4680,3 +4680,5 @@ cancellation, essential queue capacity, useful quiet progress, paired native UI
 input and prepared-next presentation proxies. Existing native phone/recovery
 cases remain registered and unchanged. Dynamic activity sessions have a strict
 owning contract regression in `tests/controlled-browser/unit/controlled-browser-regressions.test.ts`.
+
+Study Priority v1: `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` retains serialized bulk ownership and probes a saved late handler. Invalidated bulk failures stay diagnostic without publishing notifications; current diagnostics and workspace publication remain authoritative. Home lifecycle regressions await the existing three-second quiet period before idle recovery.

@@ -258,19 +258,26 @@ it.each(["success", "failure"])("issue36_delayed_workspace_worker_diagnostics_ca
   workspace.invalidateWorkspaceData(apiUrl);
   const second = workspace.readWorkspaceData(apiUrl);
   reads[1].resolve(Response.json({ lines: [] }));
+  // Bulk validation has one execution owner. The obsolete request settles before
+  // the queued current request starts; retain its handler to probe late delivery.
+  expect(messages).toHaveLength(1);
+  const obsoleteReply = workers[0].onmessage!;
+  obsoleteReply({ data: { id: messages[0].id,
+    ...(outcome === "success" ? { result: { lines: [] } } : { error: "Obsolete worker validation failed" }), diagnostics: [
+      { source: "repertoire line", raw: { id: "obsolete" }, recordId: "obsolete", message: "Obsolete invalid record", recordedAt: new Date().toISOString() },
+    ] } } as MessageEvent);
+  if (outcome === "success") await expect(firstOutcome).resolves.toEqual({ lines: [] });
+  else expect(await firstOutcome).toMatchObject({ cause: { message: "Obsolete worker validation failed" } });
+  expect(validation.dataDiagnostics()).toEqual([]);
+  expect(events).toEqual([]);
   await submitted[1].promise;
   const currentDiagnostic = { source: "repertoire line", raw: { id: "current" }, recordId: "current",
     message: "Current invalid record", recordedAt: new Date().toISOString() };
-  workers[0].onmessage!({ data: { id: messages[1].id, result: { lines: [] }, diagnostics: [currentDiagnostic] } } as MessageEvent);
+  workers[1].onmessage!({ data: { id: messages[1].id, result: { lines: [] }, diagnostics: [currentDiagnostic] } } as MessageEvent);
   await second;
   expect(validation.dataDiagnostics()).toHaveLength(1);
   const currentDiagnostics = validation.dataDiagnostics();
-  workers[0].onmessage!({ data: { id: messages[0].id,
-    ...(outcome === "success" ? { result: { lines: [] } } : { error: "Obsolete worker validation failed" }), diagnostics: [
-    { source: "repertoire line", raw: { id: "obsolete" }, recordId: "obsolete", message: "Obsolete invalid record", recordedAt: new Date().toISOString() },
-  ] } } as MessageEvent);
-  if (outcome === "success") await expect(firstOutcome).resolves.toEqual({ lines: [] });
-  else expect(await firstOutcome).toMatchObject({ message: "Obsolete worker validation failed" });
+  obsoleteReply({ data: { id: messages[0].id, result: { lines: [] }, diagnostics: [currentDiagnostic] } } as MessageEvent);
   expect(workerNotifications.notifications()).toEqual([]);
   expect(validation.dataDiagnostics()).toEqual(currentDiagnostics);
   expect(events).toEqual([{ state: "ready", url: apiUrl }]);

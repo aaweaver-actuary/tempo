@@ -42,7 +42,7 @@ function finish(error?: Error, value?: unknown) {
   pump();
 }
 function fail(cause: unknown) {
-  reportDebugError(cause, { kind: 'uncaught-exception', source: 'bulk-study-worker' });
+  reportDebugError(cause, { kind: 'uncaught-exception', source: 'bulk-study-worker', notify: active?.current?.() !== false });
   finish(new Error('Workspace preparation failed. Retry loading it while Tempo is idle.', { cause }));
 }
 function pump() {
