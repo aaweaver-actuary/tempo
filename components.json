@@ -364,21 +364,166 @@
     {
       "id": "stockfish",
       "type": "worker",
-      "maintainer": "Tempo",
-      "status": "planned",
+      "maintainer": "Tempo / #43 workstream B",
+      "status": "implemented",
       "root": "workers/stockfish",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "StockfishWorker",
+        "inspectEngine",
+        "stockfishInputDigest"
+      ],
+      "dependencies": [
+        "ajv",
+        "chess.js"
+      ],
+      "buildInputs": [
+        "package.json",
+        "package-lock.json",
+        "index.mjs",
+        "index.d.ts",
+        "core.mjs",
+        "engine.mjs",
+        "worker.mjs",
+        "child.mjs",
+        "cli.mjs",
+        "wire.mjs",
+        "resources.mjs",
+        "engine-descriptor.json",
+        "build-inputs.json",
+        "build.mjs",
+        "qualify.mjs",
+        "qualify_container.py",
+        "backlog_driver.py",
+        "Dockerfile",
+        "fixtures",
+        "licenses",
+        "python",
+        "tests",
+        "test.mjs",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "node qualify.mjs restricted",
+      "artifact": {
+        "name": "@tempo/stockfish-worker",
+        "version": "1.0.0",
+        "qualifier": "qualify.mjs",
+        "formats": [
+          "npm-tarball",
+          "container",
+          "python-wheel",
+          "python-sdist"
+        ],
+        "contract": "tempo-analysis-jobs-contracts 1.0.0 / wire v1",
+        "immutableInputs": "build-inputs.json",
+        "engineDescriptor": "engine-descriptor.json"
+      },
+      "tests": [
+        {
+          "owner": "stockfish",
+          "kind": "node",
+          "command": "node test.mjs pure",
+          "inputs": [
+            "tests",
+            "fixtures",
+            "test.mjs",
+            "core.mjs",
+            "wire.mjs",
+            "resources.mjs",
+            "build.mjs",
+            "qualify.mjs",
+            "engine-descriptor.json",
+            "build-inputs.json"
+          ]
+        },
+        {
+          "owner": "stockfish",
+          "kind": "node",
+          "command": "node test.mjs protocol",
+          "inputs": [
+            "tests",
+            "fixtures",
+            "test.mjs",
+            "worker.mjs",
+            "child.mjs",
+            "cli.mjs",
+            "wire.mjs",
+            "core.mjs",
+            "build.mjs",
+            "build-inputs.json",
+            "engine-descriptor.json"
+          ]
+        },
+        {
+          "owner": "stockfish",
+          "kind": "python",
+          "command": "python -I -m pytest tests/contracts/test_exchange.py --import-mode=importlib -q",
+          "inputs": [
+            "tests/contracts",
+            "fixtures",
+            "python",
+            "worker.mjs",
+            "cli.mjs",
+            "core.mjs",
+            "wire.mjs",
+            "build.mjs",
+            "build-inputs.json",
+            "package.json",
+            "package-lock.json"
+          ]
+        },
+        {
+          "owner": "stockfish",
+          "kind": "node",
+          "command": "node qualify.mjs container",
+          "inputs": [
+            "qualify.mjs",
+            "qualify_container.py",
+            "backlog_driver.py",
+            "tests/contracts",
+            "Dockerfile",
+            "fixtures",
+            "build.mjs",
+            "build-inputs.json",
+            "engine-descriptor.json",
+            "worker.mjs",
+            "engine.mjs",
+            "child.mjs",
+            "cli.mjs",
+            "wire.mjs",
+            "resources.mjs",
+            "package.json",
+            "package-lock.json",
+            "index.mjs",
+            "index.d.ts",
+            "core.mjs",
+            "python",
+            "licenses",
+            "tests/fixtures"
+          ]
+        }
+      ],
+      "toolchain": {
+        "node": "26.10.0",
+        "runtime": "Stockfish 19 smallnet WASM / stockfish-web 0.5.0",
+        "chess": "chess.js 1.4.0",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ],
+        "qualifiedPlatform": "linux/arm64",
+        "normalConcurrency": 1,
+        "minimumMemoryMiB": 512,
+        "qualificationCPU": 1,
+        "resourcePolicy": "Finite 512 MiB Linux cgroup v2 memory cap, <=1 CPU, zero swap; original 1-thread/32 MiB Hash/full-strength profile."
+      },
       "dataOwnership": {
-        "authority": null,
+        "authority": "B computation and session receipts; C durable jobs/generations/accepted results; Learning training effects",
         "databases": [],
-        "migrations": []
-      }
+        "migrations": [],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "maia",

@@ -1,0 +1,1042 @@
+{
+  "complete": true,
+  "image_id": "sha256:21172218ef8fb1c5d1edf6dabae11ab7de13f829b0cdb2c001974a4fdbe07f81",
+  "platform": "linux/arm64",
+  "runtime": "Node 26.10.0",
+  "cpu_limit": 1,
+  "memory_limit_bytes": 536870912,
+  "swap": false,
+  "independent_consumer": {
+    "success": true,
+    "results": 20,
+    "statuses": 75,
+    "acknowledgements": 10,
+    "distinct_accepted_executions": 20
+  },
+  "cleanup": {
+    "removed_remaining_owned_containers": [],
+    "all_created_names": [
+      "tempo-stockfish-b-6cb11744e73a",
+      "tempo-stockfish-b-3fe851109732",
+      "tempo-stockfish-b-7989186d2b62",
+      "tempo-stockfish-b-21544c950085",
+      "tempo-stockfish-b-924a840a6cc7"
+    ]
+  },
+  "last_diagnostics": [
+    {
+      "event": "ready",
+      "identity": {
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+        "runtime_name": "node-stockfish-wasm",
+        "runtime_version": "26.10.0",
+        "descriptor": {
+          "schema_version": 1,
+          "engine": "Stockfish 19 smallnet",
+          "node": "26.10.0",
+          "assets": {
+            "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+            "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+            "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+          },
+          "upstream": {
+            "package": "@lichess-org/stockfish-web",
+            "version": "0.5.0",
+            "package_license_metadata": "AGPL-3.0-or-later",
+            "shipped_license": "GPL-3.0",
+            "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+            "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+            "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+            "patches": [
+              "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+              "patches/sf_19_smallnet/0002-stockfish-web.patch"
+            ],
+            "emscripten": "5.0.7"
+          },
+          "options": {
+            "Threads": 1,
+            "Hash": 32,
+            "Ponder": false,
+            "Skill Level": 20,
+            "UCI_LimitStrength": false,
+            "UCI_Chess960": false,
+            "UCI_ShowWDL": false,
+            "SyzygyPath": "",
+            "SyzygyProbeLimit": 0,
+            "nodestime": 0,
+            "Move Overhead": 10
+          },
+          "hash_reset": "ucinewgame-before-each-attempt",
+          "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+          "supported_platform": "linux/arm64",
+          "cpu_limit": 1,
+          "memory_mib": 512,
+          "swap": false
+        }
+      },
+      "resources": {
+        "memory_enforced": true,
+        "memory_limit_bytes": 536870912,
+        "memory_limit_mb": 512,
+        "source": "/sys/fs/cgroup/memory.max",
+        "minimum_memory_mb": 512,
+        "reason": null,
+        "cpu_limit": 1,
+        "swap_limit_bytes": 0,
+        "memory_events": {
+          "low": 0,
+          "high": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_kill": 0,
+          "oom_group_kill": 0,
+          "sock_throttled": 0
+        }
+      },
+      "pid": 17,
+      "initialization_ms": 453.555584
+    },
+    {
+      "event": "execution_started",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-21",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "pid": 17,
+      "started_at": "2026-10-16T18:20:40.222Z"
+    },
+    {
+      "event": "execution_finished",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-21",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "last_reported_depth": 12,
+      "nodes": 12743,
+      "engine_time_ms": 186
+    },
+    {
+      "event": "execution_started",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-22",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "pid": 17,
+      "started_at": "2026-10-16T18:20:40.447Z"
+    },
+    {
+      "event": "execution_finished",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-22",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "last_reported_depth": 12,
+      "nodes": 23297,
+      "engine_time_ms": 111
+    },
+    {
+      "event": "execution_started",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-23",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "pid": 17,
+      "started_at": "2026-10-16T18:20:40.625Z"
+    },
+    {
+      "event": "execution_finished",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-23",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "last_reported_depth": 12,
+      "nodes": 8780,
+      "engine_time_ms": 86
+    },
+    {
+      "event": "execution_started",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-24",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "pid": 17,
+      "started_at": "2026-10-16T18:20:40.730Z"
+    },
+    {
+      "event": "execution_finished",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-24",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "last_reported_depth": 12,
+      "nodes": 70353,
+      "engine_time_ms": 179
+    },
+    {
+      "event": "execution_started",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-25",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "pid": 17,
+      "started_at": "2026-10-16T18:20:40.936Z"
+    },
+    {
+      "event": "child_exited",
+      "pid": 17,
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    {
+      "event": "ready",
+      "identity": {
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+        "runtime_name": "node-stockfish-wasm",
+        "runtime_version": "26.10.0",
+        "descriptor": {
+          "schema_version": 1,
+          "engine": "Stockfish 19 smallnet",
+          "node": "26.10.0",
+          "assets": {
+            "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+            "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+            "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+          },
+          "upstream": {
+            "package": "@lichess-org/stockfish-web",
+            "version": "0.5.0",
+            "package_license_metadata": "AGPL-3.0-or-later",
+            "shipped_license": "GPL-3.0",
+            "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+            "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+            "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+            "patches": [
+              "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+              "patches/sf_19_smallnet/0002-stockfish-web.patch"
+            ],
+            "emscripten": "5.0.7"
+          },
+          "options": {
+            "Threads": 1,
+            "Hash": 32,
+            "Ponder": false,
+            "Skill Level": 20,
+            "UCI_LimitStrength": false,
+            "UCI_Chess960": false,
+            "UCI_ShowWDL": false,
+            "SyzygyPath": "",
+            "SyzygyProbeLimit": 0,
+            "nodestime": 0,
+            "Move Overhead": 10
+          },
+          "hash_reset": "ucinewgame-before-each-attempt",
+          "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+          "supported_platform": "linux/arm64",
+          "cpu_limit": 1,
+          "memory_mib": 512,
+          "swap": false
+        }
+      },
+      "resources": {
+        "memory_enforced": true,
+        "memory_limit_bytes": 536870912,
+        "memory_limit_mb": 512,
+        "source": "/sys/fs/cgroup/memory.max",
+        "minimum_memory_mb": 512,
+        "reason": null,
+        "cpu_limit": 1,
+        "swap_limit_bytes": 0,
+        "memory_events": {
+          "low": 0,
+          "high": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_kill": 0,
+          "oom_group_kill": 0,
+          "sock_throttled": 0
+        }
+      },
+      "pid": 42,
+      "initialization_ms": 321.5970840000002
+    },
+    {
+      "event": "child_exited",
+      "pid": 42,
+      "code": null,
+      "signal": "SIGKILL"
+    }
+  ],
+  "slow_consumer": null,
+  "cases": [
+    {
+      "name": "serial_benchmark",
+      "success": true,
+      "cold_starts": 5,
+      "searches": 20,
+      "cancellations": 5
+    },
+    {
+      "name": "B_installed_consumer",
+      "success": true,
+      "results": 20,
+      "statuses": 75,
+      "acknowledgements": 10,
+      "distinct_accepted_executions": 20
+    }
+  ],
+  "measurements": [
+    {
+      "kind": "serial_benchmark",
+      "cold_initialization_ms": [
+        {
+          "end_to_end_startup_ms": 674.9858749972191,
+          "engine_initialization_ms": 355.522
+        },
+        {
+          "end_to_end_startup_ms": 616.1199170019245,
+          "engine_initialization_ms": 302.934375
+        },
+        {
+          "end_to_end_startup_ms": 981.6354160138872,
+          "engine_initialization_ms": 525.9378330000001
+        },
+        {
+          "end_to_end_startup_ms": 1531.1469589942135,
+          "engine_initialization_ms": 614.104541
+        },
+        {
+          "end_to_end_startup_ms": 943.0683749960735,
+          "engine_initialization_ms": 453.555584
+        }
+      ],
+      "searches": [
+        {
+          "end_to_end_ms": 173.95420899265446,
+          "actual_depth": 12,
+          "nodes": 12743,
+          "engine_time_ms": 97,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-1",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:15554e389e5a318c746e7c732d37f276e68d0007acc1e8bc6937fb5f6d88f80a",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 115.05204100103583,
+          "actual_depth": 12,
+          "nodes": 23297,
+          "engine_time_ms": 98,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-2",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:48a5f849ab14fd5b1b15b0e57ebbf0ebbe51ae1d4a5233141f7c405569aafab9",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [
+              "e2e4"
+            ],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 71.95820900960825,
+          "actual_depth": 12,
+          "nodes": 8780,
+          "engine_time_ms": 59,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-3",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:b34b6cfced44338b8affb63748395e1e8706a958b33de57d75f35d875e3d606e",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [
+              "e2e4"
+            ],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 149.21883300121408,
+          "actual_depth": 12,
+          "nodes": 70353,
+          "engine_time_ms": 135,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-4",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:02b0d30e1568ceefdd0f32e0bcbf98591cf3d158d663280ea5f76c5907f7f388",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 3,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 187.79483399703167,
+          "actual_depth": 12,
+          "nodes": 12743,
+          "engine_time_ms": 110,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-6",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:df7a1dd9e0cbeffe807249baa9e9a2d37d69f567b75f0c81b16f21a8ebd325ca",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 122.90487499558367,
+          "actual_depth": 12,
+          "nodes": 23297,
+          "engine_time_ms": 104,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-7",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:4272b914f69c3d0c350df86ef234d9197b13897c2e51048d1e293210d5990e79",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [
+              "e2e4"
+            ],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 85.83162499417085,
+          "actual_depth": 12,
+          "nodes": 8780,
+          "engine_time_ms": 27,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-8",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:e8d030112866731c165a0c22a3d2f4fbdee485a9032a809dc4af319c2b39a1ad",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [
+              "e2e4"
+            ],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 194.31579200318083,
+          "actual_depth": 12,
+          "nodes": 70353,
+          "engine_time_ms": 173,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-9",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:ff4f39b94b07b0391e874991088883749f8743df0d553a9c86205d4b52349619",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 3,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 196.7790420021629,
+          "actual_depth": 12,
+          "nodes": 12743,
+          "engine_time_ms": 110,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-11",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:64b4e04697d8a87929f426198ec29e9a916d6c286a20d49ee7c435795018c2a4",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 132.7305000013439,
+          "actual_depth": 12,
+          "nodes": 23297,
+          "engine_time_ms": 112,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-12",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:153003ba9b2f59d28f20d342e712a36f935d8b6a929d9bb459d14c53fd27f20a",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [
+              "e2e4"
+            ],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 79.61204100865871,
+          "actual_depth": 12,
+          "nodes": 8780,
+          "engine_time_ms": 64,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-13",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:370e33986b7c84d7683d424825ad49a70d128fa04c3d71264fe0b43c8f297040",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [
+              "e2e4"
+            ],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 164.48554101225454,
+          "actual_depth": 12,
+          "nodes": 70353,
+          "engine_time_ms": 148,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-14",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:5cdf58e2939961806f79cfadab40f4b5560af52d117a274e270c83e5825c6578",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 3,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 212.04891699017026,
+          "actual_depth": 12,
+          "nodes": 12743,
+          "engine_time_ms": 116,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-16",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:9466749c48228ca42b0e4a89dce626d6f58752018f36199ac5b08a120f906f6f",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 194.4308749953052,
+          "actual_depth": 12,
+          "nodes": 23297,
+          "engine_time_ms": 117,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-17",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:6311d0770f7bbef5396a1a5dd8ca182cd6aabddd6e4f3d1d27a175c33f32aeab",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [
+              "e2e4"
+            ],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 85.13408301223535,
+          "actual_depth": 12,
+          "nodes": 8780,
+          "engine_time_ms": 65,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-18",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:1c9dc19205235c798ddd7ec035f87b068f6da3136e7b285f97208d12fa4d107e",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [
+              "e2e4"
+            ],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 226.05158299847972,
+          "actual_depth": 12,
+          "nodes": 70353,
+          "engine_time_ms": 205,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-19",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:e5ff81499fd2ef6212e5b091e5000cd1cc965f236d28f0fd8da4521bcfe5f52e",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 3,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 272.4027499934891,
+          "actual_depth": 12,
+          "nodes": 12743,
+          "engine_time_ms": 186,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-21",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:00d8347a8fd24a1760c34e93f6b652ef3b058af7ba604464af86f1bf40733621",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 179.00520800321829,
+          "actual_depth": 12,
+          "nodes": 23297,
+          "engine_time_ms": 111,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-22",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:cc681208cb65b3fe50d883e1d0cf7d33d3df2373de50fe7d57ba171325bf9d56",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [
+              "e2e4"
+            ],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 104.45333299867343,
+          "actual_depth": 12,
+          "nodes": 8780,
+          "engine_time_ms": 86,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-23",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:042d33b2eed28574889894f7d1760493a54173b7e3922b644bb8faf36259fbf1",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [
+              "e2e4"
+            ],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 1,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        },
+        {
+          "end_to_end_ms": 205.97129200177733,
+          "actual_depth": 12,
+          "nodes": 70353,
+          "engine_time_ms": 179,
+          "job": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-24",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "input_digest": "sha256:b9a21a82775c5bb6a92c3ab85e7b710a1741287fd25ba080e1564ee2d464f86a",
+            "constraints": {
+              "max_wall_time_ms": 5000,
+              "max_memory_mb": 512
+            },
+            "worker": "stockfish",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "moves": [],
+            "search_moves": [],
+            "max_depth": 12,
+            "max_nodes": null,
+            "multi_pv": 3,
+            "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+          }
+        }
+      ],
+      "cancellations": [
+        {
+          "cpu_ticks_before": 81,
+          "cpu_ticks_after": 97,
+          "termination_ms": 12.507000006735325,
+          "capacity_recovery_ms": 249.39891599933617,
+          "pid": 17,
+          "ack": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-5",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "cancellation_id": "b3593efc-ae00-436d-90da-265fb341552d",
+            "status": "terminated",
+            "acknowledged_at": "2026-10-16T18:20:31.156Z"
+          }
+        },
+        {
+          "cpu_ticks_before": 84,
+          "cpu_ticks_after": 100,
+          "termination_ms": 13.669374995515682,
+          "capacity_recovery_ms": 535.84745900298,
+          "pid": 17,
+          "ack": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-10",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "cancellation_id": "56ef1673-acf3-4723-8f96-fe8bdfc72a9a",
+            "status": "terminated",
+            "acknowledged_at": "2026-10-16T18:20:33.009Z"
+          }
+        },
+        {
+          "cpu_ticks_before": 104,
+          "cpu_ticks_after": 119,
+          "termination_ms": 8.561374997952953,
+          "capacity_recovery_ms": 323.5326660069404,
+          "pid": 17,
+          "ack": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-15",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "cancellation_id": "6bda95f0-3b88-46fd-9c20-57bb8240b46d",
+            "status": "terminated",
+            "acknowledged_at": "2026-10-16T18:20:35.565Z"
+          }
+        },
+        {
+          "cpu_ticks_before": 121,
+          "cpu_ticks_after": 140,
+          "termination_ms": 9.018083001137711,
+          "capacity_recovery_ms": 327.7701250044629,
+          "pid": 17,
+          "ack": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-20",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "cancellation_id": "ea611abe-45fd-4a44-93d1-279c5859e662",
+            "status": "terminated",
+            "acknowledged_at": "2026-10-16T18:20:38.672Z"
+          }
+        },
+        {
+          "cpu_ticks_before": 117,
+          "cpu_ticks_after": 135,
+          "termination_ms": 13.349750006454997,
+          "capacity_recovery_ms": 339.29241700388957,
+          "pid": 17,
+          "ack": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "observed-25",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "cancellation_id": "9382de34-d749-4dcf-b946-d3e51f3e21dc",
+            "status": "terminated",
+            "acknowledged_at": "2026-10-16T18:20:41.244Z"
+          }
+        }
+      ],
+      "memory_peak_bytes": [
+        199749632,
+        184221696,
+        211390464,
+        213299200,
+        203030528
+      ],
+      "exit_statuses": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "sample_scope": "five isolated cold sessions, twenty depth-12 searches, five observed in-flight cancellations; no universal SLO"
+    }
+  ],
+  "identity": {
+    "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+    "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+    "runtime_name": "node-stockfish-wasm",
+    "runtime_version": "26.10.0",
+    "descriptor": {
+      "schema_version": 1,
+      "engine": "Stockfish 19 smallnet",
+      "node": "26.10.0",
+      "assets": {
+        "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+        "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+        "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+      },
+      "upstream": {
+        "package": "@lichess-org/stockfish-web",
+        "version": "0.5.0",
+        "package_license_metadata": "AGPL-3.0-or-later",
+        "shipped_license": "GPL-3.0",
+        "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+        "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+        "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+        "patches": [
+          "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+          "patches/sf_19_smallnet/0002-stockfish-web.patch"
+        ],
+        "emscripten": "5.0.7"
+      },
+      "options": {
+        "Threads": 1,
+        "Hash": 32,
+        "Ponder": false,
+        "Skill Level": 20,
+        "UCI_LimitStrength": false,
+        "UCI_Chess960": false,
+        "UCI_ShowWDL": false,
+        "SyzygyPath": "",
+        "SyzygyProbeLimit": 0,
+        "nodestime": 0,
+        "Move Overhead": 10
+      },
+      "hash_reset": "ucinewgame-before-each-attempt",
+      "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+      "supported_platform": "linux/arm64",
+      "cpu_limit": 1,
+      "memory_mib": 512,
+      "swap": false
+    }
+  },
+  "source_revision": "c1ccba8dc35881e668809788ab9f39be7091f656",
+  "source_dirty": false,
+  "artifacts": [
+    {
+      "name": "tempo-stockfish-worker-1.0.0.tgz",
+      "sha256": "fd12c15fc5f539e327a124086be21ae425e8ae316b04761f4c4a92fc333962d3"
+    }
+  ],
+  "host_before": {
+    "uptime": "14:20  up 1 day,  1:42, 2 users, load averages: 2.83 11.51 45.76",
+    "swap": "vm.swapusage: total = 6144.00M  used = 4734.69M  free = 1409.31M  (encrypted)"
+  },
+  "command": [
+    "/private/tmp/tempo-analysis-b-stockfish/python-env/bin/python",
+    "-I",
+    "workers/stockfish/qualify_container.py",
+    "--image",
+    "sha256:21172218ef8fb1c5d1edf6dabae11ab7de13f829b0cdb2c001974a4fdbe07f81",
+    "--report",
+    "/private/tmp/tempo-analysis-b-stockfish/evidence/benchmark-final.json",
+    "--exchange",
+    "/private/tmp/tempo-analysis-b-stockfish/evidence/benchmark-exchange-final.json",
+    "--benchmark"
+  ]
+}

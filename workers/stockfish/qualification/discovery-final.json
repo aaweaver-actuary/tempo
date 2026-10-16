@@ -1,0 +1,83 @@
+{
+  "selected": [
+    {
+      "owner": "stockfish",
+      "kind": "node",
+      "command": "node test.mjs pure",
+      "inputs": [
+        "tests",
+        "fixtures",
+        "test.mjs",
+        "core.mjs",
+        "wire.mjs",
+        "resources.mjs",
+        "build.mjs",
+        "qualify.mjs",
+        "engine-descriptor.json",
+        "build-inputs.json"
+      ],
+      "id": "stockfish",
+      "cwd": "workers/stockfish"
+    },
+    {
+      "owner": "stockfish",
+      "kind": "node",
+      "command": "node test.mjs protocol",
+      "inputs": [
+        "tests",
+        "fixtures",
+        "test.mjs",
+        "worker.mjs",
+        "child.mjs",
+        "cli.mjs",
+        "wire.mjs",
+        "core.mjs"
+      ],
+      "id": "stockfish",
+      "cwd": "workers/stockfish"
+    },
+    {
+      "owner": "stockfish",
+      "kind": "python",
+      "command": "python -I -m pytest tests/contracts/test_exchange.py --import-mode=importlib -q",
+      "inputs": [
+        "tests/contracts",
+        "fixtures",
+        "python"
+      ],
+      "id": "stockfish",
+      "cwd": "workers/stockfish"
+    },
+    {
+      "owner": "stockfish",
+      "kind": "node",
+      "command": "node qualify.mjs container",
+      "inputs": [
+        "qualify.mjs",
+        "qualify_container.py",
+        "backlog_driver.py",
+        "tests/contracts",
+        "Dockerfile",
+        "fixtures",
+        "build.mjs",
+        "build-inputs.json",
+        "engine-descriptor.json",
+        "worker.mjs",
+        "engine.mjs",
+        "child.mjs",
+        "cli.mjs",
+        "wire.mjs",
+        "resources.mjs",
+        "package.json",
+        "package-lock.json",
+        "index.mjs",
+        "index.d.ts",
+        "core.mjs",
+        "python",
+        "licenses"
+      ],
+      "id": "stockfish",
+      "cwd": "workers/stockfish"
+    }
+  ]
+}

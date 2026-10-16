@@ -1,0 +1,300 @@
+{
+  "scope": "path-redacted copies of actual command/exit records; raw outputs and exact private paths preserved externally",
+  "records": {
+    "pure-final": {
+      "command": [
+        "node",
+        "workers/stockfish/test.mjs",
+        "pure"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:11.939383+00:00",
+      "finished_at": "2026-10-16T19:31:20.967119+00:00",
+      "seconds": 9.027743583006668,
+      "exit_status": 0,
+      "environment": {},
+      "log": "pure-final.log"
+    },
+    "protocol-final": {
+      "command": [
+        "node",
+        "workers/stockfish/test.mjs",
+        "protocol"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:11.939405+00:00",
+      "finished_at": "2026-10-16T19:31:18.687145+00:00",
+      "seconds": 6.747761584003456,
+      "exit_status": 0,
+      "environment": {},
+      "log": "protocol-final.log"
+    },
+    "restricted-final": {
+      "command": [
+        "node",
+        "workers/stockfish/qualify.mjs",
+        "restricted",
+        "--report",
+        "<TASK>/evidence/restricted-final-report.json",
+        "--artifacts",
+        "<TASK>/evidence/artifacts-restricted-final"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:14.723782+00:00",
+      "finished_at": "2026-10-16T19:31:24.567712+00:00",
+      "seconds": 9.843956292010262,
+      "exit_status": 0,
+      "environment": {
+        "TEMPO_STOCKFISH_PYTHON": "<TASK>/python-env/bin/python",
+        "UV_CACHE_DIR": "<TASK>/uv-cache"
+      },
+      "log": "restricted-final.log"
+    },
+    "shared-contract-final": {
+      "command": [
+        "<TASK>/python-env/bin/python",
+        "-I",
+        "-m",
+        "pytest",
+        "contracts/analysis-jobs/tests",
+        "--import-mode=importlib",
+        "-q",
+        "--junitxml=<TASK>/evidence/shared-contract-final.xml"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:11.939382+00:00",
+      "finished_at": "2026-10-16T19:31:12.484184+00:00",
+      "seconds": 0.5448185419954825,
+      "exit_status": 0,
+      "environment": {},
+      "log": "shared-contract-final.log"
+    },
+    "schema-exports-final": {
+      "command": [
+        "<TASK>/python-env/bin/python",
+        "-I",
+        "contracts/export_schemas.py",
+        "--check",
+        "--package",
+        "analysis-jobs"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:41.174483+00:00",
+      "finished_at": "2026-10-16T19:31:41.354531+00:00",
+      "seconds": 0.1800779170007445,
+      "exit_status": 0,
+      "environment": {},
+      "log": "schema-exports-final.log"
+    },
+    "boundary-final": {
+      "command": [
+        "node",
+        "tools/component-build/check-components.mjs",
+        "--component",
+        "stockfish"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:41.177879+00:00",
+      "finished_at": "2026-10-16T19:31:42.724872+00:00",
+      "seconds": 1.547010540991323,
+      "exit_status": 0,
+      "environment": {},
+      "log": "boundary-final.log"
+    },
+    "discovery-final": {
+      "command": [
+        "node",
+        "tools/component-build/test-lane.mjs",
+        "--component",
+        "stockfish",
+        "--list"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:32:06.844622+00:00",
+      "finished_at": "2026-10-16T19:32:07.127599+00:00",
+      "seconds": 0.2829971250030212,
+      "exit_status": 0,
+      "environment": {},
+      "log": "discovery-final.log"
+    },
+    "worker-hooks-final": {
+      "command": [
+        "node",
+        "--input-type=module",
+        "-e",
+        "import {runNodeFiles} from \"./tools/component-build/test-node.mjs\"; runNodeFiles([\"tools/component-build/tests/workers.test.mjs\"]);"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:41.176000+00:00",
+      "finished_at": "2026-10-16T19:31:42.966094+00:00",
+      "seconds": 1.7901074580004206,
+      "exit_status": 0,
+      "environment": {},
+      "log": "worker-hooks-final.log"
+    },
+    "static-final": {
+      "command": [
+        "python3",
+        "<TASK>/static_checks.py"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:41.175859+00:00",
+      "finished_at": "2026-10-16T19:31:42.017285+00:00",
+      "seconds": 0.8414423750073183,
+      "exit_status": 0,
+      "environment": {},
+      "log": "static-final.log"
+    },
+    "conflicts-final": {
+      "command": [
+        "npm",
+        "run",
+        "check:conflicts"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:31:41.173867+00:00",
+      "finished_at": "2026-10-16T19:31:42.021101+00:00",
+      "seconds": 0.8472581670066575,
+      "exit_status": 0,
+      "environment": {},
+      "log": "conflicts-final.log"
+    },
+    "dispatcher-final": {
+      "command": [
+        "node",
+        "tools/component-build/test-lane.mjs",
+        "--component",
+        "stockfish"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:32:19.361498+00:00",
+      "finished_at": "2026-10-16T19:33:56.037977+00:00",
+      "seconds": 96.67641270799504,
+      "exit_status": 0,
+      "environment": {
+        "TEMPO_COMPONENT_PYTHON": "<TASK>/python-env/bin/python",
+        "TEMPO_STOCKFISH_PYTHON": "<TASK>/python-env/bin/python"
+      },
+      "log": "dispatcher-final.log"
+    },
+    "merge-compatibility": {
+      "command": [
+        "git",
+        "merge-tree",
+        "--write-tree",
+        "origin/main",
+        "HEAD"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:32:25.225281+00:00",
+      "finished_at": "2026-10-16T19:32:25.609826+00:00",
+      "seconds": 0.384579459001543,
+      "exit_status": 0,
+      "environment": {},
+      "log": "merge-compatibility.log"
+    },
+    "benchmark-final": {
+      "command": [
+        "node",
+        "workers/stockfish/qualify.mjs",
+        "benchmark",
+        "--report",
+        "<TASK>/evidence/benchmark-final-report.json",
+        "--exchange",
+        "<TASK>/evidence/benchmark-final-exchange.json",
+        "--artifacts",
+        "<TASK>/evidence/artifacts-benchmark-final"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:34:23.998171+00:00",
+      "finished_at": "2026-10-16T19:34:34.905271+00:00",
+      "seconds": 10.907126541002071,
+      "exit_status": 0,
+      "environment": {
+        "TEMPO_STOCKFISH_PYTHON": "<TASK>/python-env/bin/python"
+      },
+      "log": "benchmark-final.log"
+    },
+    "benchmark-accepted-image": {
+      "command": [
+        "<TASK>/python-env/bin/python",
+        "-I",
+        "workers/stockfish/qualify_container.py",
+        "--image",
+        "sha256:a42a0a8e44fe0db8af81ab7424dca1be0c1f5fff8e93ae517dafb6486ad2c81f",
+        "--report",
+        "<TASK>/evidence/benchmark-accepted-image-report.json",
+        "--exchange",
+        "<TASK>/evidence/benchmark-accepted-image-exchange.json",
+        "--benchmark"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "c652abadc9a0abcd022995447014d42e9e88d411",
+      "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "started_at": "2026-10-16T19:35:45.235138+00:00",
+      "finished_at": "2026-10-16T19:35:54.863715+00:00",
+      "seconds": 9.628614166009356,
+      "exit_status": 0,
+      "environment": {},
+      "log": "benchmark-accepted-image.log"
+    },
+    "red-protocol": {
+      "command": [
+        "node",
+        "workers/stockfish/test.mjs",
+        "protocol",
+        "B_repeated_start_preserves_active_child|B_conflicting_duplicate|B_cancellation_identity_conflict_does_not_fail_target_execution|B_cancellation_capacity_refusal_is_not_execution_failure"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "603822b2c2f3618ddd2055001a6c5afdfecde3f8",
+      "tracked_patch_sha256": "8e1f3d8a2d77458f01942757c4f9a9a5f266cced12326e8f79034a8fcff9b68e",
+      "started_at": "2026-10-16T19:20:17.886084+00:00",
+      "seconds": 2.492643165998743,
+      "exit_status": 1,
+      "environment": {},
+      "log": "red-protocol.log"
+    },
+    "red-staging": {
+      "command": [
+        "node",
+        "workers/stockfish/test.mjs",
+        "pure",
+        "B_test_runner_refreshes_staged_contract_inputs"
+      ],
+      "cwd": "<TASK>/tempo",
+      "revision": "603822b2c2f3618ddd2055001a6c5afdfecde3f8",
+      "tracked_patch_sha256": "8e1f3d8a2d77458f01942757c4f9a9a5f266cced12326e8f79034a8fcff9b68e",
+      "started_at": "2026-10-16T19:20:31.589788+00:00",
+      "seconds": 1.0223225419904338,
+      "exit_status": 1,
+      "environment": {},
+      "log": "red-staging.log"
+    }
+  }
+}
