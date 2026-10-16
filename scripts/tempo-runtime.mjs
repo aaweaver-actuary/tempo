@@ -1,5 +1,6 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
+import { managedComposeBuild } from './development-budget.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
@@ -107,7 +108,7 @@ export async function executeLifecycle(plan, actions) {
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
   fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
-  redisReadinessOptions = {}, readinessOptions = {} }) {
+  redisReadinessOptions = {}, readinessOptions = {}, buildImages = managedComposeBuild }) {
   let composeFiles = fallback ? previous.composeFiles : target.composeFiles;
   let imageOverride = fallback ? previous.imageOverride : null;
   let configuration;
@@ -236,7 +237,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     atomicJson(labelsFile, { services: Object.fromEntries(buildServices.map(name => [name,
       { image: `${target.project}-${name}:tempo-${revision}`, build: { labels: { "org.opencontainers.image.revision": revision } } }])) });
     composeFiles.push(labelsFile);
-    await compose(["--profile", "maintenance", "build", ...buildServices], { echo: true });
+    await buildImages(async () => (await compose(["--profile", "maintenance", "build", "--print", ...buildServices])).stdout,
+      args => docker(args, {echo:true}), { docker: async args => (await docker(args)).stdout });
     const pulledServices = Object.entries(configuration.services).filter(([, service]) => !service.build && service.image).map(([name]) => name);
     if (pulledServices.length) await compose(["--profile", "maintenance", "pull", ...pulledServices], { echo: true });
     await config();

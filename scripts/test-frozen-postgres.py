@@ -16,6 +16,7 @@ sys.path.insert(0,str(ROOT/'backend'))
 sys.path.insert(0,str(ROOT/'scripts'))
 import psycopg
 from app.postgres_store import PostgresConnection,tempo_row_factory,close_pools
+from app.schema_version import POSTGRES_SCHEMA_VERSION
 from app.services import frozen_opening_order as order,postgres_queue_refresh as refresh
 from app.services.frozen_maia_plan import create_plan
 from app.services.cards import card_id
@@ -246,7 +247,7 @@ def main():
                 assert grants and grants['owner']!='tempo_reader' and grants['can_select'] and not any(grants[key] for key in ('can_insert','can_update','can_delete')),(relation,grants)
 
         captured=cli.capture(reader_factory)
-        assert len(captured['cards'])==361 and captured['metadata'][0]['schema_version']==48
+        assert len(captured['cards'])==361 and captured['metadata'][0]['schema_version']==POSTGRES_SCHEMA_VERSION
         assert [row['id'] for row in captured['cards'] if row['id'] in pagination_ids]==pagination_ids
         assert len({row['id'] for row in captured['cards']})==len(captured['cards'])
         assert len([row for row in captured['origins'] if row['queue_entry_id']>=100000])==260

@@ -513,6 +513,7 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false, respon
   };
   const runtime = createRuntime(fixture.target, { run, stateDirectory: fixture.stateDirectory, revision: record.revision,
     evidence: record.evidence, previous: record, fallback,
+    buildImages: async prepare => prepare(),
     preparedImages: { revision: record.revision, images: record.images, configFingerprint: configurationFingerprint(config) }, log: () => {}, ...runtimeOptions });
   return { runtime, calls, fixture };
 }

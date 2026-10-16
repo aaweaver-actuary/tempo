@@ -323,7 +323,8 @@ test("standalone lifecycle prepares only missing dependency images on cold and w
       const servicesWithAvailableImages = new Set(cachedServices);
       const imagePreparationCommands = [];
       const registryAcquisitions = [];
-      const imagePreparationContext = { options: { mode }, compose: ["compose"], resourcesCreated: false,
+      const imagePreparationContext = { waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
+        managedComposeBuild:async (_prepare,execute)=>execute(['compose','build']), options: { mode }, compose: ["compose"], resourcesCreated: false,
         run: (command, args) => {
           assert.equal(command, "docker");
           imagePreparationCommands.push(args);
@@ -362,7 +363,8 @@ test("standalone lifecycle propagates missing dependency acquisition failures wi
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
   const acquisitionFailure = new Error("Missing Redis image could not be acquired");
-  const imagePreparationContext = { options: { mode: "lifecycle" }, compose: ["compose"], resourcesCreated: false,
+  const imagePreparationContext = { waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
+        managedComposeBuild:async (_prepare,execute)=>execute(['compose','build']), options: { mode: "lifecycle" }, compose: ["compose"], resourcesCreated: false,
     run: (_command, args) => {
       if (args.includes("pull")) throw acquisitionFailure;
     } };
@@ -376,7 +378,7 @@ test("maintenance image cleanup is armed before build timing publication can fai
   const start = source.indexOf("  maintenance_cli: async () => {");
   const end = source.indexOf("  startup: async () => {", start);
   const publicationFailure = new Error("Timing publication failed after the image was built");
-  const context = { maintenanceImageCleanupRequired: false,
+  const context = { managedBuild:async build=>build("fixture-builder"), buildResourceArguments:()=>[], maintenanceImageCleanupRequired: false,
     candidateRevision: "candidate", maintenanceImage: "owned-maintenance", run: () => { throw publicationFailure; } };
   const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
   await assert.rejects(actions.maintenance_cli(), error => error === publicationFailure);
@@ -399,7 +401,7 @@ test("maintenance cleanup accepts only an absent owned image and preserves other
     [{ error: new Error("Docker unavailable"), status: null }, false],
   ]) {
     const calls = [];
-    const context = { executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
+    const context = { recordBudgetResource:async()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
       maintenanceImage: "owned-maintenance", environment: {}, secretsDirectory: "owned-secrets", process: { env: {} },
       spawnSync: (command, args) => { calls.push([command, Array.from(args)]); return removal; },
       rmSync: path => calls.push(["secrets", path]) };
@@ -420,7 +422,7 @@ test("lifecycle rehearsal restores full-mode applications after failure and neve
     const rehearsalFailure = new Error("rehearsal failed");
     const context = { options: { mode }, project: "fixture", environment: {}, candidateRevision: "revision",
       measureScenario: directMeasurement,
-      buildLabels: "labels", compose: ["compose"], join, process: { cwd: () => root },
+      resourceLimits:"resource-limits.json",buildLabels: "labels", compose: ["compose"], join, process: { cwd: () => root },
       verifyTempoCliLifecycle: async () => { calls.push("rehearsal"); if (shouldFail) throw rehearsalFailure; },
       run: (_command, args) => calls.push(args.includes("stop") ? "stop" : "restore"),
       waitForReady: async () => calls.push("ready") };
@@ -883,7 +885,7 @@ test("real worker signal verification retains the existing stop boundary and rej
 
 test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
-  assert.equal(source.split('[...compose, "build"]').length - 1, 1);
+  assert.equal(source.split("await managedComposeBuild(").length - 1, 1);
   assert.equal(source.includes('[...compose, "up", "--build"'), false);
   assert.equal(source.includes('[...compose, "up", "-d"'), false);
   assert(source.includes('[...compose, "up", "--no-build", "-d"]'));

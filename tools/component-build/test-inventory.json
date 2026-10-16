@@ -194,6 +194,7 @@
       "tests/runner/ci-development.test.mjs",
       "tests/runner/ci-fast-lane.test.mjs",
       "tests/runner/ci-reliability.test.mjs",
+      "tests/runner/development-budget.test.mjs",
       "tests/runner/inference-priority.test.mjs",
       "tests/runner/merge-conflict-guard.test.mjs",
       "tests/runner/postgres-test-speedups.test.mjs",
