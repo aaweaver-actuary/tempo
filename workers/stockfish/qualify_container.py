@@ -75,8 +75,8 @@ class Qualification:
     async def ready_after(self, client, old_pid):
         deadline = time.monotonic() + 35
         while time.monotonic() < deadline:
-            ready = next((event for event in reversed(client.diagnostics) if event.get("event") == "ready" and event.get("pid") != old_pid), None)
-            if ready:
+            ready = next((event for event in reversed(client.diagnostics) if event.get("event") == "ready"), None)
+            if ready and ready.get("pid") != old_pid:
                 return ready
             await asyncio.sleep(.01)
         raise AssertionError("capacity did not recover")

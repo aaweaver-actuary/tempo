@@ -42,8 +42,9 @@ async def run_fixture(client, fixture, template, record_sink=lambda _: None):
     old_pid = next(event["pid"] for event in reversed(client.diagnostics)
                    if event.get("event") == "ready")
     await send(probe)
-    await receive(lambda record: isinstance(record, v1.JobStatus) and
-                  record.job_id == probe.job_id and record.status == "running")
+    started = await receive(lambda record: isinstance(record, v1.JobStatus) and
+                            record.job_id == probe.job_id and record.status in {"running", "failed"})
+    assert started.status == "running", started
     first_job = make_job(fixture[0])
     await send(first_job)
     busy = await receive(lambda record: isinstance(record, v1.JobStatus) and
@@ -61,8 +62,11 @@ async def run_fixture(client, fixture, template, record_sink=lambda _: None):
                                     and record.status == "terminated")
     terminated_ms = (time.monotonic() - cancelled_at) * 1000
     recovery_deadline = time.monotonic() + 35
-    while not any(event.get("event") == "ready" and event.get("pid") != old_pid
-                  for event in client.diagnostics):
+    while True:
+        latest_ready = next((event for event in reversed(client.diagnostics)
+                             if event.get("event") == "ready"), None)
+        if latest_ready and latest_ready.get("pid") != old_pid:
+            break
         if time.monotonic() >= recovery_deadline:
             raise TimeoutError("Finite backlog probe capacity did not recover")
         await asyncio.sleep(.01)
