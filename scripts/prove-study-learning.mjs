@@ -6,6 +6,8 @@ let input = ''; for await (const chunk of process.stdin) input += chunk;
 const { frontend, learning, credential, scenario, operation, mate, fixture_key } = JSON.parse(input);
 const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [];
 let evidenceDelivered=false, priorityHead=false;
+let holdNextQueue=false, heldQueue=false, delayedResponseCancelled=false, releaseDelayedQueue;
+const delayedQueue=new Promise(resolve=>{releaseDelayedQueue=resolve;});
 async function fixture(action) {
   const result=await fetch(`${frontend}/__fixture/${action}`, {method:'POST',headers:{'Content-Type':'application/json','X-Tempo-Fixture-Key':fixture_key},body:'{}'});
   assert.equal(result.status,200); fixtureEvents.push(action); return result.json();
@@ -27,6 +29,11 @@ const proxy = createServer(async (request, response) => {
     if (path==='/api/queue/window' && request.method==='GET' && upstream.ok) {
       priorityHead ||= Boolean(JSON.parse(bytes).cards?.[0]?.gameplay_priority_reason);
       if (scenario==='remediation-late' && !evidenceDelivered) { await fixture('deliver-evidence'); evidenceDelivered=true; }
+      if(holdNextQueue) {
+        holdNextQueue=false;heldQueue=true;
+        await delayedQueue;
+        delayedResponseCancelled=response.destroyed;
+      }
     }
     if (review && upstream.ok && scenario==='service-restart') await fixture('restart-learning');
     if (review && upstream.ok && scenario === 'next-load') blockedQueue = true;
@@ -145,6 +152,22 @@ try {
       }
       if(scenario.endsWith('-loss')) {await expect.poll(()=>dropped).toBe(true);await page.reload();}
       await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='tactic-command'&&item.state==='committed').length,{timeout:20000}).toBe(1);
+    } else if (scenario==='delayed-replacement') {
+      holdNextQueue=true;
+      await page.getByRole('button',{name:'Tactics',exact:true}).click();
+      await page.getByRole('button',{name:'Train',exact:true}).click();
+      await expect.poll(()=>heldQueue).toBe(true);
+      const newer=await context.newPage();await connect(newer);
+      await expect(newer.locator('cg-board:visible')).toBeVisible();await move(newer);
+      await expect.poll(async()=> (await records(newer)).filter(item=>item.kind==='review'&&item.state==='committed').length).toBe(1);
+      await page.getByRole('button',{name:'Tactics',exact:true}).click();
+      await page.getByRole('button',{name:'Train',exact:true}).click();
+      await expect(page.getByText("You're done for today",{exact:true})).toBeVisible();
+      releaseDelayedQueue();
+      await expect.poll(()=>delayedResponseCancelled).toBe(true);
+      await expect(page.locator('cg-board:visible')).toHaveCount(0);
+      await expect(page.getByText("You're done for today",{exact:true})).toBeVisible();
+      assert.equal(traffic.filter(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path)).length,1);
     } else if (scenario==='settings') {
       await page.getByRole('button',{name:'Study settings',exact:true}).click();
       await page.getByLabel('New tactics per day',{exact:true}).fill('3');
@@ -250,12 +273,13 @@ try {
     }
   }
   assert.deepEqual(unexpected,[]);
-  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,confirmed_receipts:confirmedReceipts,fixture_events:fixtureEvents,fault_dropped:dropped,browser:browser.version()}));
+  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,confirmed_receipts:confirmedReceipts,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
 } catch (error) {
   // Do not record form input, credentials, authenticated headers or raw traces.
   console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]"));
   console.error((await page?.locator("body").innerText().catch(()=>"") ?? "").slice(0,3000).replaceAll(credential,"[redacted]"));
   console.error(JSON.stringify(traffic)); process.exitCode=1;
 } finally {
+  releaseDelayedQueue();
   await context.close();await browser.close();proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));
 }
