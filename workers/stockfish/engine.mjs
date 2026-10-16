@@ -24,16 +24,15 @@ export async function createEngine() {
   const { default: factory } = await import('./assets/sf_19_smallnet.js');
   let listener = () => {};
   const engine = await factory({ locateFile: name => new URL('./assets/' + name, import.meta.url).pathname, listen: line => listener(line), onError: () => { process.exitCode = 1; process.exit(1); }, print: () => {}, printErr: () => {} });
-  if (engine.getRecommendedNnue() !== 'nn-61e7af4bb97d.nnue') throw new WireError('engine_identity_mismatch', 'Unexpected engine network');
   engine.setNnueBuffer(new Uint8Array(await readFile(new URL('./assets/nn-61e7af4bb97d.nnue', import.meta.url))));
   const wait = (command, expected, before = () => {}) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new WireError('engine_initialization_timeout', 'UCI handshake timed out')), 10000);
     listener = line => { before(line); if (line === expected) { clearTimeout(timer); resolve(); } };
     engine.uci(command);
   });
-  const options = new Set(); let name;
-  await wait('uci', 'uciok', line => { if (line.startsWith('id name ')) name = line.slice(8); const option = line.match(/^option name (.+) type /); if (option) options.add(option[1]); });
-  if (name !== 'Stockfish 19') throw new WireError('engine_identity_mismatch', 'Unexpected UCI identity');
+  const options = new Set(); let name, evalFile;
+  await wait('uci', 'uciok', line => { if (line.startsWith('id name ')) name = line.slice(8); const option = line.match(/^option name (.+) type /); if (option) options.add(option[1]); if (line.startsWith('option name EvalFile ')) evalFile = line.split(' default ')[1]; });
+  if (name !== 'Stockfish 19' || evalFile !== 'nn-61e7af4bb97d.nnue') throw new WireError('engine_identity_mismatch', 'Unexpected UCI identity');
   for (const [option, value] of Object.entries(identity.descriptor.options)) {
     if (!options.has(option)) throw new WireError('unsupported_engine_option', 'Declared UCI option missing');
     engine.uci(`setoption name ${option} value ${value === '' ? '<empty>' : value}`);

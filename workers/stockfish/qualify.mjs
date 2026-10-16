@@ -91,7 +91,7 @@ export async function qualifyRestricted({ reportPath, artifactsDirectory }) {
     const contractWheel = join(artifactsDirectory, 'tempo_analysis_jobs_contracts-1.0.0-py3-none-any.whl');
     for (const version of ['3.12', '3.14']) {
       const environment = join(temporary, 'python-' + version), interpreter = join(environment, 'bin/python');
-      const uvEnv = { UV_CACHE_DIR: join(temporary, 'uv-cache') };
+      const uvEnv = { UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? join(temporary, 'uv-cache') };
       execute('uv', ['venv', '--python', version, environment], temporary, 0, uvEnv);
       execute('uv', ['pip', 'install', '--python', interpreter, '--require-hashes', '-r', resolve(componentRoot, '../../contracts/requirements-test.lock')], temporary, 0, uvEnv);
       execute('uv', ['pip', 'install', '--python', interpreter, 'chess==1.11.2'], temporary, 0, uvEnv);

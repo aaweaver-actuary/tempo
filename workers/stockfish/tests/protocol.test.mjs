@@ -147,3 +147,13 @@ test('pre-job cancellation capacity exhaustion does not create authority or stop
   assert.equal(f.records.at(-1).payload.reason,'session_capacity_exhausted');
   assert.equal(f.worker.logicalRequests.size,0);assert.equal(f.worker.executions.size,0);
 });
+
+test('subscriber mutations cannot rewrite completed receipts or terminal statuses',async t=>{
+  const f=await fixture(t);const input=job();send(f.worker,input);const original=await f.record(isResult());
+  const timestamp=original.payload.provenance.started_at;
+  original.payload.provenance.started_at='caller-mutated';
+  const terminal=f.records.find(isStatus('completed'));terminal.payload.status='running';
+  send(f.worker,input);const replay=f.records.filter(isResult()).at(-1);
+  assert.equal(replay.payload.provenance.started_at,timestamp);
+  assert.equal(f.records.at(-1).payload.status,'completed');
+});

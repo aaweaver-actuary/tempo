@@ -115,7 +115,7 @@ export class StockfishWorker extends EventEmitter {
 
   emitRecord(model, payload) {
     validatePayload(model, payload);
-    this.emit('record', { model, payload });
+    this.emit('record', { model, payload: structuredClone(payload) });
   }
 
   setStatus(record, status, reason = null, retryable = false) {

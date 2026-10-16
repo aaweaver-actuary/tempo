@@ -55,8 +55,12 @@ class StockfishClient:
         self._tasks = [asyncio.create_task(self._read_records()), asyncio.create_task(self._read_diagnostics())]
         try:
             await asyncio.wait_for(asyncio.shield(self._ready), self.startup_timeout)
-        except BaseException:
+        except BaseException as error:
             await self.close()
+            if self._ready.done() and not self._ready.cancelled():
+                self._ready.exception()
+            if isinstance(error, asyncio.TimeoutError):
+                raise WorkerSessionLost("worker startup deadline expired") from error
             raise
         return self
 

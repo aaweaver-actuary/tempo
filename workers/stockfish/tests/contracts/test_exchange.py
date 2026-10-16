@@ -73,3 +73,13 @@ def test_independent_consumer_rejects_illegal_pv_and_cancellation_identity():
     acknowledgement["payload"]["execution_generation"] += 1
     with pytest.raises(AssertionError):
         _consumer().consume(invalid_ack)
+
+
+def test_startup_timeout_is_typed_session_loss_and_reaps_its_launcher():
+    async def scenario():
+        client = StockfishClient([sys.executable, "-u", "-c", "import sys; sys.stdin.read()"], startup_timeout=.05)
+        with pytest.raises(WorkerSessionLost, match="startup deadline"):
+            async with client:
+                pass
+        assert client.process.returncode is not None
+    asyncio.run(scenario())

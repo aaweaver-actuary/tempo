@@ -43,6 +43,10 @@ class Qualification:
         self.containers.append(name)
         return name, ["docker", "run", "--pull=never", "--rm", "-i", "--name", name, "--label", f"tempo.task={TASK}", "--label", f"tempo.run={self.run_id}", "--network=none", "--cpus=1", "--memory=512m", "--memory-swap=512m", "--pids-limit=64", "--read-only", self.image, "serve"]
 
+    def client(self, command):
+        self.current_client = StockfishClient(command)
+        return self.current_client
+
     def job(self, client, **changes):
         self.counter += 1
         payload = json.loads((ROOT / "fixtures/synthetic/job.json").read_text())["payload"]
@@ -108,7 +112,7 @@ class Qualification:
     async def acceptance(self):
         name, command = self.command()
         cold = time.monotonic()
-        async with StockfishClient(command) as client:
+        async with self.client(command) as client:
             cold_ms = (time.monotonic() - cold) * 1000
             configuration = json.loads(docker("inspect", name).stdout)[0]
             assert configuration["HostConfig"]["Memory"] == 512 * 1024 * 1024
@@ -187,9 +191,10 @@ class Qualification:
             self.last_identity=client.identity
         removed=docker("inspect",name,check=False).returncode != 0
         assert removed, "owned container survived EOF shutdown"
-        self.passed("B_clean_shutdown", container_removed=removed)
+        assert client.process.returncode == 0
+        self.passed("B_clean_shutdown", container_removed=removed, exit_status=client.process.returncode)
         name2, command2=self.command()
-        async with StockfishClient(command2) as client:
+        async with self.client(command2) as client:
             retried=replay_job.model_copy(update={"execution_generation":replay_job.execution_generation+1})
             await self.send(client,retried); new_result=await self.result(client,retried)
             assert new_result.execution_generation != outputs[-1].execution_generation
@@ -199,7 +204,7 @@ class Qualification:
         cold=[]; searches=[]; cancellations=[]; peaks=[]
         for cycle in range(5):
             name,command=self.command(); began=time.monotonic()
-            async with StockfishClient(command) as client:
+            async with self.client(command) as client:
                 cold.append({"end_to_end_startup_ms":(time.monotonic()-began)*1000,"engine_initialization_ms":next(event["initialization_ms"] for event in client.diagnostics if event.get("event")=="ready")})
                 for index in range(4):
                     changes=[{}, {"moves":["e2e4"]}, {"search_moves":["e2e4"]}, {"multi_pv":3}][index]
@@ -219,42 +224,62 @@ class Qualification:
         self.passed("serial_benchmark", cold_starts=5,searches=20,cancellations=5)
 
     async def slow_consumer(self):
+        # Put the unread pipe beside the server; Docker attach buffering cannot hide it.
         name,command=self.command()
-        process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        diagnostics=[]
-        try:
-            while True:
-                line=await asyncio.wait_for(asyncio.to_thread(process.stderr.readline),35)
-                assert line, "worker failed before slow-consumer readiness"
-                event=json.loads(line); diagnostics.append(event)
-                if event.get("event")=="ready": break
-            payload=json.loads((ROOT/"fixtures/synthetic/job.json").read_text())
-            payload["payload"]["constraints"]["max_memory_mb"]=256
-            payload["payload"]["input_digest"]=stockfish_input_digest(payload["payload"])
-            line=(json.dumps(payload,separators=(",",":"))+"\n").encode()
-            os.set_blocking(process.stdin.fileno(),False)
-            written=0
-            deadline=time.monotonic()+1
-            while time.monotonic()<deadline:
-                try:
-                    written+=os.write(process.stdin.fileno(),line)
-                    await asyncio.sleep(.001)
-                except BlockingIOError:
-                    await asyncio.sleep(.005)
-                except (BrokenPipeError,OSError): break
-            process.stdin.close()
-            code=await asyncio.wait_for(asyncio.to_thread(process.wait),10)
-            output=process.stdout.read();stderr=process.stderr.read()
-            assert code != 0 and len(output)<=2*1024*1024+65536
-            self.passed("B_slow_consumer",exit_status=code,bytes_written=written,stdout_bytes=len(output),diagnostics=stderr.decode()[-2000:])
-        finally:
-            if process.poll() is None:
-                docker("kill",name,check=False); await asyncio.to_thread(process.wait)
-            process.stdout.close();process.stderr.close()
+        template=json.loads((ROOT/"fixtures/synthetic/job.json").read_text())["payload"]
+        harness=r"""
+const {spawn}=require('node:child_process');const fs=require('node:fs');
+(async()=>{
+ const {stockfishInputDigest}=await import('/opt/stockfish/wire.mjs');
+ const template=JSON.parse(process.argv[1]);
+ const child=spawn(process.execPath,['/opt/stockfish/cli.mjs','serve'],{stdio:['pipe','pipe','pipe']});
+ let buffer='',sent=0,timedOut=false,feeding=false,feedTimer,stdoutBytes=0,enginePid=null;
+ const events=[];
+ const watchdog=setTimeout(()=>{timedOut=true;clearTimeout(feedTimer);child.kill('SIGKILL');},38000);
+ function feed(){
+  if(child.exitCode!==null||!feeding)return;
+  const job={...template,job_id:'slow-'+sent++,max_depth:4,max_nodes:null,search_moves:[]};
+  job.input_digest=stockfishInputDigest(job);
+  if(!child.stdin.write(JSON.stringify({model:'StockfishJob',payload:job})+'\n'))child.stdin.once('drain',()=>{feedTimer=setTimeout(feed,1);});
+  else feedTimer=setTimeout(feed,1);
+ }
+ child.stdin.on('error',()=>{feeding=false;clearTimeout(feedTimer);});
+ child.stderr.on('data',chunk=>{
+  buffer+=chunk.toString();let end;
+  while((end=buffer.indexOf('\n'))>=0){
+   const text=buffer.slice(0,end);buffer=buffer.slice(end+1);
+   try{const event=JSON.parse(text);events.push(event);if(events.length>128)events.shift();
+    if(event.event==='ready'&&!feeding){enginePid=event.pid;feeding=true;feed();}
+   }catch{}
+  }
+ });
+ // stdout deliberately remains paused until server exit.
+ child.once('exit',code=>{
+  feeding=false;clearTimeout(feedTimer);clearTimeout(watchdog);child.stdin.destroy();
+  child.stdout.on('data',chunk=>{stdoutBytes+=chunk.length;});child.stdout.resume();
+  child.once('close',()=>{
+   const result={exit_status:code,timed_out:timedOut,sent,stdout_bytes:stdoutBytes,
+    engine_gone:enginePid!==null&&!fs.existsSync('/proc/'+enginePid),
+    peak_bytes:Number(fs.readFileSync('/sys/fs/cgroup/memory.peak','utf8')),
+    protocol_errors:events.filter(event=>event.event==='protocol_error'),
+    actual_searches:events.filter(event=>event.event==='execution_started').length};
+   console.log(JSON.stringify(result));
+  });
+ });
+})();
+"""
+        arguments=["run", "--pull=never", "--rm", "--name", name, "--label",f"tempo.task={TASK}","--label",f"tempo.run={self.run_id}","--network=none","--cpus=1","--memory=512m","--memory-swap=512m","--pids-limit=64","--read-only","--entrypoint","node",self.image,"-e",harness,json.dumps(template)]
+        result=await asyncio.to_thread(docker,*arguments,timeout=50)
+        observed=json.loads(result.stdout)
+        self.last_slow_consumer=observed
+        assert not observed["timed_out"] and observed["exit_status"]==1
+        assert observed["engine_gone"] and observed["stdout_bytes"]<=2*1024*1024+65536
+        assert any(event.get("reason")=="output_stalled" for event in observed["protocol_errors"])
+        self.passed("B_slow_consumer",**observed)
 
     async def signal_shutdown(self):
         name,command=self.command()
-        async with StockfishClient(command) as client:
+        async with self.client(command) as client:
             job=self.job(client,max_depth=128,max_nodes=None,constraints={"max_wall_time_ms":10000,"max_memory_mb":512})
             await self.send(client,job)
             await self.until(client,lambda value:isinstance(value,v1.JobStatus) and value.job_id==job.job_id and value.status=="running")
@@ -268,14 +293,22 @@ class Qualification:
 
     def cleanup(self):
         removed=[]
+        missing=lambda result:result.returncode and ("No such object" in result.stderr or "No such container" in result.stderr)
         for name in self.containers:
             state=docker("inspect",name,check=False)
-            if state.returncode:
-                continue
+            if missing(state): continue
+            if state.returncode: raise RuntimeError("owned container inspection unavailable")
             labels=json.loads(state.stdout)[0]["Config"]["Labels"]
             if labels.get("tempo.run") != self.run_id or labels.get("tempo.task") != TASK:
                 raise RuntimeError("container ownership changed")
-            docker("rm","-f",name); removed.append(name)
+            result=docker("rm","-f",name,check=False)
+            if result.returncode:
+                for _ in range(20):
+                    state=docker("inspect",name,check=False,timeout=5)
+                    if missing(state): break
+                    time.sleep(.25)
+                else: raise RuntimeError("owned container cleanup remains unconfirmed")
+            removed.append(name)
         return {"removed_remaining_owned_containers":removed,"all_created_names":self.containers}
 
 
@@ -299,7 +332,16 @@ async def run(arguments):
     except BaseException as error:
         failure=error; report["failure"]={"type":type(error).__name__,"message":str(error)[:2000]}
     finally:
-        report["cleanup"]=qualifier.cleanup()
+        try:
+            report["cleanup"]=qualifier.cleanup()
+        except Exception as cleanup_error:
+            report["cleanup"]={"failure":str(cleanup_error),"owned_names":qualifier.containers}
+            report["complete"]=False
+            if failure is None: failure=cleanup_error
+        if qualifier.records:
+            Path(arguments.exchange).write_text(json.dumps({"scope":"actual installed Stockfish output","records":qualifier.records},indent=2)+"\n")
+        report["last_diagnostics"]=list(getattr(getattr(qualifier,"current_client",None),"diagnostics",[]))
+        report["slow_consumer"]=getattr(qualifier,"last_slow_consumer",None)
         report["cases"]=qualifier.cases;report["measurements"]=qualifier.measurements
         report["identity"]=getattr(qualifier,"last_identity",None)
         Path(arguments.report).parent.mkdir(parents=True,exist_ok=True)
