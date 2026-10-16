@@ -487,3 +487,27 @@ def test_R5_legacy_cancellation_reaps_expired_execution_without_new_work(state):
     assert owner.status('repair')['state']=='cancelled'
     assert owner.claim('repair',builder) is None
     with pytest.raises(DomainError,match='stale_analysis_execution'):owner.accept(claim,result(claim))
+
+
+def test_R3_configured_success_clears_only_current_pending_absence_markers(state):
+    from tempo_intelligence.analysis.worker import work
+    owner=setup(state);other=setup(state,run_id='other')
+    assert work(owner,'run',1)['engine']=='unavailable_not_configured'
+    work(other,'other',1)
+    with state[0].transaction() as db:
+        db.execute("UPDATE analysis_positions SET error_code='execution_failed' WHERE run_id='run' AND ordinal=(SELECT max(ordinal) FROM analysis_positions WHERE run_id='run')")
+    class GoodWorker:
+        build_job=staticmethod(builder)
+        def execute(self,job):
+            with state[0].transaction(read_only=True) as db:
+                position=db.execute("SELECT payload FROM analysis_positions WHERE run_id='run' AND state='running'").fetchone()['payload']
+            return result({'job':job,'payload':position})
+        def close(self):pass
+    assert work(owner,'run',1,client=GoodWorker())['jobs']==1
+    report=owner.report('run');assert report['unprocessed_count']>0
+    assert report['engine_availability']=='pending_or_available'
+    assert any(item['error_code']=='execution_failed' for item in owner.remaining('run')['items'])
+    assert other.report('other')['engine_availability']=='unavailable'
+    assert work(owner,'run',1,client=GoodWorker())['jobs']==1
+    with state[0].transaction(read_only=True) as db:assert db.execute('SELECT count(*) FROM analysis_results').fetchone()['count']==2
+    work(owner,'run',1);assert owner.report('run')['engine_availability']=='unavailable'

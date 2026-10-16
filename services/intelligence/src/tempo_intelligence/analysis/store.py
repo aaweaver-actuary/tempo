@@ -481,6 +481,7 @@ class AnalysisStore:
                 validate_pair_jobs(root_job, claim["job"], row["payload"]["actual_move"])
                 compared=comparison(root,wire,row["payload"]["actual_move"])
                 db.execute("UPDATE analysis_positions SET accepted_played=%s,state='complete',lease_token=NULL,leased_until=NULL,error_code=%s WHERE run_id=%s AND revision=%s AND position_id=%s",(result_id,"insufficient_quality" if compared["status"]=="insufficient_quality" else None,claim["run_id"],claim["revision"],claim["position_id"]))
+            db.execute("UPDATE analysis_positions SET error_code=NULL WHERE run_id=%s AND revision=%s AND state='pending' AND error_code='engine_unavailable'",(claim["run_id"],claim["revision"]))
             db.execute("UPDATE analysis_runs SET requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(claim["run_id"],claim["revision"]))
         return {"result_id":result_id,"replayed":False}
 

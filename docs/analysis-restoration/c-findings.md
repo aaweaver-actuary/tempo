@@ -293,3 +293,12 @@ Final consumer review removed legacy Continue/Retry/Resume controls before they
 could persist predictably rejected commands; Cancel remains available with an
 explanation. Explicit cancellation also reaps expired executions directly, so an
 unpublished legacy run needs no derivation worker to release expired capacity.
+
+The final R3 transition audit reproduced one further stale availability marker:
+no-engine work followed by bounded configured success could leave other pending
+positions marked unavailable. A successful accepted result now clears only those
+current-run/revision pending absence markers in the same transaction. The named
+native regression first failed against the installed `d21bd33b` wheel (34 other
+cases passed); it also verifies other runs/failures and a later explicit no-engine
+invocation remain truthful. The final artifact matrix is regenerated after this
+narrow correction.

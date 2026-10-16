@@ -359,3 +359,8 @@ Legacy follow-up edges are owned by the same regular native suite:
 `test_R5_legacy_cancellation_reaps_expired_execution_without_new_work`. The legacy
 identity test includes explicit dismissal → reopening → publication. These keep
 legacy recovery from blocking corrected runs or retaining orphaned capacity.
+
+`test_R3_configured_success_clears_only_current_pending_absence_markers` covers
+no-engine → configured bounded success → continuation → explicit no-engine again.
+Acceptance clears only the current revision's pending absence markers, preserving
+other failures, states, results and other runs.
