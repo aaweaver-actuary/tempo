@@ -162,3 +162,5 @@ Existing F1, restart, storage, exercise-family and offline-shell cases remain se
 - `test_A_actual_evidence_delivery_export_proposal_and_optional_off_study` additionally loads historical then current snapshots into a separate fresh installed producer; the original producer still proves current-then-historical rejection without current-pointer mutation. Post-retirement observations are genuine HTTP-produced fixtures.
 
 The complete regular native and production Study suites retain credential separation, issuance, review, retirement, optional-services-off and resource-budget owners.
+
+The installed bridge proof also loads the real post-retirement generation-2 observation, recomputes evidence, and requires unknown readiness with unchanged delivery receipts; response loss explicitly retains Content applying authority.

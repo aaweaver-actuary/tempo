@@ -105,3 +105,5 @@ Regular native `integration/test_postgres.py` owns:
 Regular installed pure `tests/test_bridge.py::test_A_terminal_failure_requires_original_authenticated_request` covers terminal state and request/workspace/command/operation mismatches, and safe failure details. Real authenticated rejection and corrected activation are owned by Learning's installed `test_A_corrected_source_activates_after_original_terminal_failure`.
 
 `test_A_success_and_terminal_failure_race_preserves_one_outcome` owns concurrent competing terminal records; `test_A_proposal_identity_is_scoped_to_workspace_and_source` owns permitted source scoping.
+
+`test_A_proposal_insert_rollback_allows_legitimate_retry_after_restart` owns aborted insertion and durable retry. Pure `test_A_failure_transport_rejects_uncertain_http_outcomes` uses real local HTTP for redirect/authentication/unavailability/malformed/oversized boundaries. Terminal request-binding parameters include retirement and wrong original origin.

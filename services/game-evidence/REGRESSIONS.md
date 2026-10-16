@@ -99,3 +99,5 @@ installed CLI -> authenticated Learning HTTP -> independent databases.
 ## PR #294 snapshot repair
 
 `integration/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.
+
+`test_A_post_retirement_snapshot_cannot_claim_current_serving` installs a genuine retired observation, recomputes comparison readiness and preserves the original snapshot and delivery records.

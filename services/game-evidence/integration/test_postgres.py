@@ -1151,3 +1151,23 @@ def test_A_snapshot_installation_orders_preserve_current_generation(state, histo
     game = store.import_pgn(workspace, 'pgn', 'current-generation', 'Learner', b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 2. Nf3 1-0')
     drain(store)
     assert store.report(workspace, game)['snapshot']['publication_generation'] == 2
+
+
+def test_A_post_retirement_snapshot_cannot_claim_current_serving(state):
+    store, _, _ = state
+    active = json.loads((FIXTURES / 'bridge-snapshot-v2.json').read_text())
+    retired = json.loads((FIXTURES / 'bridge-retired-snapshot-v2.json').read_text())
+    workspace = active['publication']['workspace_id']
+    original_digest = store.load_snapshot(active)
+    game = store.import_pgn(workspace, 'pgn', 'retired-comparison', 'Learner', b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. c4 1-0')
+    drain(store)
+    with store.connect() as database:
+        deliveries = database.execute('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id').fetchall()
+    retired_digest = store.load_snapshot(retired)
+    assert retired_digest != original_digest
+    drain(store)
+    report = store.report(workspace, game)
+    assert report['readiness'] == 'unknown' and report['snapshot']['digest'] == retired_digest
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS count FROM snapshots').fetchone()['count'] == 2
+        assert database.execute('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id').fetchall() == deliveries

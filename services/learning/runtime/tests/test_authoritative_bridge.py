@@ -181,6 +181,8 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
             time.sleep(.1)
         assert isinstance(failed,subprocess.CompletedProcess),failed
         assert failed.returncode!=0 and len(dropped)==1,(failed.stdout,failed.stderr)
+        uncertain=run_cli(content_cli,['operation','show',approved['id']],environment,tmp_path)
+        assert uncertain['state']=='applying' and uncertain['document']['delivery']
         process.restart_service()
         completed=run_cli(bridge_cli,[*arguments,'reconcile',approved['id']],environment,tmp_path)
         assert completed['state']=='completed'
@@ -290,6 +292,14 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         retired_snapshot_path=tmp_path/'post-retirement-snapshot.json'
         retired_snapshot=run_cli(bridge_cli,[*arguments,'snapshot',approved['id'],'--output',retired_snapshot_path],environment,tmp_path)
         assert retired_snapshot['current_serving']['status']=='retired' and retired_snapshot['revision']>historical['revision']
+        retired_current_path=tmp_path/'post-retirement-current-snapshot.json'
+        retired_current=run_cli(bridge_cli,[*arguments,'snapshot',updated['id'],'--output',retired_current_path],environment,tmp_path)
+        assert retired_current['publication']['publication_generation']==2 and retired_current['current_serving']['status']=='retired'
+        deliveries_before=producer.query('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id')
+        producer.run('load-snapshot',retired_current_path)
+        producer.run('work','--max-jobs','100','--learning-endpoint',learning_endpoint)
+        assert producer.run('report',game_ids[0],'--workspace','workspace-a')['readiness']=='unknown'
+        assert producer.query('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id')==deliveries_before
         # Prove all three runtime roles are denied foreign domain databases.
         learning_name=conninfo_to_dict(case.admin)['dbname']
         content_name=conninfo_to_dict(environment['TEMPO_CONTENT_DATABASE_URL'])['dbname']
@@ -301,7 +311,7 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         evidence=Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True,exist_ok=True)
         shutil.copytree(output,evidence/'analysis-inputs',dirs_exist_ok=True)
-        for path in (source_path,manifest_path,snapshot_path,proposal_path,historical_path,successor_path,retired_snapshot_path):
+        for path in (source_path,manifest_path,snapshot_path,proposal_path,historical_path,successor_path,retired_snapshot_path,retired_current_path):
             shutil.copy2(path,evidence/path.name)
         (evidence/'activation.json').write_text(json.dumps(dropped[0],indent=2))
         (evidence/'retirement.json').write_text(json.dumps(retired['document']['receipt']['acknowledgement'],indent=2))

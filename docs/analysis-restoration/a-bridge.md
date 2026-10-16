@@ -181,7 +181,7 @@ delivery-state digest participates in immutable input identity. Its input ID is
 `22de0c7c92fcecc176d4fe7acd956aae66fd77ddeba86db4a0e4ea3b738b373e`,
 manifest digest `924b65aa373b5305816daf5a2ddfc2fcf26640f03a15259a34048d03033c267b`.
 The learner miss has one completed batch; other games are explicitly not required.
-The first fixture is unchanged. Neither C nor another consumer creates remediation
+The original immutable analysis-input exports are unchanged. Repair regeneration refreshes snapshot/receipt files in both fixture folders; each frozen export continues to pin its original observation and digest, rather than being relabelled with a newer snapshot. Neither C nor another consumer creates remediation
 from these serialized delivery facts.
 
 Historical activation and currently observed serving status are distinct. A

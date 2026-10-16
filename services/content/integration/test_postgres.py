@@ -1512,3 +1512,25 @@ def test_A_proposal_identity_is_scoped_to_workspace_and_source(service):
         draft = Bridge(service).draft(original['document']['source'],original['document']['manifest'],0,proposal)
         assert draft['document']['proposal'] == proposal
     assert query("SELECT count(*) FROM content.bridge_drafts WHERE source_key=ANY(%s) AND document->'proposal'->>'proposal_id'='same-permitted-id'", ([first['source_key'],second['source_key']],))[0][0] == 2
+
+
+def test_A_proposal_insert_rollback_allows_legitimate_retry_after_restart(service):
+    from contextlib import contextmanager
+    original = bridge_draft(service)
+    proposal = {'workspace_id':service.workspace_id, 'source_key':original['source_key'], 'proposal_id':'rolled-back'}
+    with reopen() as application:
+        transaction = application._transaction
+        @contextmanager
+        def interrupted_transaction():
+            with transaction() as database:
+                yield database
+                raise RuntimeError('interrupted before proposal commit')
+        application._transaction = interrupted_transaction
+        with pytest.raises(RuntimeError, match='before proposal commit'):
+            Bridge(application).draft(original['document']['source'], original['document']['manifest'], 0, proposal)
+    statement = "SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='rolled-back'"
+    assert query(statement, (original['source_key'],))[0][0] == 0
+    with reopen() as restarted:
+        draft = Bridge(restarted).draft(original['document']['source'], original['document']['manifest'], 0, proposal)
+        assert Bridge(restarted).draft(original['document']['source'], original['document']['manifest'], 0, proposal) == draft
+    assert query(statement, (original['source_key'],))[0][0] == 1
