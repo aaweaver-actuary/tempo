@@ -34,3 +34,5 @@ and `M02 controlled browser dispatch awaits and catches asynchronous failures`.
 These preserve frontend/integration build ordering and runner independence without
 browser dependencies, reject missing/empty/duplicate/stale registrations, and prove
 lazy browser dispatch completes or exits nonzero on import/execution failure.
+
+`registered Stockfish container qualification acquires Docker admission while listing remains lightweight` owns explicit `requiresDocker` suite admission. The registered Stockfish suite retains its Node reporter and receives the shared managed Docker adapter and cleanup verification.

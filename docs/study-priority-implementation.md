@@ -110,3 +110,5 @@ See [study-priority-validation.md](study-priority-validation.md).
 Focused passes are not full-system qualification. Existing failing checks must be
 reported, not skipped or weakened. The release procedure is in
 [study-priority-release.md](study-priority-release.md).
+
+Docker-backed component suites may declare `requiresDocker: true` independently of their result reporter kind. Stockfish retains its registered Node container suite; managed dispatch acquires the shared lease and injects the same ownership/capacity adapter used by PostgreSQL suites. Listing remains read-only.

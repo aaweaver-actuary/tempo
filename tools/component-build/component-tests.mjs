@@ -14,7 +14,7 @@ export function componentSelectionNeedsBudget(argumentsList, root = process.env.
   const manifest = readManifest(root);
   const suites = [...(options.componentIds ? selectComponents(manifest,options.componentIds).flatMap(component=>component.tests) : []),
     ...(options.suiteIds ? selectSuites(manifest,options.suiteIds) : [])];
-  return suites.some(suite=>suite.kind === 'postgres');
+  return suites.some(suite=>(suite.kind === 'postgres' || suite.requiresDocker === true));
 }
 
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -38,7 +38,7 @@ export function runComponentSelection(argumentsList, root = process.env.TEMPO_CO
       let environment = { ...process.env, PYTHONPATH: "", PYTHONDONTWRITEBYTECODE: "1", PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1" };
       delete environment.NODE_TEST_CONTEXT;
       delete environment.PYTHONHOME;
-      if (suite.kind === 'postgres' && process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN) {
+      if ((suite.kind === 'postgres' || suite.requiresDocker === true) && process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN) {
         environment = managedDockerEnvironment(environment,reports); managedEnvironment=environment;
         recordBudgetResourceSync('component-suite:'+suite.id,true);
       }

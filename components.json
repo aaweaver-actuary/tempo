@@ -557,6 +557,7 @@
           "owner": "stockfish",
           "kind": "node",
           "command": "node qualify.mjs container",
+          "requiresDocker": true,
           "inputs": [
             "qualify.mjs",
             "qualify_container.py",

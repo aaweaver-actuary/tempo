@@ -289,3 +289,9 @@ test('B refused legacy control is not confirmed inactivity', async () => {
     pause:async()=>{waits++;controller.abort(new Error('control stayed unavailable'));}}),/stayed unavailable/);
   assert.equal(waits,1);
 });
+
+test('registered Stockfish container qualification acquires Docker admission while listing remains lightweight', async () => {
+  const {componentSelectionNeedsBudget}=await import('../../tools/component-build/component-tests.mjs');
+  assert.equal(componentSelectionNeedsBudget(['--component','stockfish']),true);
+  assert.equal(componentSelectionNeedsBudget(['--component','stockfish','--list']),false);
+});
