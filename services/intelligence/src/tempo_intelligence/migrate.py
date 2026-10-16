@@ -7,6 +7,16 @@ import psycopg
 from psycopg import sql
 
 
+ANALYSIS_IMMUTABLE_TABLES=("analysis_pages","analysis_executions","analysis_results","analysis_reports","analysis_report_items","analysis_commands","analysis_execution_events")
+ANALYSIS_MUTABLE_COLUMNS={
+    "analysis_inputs":["state"],
+    "analysis_runs":["state","budget","requested_generation","published_generation","last_complete_generation"],
+    "analysis_heads":["revision"],
+    "analysis_positions":["state","execution_generation","stage","attempts","next_attempt_at","lease_token","leased_until","accepted_root","accepted_played","error_code"],
+    "analysis_dismissals":["revision","state","supporting_games"],
+}
+
+
 def migration_sources():
     directory = Path(__file__).parent / "migrations"
     seen = set()
@@ -64,6 +74,11 @@ def grant_runtime(owner_url, runtime_role):
             "maia_jobs":["status","status_payload","result_payload","evidence_id"],
         }
         for table,columns in updates.items():
+            database.execute(sql.SQL("GRANT INSERT ON intelligence.{} TO {}").format(sql.Identifier(table),role))
+            database.execute(sql.SQL("GRANT UPDATE ({}) ON intelligence.{} TO {}").format(sql.SQL(',').join(map(sql.Identifier,columns)),sql.Identifier(table),role))
+        for table in ANALYSIS_IMMUTABLE_TABLES:
+            database.execute(sql.SQL("GRANT INSERT ON intelligence.{} TO {}").format(sql.Identifier(table),role))
+        for table, columns in ANALYSIS_MUTABLE_COLUMNS.items():
             database.execute(sql.SQL("GRANT INSERT ON intelligence.{} TO {}").format(sql.Identifier(table),role))
             database.execute(sql.SQL("GRANT UPDATE ({}) ON intelligence.{} TO {}").format(sql.SQL(',').join(map(sql.Identifier,columns)),sql.Identifier(table),role))
         # Runtime cannot rewrite accepted evidence, caller intent, or migration/workspace authority.

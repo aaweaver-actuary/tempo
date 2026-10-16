@@ -51,7 +51,9 @@
     "test:components": "node tools/component-build/test-node.mjs tools/component-build/tests",
     "build:components": "node tools/component-build/restricted-build.mjs",
     "test:component": "node tools/component-build/test-lane.mjs",
-    "build:study": "npm run build:packages && TEMPO_TARGET=study vite build --config vite.static.config.ts"
+    "build:study": "npm run build:packages && TEMPO_TARGET=study vite build --config vite.static.config.ts",
+    "build:workbench": "npm run build --prefix apps/workbench-web",
+    "test:workbench": "npm test --prefix apps/workbench-web"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",

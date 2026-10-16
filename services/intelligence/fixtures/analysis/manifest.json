@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "workspace_id": "fixture",
+  "input_id": "synthetic-C",
+  "revision": 1,
+  "producer": "synthetic",
+  "producer_version": "c-fixture-v1",
+  "source_artifact_digest": "sha256:b805d286c3d3a08841739e431781a89fec2577e16c55dba36afbd3f2c87b6a23",
+  "completeness": "complete",
+  "reasons": [],
+  "game_ids": [
+    "miss",
+    "gap",
+    "alternative"
+  ],
+  "window_start": null,
+  "window_end": null,
+  "selections": [
+    {
+      "repertoire_id": "rep",
+      "policy_id": "policy",
+      "learner_color": "white",
+      "lineage": {
+        "source_id": "synthetic-source",
+        "source_revision": 1,
+        "source_digest": "synthetic-source-digest",
+        "publication_id": "synthetic-publication",
+        "publication_generation": 1,
+        "activation_id": "synthetic-activation",
+        "activation_revision": 1,
+        "activation_status": "activated",
+        "serving_status": "unknown"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "page_id": "games-0",
+      "digest": "sha256:02f5b7df582bb41ef1ce09bb1f4e87a08193da680826407afc1454e8fc3b0dd3",
+      "game_count": 3
+    }
+  ],
+  "coverage_scopes": [],
+  "producer_manifest": null
+}

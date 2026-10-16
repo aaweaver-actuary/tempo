@@ -262,3 +262,63 @@ Owned by `tests/test_worker.py`; these cover executor join and cancellation of a
 
 - `test_lifespan_cancellation_during_owned_store_close_drains_and_joins_runner`
 - `test_lifespan_startup_cancellation_closes_eventually_created_store_and_runner`
+
+## C analysis-v1 owning suites
+
+### `tests/test_analysis.py`
+
+- `test_C_accepted_alternative`
+- `test_C_course_difference_not_blunder`
+- `test_C_unknown_not_gap`
+- `test_C_actual_opponent_gap`
+- `test_C_post_gap_no_cascade`
+- `test_C_explicit_reentry`
+- `test_C_distinct_game_dedup`
+- `test_C_policy_independence`
+- `test_C_partial_explorer`
+- `test_C_maia_full_legal_set`
+- `test_C_engine_played_move`
+- `test_C_engine_perspective`
+- `test_C_mate_not_cp`
+- `test_C_engine_quality`
+- `test_C_partial_scan_truth`
+- `test_analysis_input_strict_versions`
+- `test_source_specific_proactive_gap_and_policy_identity`
+- `test_positive_opponent_encounters_supply_distinct_game_denominator`
+- `test_worker_session_is_closed_before_durable_failure`
+- `test_worker_acknowledged_cancellation_is_not_a_failed_search`
+- `test_packaged_analysis_v1_schemas_match_public_models`
+
+### `integration/test_analysis_postgres.py`
+
+- `test_C_duplicate_result`
+- `test_C_worker_restart`
+- `test_C_newer_input_during_publish`
+- `test_C_cancel_resume`
+- `test_C_finite_backlog_fairness`
+- `test_C_read_has_no_work_effect`
+- `test_C_dismissal_revision`
+- `test_C_stale_pagination`
+- `test_C_auth_workspace`
+- `test_C_proposal_not_activation`
+- `test_C_partial_scan_truth_native`
+- `test_input_immutable_and_partial_rejection`
+- `test_native_workbench_producer_contract`
+- `test_source_correction_retains_report_and_fences_prior_execution`
+- `test_dismissal_exact_replay_after_publication`
+- `test_engine_job_builder_cannot_change_captured_root`
+- `test_three_additional_games_reopen_durably_across_correction`
+- `test_analysis_shutdown_receipt_for_optional_off_assembly`
+- `test_retry_insufficient_quality_preserves_results_and_advances_execution`
+- `test_engine_opportunity_without_repertoire_color_mapping`
+- `test_first_report_cannot_publish_over_a_sibling_run_dismissal`
+
+`C_native_workbench` belongs to the independent Workbench suite. `C_optional_off_study` and `C_actual_AB_consumers` belong to the explicit external pilot integration lane, with actual artifacts required; fixture-only suites do not claim those milestones.
+
+Explicit actual lanes: `integration/test_actual_analysis.py` owns fresh installed B
+same-root depth/mate acceptance. `integration/test_actual_a.py` owns actual A export
+acceptance into a separate restricted C workspace and bounded B dispatch. They are
+selected only with explicit artifact/profile paths; missing selected inputs fail.
+The external pilot owns the exact named `test_C_actual_AB_consumers` and
+`test_C_optional_off_study` cases. All 28 requested C identities have owning suites;
+actual acceptance and synthetic compatibility remain separate executions.
