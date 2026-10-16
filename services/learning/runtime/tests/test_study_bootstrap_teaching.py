@@ -39,14 +39,18 @@ def test_study_settings_patch_is_durable_idempotent_and_has_no_optional_fields(c
 
 def test_teaching_duplicate_fact_and_receipt_preserve_original_timestamp(case):
     card = activate(case)["facts"][0]["card_id"]
+    # Admission already retains an unissued origin. Teaching must preserve it
+    # byte-for-byte, not delete it or turn it into an issued attempt.
+    origins = [tuple(row) for row in case.query("SELECT * FROM learning.queue_attempt_origins ORDER BY queue_entry_id")]
     first = teaching(case, card)
     assert first.status_code == 200, first.text
     assert teaching(case, card).json() == first.json()
     assert teaching(case, card, key="other-transport").json() == first.json()
     assert case.client.get(f"/api/cards/{card}/teaching").json() == {"states": [first.json()]}
     assert case.query("SELECT COUNT(*) FROM learning.teaching_states")[0][0] == 1
-    for table in ["reviews", "review_attempt_receipts", "queue_attempt_origins"]:
+    for table in ["reviews", "review_attempt_receipts"]:
         assert case.query(f"SELECT COUNT(*) FROM learning.{table}")[0][0] == 0
+    assert [tuple(row) for row in case.query("SELECT * FROM learning.queue_attempt_origins ORDER BY queue_entry_id")] == origins
 
 
 @pytest.mark.parametrize("revision,ply,status", [(2,0,409),(1,1,422),(1,-1,422),(0,0,422)])

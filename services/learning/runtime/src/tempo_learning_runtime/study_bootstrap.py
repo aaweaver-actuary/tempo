@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from .clock import date
 from .durable_tasks import enqueue_task_in_transaction
+from .card_deletion import require_card_not_deleted
 import chess, json
 from fastapi import HTTPException
 
@@ -72,8 +73,9 @@ def tactic_progress(database):
 def move_membership(database, card_id, revision, fen, move_uci):
     """Check alternatives only against currently accepted executable routes."""
     card = database.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
-    if not card or not card["serving_active"] or card["archived"] or card["revision"] != revision:
+    if not card or not card["serving_active"] or card["archived"] or card["superseded_by"] or card["revision"] != revision:
         raise HTTPException(409, "Accepted opening revision is unavailable")
+    require_card_not_deleted(database, card_id)
     try:
         position = chess.Board(fen)
         move = chess.Move.from_uci(move_uci)
