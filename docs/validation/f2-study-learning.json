@@ -331,5 +331,193 @@
     "browser_cases_passed": 28,
     "success": false,
     "reason": "Unexpected GET /api/repertoires; baseline request inventory retained as failed evidence."
+  },
+  "review_repairs": {
+    "base_sha": "fbf02120b311a9c0ad9ece9deb271665f79b4544",
+    "starting_head": "5cc32bb99d12ad3ef91517a26203000b57dab601",
+    "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+    "branch": "codex/f2-study-learning",
+    "evidence_root": "/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1",
+    "frontend": 1701,
+    "native_study": 41,
+    "learning_postgresql": 160,
+    "controlled_browser": 28,
+    "focused": 261,
+    "browser_intents": 15,
+    "study_session": 10,
+    "controlled_unit": 54,
+    "installed_consumers": {
+      "3.12-wheel": 3,
+      "3.12-sdist": 3,
+      "3.14-wheel": 3,
+      "3.14-sdist": 3
+    },
+    "artifact_count": 14,
+    "inventories": "inventory-validation.json",
+    "commands": "command-ledger.json",
+    "historical_evidence_preserved": "/Users/andy/tempo/test-results/f2-study-learning-20261016",
+    "limitations": [
+      "Two authority forwarding origins share one installed Learning database.",
+      "Native Study is Chromium/macOS arm64; controlled Firefox/WebKit cases do not establish offline release qualification.",
+      "No hosted/full-system gate, live migration, publication scaling, frontend artifact extraction, merge or deployment."
+    ],
+    "failed_attempts": [
+      "frontend-release",
+      "registered-study",
+      "endgame-capability",
+      "native-exploratory",
+      "types-final",
+      "focused-matrix",
+      "frontend-qualified",
+      "baseline-regressions",
+      "native-final",
+      "learning-final"
+    ],
+    "starting_pr_base": "0c7ef737bb2daacd8f671f252ce5a1d0787b1871",
+    "task_branch": "codex/pr291-review-repairs-20261016",
+    "production_files": [
+      "app/components/study-connection-boundary.tsx",
+      "app/components/tactical-catalog.tsx",
+      "app/lib/card-delete-command.ts",
+      "app/lib/study-connection.ts",
+      "app/lib/tactic-capture-command.ts",
+      "app/views/endgames_view.tsx",
+      "app/views/home_view.tsx",
+      "app/views/tactics_view.tsx"
+    ],
+    "published_sha_receipt": "/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/handoff.json",
+    "cleanup_receipt": "/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/resource-cleanup.json",
+    "baseline_reproduction": {
+      "command_receipt": "baseline-regressions.json",
+      "passed": 21,
+      "failed": 14,
+      "total": 35,
+      "relevant_production_inputs_match_reviewed_head": true
+    },
+    "fixture_repairs": [
+      "Wait for each original authority tab to finish its own recovery before comparing foreign bytes.",
+      "Wait for failed database-interruption delivery to release its original claim before reload; retain the 60-second lease and existing test budgets.",
+      "Wait for the defense control to be enabled and for fixture-started durable failure writes to finish."
+    ],
+    "scope": "Local source-bound qualification for independent re-review; no hosted/full-system merge qualification, merge, deployment or live conversion.",
+    "command_ledger": "/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/command-ledger.json",
+    "checks": {
+      "boundaries-complete": {
+        "command": "env TEMPO_COMPONENT_PYTHON=/Users/andy/.codex/worktrees/pr291-review-repairs/tempo/services/learning/runtime/.venv/bin/python node tools/component-build/check-components.mjs --component learning --component browser-intents --component study-session --consumers",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "boundaries-complete.json"
+      },
+      "collection-complete": {
+        "command": "env TEMPO_TEST_LANE=frontend node_modules/.bin/vitest list --config vitest.lanes.config.ts --json --staticParse=false",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "collection-complete.json"
+      },
+      "conflicts-complete": {
+        "command": "npm run check:conflicts",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "conflicts-complete.json"
+      },
+      "controlled-unit": {
+        "command": "node tools/component-build/test-lane.mjs controlled-browser",
+        "tested_sha": "7add73fa5a75939307e6a0312ee9246e3798ee68",
+        "exit_code": 0,
+        "receipt": "controlled-unit.json"
+      },
+      "demo-build": {
+        "command": "env TEMPO_TARGET=demo TEMPO_BROWSER_BUILD_DIR=/private/tmp/pr291-demo-build-20261016-a1 node_modules/.bin/vite build --config vite.static.config.ts",
+        "tested_sha": "47c2b363a846a34186ce4b98f6fff206e98268b1",
+        "exit_code": 0,
+        "receipt": "demo-build.json"
+      },
+      "focused-qualified": {
+        "command": "node_modules/.bin/vitest run tests/unit/study-learning-connection-regressions.test.ts tests/unit/study-cached-startup-regressions.test.tsx tests/unit/study-authoring-capability-regressions.test.tsx tests/unit/study-intent-storage-regressions.test.ts tests/unit/study-attempt-pending-regressions.test.tsx tests/unit/card-delete-pending-regressions.test.ts tests/unit/tactic-capture-regressions.test.tsx tests/unit/tactical-catalog-suggestions.test.tsx tests/unit/endgame-template-pending-regressions.test.ts tests/unit/endgame-attempt-pending-regressions.test.ts tests/unit/offline-training-regressions.test.ts tests/unit/shared-board-shell-endgames-regressions.test.tsx tests/unit/repair-endgame-regressions.test.tsx tests/unit/review-outbox-regressions.test.ts tests/unit/teaching-state-outbox-regressions.test.ts --reporter=default --reporter=json --outputFile=/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/focused-qualified-report.json --maxWorkers=2",
+        "tested_sha": "7add73fa5a75939307e6a0312ee9246e3798ee68",
+        "exit_code": 0,
+        "receipt": "focused-qualified.json"
+      },
+      "frontend-complete": {
+        "command": "env TEMPO_TEST_LANE=frontend node_modules/.bin/vitest run --config vitest.lanes.config.ts --reporter=default --reporter=json --outputFile=/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/frontend-complete-report.json",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "frontend-complete.json"
+      },
+      "installed-final": {
+        "command": "services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py /Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/installed-final",
+        "tested_sha": "0f8228d0005cb76139211ef2c37d86ff262082fe",
+        "exit_code": 0,
+        "receipt": "installed-final.json"
+      },
+      "intent-session-packages": {
+        "command": "env TEMPO_COMPONENT_PYTHON=/Users/andy/.codex/worktrees/pr291-review-repairs/tempo/services/learning/runtime/.venv/bin/python node tools/component-build/test-lane.mjs --component browser-intents --component study-session",
+        "tested_sha": "7add73fa5a75939307e6a0312ee9246e3798ee68",
+        "exit_code": 0,
+        "receipt": "intent-session-packages.json"
+      },
+      "learning-qualified": {
+        "command": "services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py /Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/learning-qualified",
+        "tested_sha": "7add73fa5a75939307e6a0312ee9246e3798ee68",
+        "exit_code": 0,
+        "receipt": "learning-qualified.json"
+      },
+      "legacy-build": {
+        "command": "npm run build",
+        "tested_sha": "47c2b363a846a34186ce4b98f6fff206e98268b1",
+        "exit_code": 0,
+        "receipt": "legacy-build.json"
+      },
+      "lint-complete": {
+        "command": "node_modules/.bin/eslint app/components/study-connection-boundary.tsx app/components/tactical-catalog.tsx app/lib/card-delete-command.ts app/lib/study-connection.ts app/lib/tactic-capture-command.ts app/views/endgames_view.tsx app/views/home_view.tsx app/views/tactics_view.tsx scripts/prove-study-learning.mjs tests/unit/study-learning-connection-regressions.test.ts tests/unit/study-authoring-capability-regressions.test.tsx tests/unit/study-cached-startup-regressions.test.tsx tests/unit/defense-recognition-regressions.test.tsx tests/unit/repertoire-alternative-home-regressions.test.tsx --format json --output-file /Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/lint-complete-report.json",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "lint-complete.json"
+      },
+      "native-complete": {
+        "command": "services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_study.py /Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/native-complete",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "native-complete.json"
+      },
+      "registered-qualified": {
+        "command": "env TEMPO_COMPONENT_PYTHON=/Users/andy/.codex/worktrees/pr291-review-repairs/tempo/services/learning/runtime/.venv/bin/python node tools/component-build/test-lane.mjs --suite learning-full-study",
+        "tested_sha": "eacc075451fa9ec015e448358f2487230c127b94",
+        "exit_code": 0,
+        "receipt": "registered-qualified.json"
+      },
+      "typecheck-complete": {
+        "command": "npm run typecheck",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "typecheck-complete.json"
+      },
+      "ui-qualified": {
+        "command": "npm run test:ui-isolated",
+        "tested_sha": "7add73fa5a75939307e6a0312ee9246e3798ee68",
+        "exit_code": 0,
+        "receipt": "ui-qualified.json"
+      },
+      "whitespace-complete": {
+        "command": "git diff origin/main --check",
+        "tested_sha": "67684c2a8532df9d28d67cc02a85a1553181a105",
+        "exit_code": 0,
+        "receipt": "whitespace-complete.json"
+      }
+    },
+    "input_equivalence": {
+      "receipt": "/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/input-equivalence.json",
+      "sha256": "1f249c31ce7b9b63fae6b4be5db931ca8a968d9f1fcee385e6e2642310f4f6f3",
+      "verified_sets": [
+        "native-complete",
+        "native-registered",
+        "learning-qualified",
+        "installed-final",
+        "ui-qualified",
+        "legacy-build",
+        "demo-build"
+      ],
+      "consumed_input_differences": []
+    }
   }
 }

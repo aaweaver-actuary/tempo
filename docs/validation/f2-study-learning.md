@@ -151,3 +151,85 @@ tracked sources, fixtures, metadata and toolchain inputs are unchanged since
 `0175a978`. `input-equivalence-release.json` records the zero-difference path audit;
 current runtime/component boundaries were checked freshly. No old native, package
 consumer, production UI or full frontend result substitutes for the final runs.
+
+
+## PR #291 independent review repairs — October 16, 2026
+
+Starting PR head: `5cc32bb99d12ad3ef91517a26203000b57dab601`; its original base
+was `0c7ef737bb2daacd8f671f252ce5a1d0787b1871`. Current remote main
+`fbf02120b311a9c0ad9ece9deb271665f79b4544` was merged normally, preserving both
+regression-index additions. Qualified executable revision: `67684c2a8532df9d28d67cc02a85a1553181a105`.
+The final published documentation commit and exact remote readback are recorded in
+`/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1/handoff.json`; the publication diff must contain documentation only.
+The original acceptance record above and its evidence directory remain intact.
+
+R1 now classifies connection failures explicitly. Only a transport failure while
+resuming the exact saved, registered authority can expose cached practice, after
+schema/workspace/timezone and read-only retained-storage validation. The browser
+network flag confers no authority. HTTP rejection, invalid bootstrap, unsafe
+bindings and storage failure remain blocked; no cache authorizes a first connection.
+
+R2 distinguishes original resumption, explicit registered recovery without a tab
+session, and conservative cutover. Registered foreign work remains isolated during
+recovery; it still fences unrelated cutover. Both inventory checks remain, and a
+connection generation fence rejects stale bootstrap results and disconnect races.
+Existing storage keys, immutable envelopes, claims and Learning contracts remain.
+
+R3 removes activation, admission and capture affordances in independent Study while
+keeping packaged tactics and accepted/local endgame practice. Capture rejects before
+pending-state reads, mutation or transport. The nearby audit also found automatic
+legacy card-deletion recovery: Study now gates it and the shared command rejects
+before side effects. Exact pending capture/deletion keys are inspectable and block
+ambiguous cutover. Workbench/legacy authoring retains its regular regressions.
+
+Evidence is retained at `/Users/andy/tempo/test-results/pr291-review-repair-20261016-a1`. Exact argument vectors, revisions, exit codes and
+logs are in `command-ledger.json`; `inventory-validation.json` checks actual case
+identities; `input-equivalence.json` verifies unchanged consumed inputs across the
+qualified commits. All following runs were executed in this repair task. Earlier
+qualified commits are identified explicitly rather than relabelled as newer runs.
+
+| Suite | Command receipt | Passed / selected |
+| --- | --- | ---: |
+| Focused frontend | `focused-qualified.json` | 261 / 261 |
+| Full frontend | `frontend-complete.json` | 1,701 / 1,701 |
+| Native Study | `native-complete.json` | 41 / 41 |
+| Registered native dispatch | `registered-qualified.json` | 41 / 41; same inventory |
+| Learning/PostgreSQL | `learning-qualified.json` | 160 / 160 |
+| Controlled browser | `ui-qualified.json` | 28 / 28 |
+| Persistence/session packages | `intent-session-packages.json` | 15 / 15 and 10 / 10 |
+| Controlled harness unit | `controlled-unit.json` | 54 / 54 |
+| Installed consumers | `installed-final.json` | 3 / 3 in each of four consumers |
+
+Typecheck, changed TypeScript/TSX and native-driver lint, nine component boundaries,
+conflict/whitespace checks, and Study/legacy/demo builds pass. Frontend collection
+and execution agree on all 1,701 cases in 156 files, with no failed, pending or TODO
+cases. Native collection/execution/JUnit agree. Native dispatch repeats the same
+41 cases and is not counted as independent extra coverage. Python 3.12 and 3.14
+wheel/sdist consumers retain their source-removed and expected-empty-selection proofs;
+all 236 installed-package build inputs remain identical to their fresh task run.
+
+The two new browser authority origins forward to one installed Learning database.
+Their same-context tabs share localStorage/IndexedDB and use separate session
+bindings. Actual settings commands lose replies, then reconcile through their
+original origins with unchanged identities, payloads and foreign records. This is
+not a separate-database proof. The browser-online outage retains an actual issued
+head and answer until a real receipt and one PostgreSQL review confirm it.
+
+Failed exploratory runs remain failures in the ledger: 14 baseline reproductions;
+an early Endgames read gate and tab-role test error; the tab's own recovery racing
+with a foreign-byte snapshot; and an interruption fixture reloading before its
+failed delivery released its claim. Two existing frontend fixtures now await real
+control readiness and durable writes. A concurrent Learning run hit two transaction
+timeouts; the separate complete 160-case run passed without changing budgets.
+No assertion, timeout, selected case or test registration was weakened.
+
+The actual 850-asset production build matched its manifest and contained no
+credential literals under the recorded scan. Task owner labels and cleanup receipts
+verify removal of eight PostgreSQL fixture containers, two runtime test containers,
+eight volumes and eight image tags. Native temporary data/builds and the demo output
+were removed; shared caches, other checkouts and live Study were preserved. Final
+checkout removal and process/readback verification are in the external handoff.
+
+Historical migration, production cutover, publication scale, separately extracted
+frontend artifacts and cross-device/browser offline release qualification remain
+outside F2. Local results do not establish hosted or full-system merge qualification.

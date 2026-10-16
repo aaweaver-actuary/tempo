@@ -170,3 +170,32 @@ changed contents. Producer HTTP-401 failures retry the original delivery after
 credential correction and restart. The [producer recovery instructions](../../services/game-evidence/README.md#authentication-recovery)
 cover the explicit command for old 401-blocked rows. No new Study wire fields or
 browser authority are introduced. F2 now owns full routing and teaching; live cutover remains separate work.
+
+
+## PR #291 repair semantics
+
+Connection failures now carry an explicit category. Cached local practice requires
+transport unavailability and the exact previously authenticated, saved authority,
+a valid matching bootstrap/timezone and compatible retained storage. It grants no
+server settlement authority. HTTP/auth rejection and invalid identity/storage never
+become cached authorization. Fresh and changed-authority connections cannot borrow
+a prior cache. Superseded bootstrap responses cannot rebind or expire a newer session.
+
+Same-authority resumption and deliberate connection-form recovery of an exactly
+registered authority can coexist with correctly bound foreign pending work. An
+active tab changing authority retains the conservative cutover guard. Registry
+presence never overrides unresolved work in that tab. Both pre/post-bootstrap
+checks remain, while stores, claims, teaching facts and offline queues stay scoped.
+
+Independent Study supplies no catalog activation callback and exposes no capture or
+endgame admission controls. Pack selection/practice, Learning tactics progress,
+accepted endgame reads/attempts and local material exploration remain. Capture and
+permanent deletion reject before pending-state access, writes or transport; Home
+also suppresses automatic legacy deletion recovery. Read-only inspection includes
+exact pending capture/deletion keys, preserves their bytes and never assigns an
+unknown original authority. Other Workbench-only revision/import/prefix operations
+remain gated and keep their legacy protocol. No database or Learning API changes
+are introduced by these repairs.
+
+The updated acceptance map keeps original F2 results separate from the repair's
+fresh results, input-equivalent task evidence, failed attempts and cleanup receipts.
