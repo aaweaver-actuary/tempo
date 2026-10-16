@@ -25,7 +25,7 @@ def build_maia_job(descriptor: dict, workspace: str, cache_id: str, work_generat
             "request_revision": work_generation,
             "execution_generation": execution_generation,
             "input_digest": digest(descriptor),
-            "constraints": {"max_wall_time_ms": 5000, "max_memory_mb": 512},
+            "constraints": {"max_wall_time_ms": 5000, "max_memory_mb": 1024},
             "worker": "maia",
             "fen": descriptor["canonical_fen"],
             "rating": descriptor["rating"],

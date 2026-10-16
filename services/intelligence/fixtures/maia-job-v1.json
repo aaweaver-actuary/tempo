@@ -7,7 +7,7 @@
   "input_digest": "sha256:59006aa6fc4682aa9e7b942559b6d2c3e7b3fc022e8922ebbc466b6be3bccc6e",
   "constraints": {
     "max_wall_time_ms": 5000,
-    "max_memory_mb": 512
+    "max_memory_mb": 1024
   },
   "worker": "maia",
   "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",

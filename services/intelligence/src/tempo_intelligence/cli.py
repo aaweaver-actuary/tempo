@@ -65,9 +65,11 @@ async def bounded_work(store, configuration):
     from .worker import Worker
 
     client = ExplorerClient(configuration.provider_base_url)
+    worker = Worker(store, PrivateCredentials(configuration.credential_file), client)
     try:
-        return {"work_performed": await Worker(store, PrivateCredentials(configuration.credential_file), client).work_once()}
+        return {"work_performed": await worker.work_once()}
     finally:
+        await worker.aclose()
         if hasattr(client, "aclose"):
             await client.aclose()
 

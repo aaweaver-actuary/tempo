@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -9,12 +10,13 @@ import os
 from threading import Event, Thread
 import time
 
+import httpx
 import psycopg
 import pytest
 from tempo_analysis_jobs_contracts.v1 import MaiaResult
 
+from tempo_intelligence.api import create_app
 from tempo_intelligence.credentials import CredentialMaterial, PrivateCredentials
-from tempo_intelligence.errors import DomainError
 from tempo_intelligence.models import RequestInput
 from tempo_intelligence.provider import ExplorerClient
 from tempo_intelligence.store import Store
@@ -309,6 +311,209 @@ def test_postgres_cancelled_http_releases_lease_without_consuming_attempt_and_is
         assert len(paths) == 2
 
 
+@pytest.mark.parametrize("cleanup_failure",["exception","client-deadline"])
+def test_postgres_cancelled_http_with_failed_cleanup_recovers_by_native_lease_expiry_and_fences_stale_publication(state,monkeypatch,cleanup_failure):
+    from tempo_intelligence import runtime
+    store,configuration,path=state
+    register(state)
+    submit(state)
+    entered,release=Event(),Event()
+    captured_claims=[]
+    cleanup_calls=[]
+    expired_connections=[]
+    original_claim=store.claim
+
+    def capture_claim():
+        claim=original_claim()
+        if claim is not None:
+            captured_claims.append(claim)
+        return claim
+
+    def failed_cleanup(claim,code,**options):
+        cleanup_calls.append((claim["cache_id"],code,options))
+        if cleanup_failure=="client-deadline":
+            with store.transaction(background=True) as database:
+                expired_connections.append(database)
+                database.execute("SELECT pg_sleep(30)")
+        raise RuntimeError("synthetic_cleanup_failure_must_not_replace_cancellation")
+
+    def behavior(number):
+        if number==2:
+            entered.set()
+            assert release.wait(5)
+        return 200,{},valid_counts()
+
+    with fake_provider(behavior) as (url,paths):
+        assert asyncio.run(worker(state,url).work_once())
+        accepted=sources(store)["lichess"]["evidence_id"]
+        evidence=store.evidence(accepted)
+        store.refresh("request","refresh-before-failed-cleanup")
+        ready(store)
+        monkeypatch.setattr(store,"claim",capture_claim)
+        monkeypatch.setattr(store,"fail",failed_cleanup)
+
+        async def cancel_with_failed_cleanup():
+            runner=runtime.DatabaseRunner()
+            client=ExplorerClient(url)
+            active_worker=Worker(store,PrivateCredentials(path),client,runner=runner)
+            pending=asyncio.create_task(active_worker.work_once())
+            try:
+                assert await asyncio.to_thread(entered.wait,3)
+                cache_before=owner_execute("SELECT row_to_json(c) FROM intelligence.caches c")
+                permit_before=owner_execute("SELECT row_to_json(p) FROM intelligence.provider_control p")
+                if cleanup_failure=="client-deadline":
+                    monkeypatch.setattr(runtime,"BACKGROUND_OPERATION_SECONDS",0.2)
+                started=time.monotonic()
+                pending.cancel("native_cancelled_request")
+                with pytest.raises(asyncio.CancelledError,match="native_cancelled_request"):
+                    await pending
+                assert time.monotonic()-started<1
+                assert pending.cancelled() and runner.pending is None
+                assert cleanup_calls==[(captured_claims[0]["cache_id"],"request_cancelled",{"cancelled":True})]
+                assert owner_execute("SELECT row_to_json(c) FROM intelligence.caches c")==cache_before
+                assert owner_execute("SELECT row_to_json(p) FROM intelligence.provider_control p")==permit_before
+                assert sources(store)["lichess"]["attempts"]==0
+                assert sources(store)["lichess"]["evidence_id"]==accepted
+                assert store.evidence(accepted)==evidence
+                assert store.claim() is None
+                if expired_connections:
+                    assert expired_connections[0].closed
+            finally:
+                release.set()
+                if not pending.done():
+                    pending.cancel()
+                    await asyncio.gather(pending,return_exceptions=True)
+                await active_worker.aclose()
+                await runner.aclose()
+                assert runner.pending is None and runner.closed
+                assert not any(thread.is_alive() for thread in runner.executor._threads)
+
+        asyncio.run(cancel_with_failed_cleanup())
+        assert len(paths)==2
+
+    old_claim=captured_claims[0]
+    assert len(captured_claims)==1
+    owner_execute("UPDATE intelligence.caches SET leased_until=now()-interval '1 second' WHERE cache_id=%s",(old_claim["cache_id"],))
+    owner_execute("UPDATE intelligence.provider_control SET leased_until=now()-interval '1 second' WHERE id=1")
+    assert not store.publish(old_claim,{"source":"stale-before-reclaim"})
+    restarted=Store(configuration)
+    try:
+        restarted.validate_startup()
+        replacement=restarted.claim()
+        assert replacement and replacement["generation"]==old_claim["generation"]
+        assert replacement["execution_generation"]==old_claim["execution_generation"]+1
+        assert replacement["attempts"]==old_claim["attempts"]==0
+        assert not store.publish(old_claim,{"source":"stale-after-reclaim"})
+        assert restarted.publish(replacement,{"source":"replacement","total_games":29})
+        newer=sources(restarted)["lichess"]["evidence_id"]
+        assert newer!=accepted
+        assert not store.publish(old_claim,{"source":"stale-after-acceptance"})
+        assert sources(restarted)["lichess"]["evidence_id"]==newer
+        assert restarted.evidence(newer)["payload"]["total_games"]==29
+        assert restarted.evidence(accepted)==evidence
+    finally:
+        restarted.close()
+
+
+def test_postgres_advisory_locked_background_claim_keeps_actual_asgi_health_responsive(state,monkeypatch):
+    store,configuration,_=state
+    register(state)
+    submit(state)
+    entered,completed=Event(),Event()
+    waiting_backend=[]
+    original_claim=store.claim
+    advisory_identity=109289
+
+    def locked_claim():
+        with store.transaction(background=True) as database:
+            database.execute("SET LOCAL lock_timeout='1400ms'")
+            waiting_backend.append(database.info.backend_pid)
+            entered.set()
+            database.execute("SELECT pg_advisory_xact_lock(%s)",(advisory_identity,))
+        completed.set()
+        return original_claim()
+
+    def wait_for_actual_database_lock():
+        deadline=time.monotonic()+0.6
+        with psycopg.connect(os.environ["TEMPO_INTELLIGENCE_TEST_ADMIN_URL"],autocommit=True) as database:
+            while time.monotonic()<deadline:
+                row=database.execute("SELECT state,wait_event_type,wait_event FROM pg_stat_activity WHERE pid=%s",(waiting_backend[0],)).fetchone()
+                if row==("active","Lock","advisory"):
+                    return True
+                time.sleep(0.005)
+        return False
+
+    monkeypatch.setattr(store,"claim",locked_claim)
+    with psycopg.connect(os.environ["TEMPO_INTELLIGENCE_TEST_OWNER_URL"]) as lock_owner:
+        lock_owner.execute("SELECT pg_advisory_xact_lock(%s)",(advisory_identity,))
+        with fake_provider() as (url,paths):
+            active_worker=worker(state,url)
+            application=create_app(replace(configuration,worker_enabled=True),store=store,worker=active_worker)
+
+            async def check_health_during_lock():
+                try:
+                    async with application.router.lifespan_context(application):
+                        assert await asyncio.to_thread(entered.wait,2)
+                        assert await asyncio.to_thread(wait_for_actual_database_lock)
+                        assert not completed.is_set() and paths==[]
+                        async with httpx.AsyncClient(transport=httpx.ASGITransport(application),base_url="http://testserver") as client:
+                            started=time.monotonic()
+                            response=await asyncio.wait_for(client.get("/healthz"),timeout=0.5)
+                            assert response.status_code==200 and response.json()=={"status":"ready","workspace_id":"fixture"}
+                            assert time.monotonic()-started<0.5
+                        assert not completed.is_set() and paths==[]
+                        lock_owner.rollback()
+                        deadline=time.monotonic()+2
+                        while time.monotonic()<deadline:
+                            current=await asyncio.to_thread(sources,store)
+                            if current["lichess"]["state"]=="complete":
+                                break
+                            await asyncio.sleep(0.005)
+                        assert current["lichess"]["state"]=="complete"
+                finally:
+                    lock_owner.rollback()
+            asyncio.run(check_health_during_lock())
+            assert len(paths)==1 and completed.is_set() and active_worker.closed
+
+
+def test_postgres_background_client_deadline_discards_connection_resets_context_and_allows_pool_replacement(state,monkeypatch):
+    from tempo_intelligence import runtime
+    store,_,_=state
+    expired_connections=[]
+    replacement_connections=[]
+    monkeypatch.setattr(runtime,"BACKGROUND_OPERATION_SECONDS",0.2)
+
+    def exceed_client_deadline():
+        with store.transaction(background=True) as database:
+            expired_connections.append(database)
+            database.execute("SELECT pg_sleep(30)")
+
+    def use_replacement_connection():
+        with store.transaction(background=True) as database:
+            replacement_connections.append(database)
+            return database.execute("SELECT 1 AS answer").fetchone()["answer"]
+
+    async def exercise_deadline():
+        runner=runtime.DatabaseRunner()
+        try:
+            started=time.monotonic()
+            with pytest.raises(psycopg.OperationalError,match="^background_database_(deadline|unavailable)$"):
+                await runner.run(exceed_client_deadline)
+            assert 0.15<=time.monotonic()-started<1
+            assert len(expired_connections)==1 and expired_connections[0].closed
+            assert runner.pending is None and runtime.background_deadline.get() is None
+            observed_context=await asyncio.get_running_loop().run_in_executor(runner.executor,runtime.background_deadline.get)
+            assert observed_context is None
+            assert await runner.run(use_replacement_connection)==1
+            assert replacement_connections[0] is not expired_connections[0]
+            assert not replacement_connections[0].closed
+        finally:
+            await runner.aclose()
+            assert runner.closed and runner.pending is None
+            assert not any(thread.is_alive() for thread in runner.executor._threads)
+    asyncio.run(exercise_deadline())
+
+
 def test_postgres_lost_private_file_is_unavailable_then_explicit_registration_recovers(state):
     store, _, path = state
     register(state)
@@ -356,9 +561,9 @@ def test_postgres_invalid_provider_response_is_failed_without_automatic_retry(st
         assert not failed["retryable"] and not failed["retry_eligible"]
         ready(store)
         assert not asyncio.run(worker(state, url).work_once()) and len(paths) == 1
-        with pytest.raises(DomainError) as caught:
-            store.retry("request", "invalid-same-generation-retry", 1)
-        assert caught.value.code == "retry_not_permitted"
+        before_explicit_retry = sources(store)["lichess"]
+        assert store.retry("request", "invalid-same-generation-retry", 1)["accepted"]
+        assert sources(store)["lichess"]==before_explicit_retry
         store.refresh("request", "corrected-provider-refresh", 1)
         ready(store)
         assert asyncio.run(worker(state, url).work_once()) and len(paths) == 2

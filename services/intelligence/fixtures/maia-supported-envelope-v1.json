@@ -1,0 +1,205 @@
+{
+  "request": {
+    "schema_version": 1,
+    "request_id": "intelligence-maia-native-faa7n7ps",
+    "request_revision": 1,
+    "expected_revision": null,
+    "snapshot": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "snapshot_id": "initial-position",
+      "source_id": "content-fixture",
+      "source_revision": 1,
+      "publication_id": "publication-fixture",
+      "publication_generation": 1,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "legal_universe_version": "standard-chess-v1",
+      "legal_universe_digest": "sha256:d5547771fd1d7d329218997b1347df9494b2a9d03f44463769d81ea2a2fe5e4c",
+      "complete": true,
+      "legal_moves": [
+        "a2a3",
+        "a2a4",
+        "b1a3",
+        "b1c3",
+        "b2b3",
+        "b2b4",
+        "c2c3",
+        "c2c4",
+        "d2d3",
+        "d2d4",
+        "e2e3",
+        "e2e4",
+        "f2f3",
+        "f2f4",
+        "g1f3",
+        "g1h3",
+        "g2g3",
+        "g2g4",
+        "h2h3",
+        "h2h4"
+      ],
+      "policy_context": {
+        "policy_id": "policy-a"
+      }
+    },
+    "sources": [
+      {
+        "kind": "maia",
+        "rating": 1500,
+        "model_id": "maia3-onnx",
+        "model_version": "maia3-v1-5636517db9d76a5f",
+        "artifact_sha256": "6c51d0b989d5eddfef72aff6a181285a852888d504d7bf830e8978c772170d2b"
+      }
+    ],
+    "max_age_seconds": 86400
+  },
+  "job": {
+    "contract_version": 1,
+    "workspace_id": "fixture",
+    "job_id": "maia:1e2cbb6679568d2cc3701912e2959594ffd93a9a74adf24ec0f3462bd068cce0",
+    "request_revision": 1,
+    "execution_generation": 1,
+    "input_digest": "sha256:0721517da8c60832881f3c7bc10a5eed71cbfca7650c44bdcda702cac568c67f",
+    "constraints": {
+      "max_wall_time_ms": 5000,
+      "max_memory_mb": 1024
+    },
+    "worker": "maia",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "rating": 1500,
+    "model_id": "maia3-onnx",
+    "model_version": "maia3-v1-5636517db9d76a5f",
+    "legal_moves": [
+      "a2a3",
+      "a2a4",
+      "b1a3",
+      "b1c3",
+      "b2b3",
+      "b2b4",
+      "c2c3",
+      "c2c4",
+      "d2d3",
+      "d2d4",
+      "e2e3",
+      "e2e4",
+      "f2f3",
+      "f2f4",
+      "g1f3",
+      "g1h3",
+      "g2g3",
+      "g2g4",
+      "h2h3",
+      "h2h4"
+    ]
+  },
+  "result": {
+    "contract_version": 1,
+    "workspace_id": "fixture",
+    "job_id": "maia:1e2cbb6679568d2cc3701912e2959594ffd93a9a74adf24ec0f3462bd068cce0",
+    "request_revision": 1,
+    "execution_generation": 1,
+    "worker": "maia",
+    "model_id": "maia3-onnx",
+    "model_version": "maia3-v1-5636517db9d76a5f",
+    "provenance": {
+      "input_digest": "sha256:0721517da8c60832881f3c7bc10a5eed71cbfca7650c44bdcda702cac568c67f",
+      "runtime_name": "onnxruntime-web/wasm",
+      "runtime_version": "1.23.0",
+      "implementation_version": "maia-worker-v1-3eee2e5fbca3c613",
+      "started_at": "2026-10-16T12:55:46.491Z",
+      "finished_at": "2026-10-16T12:55:46.758Z"
+    },
+    "predictions": [
+      {
+        "move": "a2a3",
+        "probability": 0.0006623216133596727
+      },
+      {
+        "move": "a2a4",
+        "probability": 0.0005280488290804264
+      },
+      {
+        "move": "b1a3",
+        "probability": 5.653239059469713e-05
+      },
+      {
+        "move": "b1c3",
+        "probability": 0.0027238831196988444
+      },
+      {
+        "move": "b2b3",
+        "probability": 0.010279827500376003
+      },
+      {
+        "move": "b2b4",
+        "probability": 0.004855846679124895
+      },
+      {
+        "move": "c2c3",
+        "probability": 0.0016265049003849673
+      },
+      {
+        "move": "c2c4",
+        "probability": 0.03370625672991746
+      },
+      {
+        "move": "d2d3",
+        "probability": 0.003665385374590278
+      },
+      {
+        "move": "d2d4",
+        "probability": 0.2651202455248062
+      },
+      {
+        "move": "e2e3",
+        "probability": 0.009071915928185766
+      },
+      {
+        "move": "e2e4",
+        "probability": 0.616423039194948
+      },
+      {
+        "move": "f2f3",
+        "probability": 0.0004696563507952562
+      },
+      {
+        "move": "f2f4",
+        "probability": 0.00674167546785568
+      },
+      {
+        "move": "g1f3",
+        "probability": 0.02928450333721307
+      },
+      {
+        "move": "g1h3",
+        "probability": 0.00010157030905745215
+      },
+      {
+        "move": "g2g3",
+        "probability": 0.009359889452291766
+      },
+      {
+        "move": "g2g4",
+        "probability": 0.004490924038348508
+      },
+      {
+        "move": "h2h3",
+        "probability": 0.000343607926475856
+      },
+      {
+        "move": "h2h4",
+        "probability": 0.000488365332895239
+      }
+    ]
+  },
+  "producer": {
+    "pull_request": 290,
+    "revision": "d0b5ee725ad3e884fd6eb7b8c5c9042ac679b24b",
+    "artifact_sha256": "6c51d0b989d5eddfef72aff6a181285a852888d504d7bf830e8978c772170d2b",
+    "cpu_limit": 1,
+    "memory_limit_bytes": 1073741824,
+    "swap_limit_bytes": 0,
+    "job_elapsed_ms": 270.66
+  }
+}

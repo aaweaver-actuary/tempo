@@ -198,3 +198,67 @@ Real local HTTP against task-owned PostgreSQL: provider/session failures, rate l
 Actual installed HTTP server process, private registration, persisted counts and restart recovery against invocation-owned PostgreSQL.
 
 - `test_installed_server_missing_credentials_explicit_reload_counts_and_restart`
+
+## Repair qualification: `tests/test_worker.py`
+
+Deterministic event-controlled worker/ASGI/CLI lifecycle proof. Blocking fake calls have task-owned release/watchdog cleanup; these are not native PostgreSQL claims.
+
+- `test_worker_without_claim_performs_no_provider_or_failure_operation`
+- `test_successful_slice_offloads_database_calls_and_keeps_http_on_event_loop`
+- `test_credential_rejection_is_persisted_without_contacting_provider`
+- `test_provider_failure_preserves_its_retry_and_authorization_metadata`
+- `test_normal_cancellation_releases_claim_without_consuming_failure_attempts`
+- `test_cancellation_cleanup_database_error_never_replaces_original_cancellation`
+- `test_background_database_latency_does_not_block_event_loop`
+- `test_cancellation_drains_inflight_database_operation_before_terminating`
+- `test_repeated_cancellation_during_cleanup_waits_and_preserves_first_cancellation`
+- `test_database_errors_propagate_without_becoming_provider_failures`
+- `test_lifespan_shutdown_with_failed_cleanup_terminates_without_new_slice`
+- `test_foreground_asgi_health_completes_while_background_claim_is_blocked`
+- `test_lifespan_does_not_close_owned_store_until_inflight_operation_ends`
+- `test_cli_single_slice_closes_its_worker_on_success_and_cancellation`
+- `test_cancellation_during_executor_join_remains_authoritative`
+- `test_repeated_cancellation_during_final_executor_join_preserves_provider_cancellation`
+
+## Repair qualification: `tests/test_maia_validation.py`
+
+New Maia supported-envelope budget contract.
+
+- `test_generated_maia_job_budget_matches_supported_one_gib_worker_envelope`
+
+## Repair qualification: `integration/test_postgres.py`
+
+Native selective retry, command replay/conflict, retained evidence, historical constraints, and exact externally-produced Maia result acceptance.
+
+- `test_request_retry_is_source_local_in_both_cache_orders_and_replays_without_rollback`
+- `test_request_retry_advances_multiple_eligible_sources_but_preserves_provider_permit_and_evidence`
+- `test_request_retry_with_three_ineligible_sources_is_a_durable_noop`
+- `test_retry_inspection_matches_source_state_and_retryable_flag`
+- `test_retry_inspection_and_execution_use_each_sources_own_deadline`
+- `test_provider_origin_mismatch_is_ineligible_without_blocking_maia_retry`
+- `test_legacy_maia_retry_preserves_persisted_constraints_and_refresh_uses_current_budget`
+- `test_real_supported_maia_envelope_result_is_accepted_against_exact_persisted_job`
+
+## Repair qualification: `integration/test_provider_postgres.py`
+
+Native cancellation cleanup failure/deadline, lease expiration and fencing, real SQL isolation, and client deadline pool recovery.
+
+- `test_postgres_cancelled_http_with_failed_cleanup_recovers_by_native_lease_expiry_and_fences_stale_publication`
+- `test_postgres_advisory_locked_background_claim_keeps_actual_asgi_health_responsive`
+- `test_postgres_background_client_deadline_discards_connection_resets_context_and_allows_pool_replacement`
+
+## Repair qualification: `integration/test_server_postgres.py`
+
+Installed server-process lifecycle failure injection, foreground health during background SQL, and shutdown.
+
+- `test_installed_server_shutdown_with_failed_cancellation_cleanup_is_bounded`
+- `test_installed_server_health_and_shutdown_remain_responsive_during_background_sql`
+
+The source-free artifact runner executes the complete deterministic inventory on wheel and sdist consumers under Python 3.12 and 3.14, and the complete native inventory on Python 3.12/wheel and Python 3.14/sdist. Repeated cases across consumers are separate qualification executions, not additional regression identities. Fresh Maia inference is a separate recorded disposable-container proof; native tests accept its retained exact exchange without installing a model runtime.
+
+## Additional reviewed worker lifecycle regressions
+
+Owned by `tests/test_worker.py`; these cover executor join and cancellation of application startup/pool closure.
+
+- `test_lifespan_cancellation_during_owned_store_close_drains_and_joins_runner`
+- `test_lifespan_startup_cancellation_closes_eventually_created_store_and_runner`

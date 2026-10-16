@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import uuid
+import time
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -12,6 +13,7 @@ from .errors import DomainError
 from .identity import canonical_json, digest, source_descriptor
 from .maia import build_maia_job, validate_maia_result
 from .migrate import expected_migrations
+from .runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
 
 
 def utcnow():
@@ -35,19 +37,27 @@ class Store:
         self.foreground = ConnectionPool(configuration.database_url, min_size=0, max_size=configuration.pool_size,
             timeout=2, open=True, kwargs={"row_factory":dict_row,"connect_timeout":2,"application_name":"tempo-intelligence"})
         self.background = ConnectionPool(configuration.database_url, min_size=0, max_size=configuration.background_pool_size,
-            timeout=1, open=True, kwargs={"row_factory":dict_row,"connect_timeout":2,"application_name":"tempo-intelligence-worker"})
+            timeout=1, open=True, connection_class=BackgroundConnection,
+            kwargs={"row_factory":dict_row,"connect_timeout":2,"application_name":"tempo-intelligence-worker"})
 
     @contextmanager
     def transaction(self, *, background=False, read_only=False):
         pool = self.background if background else self.foreground
-        with pool.connection() as database:
-            if read_only:
-                database.execute("SET TRANSACTION READ ONLY")
-            database.execute("SET LOCAL search_path=intelligence,pg_catalog")
-            database.execute("SELECT set_config('statement_timeout',%s,true)",("1500ms",))
-            database.execute("SELECT set_config('lock_timeout',%s,true)",("250ms",))
-            database.execute("SELECT set_config('transaction_timeout',%s,true)",("3000ms",))
-            yield database
+        token = None
+        if background and background_deadline.get() is None:
+            token = background_deadline.set(time.monotonic() + BACKGROUND_OPERATION_SECONDS)
+        try:
+            with pool.connection() as database:
+                if read_only:
+                    database.execute("SET TRANSACTION READ ONLY")
+                database.execute("SET LOCAL search_path=intelligence,pg_catalog")
+                database.execute("SELECT set_config('statement_timeout',%s,true)",("1500ms",))
+                database.execute("SELECT set_config('lock_timeout',%s,true)",("250ms",))
+                database.execute("SELECT set_config('transaction_timeout',%s,true)",("3000ms",))
+                yield database
+        finally:
+            if token is not None:
+                background_deadline.reset(token)
 
     def validate_startup(self):
         try:
@@ -148,7 +158,11 @@ class Store:
 
     def _maia_job(self,database,cache):
         execution=cache["execution_generation"]+1
-        job=build_maia_job(cache["descriptor"],self.workspace_id,cache["cache_id"],cache["generation"],execution)
+        previous=database.execute("SELECT payload FROM maia_jobs WHERE cache_id=%s AND request_revision=%s ORDER BY execution_generation DESC LIMIT 1",(cache["cache_id"],cache["generation"])).fetchone()
+        # Worker request contents, including constraints, are immutable within
+        # a work generation. New defaults apply only to a new work generation.
+        job=(MaiaJob.model_validate({**previous["payload"],"execution_generation":execution}) if previous else
+             build_maia_job(cache["descriptor"],self.workspace_id,cache["cache_id"],cache["generation"],execution))
         payload=job.model_dump(mode="json")
         database.execute("INSERT INTO maia_jobs(job_id,request_revision,execution_generation,cache_id,payload) VALUES(%s,%s,%s,%s,%s)",(job.job_id,job.request_revision,execution,cache["cache_id"],Jsonb(payload)))
         database.execute("UPDATE caches SET execution_generation=%s,state='awaiting_result',error_code=NULL,next_attempt_at=NULL,updated_at=now() WHERE cache_id=%s",(execution,cache["cache_id"]))
@@ -164,13 +178,11 @@ class Store:
                 cache=database.execute("SELECT * FROM caches WHERE cache_id=%s",(binding["cache_id"],)).fetchone()
                 evidence=database.execute("SELECT accepted_at FROM evidence WHERE evidence_id=%s",(cache["accepted_id"],)).fetchone() if cache["accepted_id"] else None
                 freshness="absent" if not evidence else "current" if evidence["accepted_at"]+timedelta(seconds=request["payload"]["max_age_seconds"])>utcnow() else "stale"
-                source={"kind":cache["kind"],"cache_id":cache["cache_id"],"work_generation":cache["generation"],"execution_generation":cache["execution_generation"],"state":cache["state"],"freshness":freshness,"evidence_id":cache["accepted_id"],"error_code":cache["error_code"],"attempts":cache["attempts"],"retryable":cache["retryable"],"retry_at":cache["next_attempt_at"],"retry_eligible":cache["retryable"] and cache["state"] in ("failed","waiting_credentials","retry_wait") and (cache["next_attempt_at"] is None or cache["next_attempt_at"]<=utcnow())}
+                source={"kind":cache["kind"],"cache_id":cache["cache_id"],"work_generation":cache["generation"],"execution_generation":cache["execution_generation"],"state":cache["state"],"freshness":freshness,"evidence_id":cache["accepted_id"],"error_code":cache["error_code"],"attempts":cache["attempts"],"retryable":cache["retryable"],"retry_at":cache["next_attempt_at"],"retry_eligible":self._retry_eligible(cache,utcnow())}
                 if cache["kind"] != "maia":
                     source["credential"]=self._credential_status(database)
                     source["provider_origin"]=cache["descriptor"]["provider_origin"]
                     source["provider_configuration_status"]="configured" if source["provider_origin"]==self.configuration.provider_base_url else "unavailable"
-                    if source["provider_configuration_status"] == "unavailable":
-                        source["retry_eligible"]=False
                     control=database.execute("SELECT next_attempt_at FROM provider_control WHERE id=1").fetchone()
                     source["provider_retry_at"]=control["next_attempt_at"]
                 sources.append(source)
@@ -189,6 +201,11 @@ class Store:
                 raise DomainError("evidence_not_found",404)
             return public({"schema_version":1,"workspace_id":self.workspace_id,**row})
 
+    def _retry_eligible(self,cache,now):
+        return bool(cache["retryable"] and cache["state"] in ("failed","waiting_credentials","retry_wait")
+            and (cache["next_attempt_at"] is None or cache["next_attempt_at"]<=now)
+            and (cache["kind"] == "maia" or cache["descriptor"]["provider_origin"] == self.configuration.provider_base_url))
+
     def _command(self,request_id,command_id,expected_revision,retry):
         with self.transaction() as database:
             database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("command:"+command_id,))
@@ -206,11 +223,7 @@ class Store:
                 if cache["state"] == "terminal":
                     continue
                 if retry:
-                    if cache["next_attempt_at"] and cache["next_attempt_at"]>utcnow():
-                        raise DomainError("retry_not_due")
-                    if cache["state"] == "failed" and not cache["retryable"]:
-                        raise DomainError("retry_not_permitted")
-                    if cache["state"] not in ("failed","waiting_credentials","retry_wait"):
+                    if not self._retry_eligible(cache,utcnow()):
                         continue
                     database.execute("UPDATE caches SET state='queued',attempts=0,error_code=NULL,next_attempt_at=NULL WHERE cache_id=%s",(cache["cache_id"],))
                 elif cache["state"] not in ("queued","running","retry_wait","waiting_credentials","awaiting_result"):

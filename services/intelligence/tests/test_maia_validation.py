@@ -28,6 +28,14 @@ def test_versioned_maia_fixture_is_bound_to_complete_position_input():
     assert validate_maia_result(job, valid_pair()[1]) is None
 
 
+def test_generated_maia_job_budget_matches_supported_one_gib_worker_envelope():
+    request = RequestInput.model_validate(fixture("request-v1.json"))
+    descriptor = source_descriptor(request.snapshot, request.sources[2])
+    job = build_maia_job(descriptor, "fixture", "budget-cache", 1, 1)
+    assert job.constraints.max_memory_mb == 1024
+    assert job.constraints.max_wall_time_ms == 5000
+
+
 def test_maia_artifact_replacement_changes_reproducible_input_identity():
     request = RequestInput.model_validate(fixture("request-v1.json"))
     descriptor = source_descriptor(request.snapshot, request.sources[2])

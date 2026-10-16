@@ -39,6 +39,12 @@ refresh/retry operations: the same identity/payload returns its recorded result;
 a different payload conflicts. A successful command response records accepted
 intent, not proof that a provider or model succeeded.
 
+Request-level retry processes each bound source independently. `accepted:true`
+records durable processing of the command, including a partial retry or a no-op
+when no source is eligible. It does not promise that any source was restarted or
+completed. Inspect source state separately. Replay returns the stored receipt
+without re-evaluating eligibility or restarting later work.
+
 HTTP failures include `401 unauthorized`, `403 workspace_mismatch`, `404` unknown
 request/evidence, `409` replay/revision/generation/transition conflicts, `413`
 oversize input, `422` invalid or unsupported input, and `503` unavailable runtime.
@@ -186,10 +192,20 @@ A new request finding completed evidence outside its age tolerance queues the
 next cache generation. A read only reports age; it does not enqueue work.
 Explicit refresh joins existing queued/running/waiting work; otherwise it creates
 a new generation. It does not force a second fetch after an already active fetch.
-Retry requires permitted failure status and an elapsed deadline; it recovers the
-same work generation with a new execution. Exhausted ordinary failure cycles may
-be explicitly retried when retryable; a terminal failure requires a new refresh
-intent or corrected request. Old accepted evidence is retained throughout.
+Retry requires `failed`, `retry_wait` or `waiting_credentials`, a true retryable
+flag, no future source-local deadline, and the configured provider origin for
+Explorer. Every other source is skipped unchanged, including complete, terminal,
+queued, running, awaiting-result, nonretryable or delayed sources. Eligible sources
+recover the same work generation with a new execution according to their source
+lifecycle. Explorer execution advances when claimed; Maia registers its next
+execution immediately. Ordinary failure attempts reset on explicit retry.
+Exhausted retryable failures can recover; nonretryable failures need a new refresh
+intent or corrected request. Accepted evidence remains readable until valid new
+evidence is accepted. Refresh behavior is unchanged.
+
+An Explorer cooldown cannot block eligible Maia retry. Retry never clears the
+shared provider deadline or bypasses the provider permit, credential validation
+or pacing. A queued Explorer source may still await provider permission.
 
 Source inspection returns cache/work/execution identity, `state`, `freshness`,
 `evidence_id`, attempts, retryability, fixed error code, retry deadline/eligibility and Explorer
@@ -292,8 +308,27 @@ The stable job ID derives from workspace/cache identity; its `request_revision`
 equals cache work generation, and execution retries advance
 `execution_generation`. The job's input digest covers the exact stored descriptor,
 including its artifact binding. Fixed execution constraints are 5000 ms wall time
-and 512 MiB memory. An external worker pulls explicit inputs and posts results;
+and 1024 MiB memory for newly created work generations. An external worker pulls explicit inputs and posts results;
 there is no synchronous inference in a transaction or implicit dispatch broker.
+
+Same-generation execution retries copy the persisted job contents, changing only
+execution generation. This preserves the worker's immutable request fingerprint,
+including constraints. Historical 512 MiB jobs are not rewritten; an explicit
+refresh after failed/completed work creates a new generation with the current
+budget. Accepted historical evidence remains unchanged.
+
+The independently packaged #110 worker requires a finite cgroup cap of at least
+1 GiB and rejects a cap larger than the job allowance. This 1024 MiB allowance
+therefore pairs with a 1 GiB effective whole-worker cgroup, one CPU and zero swap,
+with readiness established before submitting the 5000 ms job. Its reported RSS
+and the enforced cgroup hard limit are different measurements. A fresh generated
+job completed against published #290 artifact
+`6c51d0b989d5eddfef72aff6a181285a852888d504d7bf830e8978c772170d2b`
+under this envelope; `maia-supported-envelope-v1.json` preserves that exact
+request/job/result for native acceptance and replay. Normal tests do not run a
+model. Legacy 768 MiB Compose settings describe a different worker and cannot
+provision this independent artifact. Production provisioning remains unverified;
+this PR neither changes it nor deploys a worker.
 
 Acceptance validates both shared Pydantic wire semantics and persisted owner
 context: workspace/job/revision/current execution/input digest, exact model/version,
@@ -345,6 +380,33 @@ and background pools default to 4/1 connections, with short statement/lock/
 transaction deadlines. Deployment provisioning must enforce the role/database
 configuration; table grants alone do not establish it. A shared PostgreSQL server
 still shares CPU, memory, I/O and failure risk with other databases.
+
+The asynchronous background worker offloads claim, publication and every failure
+write to one owned serial database thread. Application database startup/closure
+also run off the event loop; synchronous foreground HTTP handlers retain the
+framework's normal threadpool execution. Connections are checked out and returned
+within their operation thread. Provider HTTP stays asynchronous and never spans a
+database transaction. Direct bounded CLI/Worker slices drain and join their runner.
+
+Background operations have a five-second client I/O deadline, covering pool
+acquisition, setup, SQL and commit/rollback, in addition to the one-second pool,
+1500 ms statement, 250 ms lock and 3000 ms transaction limits. Deadline expiry
+closes/discards the connection in its operation thread; cancelling an await never
+abandons a database thread. Connection return and deadline context reset complete
+before the operation is released.
+
+Cancellation remains authoritative through repeated cancellation and cleanup
+failure. The owner drains an in-flight operation and attempts at most one bounded
+lease release if a claim remains outstanding. A claim returned during cancellation
+is released; an already-committed publication remains accepted. Failed release
+leaves a fenced expiring lease recoverable by a later worker, without consuming an
+ordinary failure attempt. Shutdown marks the loop stopping before cancelling it,
+drains work/cleanup, closes provider resources and owned pools off-loop, then joins
+the runner. The current operation plus cancellation cleanup can consume up to ten
+seconds of database budget; HTTP/pool closure has separate lifecycle costs.
+Ordinary database errors retain the sanitized background-error path rather than
+being mislabeled as provider failure. Private driver/credential details are not
+reported publicly.
 
 The #108 handoff is a producer for the explicit immutable complete-position input,
 not private SQL. #110 owns job execution and versioned model-context extensions.

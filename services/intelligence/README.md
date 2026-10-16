@@ -83,6 +83,23 @@ Explorer request; `serve` runs these bounded slices in its background loop.
 Local CLI operations use configured database access directly; HTTP bearer scopes
 are enforced by the API, not by the local CLI.
 
+Retry accepts the command even when only some sources, or none, are eligible.
+Inspect per-source status afterward. A delayed or nonretryable Explorer source
+does not block Maia retry; provider cooldowns and pacing remain authoritative.
+
+Background database calls run on one owned thread with a five-second client I/O
+deadline. Shutdown drains in-flight calls and best-effort cancellation cleanup
+before closing pools. Cleanup failure preserves cancellation and leaves lease
+expiration available for recovery. Allow time for both the current operation and
+cleanup, plus pool/HTTP closure, when configuring a service shutdown grace period.
+
+New Maia work requests 1024 MiB and 5000 ms, matching the independent worker's
+qualified one CPU / 1 GiB cgroup / zero-swap envelope after readiness. Historical
+job constraints remain immutable across execution retries; refresh after a failed
+old job establishes a new generation using the current budget. Existing legacy
+768 MiB Compose settings do not provision this standalone worker. Deployment
+provisioning remains a separate, unverified integration step; see INTERFACES.md.
+
 ## Provider subset and evidence
 
 The current supported endpoints are `/lichess` and `/masters`. Their verified

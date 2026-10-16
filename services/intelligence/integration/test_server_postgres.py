@@ -7,11 +7,12 @@ import signal
 import socket
 import subprocess
 import sys
-from threading import Thread
+from threading import Event, Thread
 import time
 from uuid import uuid4
 
 import httpx
+import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
 from .support import request_value
@@ -72,6 +73,38 @@ for operation in (lambda: socket.getaddrinfo("external.invalid", 443),
     else:
         raise RuntimeError("external_network_guard_missing")
 print("installed_loopback_guards_ready", flush=True)
+scenario = sys.argv[2] if len(sys.argv) > 2 else "normal"
+if scenario != "normal":
+    from pathlib import Path
+    from tempo_intelligence.store import Store
+    original_claim, original_fail, original_close = Store.claim, Store.fail, Store.close
+    active_claims = 0
+
+    if scenario == "slow-background":
+        def delayed_claim(store):
+            global active_claims
+            active_claims += 1
+            try:
+                with store.transaction(background=True) as database:
+                    database.execute("SET LOCAL lock_timeout='1400ms'")
+                    database.execute("SELECT pg_advisory_xact_lock(289109)")
+                return original_claim(store)
+            finally:
+                active_claims -= 1
+        Store.claim = delayed_claim
+    elif scenario == "cleanup-failure":
+        def failed_cleanup(store, claim, code, **options):
+            if options.get("cancelled"):
+                Path("cleanup-attempted").write_text("yes")
+                raise RuntimeError("TEST_PRIVATE_CLEANUP_DETAIL")
+            return original_fail(store, claim, code, **options)
+        Store.fail = failed_cleanup
+
+    def observed_close(store):
+        assert active_claims == 0, "store_closed_while_background_database_active"
+        original_close(store)
+        Path("store-closed").write_text("yes")
+    Store.close = observed_close
 from tempo_intelligence.cli import main
 raise SystemExit(main(["serve", "--host", "127.0.0.1", "--port", sys.argv[1]]))
 '''
@@ -84,10 +117,10 @@ def unused_loopback_port():
 
 
 @contextmanager
-def installed_server(environment, private_directory, secret_values):
+def installed_server(environment, private_directory, secret_values, scenario="normal"):
     port = unused_loopback_port()
     process = subprocess.Popen(
-        [sys.executable, "-I", "-c", _CHILD, str(port)],
+        [sys.executable, "-I", "-c", _CHILD, str(port), scenario],
         env=environment, cwd=private_directory,
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
@@ -164,6 +197,85 @@ def wait_for_source(client, process, state):
             return source
         time.sleep(0.025)
     raise AssertionError("installed_server_source_progress_timeout")
+
+
+def lifecycle_environment(state):
+    _, configuration, credential_path = state
+    values = {"DATABASE_URL": configuration.database_url,
+              "CALLER_TOKEN": configuration.caller_token,
+              "OPERATOR_TOKEN": configuration.operator_token,
+              "WORKER_TOKEN": configuration.worker_token}
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("PG", "TEMPO_", "PYTHON", "VIRTUAL_ENV", "PYTEST_"))}
+    for name, value in values.items():
+        path = credential_path.parent / (name.lower() + ".private")
+        path.write_text(value)
+        path.chmod(0o600)
+        environment["TEMPO_INTELLIGENCE_" + name + "_FILE"] = str(path)
+    environment.update(TEMPO_INTELLIGENCE_WORKSPACE="fixture",
+                       TEMPO_INTELLIGENCE_CREDENTIAL_FILE=str(credential_path),
+                       TEMPO_INTELLIGENCE_WORKER_ENABLED="1",
+                       TEMPO_INTELLIGENCE_POLL_INTERVAL="0.05")
+    secrets = [*values.values(), conninfo_to_dict(configuration.database_url)["password"],
+               "TEST_PRIVATE_CLEANUP_DETAIL"]
+    return environment, credential_path.parent, secrets
+
+
+def test_installed_server_shutdown_with_failed_cancellation_cleanup_is_bounded(state):
+    from .support import register
+    store, _, _ = state
+    register(state, token="synthetic_process_cancel_token")
+    entered, release = Event(), Event()
+
+    def blocked_provider(_):
+        entered.set()
+        assert release.wait(5)
+        return 200, {}, {"white":0,"draws":0,"black":0,"moves":[]}
+
+    environment, private_directory, secrets = lifecycle_environment(state)
+    with fake_provider(blocked_provider) as (url, paths):
+        environment["TEMPO_INTELLIGENCE_PROVIDER_BASE_URL"] = url
+        try:
+            with installed_server(environment, private_directory, secrets, "cleanup-failure") as (process, service_url):
+                with httpx.Client(base_url=service_url, headers={"Authorization":"Bearer "+state[1].caller_token}, timeout=1, trust_env=False) as client:
+                    wait_for_health(client, process)
+                    assert client.post("/v1/requests", json=request_value()).status_code == 200
+                    assert entered.wait(3)
+                    process.terminate()
+                    process.wait(timeout=5)
+                assert (private_directory / "cleanup-attempted").read_text() == "yes"
+                assert (private_directory / "store-closed").read_text() == "yes"
+                assert len(paths) == 1
+        finally:
+            release.set()
+    assert store.inspect("request")["sources"][0]["state"] == "running"
+    assert store.inspect("request")["sources"][0]["evidence_id"] is None
+
+
+def test_installed_server_health_and_shutdown_remain_responsive_during_background_sql(state):
+    environment, private_directory, secrets = lifecycle_environment(state)
+    with psycopg.connect(os.environ["TEMPO_INTELLIGENCE_TEST_OWNER_URL"]) as blocker:
+        blocker.execute("SELECT pg_advisory_xact_lock(289109)")
+        try:
+            with installed_server(environment, private_directory, secrets, "slow-background") as (process, url):
+                with httpx.Client(base_url=url, timeout=1, trust_env=False) as client:
+                    wait_for_health(client, process)
+                    with psycopg.connect(os.environ["TEMPO_INTELLIGENCE_TEST_ADMIN_URL"], autocommit=True) as observer:
+                        deadline = time.monotonic() + 3
+                        while True:
+                            blocked = observer.execute("SELECT count(*) FROM pg_stat_activity WHERE application_name='tempo-intelligence-worker' AND wait_event='advisory'").fetchone()[0]
+                            if blocked:
+                                break
+                            assert time.monotonic() < deadline, "installed_background_sql_not_waiting"
+                            time.sleep(0.01)
+                    assert client.get("/healthz").status_code == 200
+                    assert blocked == 1
+                    process.terminate()
+                    blocker.rollback()
+                    process.wait(timeout=5)
+                assert (private_directory / "store-closed").read_text() == "yes"
+        finally:
+            blocker.rollback()
 
 
 def test_installed_server_missing_credentials_explicit_reload_counts_and_restart(state):

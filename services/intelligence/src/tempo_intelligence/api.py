@@ -14,6 +14,7 @@ from tempo_analysis_jobs_contracts.v1 import MaiaResult, JobStatus
 from .config import Configuration
 from .errors import DomainError
 from .models import RequestInput
+from .runtime import DatabaseRunner, drain_operation
 
 
 class BodyLimitMiddleware:
@@ -66,15 +67,19 @@ def create_app(configuration: Configuration, store=None, worker=None):
         owned_store = store is None
         task = None
         client = None
+        stopping = False
+        runner = DatabaseRunner()
+        cancellation = None
         try:
             try:
                 if owned_store:
                     from .store import Store
 
-                    app.state.store = Store(configuration)
+                    await runner.run(Store, configuration,
+                                     on_result=lambda value: setattr(app.state, "store", value))
                 else:
                     app.state.store = store
-                app.state.store.validate_startup()
+                await runner.run(app.state.store.validate_startup)
             except Exception:
                 raise RuntimeError("intelligence_startup_failed") from None
             from .credentials import PrivateCredentials
@@ -87,10 +92,10 @@ def create_app(configuration: Configuration, store=None, worker=None):
                     from .worker import Worker
 
                     client = ExplorerClient(configuration.provider_base_url)
-                    app.state.worker = Worker(app.state.store, app.state.credentials, client)
+                    app.state.worker = Worker(app.state.store, app.state.credentials, client, runner=runner)
 
                 async def run_background():
-                    while True:
+                    while not stopping:
                         try:
                             progressed = await app.state.worker.work_once()
                             app.state.worker_error = None
@@ -104,28 +109,58 @@ def create_app(configuration: Configuration, store=None, worker=None):
 
                 task = asyncio.create_task(run_background())
             yield
+        except asyncio.CancelledError as error:
+            cancellation = error
+            raise
         finally:
-            shutdown_failed = False
-            if task is not None:
-                task.cancel()
+            stopping = True
+
+            async def shutdown():
+                shutdown_failed = False
                 try:
-                    await task
-                except asyncio.CancelledError:
+                    if task is not None:
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception:
+                            app.state.worker_error = "background_work_unavailable"
+                    active_worker = getattr(app.state, "worker", None)
+                    if active_worker is not None and hasattr(active_worker, "aclose"):
+                        try:
+                            await active_worker.aclose()
+                        except Exception:
+                            shutdown_failed = True
+                    if client is not None and hasattr(client, "aclose"):
+                        try:
+                            await client.aclose()
+                        except Exception:
+                            shutdown_failed = True
+                    if owned_store and hasattr(app.state, "store"):
+                        try:
+                            await runner.run(app.state.store.close)
+                        except Exception:
+                            shutdown_failed = True
+                finally:
+                    await runner.aclose()
+                if shutdown_failed:
+                    raise RuntimeError("intelligence_shutdown_failed") from None
+
+            # The lifespan owner may itself be cancelled while pools close.
+            # Retain the entire cleanup operation until all resources are joined.
+            closing = asyncio.create_task(shutdown())
+            try:
+                await asyncio.shield(closing)
+            except asyncio.CancelledError as error:
+                try:
+                    await drain_operation(closing)
+                except Exception:
                     pass
-                except Exception:
-                    app.state.worker_error = "background_work_unavailable"
-            if client is not None and hasattr(client, "aclose"):
-                try:
-                    await client.aclose()
-                except Exception:
-                    shutdown_failed = True
-            if owned_store and hasattr(app.state, "store"):
-                try:
-                    app.state.store.close()
-                except Exception:
-                    shutdown_failed = True
-            if shutdown_failed:
-                raise RuntimeError("intelligence_shutdown_failed") from None
+                raise cancellation or error
+            except Exception:
+                if cancellation is None:
+                    raise
 
     app = FastAPI(title="Tempo Intelligence", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(configuration.hosts))
