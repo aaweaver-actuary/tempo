@@ -1,5 +1,15 @@
 ## Independent Study connection (F2)
 
+Post-merge P3: `study-learning-connection-regressions.test.ts` owns P3-U1–U15:
+HTTP-200 partial-stream and body-deadline failures reuse original-authority cached
+eligibility; completed invalid documents, rejected HTTP, used/locked bodies,
+unknown exceptions, invalid caches and unsafe storage remain fail-closed. Body-read
+replacement/disconnect and inventory races retain generation/authority fences and
+immutable records. `study-cached-startup-regressions.test.tsx` owns P3-C1–C4:
+post-header cached startup independent of browser online status and completed
+invalid-response rejection. Real browser/PostgreSQL proof remains in the existing
+`learning-full-study` scenario `bootstrap-body-interruption-browser-online`.
+
 Regular owner: `tests/unit/study-learning-connection-regressions.test.ts`.
 Named F2 cases cover authenticated bootstrap/delivery, forbidden destinations,
 workspace/date binding, original-origin retention, terminal history, unscoped

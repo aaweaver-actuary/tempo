@@ -6,8 +6,18 @@ let input = ''; for await (const chunk of process.stdin) input += chunk;
 const { frontend, learning, credential, replacement_credential, scenario, operation, mate, fixture_key } = JSON.parse(input);
 const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [], queueResponses=[];
 let evidenceDelivered=false, priorityHead=false, learningUnavailable=false, originalOfflineAttempt;
+let interruptBootstrapBody=false, pendingBootstrapFault;
+const bootstrapBodyFaults=[];
 const heldAuthorities = new Set();
-const offlineScenario = ['offline-shell','service-unavailable-browser-online'].includes(scenario);
+const offlineScenario = ['offline-shell','service-unavailable-browser-online','bootstrap-body-interruption-browser-online'].includes(scenario);
+function interruptObservedBootstrap() {
+  if (!pendingBootstrapFault) return;
+  const { response, proof } = pendingBootstrapFault;
+  if (proof.fetch_resolved && proof.body_read_started && proof.bytes_written && !proof.interrupted) {
+    proof.interrupted=true;
+    response.destroy();
+  }
+}
 let holdNextQueue=false, heldQueue=false, delayedResponseCancelled=false, releaseDelayedQueue;
 const delayedQueue=new Promise(resolve=>{releaseDelayedQueue=resolve;});
 async function fixture(action) {
@@ -22,13 +32,27 @@ const forward = async (request, response, authorityOrigin = endpoint) => {
   const review = request.method === 'POST' && /\/cards\/[^/]+\/review$/.test(path);
   const lossyCommand = review || request.method === 'POST' && (scenario === 'typed-explanation-loss' && path.endsWith('/attempts') || scenario === 'tactics-discovery-loss' && path==='/api/tactics/attempt');
   traffic.push({ origin: authorityOrigin, method: request.method, path, key: request.headers['idempotency-key'], body: body.length ? JSON.parse(body) : null });
-  if (learningUnavailable || heldAuthorities.has(authorityOrigin) && path.startsWith('/api/operations/')) { request.socket.destroy(); return; }
+  const bootstrapBodyFault=interruptBootstrapBody && request.method==='GET' && path==='/api/study/bootstrap';
+  const bootstrapFaultRequest=interruptBootstrapBody && ['GET','OPTIONS'].includes(request.method) && path==='/api/study/bootstrap';
+  if (learningUnavailable && !bootstrapFaultRequest || heldAuthorities.has(authorityOrigin) && path.startsWith('/api/operations/')) { request.socket.destroy(); return; }
   if (blockedQueue && path === '/api/queue/window') { request.socket.destroy(); return; }
   if (review && loss && scenario === 'before-commit') { dropped=true; request.socket.destroy(); return; }
   try {
     const headers = { ...request.headers }; delete headers.host; delete headers.connection; delete headers['content-length'];
     const upstream = await fetch(new URL(request.url, learning), { method: request.method, headers, body: body.length ? body : undefined, redirect: 'error' });
     const bytes = Buffer.from(await upstream.arrayBuffer());
+    if (bootstrapBodyFault) {
+      assert.equal(upstream.status,200,'Only a real successful Learning bootstrap may be interrupted');
+      assert.ok(bytes.length>1);
+      const partialBytes=bytes.subarray(0,Math.floor(bytes.length/2));
+      const proof={upstream_status:upstream.status,declared_bytes:bytes.length,sent_bytes:partialBytes.length,
+        fetch_resolved:false,body_read_started:false,bytes_written:false,interrupted:false,body_read_failed:false};
+      bootstrapBodyFaults.push(proof); pendingBootstrapFault={response,proof};
+      response.writeHead(upstream.status,{...Object.fromEntries([...upstream.headers].filter(([key])=>!['content-encoding','transfer-encoding','content-length'].includes(key))),'Content-Length':bytes.length});
+      response.flushHeaders();
+      response.write(partialBytes,()=>{proof.bytes_written=true;interruptObservedBootstrap();});
+      return;
+    }
     if (path==='/api/queue/window' && request.method==='GET' && upstream.ok) {
       const queue=JSON.parse(bytes);
       queueResponses.push({cards:queue.cards.map(card=>({card_id:card.id,queue_entry_id:card.queue_entry_id})),held:holdNextQueue});
@@ -140,6 +164,40 @@ async function proveMultipleAuthorities(first) {
 let page;
 try {
   page = await context.newPage();
+  if (scenario==='bootstrap-body-interruption-browser-online') {
+    await page.exposeBinding('__tempoObserveBootstrap',(_source,event)=>{
+      if (!pendingBootstrapFault) return;
+      assert.equal(event.status,200);
+      const proof=pendingBootstrapFault.proof;
+      if (event.phase==='headers') proof.fetch_resolved=true;
+      if (event.phase==='body-start') proof.body_read_started=true;
+      if (event.phase==='body-failure') {proof.body_read_failed=true;proof.failure_name=event.name;}
+      interruptObservedBootstrap();
+    });
+    await page.addInitScript(endpoint=>{
+      const nativeFetch=window.fetch;
+      window.fetch=async(...argumentsList)=>{
+        const response=await nativeFetch(...argumentsList);
+        const input=argumentsList[0];
+        const url=new URL(input instanceof Request?input.url:String(input),location.href);
+        if (url.origin===endpoint && url.pathname==='/api/study/bootstrap' && response.status===200) {
+          void window.__tempoObserveBootstrap({phase:'headers',status:response.status});
+          for (const method of ['text','json']) {
+            const nativeRead=response[method].bind(response);
+            response[method]=(...readArguments)=>{
+              const reading=nativeRead(...readArguments);
+              void window.__tempoObserveBootstrap({phase:'body-start',status:response.status});
+              return reading.catch(cause=>{
+                void window.__tempoObserveBootstrap({phase:'body-failure',status:response.status,name:cause.name});
+                throw cause;
+              });
+            };
+          }
+        }
+        return response;
+      };
+    },endpoint);
+  }
   if (scenario === 'storage-denied') await page.addInitScript(() => { Object.defineProperty(window,'indexedDB',{get(){throw new DOMException('Storage denied','SecurityError');}}); });
   if (scenario === 'origin-transition') await page.addInitScript(() => {
     const opening=indexedDB.open('tempo-study-intents',1);
@@ -202,9 +260,15 @@ try {
       await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
       await expect.poll(()=>page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
       await page.reload(); await expect(page.locator('cg-board:visible')).toBeVisible();
-      if (scenario === 'service-unavailable-browser-online') { learningUnavailable=true; assert.equal(await page.evaluate(()=>navigator.onLine),true); } else await context.setOffline(true);
+      if (scenario === 'bootstrap-body-interruption-browser-online') {interruptBootstrapBody=true;learningUnavailable=true;}
+      if (scenario !== 'offline-shell') { learningUnavailable=true; assert.equal(await page.evaluate(()=>navigator.onLine),true); } else await context.setOffline(true);
       await page.reload(); await expect(page.getByRole('button',{name:'Disconnect Learning'})).toBeVisible();
       await expect(page.locator('cg-board:visible')).toBeVisible();
+      if (interruptBootstrapBody) {
+        await expect(page.getByRole('status').filter({hasText:'Cached practice is available; saved attempts await Learning confirmation.'})).toBeVisible();
+        await expect.poll(()=>bootstrapBodyFaults.every(proof=>proof.fetch_resolved&&proof.body_read_started&&proof.bytes_written&&proof.interrupted&&proof.body_read_failed)).toBe(true);
+        assert.ok(bootstrapBodyFaults.length>0);assert.equal(await page.evaluate(()=>navigator.onLine),true);
+      }
       await move(page);
       await expect.poll(()=>page.evaluate(async()=>{
         const registry=JSON.parse(localStorage.getItem('tempo-learning-authorities-v1'));
@@ -217,9 +281,10 @@ try {
       }));
       assert.equal((await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length,0);
       assert.equal(traffic.filter(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path)).length,0);
+      assert.ok(!originalOfflineAttempt.serverReviewId&&!originalOfflineAttempt.serverAcknowledged);
       await page.reload();
       await expect(page.getByRole('button',{name:'Disconnect Learning'})).toBeVisible();
-      learningUnavailable=false; await context.setOffline(false);
+      interruptBootstrapBody=false;learningUnavailable=false; await context.setOffline(false);
       await page.reload();
     }
     if (scenario.startsWith('tactics-discovery')) {
@@ -372,6 +437,14 @@ try {
       assert.equal(posts[0].body.recorded_at,originalOfflineAttempt.completedAt);
       assert.equal(posts[0].body.outcome,originalOfflineAttempt.outcome);
       assert.equal(posts[0].body.expected_revision,originalOfflineAttempt.expectedRevision);
+      if (scenario==='bootstrap-body-interruption-browser-online') {
+        await expect.poll(()=>page.evaluate(attemptId=>new Promise(resolve=>{
+          const registry=JSON.parse(localStorage.getItem('tempo-learning-authorities-v1'));
+          const opening=indexedDB.open(Object.values(registry)[0].offlineDatabase);
+          opening.onsuccess=()=>{const database=opening.result;const read=database.transaction('training').objectStore('training').get('prepared-daily-queue');read.onsuccess=()=>{resolve(Boolean(read.result?.attempts?.find(attempt=>(attempt.attemptId??`phone:${attempt.localEntryId}:${attempt.completedAt}`)===attemptId)?.serverAcknowledged));database.close();};};
+        }),originalId)).toBe(true);
+        assert.ok(bootstrapBodyFaults.every(proof=>proof.fetch_resolved&&proof.body_read_started&&proof.bytes_written&&proof.interrupted&&proof.body_read_failed&&proof.sent_bytes<proof.declared_bytes));
+      }
     } else await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length,{timeout:20000}).toBeGreaterThan(0);
     if (scenario==='remediation') assert.ok(priorityHead,'Real accepted evidence must prioritize the issued head');
     if (scenario==='remediation-late') {
@@ -393,7 +466,7 @@ try {
     }
   }
   assert.deepEqual(unexpected,[]);
-  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,original_offline_attempt:originalOfflineAttempt,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
+  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,original_offline_attempt:originalOfflineAttempt,bootstrap_body_faults:bootstrapBodyFaults,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
 } catch (error) {
   // Do not record form input, credentials, authenticated headers or raw traces.
   console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]").replaceAll(replacement_credential??'unused-replacement-secret',"[redacted]"));
