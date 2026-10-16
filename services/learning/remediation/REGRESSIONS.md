@@ -48,3 +48,20 @@ and SQL-alias validation. `integration/test_postgres.py` additionally owns
 `test_native_single_card_page_advances_past_rejected_rows_without_skipping_pending`
 and `test_native_correlated_queue_predicate_matches_repository_and_settlement`.
 The original frontier-first query-plan checks and their row limits are unchanged.
+
+## PR #287 stale transport identity
+
+`test_native_stale_transport_receipt_survives_reconnect_and_rejects_changed_identity`
+owns native stale persistence, fresh-connection replay, immutable stale status,
+changed-payload conflict and acceptance of the correction under a new ID.
+`test_native_old_withdrawal_or_review_cannot_clear_corrected_revision` retains its
+original revision/frontier assertions and now additionally rejects reuse of its
+stale withdrawal transport. The valid corrected withdrawal uses a new delivery ID;
+its exact target revision and resulting lack of outstanding work remain asserted.
+The original frontier-first EXPLAIN bounds are unchanged.
+
+`test_native_stale_or_forged_supported_miss_is_not_accepted` retains all rejection
+outcomes and now explicitly proves zero evidence, contributions and workspace
+authority. Its previous zero-receipt assertion is superseded for stale rejection
+by the required durable transport receipt; terminal identity failures still write
+no receipt. No acceptance assertion is removed.

@@ -91,3 +91,25 @@ docker build -f services/learning/runtime/Dockerfile -t tempo-learning:task .
 The native runner creates and removes only labeled invocation-owned PostgreSQL containers and volumes. It refuses externally supplied databases. It records exact collected/executed identities and rejects missing, skipped, deselected or zero required tests using the existing qualification machinery. Installed qualification copies only declared package inputs, builds wheels/sdists, removes producer source, and tests consumers as wheel and sdist consumers on Python 3.12 and 3.14. Native Chromium uses the existing review outbox and strict queue schemas against the real HTTP service; it proves the focused client/API seam, not the complete Study UI or shared browser matrix. Install Chromium with the component-local Playwright CLI if its matching browser is unavailable.
 
 [REGRESSIONS.md](REGRESSIONS.md) maps the owning checks. [VALIDATION.md](VALIDATION.md) records this change's exact results and limits. A local focused pass does not establish hosted merge qualification or close #224/#194 by itself.
+
+## Recovery repairs
+
+Same-day remediation refreshes preserve the active one-card sweep and request a
+durable follow-up pass. New arrivals behind its cursor are discovered on that
+pass. Finalization reads the current rescan marker under the actual lease and
+generation; day changes fence prior workers and delayed old requests are ignored.
+The finite-sweep proof concerns refreshes preserving productive progress; it is
+not a latency bound under unbounded arrivals. Daily-queue replacement is unchanged.
+
+Stale v1 and historical-frontier transport acknowledgements are now persisted by
+the remediation repository before return. Exact replay survives restart; changed
+contents under the same ID conflict. V2 semantic replay and historical receipt
+compatibility remain as documented in [INTERFACES.md](INTERFACES.md). Receipt
+persistence does not accept evidence, increment authority or request queue work.
+Review task requests flush after prepared issuance inside the owning transaction,
+using daily-before-remediation ordering and projections last.
+
+The producer validates its private credential before processing work when a
+Learning endpoint is configured. HTTP 401 schedules the same immutable delivery
+for retry after at least 60 seconds. See the [producer recovery command](../../game-evidence/README.md#authentication-recovery)
+for narrowly recovering rows blocked by the previous classification.

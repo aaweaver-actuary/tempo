@@ -113,6 +113,163 @@ def studied_card(case):
     return card
 
 
+def stale_receipt_fixture(case):
+    card = studied_card(case)
+    assert send(case, delivery(card['id'], 5)).json()['status'] == 'completed'
+    return card, delivery(card['id'], 4, 'stale-transport')
+
+
+def test_stale_v1_delivery_receipt_survives_reconnect(case, tmp_path):
+    from test_restart import server
+    _, stale = stale_receipt_fixture(case)
+    before = domain_state(case)
+    response = send(case, stale).json()
+    assert response['status'] == 'stale_revision'
+    assert response['learning_revision'] is None and response['accepted_obligation_ids'] == []
+    rows = case.query("SELECT response_json FROM learning.remediation_deliveries WHERE delivery_id=%s", (stale['delivery_id'],))
+    assert len(rows) == 1 and rows[0][0] == response
+    with server(case, tmp_path) as (client, _):
+        assert send(case, stale, client).json() == response
+    assert domain_state(case) == before
+
+
+def test_stale_v1_delivery_id_cannot_be_reused_with_newer_payload(case):
+    card, stale = stale_receipt_fixture(case)
+    assert send(case, stale).json()['status'] == 'stale_revision'
+    before = domain_state(case)
+    changed = delivery(card['id'], 6, stale['delivery_id'])
+    assert send(case, changed).status_code == 409
+    assert domain_state(case) == before
+    assert send(case, {**changed, 'delivery_id': 'new-transport'}).json()['status'] == 'completed'
+
+
+@pytest.mark.parametrize('wire_version', [1, 2])
+def test_historical_frontier_stale_delivery_binds_transport_identity(case, wire_version):
+    from tempo_game_evidence_contracts import v1
+    from test_remediation import evidence
+    definition = activate(case)['publication']['definitions'][0]
+    original = delivery(definition['card_id'], 5, 'historical-completed', obligations=False)
+    response = EvidenceAcknowledgement(contract_version=1, workspace_id='workspace-a', delivery_id=original['delivery_id'],
+        evidence_id=original['evidence_id'], evidence_revision=5, status='completed', accepted_obligation_ids=[], learning_revision=5, reason=None).model_dump(mode='json')
+    with psycopg.connect(case.admin) as database:
+        database.execute('INSERT INTO learning.evidence_deliveries VALUES(%s,%s,%s)',
+            (original['delivery_id'], hashlib.sha256(v1.EvidenceDelivery.model_validate(original).model_dump_json().encode()).hexdigest(), json.dumps(response)))
+        database.execute("INSERT INTO learning.accepted_evidence_revisions(workspace_id,evidence_id,evidence_revision) VALUES('workspace-a','evidence-a',5)")
+    stale = delivery(definition['card_id'], 4, 'historical-stale') if wire_version == 1 else evidence(definition, revision=4, transport='historical-stale')
+    before = domain_state(case)
+    result = send(case, stale).json()
+    assert result['status'] == 'stale_revision'
+    receipts = case.query("SELECT response_json FROM learning.remediation_deliveries WHERE delivery_id='historical-stale'")
+    assert len(receipts) == 1 and receipts[0][0] == result
+    assert send(case, stale).json() == result
+    changed = deepcopy(stale)
+    changed['encounters'][0]['observed_move'] = 'c2c4'
+    conflict = send(case, changed)
+    assert conflict.status_code == 409 if wire_version == 1 else conflict.json()['status'] == 'conflict'
+    same_frontier = delivery(definition['card_id'], 5, 'unconverted') if wire_version == 1 else evidence(definition, revision=5, transport='unconverted')
+    assert send(case, same_frontier).status_code == 409
+    assert send(case, original).json() == response
+    assert send(case, {**original, 'game_id': 'changed'}).status_code == 409
+    assert domain_state(case) == before
+
+
+@pytest.mark.parametrize('first', ['stale', 'newer'])
+def test_concurrent_stale_delivery_identity_reuse_is_serialized(case, first, monkeypatch):
+    card, stale = stale_receipt_fixture(case)
+    newer = delivery(card['id'], 6, stale['delivery_id'], obligations=False)
+    # Different evidence/game identities and no obligation/card lock on the
+    # contender prove that module serialization owns transport identity.
+    newer.update(evidence_id='independent-source', game_id='independent-game')
+    entered, release, started = Event(), Event(), Event()
+    contender_pid = []
+    from tempo_learning_remediation import PostgresRepository
+    original_lock = PostgresRepository.lock
+
+    def gate(self):
+        original_lock(self)
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(3)
+    monkeypatch.setattr(PostgresRepository, 'lock', gate)
+
+    def receive(payload, contender=False):
+        with case.database.scope(), connection() as database:
+            extend_gate_budget(database)
+            if contender:
+                contender_pid.append(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
+                started.set()
+            try:
+                return receivers.receive(database, payload, 'workspace-a')
+            except HTTPException as error:
+                assert error.status_code == 409
+                return {'status': 'conflict'}
+    payloads = {'stale': stale, 'newer': newer}
+    with ThreadPoolExecutor(2) as executor:
+        winner = executor.submit(receive, payloads[first])
+        try:
+            # The pre-repair shortcut never reaches the authoritative lock;
+            # that is itself a behavioral failure of this regression.
+            if not entered.wait(3):
+                result = winner.result()
+                pytest.fail(f'stale response bypassed serialized receipt identity: {result["status"]}')
+            second = executor.submit(receive, payloads['newer' if first == 'stale' else 'stale'], True)
+            assert started.wait(3)
+            wait_for_lock(case, contender_pid[0])
+        finally:
+            release.set()
+        assert winner.result()['status'] == ('stale_revision' if first == 'stale' else 'completed')
+        assert second.result()['status'] == 'conflict'
+    rows = case.query("SELECT response_json FROM learning.remediation_deliveries WHERE delivery_id='stale-transport'")
+    assert len(rows) == 1
+    assert case.query("SELECT count(*) FROM learning.remediation_evidence WHERE evidence_id='independent-source'")[0][0] == (first == 'newer')
+
+
+def test_stale_receipt_failure_rolls_back_without_acceptance_effects(case, monkeypatch):
+    _, stale = stale_receipt_fixture(case)
+    before = domain_state(case)
+    tasks = [tuple(row) for row in case.query('SELECT * FROM learning.background_tasks ORDER BY id')]
+    execute = BorrowedConnection.execute
+    def reject_receipt(self, statement, *arguments, **keywords):
+        if statement.startswith('INSERT INTO remediation_deliveries'):
+            raise HTTPException(409, 'injected stale receipt failure')
+        return execute(self, statement, *arguments, **keywords)
+    with monkeypatch.context() as patch:
+        patch.setattr(BorrowedConnection, 'execute', reject_receipt)
+        assert send(case, stale).status_code == 409
+    assert domain_state(case) == before
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.background_tasks ORDER BY id')] == tasks
+    assert not case.query("SELECT 1 FROM learning.remediation_deliveries WHERE delivery_id=%s", (stale['delivery_id'],))
+    assert send(case, stale).json()['status'] == 'stale_revision'
+
+
+def test_v2_historical_semantic_replay_is_unchanged_by_v1_stale_policy(case):
+    from test_remediation import evidence
+    definition = activate(case)['publication']['definitions'][0]
+    original = evidence(definition)
+    first = send(case, original).json()
+    assert first['status'] == 'completed'
+    assert send(case, evidence(definition, revision=2)).json()['status'] == 'completed'
+    replay = {**original, 'delivery_id': 'v2-semantic-replay'}
+    assert send(case, replay).json() == {**first, 'delivery_id': replay['delivery_id']}
+    assert send(case, original).json() == first
+    assert send(case, {**replay, 'game_id': 'different-game'}).json()['status'] == 'conflict'
+
+
+def test_stale_content_receipt_binds_identity_without_acceptance(case):
+    from test_remediation import evidence
+    definition = activate(case)['publication']['definitions'][0]
+    value = evidence(definition)
+    value['obligations'][0]['card_revision'] += 1
+    before = domain_state(case)
+    response = send(case, value).json()
+    assert response['status'] == 'stale_revision'
+    assert case.query('SELECT response_json FROM learning.remediation_deliveries')[0][0] == response
+    assert domain_state(case) == before
+    corrected = evidence(definition)
+    assert send(case, corrected).json()['status'] == 'conflict'
+    assert send(case, {**corrected, 'delivery_id': 'corrected-content'}).json()['status'] == 'completed'
+
+
 def test_evidence_revisions_are_monotonic_and_original_transport_replays(case):
     card = studied_card(case)
     original = delivery(card["id"])

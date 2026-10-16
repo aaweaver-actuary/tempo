@@ -19,6 +19,225 @@ from test_evidence_revisions import send, drain, domain_state
 from concurrency_helpers import extend_gate_budget, wait_for_lock
 
 
+def current_remediation_task(case):
+    with case.database.scope(), connection() as database:
+        return dict(database.execute_native(
+            "SELECT * FROM background_tasks WHERE kind='remediation' AND deduplication_key='current'"
+        ).fetchone())
+
+
+def request_sweep(case, day=None):
+    from tempo_learning_runtime.remediation_adapter import request_remediation
+    with case.database.scope(), connection() as database:
+        return request_remediation(database, day)
+
+
+def remediation_history(case, identities):
+    # Retained identities whose accepted definitions no longer serve. They must
+    # still consume scan positions; the fixture never deletes historical work.
+    for identifier in identities:
+        case.query(
+            "INSERT INTO learning.remediation_cards(workspace_id,card_id,work_state,reason) VALUES('workspace-a',%s,'deferred','retired_definition')",
+            (identifier,),
+        )
+
+
+@pytest.mark.parametrize('state', ['queued', 'leased', 'retrying'])
+def test_remediation_refresh_preserves_active_cursor_and_lease(case, state):
+    from tempo_learning_runtime.queue_application import request_queue_refresh_in_transaction
+    task = request_sweep(case)
+    payload = {**json.loads(task['payload_json']), 'after_card': 'history-middle', 'retained': 17}
+    case.query("UPDATE learning.background_tasks SET payload_json=%s,state=%s,lease_token=%s,lease_expires_at=clock_timestamp()+interval '1 minute',attempt_count=3 WHERE id=%s",
+               (json.dumps(payload), state, 'owned-lease' if state == 'leased' else None, task['id']))
+    before = current_remediation_task(case)
+    with case.database.scope(), connection() as database:
+        # Exercise the actual review-triggered refresh caller, not only a helper.
+        request_queue_refresh_in_transaction(database, payload['queue_date'])
+    after = current_remediation_task(case)
+    assert json.loads(after.pop('payload_json')) == {**payload, 'rescan_requested': True}
+    before.pop('payload_json')
+    assert after == before
+    assert tuple(case.query("SELECT task_id,generation FROM learning.background_task_events WHERE task_id=%s ORDER BY id DESC LIMIT 1", (task['id'],))[0]) == (task['id'], task['generation'])
+
+
+def test_repeated_refreshes_do_not_starve_later_remediation_card(case):
+    from test_game_evidence_runtime import activate_without_queue_work
+    from tempo_learning_runtime.queue_application import request_queue_refresh_in_transaction
+    from tempo_learning_runtime.maintenance import apply_task
+    payload, _, _ = activate_without_queue_work(case, opening_definitions(['e2e4', 'd2d4']))
+    definition = payload['publication']['definitions'][0]
+    history = [f'000-history-{index}' for index in range(4)]
+    remediation_history(case, history)
+    accepted(case, evidence(definition))
+    successful_slices = 0
+    daily_slices = 0
+    # Four retained identities and the target require at most five productive
+    # remediation slices. Refreshes continue throughout every iteration.
+    for _ in range(len(history) + 1):
+        with case.database.scope(), connection() as database:
+            request_queue_refresh_in_transaction(database, json.loads(current_remediation_task(case)['payload_json'])['queue_date'])
+        # Two claims between refreshes let the unchanged daily replacement
+        # policy make progress as well as the preserved remediation sweep.
+        for _ in range(2):
+            with case.database.scope():
+                with connection() as database:
+                    task = claim(database)
+                assert task
+                apply_task(task)
+            successful_slices += task['kind'] == 'remediation'
+            daily_slices += task['kind'] == 'daily_queue'
+        if case.query("SELECT 1 FROM learning.daily_queue WHERE card_id=%s AND gameplay_priority_reason IS NOT NULL", (definition['card_id'],)):
+            break
+    else:
+        pytest.fail('continued same-day refreshes starved the later valid miss')
+    assert successful_slices <= len(history) + 1
+    assert daily_slices > 0
+
+
+@pytest.mark.parametrize('restart', [False, True], ids=['continuing-client', 'recreated-client'])
+def test_remediation_arrival_behind_cursor_is_found_by_followup_pass(case, restart):
+    from tempo_learning_runtime.database import Database
+    payload = opening_definitions(['e2e4', 'd2d4'])
+    payload['repertoire_limits'] = {'repertoire-a': 0}
+    activate(case, payload)
+    earlier, later = sorted(payload['publication']['definitions'], key=lambda item: item['card_id'])
+    remediation_history(case, [earlier['card_id']])
+    accepted(case, evidence(later))
+    with case.database.scope():
+        assert run_once()
+    before = current_remediation_task(case)
+    assert json.loads(before['payload_json'])['after_card'] == earlier['card_id']
+    arrival = evidence(earlier, transport='behind-cursor', evidence_id='behind-source', game_id='behind-game')
+    arrival['obligations'][0]['obligation_id'] = 'behind-obligation'
+    accepted(case, arrival)
+    after = current_remediation_task(case)
+    assert after['generation'] == before['generation']
+    assert json.loads(after['payload_json'])['after_card'] == earlier['card_id']
+    assert json.loads(after['payload_json'])['rescan_requested']
+    database_client = Database(case.configuration) if restart else case.database
+    try:
+        with database_client.scope():
+            for _ in range(4):
+                run_once()
+    finally:
+        if restart:
+            database_client.close()
+    assert case.query("SELECT 1 FROM learning.daily_queue WHERE card_id=%s AND gameplay_priority_reason IS NOT NULL", (earlier['card_id'],))
+
+
+@pytest.mark.parametrize('first', ['request', 'finalizer'])
+def test_remediation_rescan_racing_with_final_slice_is_not_lost(case, first):
+    from tempo_learning_runtime.remediation_adapter import request_remediation
+    request_sweep(case)
+    with case.database.scope(), connection() as database:
+        task = claim(database)
+    entered, release, started = Event(), Event(), Event()
+    contender_pid = []
+
+    def operation(kind, contender=False):
+        with case.database.scope(), connection() as database:
+            extend_gate_budget(database)
+            if contender:
+                contender_pid.append(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
+                started.set()
+            if kind == 'request':
+                request_remediation(database)
+            else:
+                finish_slice(database, task, json.loads(task['payload_json']), False)
+            if not contender:
+                entered.set()
+                assert release.wait(3)
+
+    with ThreadPoolExecutor(2) as executor:
+        winner = executor.submit(operation, first)
+        try:
+            assert entered.wait(3)
+            second = executor.submit(operation, 'finalizer' if first == 'request' else 'request', True)
+            assert started.wait(3)
+            wait_for_lock(case, contender_pid[0])
+        finally:
+            release.set()
+        winner.result()
+        second.result()
+    current = current_remediation_task(case)
+    assert current['state'] == 'queued'
+    assert current['lease_token'] is None
+    assert json.loads(current['payload_json'])['after_card'] == ''
+    assert not json.loads(current['payload_json']).get('rescan_requested', False)
+
+
+def test_remediation_day_change_fences_old_slice(case):
+    from tempo_learning_runtime.maintenance import apply_task
+    task = request_sweep(case, '2026-10-15')
+    with case.database.scope(), connection() as database:
+        old = claim(database)
+    newer = request_sweep(case, '2026-10-16')
+    assert newer['generation'] > task['generation']
+    with case.database.scope(), pytest.raises(SupersededWork):
+        apply_task(old)
+    before = current_remediation_task(case)
+    request_sweep(case, '2026-10-15')
+    assert current_remediation_task(case) == before
+
+
+def test_remediation_coalesced_request_rolls_back_with_parent(case):
+    from tempo_learning_runtime.remediation_adapter import request_remediation
+    request_sweep(case)
+    before = current_remediation_task(case)
+    with case.database.scope(), pytest.raises(RuntimeError), connection() as database:
+        request_remediation(database)
+        raise RuntimeError('parent rollback')
+    assert current_remediation_task(case) == before
+
+
+def test_remediation_failed_slice_release_preserves_concurrent_rescan(case, monkeypatch):
+    from tempo_learning_runtime import remediation_adapter
+    payload = bundle()
+    payload['repertoire_limits'] = {'repertoire-a': 0}
+    definition = activate(case, payload)['publication']['definitions'][0]
+    accepted(case, evidence(definition))
+    before = domain_state(case)
+    original = remediation_adapter.maintain_one
+    def fail_after_arrival(database, cursor):
+        original(database, cursor)
+        request_sweep(case)
+        raise SupersededWork()
+    with monkeypatch.context() as patch:
+        patch.setattr(remediation_adapter, 'maintain_one', fail_after_arrival)
+        with case.database.scope(), pytest.raises(SupersededWork):
+            run_once()
+    assert domain_state(case) == before
+    task = current_remediation_task(case)
+    assert task['state'] == 'queued' and task['lease_token'] is None
+    assert json.loads(task['payload_json'])['rescan_requested']
+    assert json.loads(task['payload_json'])['after_card'] == ''
+    drain(case)
+    assert case.query('SELECT 1 FROM learning.daily_queue WHERE card_id=%s', (definition['card_id'],))
+
+
+def test_review_task_locks_follow_prepared_continuation_issuance(case, monkeypatch):
+    activate(case, opening_definitions(['e2e4', 'd2d4']))
+    response = case.client.get('/api/queue/window?include_opening_evidence=true').json()
+    current, successor = response['cards']
+    payload = review_payload(current, prepared_next={
+        'queue_entry_id': successor['queue_entry_id'], 'card_id': successor['id'],
+        'revision': successor['revision'], 'cycle': successor['cycle'], 'local_date': response['local_date'],
+    })
+    execute = BorrowedConnection.execute
+    checked = []
+    def inspect_issuance(self, statement, parameters=()):
+        if statement.startswith('INSERT INTO remediation_attempts'):
+            # A task table write lock survives until the transaction ends.
+            assert not self.database.execute_native("SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND relation='learning.background_tasks'::regclass AND mode IN ('RowExclusiveLock','RowShareLock')").fetchone()
+            checked.append(parameters)
+        return execute(self, statement, parameters)
+    monkeypatch.setattr(BorrowedConnection, 'execute', inspect_issuance)
+    saved = submit(case, current, payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['prepared_continuation']['card_id'] == successor['id']
+    assert checked
+
+
 def evidence(
     definition,
     *,

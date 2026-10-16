@@ -122,3 +122,23 @@ directory, then `uv run --locked --no-editable python -m pytest tests`.
 `integration/run_postgres.py` runs the actual repository on a uniquely owned
 disposable PostgreSQL fixture and refuses external database targets. See
 REGRESSIONS.md and VALIDATION.md for executed identities and limits.
+
+## Serialized stale transport receipts
+
+`PostgresRepository.receive(delivery, context, *,
+historical_evidence_revision=None, v1_transport_stale=False)` adds optional trusted
+adapter policy. Existing callers retain historical semantic replay by default.
+Learning alone supplies a historical frontier; producer payloads cannot supply it.
+The runtime enables v1's transport-first stale policy without applying it to v2
+semantic replay. Historical same-frontier authority remains unconverted/conflicted.
+
+Within the module lock, authenticated context and full delivery digest checks
+precede compatibility decisions. Completed and stale transport receipts are
+immutable in both `receive` and `record_status`; pending/retryable statuses retain
+their existing mutable retry behavior. Source/lineage staleness after validation
+and compatibility staleness persist a canonical transport digest and stable
+response with no accepted obligations or Learning revision. Content-validation
+stale responses bind transport identity too; invalid context grants no acceptance.
+A stale receipt creates
+no source/game/evidence/work authority or admission request. The caller still owns
+commit/rollback and encompassing card locks must precede the module lock.

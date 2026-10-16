@@ -58,59 +58,17 @@ def receive(database, delivery, workspace_id, *, background=False):
         ):
             raise HTTPException(409, "Evidence delivery identity reused")
         return json.loads(historical[1])
-    recorded = database.execute_native(
-        "SELECT 1 FROM remediation_deliveries WHERE workspace_id=%s AND delivery_id=%s",
-        (workspace_id, delivery.delivery_id),
-    ).fetchone()
     frontier = database.execute(
         "SELECT evidence_revision FROM accepted_evidence_revisions WHERE workspace_id=? AND evidence_id=?",
         (workspace_id, delivery.evidence_id),
     ).fetchone()
-    if recorded is None and frontier and delivery.evidence_revision <= frontier[0]:
-        if delivery.evidence_revision == frontier[0]:
-            raise HTTPException(
-                409,
-                "Historical obligation authority has not been converted; send a newer revision",
-            )
-        model = (
-            v2.EvidenceAcknowledgement
-            if delivery.contract_version == 2
-            else v1.EvidenceAcknowledgement
-        )
-        return model(
-            contract_version=delivery.contract_version,
-            workspace_id=workspace_id,
-            delivery_id=delivery.delivery_id,
-            evidence_id=delivery.evidence_id,
-            evidence_revision=delivery.evidence_revision,
-            status="stale_revision",
-            reason="source_revision_superseded",
-            accepted_obligation_ids=[],
-            learning_revision=None,
-        ).model_dump(mode="json")
-    # Preserve v1's transport-first stale acknowledgement behavior while the
-    # remediation repository remains the only writer. V2 retains its richer
-    # immutable historical-semantic replay policy.
-    if delivery.contract_version == 1:
-        source = database.execute_native(
-            "SELECT evidence_revision FROM remediation_source_heads WHERE workspace_id=%s AND evidence_id=%s",
-            (workspace_id, delivery.evidence_id),
-        ).fetchone()
-        if recorded is None and source and delivery.evidence_revision < source[0]:
-            return v1.EvidenceAcknowledgement(
-                contract_version=1,
-                workspace_id=workspace_id,
-                delivery_id=delivery.delivery_id,
-                evidence_id=delivery.evidence_id,
-                evidence_revision=delivery.evidence_revision,
-                status="stale_revision",
-                reason="source_revision_superseded",
-                accepted_obligation_ids=[],
-                learning_revision=None,
-            ).model_dump(mode="json")
     from .remediation_adapter import receive as receive_remediation
 
-    acknowledgement = receive_remediation(database, delivery, background=background)
+    acknowledgement = receive_remediation(database, delivery, background=background,
+        historical_evidence_revision=frontier[0] if frontier else None)
+    if acknowledgement.status == "conflict" and acknowledgement.reason == "historical_authority_not_converted":
+        raise HTTPException(409,
+            "Historical obligation authority has not been converted; send a newer revision")
     if delivery.contract_version == 1 and acknowledgement.status == "conflict":
         raise HTTPException(409, acknowledgement.reason)
     return acknowledgement.model_dump(mode="json")

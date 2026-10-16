@@ -100,3 +100,13 @@ This demonstrates the selected client/API path, not the entire Home/Study screen
 service-worker/offline shell, production routing or live external providers.
 Source-bound commands/results and limitations are recorded in the F1 validation
 record. No production deployment or architecture-issue closure is implied.
+
+## Recovery guarantees added to F1
+
+Same-day refreshes preserve an unfinished remediation cursor and schedule a durable
+follow-up pass for arrivals behind it. Stale compatibility transport receipts bind
+their original payload; they cannot authorize evidence acceptance or be reused for
+changed contents. Producer HTTP-401 failures retry the original delivery after
+credential correction and restart. The [producer recovery instructions](../../services/game-evidence/README.md#authentication-recovery)
+cover the explicit command for old 401-blocked rows. No new Study wire fields or
+browser authority are introduced. Full routing, teaching and cutover remain F2 work.

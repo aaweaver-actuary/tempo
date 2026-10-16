@@ -128,22 +128,44 @@ class PostgresRepository:
             raise ValueError("record_status is only for pending/failure")
         self.lock()
         existing = self._existing_delivery(delivery)
-        if existing and existing["status"] == "completed":
+        if existing and existing["status"] in {"completed", "stale_revision"}:
             return self.receipt(delivery.delivery_id)
         response = self._ack(delivery, status, reason=reason)
         self._save_receipt(delivery, response)
         return response
 
-    def receive(self, delivery, context: ReceiveContext):
+    def receive(self, delivery, context: ReceiveContext, *,
+                historical_evidence_revision: int | None = None,
+                v1_transport_stale: bool = False):
         """Validate completely before writes; acceptance and receipt share the caller's commit."""
+        identity_checked = False
         try:
             self.lock()
             if (context.workspace_id, context.game_id, context.evidence_id) != (
                     self.workspace_id, delivery.game_id, delivery.evidence_id):
                 raise RemediationError("terminal_failure", "source_authority_mismatch")
             existing = self._existing_delivery(delivery)
-            if existing and existing["status"] == "completed":
+            identity_checked = True
+            if existing and existing["status"] in {"completed", "stale_revision"}:
                 return self.receipt(delivery.delivery_id)
+            # Only trusted Learning adapters supply the historical frontier.
+            # Serialize identity first, including requests for different cards.
+            if existing is None:
+                if historical_evidence_revision is not None:
+                    if delivery.evidence_revision == historical_evidence_revision:
+                        raise RemediationError("conflict", "historical_authority_not_converted")
+                    if delivery.evidence_revision < historical_evidence_revision:
+                        response = self._ack(delivery, "stale_revision", reason="source_revision_superseded")
+                        self._save_receipt(delivery, response)
+                        return response
+                if v1_transport_stale and delivery.contract_version == 1:
+                    source = self._execute("""SELECT evidence_revision FROM remediation_source_heads
+                        WHERE workspace_id=%s AND evidence_id=%s""",
+                        (self.workspace_id, delivery.evidence_id)).fetchone()
+                    if source and delivery.evidence_revision < source[0]:
+                        response = self._ack(delivery, "stale_revision", reason="source_revision_superseded")
+                        self._save_receipt(delivery, response)
+                        return response
             payload_hash = digest(delivery.model_dump(mode="json", exclude={"delivery_id"}))
             evidence = self._execute("""SELECT payload_hash,learning_revision FROM remediation_evidence
                 WHERE workspace_id=%s AND evidence_id=%s AND evidence_revision=%s""",
@@ -158,7 +180,14 @@ class PostgresRepository:
             self._check_sources(delivery)
             self._check_contributions(delivery, contributions)
         except RemediationError as error:
-            return self._ack(delivery, error.status, reason=error.reason)
+            response = self._ack(delivery, error.status, reason=error.reason)
+            # A stale acknowledgement is an immutable transport decision, even
+            # when current content validation rejected it. It grants no evidence
+            # authority. Busy locks and unauthenticated/mismatched identities
+            # never reach this receipt boundary; retryable failures stay mutable.
+            if identity_checked and error.status == "stale_revision":
+                self._save_receipt(delivery, response)
+            return response
         self._execute("INSERT INTO remediation_workspaces(workspace_id) VALUES(%s) ON CONFLICT DO NOTHING", (self.workspace_id,))
         revision = self._execute("UPDATE remediation_workspaces SET revision=revision+1 WHERE workspace_id=%s RETURNING revision",
                                  (self.workspace_id,)).fetchone()[0]

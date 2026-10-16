@@ -118,6 +118,7 @@ def apply_scheduling_review(
     review_day: date,
     queue_entry_id: int | None = None,
     expected_revision: int | None = None,
+    request_followup=None,
 ) -> dict:
     from .scheduling_review_application import (
         apply_scheduling_review as apply_review_to_store,
@@ -149,6 +150,7 @@ def apply_scheduling_review(
             review,
             queue_entry_id=queue_entry_id,
             revision=expected_revision,
+            request_followup=request_followup,
         )
     unlock_legacy_children_after_review(
         database, card_id, review_day.isoformat(), result["state"]

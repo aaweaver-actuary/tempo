@@ -84,6 +84,25 @@ def test_native_response_loss_restart_and_new_transport_have_one_effect(workspac
         assert count(connection, "remediation_deliveries", workspace) == 2
 
 
+def test_native_stale_transport_receipt_survives_reconnect_and_rejects_changed_identity(workspace):
+    newer = scoped(delivery(revision=5, transport='newer'), workspace)
+    stale = scoped(delivery(revision=4, transport='stale'), workspace)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert accept(repository, newer).status == 'completed'
+        result = accept(repository, stale)
+        assert result.status == 'stale_revision'
+        assert repository.receipt('stale') == result
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert accept(repository, stale) == result
+        assert repository.record_status(stale, 'retryable_failure', 'temporary') == result
+        changed = scoped(delivery(revision=6, transport='stale'), workspace)
+        assert accept(repository, changed).status == 'conflict'
+        assert accept(repository, changed.model_copy(update={'delivery_id': 'fresh'})).status == 'completed'
+        assert count(connection, 'remediation_evidence', workspace) == 2
+
+
 def test_native_pending_failed_and_completed_are_durable_acceptance_states(workspace):
     value = scoped(delivery(), workspace)
     with connect() as connection, connection.transaction():
@@ -129,8 +148,14 @@ def test_native_stale_or_forged_supported_miss_is_not_accepted(workspace, kind):
         if kind == "foreign_workspace": expected = replace(expected, content=support.Authority(replace(DECISION, workspace_id="foreign")))
         if kind == "forged_card": expected = replace(expected, content=support.Authority(replace(DECISION, card_id="unrelated", aliases=())))
         if kind == "game_revision": expected = replace(expected, game_revision=2)
-        assert repository.receive(value, expected).status in {"terminal_failure", "stale_revision"}
-        assert count(connection, "remediation_deliveries", workspace) == 0
+        response = repository.receive(value, expected)
+        assert response.status in {"terminal_failure", "stale_revision"}
+        # Stale rejection now binds transport identity, without granting any of
+        # the evidence/work authority that this original regression forbids.
+        assert count(connection, "remediation_deliveries", workspace) == (response.status == "stale_revision")
+        assert count(connection, "remediation_evidence", workspace) == 0
+        assert count(connection, "remediation_contributions", workspace) == 0
+        assert count(connection, "remediation_workspaces", workspace) == 0
         assert not repository.has_outstanding("card")
 
 
@@ -268,7 +293,12 @@ def test_native_old_withdrawal_or_review_cannot_clear_corrected_revision(workspa
         assert accept(repository, withdrawal(first, revision=3)).status == "stale_revision"
         assert not repository.settle(review(bound), DECISION)
         assert repository.has_outstanding("card")
-        assert accept(repository, withdrawal(corrected, revision=3, obligation_revision=2)).status == "completed"
+        corrected_withdrawal = withdrawal(corrected, revision=3, obligation_revision=2)
+        # The rejected transport now has an immutable stale receipt. Correcting
+        # the withdrawal uses a new delivery ID, preserving the original test's
+        # exact-revision fence and adding transport-reuse protection.
+        assert accept(repository, corrected_withdrawal).status == "conflict"
+        assert accept(repository, corrected_withdrawal.model_copy(update={"delivery_id": "corrected-withdrawal"})).status == "completed"
         assert not repository.has_outstanding("card")
 
 

@@ -65,3 +65,32 @@ cover all family-specific requests/responses against their existing Pydantic
 models. Successful migration/install/startup is not wire-v1 or product acceptance.
 
 The evidence endpoint retains the background writer pool, short lock timeout and nonblocking module lock, with a 1,000 ms atomic batch transaction bound. Ordinary maintenance remains 250 ms. A transaction timeout maps to retryable HTTP 503 and rolls back acceptance/receipt/work effects. See the exact remaining full-Study teaching/routing work in [F2 handoff](../../../docs/study/f2-remediation-handoff.md).
+
+## Recovery guarantees for PR #287
+
+Remediation uses the existing task payload `{queue_date, after_card,
+rescan_requested}`. Missing markers mean false. Same-day unfinished requests set
+only the marker and retain cursor, generation, lease, retry accounting and ready
+ordering. A completed sweep or newer day starts a fresh generation; delayed older
+days do not replace newer work. Generic daily-queue replacement is unchanged.
+
+After each one-card application slice, finalization locks the current task late
+and verifies ID/generation/token/leased state and actual-time expiry. More work
+advances the cursor and retains the durable marker. At end, false completes;
+true atomically consumes the marker and queues an empty-cursor follow-up pass.
+Failed-owner release preserves the marker. Review refresh requests flush within
+the original transaction after settlement and prepared issuance: daily task,
+remediation task, then projection. No task lock precedes subsequent card/queue/module
+acquisition. Intake and maintenance retain card -> queue where needed -> module ->
+late task ordering. Claims remain separate committed sections.
+
+The adapter passes trusted historical evidence revisions to the repository through
+`receive(..., historical_evidence_revision=None, v1_transport_stale=False)`; the
+runtime enables v1 transport-stale compatibility. These arguments are never wire
+fields. Delivery identity/digest and existing immutable receipts are checked under
+the module lock before stale policy. Source-stale and compatibility receipts bind
+the full canonical payload and replay unchanged with null Learning revision and
+empty accepted obligations. They create no evidence/work/admission authority.
+V2 historical semantic replay and historical exact transport replay remain valid;
+unconverted historical same-frontier requests retain HTTP 409 for either wire.
+Historical tables remain read-only; no obligation conversion is introduced.

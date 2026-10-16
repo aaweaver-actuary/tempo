@@ -56,3 +56,45 @@ and settlement now observes the durable maintenance boundary, rather than assumi
 intake performs synchronous admission. The native browser harness awaits #285's
 durable enqueue and compiles the two unchanged Study package public entries using
 its local TypeScript dependency; no root frontend install is required.
+
+## PR #287 recovery repairs
+
+The regular native `test_remediation.py` inventory adds:
+
+- `test_remediation_refresh_preserves_active_cursor_and_lease`: queued, leased and
+  retrying states through the real queue-refresh caller; cursor, lease, generation,
+  ready ordering, attempts, other payload fields and database-returned identities.
+- `test_repeated_refreshes_do_not_starve_later_remediation_card`: four retained
+  non-actionable identities and one later valid miss; continuing requests between
+  pairs of claims, at most five successful remediation slices, and ordinary work.
+- `test_remediation_arrival_behind_cursor_is_found_by_followup_pass`: continuing
+  and recreated clients. `recreated-client` owns restart/cursor/rescan preservation.
+- `test_remediation_rescan_racing_with_final_slice_is_not_lost`: both serialization
+  orders, actual PostgreSQL blocking and committed-state verification.
+- `test_remediation_day_change_fences_old_slice`,
+  `test_remediation_coalesced_request_rolls_back_with_parent`, and
+  `test_remediation_failed_slice_release_preserves_concurrent_rescan`: day fencing,
+  atomic request rollback and failed-owner release.
+
+`test_evidence_revisions.py` adds `test_stale_v1_delivery_receipt_survives_reconnect`,
+`test_stale_v1_delivery_id_cannot_be_reused_with_newer_payload`,
+`test_historical_frontier_stale_delivery_binds_transport_identity` (both wires),
+`test_concurrent_stale_delivery_identity_reuse_is_serialized` (both commit orders,
+independent source identities without shared obligation locks),
+`test_stale_receipt_failure_rolls_back_without_acceptance_effects`, and
+`test_v2_historical_semantic_replay_is_unchanged_by_v1_stale_policy`.
+
+`test_installed_producer_auth_recovery_accepts_once_in_independent_learning` in
+`test_game_evidence_runtime.py` uses actual installed CLI processes, authenticated
+Learning HTTP and separate disposable databases. Correcting the private token and
+restarting retries the original delivery and produces one logical acceptance.
+
+`test_installed_receipt_policy_replays_stale_identity_without_content_or_writes`
+in `test_installation.py` checks optional installed receipt arguments, immutable
+replay and digest conflict in all four wheel/sdist consumers using a receipt-read
+port double. Native suites separately own actual persistence and concurrency.
+
+`test_review_task_locks_follow_prepared_continuation_issuance` observes actual
+PostgreSQL task-table lock ownership at continuation binding.
+`test_stale_content_receipt_binds_identity_without_acceptance` additionally covers
+durable rejected-content identity and acceptance only under a fresh transport.

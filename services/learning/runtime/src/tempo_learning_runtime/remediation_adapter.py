@@ -125,7 +125,7 @@ def clear_priority(database, card_id):
         )
 
 
-def receive(database, delivery, *, background=False):
+def receive(database, delivery, *, background=False, historical_evidence_revision=None):
     from .admission import lock_card
 
     owned = repository(database, background=background)
@@ -152,7 +152,9 @@ def receive(database, delivery, *, background=False):
         datetime.now(timezone.utc),
         AcceptedDefinitions(database),
     )
-    acknowledgement = owned.receive(delivery, context)
+    acknowledgement = owned.receive(delivery, context,
+        historical_evidence_revision=historical_evidence_revision,
+        v1_transport_stale=True)
     if acknowledgement.status == "completed" and acknowledgement.learning_revision > (
         before[0] if before else 0
     ):
@@ -188,7 +190,8 @@ def bind_issued_attempt(database, queue_entry_id, card_id, revision):
     )
 
 
-def settle_review(database, card_id, review_id, *, queue_entry_id=None, revision=None):
+def settle_review(database, card_id, review_id, *, queue_entry_id=None, revision=None,
+                  request_followup=None):
     """Only a previously bound, compatible authoritative queue attempt may settle."""
     if queue_entry_id is None or revision is None:
         return
@@ -232,7 +235,10 @@ def settle_review(database, card_id, review_id, *, queue_entry_id=None, revision
     clear_priority(database, card_id)
     # A miss arriving after issuance needs a new attempt, even after a clean review.
     if owned.has_current_miss(candidate(database, card_id, date.today().isoformat())):
-        request_remediation(database)
+        if request_followup is None:
+            request_remediation(database)
+        else:
+            request_followup(date.today().isoformat())
 
 
 def candidate(database, card_id, queue_day):

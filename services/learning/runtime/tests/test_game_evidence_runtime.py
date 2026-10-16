@@ -295,6 +295,32 @@ def test_installed_producer_lost_acknowledgement_replays_after_learning_restart(
     assert case.query("SELECT COUNT(*) FROM learning.reviews")[0][0] == 0
 
 
+def test_installed_producer_auth_recovery_accepts_once_in_independent_learning(case, producer, tmp_path):
+    payload, activation_id, receipt = activate_without_queue_work(case)
+    producer.load(payload, activation_id, receipt)
+    token = Path(producer.environment['TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE'])
+    token.write_text('wrong-test-credential-' + 'w' * 40)
+    with server(case, tmp_path) as (client, _):
+        endpoint = str(client.base_url).rstrip('/') + '/internal/evidence'
+        producer.work(endpoint)
+        original = producer.query('SELECT delivery_id,payload,attempts,status,reason,acknowledgement,next_attempt_at FROM outbox')[0]
+        assert producer.query('SELECT count(*) FROM accepted_heads')[0][0] == 0
+        assert case.query('SELECT count(*) FROM learning.remediation_deliveries')[0][0] == 0
+        producer.work(endpoint)
+        assert producer.query('SELECT attempts FROM outbox')[0][0] == 1
+        token.write_text(case.configuration.evidence_token)
+        producer.query('UPDATE outbox SET next_attempt_at=now()')
+        # Each CLI invocation is a fresh installed producer process.
+        producer.work(endpoint)
+        producer.work(endpoint)
+    final = producer.query('SELECT delivery_id,payload,attempts,status,reason,acknowledgement FROM outbox')[0]
+    assert final[:2] == original[:2] and final[2:4] == (2, 'completed')
+    assert original[2:6] == (1, 'retryable_failure', 'remote_rejected_401', None)
+    assert producer.query('SELECT count(*) FROM accepted_heads')[0][0] == 1
+    assert case.query('SELECT count(*) FROM learning.remediation_deliveries')[0][0] == 1
+    assert case.query('SELECT count(*) FROM learning.remediation_evidence')[0][0] == 1
+
+
 def test_native_browser_settles_accepted_remediation_and_introduces_ordinary_work_with_producer_stopped(
     case, producer, tmp_path
 ):

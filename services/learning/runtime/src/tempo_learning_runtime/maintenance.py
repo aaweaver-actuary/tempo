@@ -19,6 +19,24 @@ class SupersededWork(Exception):
 
 
 def finish_slice(database, task, payload, more):
+    if task["kind"] == "remediation":
+        # Lock late: claims have committed and card/queue/module operations have
+        # finished. Read the marker here, never from the claim-time snapshot.
+        current = database.execute_native(
+            """SELECT payload_json FROM background_tasks
+               WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'
+                 AND lease_expires_at>clock_timestamp() FOR UPDATE""",
+            (task["id"], task["generation"], task["lease_token"]),
+        ).fetchone()
+        if current is None:
+            raise SupersededWork()
+        merged = json.loads(current[0])
+        merged["after_card"] = payload.get("after_card", "")
+        merged.setdefault("rescan_requested", False)
+        if not more and merged["rescan_requested"]:
+            merged.update(after_card="", rescan_requested=False)
+            more = True
+        payload = merged
     changed = database.execute_native(
         """UPDATE background_tasks SET payload_json=%s,state=%s,phase=%s,
                lease_token=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=NOW()
@@ -71,7 +89,7 @@ def run_once():
                 database.execute_native(
                     """UPDATE background_tasks SET state='queued',lease_token=NULL,
                     lease_expires_at=NULL,last_error='Learning slice yielded',updated_at=NOW()
-                    WHERE id=%s AND generation=%s AND lease_token=%s""",
+                    WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'""",
                     (task["id"], task["generation"], task["lease_token"]),
                 )
         except (psycopg.Error, PoolTimeout):
