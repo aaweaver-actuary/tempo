@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "model_sha256": "405bf76c15727dad8728b352c06a8f3c1b80fb2760e8d666b32485c63d75b856",
+  "external_inputs": [
+    {
+      "source": "public/maia3/parts/part-00",
+      "role": "model-part",
+      "sha256": "f45cbbb2ee28a7041b8257f4e9b22baaef45a44a4ded626635b56fd3120585ae"
+    },
+    {
+      "source": "public/maia3/parts/part-01",
+      "role": "model-part",
+      "sha256": "746bbf7fc56dc36e64787bfdc649733fb7b9fdb60fdf242b384592c898375750"
+    },
+    {
+      "source": "public/maia3/parts/part-02",
+      "role": "model-part",
+      "sha256": "3fe60ff530fb324c95c2ed5b35fa956745048041d4dfe450db06273b67473f36"
+    },
+    {
+      "source": "public/maia3/parts/part-03",
+      "role": "model-part",
+      "sha256": "88ec2c69db75e8cf1ea2651d08dbcda5410ffc0e02880f6dcfa5cf724fbae59e"
+    },
+    {
+      "source": "public/maia3/parts/part-04",
+      "role": "model-part",
+      "sha256": "f590eb45dcedee61ea39bd47e1f5c03c8288a0952e93a73a14df64a136e7a743"
+    },
+    {
+      "source": "public/maia3/parts/part-05",
+      "role": "model-part",
+      "sha256": "f6a6a7d3138e49cccf113d837e1e3d23a6111e8bbe2c894d85a806f1e0a031fa"
+    },
+    {
+      "source": "app/lib/all_moves_maia3.json",
+      "target": "assets/move-index.json",
+      "role": "vocabulary",
+      "sha256": "e3351a233174e99d9ddca981681b65a444d191e8a6b474e27bd8fad8514af8d7"
+    },
+    {
+      "source": "app/lib/all_moves_maia3_reversed.json",
+      "target": "assets/reverse-index.json",
+      "role": "vocabulary",
+      "sha256": "bb9542b706d3011aa8c0bb067dd33b50bbd7313414cfb50052b0c92aaa9833ee"
+    },
+    {
+      "source": "contracts/analysis-jobs/schemas/v1/MaiaJob.schema.json",
+      "target": "schemas/v1/MaiaJob.schema.json",
+      "role": "schema",
+      "sha256": "7fb96a4410467864ccb9a250c5ff9532294181d394a2af8be6ffe3dbaa560352"
+    },
+    {
+      "source": "contracts/analysis-jobs/schemas/v1/MaiaResult.schema.json",
+      "target": "schemas/v1/MaiaResult.schema.json",
+      "role": "schema",
+      "sha256": "abe70fe3ca37a37a92f988e598c65d7a026c3363263bac284eeaf1d7c972a91b"
+    },
+    {
+      "source": "contracts/analysis-jobs/schemas/v1/JobStatus.schema.json",
+      "target": "schemas/v1/JobStatus.schema.json",
+      "role": "schema",
+      "sha256": "f8d57f8621abeb613a75bffbb8b7e9fb2c06b91f3473609efb1245b074722d4c"
+    },
+    {
+      "source": "contracts/analysis-jobs/schemas/v1/CancellationRequest.schema.json",
+      "target": "schemas/v1/CancellationRequest.schema.json",
+      "role": "schema",
+      "sha256": "3cb82356607000cc597adf68276d3b932a22e8084cb2bd872effb76746e2cd1e"
+    },
+    {
+      "source": "contracts/analysis-jobs/schemas/v1/CancellationAcknowledgement.schema.json",
+      "target": "schemas/v1/CancellationAcknowledgement.schema.json",
+      "role": "schema",
+      "sha256": "4d0368b4be70e043a2072ba2310c14920c942e2965b0dc752133d6ab4eefe291"
+    }
+  ]
+}

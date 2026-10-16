@@ -909,6 +909,15 @@ queue-only owned receipt fails the audit before deletion. See
 
 ## M02 package-local transition
 
+Maia's independently packaged worker is registered as `maia`. Install only
+`workers/maia` dependencies, then run `node tools/component-build/test-lane.mjs
+--component maia --list` for its owning suites. The worker's
+[local instructions](../workers/maia/README.md) describe installed-contract setup,
+restricted artifacts, real offline model/cancellation proofs and the separate
+serial benchmark. Its local regression inventory owns discovery; legacy adapter
+parity remains in the already registered root tests. Component checks do not
+establish the whole-product or hosted merge gates.
+
 Implemented package declarations are in `components.json`; planned targets are not
 independently buildable claims. See [component build/discovery commands](../tools/component-build/README.md)
 for restricted installed-artifact proofs, separate frontend/runner/Python-producer

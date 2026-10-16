@@ -4585,3 +4585,14 @@ regression in `unit/storage-probes.test.ts`: reading before lazy application
 startup aborts an absent database open rather than creating an empty incompatible
 schema. The existing two native legacy receipt/reimport scenarios retain their
 original assertions against that non-mutating inspector.
+## Independent Maia worker (#110)
+
+[`workers/maia/REGRESSIONS.md`](../workers/maia/REGRESSIONS.md) owns the registered
+pure, protocol/resource, installed-contract and actual-model regressions. Named
+cases protect phantom castling, king coherence, en-passant legality, exact requested
+move support, generation/replay identity and truthful termination. Shared qualifier
+routing, containment, failure propagation and zero-case proofs remain in
+`tools/component-build/tests/workers.test.mjs`. Existing frozen-helper and
+browser/Node parity cases retain their root registration and now exercise the
+shared computation owner. These proofs do not establish Intelligence persistence,
+Learning behavior, or full-system qualification.

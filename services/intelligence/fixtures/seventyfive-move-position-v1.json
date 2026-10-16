@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "workspace_id": "fixture",
+  "snapshot_id": "seventyfive-move-position-v1",
+  "source_id": "content-fixture",
+  "source_revision": 1,
+  "publication_id": "publication-fixture",
+  "publication_generation": 1,
+  "fen": "7k/8/8/8/8/8/R7/K7 w - - 150 80",
+  "position_key": "7k/8/8/8/8/8/R7/K7 w - -",
+  "legal_universe_version": "standard-chess-v1",
+  "legal_universe_digest": "sha256:c4ac6eb1f6efe0b5134afdbf666163643646661f0e7add77119ecdf4add1501c",
+  "complete": true,
+  "legal_moves": [
+    "a1b1",
+    "a1b2",
+    "a2a3",
+    "a2a4",
+    "a2a5",
+    "a2a6",
+    "a2a7",
+    "a2a8",
+    "a2b2",
+    "a2c2",
+    "a2d2",
+    "a2e2",
+    "a2f2",
+    "a2g2",
+    "a2h2"
+  ],
+  "policy_context": {
+    "policy_id": "policy-a"
+  }
+}
