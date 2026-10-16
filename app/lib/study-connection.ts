@@ -199,6 +199,11 @@ export async function assertStudyAuthority(origin: string, workspace: string, tr
   return retained;
 }
 export async function connectStudy(origin: string, workspace: string, credential: string) {
+  const release = holdActiveStudyRequest();
+  try { return await connectStudyWithAuthority(origin, workspace, credential); }
+  finally { release(); }
+}
+async function connectStudyWithAuthority(origin: string, workspace: string, credential: string) {
   const generation = ++connectionGeneration;
   const previous = studyConnection();
   const requireCurrent = () => {

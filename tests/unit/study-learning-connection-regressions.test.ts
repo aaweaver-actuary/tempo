@@ -490,3 +490,22 @@ it.each(["workspace", "schema", "timezone"])("P3 invalid cached %s cannot author
   const outcome = expect(connecting).rejects.toMatchObject({ kind: "bootstrap", cachedPracticeAvailable: false });
   await body.reading; body.fail(); await outcome; expect(await savedConnectionState(client)).toEqual(before);
 });
+
+it.each(['resolve','reject'])('study_priority_bootstrap_body_%s_retains_operation_hold_until_authority_settlement', async outcome => {
+  const {client,fetcher}=await connected();
+  const priority=await import('../../app/lib/study-priority');priority.setStudyPriorityScope(true);
+  vi.useFakeTimers();
+  const reading=Promise.withResolvers<void>();let controller!:ReadableStreamDefaultController<Uint8Array>;
+  const body=new ReadableStream<Uint8Array>({start(value){controller=value;},pull(){reading.resolve();}},{highWaterMark:0});
+  fetcher.mockResolvedValueOnce(new Response(body));
+  const pending=client.connectStudy('http://learning.test:8001','workspace-a',credential).catch(error=>error);
+  await reading.promise;
+  await vi.advanceTimersByTimeAsync(3500);
+  expect(priority.studyInteractionActive()).toBe(true);
+  if(outcome==='resolve'){controller.enqueue(new TextEncoder().encode(JSON.stringify(bootstrap)));controller.close();}
+  else controller.error(new TypeError('Interrupted bootstrap body'));
+  const result=await pending;
+  if(outcome==='resolve')expect(result.workspace_id).toBe('workspace-a');
+  else expect(result).toMatchObject({kind:'transport',cachedPracticeAvailable:true});
+  await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
+});

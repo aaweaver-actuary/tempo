@@ -373,3 +373,18 @@ it("foreground review submission waits only for its same-card predecessors", asy
   expect(result.persistedAttemptIds).toEqual(deliveries);
   expect(pendingReviews().map(review => review.attemptId)).toEqual(["independent"]);
 });
+
+it('study_priority_queue_body_remains_essential_until_queue_installation_settles', async () => {
+  vi.useFakeTimers();
+  const priority=await import('../../app/lib/study-priority');priority.setStudyPriorityScope(true);
+  let finishBody!:(value:unknown)=>void;
+  const response=Response.json({});
+  vi.spyOn(response,'json').mockImplementation(()=>new Promise(resolve=>{finishBody=resolve;}));
+  vi.stubGlobal('fetch',vi.fn(async()=>response));
+  const loading=fetchAndInitializeQueue(false,{replaySavedReviews:false,preservePreparedAttempt:true});
+  await vi.waitFor(()=>expect(finishBody).toBeTypeOf('function'));
+  await vi.advanceTimersByTimeAsync(3500);expect(priority.studyInteractionActive()).toBe(true);
+  finishBody({cards:queue,count:queue.length,local_date:localDayKey()});await loading;
+  await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
+  priority.setStudyPriorityScope(false);
+});

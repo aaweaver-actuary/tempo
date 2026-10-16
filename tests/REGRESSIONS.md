@@ -4682,3 +4682,5 @@ cases remain registered and unchanged. Dynamic activity sessions have a strict
 owning contract regression in `tests/controlled-browser/unit/controlled-browser-regressions.test.ts`.
 
 Study Priority v1: `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` retains serialized bulk ownership and probes a saved late handler. Invalidated bulk failures stay diagnostic without publishing notifications; current diagnostics and workspace publication remain authoritative. Home lifecycle regressions await the existing three-second quiet period before idle recovery.
+
+`study_priority_bootstrap_body_resolve_retains_operation_hold_until_authority_settlement`, its `reject` variant, and `study_priority_queue_body_remains_essential_until_queue_installation_settles` keep optional work paused after headers while essential bodies and authority/queue settlement remain pending. Existing #296 classification, timeout, cached recovery and supersession assertions remain unchanged.
