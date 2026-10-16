@@ -783,3 +783,78 @@ def test_intake_transaction_timeout_is_retryable_and_rolls_back_acceptance(
     )
     assert case.query("SELECT COUNT(*) FROM learning.remediation_deliveries")[0][0] == 0
     accepted(case, value)
+
+
+def test_prefetch_has_no_frontier_and_prepared_continuation_binds_once(case):
+    publication = activate(case, opening_definitions(["e2e4", "d2d4"]))
+    response = case.client.get("/api/queue/window?include_opening_evidence=true")
+    current, successor = response.json()["cards"]
+    definition = next(
+        value
+        for value in publication["publication"]["definitions"]
+        if value["card_id"] == successor["id"]
+    )
+    accepted(case, evidence(definition))
+    drain(case)
+
+    def bindings():
+        return [
+            tuple(row)
+            for row in case.query(
+                "SELECT attempt_id,issued_at,frontier_sequence FROM learning.remediation_attempts WHERE card_id=%s",
+                (successor["id"],),
+            )
+        ]
+
+    assert bindings() == []  # A window's prefetched successor has no authority.
+    payload = review_payload(
+        current,
+        prepared_next={
+            "queue_entry_id": successor["queue_entry_id"],
+            "card_id": successor["id"],
+            "revision": successor["revision"],
+            "cycle": successor["cycle"],
+            "local_date": response.json()["local_date"],
+        },
+    )
+    operation = uuid.uuid4().hex
+    saved = submit(case, current, payload, operation)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["prepared_continuation"]["card_id"] == successor["id"]
+    bound = bindings()
+    assert len(bound) == 1 and bound[0][2] == 1
+    assert submit(case, current, payload, operation).json() == saved.json()
+    assert head(case)["queue_entry_id"] == successor["queue_entry_id"]
+    assert bindings() == bound
+    assert submit(case, successor, review_payload(successor)).status_code == 200
+    assert case.query(
+        "SELECT COUNT(*) FROM learning.remediation_settlements WHERE card_id=%s",
+        (successor["id"],),
+    )[0][0] == 1
+
+
+@pytest.mark.parametrize(
+    "previously_issued", [False, True], ids=["unissued", "legacy-issued"]
+)
+def test_review_submission_never_creates_a_missing_issuance_frontier(
+    case, previously_issued
+):
+    definition = activate(case)["publication"]["definitions"][0]
+    row = case.query(
+        "SELECT id,card_id FROM learning.daily_queue ORDER BY position,id LIMIT 1"
+    )[0]
+    card = {"id": row[1], "queue_entry_id": row[0], "revision": 1}
+    if previously_issued:
+        case.query(
+            "UPDATE learning.queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s",
+            (row[0],),
+        )
+    accepted(case, evidence(definition))
+    if previously_issued:
+        assert head(case)["queue_entry_id"] == row[0]
+    response = submit(case, card, review_payload(card))
+    assert response.status_code == 200, response.text
+    assert case.query("SELECT COUNT(*) FROM learning.remediation_attempts")[0][0] == 0
+    assert (
+        case.query("SELECT COUNT(*) FROM learning.remediation_settlements")[0][0] == 0
+    )

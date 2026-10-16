@@ -31,6 +31,9 @@ introduction; protected positions and unchanged frozen inputs; concurrent delive
 both actual review/evidence commit orders; acceptance/receipt/work-request rollback;
 trusted alternatives/position/alias rejection; ordinary-work fairness; and stable
 library miss order across single-card maintenance slices.
+Prepared-continuation coverage asserts that prefetch has no frontier, the actual
+receipt-authorized issuance binds it once, reload/replay retains it, and neither
+review submission nor an old already-issued origin can invent a missing binding.
 
 `test_game_evidence_runtime.py` owns actual installed producer CLI -> authenticated
 Learning HTTP -> separate PostgreSQL database integration. A real forwarding proxy
