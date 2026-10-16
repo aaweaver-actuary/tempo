@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
 let input = ''; for await (const chunk of process.stdin) input += chunk;
 const { frontend, learning, credential, replacement_credential, scenario, operation, mate, fixture_key } = JSON.parse(input);
-const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [];
+const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [], queueResponses=[];
 let evidenceDelivered=false, priorityHead=false;
 let holdNextQueue=false, heldQueue=false, delayedResponseCancelled=false, releaseDelayedQueue;
 const delayedQueue=new Promise(resolve=>{releaseDelayedQueue=resolve;});
@@ -27,7 +27,9 @@ const forward = async (request, response) => {
     const upstream = await fetch(new URL(request.url, learning), { method: request.method, headers, body: body.length ? body : undefined, redirect: 'error' });
     const bytes = Buffer.from(await upstream.arrayBuffer());
     if (path==='/api/queue/window' && request.method==='GET' && upstream.ok) {
-      priorityHead ||= Boolean(JSON.parse(bytes).cards?.[0]?.gameplay_priority_reason);
+      const queue=JSON.parse(bytes);
+      queueResponses.push({cards:queue.cards.map(card=>({card_id:card.id,queue_entry_id:card.queue_entry_id})),held:holdNextQueue});
+      priorityHead ||= Boolean(queue.cards?.[0]?.gameplay_priority_reason);
       if (scenario==='remediation-late' && !evidenceDelivered) { await fixture('deliver-evidence'); evidenceDelivered=true; }
       if(holdNextQueue) {
         holdNextQueue=false;heldQueue=true;
@@ -162,17 +164,25 @@ try {
       const newer=await context.newPage();await connect(newer);
       await expect(newer.locator('cg-board:visible')).toBeVisible();await move(newer);
       await expect.poll(async()=> (await records(newer)).filter(item=>item.kind==='review'&&item.state==='committed').length).toBe(1);
+      await expect(newer.getByText("You're done for today",{exact:true})).toBeVisible();
+      await newer.close();
+      const previousResponses=queueResponses.length;
       await page.getByRole('button',{name:'Tactics',exact:true}).click();
       await page.getByRole('button',{name:'Train',exact:true}).click();
-      await expect(page.getByText("You're done for today",{exact:true})).toBeVisible();
+      await expect.poll(()=>queueResponses.slice(previousResponses).some(queue=>!queue.held&&queue.cards.length===0)).toBe(true);
+      // An ordinary refresh preserves the older tab's unfinished foreground
+      // attempt. Neither a peer review nor stale pre-review bytes may replace it.
+      await expect(page.locator('cg-board:visible')).toBeVisible();
+      const retainedPosition=await page.locator('.board-frame').getAttribute('data-fen');
       releaseDelayedQueue();
       await expect.poll(()=>delayedResponseCancelled).toBe(true);
-      await expect(page.locator('cg-board:visible')).toHaveCount(0);
-      await expect(page.getByText("You're done for today",{exact:true})).toBeVisible();
+      await expect(page.locator('.board-frame')).toHaveAttribute('data-fen',retainedPosition);
+      await expect(page.getByRole('button',{name:'Correct',exact:true})).toBeEnabled();
       assert.equal(traffic.filter(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path)).length,1);
     } else if (scenario==='authority-reconnect') {
       await move(page);
       await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length).toBe(1);
+      await expect(page.getByText("You're done for today",{exact:true})).toBeVisible();
       const original=(await records(page)).find(item=>item.kind==='review');
       await fixture('rotate-study-credential');
       await page.getByRole('button',{name:'Study settings',exact:true}).click();
@@ -295,7 +305,7 @@ try {
     }
   }
   assert.deepEqual(unexpected,[]);
-  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,confirmed_receipts:confirmedReceipts,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
+  console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,queue_responses:queueResponses,confirmed_receipts:confirmedReceipts,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
 } catch (error) {
   // Do not record form input, credentials, authenticated headers or raw traces.
   console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]").replaceAll(replacement_credential??'unused-replacement-secret',"[redacted]"));
