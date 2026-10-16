@@ -484,6 +484,6 @@ def test_R5_legacy_cancellation_reaps_expired_execution_without_new_work(state):
         db.execute("UPDATE intelligence.analysis_runs SET payload=payload-'derivation_version' WHERE run_id='repair'")
         db.execute("UPDATE intelligence.analysis_positions SET leased_until=now()-interval '1 second' WHERE state='running'")
     owner.command('repair',Command(command_id='legacy-cancel',action='cancel',expected_revision=1))
-    assert owner.claim('repair',builder) is None
     assert owner.status('repair')['state']=='cancelled'
+    assert owner.claim('repair',builder) is None
     with pytest.raises(DomainError,match='stale_analysis_execution'):owner.accept(claim,result(claim))

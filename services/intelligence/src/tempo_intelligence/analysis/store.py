@@ -186,6 +186,7 @@ class AnalysisStore:
                     db.execute("UPDATE analysis_positions SET state='pending',attempts=0,next_attempt_at=NULL WHERE run_id=%s AND revision=%s AND state IN ('failed','cancelled') AND error_code IS DISTINCT FROM 'incompatible_engine_profile'",(run_id,run["revision"]))
                 db.execute("UPDATE analysis_runs SET state='pending',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
             elif command.action=="cancel":
+                db.execute("UPDATE analysis_positions SET state='cancelled',lease_token=NULL,leased_until=NULL WHERE run_id=%s AND revision=%s AND state='running' AND leased_until<=now()",(run_id,run["revision"]))
                 db.execute("UPDATE analysis_runs SET state='cancel_requested',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
                 db.execute("UPDATE analysis_positions SET state='cancelled' WHERE run_id=%s AND revision=%s AND state IN ('pending','retry_wait')",(run_id,run["revision"]))
                 running=db.execute("SELECT 1 FROM analysis_positions WHERE run_id=%s AND revision=%s AND state='running' LIMIT 1",(run_id,run["revision"])).fetchone()

@@ -69,6 +69,8 @@
           "ranking_evidence_id": null,
           "source_evidence_ids": []
         },
+        "derivation_version": 2,
+        "recovery_required": null,
         "progress": {
           "complete": 1
         },
@@ -97,6 +99,8 @@
           "ranking_evidence_id": null,
           "source_evidence_ids": []
         },
+        "derivation_version": 2,
+        "recovery_required": null,
         "progress": {
           "pending": 5
         },
@@ -881,6 +885,8 @@
             "ranking_evidence_id": null,
             "source_evidence_ids": []
           },
+          "derivation_version": 2,
+          "recovery_required": null,
           "progress": {
             "complete": 1
           },
@@ -909,6 +915,8 @@
             "ranking_evidence_id": null,
             "source_evidence_ids": []
           },
+          "derivation_version": 2,
+          "recovery_required": null,
           "progress": {
             "pending": 5
           },
@@ -1435,6 +1443,8 @@
             "ranking_evidence_id": null,
             "source_evidence_ids": []
           },
+          "derivation_version": 2,
+          "recovery_required": null,
           "progress": {
             "complete": 1
           },
@@ -1463,6 +1473,8 @@
             "ranking_evidence_id": null,
             "source_evidence_ids": []
           },
+          "derivation_version": 2,
+          "recovery_required": null,
           "progress": {
             "pending": 5
           },

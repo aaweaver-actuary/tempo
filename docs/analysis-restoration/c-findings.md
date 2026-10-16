@@ -288,3 +288,8 @@ cancellation leases. Their focused corrections reset user state from authoritati
 dismissals, exclude unpublished legacy heads from background derivation while
 exposing a revision-required read status, and reap cancellation before rejecting
 new legacy work. Named native regressions cover all three paths.
+
+Final consumer review removed legacy Continue/Retry/Resume controls before they
+could persist predictably rejected commands; Cancel remains available with an
+explanation. Explicit cancellation also reaps expired executions directly, so an
+unpublished legacy run needs no derivation worker to release expired capacity.

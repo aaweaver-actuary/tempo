@@ -15,3 +15,7 @@ and continue/retry/cancel/resume recovery cases. `tests/browser.mjs` exercises
 second-command blocking while dismissal outcome is unresolved, lost response,
 reload, authoritative receipt recovery, actual reopening/reload, and an actual
 C-produced null-lineage engine finding with board rendering/dismissal/reload.
+
+The native browser scenario also verifies legacy run controls omit Continue,
+Retry and Resume, retain Cancel, and explain revision recovery. These predictable
+rejections must never create an unrecoverable pending command.
