@@ -1,0 +1,39 @@
+{
+  "contract_version": 1,
+  "workspace_id": "fixture",
+  "job_id": "maia:8948e1c3d48f02f7319909498d19d04dea89e70af0a1a9a11d23309ec79cdedd",
+  "request_revision": 1,
+  "execution_generation": 1,
+  "input_digest": "sha256:59006aa6fc4682aa9e7b942559b6d2c3e7b3fc022e8922ebbc466b6be3bccc6e",
+  "constraints": {
+    "max_wall_time_ms": 5000,
+    "max_memory_mb": 1024
+  },
+  "worker": "maia",
+  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+  "rating": 1500,
+  "model_id": "maia-2",
+  "model_version": "fixture-1",
+  "legal_moves": [
+    "a2a3",
+    "a2a4",
+    "b1a3",
+    "b1c3",
+    "b2b3",
+    "b2b4",
+    "c2c3",
+    "c2c4",
+    "d2d3",
+    "d2d4",
+    "e2e3",
+    "e2e4",
+    "f2f3",
+    "f2f4",
+    "g1f3",
+    "g1h3",
+    "g2g3",
+    "g2g4",
+    "h2h3",
+    "h2h4"
+  ]
+}

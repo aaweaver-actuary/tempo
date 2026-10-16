@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-intelligence"
+version = "0.1.0"
+description = "Independent source-native Explorer and Maia evidence authority"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "chess==1.11.2", "tempo-chess-core==0.1.0",
+  "tempo-analysis-jobs-contracts==1.0.0",
+  "fastapi==0.116.1", "starlette==0.47.3", "uvicorn==0.35.0", "httpx==0.28.1",
+  "psycopg[binary]==3.3.6", "psycopg-pool==3.3.3", "pydantic==2.12.5",
+]
+
+[project.scripts]
+tempo-intelligence = "tempo_intelligence.cli:main"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0", "jsonschema==4.25.1"]
+
+[tool.uv.sources]
+tempo-chess-core = { path = "../../packages/chess-core" }
+tempo-analysis-jobs-contracts = { path = "../../contracts/analysis-jobs" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_intelligence"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "integration", "fixtures", "pyproject.toml", "uv.lock", "README.md", "REGRESSIONS.md", "INTERFACES.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib -ra"

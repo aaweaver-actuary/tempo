@@ -1,0 +1,418 @@
+# Intelligence local interface version 1
+
+This document describes the implemented component-local schemas and protocol.
+It does not extend shared Intelligence, Content or analysis-jobs wire v1. Unknown
+input fields are rejected. HTTP and CLI document bodies are bounded to 1 MiB;
+validation/public failures use fixed codes without echoing rejected input, private
+filenames, connection strings, credentials or upstream bodies.
+
+## HTTP and CLI operations
+
+All `/v1/` routes require `Authorization: Bearer ...`. An optional
+`X-Tempo-Workspace` header must match the configured workspace; the supplied
+snapshot/worker workspace must also match. Bearer secrets have separate scopes:
+
+| HTTP operation | Body | Bearer scope | Local CLI equivalent |
+|---|---|---|---|
+| `GET /healthz` | None | Public | Startup validation occurs before local operations |
+| `POST /v1/requests` | `RequestInput` below | Caller | `request --file FILE` |
+| `GET /v1/requests/{request_id}` | None | Caller | `inspect REQUEST_ID` |
+| `GET /v1/evidence/{evidence_id}` | None | Caller | `evidence EVIDENCE_ID` |
+| `POST /v1/requests/{request_id}/refresh` | Revision command | Caller | `refresh REQUEST_ID --file FILE` |
+| `POST /v1/requests/{request_id}/retry` | Revision command | Caller | `retry REQUEST_ID --file FILE` |
+| `GET /v1/requests/{request_id}/maia-jobs` | None | Caller | `maia-jobs REQUEST_ID` |
+| `POST /v1/maia/results` | Shared `MaiaResult` wire v1 | Worker | `accept-maia --file FILE` |
+| `POST /v1/maia/status` | Shared `JobStatus` wire v1 | Worker | `maia-status --file FILE` |
+| `POST /v1/credentials/lichess-explorer/reload` | Credential command | Operator | `credentials reload --file FILE` |
+| `POST /v1/credentials/lichess-explorer/revoke` | Credential command | Operator | `credentials revoke --file FILE` |
+
+`--file -` reads stdin. Local commands use configured database authority directly;
+their security boundary is the operating-system account and private configuration,
+not an HTTP bearer scope. `work --once` claims at most one Explorer item.
+`serve --host 127.0.0.1 --port 8049` enables the small HTTP service and, unless
+disabled, bounded background work. There is no general scheduler or analytics API.
+
+Revision commands have `command_id` and optional `expected_revision` (positive
+integer or null). Credential commands have `expected_generation` (nonnegative
+integer). Command identities are workspace-local, durable and shared across
+refresh/retry operations: the same identity/payload returns its recorded result;
+a different payload conflicts. A successful command response records accepted
+intent, not proof that a provider or model succeeded.
+
+Request-level retry processes each bound source independently. `accepted:true`
+records durable processing of the command, including a partial retry or a no-op
+when no source is eligible. It does not promise that any source was restarted or
+completed. Inspect source state separately. Replay returns the stored receipt
+without re-evaluating eligibility or restarting later work.
+
+HTTP failures include `401 unauthorized`, `403 workspace_mismatch`, `404` unknown
+request/evidence, `409` replay/revision/generation/transition conflicts, `413`
+oversize input, `422` invalid or unsupported input, and `503` unavailable runtime.
+Domain errors use `{"error":"fixed_code"}`; CLI failures emit that shape on stderr
+and exit nonzero. The health endpoint verifies database access/workspace binding.
+
+## Request and immutable position input
+
+`RequestInput` has exactly these fields:
+
+| Field | Meaning/default |
+|---|---|
+| `schema_version` | Required integer `1` |
+| `request_id` | Nonempty workspace-local logical identity, at most 200 characters |
+| `request_revision` | Positive interoperable integer; immutable semantic revision |
+| `expected_revision` | Null for creation; current revision for replacement |
+| `snapshot` | Complete schema-1 snapshot below |
+| `sources` | One to three discriminated sources; at most one of each `kind` |
+| `max_age_seconds` | Accepted-evidence age tolerance, 0–31536000; default 86400 |
+
+The first request may use any positive revision with null `expected_revision`.
+Replacement requires the current expected revision and a strictly greater new
+revision. Same identity/revision/payload is replay; changed payload under that
+identity/revision conflicts. Replaying an older retained request never restores it
+as current; the response inspects the current head. Replay does not refresh work.
+
+Snapshot fields are required unless shown otherwise:
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | Integer `1` |
+| `workspace_id`, `snapshot_id`, `source_id` | Explicit workspace and immutable source identities |
+| `source_revision` | Positive source revision |
+| `publication_id`, `publication_generation` | Explicit immutable publication lineage |
+| `fen`, `position_key` | Legal standard position and matching normalized first four FEN fields |
+| `legal_universe_version`, `legal_universe_digest` | Version and verified digest of complete move inputs |
+| `complete` | Must be true for this supported subset |
+| `legal_moves` | Exactly every legal UCI move; unique, at most 256; retained even when a drawn terminal position has legal moves |
+| `policy_context` | Optional JSON object or null; caller context, not provider identity |
+
+Board legality, position key, full move set and digest are checked. A chess library
+validates one supplied fixture; Intelligence does not build Content's global legal
+inventory. Incomplete inventories and missing required provenance fields are
+rejected. Source/publication identifiers are supplied by the authenticated caller;
+this interface does not authenticate a Content publication cryptographically.
+
+An append-only snapshot registry binds the tuple `source_id`, `source_revision`,
+`snapshot_id`, `publication_id`, `publication_generation` to its exact validated
+snapshot payload, excluding policy context. Reusing that tuple with changed input
+conflicts. Policy context may differ across callers without changing the immutable
+source identity. Each request still preserves its complete submitted snapshot.
+
+`position_key` comes from the validated board's legal-en-passant FEN, keeping
+piece placement, side to move, castling and legal en-passant state. Provider/model
+FEN clocks are normalized to `0 1`. Unlike the legacy stable-card primitive alone,
+this step validates legality and normalizes nonlegal en-passant targets.
+
+The legal-universe digest is `sha256:` plus the SHA-256 of compact, key-sorted
+UTF-8 JSON containing `legal_universe_version`, `position_key` and sorted
+`legal_moves`. Canonical JSON preserves array order generally, explicit nulls and
+finite values. Fixtures live in `fixtures/position-v1.json`,
+`terminal-position-v1.json` and `request-v1.json`. Separate
+`insufficient-material-position-v1.json` and `seventyfive-move-position-v1.json`
+fixtures retain legal moves while demonstrating terminal draws.
+
+## Source subset and exact descriptors
+
+`LichessSource` fields are `kind:"lichess"`, nonempty unique `ratings`, nonempty
+unique `speeds`, `since` and `until`. Exact supported buckets/speeds and date
+bounds are listed in [README.md](README.md#provider-subset-and-evidence).
+Equivalent cohort sets use one canonical order. Arbitrary rating values such as
+1500 or 400, unsupported speed labels and reversed/invalid dates are rejected.
+
+`MastersSource` has `kind:"masters"`, integer `since`/`until` (default 1952/3000,
+inclusive). Rating and speed fields are rejected; Masters and Lichess are separate
+populations, not interchangeable samples.
+
+`MaiaSource` has `kind:"maia"`, integer `rating` (0–4000), `model_id`,
+`model_version` and raw lowercase 64-hex `artifact_sha256`. The precise combination
+must be enabled by the runtime's configured model profile. Wire v1 represents one
+rating; separate ordered player/opponent ratings or speed conditioning are not
+supported. Model execution belongs to the external worker.
+
+Every descriptor contains `schema_version:1`, `kind`, normalized `canonical_fen`,
+`position_key`, sorted complete `legal_moves`, first-acquisition
+`legal_universe_digest` and `terminal_reason` (null or the board outcome name).
+The latter is determined from the original full FEN with `claim_draw=False` before
+clocks are normalized. Checkmate, stalemate, insufficient material and automatic
+75-move draws do not produce source distributions, even when legal moves exist.
+Repetition history and claim-dependent draws cannot be inferred from a single
+FEN; no such history is invented. Ordinary nonterminal clock differences continue
+to share computation, while a 75-move terminal variant has a distinct identity.
+
+Explorer descriptors additionally record the normalized configured
+`provider_origin` and this exact `parameters` object:
+
+| Parameter | Lichess | Masters |
+|---|---|---|
+| `fen` | Normalized six-field FEN | Same |
+| `moves` | Number of complete legal moves | Same |
+| `topGames` | `0` | `0` |
+| `since`, `until` | Requested monthly strings | Requested integer years |
+| `variant` | `standard` | Omitted |
+| `speeds`, `ratings` | Canonical comma-separated requested sets | Omitted |
+| `recentGames` | `0` | Omitted |
+| `history` | `false` | Omitted |
+
+`play` is omitted. These endpoints return one bounded move listing; no pagination
+or follow-up game requests are implemented. A request for the full legal count
+does not certify an exhaustive response. Maia descriptors instead add the four
+Maia source fields, retaining artifact identity in the input digest/cache identity.
+
+## Cache, evidence and recovery semantics
+
+Caller intent and shared work are different identities. A cache ID hashes
+`{"workspace":workspace_id,"descriptor":semantic_descriptor}` using the digest
+algorithm above. The semantic descriptor excludes `legal_universe_digest`: a
+Content inventory-version change with the same validated position/move inputs
+does not change the provider/model computation. All other descriptor fields,
+including actual query parameters, provider origin, terminal reason, kind, schema
+and model artifact, participate.
+Policy, repertoire, route, publication identity and freshness tolerance do not.
+
+The cache stores its first immutable acquisition descriptor and `input_snapshot`;
+each accepted evidence record copies both. Each logical request retains its own
+exact snapshot lineage. Reusing that cache does not claim the cache's original
+legal-universe provenance belongs to a newer caller snapshot.
+Equivalent transpositions and policies share work; changed cohorts, source
+families, actual model inputs or schema variants do not.
+
+Changing the configured provider origin creates distinct Explorer cache identities.
+Inspection exposes `provider_origin` and `provider_configuration_status`
+(`configured` or `unavailable`); retained old-origin evidence remains readable.
+Workers only claim work for their configured origin, so a new endpoint cannot
+silently execute an old source's pending query. Configuration normalizes scheme,
+host and default ports before identity comparison.
+
+Each cache has a desired work generation, an execution generation, an immutable
+accepted-evidence pointer and separate progress/failure/retry facts. New input
+binds a caller revision to its appropriate cache. Replacing one caller never
+cancels the shared cache that another caller may need. Worker completion cannot
+change caller heads or resurrect a replaced revision.
+
+A new request finding completed evidence outside its age tolerance queues the
+next cache generation. A read only reports age; it does not enqueue work.
+Explicit refresh joins existing queued/running/waiting work; otherwise it creates
+a new generation. It does not force a second fetch after an already active fetch.
+Retry requires `failed`, `retry_wait` or `waiting_credentials`, a true retryable
+flag, no future source-local deadline, and the configured provider origin for
+Explorer. Every other source is skipped unchanged, including complete, terminal,
+queued, running, awaiting-result, nonretryable or delayed sources. Eligible sources
+recover the same work generation with a new execution according to their source
+lifecycle. Explorer execution advances when claimed; Maia registers its next
+execution immediately. Ordinary failure attempts reset on explicit retry.
+Exhausted retryable failures can recover; nonretryable failures need a new refresh
+intent or corrected request. Accepted evidence remains readable until valid new
+evidence is accepted. Refresh behavior is unchanged.
+
+An Explorer cooldown cannot block eligible Maia retry. Retry never clears the
+shared provider deadline or bypasses the provider permit, credential validation
+or pacing. A queued Explorer source may still await provider permission.
+
+Source inspection returns cache/work/execution identity, `state`, `freshness`,
+`evidence_id`, attempts, retryability, fixed error code, retry deadline/eligibility and Explorer
+credential/provider-cooldown facts. Source state and evidence age are independent:
+
+| State | Meaning |
+|---|---|
+| `queued` | Durable intent awaiting an eligible bounded execution |
+| `running` | Explorer execution holds a fenced expiring permit |
+| `awaiting_result` | Registered Maia job awaits a validated external result |
+| `complete` | This source accepted evidence; freshness may later be stale |
+| `retry_wait` | Recoverable provider failure/delay with a deadline |
+| `waiting_credentials` | Missing/rejected/expired/revoked/unavailable registration or storage |
+| `failed` | Execution failed; retryability remains explicit |
+| `terminal` | Terminal board outcome, including insufficient material/automatic 75-move draws; full legal inventory retained, no source distribution or queued work |
+
+Freshness is `absent`, `current` or `stale` according to the current caller's
+age tolerance and the evidence's database acceptance time. It is a local retrieval
+age fact, not a guarantee about the provider's underlying dataset. A failed refresh
+may retain current or stale prior evidence. Explorer failure cannot clear Maia
+evidence, and one successful source cannot mark another source successful.
+Unsupported inputs fail validation instead of creating an invented cache result.
+
+Explorer evidence preserves root `counts` (`white`, `draws`, `black`),
+`total_games`, per-move outcome counts and game totals, `returned_games`,
+`unallocated_games`, all legal observations, missing moves, `sample_complete`
+and limitations. Outcome-wise returned counts may not exceed root counts.
+An observed zero differs from absent evidence. An omitted legal move is known zero
+only when a nonempty exact sample's returned counts exhaust its denominator;
+otherwise it remains unreported/unknown. No probabilities are calculated or
+renormalized over returned/authored moves. Terminal inputs keep no distribution.
+
+Accepted records have stable random evidence IDs, acquisition snapshot,
+descriptor/payload, input/output
+digests, work/execution generation and acceptance time. Explorer payloads also
+carry retrieval ID/time and a normalized response digest. Current pointers can
+advance, but runtime credentials cannot update/delete accepted records. Reading
+an evidence ID returns that retained record. No automatic evidence expiry or
+deletion policy is implemented.
+
+Each Explorer slice captures intent, claims a 60-second lease, releases its
+connection, performs one bounded HTTP request, validates output, then publishes
+in a short fenced transaction. Claim/publication checks cache generation,
+execution generation, lease identity, expiry and running state. A crashed lease
+becomes reclaimable; an older claimant cannot overwrite its replacement. There
+is one durable provider permit across both chosen endpoints and one-second pacing.
+Provider-mandated 429 deadlines persist across restart; Retry-After seconds and
+HTTP dates are recognized, with a 60-second fallback. Waiting does not spend
+ordinary failure attempts. Network/5xx retry delays are 5 then 30 seconds with at
+most three ordinary failures per recovery cycle. Authentication rejection and
+missing storage do not trigger provider calls until registration is usable.
+
+## Credential trust contract
+
+Private provider-file schema is exactly `schema_version:1`, UUID-v4
+`registration_id`, `token` and optional aware `expires_at`. No secret material is
+accepted through durable command bodies or worker queues. The configured private
+file is bounded to 16 KiB, checked for ownership/permissions/symlinks/repository
+placement, and read from verified descriptors. Credential reload validates only
+that file and activates its identity using `expected_generation`; it does not
+contact the provider or attest successful authentication.
+
+The database retains nonsecret registration IDs, monotonically increasing
+generations, status and expiry. Public statuses distinguish `credential_missing`,
+`registered`, `accepted`, `rejected`, `expired` and `revoked`. Inspection also reads
+the configured file outside its database transaction and reports
+`credential_storage_unavailable` or `credential_registration_mismatch` when the
+durable registration is unusable locally; source error codes preserve the bounded
+work failure. A 401/403 establishes rejection,
+not proof of whether an upstream credential expired or was revoked. Local expiry
+and explicit revoke establish those separate facts. Provider outage remains a
+source failure and does not reject credentials.
+
+Every token/expiry change must use a fresh UUID and explicit reload after atomic
+file replacement. Existing registration IDs are immutable trusted operator input;
+there is no durable token fingerprint to enforce byte identity across restart.
+Rejected/revoked/retired IDs cannot be reactivated. Re-registering the same token
+with a fresh ID is an explicit new authorized attempt. Repeated reload of the
+currently usable ID does not advance its generation. Stale rejection is fenced
+against the active ID/generation and cannot reject a replacement or override
+explicit revocation. Accepted evidence remains readable after credential loss.
+
+Restart retains registration metadata but never reconstructs missing secrets.
+The matching private file must still be available; loss/mismatch is reported
+honestly and requires restoration or explicit new registration. Both implemented
+sources currently require credentials per their official specifications; there
+is no fictitious credential-free source or OAuth flow in this subset.
+
+## Maia acceptance and compatibility
+
+Configured profile JSON is a list of objects with exactly `model_id`,
+`model_version`, `artifact_sha256` and nonempty unique `ratings`. Profiles are
+installed as immutable database bindings at startup; conflicting versions fail
+startup, and removed profiles cannot authorize new requests. Runtime may insert
+new bindings but cannot update/delete them. Artifact replacement needs a distinct
+model version and cache identity. Profiles do not execute or download a model.
+
+Intelligence persists a shared `MaiaJob` before exposing it through `maia-jobs`.
+The stable job ID derives from workspace/cache identity; its `request_revision`
+equals cache work generation, and execution retries advance
+`execution_generation`. The job's input digest covers the exact stored descriptor,
+including its artifact binding. Fixed execution constraints are 5000 ms wall time
+and 1024 MiB memory for newly created work generations. An external worker pulls explicit inputs and posts results;
+there is no synchronous inference in a transaction or implicit dispatch broker.
+
+Same-generation execution retries copy the persisted job contents, changing only
+execution generation. This preserves the worker's immutable request fingerprint,
+including constraints. Historical 512 MiB jobs are not rewritten; an explicit
+refresh after failed/completed work creates a new generation with the current
+budget. Accepted historical evidence remains unchanged.
+
+The independently packaged #110 worker requires a finite cgroup cap of at least
+1 GiB and rejects a cap larger than the job allowance. This 1024 MiB allowance
+therefore pairs with a 1 GiB effective whole-worker cgroup, one CPU and zero swap,
+with readiness established before submitting the 5000 ms job. Its reported RSS
+and the enforced cgroup hard limit are different measurements. A fresh generated
+job completed against published #290 artifact
+`6c51d0b989d5eddfef72aff6a181285a852888d504d7bf830e8978c772170d2b`
+under this envelope; `maia-supported-envelope-v1.json` preserves that exact
+request/job/result for native acceptance and replay. Normal tests do not run a
+model. Legacy 768 MiB Compose settings describe a different worker and cannot
+provision this independent artifact. Production provisioning remains unverified;
+this PR neither changes it nor deploys a worker.
+
+Acceptance validates both shared Pydantic wire semantics and persisted owner
+context: workspace/job/revision/current execution/input digest, exact model/version,
+legal FEN/full requested legal set, exact predicted move set, finite nonnegative
+probabilities summing to one within shared `1e-9` tolerance, and runtime chronology
+provenance. Duplicate/illegal/missing moves fail. Explicit zero values survive.
+FEN/rating/source lineage come from the registered job because v1 results do not
+echo those inputs. A status of completed is insufficient: a validated result is
+required to publish evidence.
+
+Result replay first checks the original execution's complete canonical wire
+payload, preserving list order and timestamp spelling. An identical replay returns
+the original evidence ID even after a newer acceptance, without rolling back the
+current pointer. A different payload conflicts. First-time stale, failed,
+cancelled, superseded or otherwise mismatched execution results cannot publish.
+Pending/running/failure/cancellation status transitions cannot resurrect terminal
+executions. Worker-declared failure retryability is preserved; terminal failure
+does not become a zero-valued result.
+
+Wire v1 has one rating and no actual worker artifact digest, ordered rating pair,
+speed context or Content legal-universe fields. Acceptance relies on the immutable
+configured model-version binding and authenticated worker. Independent artifact
+attestation and additional context need a coordinated versioned contract extension
+with #110; no new v1 fields are invented. The shared contracts' initial-position
+Maia shape fixture lists only two of twenty legal moves: it remains a shared parser
+example but is not accepted as complete-position evidence here. The service's own
+`maia-job-v1.json`/`maia-result-v1.json` contain all twenty legal initial moves and
+preserve explicit zero probabilities. Terminal inputs never form Maia jobs,
+including drawn positions with legal moves. Checkmate/stalemate also have empty
+move sets, which cannot satisfy the shared v1 lists' minimum length.
+
+## Database ownership and limits
+
+One Intelligence database is bound to one configured workspace; this is not a
+multi-workspace shared-table design. The `intelligence` schema owns migration
+history and workspace authority, immutable snapshot/request revisions, request heads,
+caches/evidence, commands, provider control, nonsecret credential registrations
+and head, Maia jobs and model profiles. `0001_sources` is the packaged migration;
+its ordered manifest and SHA-256 checksum are checked on startup.
+
+Migrations require separate owner credentials. Runtime is nonadministrative,
+NOINHERIT, has no role memberships or foreign database CONNECT privilege, and
+cannot create schema/table/temp objects or rewrite migration/workspace authority,
+accepted evidence, snapshots, caller revisions, command receipts or model bindings.
+UPDATE grants name only required progress columns: semantic cache descriptors,
+acquisition snapshots and registered job payloads are not updateable by runtime.
+Independent foreground
+and background pools default to 4/1 connections, with short statement/lock/
+transaction deadlines. Deployment provisioning must enforce the role/database
+configuration; table grants alone do not establish it. A shared PostgreSQL server
+still shares CPU, memory, I/O and failure risk with other databases.
+
+The asynchronous background worker offloads claim, publication and every failure
+write to one owned serial database thread. Application database startup/closure
+also run off the event loop; synchronous foreground HTTP handlers retain the
+framework's normal threadpool execution. Connections are checked out and returned
+within their operation thread. Provider HTTP stays asynchronous and never spans a
+database transaction. Direct bounded CLI/Worker slices drain and join their runner.
+
+Background operations have a five-second client I/O deadline, covering pool
+acquisition, setup, SQL and commit/rollback, in addition to the one-second pool,
+1500 ms statement, 250 ms lock and 3000 ms transaction limits. Deadline expiry
+closes/discards the connection in its operation thread; cancelling an await never
+abandons a database thread. Connection return and deadline context reset complete
+before the operation is released.
+
+Cancellation remains authoritative through repeated cancellation and cleanup
+failure. The owner drains an in-flight operation and attempts at most one bounded
+lease release if a claim remains outstanding. A claim returned during cancellation
+is released; an already-committed publication remains accepted. Failed release
+leaves a fenced expiring lease recoverable by a later worker, without consuming an
+ordinary failure attempt. Shutdown marks the loop stopping before cancelling it,
+drains work/cleanup, closes provider resources and owned pools off-loop, then joins
+the runner. The current operation plus cancellation cleanup can consume up to ten
+seconds of database budget; HTTP/pool closure has separate lifecycle costs.
+Ordinary database errors retain the sanitized background-error path rather than
+being mislabeled as provider failure. Private driver/credential details are not
+reported publicly.
+
+The #108 handoff is a producer for the explicit immutable complete-position input,
+not private SQL. #110 owns job execution and versioned model-context extensions.
+#156 consumes retained source-native counts/model evidence and owns fusion and
+uncertainty mathematics. #4 owns future advisory publications and consumer
+compatibility. This service does not publish rankings or claim Learning eligibility,
+readiness, admission, FSRS changes, live-provider validation, legacy migration or
+deployment. Test execution and resource-cleanup claims belong to candidate-specific
+preserved validation reports, not this interface description.

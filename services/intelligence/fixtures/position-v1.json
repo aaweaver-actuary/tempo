@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "workspace_id": "fixture",
+  "snapshot_id": "initial-position",
+  "source_id": "content-fixture",
+  "source_revision": 1,
+  "publication_id": "publication-fixture",
+  "publication_generation": 1,
+  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+  "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+  "legal_universe_version": "standard-chess-v1",
+  "legal_universe_digest": "sha256:d5547771fd1d7d329218997b1347df9494b2a9d03f44463769d81ea2a2fe5e4c",
+  "complete": true,
+  "legal_moves": [
+    "a2a3",
+    "a2a4",
+    "b1a3",
+    "b1c3",
+    "b2b3",
+    "b2b4",
+    "c2c3",
+    "c2c4",
+    "d2d3",
+    "d2d4",
+    "e2e3",
+    "e2e4",
+    "f2f3",
+    "f2f4",
+    "g1f3",
+    "g1h3",
+    "g2g3",
+    "g2g4",
+    "h2h3",
+    "h2h4"
+  ],
+  "policy_context": {
+    "policy_id": "policy-a"
+  }
+}
