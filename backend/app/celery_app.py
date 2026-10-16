@@ -17,7 +17,11 @@ celery_app.conf.update(
     broker_transport="app.services.background_wakes:WakeRedisTransport",
     # A reachable Redis peer can stop replying. Bound individual socket I/O so
     # periodic publication and result bookkeeping can fail and recover.
-    broker_transport_options={"socket_timeout": 5, "socket_connect_timeout": 5},
+    broker_transport_options={"socket_timeout": 5, "socket_connect_timeout": 5,
+                              **({'global_keyprefix': os.environ['TEMPO_REDIS_NAMESPACE']}
+                                 if os.getenv('TEMPO_REDIS_NAMESPACE') else {})},
+    result_backend_transport_options=({'global_keyprefix': os.environ['TEMPO_REDIS_NAMESPACE']}
+                                      if os.getenv('TEMPO_REDIS_NAMESPACE') else {}),
     redis_socket_timeout=5,
     redis_socket_connect_timeout=5,
     task_acks_late=True,

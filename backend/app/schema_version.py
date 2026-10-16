@@ -1,3 +1,3 @@
 """Authoritative PostgreSQL schema readiness version."""
 
-POSTGRES_SCHEMA_VERSION = 48
+POSTGRES_SCHEMA_VERSION = 49

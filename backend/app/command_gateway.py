@@ -207,14 +207,28 @@ def claim_recoverable_operation(*, allowed_background_commands=None, paused_comm
         if paused_commands:
             admission_clause += ' AND NOT (command_name=ANY(%s))'
             admission_parameters += (sorted(paused_commands),)
+        # Each state owns an indexed due-time stream. Lock at most one eligible
+        # head per stream, then prefer the oldest waiting head across streams.
+        # Terminal history and future leases are never materialized or sorted.
+        streams = []
+        for state, due_column, deadline in (
+            ('retrying', 'next_retry_at', 'NOW()'),
+            ('executing', 'lease_expires_at', 'NOW()'),
+            ('queued', 'updated_at', "NOW()-INTERVAL '30 seconds'"),
+        ):
+            streams.append(
+                f"{state} AS MATERIALIZED (SELECT operation_id,updated_at FROM operation_receipts "
+                f"WHERE state='{state}' AND payload_json IS NOT NULL AND {due_column}<={deadline}"
+                + admission_clause + f" ORDER BY {due_column},updated_at,operation_id "
+                "LIMIT 1 FOR UPDATE SKIP LOCKED)")
         row = database.raw.execute(
-            "SELECT operation_id,command_name,payload_json,background FROM operation_receipts "
-            "WHERE payload_json IS NOT NULL AND ("
-            "(state='retrying' AND next_retry_at<=NOW()) OR "
-            "(state='executing' AND lease_expires_at<=NOW()) OR "
-            "(state='queued' AND updated_at<=NOW()-INTERVAL '30 seconds')) "
-            + admission_clause + " ORDER BY updated_at,operation_id LIMIT 1 FOR UPDATE SKIP LOCKED",
-            admission_parameters,
+            'WITH ' + ','.join(streams) +
+            " SELECT receipt.operation_id,receipt.command_name,receipt.payload_json,receipt.background "
+            "FROM operation_receipts receipt JOIN (SELECT * FROM retrying UNION ALL "
+            "SELECT * FROM executing UNION ALL SELECT * FROM queued) candidate "
+            "ON candidate.operation_id=receipt.operation_id "
+            "ORDER BY candidate.updated_at,candidate.operation_id LIMIT 1",
+            admission_parameters * 3,
         ).fetchone()
         if row is None:
             return None
@@ -235,6 +249,9 @@ def execute_command(
     with capture_queue_refresh_request() as queue_request:
         result = _execute_command(operation_id, command_name, payload,
                                   background=background, attempt_token=attempt_token)
+    if result is not None and command_name == 'settings.update':
+        from .services.study_priority import refresh_policy
+        refresh_policy()  # Post-commit generation fences any older policy read.
     # The inner boundary commits and closes before returning. Failed handlers
     # return None after rollback; their transient enqueue must never emit a wake.
     if result is not None and (queue_request.requested or

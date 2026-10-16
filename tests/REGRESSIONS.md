@@ -4603,3 +4603,24 @@ Learning behavior, or full-system qualification.
 - `study-cached-startup-regressions.test.tsx` owns browser-online and browser-offline transport startup, HTTP/auth rejection, invalid cache identity/schema/timezone, unavailable storage and first-connect blocking.
 - `study-authoring-capability-regressions.test.tsx` owns read-only pack selection and command-level capture/deletion rejection before pending-data access, mutation or network. Existing catalog, capture, deletion, endgame, intent, attempt and offline regressions retain their legacy/Workbench assertions.
 - The regular `learning-full-study` native suite owns the browser-online Learning outage, same-context/two-origin recovery (including lost sessionStorage), real settings receipt reconciliation and Study authoring request inventory. Two forwarding origins share one installed Learning database; this is not a multi-database proof.
+
+## Study priority v1 — deployed legacy assembly (#218, #190)
+
+Core owners: `backend/tests/test_study_priority_control.py`,
+`backend/tests/test_study_priority_maintenance.py`, and
+`scripts/check_postgres_study_priority.py`. The native script is invoked by the
+regular PostgreSQL study and schema-migration scenarios; `--list` enumerates its
+six required identities. It proves published-graph candidate bounds and rejected
+cursor progress, a fresh process resuming a persisted fenced checkpoint, due-state
+recovery among 415,000 historical receipts, real review/identical receipt replay,
+prepared succession, database-independent control, multiple device expiry,
+stale-policy denial, and an index-only 49 → 48 → 49 rollback retaining reviews.
+The unit cases also cover setup/closed-connection backoff, generation fencing,
+control polls without database reads and current publication rechecks.
+
+The native unlock path replaces parent-wide discovery with pages of at most 16
+locked cards and at most eight writes per ordinary queue slice. Its update repeats
+ready-publication and practiced-parent eligibility. SQLite's useful sparse
+algorithm and the existing review/evidence/history/receipt transaction owners are
+retained. Original literal SQL fixtures remain a transitional compatibility owner;
+they do not select the retired native parent-wide query.
