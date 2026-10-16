@@ -381,7 +381,7 @@ is unrelated and remains untouched.
 
 ## PR #294 correctness repair
 
-The repair branch starts at `1db44cbdf310f959eb0c839e94166350531cc89b` on base `0edf566ad48f51846a43d3341809379ff0469ada`. The original validation and its recorded failures above remain historical evidence. Fresh repair evidence is maintained separately under `/Users/andy/tempo/test-results/pr294-correctness-20261016/`; final qualification is recorded in the repair report.
+The repair branch starts at `1db44cbdf310f959eb0c839e94166350531cc89b` on base `0edf566ad48f51846a43d3341809379ff0469ada`. The original validation and its recorded failures above remain historical evidence. Fresh repair evidence is maintained separately under `test-results/pr294-correctness-20261016/`; the complete [A–K repair and qualification report](a-bridge-repair.md) records exact commands, revisions, artifact hashes, retained failures and recovery limits.
 
 ### Terminal rejection and corrected approval
 
