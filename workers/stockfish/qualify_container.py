@@ -81,10 +81,20 @@ class Qualification:
             await asyncio.sleep(.01)
         raise AssertionError("capacity did not recover")
 
+    async def diagnostic(self, client, event_name, job_id):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            event = next((item for item in reversed(client.diagnostics)
+                          if item.get("event") == event_name and item.get("job_id") == job_id), None)
+            if event is not None:
+                return event
+            await asyncio.sleep(.001)
+        raise AssertionError(f"Missing {event_name} diagnostic for {job_id}")
+
     async def cancel_active(self, client, name, job):
         if not any(record["model"] == "JobStatus" and record["payload"]["job_id"] == job.job_id and record["payload"]["status"] == "running" for record in self.records):
             await self.until(client, lambda item: isinstance(item, v1.JobStatus) and item.job_id == job.job_id and item.status == "running")
-        started = next(event for event in reversed(client.diagnostics) if event.get("event") == "execution_started" and event.get("job_id") == job.job_id)
+        started = await self.diagnostic(client, "execution_started", job.job_id)
         pid = started["pid"]
         def ticks():
             value = docker("exec", name, "cat", f"/proc/{pid}/stat").stdout
@@ -211,10 +221,7 @@ class Qualification:
                     job=self.job(client,max_depth=12,**changes)
                     began=time.monotonic();await self.send(client,job);result=await self.result(client,job)
                     end_to_end_ms=(time.monotonic()-began)*1000
-                    for _ in range(100):
-                        metric=next((event for event in reversed(client.diagnostics) if event.get("event")=="execution_finished" and event.get("job_id")==job.job_id),{})
-                        if metric: break
-                        await asyncio.sleep(.001)
+                    metric = await self.diagnostic(client, "execution_finished", job.job_id)
                     searches.append({"end_to_end_ms":end_to_end_ms,"actual_depth":result.variations[0].depth,"nodes":metric.get("nodes"),"engine_time_ms":metric.get("engine_time_ms"),"job":job.model_dump(mode="json")})
                 active=self.job(client,max_depth=128,max_nodes=None,constraints={"max_wall_time_ms":10000,"max_memory_mb":512})
                 await self.send(client,active);cancellations.append(await self.cancel_active(client,name,active))
