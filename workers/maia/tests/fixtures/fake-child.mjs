@@ -4,7 +4,10 @@ if (process.argv.includes('--startup-fail')) {
   process.send({ type: 'startup_error', code: 'model_asset_missing', message: 'Fixture missing model' });
 } else {
   const startupDelay = Number(process.argv.find((argument) => argument.startsWith('--startup-delay='))?.split('=')[1] ?? 0);
-  setTimeout(() => process.send({ type: 'ready', identity }), startupDelay);
+  if (process.argv.includes('--startup-gated')) {
+    process.send({ type: 'initializing' });
+    process.once('message', (message) => { if (message.type === 'release_ready') process.send({ type: 'ready', identity }); });
+  } else setTimeout(() => process.send({ type: 'ready', identity }), startupDelay);
   process.on('message', (message) => {
     if (message.type !== 'infer') return;
     const { token, job } = message;

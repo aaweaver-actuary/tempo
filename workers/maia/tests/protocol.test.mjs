@@ -21,7 +21,7 @@ function waitFor(worker, collection, predicate, event = 'record', timeout = 5000
   const existing = collection.find(predicate);
   if (existing) return Promise.resolve(existing);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { worker.off(event, listener); reject(new Error('Expected worker event did not arrive')); }, timeout);
+    const timer = setTimeout(() => { worker.off(event, listener); reject(new Error(`Expected ${event} did not arrive; history: ${JSON.stringify(collection)}`)); }, timeout);
     const listener = (item) => { if (predicate(item)) { clearTimeout(timer); worker.off(event, listener); resolve(item); } };
     worker.on(event, listener);
   });
@@ -321,4 +321,275 @@ test('broken output interrupts an executing job even after EOF began draining', 
   input.end(`${JSON.stringify({ model: 'MaiaJob', payload: job({ fen: 'hang' }) })}\n`);
   const result = await protocol.done;
   assert.equal(result.success, false); assert.equal(f.worker.child, null); assert.equal(f.records.some(isResult()), false);
+});
+
+// Explicit child gates make predecessor-exit and model-warmup windows reproducible.
+async function lifecycleFixture(t, { holdExit = false, gateWarmup = false } = {}) {
+  let childCount = 0, releaseExit = () => {}, releaseReady = () => {};
+  let signalInitializing;
+  const initializing = new Promise(resolve => { signalInitializing = resolve; });
+  t.after(() => releaseExit());
+  const f = await fixture(t, { childFactory: () => {
+    const childIndex = childCount++;
+    const child = fork(new URL('./fixtures/fake-child.mjs', import.meta.url), childIndex > 0 && gateWarmup ? ['--startup-gated'] : [], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    if (childIndex === 0 && holdExit) {
+      const kill = child.kill.bind(child);
+      let requestedSignal;
+      child.kill = signal => { requestedSignal = signal; return true; };
+      releaseExit = () => { child.kill = kill; if (requestedSignal) { const signal = requestedSignal; requestedSignal = null; kill(signal); } };
+    }
+    if (childIndex > 0 && gateWarmup) {
+      child.on('message', message => { if (message.type === 'initializing') signalInitializing(); });
+      releaseReady = () => child.send({ type: 'release_ready' });
+    }
+    return child;
+  } });
+  return { ...f, initializing, releaseExit: () => releaseExit(), releaseReady: () => releaseReady() };
+}
+
+for (const duringWarmup of [false, true]) test(`repair A${duringWarmup ? 2 : 1}: pre-cancelled newest generation fences replacement ${duringWarmup ? 'during warmup' : 'before predecessor exit'}`, { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { holdExit: !duringWarmup, gateWarmup: duringWarmup });
+  const input = job({ fen: 'fenced' }); send(f.worker, input);
+  const started = await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 });
+  const obsolete = f.worker.replacement, timer = obsolete.timer;
+  if (duringWarmup) await f.initializing;
+  cancel(f.worker, cancellation(input, { execution_generation: 3 }));
+  send(f.worker, { ...input, execution_generation: 3 });
+  assert.equal(f.worker.logicalRequests.get(JSON.stringify(['workspace-a', 'job-a', 1])).highestGeneration, 3);
+  f.releaseExit(); if (duringWarmup) f.releaseReady();
+  await f.event(event => event.event === 'ready' && event.pid !== started.pid);
+  if (f.worker.active?.record === obsolete) await f.record(isResult(2));
+  assert.equal(f.records.some(isResult(2)), false, 'obsolete replacement published a result');
+  assert.equal(f.records.some(isResult(1)), false);
+  assert.equal(f.diagnostics.some(event => event.event === 'execution_started' && event.execution_generation === 2), false);
+  assert.equal(f.records.find(isStatus('failed', 2))?.payload.reason, 'stale_generation');
+  assert.equal(f.records.filter(isStatus('failed', 2)).length, 1);
+  assert.equal(f.records.find(isStatus('cancelled', 3))?.payload.reason, 'cancelled_before_execution');
+  assert.equal(f.records.filter(isAck('terminated', 3)).length, 1);
+  assert.equal(f.worker.replacement, null); assert.equal(timer._destroyed, true);
+  send(f.worker, job({ job_id: 'recovered' }));
+  await f.record(record => record.model === 'MaiaResult' && record.payload.job_id === 'recovered');
+});
+
+test('repair B1: every superseded pre-job cancellation settles without resend', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job();
+  for (const cancellation_id of ['first', 'second']) cancel(f.worker, cancellation(input, { cancellation_id }));
+  assert.equal(f.records.filter(isAck('requested')).length, 2);
+  send(f.worker, { ...input, execution_generation: 2 });
+  assert.deepEqual(f.records.filter(isAck('stale_generation')).map(record => record.payload.cancellation_id).sort(), ['first', 'second'], 'retained cancellation IDs remain unresolved');
+  for (const record of f.records) validateRecord(record);
+  await f.record(isResult(2));
+  send(f.worker, input); assert.equal(f.records.at(-1).payload.reason, 'stale_generation');
+  for (const cancellation_id of ['first', 'second']) {
+    cancel(f.worker, cancellation(input, { cancellation_id }));
+    assert.equal(f.records.at(-1).payload.status, 'stale_generation');
+  }
+  assert.equal(f.records.filter(isAck('requested')).length, 2);
+  assert.equal(f.diagnostics.filter(event => event.event === 'execution_started').length, 1);
+});
+
+test('repair A3: future cancellation alone leaves the pending generation eligible', { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { holdExit: true }), input = job({ fen: 'fenced' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 });
+  cancel(f.worker, cancellation(input, { execution_generation: 3 }));
+  assert.equal(f.worker.replacement.identity.execution_generation, 2);
+  f.releaseExit(); await f.record(isResult(2));
+  assert.deepEqual(f.records.filter(record => record.model === 'CancellationAcknowledgement').map(record => record.payload.status), ['requested']);
+});
+
+test('repair A4: result handler independently fences stale active state and preserves terminal receipts', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job({ fen: 'hang' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  const active = f.worker.active;
+  // Independently exercise the defensive publication boundary, without queue cleanup
+  // or stopActive having hidden the stale active state from the result handler.
+  f.worker.logicalRequests.get(JSON.stringify(['workspace-a', 'job-a', 1])).highestGeneration = 2;
+  f.worker.handleChildMessage(active.child, { type: 'result', token: active.token, predictions: input.legal_moves.map(move => ({ move, probability: 0.5 })) });
+  const failed = await f.record(isStatus('failed'));
+  assert.equal(failed.payload.reason, 'stale_generation');
+  f.worker.handleChildMessage(active.child, { type: 'result', token: active.token, predictions: [] });
+  assert.equal(f.records.some(isResult()), false); assert.equal(f.records.some(isStatus('completed')), false);
+  assert.deepEqual(active.record.status, failed.payload);
+  await f.event(event => event.event === 'ready' && event.pid !== active.child.pid);
+  send(f.worker, job({ job_id: 'fresh' })); await f.record(record => record.model === 'MaiaResult' && record.payload.job_id === 'fresh');
+});
+
+for (const changes of [{ workspace_id: 'workspace-other' }, { job_id: 'job-other' }, { request_revision: 2 }]) test(`repair B3: logical identity isolation ${JSON.stringify(changes)}`, { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job(), unrelated = job(changes);
+  cancel(f.worker, cancellation(input)); cancel(f.worker, cancellation(unrelated, { cancellation_id: 'unrelated' }));
+  cancel(f.worker, cancellation(input, { execution_generation: 3, cancellation_id: 'future' }));
+  send(f.worker, { ...input, execution_generation: 2 }); await f.record(isResult(2));
+  assert.deepEqual(f.records.filter(isAck('stale_generation')).map(record => record.payload.cancellation_id), ['cancel-a']);
+  for (const cancellation_id of ['unrelated', 'future']) assert.deepEqual(f.records.filter(record => record.model === 'CancellationAcknowledgement' && record.payload.cancellation_id === cancellation_id).map(record => record.payload.status), ['requested']);
+  send(f.worker, unrelated); await f.record(record => record.model === 'JobStatus' && record.payload.reason === 'cancelled_before_execution' && Object.entries(changes).every(([key, value]) => record.payload[key] === value));
+});
+
+test('repair B4: supersession finalizes exactly the 64 retained cancellation IDs', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job();
+  for (let index = 0; index < 64; index++) cancel(f.worker, cancellation(input, { cancellation_id: `bounded-${index}` }));
+  cancel(f.worker, cancellation(input, { cancellation_id: 'overflow' }));
+  assert.equal(f.records.at(-1).payload.reason, 'cancellation_capacity_exhausted');
+  send(f.worker, { ...input, execution_generation: 2 });
+  const final = f.records.filter(isAck('stale_generation'));
+  assert.equal(final.length, 64); assert.equal(new Set(final.map(record => record.payload.cancellation_id)).size, 64);
+  assert.equal(f.records.some(record => record.model === 'CancellationAcknowledgement' && record.payload.cancellation_id === 'overflow'), false);
+  const tombstone = f.worker.executions.get(JSON.stringify(['workspace-a', 'job-a', 1, 1]));
+  assert.equal(tombstone.cancellations.size, 64); assert.equal(tombstone.cancellationOutcomes.size, 64);
+  await f.record(isResult(2));
+});
+
+test('repair C1: newest ordinary replacement retains its slot throughout gated warmup', { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { gateWarmup: true }), input = job({ fen: 'fenced' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 }); await f.initializing;
+  send(f.worker, { ...input, execution_generation: 3 });
+  assert.equal(f.worker.replacement.identity.execution_generation, 3);
+  f.releaseReady(); await f.record(isResult(3));
+  assert.equal(f.records.find(isStatus('failed', 2)).payload.reason, 'stale_generation');
+  assert.deepEqual(f.diagnostics.filter(event => event.event === 'execution_started').map(event => event.execution_generation), [1, 3]);
+});
+
+test('repair C2: supersession preserves requested cancellation until confirmed child exit', { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { holdExit: true }), input = job({ fen: 'fenced' });
+  send(f.worker, input); const started = await f.event(event => event.event === 'execution_started');
+  cancel(f.worker, cancellation(input)); send(f.worker, { ...input, execution_generation: 2 });
+  assert.equal(f.records.filter(isAck('requested')).length, 1);
+  assert.equal(f.records.some(isAck('terminated')), false);
+  assert.doesNotThrow(() => process.kill(started.pid, 0));
+  const active = f.worker.active;
+  f.worker.handleChildMessage(active.child, { type: 'result', token: active.token, predictions: [] });
+  f.worker.on('record', record => { if (isAck('terminated')(record)) assert.throws(() => process.kill(started.pid, 0), { code: 'ESRCH' }); });
+  f.releaseExit(); await f.record(isAck('terminated')); await f.record(isResult(2));
+  assert.equal(f.records.find(isStatus('cancelled')).payload.reason, 'cancelled_by_request');
+  assert.equal(f.records.some(isResult(1)), false);
+});
+
+for (const changes of [{ input_digest: 'changed' }, { legal_moves: ['d2d4', 'e2e4'] }, { constraints: { max_wall_time_ms: 2001, max_memory_mb: 1024 } }, { model_id: 'different-model' }]) test(`repair C4: conflicting newer payload cannot cancel valid execution ${Object.keys(changes)[0]}`, { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job({ fen: 'hang' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  const active = f.worker.active;
+  send(f.worker, { ...input, ...changes, execution_generation: 2 });
+  assert.equal(f.records.at(-1).payload.reason, 'identity_payload_conflict');
+  assert.equal(f.worker.active, active); assert.equal(active.stopping, null); assert.equal(f.worker.isCurrent(active.record), true);
+  f.worker.receive({ model: 'MaiaJob', payload: { ...input, execution_generation: 2, unexpected: true } });
+  assert.equal(f.records.at(-1).payload.reason, 'invalid_request'); assert.equal(active.stopping, null);
+});
+
+test('repair C4: receipt capacity rejection does not supersede existing work', { timeout: 10000 }, async t => {
+  const f = await fixture(t, { recordLimit: 1 }), input = job({ fen: 'hang' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 });
+  assert.equal(f.records.at(-1).payload.reason, 'session_capacity_exhausted');
+  assert.equal(f.worker.active.stopping, null); assert.equal(f.worker.isCurrent(f.worker.active.record), true);
+});
+
+for (const phase of ['terminating', 'initializing', 'superseded']) for (const drain of [true, false]) test(`repair C5: close drain=${drain} during ${phase} replacement lifecycle`, { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { holdExit: phase !== 'initializing', gateWarmup: phase === 'initializing' }), input = job({ fen: 'fenced' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 }); const replacementTimer = f.worker.replacement.timer;
+  if (phase === 'initializing') await f.initializing;
+  if (phase === 'superseded') {
+    cancel(f.worker, cancellation(input, { execution_generation: 3 })); send(f.worker, { ...input, execution_generation: 3 });
+  }
+  const closing = f.worker.close({ drain });
+  if (phase === 'initializing' && drain) f.releaseReady();
+  f.releaseExit(); await closing;
+  assert.equal(f.worker.closed, true); assert.equal(f.worker.child, null); assert.equal(f.worker.active, null); assert.equal(f.worker.replacement, null);
+  assert.equal(replacementTimer._destroyed, true);
+  if (!drain || phase === 'superseded') assert.equal(f.records.some(isResult(2)), false);
+  else assert.equal(f.records.filter(isResult(2)).length, 1);
+  assert.equal(f.records.filter(record => record.model === 'JobStatus' && record.payload.execution_generation === 2 && ['failed', 'completed', 'cancelled'].includes(record.payload.status)).length, 1);
+});
+
+test('repair C5: interrupting an existing drain wakes a removed warmup replacement', { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { gateWarmup: true }), input = job({ fen: 'fenced' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 }); await f.initializing;
+  const draining = f.worker.close({ drain: true });
+  await Promise.resolve();
+  assert.equal(f.worker.close({ drain: false }), draining);
+  await draining; assert.equal(f.worker.child, null); assert.equal(f.records.some(isResult(2)), false);
+});
+
+test('repair C6: reentrant generation advance observes all tombstones settled and prevents intermediate dispatch', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job();
+  for (const cancellation_id of ['first', 'second']) cancel(f.worker, cancellation(input, { cancellation_id }));
+  let reentered = false;
+  f.worker.on('record', record => {
+    if (!isAck('stale_generation')(record) || reentered) return;
+    reentered = true;
+    const tombstone = f.worker.executions.get(JSON.stringify(['workspace-a', 'job-a', 1, 1]));
+    assert.equal(tombstone.cancellationOutcomes.size, 2);
+    send(f.worker, { ...input, execution_generation: 3 });
+  });
+  send(f.worker, { ...input, execution_generation: 2 }); await f.record(isResult(3));
+  assert.equal(f.records.some(isResult(2)), false);
+  assert.equal(f.records.filter(isStatus('failed', 2)).length, 1);
+  assert.equal(f.records.filter(isAck('stale_generation')).length, 2);
+});
+
+test('repair C6: reentrant newer job during pending status prevents old dispatch on the warm child', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job(), pid = f.worker.child.pid;
+  f.worker.on('record', record => { if (isStatus('pending', 1)(record)) send(f.worker, { ...input, execution_generation: 2 }); });
+  send(f.worker, input); await f.record(isResult(2));
+  assert.equal(f.worker.child.pid, pid); assert.equal(f.records.some(isResult(1)), false);
+  assert.deepEqual(f.diagnostics.filter(event => event.event === 'execution_started').map(event => event.execution_generation), [2]);
+});
+
+for (const operation of ['cancel', 'close']) test(`repair C6: reentrant ${operation} during generation settlement prevents admission from resuming`, { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job();
+  cancel(f.worker, cancellation(input));
+  f.worker.on('record', record => {
+    if (!isAck('stale_generation')(record)) return;
+    if (operation === 'cancel') cancel(f.worker, cancellation(input, { execution_generation: 2 }));
+    else void f.worker.close({ drain: false });
+  });
+  send(f.worker, { ...input, execution_generation: 2 });
+  assert.equal(f.records.filter(isStatus(operation === 'cancel' ? 'cancelled' : 'failed', 2)).length, 1);
+  if (operation === 'cancel') assert.equal(f.records.filter(isAck('terminated', 2)).length, 1);
+  await f.worker.close({ drain: false });
+  assert.equal(f.records.some(isResult(2)), false); assert.equal(f.diagnostics.some(event => event.event === 'execution_started'), false);
+});
+
+test('repair C5: synchronous interrupt on replacement readiness prevents dispatch', { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { gateWarmup: true }), input = job({ fen: 'fenced' });
+  send(f.worker, input); const started = await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 }); await f.initializing;
+  f.worker.on('diagnostic', event => { if (event.event === 'ready' && event.pid !== started.pid) void f.worker.close({ drain: false }); });
+  f.releaseReady(); await f.event(event => event.event === 'ready' && event.pid !== started.pid);
+  await f.worker.close({ drain: false });
+  assert.equal(f.records.some(isResult(2)), false); assert.equal(f.records.find(isStatus('failed', 2)).payload.reason, 'execution_interrupted');
+  assert.equal(f.worker.child, null);
+});
+
+test('repair C7: admitted early model failure fences and clears older queued execution', { timeout: 10000 }, async t => {
+  const f = await lifecycleFixture(t, { holdExit: true }), input = job({ fen: 'fenced' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  send(f.worker, { ...input, execution_generation: 2 }); const obsoleteTimer = f.worker.replacement.timer;
+  f.worker.identity = { ...f.worker.identity, model_id: 'unavailable-fixture-model' };
+  send(f.worker, { ...input, execution_generation: 3 });
+  assert.equal(f.records.find(isStatus('failed', 3)).payload.reason, 'unsupported_model');
+  assert.equal(f.records.find(isStatus('failed', 2)).payload.reason, 'stale_generation');
+  assert.equal(f.worker.replacement, null); assert.equal(obsoleteTimer._destroyed, true);
+  f.releaseExit(); await f.record(isStatus('failed', 1));
+  assert.equal(f.records.some(isResult()), false);
+});
+
+test('repair C5: synchronous interrupt during pending status fences dispatch immediately', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job();
+  f.worker.on('record', record => { if (isStatus('pending')(record)) void f.worker.close({ drain: false }); });
+  send(f.worker, input); await f.worker.close({ drain: false });
+  assert.equal(f.records.some(isResult()), false); assert.equal(f.diagnostics.some(event => event.event === 'execution_started'), false);
+  assert.equal(f.records.find(isStatus('failed')).payload.reason, 'execution_interrupted'); assert.equal(f.worker.child, null);
+});
+
+test('repair C5: synchronous interrupt fences child result before deferred close cleanup', { timeout: 10000 }, async t => {
+  const f = await fixture(t), input = job({ fen: 'hang' });
+  send(f.worker, input); await f.event(event => event.event === 'execution_started');
+  const active = f.worker.active, closing = f.worker.close({ drain: false });
+  f.worker.handleChildMessage(active.child, { type: 'result', token: active.token, predictions: input.legal_moves.map(move => ({ move, probability: 0.5 })) });
+  await closing;
+  assert.equal(f.records.some(isResult()), false); assert.equal(f.records.find(isStatus('failed')).payload.reason, 'execution_interrupted');
 });

@@ -31,6 +31,7 @@ export class MaiaWorker extends EventEmitter {
     this.replacement = null;
     this.resources = null;
     this.closing = false;
+    this.interrupting = false;
     this.closed = false;
     this.spawnPromise = null;
     this.closePromise = null;
@@ -99,10 +100,22 @@ export class MaiaWorker extends EventEmitter {
     this.emit('record', { model, payload });
   }
 
-  status(record, status, reason = null, retryable = false) {
+  setStatus(record, status, reason = null, retryable = false) {
+    if (this.isTerminal(record)) return null;
     const payload = { ...identityOf(record.identity), status, retryable, reason };
     record.status = payload;
-    this.emitRecord('JobStatus', payload);
+    return payload;
+  }
+
+  status(record, status, reason = null, retryable = false) {
+    const payload = this.setStatus(record, status, reason, retryable);
+    if (payload) this.emitRecord('JobStatus', payload);
+  }
+
+  isTerminal(record) { return ['completed', 'failed', 'cancelled'].includes(record.status?.status); }
+
+  isCurrent(record) {
+    return record.identity.execution_generation === this.logicalRequests.get(logicalKey(record.identity))?.highestGeneration;
   }
 
   acknowledge(request, status) {
@@ -118,7 +131,48 @@ export class MaiaWorker extends EventEmitter {
   }
 
   acknowledgeTermination(record) {
-    for (const request of record.cancellations?.values() ?? []) this.acknowledge(request, 'terminated');
+    for (const request of this.settleCancellations(record, 'terminated')) this.acknowledge(request, 'terminated');
+  }
+
+  settleCancellations(record, outcome) {
+    // Mark every retained ID before emitting: listeners may synchronously reenter.
+    record.cancellationOutcomes ??= new Map();
+    const outstanding = [];
+    for (const request of record.cancellations?.values() ?? []) {
+      if (record.cancellationOutcomes.has(request.cancellation_id)) continue;
+      record.cancellationOutcomes.set(request.cancellation_id, outcome);
+      outstanding.push(request);
+    }
+    return outstanding;
+  }
+
+  advanceGeneration(logical, record) {
+    const generation = record.identity.execution_generation;
+    if (generation <= logical.highestGeneration) return false;
+    const key = logicalKey(record.identity), notifications = [];
+    logical.highestGeneration = generation;
+    const replacingPending = this.replacement && logicalKey(this.replacement.identity) === key;
+    if (replacingPending) {
+      clearTimeout(this.replacement.timer);
+      this.replacement = null;
+    }
+    // Complete the state transition before any observable status/ack callbacks.
+    for (const older of this.executions.values()) {
+      if (logicalKey(older.identity) !== key || older.identity.execution_generation >= generation) continue;
+      if (older === this.active?.record) continue;
+      if (older.job) {
+        const payload = this.setStatus(older, 'failed', 'stale_generation');
+        if (payload) notifications.push(() => this.emitRecord('JobStatus', payload));
+      } else {
+        for (const request of this.settleCancellations(older, 'stale_generation')) notifications.push(() => this.acknowledge(request, 'stale_generation'));
+      }
+    }
+    if (this.active && logicalKey(this.active.record.identity) === key && this.active.record.identity.execution_generation < generation) {
+      this.stopActive({ status: 'failed', reason: 'stale_generation', retryable: false });
+    }
+    for (const notify of notifications) notify();
+    if (!this.active && !this.replacement) this.emit('idle');
+    return Boolean(replacingPending);
   }
 
   rejectJob(job, reason, retryable = false) {
@@ -156,13 +210,14 @@ export class MaiaWorker extends EventEmitter {
     if (!record && this.executions.size >= this.recordLimit) { this.rejectJob(job, 'session_capacity_exhausted', true); return; }
     if (!logical) { logical = { fingerprint: null, highestGeneration: 0 }; this.logicalRequests.set(key, logical); }
     logical.fingerprint = fingerprint;
-    logical.highestGeneration = Math.max(logical.highestGeneration, job.execution_generation);
     if (!record) { record = { identity: identityOf(job), job: null, status: null, result: null, cancellation: null }; this.executions.set(generationKey, record); }
     record.job = job;
+    const replacingPending = this.advanceGeneration(logical, record);
+    if (!this.isCurrent(record) || this.isTerminal(record)) return;
+    if (this.closing) { this.status(record, 'failed', 'execution_interrupted', true); return; }
     if (record.cancellation) {
       this.status(record, 'cancelled', 'cancelled_before_execution');
       this.acknowledgeTermination(record);
-      if (this.active && logicalKey(this.active.record.identity) === key && this.active.record.identity.execution_generation < job.execution_generation) this.stopActive({ status: 'failed', reason: 'stale_generation', retryable: false });
       return;
     }
     try { validateResourceBudget(job.constraints, this.resources); }
@@ -182,6 +237,7 @@ export class MaiaWorker extends EventEmitter {
       else this.status(record, 'failed', 'worker_busy', true);
       return;
     }
+    if (!this.childReady && replacingPending) { this.queueReplacement(record); return; }
     if (!this.childReady) { this.status(record, 'failed', 'worker_not_ready', true); return; }
     this.runRecord(record);
   }
@@ -200,6 +256,9 @@ export class MaiaWorker extends EventEmitter {
   }
 
   runRecord(record, pendingAlready = false) {
+    if (this.isTerminal(record)) return;
+    if (!this.isCurrent(record)) { this.status(record, 'failed', 'stale_generation'); return; }
+    if (this.interrupting || this.closed) { this.status(record, 'failed', 'execution_interrupted', true); return; }
     const job = record.job;
     const token = randomUUID(), startedAt = record.startedAt ?? new Date().toISOString();
     const deadlineAt = record.deadlineAt ?? performance.now() + job.constraints.max_wall_time_ms;
@@ -210,6 +269,9 @@ export class MaiaWorker extends EventEmitter {
     this.active.timer = setTimeout(() => this.stopActive({ status: 'failed', reason: 'execution_timeout', retryable: true }), remaining);
     if (!pendingAlready) this.status(record, 'pending');
     if (this.active?.token !== token || this.active.stopping) return;
+    if (this.interrupting) { this.stopActive({ status: 'failed', reason: 'execution_interrupted', retryable: true }); return; }
+    if (!this.isCurrent(record)) { this.stopActive({ status: 'failed', reason: 'stale_generation', retryable: false }); return; }
+    if (performance.now() >= deadlineAt) { this.stopActive({ status: 'failed', reason: 'execution_timeout', retryable: true }); return; }
     this.active.dispatched = true;
     this.child.send({ type: 'infer', token, job }, (error) => { if (error && this.active?.token === token) this.stopActive({ status: 'failed', reason: 'worker_crashed', retryable: true }); });
   }
@@ -228,6 +290,8 @@ export class MaiaWorker extends EventEmitter {
       this.acknowledge(request, 'requested');
       return;
     }
+    const cancellationOutcome = record.cancellationOutcomes?.get(request.cancellation_id);
+    if (cancellationOutcome) { this.acknowledge(request, cancellationOutcome); return; }
     if (record.result) { this.acknowledge(request, 'already_completed'); return; }
     if (!record.job) { if (this.rememberCancellation(record, request)) this.acknowledge(request, 'requested'); return; }
     if (this.replacement === record) {
@@ -248,12 +312,21 @@ export class MaiaWorker extends EventEmitter {
       this.stopActive({ status: 'cancelled', reason: 'cancelled_by_request', retryable: false });
       return;
     }
+    if (!this.isTerminal(record)) {
+      if (!this.rememberCancellation(record, request)) return;
+      this.status(record, 'cancelled', 'cancelled_before_execution');
+      this.acknowledgeTermination(record);
+      return;
+    }
     this.acknowledge(request, 'terminated');
   }
 
   handleChildMessage(child, message) {
     const active = this.active;
     if (!active || active.child !== child || active.token !== message.token || active.stopping) return;
+    if (this.interrupting) { this.stopActive({ status: 'failed', reason: 'execution_interrupted', retryable: true }); return; }
+    if (this.isTerminal(active.record)) { this.stopActive(active.record.status); return; }
+    if (!this.isCurrent(active.record)) { this.stopActive({ status: 'failed', reason: 'stale_generation', retryable: false }); return; }
     if (performance.now() >= active.deadlineAt) { this.stopActive({ status: 'failed', reason: 'execution_timeout', retryable: true }); return; }
     const record = active.record;
     if (message.type === 'started') {
@@ -271,7 +344,10 @@ export class MaiaWorker extends EventEmitter {
       catch { this.stopActive({ status: 'failed', reason: 'invalid_model_output', retryable: false }); return; }
       record.result = result;
       clearTimeout(active.timer); this.active = null; this.childReady = true;
-      this.emitRecord('MaiaResult', result); this.status(record, 'completed'); this.emit('idle');
+      const completed = this.setStatus(record, 'completed');
+      this.emitRecord('MaiaResult', result);
+      if (completed) this.emitRecord('JobStatus', completed);
+      this.emit('idle');
     } else if (message.type === 'failure') {
       clearTimeout(active.timer); this.active = null; this.childReady = true;
       this.status(record, 'failed', errorCode(message, 'inference_failed'), message.retryable === true); this.emit('idle');
@@ -280,9 +356,16 @@ export class MaiaWorker extends EventEmitter {
 
   stopActive(outcome) {
     if (!this.active || this.active.stopping) return;
-    this.active.stopping = outcome;
-    clearTimeout(this.active.timer);
-    this.active.child.kill('SIGKILL');
+    const active = this.active;
+    active.stopping = outcome;
+    clearTimeout(active.timer);
+    if (!active.dispatched) {
+      this.active = null; this.childReady = true;
+      this.status(active.record, outcome.status, outcome.reason, outcome.retryable);
+      this.acknowledgeTermination(active.record); this.emit('idle');
+      return;
+    }
+    active.child.kill('SIGKILL');
   }
 
   onChildExit(child, code, signal) {
@@ -310,19 +393,20 @@ export class MaiaWorker extends EventEmitter {
   }
 
   close({ drain = true } = {}) {
+    if (!drain) this.interrupting = true;
     if (this.closePromise) {
       if (!drain) {
-        if (this.replacement) { const replacement = this.replacement; this.replacement = null; clearTimeout(replacement.timer); this.status(replacement, 'failed', 'execution_interrupted', true); }
+        if (this.replacement) { const replacement = this.replacement; this.replacement = null; clearTimeout(replacement.timer); this.status(replacement, 'failed', 'execution_interrupted', true); if (!this.active) this.emit('idle'); }
         this.stopActive({ status: 'failed', reason: 'execution_interrupted', retryable: true });
       }
       return this.closePromise;
     }
     this.closing = true;
-    this.closePromise = (async () => {
-      if (!drain && this.replacement) { const replacement = this.replacement; this.replacement = null; clearTimeout(replacement.timer); this.status(replacement, 'failed', 'execution_interrupted', true); }
+    this.closePromise = Promise.resolve().then(async () => {
+      if (this.interrupting && this.replacement) { const replacement = this.replacement; this.replacement = null; clearTimeout(replacement.timer); this.status(replacement, 'failed', 'execution_interrupted', true); if (!this.active) this.emit('idle'); }
       while (this.active || this.replacement) {
         const idle = new Promise((resolve) => this.once('idle', resolve));
-        if (!drain) this.stopActive({ status: 'failed', reason: 'execution_interrupted', retryable: true });
+        if (this.interrupting) this.stopActive({ status: 'failed', reason: 'execution_interrupted', retryable: true });
         await idle;
       }
       if (this.child) {
@@ -330,7 +414,7 @@ export class MaiaWorker extends EventEmitter {
         await new Promise((resolve) => { child.once('exit', resolve); child.kill('SIGKILL'); });
       }
       this.closed = true;
-    })();
+    });
     return this.closePromise;
   }
 }
