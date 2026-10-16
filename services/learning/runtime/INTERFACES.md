@@ -16,7 +16,9 @@ must be shared by colocated processes using the same kernel clock; a VM with a
 different clock is unavailable control and must use its own colocated admission
 reader. Clean service shutdown removes only its producer record. An interrupted
 producer retains stale evidence, blocking admission until its exact ownership
-and service absence are reconciled. Essential Learning needs no Node or broker.
+and service absence are reconciled. Its recorded PID assists that inspection;
+missing PID alone is never permission to remove a source record. Essential
+Learning needs no Node or broker.
 
 Programmatic `Configuration.host_activity_directory=None` disables this optional
 adapter; applications embedding Learning must configure the shared directory to
