@@ -676,7 +676,8 @@ def test_A_installed_preflight_preserves_previous_serving_authority(case, author
 
 
 @pytest.mark.parametrize('action', ['apply', 'abandon'])
-def test_A_installed_concurrent_operators_preserve_one_authority(case, authored, tmp_path, action):
+@pytest.mark.parametrize('retirement', [False, True])
+def test_A_installed_concurrent_operators_preserve_one_authority(case, authored, tmp_path, action, retirement):
     content_cli, bridge_cli, environment = authored
     token = tmp_path / 'operator-token'
     token.write_text(case.configuration.operator_token); token.chmod(0o600)
@@ -684,7 +685,26 @@ def test_A_installed_concurrent_operators_preserve_one_authority(case, authored,
     controls = {'mode': 'blocked_abort' if action == 'abandon' else 'pass'}
     with server(case, tmp_path) as (client, process), publication_fault_proxy(str(client.base_url).rstrip('/'), 'pass', controls, case.configuration.token) as (origin, observed):
         arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
-        if action == 'abandon':
+        if retirement:
+            direct = ['--content-cli', content_cli, '--learning-origin', str(client.base_url).rstrip('/'), '--operator-token-file', token]
+            completed = run_cli(bridge_cli, [*direct, 'apply', operation['id']], environment, tmp_path)
+            empty = source_document()
+            empty.update(title='Concurrent retirement', routes=[], memberships=[], exercises=[], bindings=[])
+            operation = approve_authored(content_cli, environment, tmp_path, empty, 1)
+            controls['mode'] = 'pass'
+            if action == 'abandon':
+                run_cli(content_cli, ['operation', 'prepare', operation['id']], environment, tmp_path)
+                publication_id = completed['document']['export']['publication']['publication_id']
+                request = {'publication_id': publication_id, 'publication_generation': 1, 'expected_activation_revision': 1,
+                    'retirement_id': operation['id'] + ':retire'}
+                checkpoint = tmp_path / 'retirement-checkpoint.json'
+                checkpoint.write_text(json.dumps({'delivery': {'endpoint': origin, 'request': request, 'retirement': True, 'due_date': '2026-10-16'}}))
+                run_cli(content_cli, ['operation', 'checkpoint', operation['id'], '--file', checkpoint], environment, tmp_path)
+                with psycopg.connect(case.admin) as blocker:
+                    blocker.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('learning:publication:' + publication_id,))
+                    assert client.post('/internal/publications/retire', json=request,
+                        headers={'Authorization': 'Bearer ' + case.configuration.operator_token}).status_code == 503
+        elif action == 'abandon':
             run_cli(bridge_cli, [*arguments, 'apply', operation['id']], environment, tmp_path, success=False)
             persisted = run_cli(content_cli, ['operation', 'show', operation['id']], environment, tmp_path)
             assert persisted['state'] == 'applying' and 'delivery' in persisted['document']
@@ -697,8 +717,10 @@ def test_A_installed_concurrent_operators_preserve_one_authority(case, authored,
             outcomes = [future.result() for future in [executor.submit(invoke), executor.submit(invoke)]]
         persisted = run_cli(content_cli, ['operation', 'show', operation['id']], environment, tmp_path)
         assert persisted['state'] == ('completed' if action == 'apply' else 'failed'), outcomes
-        assert inspect_rows(case, 'SELECT count(*) FROM learning.activation_receipts')[0][0] == int(action == 'apply')
-        remote_id = operation['id'] + ':activate'
+        assert inspect_rows(case, 'SELECT count(*) FROM learning.activation_receipts')[0][0] == (1 if retirement else int(action == 'apply'))
+        if retirement:
+            assert inspect_rows(case, 'SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0] == (0 if action == 'apply' else 2)
+        remote_id = operation['id'] + (':retire' if retirement else ':activate')
         receipt = client.get('/internal/publications/operations/' + remote_id, headers={'Authorization': 'Bearer ' + case.configuration.operator_token}).json()
         assert receipt['state'] == ('complete' if action == 'apply' else 'failed')
         process.restart_service()
@@ -707,7 +729,7 @@ def test_A_installed_concurrent_operators_preserve_one_authority(case, authored,
         else: assert isinstance(replay, subprocess.CompletedProcess) and replay.returncode == 2
         evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True, exist_ok=True)
-        (evidence / ('concurrent-' + action + '.json')).write_text(json.dumps({'content': persisted, 'remote': receipt}, indent=2, default=str))
+        (evidence / ('concurrent-' + action + ('-retirement' if retirement else '-activation') + '.json')).write_text(json.dumps({'content': persisted, 'remote': receipt}, indent=2, default=str))
 
 
 @pytest.mark.parametrize('remote_state', ['queued', 'complete'])

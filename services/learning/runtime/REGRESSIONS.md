@@ -217,3 +217,7 @@ The installed conflicting-authority regression also creates a genuine queued
 wrong-publication retirement by timing out execution behind its publication lock.
 Neither reconcile nor abandon may retry it or change either publication. The
 completed variant independently exercises Content's authenticated record CLI.
+
+Concurrent installed operator parameters cover both activation and retirement:
+two actual apply processes share one retirement outcome; two abandon processes
+fence a genuinely queued retirement without changing the active predecessor.
