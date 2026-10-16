@@ -129,6 +129,7 @@
       "tests/unit/study-attempt-pending-regressions.test.tsx",
       "tests/unit/study-exercise-grading.test.ts",
       "tests/unit/study-intent-storage-regressions.test.ts",
+      "tests/unit/study-learning-connection-regressions.test.ts",
       "tests/unit/study-only-settings-regressions.test.tsx",
       "tests/unit/study-position-index-regressions.test.tsx",
       "tests/unit/study-position-store-regressions.test.ts",

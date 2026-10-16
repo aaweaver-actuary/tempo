@@ -1,6 +1,6 @@
 import { openIntentStore, type IntentChange, type IntentEnvelope, type IntentRecord, type IntentStore, type TeachingFact } from "@tempo/browser-intents";
 import { validLegacyReview, validLegacyFailure } from "./study-legacy-validation";
-import { API_URL } from "../const";
+import { studyWorkspace } from "./study-connection";
 
 export const legacyStudyKeys = ["tempo-pending-training-reviews-v1", "tempo-pending-training-failures-v1", "tempo-pending-teaching-states-v1", "tempo-seen-moves", "tempo-first-clean-passes"] as const;
 const acknowledgementKey = "tempo-study-intents-cutover-v1";
@@ -17,7 +17,7 @@ let storageGeneration = 0;
 const listeners = new Set<(change?: IntentChange) => void>();
 const teachingListeners = new Set<(facts: TeachingFact[]) => void>();
 const changed = (change?: IntentChange) => { for (const listener of listeners) listener(change); window.dispatchEvent(new Event("tempo:review-outbox")); };
-function workspace() { return `${new URL(API_URL || "/", window.location.href).origin}:study`; }
+function workspace() { return studyWorkspace(); }
 function legacyPresent() { return legacyStudyKeys.some(key => { const value = localStorage.getItem(key); return value && value !== "[]"; }); }
 function array(key: string): unknown[] {
   const value: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");

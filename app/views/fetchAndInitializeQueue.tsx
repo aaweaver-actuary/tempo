@@ -1,7 +1,8 @@
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
 import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../lib/study-intent-storage";
-import { API_URL } from "../const";
-import { isIPhoneHomeScreen, localDayKey, usesLocalApi } from "../utils/local";
+import { isIPhoneHomeScreen, usesLocalApi } from "../utils/local";
+import { learningDayKey as localDayKey } from "../lib/study-connection";
 import { useTrainingStore } from "../state/training-store";
 import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
@@ -13,6 +14,7 @@ import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureC
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
 import { attemptEntryKey } from "../domain/attempt";
 import { queueEnvelopeSchema } from "../domain/schemas";
+import { studyWorkspace } from "../lib/study-connection";
 
 export function rememberConfirmedQueueEntry(card: PracticeCard): void {
   const keys = useTrainingStore.getState().confirmedQueueEntryKeys ?? [];
@@ -21,7 +23,7 @@ export function rememberConfirmedQueueEntry(card: PracticeCard): void {
 
 let requestGeneration = 0;
 let activeQueueController: AbortController | null = null;
-const queueCacheKey = "tempo-training-queue-window-v2";
+const queueCacheKey = independentStudy ? `tempo-training-queue-window-v2:${studyWorkspace()}` : "tempo-training-queue-window-v2";
 
 function eligibleQueueCards(
   cards: PracticeCard[], phoneAttempts: readonly OfflineAttempt[] = [], localRepeatQueueIds: ReadonlySet<number> = new Set(),
@@ -451,7 +453,7 @@ export async function fetchAndInitializeQueue(
       if (!pendingTrainingFailures().length) useTrainingStore.getState().setQueueNotice("");
     }
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
-    if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared?include_opening_evidence=true`, { signal: controller.signal })
+    if ((independentStudy || isIPhoneHomeScreen()) && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared?include_opening_evidence=true`, { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
@@ -511,7 +513,7 @@ export async function fetchAndInitializeQueue(
       operation: failedOperation, endpoint: failedEndpoint,
     });
     if (options.preservePreparedAttempt) throw error;
-    const prepared = queueRequestFailed && isIPhoneHomeScreen()
+    const prepared = queueRequestFailed && (independentStudy || isIPhoneHomeScreen())
       ? await awaitQueueStage(readPreparedTraining().catch(() => null), controller.signal) : null;
     if (prepared?.localDate === localDayKey()) {
       try {

@@ -1,7 +1,17 @@
-import { API_URL } from "../const";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse, retryBlockedOperation } from "./operation-status";
+import { executeStudyRequest, retainedStudyRequest } from "./study-command-client";
+import { studyIntentRecords } from "./study-intent-storage";
 
 export async function buryTrainingEntry(queueEntryId: number, retry = false, identity?: { card_id: string; expected_revision?: number }): Promise<void> {
+  if (independentStudy) {
+    const scope = `burial:${queueEntryId}`;
+    const retained = await retainedStudyRequest(scope);
+    const requestId = retained?.requestId ?? crypto.randomUUID();
+    const response = await executeStudyRequest({ scope, kind: "burial-command", requestId,
+      endpoint: `${API_URL}/api/queue/entries/${queueEntryId}/bury`, body: retained?.body ?? identity ?? {} });
+    await validateTrainingBurial(response, queueEntryId); return;
+  }
   const operationKey = `tempo-bury-operation-${queueEntryId}`;
   const existingOperationId = localStorage.getItem(operationKey);
   const operationId = existingOperationId ?? crypto.randomUUID();
@@ -52,6 +62,7 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false, ide
 }
 
 export function finishTrainingBurial(queueEntryId: number): void {
+  if (independentStudy) return;
   localStorage.removeItem(`tempo-bury-operation-${queueEntryId}`);
   localStorage.removeItem(`tempo-bury-identity-${queueEntryId}`);
   if (localStorage.getItem("tempo-pending-burial-entry") === String(queueEntryId))
@@ -60,6 +71,7 @@ export function finishTrainingBurial(queueEntryId: number): void {
 
 
 export function hasPendingTrainingBurial(queueEntryId: number): boolean {
+  if (independentStudy) return studyIntentRecords("burial-command").some(record => record.key.startsWith(`burial:${queueEntryId}:`) && record.state !== "discarded" && record.state !== "committed");
   return localStorage.getItem(`tempo-bury-operation-${queueEntryId}`) !== null;
 }
 
@@ -71,6 +83,7 @@ async function validateTrainingBurial(response: Response, queueEntryId: number):
 }
 
 export async function recoverTrainingBurial(queueEntryId: number): Promise<void> {
+  if (independentStudy) { await buryTrainingEntry(queueEntryId, true); return; }
   const operationId = localStorage.getItem(`tempo-bury-operation-${queueEntryId}`);
   if (!operationId) throw new Error("The burial operation identity is unavailable.");
   try { await validateTrainingBurial(await readOperationResponse(operationId), queueEntryId); }
@@ -83,6 +96,10 @@ export async function recoverTrainingBurial(queueEntryId: number): Promise<void>
 // A single marker also recovers a committed entry absent from the active queue.
 // Legacy operation keys are consulted only for known queue entries, never scanned.
 export function pendingTrainingBurialEntry(knownEntries: number[] = []): number | undefined {
+  if (independentStudy) {
+    const record = studyIntentRecords("burial-command").find(record => record.state !== "committed" && record.state !== "discarded");
+    return record ? Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1]) : undefined;
+  }
   const marker = localStorage.getItem("tempo-pending-burial-entry");
   const entryId = marker === null ? undefined : Number(marker);
   if (entryId !== undefined && Number.isSafeInteger(entryId) && entryId > 0 && hasPendingTrainingBurial(entryId))

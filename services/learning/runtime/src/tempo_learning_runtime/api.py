@@ -39,6 +39,7 @@ from .defense import (
 from .endgames import generate_position, category_for_player
 from .receivers import receive
 from .receivers import EvidenceDelivery
+from . import study_bootstrap, teaching_commands
 
 
 def reconcile(database, payload):
@@ -93,6 +94,8 @@ def register_handlers():
     if "studies.attempts.submit" not in gateway._handlers:
         study_attempt_commands.register_handlers()
     handlers = {
+        "study.settings.update": study_bootstrap.update_settings,
+        "cards.teaching.record": teaching_commands.record_teaching,
         "cards.review": submit_legacy_review,
         "cards.review.reconcile": reconcile,
         "tactics.attempt.submit": submit_tactic_attempt,
@@ -251,6 +254,48 @@ def create_app(configuration: Configuration):
     def operation(operation_id: str):
         return gateway.read_operation(operation_id)
 
+    @app.get("/api/study/bootstrap")
+    def bootstrap():
+        with connection(read_only=True) as db:
+            return {"schema_version": 1, "workspace_id": configuration.workspace_id,
+                    "timezone": configuration.timezone, "local_date": date.today().isoformat(),
+                    "settings": study_bootstrap.read_settings(db)}
+
+    @app.get("/api/study/settings")
+    def study_settings():
+        with connection(read_only=True) as db:
+            return study_bootstrap.read_settings(db)
+
+    @app.post("/api/study/settings")
+    def save_study_settings(request: study_bootstrap.StudySettingsUpdate,
+                            idempotency_key: str = Header(...)):
+        values = request.model_dump(exclude_unset=True)
+        if not values or any(value is None for value in values.values()):
+            raise HTTPException(422, "Supply at least one non-null Study setting")
+        return gateway.dispatch("study.settings.update",
+                                values, idempotency_key)
+
+    @app.get("/api/tactics/progress")
+    def tactics_progress():
+        with connection(read_only=True) as db:
+            return study_bootstrap.tactic_progress(db)
+
+    @app.get("/api/cards/{identifier}/teaching")
+    def teaching(identifier: str):
+        with connection(read_only=True) as db:
+            return teaching_commands.read_teaching(db, identifier)
+
+    @app.post("/api/cards/{identifier}/teaching")
+    def save_teaching(identifier: str, request: teaching_commands.TeachingStateRequest,
+                      idempotency_key: str = Header(...)):
+        return gateway.dispatch("cards.teaching.record", {
+            "card_id": identifier, "teaching_state": request.model_dump()}, idempotency_key)
+
+    @app.get("/api/cards/{identifier}/move-membership")
+    def move_membership(identifier: str, revision: int, fen: str, move_uci: str):
+        with connection(read_only=True) as db:
+            return study_bootstrap.move_membership(db, identifier, revision, fen, move_uci)
+
     @app.post("/api/operations/{operation_id}/retry")
     def retry(operation_id: str):
         receipt = gateway.read_operation(operation_id)
@@ -298,6 +343,11 @@ def create_app(configuration: Configuration):
                     "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=? AND invalidated_at IS NULL",
                     (card["id"],),
                 ).fetchone()[0]
+                if card["content_type"] == "defense":
+                    accepted_defense = db.execute(
+                        "SELECT candidate_id FROM accepted_defense_exercises WHERE card_id=? AND exercise_revision=?",
+                        (card["id"], card["revision"])).fetchone()
+                    card["source_ref"] = accepted_defense[0] if accepted_defense else None
                 if card["content_type"] == "study_exercise":
                     spec = db.execute(
                         "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
@@ -701,12 +751,12 @@ def create_app(configuration: Configuration):
     @app.get("/api/endgames/templates")
     def templates():
         with connection(read_only=True) as db:
-            return [
+            return {"templates": [
                 dict(row)
                 for row in db.execute(
                     "SELECT * FROM endgame_templates WHERE enabled=1"
                 ).fetchall()
-            ]
+            ]}
 
     @app.post("/api/endgames/templates/{identifier}/attempt")
     async def endgame_attempt(

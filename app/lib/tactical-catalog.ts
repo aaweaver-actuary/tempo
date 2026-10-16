@@ -1,3 +1,4 @@
+import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL, assetUrl } from "../const";
 import { readWorkspaceData } from "./workspace-data";
@@ -33,13 +34,14 @@ export type TacticalCatalog = z.infer<typeof tacticalCatalogSchema>;
 export type TacticalPack = TacticalCatalog["packs"][number];
 export function loadTacticalCatalog() {
   return readWorkspaceData(
-    usesLocalApi()
+    usesLocalApi() && !independentStudy
       ? `${API_URL}/api/tactics/catalog`
       : assetUrl("data/tactics-catalog.json"),
     tacticalCatalogSchema,
   );
 }
 export async function setPackActivation(packIds: string[], active: boolean) {
+  if (independentStudy) throw new Error("Pack activation belongs to Workbench and accepted publication. Studying remains available.");
   if (usesLocalApi()) {
     const pendingKey = `tempo-tactics-activation-pending-v1:${[...packIds].sort().join(",")}:${active}`;
     let operationId: string;

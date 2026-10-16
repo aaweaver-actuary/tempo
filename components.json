@@ -1272,6 +1272,29 @@
         "database-ownership/tests",
         "database-ownership/requirements-test.txt"
       ]
+    },
+    {
+      "id": "learning-full-study",
+      "owner": "learning",
+      "kind": "postgres",
+      "cwd": ".",
+      "command": "python services/learning/runtime/integration/run_study.py",
+      "inputs": [
+        "services/learning/runtime",
+        "services/learning/application/qualification.py",
+        "app",
+        "static",
+        "public",
+        "scripts/prove-study-learning.mjs",
+        "scripts/offline-shell-assets.ts",
+        "vite.static.config.ts",
+        "module-resolution.ts",
+        "package.json",
+        "package-lock.json",
+        "packages/browser-intents",
+        "packages/study-session",
+        "packages/chess-line"
+      ]
     }
   ]
 }

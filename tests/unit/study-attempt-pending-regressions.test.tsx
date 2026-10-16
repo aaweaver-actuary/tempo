@@ -5,11 +5,41 @@ import { Chess } from "chess.js";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { PersistentBoardShell } from "../../app/components/board/persistent-board-shell";
+import { asCardId, asFenString, asQueueEntryId, type PracticeCard } from "../../app/types";
+import type { StudySpecification } from "../../app/domain/study-exercises";
 
 vi.mock("@lichess-org/chessground", () => ({ Chessground: () => ({ set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }) }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("F2 a cached Study specification never selects offline grading for a connected attempt", async () => {
+  const fen = new Chess().fen();
+  const specification: StudySpecification = { type: "move_line", prompt: "Connected cached exercise", hint: "", explanation: "Reference",
+    grading_policy: "reference", mode: "single", accepted_lines: [["e2e4"]] };
+  const card: PracticeCard = { id: asCardId("queue-1"), kind: "study", title: "Study", subtitle: "", startingFen: asFenString(fen), moves: [], userMoveTarget: 1,
+    backendId: asCardId("card-a"), queueEntryId: asQueueEntryId(1), queueCycle: 0, revision: 1,
+    studySnapshot: { schema_version: 1, grader_version: 1, exercise_id: "exercise", revision: 1, fen, specification } };
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    const url = String(input); requests.push(url);
+    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", prompt: specification.prompt, hint: "", fen });
+    if (url.endsWith("/attempts")) return Response.json({ attempt_id: JSON.parse(String(options?.body)).attempt_id,
+      assessment: { outcome: "correct", feedback: "Saved by Learning" }, persisted: true });
+    if (url.endsWith("/feedback")) return Response.json({ specification });
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
+  await screen.findByText(specification.prompt);
+  fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await screen.findByText("Saved by Learning");
+  expect(requests.some(url => url.endsWith("/attempts"))).toBe(true);
+  const records = await (await studyIntentStore()).list();
+  expect(records.filter(record => record.kind === "study-command" && record.state === "committed")).toHaveLength(1);
+});
 
 it.each([false, true])("study feedback browses the reference line and R restores an off-line submitted answer (shared board: %s)", async (useSharedBoard) => {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });

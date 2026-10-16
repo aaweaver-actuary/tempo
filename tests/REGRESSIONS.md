@@ -1,3 +1,12 @@
+## Independent Study connection (F2)
+
+Regular owner: `tests/unit/study-learning-connection-regressions.test.ts`.
+Named F2 cases cover authenticated bootstrap/delivery, forbidden destinations,
+workspace/date binding, original-origin retention, terminal history, unscoped
+legacy data and denied storage. The teaching outbox suite additionally rejects
+receipts for another fact. Native product persistence belongs to Learning's
+registered full-Study assembly, not these mocked transport checks.
+
 ## Supported frontend-only browser lane (#199)
 
 Owning discovery and named regressions: [controlled browser](controlled-browser/REGRESSIONS.md).

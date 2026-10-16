@@ -1,4 +1,5 @@
 "use client";
+import { LEARNING_URL as API_URL, learningFetch as fetch } from "../lib/study-connection";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { TextInput } from "../components/inputs/TextInput";
@@ -12,7 +13,6 @@ import type { Key } from "@lichess-org/chessground/types";
 import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
 import { BoardTools } from "../components/board/board-workspace";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
-import { API_URL } from "../const";
 import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
 import type { PracticeCard } from "../types";
 

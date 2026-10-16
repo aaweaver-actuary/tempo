@@ -6,7 +6,9 @@ import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import "../../app/components/ui.css";
 import "../../app/globals.css";
 import "../../app/responsive.css";
-import Home from "../../app/views/home_view";
+import { lazy, Suspense } from "react";
+import { independentStudy } from "../../app/lib/study-connection";
+const Home = lazy(() => independentStudy ? import("../../app/components/study-connection-boundary") : import("../../app/views/home_view"));
 import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { installGlobalDebugErrorHandlers, reportDebugError } from "../../app/lib/debug-reporting";
 import { prepareMoveSounds } from "../../app/lib/move-sound";
@@ -17,7 +19,7 @@ prepareMoveSounds();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <TempoErrorBoundary><Home /></TempoErrorBoundary>
+    <TempoErrorBoundary><Suspense fallback={<p role="status">Loading Tempo…</p>}><Home /></Suspense></TempoErrorBoundary>
     <NotificationViewport />
   </React.StrictMode>,
 );

@@ -1,9 +1,10 @@
+import { LEARNING_URL as API_URL } from "../lib/study-connection";
 import { useBoardHistory } from "../hooks/use-board-history";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
 import { Dialog } from "../components/dialog";
 import { BoardTools } from "../components/board/board-workspace";
-import { API_URL, STANDARD_FEN } from "../const";
+import { STANDARD_FEN } from "../const";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,

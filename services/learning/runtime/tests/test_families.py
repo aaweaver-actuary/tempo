@@ -247,6 +247,7 @@ def test_defense_uses_retained_rubric_and_durably_requests_uncovered_move(case):
     activate(case, payload)
     card = head(case)
     assert case.client.get("/api/defense-exercises/candidate-a").status_code == 200
+    assert card["source_ref"] == "candidate-a", "The production Study adapter needs the accepted candidate identity"
     recognition = {
         "attempt_id": uuid.uuid4().hex,
         "exercise_revision": 1,

@@ -1,3 +1,4 @@
+import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import type { TrainingPositionContext } from "../lib/training-builder-route";
@@ -284,11 +285,11 @@ function StandardTrainingView({
       fen={card.startingFen}
       onClick={handleAnalyzeOnLichessClick}
     />
-    <EditCardButton
+    {!independentStudy && <EditCardButton
       disabled={burialPending}
       card={card}
       setEditorCard={(value) => setEditorCard(value)}
-    />
+    />}
   </>);
 
   const studyMetadata = (
@@ -341,7 +342,7 @@ function StandardTrainingView({
       )}
     </div>
   );
-  const positionActions = (
+  const positionActions = independentStudy ? null : (
     <div className="position-actions" aria-label="Open review position">
       {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
         <Button onClick={() => onOpenPosition("compare", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Compare positions</Button>
@@ -489,7 +490,7 @@ function StandardTrainingView({
               <FailureNote failureAnnotation={failureAnnotation} />
             )}
             {!phoneOpening && moveTrail}
-            {usesLocalApi() && card.suggestShorterPrefix &&
+            {usesLocalApi() && !independentStudy && card.suggestShorterPrefix &&
               rejectedPrefixOfferKey !== prefixOfferKey &&
               card.kind === "opening" &&
               card.moves.length > 2 && (
@@ -599,6 +600,7 @@ function TrainingContent(props: TrainingViewProps) {
       key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
       studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
       card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
+      offline={props.offlineQueue ?? false}
       useSharedBoard={props.useSharedBoard ?? false} blocked={mutationBlocked}
       onAdvance={async () => { props.refreshDatabaseQueue(); }} /></div></>;
   }

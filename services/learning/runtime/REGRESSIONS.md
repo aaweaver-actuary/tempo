@@ -98,3 +98,29 @@ port double. Native suites separately own actual persistence and concurrency.
 PostgreSQL task-table lock ownership at continuation binding.
 `test_stale_content_receipt_binds_identity_without_acceptance` additionally covers
 durable rejected-content identity and acceptance only under a fresh transport.
+
+## F2 actual Study adoption
+
+`test_study_bootstrap_teaching.py` owns strict settings/bootstrap/progress,
+unsupported patches before acceptance, original teaching time and transport
+identity, concurrent incremental facts, lifecycle/revision/deletion/learner-turn
+fences, historical reads/replay, every accepted opening alternative, malformed
+chess input and the actual endgame frontend envelope. `test_families.py` additionally
+asserts the accepted defense candidate identity in the issued queue.
+
+`integration/study_tests/test_study_ui.py` is registered as `learning-full-study`.
+It owns production Home/Study native board/control interaction against installed
+Learning and real restricted PostgreSQL: progression, teaching/reload, guided
+failure, original-command loss recovery, saved-review/next-load separation, two
+tabs, denied/quota/aborted/incompatible storage, old authority, actual cached-shell
+offline answer/reconnect, all five typed specifications, tactics/middlegame,
+defense covered/uncovered, endgame cached/unavailable, settings and auth/CORS denial.
+Real installed producer delivery stops before Study settlement; late delivery
+cannot settle from the already issued attempt. Task-owned Learning and database
+interruptions recover unchanged commands. Forwarding faults never invent essential
+responses. These tests supplement rather than replace F1 and durable-session proofs.
+
+Regular frontend ownership is in `tests/REGRESSIONS.md` and
+`tools/component-build/test-inventory.json`; connection and delivery, connected
+snapshot grading, matching teaching/operation receipts and existing queue/claim/
+older-writer/cancellation tests remain in their normal suites.

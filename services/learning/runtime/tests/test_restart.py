@@ -10,7 +10,7 @@ from test_runtime import activate, head, review_payload
 
 
 @contextmanager
-def server(case, tmp_path, maintenance=False):
+def server(case, tmp_path, maintenance=False, origins=()):
     token = tmp_path / "credential"
     token.write_text(case.configuration.token)
     token.chmod(0o600)
@@ -29,7 +29,7 @@ def server(case, tmp_path, maintenance=False):
         TEMPO_LEARNING_DATABASE_URL=case.configuration.database_url,
         TEMPO_LEARNING_READER_URL=case.configuration.reader_url,
         TEMPO_LEARNING_TOKEN_FILE=str(token),
-        TEMPO_LEARNING_ORIGINS=f"http://localhost:5173,http://127.0.0.1:{port}",
+        TEMPO_LEARNING_ORIGINS=",".join(["http://localhost:5173", f"http://127.0.0.1:{port}", *origins]),
         TEMPO_LEARNING_HOSTS="127.0.0.1",
         TEMPO_LEARNING_MAINTENANCE="1" if maintenance else "0",
         TEMPO_LEARNING_TABLEBASE_URL="",
@@ -63,6 +63,25 @@ def server(case, tmp_path, maintenance=False):
         },
         timeout=3,
     )
+    def restart_service():
+        nonlocal process
+        arguments = process.args
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+        process = subprocess.Popen(arguments, env=environment, cwd=tmp_path,
+                                   stdout=output, stderr=subprocess.STDOUT)
+        for _ in range(100):
+            if process.poll() is not None:
+                raise AssertionError("Owned Learning restart exited")
+            try:
+                if client.get("/health/ready").status_code == 200:
+                    return {"restarted": True, "pid": process.pid}
+            except httpx.TransportError:
+                pass
+            time.sleep(0.05)
+        raise AssertionError("Owned Learning restart did not become ready")
+    process.restart_service = restart_service
     try:
         for _ in range(100):
             if process.poll() is not None:
