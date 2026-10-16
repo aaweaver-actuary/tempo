@@ -216,14 +216,18 @@ def activate(database, payload):
     prior_generations=sorted({item['publication_generation'] for item in existing.values() if item['publication_id']==identity})
     prior_payloads = {item[0]: json.loads(item[1]) for item in database.execute("SELECT generation,payload_json FROM accepted_publications WHERE publication_id=? AND generation=ANY(?)", (identity,prior_generations)).fetchall()}
     prior_definitions = {(generation,item["card_id"]): item for generation,document in prior_payloads.items() for item in document["publication"]["definitions"]}
+    accepted_aliases = database.execute('SELECT content_card_id,learning_card_id,publication_id,binding_digest FROM content_card_aliases WHERE content_card_id=ANY(?) OR learning_card_id=ANY(?)',
+                                       (list(definitions),list(identifiers.values()))).fetchall()
+    aliases_by_content = {item[0]:tuple(item) for item in accepted_aliases}
+    aliases_by_learning = {item[1]:tuple(item) for item in accepted_aliases}
     card_rows, alias_rows = [], []
     for fact in bundle.facts:
         definition = definitions[fact.card_id]
         identifier = identifiers[fact.card_id]
         old = existing.get(identifier)
-        alias = database.execute("SELECT learning_card_id,publication_id,binding_digest FROM content_card_aliases WHERE content_card_id=? OR learning_card_id=?", (fact.card_id, identifier)).fetchall() if identifier != fact.card_id else []
         binding = digest([bundle.publication.workspace_id, identity, fact.card_id, identifier])
-        if alias and any(tuple(item) != (identifier, identity, binding) for item in alias):
+        aliases = (aliases_by_content.get(fact.card_id),aliases_by_learning.get(identifier))
+        if any(item is not None and item != (fact.card_id,identifier,identity,binding) for item in aliases):
             raise HTTPException(409, "Historical alias already belongs to another authored object")
         if old:
             same_owner = old["publication_id"] == identity

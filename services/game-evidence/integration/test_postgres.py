@@ -93,6 +93,9 @@ def test_A_interrupted_export_resumes_frozen_input_after_game_revision_changes(s
     resumed=analysis_export.create_directory_export(store,workspace,[game],output)
     assert resumed['input_id']==reserved['input_id']
     assert verify_directory(output)['status']=='verified'
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with store.connect() as database:
+            database.execute('UPDATE analysis_exports SET manifest=manifest WHERE input_id=%s',(resumed['input_id'],))
     current=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'current-input')
     assert current['input_id']!=resumed['input_id']
     with pytest.raises(ValueError,match='resume_scope_conflict'):

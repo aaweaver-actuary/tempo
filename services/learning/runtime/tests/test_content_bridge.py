@@ -215,16 +215,25 @@ def test_A_identity_rename_replay_preserves_genuine_review_and_alias(case):
     assert case.query('SELECT count(*) FROM learning.cards')[0][0]==1
     assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews')]==historical
     assert [tuple(row) for row in case.query('SELECT fsrs_card_json,repetitions,interval_days FROM learning.cards WHERE id=%s',(card['id'],))]==scheduled
+    missing_alias=deepcopy(payload)
+    missing_alias['legacy_aliases']={}
+    missing_alias['publication'].update(publication_generation=2,source_revision=2)
+    missing_alias['publication']['definitions'][0].update(publication_generation=2,source_revision=2)
+    assert stage_v2(case,missing_alias).status_code==200
+    denied=case.client.post('/internal/publications/v2/activate',json=request_for(missing_alias,1),headers={'Authorization':'Bearer '+case.configuration.operator_token})
+    assert denied.status_code==409,denied.text
+    assert case.query('SELECT count(*) FROM learning.cards')[0][0]==1
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews')]==historical
     renamed=deepcopy(payload)
-    renamed['publication']['publication_generation']=2
-    renamed['publication']['source_revision']=2
+    renamed['publication']['publication_generation']=3
+    renamed['publication']['source_revision']=3
     definition=renamed['publication']['definitions'][0]
-    definition.update(publication_generation=2,source_revision=2,prompt='Renamed presentation')
+    definition.update(publication_generation=3,source_revision=3,prompt='Renamed presentation')
     activate_v2(case,renamed,1)
     assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews')]==historical
     with case.database.scope(),case.database.transaction(read_only=True) as database:
         from tempo_learning_runtime.remediation_adapter import AcceptedDefinitions
-        accepted=AcceptedDefinitions(database).decision(definition['card_id'],definition['decision_id'],'content-publication',2)
+        accepted=AcceptedDefinitions(database).decision(definition['card_id'],definition['decision_id'],'content-publication',3)
         assert accepted.card_id==card['id'] and definition['card_id'] in accepted.aliases
 
 

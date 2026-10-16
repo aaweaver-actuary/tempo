@@ -44,7 +44,9 @@ runtime role/database and `TEMPO_GAME_EVIDENCE_MIGRATION_URL` to its owner URL.
 There is no fallback to legacy database variables. Revoke PUBLIC database/schema
 access and runtime DDL/role/database creation and foreign-domain connections.
 Grant runtime CONNECT, schema USAGE and table SELECT/INSERT/UPDATE/DELETE,
-excluding writes to `evidence_schema_migrations`. The disposable native runner
+excluding writes to `evidence_schema_migrations`. The immutable
+`analysis_exports` and `analysis_export_pages` tables receive SELECT/INSERT only.
+The disposable native runner
 demonstrates provisioning; production provisioning remains separate.
 
 Use the full installed path below, or add its directory to PATH:
