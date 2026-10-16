@@ -201,7 +201,7 @@ class Qualification:
         self.passed("B_process_restart", old_generation=outputs[-1].execution_generation,new_generation=new_result.execution_generation)
 
     async def benchmark(self):
-        cold=[]; searches=[]; cancellations=[]; peaks=[]
+        cold=[]; searches=[]; cancellations=[]; peaks=[]; exits=[]
         for cycle in range(5):
             name,command=self.command(); began=time.monotonic()
             async with self.client(command) as client:
@@ -220,7 +220,9 @@ class Qualification:
                 await self.send(client,active);cancellations.append(await self.cancel_active(client,name,active))
                 peaks.append(int(docker("exec",name,"cat","/sys/fs/cgroup/memory.peak").stdout))
                 self.last_identity=client.identity
-        self.measurements.append({"kind":"serial_benchmark","cold_initialization_ms":cold,"searches":searches,"cancellations":cancellations,"memory_peak_bytes":peaks,"sample_scope":"five isolated cold sessions, twenty depth-12 searches, five observed in-flight cancellations; no universal SLO"})
+            exits.append(client.process.returncode)
+            assert client.process.returncode == 0
+        self.measurements.append({"kind":"serial_benchmark","cold_initialization_ms":cold,"searches":searches,"cancellations":cancellations,"memory_peak_bytes":peaks,"exit_statuses":exits,"sample_scope":"five isolated cold sessions, twenty depth-12 searches, five observed in-flight cancellations; no universal SLO"})
         self.passed("serial_benchmark", cold_starts=5,searches=20,cancellations=5)
 
     async def slow_consumer(self):

@@ -53,8 +53,9 @@ def _consumer():
     return module
 
 
-def test_B_installed_consumer():
-    exchange = json.loads((ROOT / "fixtures/observed/exchange.json").read_text())
+@pytest.mark.parametrize("fixture_directory", ["observed", "qualified"])
+def test_B_installed_consumer(fixture_directory):
+    exchange = json.loads((ROOT / "fixtures" / fixture_directory / "exchange.json").read_text())
     result = _consumer().consume(exchange)
     assert result["results"] > result["distinct_accepted_executions"] > 0
     assert result["acknowledgements"] > 0

@@ -1,0 +1,782 @@
+{
+  "complete": true,
+  "image_id": "sha256:21172218ef8fb1c5d1edf6dabae11ab7de13f829b0cdb2c001974a4fdbe07f81",
+  "platform": "linux/arm64",
+  "runtime": "Node 26.10.0",
+  "cpu_limit": 1,
+  "memory_limit_bytes": 536870912,
+  "swap": false,
+  "independent_consumer": {
+    "success": true,
+    "results": 25,
+    "statuses": 87,
+    "acknowledgements": 4,
+    "distinct_accepted_executions": 24
+  },
+  "cleanup": {
+    "removed_remaining_owned_containers": [],
+    "all_created_names": [
+      "tempo-stockfish-b-2ad61911fcc3",
+      "tempo-stockfish-b-bcc4a385a1fe",
+      "tempo-stockfish-b-9ca75229b11b",
+      "tempo-stockfish-b-d989bbf4e769"
+    ]
+  },
+  "last_diagnostics": [
+    {
+      "event": "ready",
+      "identity": {
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+        "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+        "runtime_name": "node-stockfish-wasm",
+        "runtime_version": "26.10.0",
+        "descriptor": {
+          "schema_version": 1,
+          "engine": "Stockfish 19 smallnet",
+          "node": "26.10.0",
+          "assets": {
+            "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+            "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+            "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+          },
+          "upstream": {
+            "package": "@lichess-org/stockfish-web",
+            "version": "0.5.0",
+            "package_license_metadata": "AGPL-3.0-or-later",
+            "shipped_license": "GPL-3.0",
+            "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+            "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+            "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+            "patches": [
+              "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+              "patches/sf_19_smallnet/0002-stockfish-web.patch"
+            ],
+            "emscripten": "5.0.7"
+          },
+          "options": {
+            "Threads": 1,
+            "Hash": 32,
+            "Ponder": false,
+            "Skill Level": 20,
+            "UCI_LimitStrength": false,
+            "UCI_Chess960": false,
+            "UCI_ShowWDL": false,
+            "SyzygyPath": "",
+            "SyzygyProbeLimit": 0,
+            "nodestime": 0,
+            "Move Overhead": 10
+          },
+          "hash_reset": "ucinewgame-before-each-attempt",
+          "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+          "supported_platform": "linux/arm64",
+          "cpu_limit": 1,
+          "memory_mib": 512,
+          "swap": false
+        }
+      },
+      "resources": {
+        "memory_enforced": true,
+        "memory_limit_bytes": 536870912,
+        "memory_limit_mb": 512,
+        "source": "/sys/fs/cgroup/memory.max",
+        "minimum_memory_mb": 512,
+        "reason": null,
+        "cpu_limit": 1,
+        "swap_limit_bytes": 0,
+        "memory_events": {
+          "low": 0,
+          "high": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_kill": 0,
+          "oom_group_kill": 0,
+          "sock_throttled": 0
+        }
+      },
+      "pid": 16,
+      "initialization_ms": 582.537501
+    },
+    {
+      "event": "execution_started",
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "job_id": "observed-15",
+      "request_revision": 1,
+      "execution_generation": 1,
+      "pid": 16,
+      "started_at": "2026-10-16T18:17:19.479Z"
+    },
+    {
+      "event": "child_exited",
+      "pid": 16,
+      "code": null,
+      "signal": "SIGKILL"
+    }
+  ],
+  "slow_consumer": {
+    "exit_status": 1,
+    "timed_out": false,
+    "sent": 65,
+    "stdout_bytes": 151476,
+    "engine_gone": true,
+    "peak_bytes": 200597504,
+    "protocol_errors": [
+      {
+        "event": "protocol_error",
+        "reason": "output_stalled"
+      }
+    ],
+    "actual_searches": 1
+  },
+  "cases": {
+    "success": true,
+    "passed": 12,
+    "failed": 0,
+    "executedIdentities": [
+      "B_restricted_artifact",
+      "B_real_engine_smoke",
+      "B_exact_replay",
+      "B_cancel_during_search",
+      "real_busy_backpressure",
+      "B_wall_memory_failure",
+      "B_finite_backlog_driver",
+      "B_clean_shutdown",
+      "B_process_restart",
+      "B_slow_consumer",
+      "real_signal_shutdown",
+      "B_installed_consumer"
+    ],
+    "details": [
+      {
+        "name": "B_restricted_artifact",
+        "success": true,
+        "installed_files": [
+          "README.md",
+          "assets",
+          "child.mjs",
+          "cli.mjs",
+          "core.mjs",
+          "engine-descriptor.json",
+          "engine.mjs",
+          "index.d.ts",
+          "index.mjs",
+          "licenses",
+          "node_modules",
+          "npm-shrinkwrap.json",
+          "package.json",
+          "resources.mjs",
+          "schemas",
+          "wire.mjs",
+          "worker.mjs"
+        ],
+        "configuration": {
+          "Memory": 536870912,
+          "MemorySwap": 536870912,
+          "NanoCpus": 1000000000,
+          "PidsLimit": 64,
+          "NetworkMode": "none",
+          "ReadonlyRootfs": true
+        },
+        "cold_initialization_ms": 1015.779500012286
+      },
+      {
+        "name": "B_real_engine_smoke",
+        "success": true,
+        "searches": 9,
+        "identity": {
+          "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+          "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+          "runtime_name": "node-stockfish-wasm",
+          "runtime_version": "26.10.0",
+          "descriptor": {
+            "schema_version": 1,
+            "engine": "Stockfish 19 smallnet",
+            "node": "26.10.0",
+            "assets": {
+              "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+              "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+              "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+            },
+            "upstream": {
+              "package": "@lichess-org/stockfish-web",
+              "version": "0.5.0",
+              "package_license_metadata": "AGPL-3.0-or-later",
+              "shipped_license": "GPL-3.0",
+              "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+              "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+              "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+              "patches": [
+                "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+                "patches/sf_19_smallnet/0002-stockfish-web.patch"
+              ],
+              "emscripten": "5.0.7"
+            },
+            "options": {
+              "Threads": 1,
+              "Hash": 32,
+              "Ponder": false,
+              "Skill Level": 20,
+              "UCI_LimitStrength": false,
+              "UCI_Chess960": false,
+              "UCI_ShowWDL": false,
+              "SyzygyPath": "",
+              "SyzygyProbeLimit": 0,
+              "nodestime": 0,
+              "Move Overhead": 10
+            },
+            "hash_reset": "ucinewgame-before-each-attempt",
+            "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+            "supported_platform": "linux/arm64",
+            "cpu_limit": 1,
+            "memory_mib": 512,
+            "swap": false
+          }
+        }
+      },
+      {
+        "name": "B_exact_replay",
+        "success": true,
+        "observed": true
+      },
+      {
+        "name": "B_cancel_during_search",
+        "success": true,
+        "cpu_ticks_before": 120,
+        "cpu_ticks_after": 137,
+        "termination_ms": 10.267000005114824,
+        "capacity_recovery_ms": 380.78679199679755,
+        "pid": 17,
+        "ack": {
+          "contract_version": 1,
+          "workspace_id": "workspace-a",
+          "job_id": "observed-10",
+          "request_revision": 1,
+          "execution_generation": 1,
+          "cancellation_id": "2c0b4325-04e1-46aa-bd89-421c6575eb14",
+          "status": "terminated",
+          "acknowledged_at": "2026-10-16T18:17:07.725Z"
+        }
+      },
+      {
+        "name": "real_busy_backpressure",
+        "success": true,
+        "retry_advanced_generation": true
+      },
+      {
+        "name": "B_wall_memory_failure",
+        "success": true,
+        "timeout": {
+          "contract_version": 1,
+          "workspace_id": "workspace-a",
+          "job_id": "observed-13",
+          "request_revision": 1,
+          "execution_generation": 1,
+          "status": "failed",
+          "retryable": true,
+          "reason": "execution_timeout"
+        },
+        "pressure_exit": 137,
+        "before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0\n",
+        "after": "low 0\nhigh 0\nmax 39\noom 1\noom_kill 1\noom_group_kill 0\nsock_throttled 0\n",
+        "limitation": "The pressure helper was OOM-killed; no engine-specific OOM cause is inferred."
+      },
+      {
+        "name": "B_finite_backlog_driver",
+        "success": true,
+        "useful_completions": 12,
+        "waiting_jobs": 12,
+        "busy_responses": 1,
+        "retry_attempts": 1,
+        "cancelled_probes": 1,
+        "cancellation": {
+          "acknowledgement": {
+            "contract_version": 1,
+            "workspace_id": "workspace-a",
+            "job_id": "fixture-cancel-probe",
+            "request_revision": 1,
+            "execution_generation": 1,
+            "cancellation_id": "19d4a147-cd7a-4b69-a54d-83f0e329e603",
+            "status": "terminated",
+            "acknowledged_at": "2026-10-16T18:17:09.180Z"
+          },
+          "termination_ms": 10.542749994783662,
+          "capacity_recovery_ms": 402.6103329961188
+        },
+        "foreground_like_latency_ms": [
+          104.93987500376534,
+          25.17904099659063,
+          40.630250005051494
+        ],
+        "completions": [
+          {
+            "class": "foreground-like",
+            "original_age_seconds": 100,
+            "job_id": "fixture-backlog-0",
+            "execution_generation": 2,
+            "queue_wait_ms": 422.3460420034826,
+            "end_to_end_ms": 104.93987500376534,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 101,
+            "job_id": "fixture-backlog-1",
+            "execution_generation": 1,
+            "queue_wait_ms": 527.3712920024991,
+            "end_to_end_ms": 29.811375003191642,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 102,
+            "job_id": "fixture-backlog-2",
+            "execution_generation": 1,
+            "queue_wait_ms": 557.2597090067575,
+            "end_to_end_ms": 73.25849999324419,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 103,
+            "job_id": "fixture-backlog-3",
+            "execution_generation": 1,
+            "queue_wait_ms": 630.5985000071814,
+            "end_to_end_ms": 26.603583988617174,
+            "actual_depth": 6
+          },
+          {
+            "class": "foreground-like",
+            "original_age_seconds": 104,
+            "job_id": "fixture-backlog-4",
+            "execution_generation": 1,
+            "queue_wait_ms": 657.2813340026187,
+            "end_to_end_ms": 25.17904099659063,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 105,
+            "job_id": "fixture-backlog-5",
+            "execution_generation": 1,
+            "queue_wait_ms": 682.5394589977805,
+            "end_to_end_ms": 51.456916000461206,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 106,
+            "job_id": "fixture-backlog-6",
+            "execution_generation": 1,
+            "queue_wait_ms": 734.0757089987164,
+            "end_to_end_ms": 26.308750006137416,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 107,
+            "job_id": "fixture-backlog-7",
+            "execution_generation": 1,
+            "queue_wait_ms": 760.4763749986887,
+            "end_to_end_ms": 24.491125004715286,
+            "actual_depth": 6
+          },
+          {
+            "class": "foreground-like",
+            "original_age_seconds": 108,
+            "job_id": "fixture-backlog-8",
+            "execution_generation": 1,
+            "queue_wait_ms": 785.0459170003887,
+            "end_to_end_ms": 40.630250005051494,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 109,
+            "job_id": "fixture-backlog-9",
+            "execution_generation": 1,
+            "queue_wait_ms": 825.7521670020651,
+            "end_to_end_ms": 25.05508299509529,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 110,
+            "job_id": "fixture-backlog-10",
+            "execution_generation": 1,
+            "queue_wait_ms": 850.8810000057565,
+            "end_to_end_ms": 28.24674999283161,
+            "actual_depth": 6
+          },
+          {
+            "class": "background",
+            "original_age_seconds": 111,
+            "job_id": "fixture-backlog-11",
+            "execution_generation": 1,
+            "queue_wait_ms": 879.2091250070371,
+            "end_to_end_ms": 46.903833994292654,
+            "actual_depth": 6
+          }
+        ],
+        "scope": "finite fixture caller ordering and one probe; no durable C scheduler or live Study measurement"
+      },
+      {
+        "name": "B_clean_shutdown",
+        "success": true,
+        "container_removed": true,
+        "exit_status": 0
+      },
+      {
+        "name": "B_process_restart",
+        "success": true,
+        "old_generation": 1,
+        "new_generation": 2
+      },
+      {
+        "name": "B_slow_consumer",
+        "success": true,
+        "exit_status": 1,
+        "timed_out": false,
+        "sent": 65,
+        "stdout_bytes": 151476,
+        "engine_gone": true,
+        "peak_bytes": 200597504,
+        "protocol_errors": [
+          {
+            "event": "protocol_error",
+            "reason": "output_stalled"
+          }
+        ],
+        "actual_searches": 1
+      },
+      {
+        "name": "real_signal_shutdown",
+        "success": true,
+        "container_removed": true
+      },
+      {
+        "name": "B_installed_consumer",
+        "success": true,
+        "results": 25,
+        "statuses": 87,
+        "acknowledgements": 4,
+        "distinct_accepted_executions": 24
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "kind": "search",
+      "job_id": "observed-1",
+      "end_to_end_ms": 164.77016700082459,
+      "actual_depth": 8,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-1",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:b2616f4581ea23fc6e96d3718951ccccb5bf3cfec485f64c0fbe45a731efbe42",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-2",
+      "end_to_end_ms": 118.15287500212435,
+      "actual_depth": 8,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-2",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:366710bea7f96554cd4dea5a5e385278452e9208ed8ac536f85f39a5a4d30099",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [
+          "e2e4"
+        ],
+        "search_moves": [
+          "e7e5"
+        ],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-3",
+      "end_to_end_ms": 116.93441700481344,
+      "actual_depth": 8,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-3",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:8a38c0574b84b6a3898df806bb169662ce3523f600a9c8ae3e8c69eb5e60e0ec",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [
+          "e2e4",
+          "d2d4",
+          "c2c4"
+        ],
+        "max_depth": 8,
+        "max_nodes": null,
+        "multi_pv": 3,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-4",
+      "end_to_end_ms": 115.13416600064375,
+      "actual_depth": 4,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-4",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:6406906987deafbde6ef1a125dee4ff6748bb45d64c6ba1515460c49f568479b",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [
+          "e1g1"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-5",
+      "end_to_end_ms": 46.28779200720601,
+      "actual_depth": 4,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-5",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:f401b5c3f5a090af44302106e62dc5cf9bc87591b2c0e27cd547807b1ef97aa4",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 10",
+        "moves": [],
+        "search_moves": [
+          "e5d6"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-6",
+      "end_to_end_ms": 20.288665997213684,
+      "actual_depth": 4,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-6",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:6dc49466efef34048758ca522cac8043b7f8f1c8ed13a208d8cf598385a3e05e",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+        "moves": [],
+        "search_moves": [
+          "a7a8q"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-7",
+      "end_to_end_ms": 88.12329199281521,
+      "actual_depth": 4,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-7",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:03088c1f1f8595e0fd52f075ed67ba7bba28ce6fa41bc222483f54b8bd6da64a",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1",
+        "moves": [],
+        "search_moves": [
+          "f7f8"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-8",
+      "end_to_end_ms": 87.58491701155435,
+      "actual_depth": 4,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-8",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:12fd7001a5fbef88801e9ec78baaa0124c47cd9b7b637ef98ffd59d16b78b365",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "8/8/8/8/8/6k1/5q2/7K b - - 0 1",
+        "moves": [],
+        "search_moves": [
+          "f2f1"
+        ],
+        "max_depth": 4,
+        "max_nodes": null,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "search",
+      "job_id": "observed-9",
+      "end_to_end_ms": 70.71691600140184,
+      "actual_depth": 12,
+      "request": {
+        "contract_version": 1,
+        "workspace_id": "workspace-a",
+        "job_id": "observed-9",
+        "request_revision": 1,
+        "execution_generation": 1,
+        "input_digest": "sha256:648c14770eac180b2c838261c0fb2ace86091634536816080f62883e603bcc66",
+        "constraints": {
+          "max_wall_time_ms": 5000,
+          "max_memory_mb": 512
+        },
+        "worker": "stockfish",
+        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "moves": [],
+        "search_moves": [],
+        "max_depth": 20,
+        "max_nodes": 10000,
+        "multi_pv": 1,
+        "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4"
+      }
+    },
+    {
+      "kind": "whole_worker_memory_peak",
+      "bytes": 536870912,
+      "includes_deliberate_pressure": true
+    }
+  ],
+  "identity": {
+    "engine_version": "stockfish-19-smallnet:sha256:577f1e0a5fc385a809603142330931ab2353fe92e3b6ab91d927bc39a7af31e4",
+    "implementation_version": "sha256:40aefd1ef998ef83928296e7ebe43f8b645af3fbe11aded9178d952503f056bc",
+    "runtime_name": "node-stockfish-wasm",
+    "runtime_version": "26.10.0",
+    "descriptor": {
+      "schema_version": 1,
+      "engine": "Stockfish 19 smallnet",
+      "node": "26.10.0",
+      "assets": {
+        "sf_19_smallnet.js": "114751d6f0c1e98dfedb9eb1928ac86fb763bab2b5282f24e2d7865156abac2e",
+        "sf_19_smallnet.wasm": "7e6629d0e1226a0d20c9c2c71c69dd3dccbe260a25f0053d3e5e4e5acea77fbc",
+        "nn-61e7af4bb97d.nnue": "61e7af4bb97d51eeeb25d322916f86513b5cd3a827ce189c98c6e31946f99e5b"
+      },
+      "upstream": {
+        "package": "@lichess-org/stockfish-web",
+        "version": "0.5.0",
+        "package_license_metadata": "AGPL-3.0-or-later",
+        "shipped_license": "GPL-3.0",
+        "source_revision": "931c33470b0c80756c99dfb05008d951aaa8f751",
+        "source": "https://github.com/lichess-org/stockfish-web/tree/931c33470b0c80756c99dfb05008d951aaa8f751",
+        "stockfish_base": "edb0d9db6731067ec50ce619ff372b463bc4dd5d",
+        "patches": [
+          "patches/sf_19_smallnet/0001-simple-mirrored-piece-square-features.patch",
+          "patches/sf_19_smallnet/0002-stockfish-web.patch"
+        ],
+        "emscripten": "5.0.7"
+      },
+      "options": {
+        "Threads": 1,
+        "Hash": 32,
+        "Ponder": false,
+        "Skill Level": 20,
+        "UCI_LimitStrength": false,
+        "UCI_Chess960": false,
+        "UCI_ShowWDL": false,
+        "SyzygyPath": "",
+        "SyzygyProbeLimit": 0,
+        "nodestime": 0,
+        "Move Overhead": 10
+      },
+      "hash_reset": "ucinewgame-before-each-attempt",
+      "result_policy": "last-complete-exact-multipv-iteration-after-bestmove",
+      "supported_platform": "linux/arm64",
+      "cpu_limit": 1,
+      "memory_mib": 512,
+      "swap": false
+    }
+  },
+  "artifacts": [
+    {
+      "name": "tempo-stockfish-worker-1.0.0.tgz",
+      "sha256": "fd12c15fc5f539e327a124086be21ae425e8ae316b04761f4c4a92fc333962d3"
+    }
+  ],
+  "source_revision": "df54723a05facae761539480dad58f3b74ef50ad",
+  "source_dirty": false
+}
