@@ -71,6 +71,8 @@ def request_queue_refresh_in_transaction(
         payload,
         priority=10,
     )
+    from .remediation_adapter import request_remediation
+    request_remediation(database, queue_date)
     database.execute(
         _QUEUE_REFRESH_PROJECTION_SQL,
         (queue_date,),

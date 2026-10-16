@@ -51,7 +51,9 @@ class Database:
             current_database.reset(token)
 
     @contextmanager
-    def transaction(self, *, read_only=False, background=False, **unused):
+    def transaction(self, *, read_only=False, background=False, intake=False, **unused):
+        if intake and (read_only or not background):
+            raise ValueError("Evidence intake uses the bounded background writer pool")
         pool = (
             self.reader
             if read_only
@@ -65,7 +67,10 @@ class Database:
             for setting, value in [
                 ("statement_timeout", "200ms" if background else "1500ms"),
                 ("lock_timeout", "25ms" if background else "250ms"),
-                ("transaction_timeout", "250ms" if background else "2500ms"),
+                (
+                    "transaction_timeout",
+                    "1000ms" if intake else "250ms" if background else "2500ms",
+                ),
             ]:
                 raw.execute("SELECT set_config(%s,%s,true)", (setting, value))
             raw.execute("SET LOCAL search_path=learning,pg_catalog")

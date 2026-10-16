@@ -122,7 +122,7 @@ def test_minimal_installed_container_load_issue_review_without_backend_or_broker
                 ).json()
                 == saved.json()
             )
-        guard = "import importlib.util,os,pathlib;assert os.getuid()==10001;assert all(importlib.util.find_spec(name) is None for name in ('app','celery','redis','torch','onnxruntime'));assert not pathlib.Path('/build').exists();import tempo_learning_runtime as runtime;assert 'site-packages' in runtime.__file__"
+        guard = "import importlib.util,os,pathlib;assert os.getuid()==10001;assert all(importlib.util.find_spec(name) is None for name in ('app','celery','redis','torch','onnxruntime','tempo_game_evidence'));assert not pathlib.Path('/build').exists();import tempo_learning_runtime as runtime;assert 'site-packages' in runtime.__file__"
         subprocess.run(
             ["docker", "exec", name, "/opt/learning/bin/python", "-I", "-c", guard],
             check=True,

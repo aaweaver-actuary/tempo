@@ -19,7 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from tempo_game_evidence import EvidenceStore
 from tempo_game_evidence.api import create_app
-from tempo_game_evidence.delivery import deliver_one
+from tempo_game_evidence.delivery import deliver_one as deliver_authenticated
 from tempo_game_evidence.providers import AccountImport, enqueue_import, import_one, cancel_import
 from tempo_game_evidence_contracts.v2 import EvidenceDelivery
 
@@ -27,10 +27,21 @@ from tempo_game_evidence_contracts.v2 import EvidenceDelivery
 FIXTURES=Path(__file__).resolve().parents[1]/"fixtures"
 
 
+def deliver_one(*arguments, **keywords):
+    # These synthetic strict receivers do not load user credentials. Production
+    # requires a usable token before any claim, just like the actual assembly.
+    keywords.setdefault('token', 'native-fixture-credential-' + 't' * 40)
+    return deliver_authenticated(*arguments, **keywords)
+
+
 @pytest.fixture
-def state():
+def state(tmp_path, monkeypatch):
     assert os.environ.get("TEMPO_GAME_EVIDENCE_TEST_CONTAINER","").startswith("tempo-game-evidence-41-")
     store=EvidenceStore(os.environ["TEMPO_GAME_EVIDENCE_DATABASE_URL"])
+    credential = tmp_path / 'strict-receiver-token'
+    credential.write_text('native-fixture-credential-' + 't' * 40)
+    credential.chmod(0o600)
+    monkeypatch.setenv('TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE', str(credential))
     # This is exclusively the fresh cluster provisioned by run_postgres.py.
     with psycopg.connect(os.environ["TEMPO_GAME_EVIDENCE_MIGRATION_URL"]) as database:
         database.execute("TRUNCATE accepted_heads,import_pages,import_cursors,provider_leases,outbox,comparisons,jobs,game_sources,games,snapshots,workspace_inputs CASCADE")
@@ -59,6 +70,100 @@ def imported(state,source="miss"):
 def ready_outbox(store):
     with store.connect() as database:
         database.execute("UPDATE outbox SET next_attempt_at=now(),leased_until=NULL WHERE status IN ('retryable_failure','accepted_pending')")
+
+
+def auth_retry_cli(store, workspace, delivery_id, tmp_path):
+    credential = tmp_path / 'auth-recovery-token'
+    credential.write_text('synthetic-private-credential-' + 'x' * 40)
+    credential.chmod(0o600)
+    environment = {**os.environ, 'TEMPO_GAME_EVIDENCE_DATABASE_URL': store.database_url}
+    return subprocess.run([sys.executable, '-I', '-m', 'tempo_game_evidence.cli',
+        'retry-auth-delivery', '--workspace', workspace, '--delivery-id', delivery_id,
+        '--learning-endpoint', 'http://127.0.0.1:1/internal/evidence', '--learning-token-file', str(credential)],
+        env=environment, capture_output=True, text=True, timeout=10)
+
+
+def test_learning_401_retries_original_delivery_after_credential_correction(state):
+    store, workspace, _ = state
+    game = imported(state)
+    with store.connect() as database:
+        original = database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone()
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(401))) as client:
+        assert deliver_one(store, 'http://fixture/evidence', client=client, token='wrong-' + 'w' * 40)
+    with store.connect() as database:
+        row = database.execute('SELECT *,extract(epoch FROM next_attempt_at-now()) AS remaining FROM outbox WHERE game_id=%s', (game,)).fetchone()
+        assert (row['status'], row['reason'], row['acknowledgement']) == ('retryable_failure', 'remote_rejected_401', None)
+        assert 55 <= row['remaining'] <= 905
+        assert row['delivery_id'] == original['delivery_id'] and row['payload'] == original['payload']
+        assert database.execute('SELECT count(*) AS n FROM accepted_heads').fetchone()['n'] == 0
+    ready_outbox(store)
+    with learning_receiver(store) as (endpoint, _, requests):
+        assert deliver_one(EvidenceStore(store.database_url), endpoint, token='correct-' + 'c' * 40)
+        assert requests == [original['delivery_id']]
+    with store.connect() as database:
+        final = database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone()
+        assert final['status'] == 'completed' and final['attempts'] == 2
+        assert final['payload'] == original['payload']
+
+
+def test_retry_auth_delivery_recovers_only_legacy_401_block(state, tmp_path):
+    store, workspace, _ = state
+    game = imported(state)
+    with store.connect() as database:
+        database.execute("UPDATE outbox SET status='blocked',reason='remote_rejected_401',attempts=1,lease_token='expired',leased_until=now()-interval '1 second' WHERE game_id=%s", (game,))
+        original = database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone()
+    result = auth_retry_cli(store, workspace, original['delivery_id'], tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    with store.connect() as database:
+        recovered = database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone()
+        assert recovered['status'] == 'retryable_failure' and recovered['leased_until'] is None
+        for field in ('delivery_id', 'payload', 'evidence_revision', 'comparison_revision', 'bucket', 'game_id', 'attempts', 'reason', 'acknowledgement'):
+            assert recovered[field] == original[field]
+        assert database.execute('SELECT count(*) AS n FROM accepted_heads').fetchone()['n'] == 0
+    assert auth_retry_cli(store, workspace, original['delivery_id'], tmp_path).returncode == 0
+    with store.connect() as database:
+        assert database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone() == recovered
+
+
+@pytest.mark.parametrize('refusal', ['workspace', '403', '404', 'other', 'conflict', 'stale_revision', 'acknowledged', 'leased', 'completed', 'unattempted'])
+def test_retry_auth_delivery_rejects_other_states_and_active_leases(state, tmp_path, refusal):
+    store, workspace, _ = state
+    game = imported(state)
+    with store.connect() as database:
+        database.execute("UPDATE outbox SET status='blocked',reason='remote_rejected_401',attempts=1 WHERE game_id=%s", (game,))
+        if refusal in ('403', '404', 'other'):
+            database.execute('UPDATE outbox SET reason=%s', ('remote_rejected_' + refusal,))
+        elif refusal in ('conflict', 'stale_revision', 'completed'):
+            database.execute('UPDATE outbox SET status=%s', (refusal,))
+        elif refusal == 'acknowledged':
+            database.execute("UPDATE outbox SET acknowledgement='{}'::jsonb")
+        elif refusal == 'leased':
+            database.execute("UPDATE outbox SET lease_token='live',leased_until=now()+interval '1 minute'")
+        elif refusal == 'unattempted':
+            database.execute('UPDATE outbox SET attempts=0')
+        original = database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone()
+    result = auth_retry_cli(store, 'wrong-workspace' if refusal == 'workspace' else workspace, original['delivery_id'], tmp_path)
+    assert result.returncode != 0
+    with store.connect() as database:
+        assert database.execute('SELECT * FROM outbox WHERE game_id=%s', (game,)).fetchone() == original
+
+
+def test_auth_retry_preserves_predecessor_and_acknowledgement_fences(state):
+    store, workspace, _ = state
+    game = imported(state)
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(401))) as client:
+        assert deliver_one(store, 'http://fixture/evidence', client=client, token='wrong-' + 'w' * 40)
+    store.import_pgn(workspace, 'pgn', 'miss', 'Learner', (FIXTURES / 'alternative.pgn').read_bytes())
+    drain(store)
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS n FROM outbox').fetchone()['n'] == 1
+        assert database.execute('SELECT count(*) AS n FROM accepted_heads').fetchone()['n'] == 0
+    ready_outbox(store)
+    with learning_receiver(store) as (endpoint, _, requests):
+        assert deliver_one(store, endpoint, token='correct-' + 'c' * 40)
+        drain(store)
+        assert deliver_one(store, endpoint, token='correct-' + 'c' * 40)
+        assert len(requests) == 2 and requests[0] != requests[1]
 
 
 @contextmanager

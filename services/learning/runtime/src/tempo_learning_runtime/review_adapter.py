@@ -117,6 +117,8 @@ class LearningReviewAdapter:
         self.observed_at = observed_at
         self.local_day = local_day
         self.deferred_effects = []
+        self.queue_refreshes = {}
+        self.remediation_days = set()
 
     def context(self, command):
         return learning.review_context(
@@ -276,7 +278,7 @@ class LearningReviewAdapter:
     def reconcile_completed(
         self, command, attempt, context, *, guided, revision, competing_review=None
     ):
-        return reconcile_completed_review(
+        result = reconcile_completed_review(
             self.database,
             command.card_id,
             attempt.id,
@@ -288,6 +290,12 @@ class LearningReviewAdapter:
             timezone_name=self.policy().timezone,
             competing_review=competing_review,
         )
+        if result.get("review_id") is not None:
+            from .receivers import settle
+            settle(self.database, command.card_id, result["review_id"],
+                queue_entry_id=attempt.id, revision=revision,
+                request_followup=self.remediation_days.add)
+        return result
 
     def bind_receipt(self, command, request_json, *, restore_original=False):
         if restore_original:
@@ -317,6 +325,9 @@ class LearningReviewAdapter:
                 light_first_interval_days=policy.light_first_interval_days,
                 reviewed_at=context.reviewed_at,
                 review_day=context.review_day,
+                queue_entry_id=command.queue_entry_id,
+                expected_revision=command.expected_revision if command.expected_revision is not None else self.current_revision(command.card_id),
+                request_followup=self.remediation_days.add,
             )
 
     def complete_attempt(self, command, context, *, guided):
@@ -387,15 +398,12 @@ class LearningReviewAdapter:
 
     def refresh_progression(self, context, card, result):
         if card.content_type == "opening" and result.get("review_id") is not None:
-            from .queue_commands import request_queue_refresh_in_transaction
-
             day = context.local_day.isoformat()
             preserved = self.database.execute(
                 "SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=?", (day,)
             ).fetchone()[0]
-            request_queue_refresh_in_transaction(
-                self.database, day, preserve_through_entry_id=preserved
-            )
+            self.queue_refreshes[day] = {"preserve_through_entry_id": preserved}
+            self.remediation_days.add(day)
 
     def refresh_priority(self, repertoire_id, *, transactional_only=False):
         self.database.execute(
@@ -404,16 +412,23 @@ class LearningReviewAdapter:
         )
 
     def refresh_maturity(self, context):
-        from .durable_tasks import enqueue_task_in_transaction
-
         day = context.local_day.isoformat()
-        enqueue_task_in_transaction(
-            self.database, "daily_queue", "current", {"queue_date": day}, priority=10
-        )
-        self.database.execute(queue_application._QUEUE_REFRESH_PROJECTION_SQL, (day,))
+        self.queue_refreshes.setdefault(day, {})
 
     def finish_compatibility_effects(self):
-        return None
+        # Flush before leaving the owning transaction, after all review and
+        # prepared-continuation card/queue/module work. Every multi-task path
+        # acquires daily then remediation, and projection rows last.
+        from .durable_tasks import enqueue_task_in_transaction
+        from .remediation_adapter import request_remediation
+
+        for day, options in sorted(self.queue_refreshes.items()):
+            enqueue_task_in_transaction(self.database, "daily_queue", "current",
+                {"queue_date": day, **options}, priority=10)
+        for day in sorted(self.remediation_days):
+            request_remediation(self.database, day)
+        for day in sorted(self.queue_refreshes):
+            self.database.execute(queue_application._QUEUE_REFRESH_PROJECTION_SQL, (day,))
 
     def lock_review_cards(self, command):
         return _lock_review_cards(self.database, command.card_id, command.prepared_next)
@@ -542,7 +557,7 @@ def apply_legacy_review(
             ).as_dict()
         except learning.ReviewFailure as error:
             raise translate_failure(error) from error
-    adapter.finish_compatibility_effects()
+        adapter.finish_compatibility_effects()
     return result
 
 

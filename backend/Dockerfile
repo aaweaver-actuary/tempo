@@ -6,9 +6,10 @@ COPY packages/scheduling /packages/scheduling
 COPY packages/chess-core /packages/chess-core
 COPY services/learning/application /services/learning/application
 COPY services/learning/runtime /services/learning/runtime
+COPY services/learning/remediation /services/learning/remediation
 COPY contracts/content-publication /contracts/content-publication
 COPY contracts/game-evidence /contracts/game-evidence
-RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling /packages/chess-core /services/learning/application /services/learning/runtime /contracts/content-publication /contracts/game-evidence
+RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling /packages/chess-core /services/learning/application /services/learning/remediation /services/learning/runtime /contracts/content-publication /contracts/game-evidence
 COPY backend/app ./app
 COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
 COPY public/data/tactics-packs ./public/data/tactics-packs

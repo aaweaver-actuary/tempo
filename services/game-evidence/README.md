@@ -119,12 +119,9 @@ Provider references: [Lichess guidance](https://lichess.org/page/api-tips),
 
 ## Delivery boundary and remaining scope
 
-Set `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` or `work --learning-endpoint URL` to
-an explicit EvidenceDelivery-v2 receiver. This producer depends on B's published
-contract 2.0.0 in PR #281, integrated at c4384c16. Native tests use a strict
-receiver and a test-only installed remediation repository in a separate disposable
-Learning database. This does not provide a production receiver or authentication. Reports and JSON fixtures can be used
-without starting this service.
+Set `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` or `work --learning-endpoint URL` to Learning's `/internal/evidence` receiver. Set `TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE` (or `--learning-token-file`) to a private credential file readable only by its owner, containing Learning's distinct workspace evidence token (at least 32 characters). The credential is separate from the durable outbox lease identity. Redirects remain disabled and HTTP runs outside database transactions; credentials never enter persisted payloads, command output or error messages.
+
+The independent Learning runtime now provides the authenticated v1/v2 receiver and adopts B's remediation module against its own accepted definitions. Native Game Evidence tests retain their strict receiver and test-only installed repository fixture. The Learning runtime's owning native suite separately proves actual installed producer-to-HTTP delivery, lost acknowledgement/restart, restricted database boundaries and studying after the producer stops. Neither proves live provider import, live deployment, legacy Games UI adoption or historical data conversion. Reports/fixtures remain usable without starting this service.
 
 Desired comparisons and durable reconciliation requests commit together. When
 eligible, finalization and immutable outbox insertion share that transaction.
@@ -176,3 +173,42 @@ The runner accepts no caller database URL and never restarts Docker or prunes.
 Artifact checks install wheel/sdist in clean Python 3.12/3.14 consumers. Evidence
 records commands, source/artifact hashes, case counts and cleanup outcomes.
 These focused checks do not establish whole-product or hosted qualification.
+
+## Authentication recovery
+
+With a Learning endpoint, `work` requires a configured usable private token file
+before imports, comparisons, reconciliation or delivery claims. Configuration
+failure exits nonzero without attempts, leases or blocked rows. Direct delivery
+also validates its token before claiming. Producer-only `work` without a Learning
+endpoint remains available without a token.
+
+Learning HTTP 401 maps locally to `retryable_failure` / `remote_rejected_401`, with
+no acknowledgement. Durable exponential retry timing has a 60-second authentication
+minimum and the existing 900-second exponential cap. HTTP stays outside transactions;
+there is no sleep under database locks or retry loop within a single HTTP call.
+Replace the private token file and restart the producer to reload it. Once due,
+the original ID and payload retry. 403, 404, redirects, bounds, 429/5xx and existing
+acknowledgement/predecessor fences retain their behavior.
+
+For an original delivery blocked by the previous HTTP-401 classification:
+
+```sh
+tempo-game-evidence retry-auth-delivery --workspace WORKSPACE --delivery-id DELIVERY_ID
+```
+
+Use the same database configuration, `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` and
+`TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE` as `work`; the command also accepts
+`--learning-endpoint` and `--learning-token-file`. It requires both locally valid
+endpoint/token configuration and locks the owning game before the outbox row.
+Only attempted, acknowledgement-free `blocked` rows with exactly
+`remote_rejected_401` and no live lease become immediately due `retryable_failure`.
+The command preserves payload, IDs, revisions, attempts and accepted history, and
+clears only eligible stale lease state. It sends no HTTP. Repeating on the eligible
+already-requeued row is a successful no-op; completed, acknowledged, active-lease,
+wrong-workspace and unrelated terminal/conflict/stale rows are refused unchanged.
+Refusals contain fixed sanitized reasons. There is no bulk recovery at startup.
+
+Local validation does not prove that Learning accepts the credential, nor prove
+previous non-acceptance. The next attempt retries the same immutable delivery;
+Learning's matching completed receipt remains the acceptance authority. Recovery
+never advances accepted history or permits a correction to overtake that receipt.

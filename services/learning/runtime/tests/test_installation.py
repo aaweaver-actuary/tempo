@@ -20,10 +20,12 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
     assert [entry["id"] for entry in migrations] == [
         "learning.runtime/0001",
         "learning.runtime/0002",
+        "learning.remediation/0001",
     ]
     assert migrations[1]["depends_on"] == ["learning.runtime/0001"]
     assert all(
-        (package / "migrations" / entry["path"]).is_file() for entry in migrations
+        __import__("tempo_learning_runtime.migrate", fromlist=["migration_source"]).migration_source(entry)
+        for entry in migrations
     )
     assert (
         json.loads((package / "fixtures/legacy-protocol.json").read_text())["protocol"]
@@ -42,7 +44,7 @@ import sys, pkgutil
 from importlib.abc import MetaPathFinder
 class RejectOptional(MetaPathFinder):
     def find_spec(self,fullname,path=None,target=None):
-        if fullname.split('.')[0] in {'app','celery','redis','torch','onnxruntime','transformers','sqlite3'}:
+        if fullname.split('.')[0] in {'app','celery','redis','torch','onnxruntime','transformers','sqlite3','tempo_game_evidence'}:
             raise AssertionError('Forbidden runtime dependency: '+fullname)
 sys.meta_path.insert(0,RejectOptional())
 def refuse_connection(event,arguments):
@@ -62,3 +64,43 @@ print('installed deferred imports and denied authentication passed')
         [sys.executable, "-I", "-c", guard], capture_output=True, text=True, timeout=10
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_installed_receipt_policy_replays_stale_identity_without_content_or_writes():
+    """Installed API compatibility; actual storage/races live in native suites."""
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    import hashlib
+    from tempo_game_evidence_contracts.v1 import EvidenceDelivery
+    from tempo_learning_remediation import PostgresRepository, ReceiveContext
+
+    value = EvidenceDelivery.model_validate({
+        'contract_version': 1, 'workspace_id': 'installed', 'delivery_id': 'stale',
+        'evidence_id': 'source', 'evidence_revision': 4, 'game_id': 'game', 'game_revision': 4,
+        'encounters': [{'encounter_id': 'encounter', 'ply': 0, 'position_key': 'position',
+                        'decision_id': 'decision', 'observed_move': 'd2d4'}],
+        'comparisons': [], 'misses': [], 'obligations': [],
+    })
+    response = {'contract_version': 1, 'workspace_id': 'installed', 'delivery_id': 'stale',
+        'evidence_id': 'source', 'evidence_revision': 4, 'status': 'stale_revision',
+        'accepted_obligation_ids': [], 'learning_revision': None, 'reason': 'source_revision_superseded'}
+    payload_hash = hashlib.sha256(json.dumps(value.model_dump(mode='json'), sort_keys=True,
+        separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+    class ReceiptReader:
+        info = SimpleNamespace(transaction_status=SimpleNamespace(name='INTRANS'))
+        def execute(self, statement, parameters=()):
+            if statement.startswith('SELECT pg_advisory_xact_lock'):
+                row = None
+            elif statement.startswith('SELECT payload_hash,response_json'):
+                row = (payload_hash, response)
+            elif statement.startswith('SELECT response_json'):
+                row = (response,)
+            else:
+                raise AssertionError('Replay attempted content lookup or a write: ' + statement)
+            return SimpleNamespace(fetchone=lambda: row)
+    context = ReceiveContext('installed', 'game', 4, 'source', 4, datetime.now(timezone.utc), None)
+    owned = PostgresRepository(ReceiptReader(), 'installed')
+    assert owned.receive(value, context, historical_evidence_revision=5, v1_transport_stale=True).model_dump(mode='json') == response
+    assert owned.record_status(value, 'retryable_failure', 'temporary').model_dump(mode='json') == response
+    changed = value.model_copy(update={'game_revision': 6})
+    assert owned.receive(changed, context).status == 'conflict'

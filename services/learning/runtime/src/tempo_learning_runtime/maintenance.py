@@ -3,14 +3,57 @@
 from datetime import datetime, timezone
 import json, logging
 import psycopg
+from tempo_learning_remediation import RemediationError
 from psycopg_pool import PoolTimeout
 from .database import connection
 from .durable_tasks import claim
-from .admission import admit, next_candidates
+from .admission import admit, next_candidates, protected_queue_ids
 from . import frozen_opening_order, queue_ordering
 from .review_service import preserve_daily_queue_order
 
 logger = logging.getLogger(__name__)
+
+
+class SupersededWork(Exception):
+    """Roll back a slice whose task generation/lease no longer authorizes it."""
+
+
+def finish_slice(database, task, payload, more):
+    if task["kind"] == "remediation":
+        # Lock late: claims have committed and card/queue/module operations have
+        # finished. Read the marker here, never from the claim-time snapshot.
+        current = database.execute_native(
+            """SELECT payload_json FROM background_tasks
+               WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'
+                 AND lease_expires_at>clock_timestamp() FOR UPDATE""",
+            (task["id"], task["generation"], task["lease_token"]),
+        ).fetchone()
+        if current is None:
+            raise SupersededWork()
+        merged = json.loads(current[0])
+        merged["after_card"] = payload.get("after_card", "")
+        merged.setdefault("rescan_requested", False)
+        if not more and merged["rescan_requested"]:
+            merged.update(after_card="", rescan_requested=False)
+            more = True
+        payload = merged
+    changed = database.execute_native(
+        """UPDATE background_tasks SET payload_json=%s,state=%s,phase=%s,
+               lease_token=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=NOW()
+           WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'
+             AND lease_expires_at>clock_timestamp()
+           RETURNING id""",
+        (
+            json.dumps(payload),
+            "queued" if more else "complete",
+            "queued" if more else "published",
+            task["id"],
+            task["generation"],
+            task["lease_token"],
+        ),
+    ).fetchone()
+    if not changed:
+        raise SupersededWork()
 
 
 def run_once():
@@ -34,9 +77,37 @@ def run_once():
         return True
     with connection(background=True) as database:
         task = claim(database)
-        if task is None:
-            return False
+    if task is None:
+        return False
+    try:
+        return apply_task(task)
+    except (psycopg.Error, PoolTimeout, RemediationError, SupersededWork):
+        # Claiming committed separately. Release only this still-current lease
+        # after the application transaction rolls back; preserve new generations.
+        try:
+            with connection(background=True) as database:
+                database.execute_native(
+                    """UPDATE background_tasks SET state='queued',lease_token=NULL,
+                    lease_expires_at=NULL,last_error='Learning slice yielded',updated_at=NOW()
+                    WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'""",
+                    (task["id"], task["generation"], task["lease_token"]),
+                )
+        except (psycopg.Error, PoolTimeout):
+            logger.info("Claim release yielded; lease expiry retains recovery")
+        raise
+
+
+def apply_task(task):
+    # Release the task-row lock before acquiring card/queue/module locks. The
+    # final fenced update commits its cursor with the actual application effects.
+    with connection(background=True) as database:
         payload = json.loads(task["payload_json"])
+        if task["kind"] == "remediation":
+            from .remediation_adapter import maintain_one
+
+            more = maintain_one(database, payload)
+            finish_slice(database, task, payload, more)
+            return True
         day = payload["queue_date"]
         cursor = payload.get("after_order_key", [])
         candidates = next_candidates(database, day, cursor)
@@ -45,15 +116,7 @@ def run_once():
             identifier = candidates[0]["id"]
             admit(database, identifier, day)
             payload["after_order_key"] = candidates[0]["sort_key"]
-            database.execute_native(
-                "UPDATE background_tasks SET payload_json=%s,state='queued',lease_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE id=%s AND generation=%s AND lease_token=%s",
-                (
-                    json.dumps(payload),
-                    task["id"],
-                    task["generation"],
-                    task["lease_token"],
-                ),
-            )
+            finish_slice(database, task, payload, True)
         else:
             from .queue_position_lock import lock_queue_date_for_position
 
@@ -71,19 +134,21 @@ def run_once():
                 rows,
                 preserve_through_entry_id=payload.get("preserve_through_entry_id"),
             )
-            for position, row in enumerate(ordered):
+            protected = protected_queue_ids(database, day)
+            movable = iter(row for row in ordered if row["id"] not in protected)
+            ordered = [row if row["id"] in protected else next(movable) for row in rows]
+            for slot, row in zip(rows, ordered):
                 database.execute(
                     "UPDATE daily_queue SET position=? WHERE id=?",
-                    (position, row["id"]),
+                    (slot["position"], row["id"]),
                 )
             preserve_daily_queue_order(database, day)
+            # Match foreground task-before-projection order after card/queue
+            # locks, preventing ensure_current's projection lock from inverting it.
+            finish_slice(database, task, payload, False)
             database.execute_native(
                 "INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,updated_at) VALUES(%s,'ready',1,0,%s) ON CONFLICT(queue_date) DO UPDATE SET state='ready',generation=queue_projections.generation+1,refresh_pending=0,last_error=NULL,updated_at=excluded.updated_at",
                 (day, datetime.now(timezone.utc).isoformat()),
-            )
-            database.execute_native(
-                "UPDATE background_tasks SET state='complete',phase='published',lease_token=NULL,lease_expires_at=NULL WHERE id=%s AND generation=%s AND lease_token=%s",
-                (task["id"], task["generation"], task["lease_token"]),
             )
     return True
 
@@ -91,8 +156,13 @@ def run_once():
 def safe_run_once():
     try:
         return run_once()
-    except (psycopg.Error, PoolTimeout):
+    except (psycopg.Error, PoolTimeout, SupersededWork):
         logger.info(
             "Essential maintenance yielded; durable work remains", exc_info=True
         )
+        return False
+    except RemediationError as error:
+        if error.status != "retryable_failure":
+            raise
+        logger.info("Remediation yielded; durable work remains")
         return False

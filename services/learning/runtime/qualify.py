@@ -16,6 +16,7 @@ from qualification import (
 PACKAGES = (
     "services/learning/runtime",
     "services/learning/application",
+    "services/learning/remediation",
     "packages/scheduling",
     "packages/chess-core",
     "contracts/content-publication",
@@ -166,11 +167,20 @@ def main():
             )
             for relative in PACKAGES:
                 shutil.rmtree(context / relative / "src")
-            for version in ("3.12", "3.14"):
-                consumer = Path(directory) / ("consumer-" + version)
+            for version, kind in (
+                (version, kind)
+                for version in ("3.12", "3.14")
+                for kind in ("wheel", "sdist")
+            ):
+                label = version + "-" + kind
+                consumer = Path(directory) / ("consumer-" + label)
                 consumer.mkdir()
                 run(["uv", "venv", "--python", version, consumer / ".venv"], consumer)
                 python = consumer / ".venv/bin/python"
+                run(
+                    ["uv", "pip", "install", "--python", python, "-r", requirements],
+                    consumer,
+                )
                 run(
                     [
                         "uv",
@@ -178,9 +188,10 @@ def main():
                         "install",
                         "--python",
                         python,
-                        "-r",
-                        requirements,
-                        *sorted(artifacts.glob("*.whl")),
+                        "--no-build-isolation",
+                        *sorted(
+                            artifacts.glob("*.whl" if kind == "wheel" else "*.tar.gz")
+                        ),
                     ],
                     consumer,
                 )
@@ -191,12 +202,12 @@ def main():
                 helper = context / "services/learning/application/qualification.py"
                 shutil.copy2(helper, consumer / "qualification.py")
                 receipts = {}
-                junit = destination / ("installed-" + version + ".xml")
+                junit = destination / ("installed-" + label + ".xml")
                 for stage, extra in (
                     ("collected", ["--collect-only", "-q"]),
                     ("executed", ["-v", "--junitxml=" + str(junit)]),
                 ):
-                    receipt = destination / (stage + "-" + version + ".json")
+                    receipt = destination / (stage + "-" + label + ".json")
                     run(
                         [
                             python,
@@ -216,7 +227,8 @@ def main():
                 identities = validate_inventory(
                     receipts["collected"], receipts["executed"], junit
                 )
-                report["consumers"][version] = {
+                report["consumers"][label] = {
+                    "artifact_kind": kind,
                     "runtime": run([python, "--version"], consumer).strip(),
                     "passed": len(identities),
                     "identities": identities,

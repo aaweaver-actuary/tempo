@@ -1,0 +1,903 @@
+{
+  "base_revision": "18543f08a77618f76f97be61deb2d444c95e7934",
+  "tested_revision": "9d1331872a538fc1780903f68fea0d6da6144b06",
+  "implementation_revision": "3b369830",
+  "root_document_only_updates_after_tests": true,
+  "checkout": "/Users/andy/tempo/.dev-copies/f1-remediation-integration",
+  "evidence_root": "/Users/andy/tempo/test-results/f1-integration-20261015",
+  "toolchain": {
+    "python": [
+      "3.12.12",
+      "3.14.8"
+    ],
+    "node": "26.10.0",
+    "uv": "0.12.22",
+    "ruff": "0.15.17",
+    "playwright": "1.63.0",
+    "postgresql": "18.6-trixie",
+    "postgresql_image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+  },
+  "registered_suites": [
+    {
+      "suite": "learning",
+      "command": "services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py /Users/andy/tempo/test-results/f1-integration-20261015/native-issuance-final",
+      "passed": 112,
+      "failed": 0,
+      "skipped": 0,
+      "report": "native-issuance-final/native.json",
+      "inventory_sha256": "4a59021a896779e5c727aa3e063ab79ccd7666822923a612dcf23ef64d3609d9"
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/run_suite.py pure",
+      "cwd": ".",
+      "passed": 58,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "d47b025469ff3bef0862e4e91a4c878681c37065e4b84b9b84151351c9510ceb"
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/run_suite.py tooling",
+      "cwd": ".",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "bf403d3300156aab20d3c2a10190c842075230818efa40c8a0c6f3a9e969d4f9"
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/integration/run_postgres.py",
+      "cwd": ".",
+      "passed": 49,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "798c7b3bd4cc592ef43c073376eebf1f38eddff68f3724af46605672a22d06cf"
+    },
+    {
+      "suite": "game-evidence-contracts",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "cwd": "contracts/game-evidence",
+      "passed": 99,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "393900e34a06f0a159de002a1101b9065df77acc3661b96882f69ede62492a7e"
+    },
+    {
+      "suite": "scheduling",
+      "command": "uv run --locked --no-editable python -m pytest tests",
+      "cwd": "packages/scheduling",
+      "passed": 55,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "160d565881c1db1d0bc8118b4b773e714ed4232247c8b649042d6c4bb2a8ce00"
+    },
+    {
+      "suite": "chess-core",
+      "command": "uv run --locked --no-editable python -m pytest tests",
+      "cwd": "packages/chess-core",
+      "passed": 105,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "92623112f4551ecfd1c1713b53cfcec66c71ce51f235c73e6f61423a9a8fed69"
+    },
+    {
+      "suite": "content-publication-contracts",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "cwd": "contracts/content-publication",
+      "passed": 99,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-remediation-final.log",
+      "inventory_sha256": "bc785e5493982a4dc3640bc8ec443d93b416f7a6392d1b834cfb3d37c0c8d453"
+    },
+    {
+      "suite": "learning-review-application",
+      "command": "python run_suite.py application",
+      "cwd": "services/learning/application",
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-legacy-qualified.log",
+      "inventory_sha256": "b05e71d610d2640a7f28f7e1673db48da788d35cc665a9da059f6077ee4e7556"
+    },
+    {
+      "suite": "learning-review-application",
+      "command": "python services/learning/application/run_suite.py tooling",
+      "cwd": ".",
+      "passed": 101,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-legacy-qualified.log",
+      "inventory_sha256": "ecf7b723917a67859c594c24865bd8e7f214f682e29aa328c5c6bd881bde0ec0"
+    },
+    {
+      "suite": "learning-review-application",
+      "command": "python services/learning/application/integration/run_postgres.py",
+      "cwd": ".",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-legacy-qualified.log",
+      "inventory_sha256": "b029b2f4248264c2b6898d99e138e1884d956d8542304da20c6f0523d8b1596f"
+    },
+    {
+      "suite": "game-evidence",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "cwd": "services/game-evidence",
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-game-evidence-final.log",
+      "inventory_sha256": "1d83861f9e4039b2f3d8879c33b5c957668725cfedec98aa471107c9f8710911"
+    },
+    {
+      "suite": "game-evidence",
+      "command": "python services/game-evidence/integration/run_postgres.py",
+      "cwd": ".",
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "report": "registered-game-evidence-final.log",
+      "inventory_sha256": "e63697d8a604555d4eb61d86d35f5735932cc50d9ce66a268f95231791b9a285"
+    }
+  ],
+  "component_tooling": {
+    "passed": 77,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0,
+    "source": "3b369830",
+    "reused_reason": "Only runtime tests and prose changed in 9d133187; component-tooling/checker and production inputs unchanged."
+  },
+  "learning_consumers": {
+    "3.12-wheel": {
+      "artifact_kind": "wheel",
+      "runtime": "Python 3.12.12",
+      "passed": 2
+    },
+    "3.12-sdist": {
+      "artifact_kind": "sdist",
+      "runtime": "Python 3.12.12",
+      "passed": 2
+    },
+    "3.14-wheel": {
+      "artifact_kind": "wheel",
+      "runtime": "Python 3.14.8",
+      "passed": 2
+    },
+    "3.14-sdist": {
+      "artifact_kind": "sdist",
+      "runtime": "Python 3.14.8",
+      "passed": 2
+    }
+  },
+  "learning_artifacts": {
+    "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+    "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+    "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+    "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+    "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a",
+    "tempo_learning_remediation-0.1.0-py3-none-any.whl": "06decf69244aa47e257ee5897085f0d34984b21fc3696544708f60ef298856f9",
+    "tempo_learning_remediation-0.1.0.tar.gz": "fc87fa7ed9d8e15f597ce0dfb9c0691698dd02824809c472573b304fa7e7b579",
+    "tempo_learning_review-0.1.0-py3-none-any.whl": "f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce",
+    "tempo_learning_review-0.1.0.tar.gz": "38d432ee798f2184aa62aac64527448fc7f89e28bbcb9add1fd0ecb5c446db1e",
+    "tempo_learning_runtime-0.1.0-py3-none-any.whl": "f74fa4ddbf70e69ca38f30fc7a27520890d830b6562d229a713b73da634608e0",
+    "tempo_learning_runtime-0.1.0.tar.gz": "927543d677c84dcec39f4b24012d1438f552bc7f6424f908af33513948576865",
+    "tempo_scheduling-0.2.0-py3-none-any.whl": "7fd727f381877ef8e80e11fc3d56f1e75b872db4969c59ae218c30856d6a649d",
+    "tempo_scheduling-0.2.0.tar.gz": "718cc1d3f90d19b53f6c6d0014befdae0e68605bcf7e57aa6754e520e96b5e3c"
+  },
+  "producer_consumers": {
+    "python-3.12-wheel": 37,
+    "python-3.12-sdist": 37,
+    "python-3.14-wheel": 37,
+    "python-3.14-sdist": 37
+  },
+  "producer_build_sources_removed": true,
+  "producer_artifacts": {
+    "tempo_game_evidence-0.1.0-py3-none-any.whl": "905f21c742ebcb71ceed4aac076f94f94f91430572c4a085e6da252f595c36f4",
+    "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+    "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+    "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a",
+    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+    "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+    "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+    "tempo_game_evidence-0.1.0.tar.gz": "d39530052ebc3ae32b3fdbd2442526c9e72d16333c8e290eeeedcf8278797fb1"
+  },
+  "reports_sha256": {
+    "native-issuance-final/native.json": "7e9083933f7630a4a5915fa2bba7c406a305a56d4079801a6333e7daa2e42c63",
+    "installed-issuance-final/installed.json": "013d6572402cbb7d1018b8e894ef2158919b678dda75ff826c563fc5bf4eb514",
+    "game-evidence-artifacts-final/artifacts.json": "d0e5349c08cdd99b38b4b2953b84863d2206bd344b38beabd188a16634d0b238",
+    "registered-remediation-final/native.json": "5f567f55d711b9ebe29167cf099b4416be77318da5ee4f5876e7b74a759295fb",
+    "registered-legacy-qualified/native.json": "2795ca1cfc22f3e1c4730967455510c37586610665f9d8969fbe620c49dbc09f",
+    "registered-game-evidence-native/native-resource.json": "45bea6f99d17da53ca434138db47fb1779bd7cb8e2afdad0678281d9dc2e40f2",
+    "tooling-final.log": "bd24da69db2843b32f5620a8811b175d157f3ad351f02300cfc456cfaa26f284",
+    "component-boundaries-final.log": "d1a54a2e69223e9a0b78758f58c58b26e5f5c06d32e0456f85ce20c322e67106",
+    "executed-inventory.json": "6bef626a22cc9ba3206f2fc6d90143e58674cee013bd27a9a2a49af22513371b"
+  },
+  "limits": [
+    "No deployment/live migration/history conversion.",
+    "No full Study application routing, teaching route adoption, two-tab UI or service-worker qualification.",
+    "Independent Learning has no review invalidation command; a future writer must invalidate settlement in its transaction.",
+    "No hosted merge qualification claimed. #194/#224 remain open."
+  ],
+  "cleanup_receipts": {
+    "learning": {
+      "container_absent": true,
+      "volume_absent": true,
+      "runtime_image_tag_removed": true,
+      "temporary_test_data_removed": true
+    },
+    "remediation": true,
+    "legacy": true,
+    "producer": {
+      "container_removed": true,
+      "volume_removed": true
+    },
+    "unrelated_stopped_container_retained": "tempo-learning-f63e01195e88b5e4",
+    "final_ref_and_checkout_record": "/Users/andy/tempo/test-results/f1-integration-20261015/cleanup.json"
+  },
+  "current_qualification": "repair_qualification",
+  "qualification_history_note": "Original top-level counts and hashes are historical F1 evidence; repair_qualification records the current PR287 recovery qualification.",
+  "repair_qualification": {
+    "reviewed_head": "4dd771e60cd26da2e6134ca265e4fb440810ade2",
+    "actual_starting_head": "4dd771e60cd26da2e6134ca265e4fb440810ade2",
+    "base_revision": "18543f08a77618f76f97be61deb2d444c95e7934",
+    "merge_base": "18543f08a77618f76f97be61deb2d444c95e7934",
+    "tested_revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+    "implementation_commits": [
+      "33185fa9",
+      "52d7b5c5"
+    ],
+    "published_branch": "codex/f1-remediation-integration",
+    "task_branch": "codex/f1-recovery-repairs-20261016",
+    "checkout": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+    "evidence_root": "/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65",
+    "toolchain": {
+      "python": [
+        "3.12.12",
+        "3.14.8"
+      ],
+      "node": "26.10.0",
+      "uv": "0.12.22",
+      "ruff": "0.15.17",
+      "postgresql_image": "postgres:18.6-trixie",
+      "postgresql_image_digest": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+    },
+    "findings": {
+      "R1": {
+        "disposition": "reproduced and repaired",
+        "root_cause": "Generic enqueue replaced an unfinished cursor, generation and lease; review could request remediation before daily work.",
+        "behavior": "Same-day marker-only coalescing; current-payload finalization; follow-up pass; old-day rejection; review task flush after prepared issuance.",
+        "primary_regressions": [
+          "test_remediation_refresh_preserves_active_cursor_and_lease",
+          "test_repeated_refreshes_do_not_starve_later_remediation_card",
+          "test_remediation_arrival_behind_cursor_is_found_by_followup_pass",
+          "test_remediation_rescan_racing_with_final_slice_is_not_lost",
+          "test_remediation_day_change_fences_old_slice",
+          "test_remediation_failed_slice_release_preserves_concurrent_rescan",
+          "test_review_task_locks_follow_prepared_continuation_issuance"
+        ]
+      },
+      "R2": {
+        "disposition": "reproduced and repaired",
+        "root_cause": "Unlocked runtime stale shortcuts and unpersisted repository stale outcomes did not bind transport digest.",
+        "behavior": "Module-owned serialized digest and receipt decisions; immutable stale receipts; default semantic replay and v1 compatibility kept distinct.",
+        "primary_regressions": [
+          "test_stale_v1_delivery_receipt_survives_reconnect",
+          "test_stale_v1_delivery_id_cannot_be_reused_with_newer_payload",
+          "test_historical_frontier_stale_delivery_binds_transport_identity",
+          "test_concurrent_stale_delivery_identity_reuse_is_serialized",
+          "test_stale_receipt_failure_rolls_back_without_acceptance_effects",
+          "test_v2_historical_semantic_replay_is_unchanged_by_v1_stale_policy"
+        ]
+      },
+      "R3": {
+        "disposition": "reproduced and repaired",
+        "root_cause": "Endpoint work admitted missing credentials and delivery classified Learning HTTP401 as terminal blocked.",
+        "behavior": "Preflight before mutation; immutable delivery retries with minimum60-second durable auth backoff; explicit narrow legacy retry-auth-delivery recovery.",
+        "primary_regressions": [
+          "test_work_with_learning_endpoint_requires_private_credential_before_mutation",
+          "test_learning_401_retries_original_delivery_after_credential_correction",
+          "test_retry_auth_delivery_recovers_only_legacy_401_block",
+          "test_retry_auth_delivery_rejects_other_states_and_active_leases",
+          "test_auth_retry_preserves_predecessor_and_acknowledgement_fences",
+          "test_installed_producer_auth_recovery_accepts_once_in_independent_learning"
+        ]
+      }
+    },
+    "reproduction": {
+      "initial_regressions_added_before_production_changes": true,
+      "final_unchanged_test_comparison": "red-green-test-inputs.json",
+      "original_source_run": "final-regressions-on-original.json",
+      "original_source_results": {
+        "passed": 115,
+        "failed": 20
+      },
+      "repaired_source_results": {
+        "passed": 135,
+        "failed": 0
+      },
+      "excluded_from_primary_reproduction_claims": [
+        "New optional installed API is absent on old source (TypeError); this is not a defect reproduction.",
+        "Additional content-stale receipt test encounters an absent row (IndexError) on old source; primary source-frontier receipt tests use explicit assertions."
+      ],
+      "initial_development_setup_failures": [
+        "Missing component-local browser dependencies; installed its lockfile.",
+        "Historical acknowledgement fixture initially omitted required reason; corrected before valid historical reproduction.",
+        "Producer native runner initially lacked its dev-only remediation package after assembly runner deliberately installed producer with --no-dev; restored its declared environment.",
+        "Contract aggregate lacked declared jsonschema; final selected inventory passed in the contract-provisioned environment.",
+        "Tooling fixture lacked chess-line local dependencies; scoped install and unchanged tooling suite passed."
+      ],
+      "test_fixture_adjustments": [
+        "Fairness fixture runs pairs of slices between continuing refreshes, respecting unchanged daily replacement semantics.",
+        "Existing stale withdrawal fixture now checks conflicting ID reuse, then uses a fresh transport for its corrected exact-revision withdrawal.",
+        "Stale-content rejection retains explicit zero evidence/contribution/workspace authority checks while acknowledging its newly durable transport receipt."
+      ]
+    },
+    "lanes": [
+      {
+        "label": "learning-native-final",
+        "command": [
+          "services/learning/runtime/.venv/bin/python",
+          "services/learning/runtime/integration/run_postgres.py",
+          "/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65/native-final"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:54.594967+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:27:05.568369+00:00",
+        "counts": {
+          "passed": 135,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "learning-native-final.log"
+      },
+      {
+        "label": "remediation-native-final",
+        "command": [
+          "services/learning/remediation/.venv/bin/python",
+          "services/learning/remediation/integration/run_postgres.py",
+          "/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65/remediation-final"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:31.080616+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:36.202646+00:00",
+        "counts": {
+          "passed": 50,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "remediation-native-final.log"
+      },
+      {
+        "label": "remediation-pure-final",
+        "command": [
+          "services/learning/remediation/.venv/bin/python",
+          "services/learning/remediation/run_suite.py",
+          "pure"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:36.236152+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:37.106241+00:00",
+        "counts": {
+          "passed": 58,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "remediation-pure-final.log"
+      },
+      {
+        "label": "remediation-tooling-final",
+        "command": [
+          "services/learning/remediation/.venv/bin/python",
+          "services/learning/remediation/run_suite.py",
+          "tooling"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:37.141649+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:39.514835+00:00",
+        "counts": {
+          "passed": 10,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "remediation-tooling-final.log"
+      },
+      {
+        "label": "producer-native-coherent",
+        "command": [
+          "services/game-evidence/.venv/bin/python",
+          "services/game-evidence/integration/run_postgres.py",
+          "/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65/producer-coherent"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:23:21.502675+00:00",
+        "revision": "4dd771e60cd26da2e6134ca265e4fb440810ade2",
+        "diff_sha256": "227dd17019590201be2c9e0ff9f488283a911304c997788de01d21ea5f30b212",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:24:02.606351+00:00",
+        "counts": {
+          "passed": 64,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "producer-native-coherent.log",
+        "input_equivalent_reuse": "All producer source/fixture/runner and remediation receiver inputs match the committed revision byte-for-byte; see producer-native-input-equivalence.json. Environment, command, database image and toolchain are unchanged."
+      },
+      {
+        "label": "legacy-final",
+        "command": [
+          "env",
+          "TEMPO_COMPONENT_PYTHON=/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016/backend/.venv/bin/python",
+          "TEMPO_LEARNING_EVIDENCE_DIR=/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65/legacy-final",
+          "node",
+          "tools/component-build/test-lane.mjs",
+          "--component",
+          "learning-review-application"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:27:41.524416+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:27:54.625475+00:00",
+        "counts": {
+          "application": 43,
+          "tooling": 101,
+          "postgres": 24,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "legacy-final.log"
+      },
+      {
+        "label": "learning-artifacts",
+        "command": [
+          "services/learning/runtime/.venv/bin/python",
+          "services/learning/runtime/qualify.py",
+          "/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65/learning-artifacts"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:10.559366+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:37.670239+00:00",
+        "counts": {
+          "3.12-wheel": 3,
+          "3.12-sdist": 3,
+          "3.14-wheel": 3,
+          "3.14-sdist": 3,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "learning-artifacts.log"
+      },
+      {
+        "label": "producer-artifacts",
+        "command": [
+          "services/game-evidence/.venv/bin/python",
+          "services/game-evidence/integration/qualify_artifacts.py",
+          "/Users/andy/tempo/test-results/f1-recovery-20261016-efc64d65/producer-artifacts"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:09.942431+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:34.389970+00:00",
+        "counts": {
+          "3.12-wheel": 46,
+          "3.12-sdist": 46,
+          "3.14-wheel": 46,
+          "3.14-sdist": 46,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "producer-artifacts.log"
+      },
+      {
+        "label": "dependencies-final",
+        "command": [
+          "env",
+          "TEMPO_COMPONENT_PYTHON=/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016/backend/.venv/bin/python",
+          "node",
+          "tools/component-build/test-lane.mjs",
+          "--component",
+          "scheduling",
+          "--component",
+          "chess-core",
+          "--component",
+          "content-publication-contracts",
+          "--component",
+          "game-evidence-contracts"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:30:49.644509+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:30:52.674881+00:00",
+        "counts": {
+          "scheduling": 55,
+          "chess-core": 105,
+          "content-publication-contracts": 99,
+          "game-evidence-contracts": 99,
+          "failed": 0,
+          "skipped": 0
+        },
+        "log": "dependencies-final.log"
+      },
+      {
+        "label": "boundaries",
+        "command": [
+          "env",
+          "TEMPO_COMPONENT_PYTHON=/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016/backend/.venv/bin/python",
+          "node",
+          "tools/component-build/check-components.mjs",
+          "--component",
+          "learning",
+          "--component",
+          "game-evidence"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:23:23.424444+00:00",
+        "revision": "4dd771e60cd26da2e6134ca265e4fb440810ade2",
+        "diff_sha256": "227dd17019590201be2c9e0ff9f488283a911304c997788de01d21ea5f30b212",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:23:24.044251+00:00",
+        "counts": {
+          "status": "passed"
+        },
+        "log": "boundaries.log",
+        "input_equivalent_reuse": "Checker/metadata/production source inputs are unchanged from their successful run; commit adds no further checker input changes."
+      },
+      {
+        "label": "component-tooling-final",
+        "command": [
+          "env",
+          "TEMPO_COMPONENT_PYTHON=/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016/backend/.venv/bin/python",
+          "node",
+          "tools/component-build/test-node.mjs",
+          "tools/component-build/tests"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:30.508799+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:41.686702+00:00",
+        "counts": {
+          "passed": 77,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "log": "component-tooling-final.log"
+      },
+      {
+        "label": "static",
+        "command": [
+          "/Users/andy/.local/bin/ruff",
+          "check",
+          "--select",
+          "F821,F822,F823",
+          "services/learning/runtime",
+          "services/learning/remediation",
+          "services/game-evidence"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:28.403474+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:28.521920+00:00",
+        "counts": {
+          "status": "passed",
+          "scope": "F821,F822,F823 only"
+        },
+        "log": "static.log"
+      },
+      {
+        "label": "conflicts",
+        "command": [
+          "npm",
+          "run",
+          "check:conflicts"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:28.554380+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:29.259660+00:00",
+        "counts": {
+          "status": "passed"
+        },
+        "log": "conflicts.log"
+      },
+      {
+        "label": "whitespace",
+        "command": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "cwd": "/Users/andy/tempo/.dev-copies/f1-recovery-repairs-20261016",
+        "started": "2026-10-16T09:25:29.294463+00:00",
+        "revision": "52d7b5c5d2cf34233723184315119ae6897af942",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "exit_code": 0,
+        "finished": "2026-10-16T09:25:29.348733+00:00",
+        "counts": {
+          "status": "passed"
+        },
+        "log": "whitespace.log"
+      }
+    ],
+    "artifact_sha256": {
+      "learning-artifacts/artifacts": {
+        "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+        "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+        "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+        "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+        "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+        "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a",
+        "tempo_learning_remediation-0.1.0-py3-none-any.whl": "8911550c644736b905aca893aa2266c5e4257be3407e43edcb17bdc361e8a2d2",
+        "tempo_learning_remediation-0.1.0.tar.gz": "0a2d133b68a70ddffffcc1579fc79e7f492dc2388f42ef69eebfb68408d15f9f",
+        "tempo_learning_review-0.1.0-py3-none-any.whl": "f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce",
+        "tempo_learning_review-0.1.0.tar.gz": "38d432ee798f2184aa62aac64527448fc7f89e28bbcb9add1fd0ecb5c446db1e",
+        "tempo_learning_runtime-0.1.0-py3-none-any.whl": "b0113ebae9d7c56a0e7a4da5517ef0065b88ce133dae5bd8eeee378c8feb5c40",
+        "tempo_learning_runtime-0.1.0.tar.gz": "a578e760bf66ff7a133aed19f57c40b058c22366f7e73410bc2e6608e4661efc",
+        "tempo_scheduling-0.2.0-py3-none-any.whl": "7fd727f381877ef8e80e11fc3d56f1e75b872db4969c59ae218c30856d6a649d",
+        "tempo_scheduling-0.2.0.tar.gz": "718cc1d3f90d19b53f6c6d0014befdae0e68605bcf7e57aa6754e520e96b5e3c"
+      },
+      "producer-artifacts/distributions": {
+        "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+        "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+        "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+        "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+        "tempo_game_evidence-0.1.0-py3-none-any.whl": "1d1ed9ff6b24565607b065a13fa8477bc2485f8774d37cf03a4a414b7aafbcfb",
+        "tempo_game_evidence-0.1.0.tar.gz": "62dee000867ead67d08385f9c8d55244975ebe487ca96953a78cfdd6102bed9e",
+        "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+        "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a"
+      }
+    },
+    "reports_sha256": {
+      "native-final/native.json": "4600e11cbc985f438306bada31d09743d7bf86846210a2d1e7b8810d22f8664f",
+      "native-final/run-d5ca44a67a44e369/collected.json": "830e5a1e66a28c9de1d6fdb745ce8e3efdaa8afb73a16992d9e64fe985475a63",
+      "native-final/run-d5ca44a67a44e369/collected.log": "009c75ac6eae8119e353f019c281c7dae0adb39492dcf6d16d7929817c1b7f6d",
+      "native-final/run-d5ca44a67a44e369/container-build.log": "26bf5d03e2da6e2c31f77afd6a498f017841bc604cfe351c74101d8a09ee6638",
+      "native-final/run-d5ca44a67a44e369/executed.json": "284c65a64c6f5477d383d3af8ef51334a0b93fcbeace5e6c5744c08bb82fe8b5",
+      "native-final/run-d5ca44a67a44e369/executed.log": "e467050ef39438558d038da1efcf5b5b2b61579160a480818522dbd994a9e61e",
+      "native-final/run-d5ca44a67a44e369/native.json": "4600e11cbc985f438306bada31d09743d7bf86846210a2d1e7b8810d22f8664f",
+      "native-final/run-d5ca44a67a44e369/native.xml": "61c1850355aec8ed02b875be38f9757e5d4bfc34690048cb84836114bd2ca251",
+      "native-final/run-d5ca44a67a44e369/producer-install.log": "f8eca1d82020ddbd818fab6f6d251ebacdcaeb207b214aa1cdf0851a02d35e25",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-1952ec68dd32443b994eb987ad458db9.log": "deef995c0f5b012cbe15c026289f1f45c2bccb52d9611fde794f705bb5da57f7",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-2d7092e477134baab01a87978b5266a6.log": "2363e823cb85b2e453d691adf307f97f8d3f09cb1738332d73abae49f9b0e11c",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-46bc4bd44f9e428bafadda7edb58676a.log": "c65fcbc18cdb9bbd5e86cb181a0f5683399cb4d79ef7696c70f0023aaf21fc78",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-4aceac48013e4f26aaba5cc838b6393d.log": "cd34d364c13e48b0fc0c6b8189e4822a397fb16812be0d9d310bdd28bf587cdf",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-4d9dcc9731024ff3b13222ef069af928.log": "c4d294b252c846f828fba7e9bd60b7c255934589b285e6be8afca40f84bc5c2d",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-539e0a8542664f92ae1264db5f991167.log": "70d2e6de93fb8060cef40ac49e2328f256a32f1d785cb942997f230d791795ec",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-7a6e80c64adc44a1ba1846c3f0860cc3.log": "52b1efca488b9e2f48270cfd7915269f8783409fc8214d6ff0ba9ae1db4abbbd",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-93c410a79e4c4dae8b99f65e5ac3029f.log": "306fe56569eecaa9a54c2fefd87f8e1bd5ee2b3fd66dd82a7494406c1e8783b9",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-a621afbbcad84f39b0411aaac5dc697e.log": "bc3ba72b5ccdddff5e2cbd19f86f946880de148fff1de490b82a4ad2a3fb1e9e",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-acc3091256cb4dcb847430d3eb39fd9c.log": "bf4e9b2c6fd9957e9a29961c049cb795f3b74c0ad969267a2120f59e26d5fd5c",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-bebc9a123ab447f3acd0dd05e42e645b.log": "7d753c56ad589910e76eb6c8ee70fc9d9de14d22d29d618f539d0407d609e7bb",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-d56ad678ab8340da9f03de55911fa03f.log": "5b526a3def2632b8c762874080e64e6a692352a172f51d734f1c989a1d44b98b",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-dbd41c2fd9aa4793a8493d756b178bd1.log": "220b33a768e293203d4195016326cf2746c3321a2e4a109b511e03ec6fd8a5d3",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-ea927bed0b1847bb8d83f4a0f377075d.log": "0170d5d20098a156e71ebcd8fd9b7bc4b3408ac66f76e66dd0097fd152517394",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-f33cca38fc7e4eaf8a66ec79a5cb3ebd.log": "1bd94e5ca3a82d2a5e59d428fe71e24451e52f62ef383660ed0b7c7656ff387c",
+      "native-final/run-d5ca44a67a44e369/service-logs/server-f91debacd214454581a58ece6e980ff7.log": "9a2af9e1f462ea5bdaf27f5957fff437c789eb972ad22832e06668f68160d700",
+      "remediation-final/native.json": "3ae436ee82b8c0ab4527b89ba12997894477dd1223ecdfe7be76ae89f4dfcff7",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/collected.json": "affe1b41f9078a8812b931115012e2410f521eea01f79c430ff0208802161f61",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/collected.log": "7e1376cb2eecd6c6e3ef4b64942f6472e5c1e0774c2871b0cea9b897927a7181",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/executed.json": "001b446a2aff877919a974355a5131d42efeeddbbb6d6fed8f58ec62d9224f67",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/executed.log": "9e307b4b7d7716bb63fd949dee50a47806ddaef2efae731affb284ad3cbaf1cd",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/native.json": "3ae436ee82b8c0ab4527b89ba12997894477dd1223ecdfe7be76ae89f4dfcff7",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/native.xml": "3f7de8ff1bbb3364010d9e2afd33b197db2cf237346d6674b2ef83040864d54f",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/pending-lookup-plan.json": "8b149c1e7bc186d7b8920016a7e15a298b5f0a7c3109a967e41a1d353eefef79",
+      "remediation-final/runs/f8a14066cbad4b688f7f1b5627af6945/same-frontier-lookup-plan.json": "61e64339ed29b4867dd0aa4c9de3c961f8f0361eb70400f3c39e1faa24c01d6e",
+      "producer-coherent/native-resource.json": "e5836948384f2ff20eef932a3bba2a9c837cbbe274c3f04648072f6654d63cdb",
+      "producer-coherent/native.log": "051dfe4895d6a0d6c2b5a0c0eb51cdcb5b72f51a5498c0e9bc065253f587c011",
+      "producer-coherent/native.xml": "4ff82f5771ce48816260fef1968249f80cf1867434c99cf5b8e5ec989cc957ee",
+      "legacy-final/component-application/4e6e82de8135462a9a7667c032c7082d/collected.json": "42e1608b7bad7a46d4874ccdb0375fe381161745886c5fb35e31e6a802413469",
+      "legacy-final/component-application/4e6e82de8135462a9a7667c032c7082d/collected.log": "29e62a26dcd57c809c0395c728a7d1417e0ece1f011f4e325829ffdf34928919",
+      "legacy-final/component-application/4e6e82de8135462a9a7667c032c7082d/executed.json": "32da8768763607cc78f098a6bcf2b3b915568302b42a65cfdcdefa8f3ac1583f",
+      "legacy-final/component-application/4e6e82de8135462a9a7667c032c7082d/executed.log": "99c93b8af00ea72d13a0cafd2316640d2322dbcc3eb611e3cc1bfa840c26e7d3",
+      "legacy-final/component-tooling/b8bfa90cb4614f089a4d50c0b090c14b/collected.json": "3c635029615bb37fd1feea7821a46552a3946e411768062bd2c90f09a0ccd523",
+      "legacy-final/component-tooling/b8bfa90cb4614f089a4d50c0b090c14b/collected.log": "aa6d569a78177cc96c0b169d0b3d98636b9a23415dca69a097b95d18ed4dd4b6",
+      "legacy-final/component-tooling/b8bfa90cb4614f089a4d50c0b090c14b/executed.json": "0ba774c99341eef4ff76197a1af4b91539eca4bd6cbdf12134ed599cd382823e",
+      "legacy-final/component-tooling/b8bfa90cb4614f089a4d50c0b090c14b/executed.log": "10dfc6c016e710337aa1e1a0e72a9f9287e44d3a6fb4455eb929ae33071a2ccf",
+      "legacy-final/native-resource.json": "0bba8dd65827e20aa7e130508edd9cec97c70387d7705b1d0536da9f5a2c48c7",
+      "legacy-final/native.json": "5c99f905986a92b39bf7686df34f5cc54438f2545ea8a68ee6c82b68100b0b81",
+      "legacy-final/native.xml": "8520f357b2832e7d68a682f82c670ca9641ab3abcf817d13fbd3114b39357321",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native-collected.json": "1caec47a960fa14fcbeec29bbb9bd0ccdc159a31223c93cd54e918eced232821",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native-collected.log": "c76d809b42f7e0cf1fa59b9da5173c418c1a0980fb950c9583c9e351e4032f7e",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native-executed.json": "e5c4a3d9bbf96ca713c7277fd54beaa849fc1d6db6d7c1129f26a77a18cd44e9",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native-executed.log": "e649ddbb382765ce6a5c55875d17d6da63d40456257bf397a173eae393ddb3e9",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native-resource.json": "0bba8dd65827e20aa7e130508edd9cec97c70387d7705b1d0536da9f5a2c48c7",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native.json": "5c99f905986a92b39bf7686df34f5cc54438f2545ea8a68ee6c82b68100b0b81",
+      "legacy-final/runs/tempo224-ac15aaf1e1896d4c/native.xml": "8520f357b2832e7d68a682f82c670ca9641ab3abcf817d13fbd3114b39357321",
+      "learning-artifacts/collected-3.12-sdist.json": "4d2bbe8a78c1228fd54b265c5c319f67dfc282dd77db75a371f7f9cb3a2acce7",
+      "learning-artifacts/collected-3.12-wheel.json": "4d2bbe8a78c1228fd54b265c5c319f67dfc282dd77db75a371f7f9cb3a2acce7",
+      "learning-artifacts/collected-3.14-sdist.json": "4d2bbe8a78c1228fd54b265c5c319f67dfc282dd77db75a371f7f9cb3a2acce7",
+      "learning-artifacts/collected-3.14-wheel.json": "4d2bbe8a78c1228fd54b265c5c319f67dfc282dd77db75a371f7f9cb3a2acce7",
+      "learning-artifacts/command-00.log": "ceeee2943fbb95f38074389dfe64c5e0dc8670df6eaac8ed35c0865cba9289d7",
+      "learning-artifacts/command-01.log": "b1a5c123c0680626a9918e5699d8ae7a82822bfe0b86bb35190f099da3696a32",
+      "learning-artifacts/command-02.log": "02f3f7658d5807f1924365130e3a96f8b27eec8933ab9e652285e9dbe61a2c96",
+      "learning-artifacts/command-03.log": "ab2b0a6cc94a705dcb6eae55b061d18c348409bae8cf164e022f77a5a922b419",
+      "learning-artifacts/command-04.log": "453e266d90242498ab0dfe9386a3c84788aedfaff9b32fef0d30279a4083096b",
+      "learning-artifacts/command-05.log": "e4961748fed7f1396e177ab0a436b2dc5e9dd356be822905d29f10a1dfecf08d",
+      "learning-artifacts/command-06.log": "a6d7d769790d6e7806825ecf093b0b711e675f6ffb857e6216b1d39463e1b295",
+      "learning-artifacts/command-07.log": "d1dcc2db71214d6458e0b02a15629aabbc065f7a0338f593e803fabb4f949c18",
+      "learning-artifacts/command-08.log": "b3611377e7da483f160fcc30a435d120a352235fccc7f144db81dc78056bdc02",
+      "learning-artifacts/command-09.log": "08b6bb3178f722dcf52c5033a32c490abfc7aec4a70cd4f97544c28d7d70832d",
+      "learning-artifacts/command-10.log": "0db175f7abfb4ed55df7c49cbeaba069b1838fd97972285dffc54066f58493e7",
+      "learning-artifacts/command-11.log": "ca0a14f0572de166be6123aa74cd428561d9542f6d8c0bea368a4ef19019a792",
+      "learning-artifacts/command-12.log": "a488e17173754b86c5ab9e490435c36cd3c62420ffaf6f52e43f03ddc9781862",
+      "learning-artifacts/command-13.log": "e2dcd4d96655240dd9c636c6e2aa4dc1b282fee900a5bba5ffb3a4f021fe091a",
+      "learning-artifacts/command-14.log": "08c2cdd6ce4405a8900d072fc0a1b50072b6fd4491d3f5f6b640472e36bc450a",
+      "learning-artifacts/command-15.log": "11127b908355ca05c3fd89fb6e7622ae40cd54419cb5d62508fd633c259ee313",
+      "learning-artifacts/command-16.log": "54df5a5d07e4e613d603bf32d55015548552c7039e683b109d3368cf925a748a",
+      "learning-artifacts/command-17.log": "6ceab5d025b294e63d24a54d4f0e1b672506c68d5e8d83fba782e89e20e7ff2f",
+      "learning-artifacts/command-18.log": "522a425132b77b71b67f472b0b207cbfdff601090b275f4a56e142594f66b0cd",
+      "learning-artifacts/command-19.log": "7025e6e581f448b596c4a5e07880c930ddd5365711a8500ec1de504f3ad9d34e",
+      "learning-artifacts/command-20.log": "af76352a3097626cd6b6f06860d727b736daedc6dcabbbd1c996cb420a9c2237",
+      "learning-artifacts/command-21.log": "44747e003c4cd8220fc925c8efa7a3a254d60fa6b20aa8c3cfc3cd135ba1305f",
+      "learning-artifacts/command-22.log": "e7b1e1f709847b92933c404269e9282fb70d15f3dda16c446653a0981aae48f1",
+      "learning-artifacts/command-23.log": "11127b908355ca05c3fd89fb6e7622ae40cd54419cb5d62508fd633c259ee313",
+      "learning-artifacts/command-24.log": "4f1c87a64a641f6904f72a54ea46b5e6a9328ade0966db5d92fb0bb384f06d13",
+      "learning-artifacts/command-25.log": "6ceab5d025b294e63d24a54d4f0e1b672506c68d5e8d83fba782e89e20e7ff2f",
+      "learning-artifacts/command-26.log": "b1cd8fe652cb3f3d946478ed6c70ae752690b76bcece3444dcdb7dbe9968e0e6",
+      "learning-artifacts/command-27.log": "37a84dbce2d096be89a744eb9290b7202e169215a3ed96407c4b892739e2b3fb",
+      "learning-artifacts/command-28.log": "ffdff1c6121ea2ea0529df3413db49f518e5bcd4a8b701adf7d2d7e62c06b839",
+      "learning-artifacts/command-29.log": "77f708ce9d3949eb776b345d69ea93cea5d3dc79abaa33d38927ab4a6f5cf079",
+      "learning-artifacts/command-30.log": "238b2b506343acf794f7e82690b6056147b743f09f0d9898a90341739a1a09ba",
+      "learning-artifacts/command-31.log": "f615dc9512de8b165e2b595e5cdc608a3ba7927ae92f959c5b42ec3d58e2ffa8",
+      "learning-artifacts/command-32.log": "eb8b20102a64bf90751abfdac7dad8b37cbdb60ccba362594dc1868c99309f76",
+      "learning-artifacts/command-33.log": "dc5e921b7305cc0e8cbd4e46ccfef7b8d208c027d23adec2999060ea757d1acd",
+      "learning-artifacts/command-34.log": "e41e2de169d8c2c5233805cd959b28d87a29467adf7bd26a76173b4db59ff04d",
+      "learning-artifacts/command-35.log": "6245d883d75f93ab95e29ce7533b7efa652eab7190c63820fe5ce5720c48d8cd",
+      "learning-artifacts/command-36.log": "6595db09fb2d217995cc23e5526a9c1cbc218b943b17432ea1e152bd66837389",
+      "learning-artifacts/command-37.log": "bc34a4c4f3ac780e01cdc9155a820b146b10309c3ac81ed522c000000d4c3db6",
+      "learning-artifacts/command-38.log": "fc1596c73e1767186f21c4665435927bca436554096b4fe2e16467c58f4ca738",
+      "learning-artifacts/command-39.log": "f615dc9512de8b165e2b595e5cdc608a3ba7927ae92f959c5b42ec3d58e2ffa8",
+      "learning-artifacts/command-40.log": "a07204c0eb40fbf9f679eddeaa98f1b180128b3244a36ea1addeda0a00046797",
+      "learning-artifacts/command-41.log": "0f7f79d2309b5ceeff0ed22f6065829fe0f71cfc8b258d2092f2bf139ff463b8",
+      "learning-artifacts/executed-3.12-sdist.json": "71ef819bd7c77dab1d9ed3f3f53db26fbc67feeb49e0d06facbd88886b32c618",
+      "learning-artifacts/executed-3.12-wheel.json": "71ef819bd7c77dab1d9ed3f3f53db26fbc67feeb49e0d06facbd88886b32c618",
+      "learning-artifacts/executed-3.14-sdist.json": "71ef819bd7c77dab1d9ed3f3f53db26fbc67feeb49e0d06facbd88886b32c618",
+      "learning-artifacts/executed-3.14-wheel.json": "71ef819bd7c77dab1d9ed3f3f53db26fbc67feeb49e0d06facbd88886b32c618",
+      "learning-artifacts/installed-3.12-sdist.xml": "e15b805aae92102a36d34b106999ba844c7e6c2da2083a5be9eb48190019b2c0",
+      "learning-artifacts/installed-3.12-wheel.xml": "5a0b32d63d765088350bc42e9742ff7419ce87ade5ef835329ffb4af84e63ea7",
+      "learning-artifacts/installed-3.14-sdist.xml": "cbf85137e3550d6c02e6562b0a53fa3c73848f402edeb9e0302c81ce6fcd4805",
+      "learning-artifacts/installed-3.14-wheel.xml": "a681c377ff49dd5f7cffadd164f0971134576311bfc131db24c0e093f0969c8a",
+      "learning-artifacts/installed.json": "740c02603b90004e1aa74bdd0576642de5eea80edc6a3c5b2230761b2848b0c5",
+      "producer-artifacts/artifacts.json": "b3227cbdd2363e01c4f5623280ee6fd24b970c6c7d04e9c03809edffb717b41d",
+      "producer-artifacts/chess-core-build.log": "a6d7d769790d6e7806825ecf093b0b711e675f6ffb857e6216b1d39463e1b295",
+      "producer-artifacts/content-contract-build.log": "d1dcc2db71214d6458e0b02a15629aabbc065f7a0338f593e803fabb4f949c18",
+      "producer-artifacts/evidence-contract-build.log": "b3611377e7da483f160fcc30a435d120a352235fccc7f144db81dc78056bdc02",
+      "producer-artifacts/locked-requirements.log": "a7f0c4ef7d313653556f3aa1e73e85b811828f45bf70602b09bb5ae2447844a7",
+      "producer-artifacts/python-3.12-sdist-cli.log": "1982d2046e8432b4c6f47aed9e0979fea8429717047537f90fe54cba83d6c634",
+      "producer-artifacts/python-3.12-sdist-dependencies.log": "b6d21fb8f48a2c043d1f91b5023da7cd205f535888a14f6050c65eccab607cc0",
+      "producer-artifacts/python-3.12-sdist-install.log": "547604c5658d30cec3b7fc83cae7fef339742f2c98c76183d9d7f40c8432dfdb",
+      "producer-artifacts/python-3.12-sdist-installed-guard.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "producer-artifacts/python-3.12-sdist-tests.log": "4e1cbf594ca134147ec116fe3c493633519417e6751c62780c4091c03dbf64a7",
+      "producer-artifacts/python-3.12-sdist-venv.log": "1e4d32895cc5265d2ebae2617e4c734cfc8189b97871024f82eff023db52717a",
+      "producer-artifacts/python-3.12-sdist.xml": "44edbc1f7005adcf8b56a3e85a9a62aa2e6b71df582f23c8f27d8dda08388b50",
+      "producer-artifacts/python-3.12-wheel-cli.log": "1982d2046e8432b4c6f47aed9e0979fea8429717047537f90fe54cba83d6c634",
+      "producer-artifacts/python-3.12-wheel-dependencies.log": "8aa6a9b4b47686b37f1f76b8a6de0ad5ae7b3c35b69ee7e8c5099acba8f6660b",
+      "producer-artifacts/python-3.12-wheel-install.log": "3230a52874c4e52cf0badfa5b3f6e2b57e07057ba7286131f7d9da91ca082f24",
+      "producer-artifacts/python-3.12-wheel-installed-guard.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "producer-artifacts/python-3.12-wheel-tests.log": "ccfd032349c8c8096dd69ed25fd0578f17717dfb618706af3575931ba127d03d",
+      "producer-artifacts/python-3.12-wheel-venv.log": "34e04bc73900391e296a70452a01d28538e02a982a317f03884483ff39245b83",
+      "producer-artifacts/python-3.12-wheel.xml": "4d7fe9d40b09487d8700f2db2081bc65f6f8610609ff78cccbfca715f8fbeb20",
+      "producer-artifacts/python-3.14-sdist-cli.log": "b2afd5196991691025c4af3e82fccee9be55555a202295746a99c1df2c8da599",
+      "producer-artifacts/python-3.14-sdist-dependencies.log": "b291bad6eec0ccbe44946da8bf54efaa6abc2e2291698183152f7927bffa13b7",
+      "producer-artifacts/python-3.14-sdist-install.log": "2d0ac53be04ef8bac7e24eb0fde9ec96ea96d1bec5dfe1c1634b1061a61b6896",
+      "producer-artifacts/python-3.14-sdist-installed-guard.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "producer-artifacts/python-3.14-sdist-tests.log": "dd81ed1be3bf6129f8256cc55c9aa27ebb27abbfcfccd43be8e159f738abb2ef",
+      "producer-artifacts/python-3.14-sdist-venv.log": "41aa7403ae611efabe78948f83c685677ad708667918cbc190cab7a8a5300c14",
+      "producer-artifacts/python-3.14-sdist.xml": "bfb104ae70a1bcaf4ed69a4985a0cac2dd1531e03f353c3c126bf80e6174a063",
+      "producer-artifacts/python-3.14-wheel-cli.log": "b2afd5196991691025c4af3e82fccee9be55555a202295746a99c1df2c8da599",
+      "producer-artifacts/python-3.14-wheel-dependencies.log": "dd87aa86a2420c29549ec6f5a2dc0900e1dd91474094d1cbe2783e7e3ba6e307",
+      "producer-artifacts/python-3.14-wheel-install.log": "910d048efc971ac7258dbe3ce2b00c0595ab026388b9fb20f2d75eb0e0204dcc",
+      "producer-artifacts/python-3.14-wheel-installed-guard.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "producer-artifacts/python-3.14-wheel-tests.log": "1ab89b545a4413f65f7345b68ef145c3db45faf5936d857c5a06b9b0ce4496b4",
+      "producer-artifacts/python-3.14-wheel-venv.log": "c140cda3829117ca9a2d05dc530f85c2b92ae3ee07bae0925ef9e9fa6ef160bb",
+      "producer-artifacts/python-3.14-wheel.xml": "23dcbdd268e9ad34c48d3fc76d4be9a7b1550487f9e603cbf746f3a86119fd74",
+      "producer-artifacts/revision.log": "9aafa791ddda1578f8945a9a95a93ebd06a18cc8c6a2bacc60f8dbddb41ca2f0",
+      "producer-artifacts/service-build.log": "d1b8918e5ee02c2bc5334608076d620df4c074ec6d29a2ff060c84f2b77a181f",
+      "producer-artifacts/source-status.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "final-regressions-original/native.json": "96e596a931b38aee12dfb0bd904687001c15a28e0c841fb27f6ca76c695bea4e",
+      "final-regressions-original/run-e6cf28d2faee17d3/collected.json": "830e5a1e66a28c9de1d6fdb745ce8e3efdaa8afb73a16992d9e64fe985475a63",
+      "final-regressions-original/run-e6cf28d2faee17d3/collected.log": "6416f8cc6f2367439d64a33afcc2dbedce9fc02b40032f0a8bc223ad580b6e94",
+      "final-regressions-original/run-e6cf28d2faee17d3/container-build.log": "35d59d4f2a12c85a050f26eae67fc2455afd3525cef31caffbd9b8d77651ad30",
+      "final-regressions-original/run-e6cf28d2faee17d3/executed.json": "4f05d7721fa7a7c2d61b24586f55e1e5d166427992cccdcac706acdfad9867f2",
+      "final-regressions-original/run-e6cf28d2faee17d3/executed.log": "3e73de7b13a1251ee4f99043a1cfc171005372b7178bd2225e3dbae21bf3f9d3",
+      "final-regressions-original/run-e6cf28d2faee17d3/native.json": "96e596a931b38aee12dfb0bd904687001c15a28e0c841fb27f6ca76c695bea4e",
+      "final-regressions-original/run-e6cf28d2faee17d3/native.xml": "aa7083299f5d3bc4bf1a0f6dc25d0f3663bcce57bf53127d17b66ba536826350",
+      "final-regressions-original/run-e6cf28d2faee17d3/producer-install.log": "5ace9859b12a378294e9d981c32a5a3d12cdd77abcee3b30350296b36190849c",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-032b1428538c43f28a9a46cee4997e56.log": "70ad806e3e340679bc7ac525af665cd001aff756bd2157c4e778533e916fa98e",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-227637d219e94f749c51691b9c42b490.log": "84cf0ffbc07e5a3651d962ead82453922b7ce204bdfe37f5bffa141b02b16f2f",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-23384a2e177f48a4b49ca78199170b2a.log": "8c57c0184a96a0cfac92d87bbf1d27e697752c532eb0996f9f7cb935142f6865",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-427c8cca30c74ab583973dac099b1598.log": "f4cf34659715c9ed43dbf0c75645e03cbc379faf226481802678b530684652a5",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-4c50dca4dcd947d5af618219844835b0.log": "d3d975e5eb7f711a46e30864f52daf9834a5079a41947f0b3cc53b15af277aef",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-54601c42b4e84b729b590e7f5b134ea9.log": "2fb1368629177cf092c773e4a6357c7f6c0955f09ae1327e74a35a8060f20782",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-617f7ce34bfa4690b90ddf25a3ce4e4f.log": "de0e21b4d20aa847523445a3e7e5f81666b9353be9022ee551ecf5c0da45213d",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-a5d9212605a443d08dced20da69b7953.log": "6625238bd675109f99df44d7cf26aa384d3edbfc75b13dc0c8dddb732e47b3df",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-bd43f85f042f429981241effa9177aae.log": "53a3073e8eb9789e3843f2b11209502deba18f697e805a341ca1f481632a4845",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-bf845b8f7a33459eb6319131122202a2.log": "0821394799ae5e825a946639a70133a2250104a1676c6df7ebf650c5b3bba882",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-bfbe423db4a642e9a3903baf04126dd1.log": "4199ca71f48dd5413368034bb1aa1727d61c28f2245b1915a9a1f5356e1627a2",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-e833f01ddf8f4a39888f425cb7d53ce5.log": "a6602e6e525b5ec5f10780822884d63b1242a898b7f5bb1931da688bcd55aae2",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-eceaf2a3bcb04b26a004e0e074ca0131.log": "51f50914cd01a8cc046a3a85ffad6ca308ca3df396874bf0bf16bf4aa0635934",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-f6d0e39873054c12a05f8b859aee67ed.log": "d4075087ad99c29725b5bd87b5cb08b590674c6fda4c8a1a4657502bb2b89c3b",
+      "final-regressions-original/run-e6cf28d2faee17d3/service-logs/server-fbc46f4e7622407db9455635465bb94f.log": "1002707e8e8adae36752cd80282b01dea84044075f83aaa00353ae7cbdfc6dbc",
+      "independent-review.json": "302073363cf3510211c3387fb17c4bc364379d6cf5242b232302ee196b1da8ed",
+      "producer-native-input-equivalence.json": "8918226bf71a5f0728560a841292bfd496c1d4e8e365effdfaf522daa6c15492",
+      "red-green-test-inputs.json": "5e0c2bae02efbbbcc4c93cc55ed68c1a54d0dbb0f6286ca7f59b09580cdffefa",
+      "document-links.json": "c729f182b73bbc0f3af59703241de523cc870a4c96ad90afc646d48a815f5004"
+    },
+    "independent_review": {
+      "reviewed_base": "4dd771e60cd26da2e6134ca265e4fb440810ade2",
+      "reviewed_head": "52d7b5c5d2cf34233723184315119ae6897af942",
+      "reviewer": "separate subagent context independent_repair_review",
+      "findings": [],
+      "scope": [
+        "R1 coalescing, finalization, lease/generation rollback and review lock ordering",
+        "R2 serialized immutable stale receipts, digest identity and v1/v2/legacy replay",
+        "R3 credential preflight, recoverable401, narrow recovery and predecessor fences"
+      ],
+      "limits": "Focused read-only code and evidence review; no independent test execution or hosted qualification."
+    },
+    "hosted_observation": {
+      "actions_enabled": false,
+      "branch_protection_endpoint": "404 Branch not protected; no change made",
+      "mechanical_state_before_publish": "MERGEABLE / CLEAN at original head",
+      "qualification": "not established; read back exact published head separately"
+    },
+    "post_test_documentation_policy": "Only the two root docs/validation/f1-game-evidence-learning files may change after this tested revision; verify no executable, packaged, fixture, runner or configuration input changes.",
+    "cleanup": {
+      "native_final": {
+        "container_absent": true,
+        "volume_absent": true,
+        "runtime_image_tag_removed": true,
+        "temporary_test_data_removed": true
+      },
+      "remediation_final": {},
+      "producer_final": {
+        "container_removed": true,
+        "volume_removed": true
+      },
+      "source_bundle": "repair-source.bundle",
+      "remaining": "Verify preserved refs and source bundle; remove eligible task checkouts only after publication, review completion and process/mount checks. Final external cleanup.json records actual removal."
+    },
+    "limits": [
+      "No hosted merge qualification, merge or deployment.",
+      "F2 full Study routing, teaching, service-worker/offline shell and full UI cutover remain deferred.",
+      "No historical obligation conversion, live migration, live provider or live credential access.",
+      "Issues #194 and #224 remain open."
+    ]
+  }
+}

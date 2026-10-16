@@ -38,7 +38,7 @@ from .defense import (
 )
 from .endgames import generate_position, category_for_player
 from .receivers import receive
-from tempo_game_evidence_contracts.v1 import EvidenceDelivery
+from .receivers import EvidenceDelivery
 
 
 def reconcile(database, payload):
@@ -224,6 +224,7 @@ def create_app(configuration: Configuration):
     app.add_exception_handler(PoolTimeout, database_unavailable)
     app.add_exception_handler(psycopg.errors.QueryCanceled, database_unavailable)
     app.add_exception_handler(psycopg.errors.LockNotAvailable, database_unavailable)
+    app.add_exception_handler(psycopg.errors.TransactionTimeout, database_unavailable)
 
     @app.get("/health/live")
     def live():
@@ -789,9 +790,9 @@ def create_app(configuration: Configuration):
 
     @app.post("/internal/evidence")
     def evidence_receive(payload: EvidenceDelivery):
-        with connection() as db:
+        with connection(background=True, intake=True) as db:
             return receive(
-                db, payload.model_dump(mode="json"), configuration.workspace_id
+                db, payload.model_dump(mode="json"), configuration.workspace_id, background=True
             )
 
     return app

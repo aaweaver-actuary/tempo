@@ -102,8 +102,43 @@ backfill, HTTP receiver, settings switch, or FSRS/history writes.
 
 ## Owning checks
 
+F1's independent Learning runtime now adopts this library separately. The default
+preparation bound remains 16 identities per page and four pages. Callers may request
+smaller positive `page_size`/`max_pages`; the runtime uses one identity and one page
+to commit every application with its exact cursor. Rejected/settled rows still
+advance. `pending_page(limit=...)` has the same maximum of 16. These extensions do
+not change eligibility, scheduling or the default scan contract.
+
+`current_miss_sql(card_alias)` is the read-only correlated predicate for existing
+Learning queue/frozen readers. Its single bound value is the authenticated
+workspace; the alias must be an SQL identifier. The module retains ownership of
+the frontier-first settlement query and its OFFSET/LATERAL plan fence. The runtime
+does not privately replace that predicate or read source-game tables. Native
+predicate/settlement parity and single-card cursor checks supplement the unchanged
+historical query-plan regression.
+
 Install only this component with `uv sync --locked --no-editable` from this
 directory, then `uv run --locked --no-editable python -m pytest tests`.
 `integration/run_postgres.py` runs the actual repository on a uniquely owned
 disposable PostgreSQL fixture and refuses external database targets. See
 REGRESSIONS.md and VALIDATION.md for executed identities and limits.
+
+## Serialized stale transport receipts
+
+`PostgresRepository.receive(delivery, context, *,
+historical_evidence_revision=None, v1_transport_stale=False)` adds optional trusted
+adapter policy. Existing callers retain historical semantic replay by default.
+Learning alone supplies a historical frontier; producer payloads cannot supply it.
+The runtime enables v1's transport-first stale policy without applying it to v2
+semantic replay. Historical same-frontier authority remains unconverted/conflicted.
+
+Within the module lock, authenticated context and full delivery digest checks
+precede compatibility decisions. Completed and stale transport receipts are
+immutable in both `receive` and `record_status`; pending/retryable statuses retain
+their existing mutable retry behavior. Source/lineage staleness after validation
+and compatibility staleness persist a canonical transport digest and stable
+response with no accepted obligations or Learning revision. Content-validation
+stale responses bind transport identity too; invalid context grants no acceptance.
+A stale receipt creates
+no source/game/evidence/work authority or admission request. The caller still owns
+commit/rollback and encompassing card locks must precede the module lock.
