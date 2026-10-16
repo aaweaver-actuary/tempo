@@ -1,0 +1,50 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "continue",
+        "retry",
+        "cancel",
+        "resume",
+        "dismiss",
+        "reopen",
+        "finalize"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "budget": {
+      "default": 250,
+      "maximum": 10000,
+      "minimum": 1,
+      "title": "Budget",
+      "type": "integer"
+    },
+    "command_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Command Id",
+      "type": "string"
+    },
+    "expected_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Expected Revision",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "command_id",
+    "action",
+    "expected_revision"
+  ],
+  "title": "Command",
+  "type": "object"
+}

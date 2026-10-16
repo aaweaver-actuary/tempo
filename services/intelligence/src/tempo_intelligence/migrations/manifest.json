@@ -1,1 +1,14 @@
-[{"id":"0001_sources","path":"0001_sources.sql","depends_on":[]}]
+[
+  {
+    "id": "0001_sources",
+    "path": "0001_sources.sql",
+    "depends_on": []
+  },
+  {
+    "id": "0002_analysis",
+    "path": "0002_analysis.sql",
+    "depends_on": [
+      "0001_sources"
+    ]
+  }
+]

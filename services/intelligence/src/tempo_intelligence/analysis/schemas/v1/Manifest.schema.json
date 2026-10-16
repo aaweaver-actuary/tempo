@@ -1,0 +1,405 @@
+{
+  "$defs": {
+    "CoverageScope": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "covered_replies": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Covered Replies",
+          "type": "array"
+        },
+        "evidence_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "fen": {
+          "maxLength": 120,
+          "title": "Fen",
+          "type": "string"
+        },
+        "learner_color": {
+          "enum": [
+            "white",
+            "black"
+          ],
+          "title": "Learner Color",
+          "type": "string"
+        },
+        "legal_moves": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Legal Moves",
+          "type": "array"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "repertoire_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Id",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "repertoire_id",
+        "policy_id",
+        "learner_color",
+        "fen",
+        "complete",
+        "revision",
+        "covered_replies",
+        "legal_moves",
+        "evidence_id"
+      ],
+      "title": "CoverageScope",
+      "type": "object"
+    },
+    "Lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activation Id"
+        },
+        "activation_revision": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activation Revision"
+        },
+        "activation_status": {
+          "default": "unknown",
+          "enum": [
+            "activated",
+            "unknown",
+            "retired"
+          ],
+          "title": "Activation Status",
+          "type": "string"
+        },
+        "publication_generation": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication Generation"
+        },
+        "publication_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication Id"
+        },
+        "serving_status": {
+          "default": "unknown",
+          "enum": [
+            "current",
+            "historical",
+            "unknown"
+          ],
+          "title": "Serving Status",
+          "type": "string"
+        },
+        "source_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "source_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_revision",
+        "source_digest"
+      ],
+      "title": "Lineage",
+      "type": "object"
+    },
+    "PageReference": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "game_count": {
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Game Count",
+          "type": "integer"
+        },
+        "page_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "digest",
+        "game_count"
+      ],
+      "title": "PageReference",
+      "type": "object"
+    },
+    "Selection": {
+      "additionalProperties": false,
+      "properties": {
+        "learner_color": {
+          "enum": [
+            "white",
+            "black"
+          ],
+          "title": "Learner Color",
+          "type": "string"
+        },
+        "lineage": {
+          "$ref": "#/$defs/Lineage"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "repertoire_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repertoire_id",
+        "policy_id",
+        "learner_color",
+        "lineage"
+      ],
+      "title": "Selection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "completeness": {
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable"
+      ],
+      "title": "Completeness",
+      "type": "string"
+    },
+    "coverage_scopes": {
+      "items": {
+        "$ref": "#/$defs/CoverageScope"
+      },
+      "maxItems": 2048,
+      "title": "Coverage Scopes",
+      "type": "array"
+    },
+    "game_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "title": "Game Ids",
+      "type": "array"
+    },
+    "input_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Input Id",
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PageReference"
+      },
+      "maxItems": 1024,
+      "title": "Pages",
+      "type": "array"
+    },
+    "producer": {
+      "enum": [
+        "synthetic",
+        "a-analysis-export"
+      ],
+      "title": "Producer",
+      "type": "string"
+    },
+    "producer_manifest": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Producer Manifest"
+    },
+    "producer_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Producer Version",
+      "type": "string"
+    },
+    "reasons": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "selections": {
+      "items": {
+        "$ref": "#/$defs/Selection"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "title": "Selections",
+      "type": "array"
+    },
+    "source_artifact_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Source Artifact Digest",
+      "type": "string"
+    },
+    "window_end": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Window End"
+    },
+    "window_start": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Window Start"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "workspace_id",
+    "input_id",
+    "revision",
+    "producer",
+    "producer_version",
+    "source_artifact_digest",
+    "completeness",
+    "game_ids",
+    "selections",
+    "pages"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}
