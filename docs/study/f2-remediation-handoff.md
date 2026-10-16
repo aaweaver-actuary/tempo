@@ -112,6 +112,17 @@ storage block switching. Inspection/export preserves original envelopes. Recover
 requires the original service; no automatic retargeting, clearing or live conversion
 is provided. Terminal history remains inspectable without resurrecting it.
 
+Candidate bootstrap does not rebind the active client. Authority inventory is
+rechecked after bootstrap to catch an older writer arriving in flight; only then
+is the connection persisted. Successful connection reloads the shell so existing
+store handles, queue caches and coordinator owners bind the new origin/workspace.
+Allowed browser origins can observe actual 401/403 responses through CORS and
+reconnect; Host checks still cover preflight. Native acceptance rotates the real
+service credential, connects through a second Learning origin, preserves the
+original completed receipt and verifies the new command's authority. Its real
+forwarding delay also proves cancelled old queue bytes cannot replace the older
+tab's unfinished foreground attempt or cancel the newer acquisition.
+
 Independent offline practice retains only the already issued head. It creates no
 local repeat or authoritative successor. Reconnect/reload replays the original
 answer and requires Learning confirmation before advancement. Cached typed

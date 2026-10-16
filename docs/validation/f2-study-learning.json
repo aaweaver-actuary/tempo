@@ -1,0 +1,335 @@
+{
+  "base_sha": "0c7ef737bb2daacd8f671f252ce5a1d0787b1871",
+  "tested_sha": "cceafce1210282d7a2510e0dd54ff436f035068b",
+  "branch": "codex/f2-study-learning",
+  "evidence_root": "/Users/andy/tempo/test-results/f2-study-learning-20261016",
+  "counts": {
+    "frontend": 1666,
+    "strict_schema": 6,
+    "production_study": 37,
+    "learning_postgresql": 160,
+    "controlled_browser": 28,
+    "controlled_unit_reused": 54,
+    "browser_intents_reused": 15,
+    "study_session_reused": 10,
+    "component_tooling_reused": 77,
+    "boundary_components": 9,
+    "installed": {
+      "3.12-wheel": 3,
+      "3.12-sdist": 3,
+      "3.14-wheel": 3,
+      "3.14-sdist": 3
+    }
+  },
+  "commands": [
+    {
+      "name": "frontend-release",
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "--config",
+        "vitest.lanes.config.ts",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=/Users/andy/tempo/test-results/f2-study-learning-20261016/frontend-release.json"
+      ],
+      "environment": {
+        "TEMPO_TEST_LANE": "frontend"
+      },
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/frontend-release.log",
+      "exit_code": 0,
+      "seconds": 53.09,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "frontend-release-collected",
+      "command": [
+        "node_modules/.bin/vitest",
+        "list",
+        "--config",
+        "vitest.lanes.config.ts",
+        "--json",
+        "--staticParse=false"
+      ],
+      "environment": {
+        "TEMPO_TEST_LANE": "frontend"
+      },
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/frontend-release-collected.json",
+      "exit_code": 0,
+      "seconds": 29.639,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "native-release",
+      "command": [
+        "/Users/andy/.codex/worktrees/f2-study-learning/tempo/services/learning/runtime/.venv/bin/python",
+        "services/learning/runtime/integration/run_postgres.py",
+        "/Users/andy/tempo/test-results/f2-study-learning-20261016/native-release"
+      ],
+      "environment": {},
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/native-release.log",
+      "exit_code": 0,
+      "seconds": 68.692,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "study-release",
+      "command": [
+        "/Users/andy/.codex/worktrees/f2-study-learning/tempo/services/learning/runtime/.venv/bin/python",
+        "services/learning/runtime/integration/run_study.py",
+        "/Users/andy/tempo/test-results/f2-study-learning-20261016/study-release"
+      ],
+      "environment": {},
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/study-release.log",
+      "exit_code": 0,
+      "seconds": 192.417,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "installed-release",
+      "command": [
+        "/Users/andy/.codex/worktrees/f2-study-learning/tempo/services/learning/runtime/.venv/bin/python",
+        "services/learning/runtime/qualify.py",
+        "/Users/andy/tempo/test-results/f2-study-learning-20261016/installed-release"
+      ],
+      "environment": {},
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/installed-release.log",
+      "exit_code": 0,
+      "seconds": 19.928,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "controlled-release",
+      "command": [
+        "npm",
+        "run",
+        "test:ui-isolated"
+      ],
+      "environment": {},
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/controlled-release.log",
+      "exit_code": 0,
+      "seconds": 45.804,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "legacy-build-release",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "environment": {},
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/legacy-build-release.log",
+      "exit_code": 0,
+      "seconds": 4.504,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "types-release",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "environment": {},
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/types-release.log",
+      "exit_code": 0,
+      "seconds": 7.52,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    },
+    {
+      "name": "boundaries-release",
+      "command": [
+        "node",
+        "tools/component-build/check-components.mjs",
+        "--component",
+        "learning",
+        "--component",
+        "browser-intents",
+        "--component",
+        "study-session",
+        "--consumers"
+      ],
+      "environment": {
+        "TEMPO_COMPONENT_PYTHON": "/Users/andy/.codex/worktrees/f2-study-learning/tempo/services/learning/runtime/.venv/bin/python"
+      },
+      "cwd": "/Users/andy/.codex/worktrees/f2-study-learning/tempo",
+      "output": "/Users/andy/tempo/test-results/f2-study-learning-20261016/boundaries-release.log",
+      "exit_code": 0,
+      "seconds": 1.882,
+      "head": "cceafce1210282d7a2510e0dd54ff436f035068b"
+    }
+  ],
+  "artifact_sha256": {
+    "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
+    "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
+    "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
+    "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
+    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777",
+    "tempo_game_evidence_contracts-2.0.0.tar.gz": "e877c886f220a7183f864080c7716b7aa6b8c73a94708396b183da5d3d41b91a",
+    "tempo_learning_remediation-0.1.0-py3-none-any.whl": "8911550c644736b905aca893aa2266c5e4257be3407e43edcb17bdc361e8a2d2",
+    "tempo_learning_remediation-0.1.0.tar.gz": "0a2d133b68a70ddffffcc1579fc79e7f492dc2388f42ef69eebfb68408d15f9f",
+    "tempo_learning_review-0.1.0-py3-none-any.whl": "f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce",
+    "tempo_learning_review-0.1.0.tar.gz": "38d432ee798f2184aa62aac64527448fc7f89e28bbcb9add1fd0ecb5c446db1e",
+    "tempo_learning_runtime-0.1.0-py3-none-any.whl": "b965434e99486c12694595d7b4741941316faa8cafa8ad7fb87bd6d4c0bb9647",
+    "tempo_learning_runtime-0.1.0.tar.gz": "13040e6c691b7ab88107832958663f392f38463d123b573a5ff3391e4d3c0a2c",
+    "tempo_scheduling-0.2.0-py3-none-any.whl": "7fd727f381877ef8e80e11fc3d56f1e75b872db4969c59ae218c30856d6a649d",
+    "tempo_scheduling-0.2.0.tar.gz": "718cc1d3f90d19b53f6c6d0014befdae0e68605bcf7e57aa6754e520e96b5e3c"
+  },
+  "study_assets_manifest_sha256": "b8a252113e2a97ab108a482f02aeb845729a786e19cacb3a1007a88f415c1332",
+  "images": {
+    "native": {
+      "runtime_image": "sha256:b147bf66e8c9f6ffef367df456a3e816d211f8b1729be37e37527e196e001ecc",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+    },
+    "study": {
+      "runtime_image": "sha256:06bd1bb88f782ed460aef82f4902fc26cec9529f5a74f22c335aeb0b64952b32",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+    }
+  },
+  "evidence_files": {
+    "frontend-inventory-release.json": "571a61ab19b344f9a98052b1a3f1b41f1b8fa4d4a8da28f9ddb8736e8ef7716f",
+    "frontend-release.json": "f9516071ba8da5e6b9e628692d4881b20151bbdc85d32376a201c4adb00cdae5",
+    "schema-release.json": "5b9b0e229fe2bee6c058ee8944329be830f76b0096e5919d17e6877013156e44",
+    "controlled-unit-qualified.log": "1730be1e9c1f1f848366999683e9f4a2e0192a1a2e949edb05b6dc152295f7da",
+    "study-packages-qualified.log": "cbb892dc78060a77c79eabd28fd76cd1a475f8e42b049e4203714fa55fb5f17c",
+    "component-tooling-qualified.log": "c7e6127529abbe804e1e72a29ed757f44d025a2eeab3559e8378aef5ab76af67",
+    "boundaries-release.log": "a8fcf5afade7b79562b3b7231be10d1a48443c323c1b2e72e8aaea40644d4e6d",
+    "types-release.log": "3f011a041940bece9d918690e3b903329e6e2a0c9f21af49033b53c25457e316",
+    "lint-release.json": "182cc46234548a2fb7bfc7b148c89d6b54f7b0a6db7f48fac24744b16d1924f3",
+    "harness-lint-release.json": "e3e237e2d4ae897a6425f21bf7743982bb72058840314c53d1bc8833695d4b50",
+    "python-lint-release.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "native-release/native.json": "f777cdf02d8f49f5385379bfead8eb393a2401db0c1469cae26c1bb69b9174eb",
+    "study-release/native.json": "fbf99f7686d738f1cc94e2a93e9366ea4852170b3a437715d1724a97c81679dd",
+    "study-release/study-assets.json": "b8a252113e2a97ab108a482f02aeb845729a786e19cacb3a1007a88f415c1332",
+    "installed-release/installed.json": "52de16d8805865c7ff3901202649afc1998433907ca12caff78da3261a7e3f88",
+    "actions-policy.json": "32700f5e09febdcc97d40b65c42a1c4b981b4b96af6eb1b8e87c932aba0a71ca",
+    "legacy-build-release.log": "69b3ba28d4fde814e83847b01697126ea56a17fc9896ca9560d69299c1fca325",
+    "demo-release.log": "cf8eb85334d805ba9e836cf0168e94bfa13c2b2be7395ad84a680b7cb07d3012",
+    "demo-release-assets.json": "4d7e464b82246d4ad48a3889e565c0b896833bc42c94025e520b8dcc1399e51b",
+    "input-equivalence-release.json": "12af20672dc35af7b496a9391c2ef33519d81e3edfde996fa60202c733bdd963",
+    "final-check-commands.json": "facbcf2e031098323e26bbb9ffeeb58f5ea957511571aa7ec5d2bbe7de104fd5",
+    "schema-support-setup.json": "ffe8448f8922b1825a23fbae7444cd9c7906feb319afd72e4226d40168c247b0",
+    "conflicts-release.log": "a12def5123403d39b8329c6d45f31fe41626b201987d26fe24be1a5afb8336b7",
+    "whitespace-release.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "registered-suite-release.json": "bd29b5aa77bf74b25a8f7dd1c2e12ce5d463422492813f062b140b6af4e09d21"
+  },
+  "production_study_identities": [
+    "integration/study_tests/test_study_ui.py::test_production_study_interruption_retains_original_command[database-interruption]",
+    "integration/study_tests/test_study_ui.py::test_production_study_interruption_retains_original_command[service-restart]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[aborted-storage]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[authority-reconnect]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[before-commit]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[defense-uncovered]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[defense]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[delayed-replacement]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[disallowed-origin]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[endgame-cached]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[endgame-unavailable]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[guided-failure]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[incompatible-storage]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[lost-response]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[middlegame]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[next-load]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[normal]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[offline-shell]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[origin-transition]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[quota]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[settings]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[storage-denied]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[tactic-review]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[tactics-discovery-loss]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[tactics-discovery]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[teaching]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[two-tabs]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[typed-choice]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[typed-explanation-loss]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[typed-explanation]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[typed-knight_path]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[typed-move_line]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[typed-square_set]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[wrong-credential]",
+    "integration/study_tests/test_study_ui.py::test_production_study_learning_native[wrong-workspace]",
+    "integration/study_tests/test_study_ui.py::test_production_study_settles_real_issuance_bound_remediation[late-after-issued-attempt]",
+    "integration/study_tests/test_study_ui.py::test_production_study_settles_real_issuance_bound_remediation[producer-stopped-before-study]"
+  ],
+  "input_equivalence": {
+    "tested_sha": "cceafce1210282d7a2510e0dd54ff436f035068b",
+    "complete": true,
+    "reports": {
+      "native": {
+        "source_inputs": {
+          "captured_inputs": 94,
+          "differences": []
+        },
+        "dependency_inputs": {
+          "captured_inputs": 308,
+          "differences": []
+        }
+      },
+      "study": {
+        "source_inputs": {
+          "captured_inputs": 94,
+          "differences": []
+        },
+        "dependency_inputs": {
+          "captured_inputs": 1208,
+          "differences": []
+        }
+      },
+      "installed": {
+        "source_inputs": {
+          "captured_inputs": 236,
+          "differences": []
+        }
+      }
+    },
+    "reused_package_tooling_and_controlled_unit_inputs": {
+      "from_sha": "0175a97816dc9879f8dc00880a3b7462009a6114",
+      "paths": [
+        "packages/browser-intents",
+        "packages/study-session",
+        "packages/chess-line",
+        "tools/component-build",
+        "components.json",
+        "package.json",
+        "package-lock.json",
+        "tests/controlled-browser/unit",
+        "tests/controlled-browser/test-unit.mjs",
+        "tests/controlled-browser/vitest.config.ts",
+        "scripts/controlled-browser-host.mjs",
+        "tests/browser/native-study-storage.ts"
+      ],
+      "differences": []
+    }
+  },
+  "controlled_browser_run": "run-CgcUYW",
+  "qualification_boundary": "Local focused runtime/component qualification; no hosted or full-system qualification, live conversion, merge or deployment. Study/Workbench frontend artifacts remain planned.",
+  "actions_policy": {
+    "enabled": false,
+    "sha_pinning_required": false
+  },
+  "remaining": [
+    "Live historical obligation/content/history/profile migration and provenance conversion",
+    "Publication scale beyond the retained 128-definition bound",
+    "Independent Study and Workbench frontend artifact extraction",
+    "Cross-device/browser offline release qualification",
+    "Deployment and production cutover"
+  ],
+  "baseline": {
+    "path": "controlled-browser-runs/run-Ps60og",
+    "head": "0c7ef737bb2daacd8f671f252ce5a1d0787b1871",
+    "dirty": true,
+    "browser_cases_passed": 28,
+    "success": false,
+    "reason": "Unexpected GET /api/repertoires; baseline request inventory retained as failed evidence."
+  }
+}
