@@ -482,7 +482,12 @@
             "wire.mjs",
             "resources.mjs",
             "package.json",
-            "package-lock.json"
+            "package-lock.json",
+            "index.mjs",
+            "index.d.ts",
+            "core.mjs",
+            "python",
+            "licenses"
           ]
         }
       ],
