@@ -36,7 +36,12 @@ export default function StudyConnectionBoundary() {
     <p>Use the Learning workspace and its Study credential.</p>
     <form onSubmit={async event => {
       event.preventDefault(); setBusy(true); setError("");
-      try { await connectStudy(origin, workspace, credential); setCredential(""); setReady(true); }
+      try {
+        await connectStudy(origin, workspace, credential); setCredential("");
+        // Store handles, queue caches and coordinator owners bind at module load.
+        // A connection change must create a fresh application lifetime.
+        window.location.reload();
+      }
       catch (error) { setError(String(error)); }
       finally { setBusy(false); }
     }}>

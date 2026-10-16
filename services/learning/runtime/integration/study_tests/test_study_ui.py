@@ -88,17 +88,26 @@ def study_assets(control=None, control_key=None):
         thread.join(timeout=5)
 
 
-@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "endgame-cached", "endgame-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement"])
+@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "endgame-cached", "endgame-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect"])
 def test_production_study_learning_native(case, tmp_path, scenario):
     activate(case, publication_for(scenario))
     extra = cached_mate(case) if scenario == "endgame-cached" else {}
     if scenario not in ["teaching", "next-load"]:
         case.query("UPDATE learning.cards SET first_correct_at='2026-01-01T12:00:00Z'")
     root = Path(__file__).resolve().parents[5]
-    with study_assets() as origin, server(case, tmp_path, origins=(() if scenario == "disallowed-origin" else (origin,))) as (client, process):
+    fixture_key = uuid.uuid4().hex
+    replacement_credential = "replacement-study-" + uuid.uuid4().hex + uuid.uuid4().hex
+
+    def control(path, body):
+        assert scenario == "authority-reconnect" and path == "/__fixture/rotate-study-credential"
+        (tmp_path / "credential").write_text(replacement_credential)
+        return process.restart_service()
+
+    with study_assets(control, fixture_key) as origin, server(case, tmp_path, origins=(() if scenario == "disallowed-origin" else (origin,))) as (client, process):
         result = subprocess.run(["node", str(root / "scripts/prove-study-learning.mjs")],
             input=json.dumps({"frontend": origin, "learning": str(client.base_url).rstrip("/"),
-                "credential": case.configuration.token, "scenario": scenario, **extra}),
+                "credential": case.configuration.token, "replacement_credential": replacement_credential,
+                "fixture_key": fixture_key, "scenario": scenario, **extra}),
             cwd=root, capture_output=True, text=True, timeout=90)
         (tmp_path / f"study-proof-{scenario}.log").write_text(result.stdout + result.stderr)
         assert result.returncode == 0, (result.stdout + result.stderr)[-5000:]
@@ -119,7 +128,7 @@ def test_production_study_learning_native(case, tmp_path, scenario):
         assert tuple(case.query("SELECT rating,guided FROM learning.reviews")[0]) == ("again", 1)
     if scenario.startswith("tactics-discovery"):
         assert case.query("SELECT COUNT(*) FROM learning.tactic_discovery_attempts")[0][0] == 1
-    if scenario == "settings":
+    if scenario in ["settings", "authority-reconnect"]:
         assert case.client.get("/api/study/settings").json()["tactics_new_per_day"] == 3
     if scenario == "defense-uncovered":
         assert case.query("SELECT COUNT(*) FROM learning.analysis_obligations")[0][0] == 1

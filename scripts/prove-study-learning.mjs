@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
 let input = ''; for await (const chunk of process.stdin) input += chunk;
-const { frontend, learning, credential, scenario, operation, mate, fixture_key } = JSON.parse(input);
+const { frontend, learning, credential, replacement_credential, scenario, operation, mate, fixture_key } = JSON.parse(input);
 const traffic = [], unexpected = [], fixtureEvents = [], applicationRequests = new Set(), confirmedReceipts = [];
 let evidenceDelivered=false, priorityHead=false;
 let holdNextQueue=false, heldQueue=false, delayedResponseCancelled=false, releaseDelayedQueue;
@@ -13,7 +13,7 @@ async function fixture(action) {
   assert.equal(result.status,200); fixtureEvents.push(action); return result.json();
 }
 let loss = ['lost-response','before-commit','typed-explanation-loss','tactics-discovery-loss','service-restart'].includes(scenario), blockedQueue = false, dropped = false;
-const proxy = createServer(async (request, response) => {
+const forward = async (request, response) => {
   const chunks = []; for await (const chunk of request) chunks.push(chunk);
   const body = Buffer.concat(chunks);
   const path = new URL(request.url, learning).pathname;
@@ -47,15 +47,17 @@ const proxy = createServer(async (request, response) => {
     response.writeHead(upstream.status, Object.fromEntries([...upstream.headers].filter(([key]) => !['content-encoding','transfer-encoding','content-length'].includes(key))));
     response.end(bytes);
   } catch { request.socket.destroy(); }
-});
+};
+const proxy = createServer(forward);
 await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
 const endpoint = `http://127.0.0.1:${proxy.address().port}`;
+let replacementProxy, replacementEndpoint;
 const browser = await chromium.launch({headless:true});
 const context = await browser.newContext({ serviceWorkers: scenario === 'offline-shell' ? 'allow' : 'block' });
 context.on('request', request => {
   const url = new URL(request.url());
   applicationRequests.add(`${request.method()} ${url.origin === endpoint ? 'Learning' : url.origin === new URL(frontend).origin ? 'Study' : url.origin}${url.pathname}`);
-  if (![new URL(frontend).origin, endpoint].includes(url.origin)) unexpected.push({ method: request.method(), path: url.pathname, origin: url.origin });
+  if (![new URL(frontend).origin, endpoint, replacementEndpoint].includes(url.origin)) unexpected.push({ method: request.method(), path: url.pathname, origin: url.origin });
 });
 async function connect(page) {
   await page.goto(frontend);
@@ -168,6 +170,26 @@ try {
       await expect(page.locator('cg-board:visible')).toHaveCount(0);
       await expect(page.getByText("You're done for today",{exact:true})).toBeVisible();
       assert.equal(traffic.filter(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path)).length,1);
+    } else if (scenario==='authority-reconnect') {
+      await move(page);
+      await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length).toBe(1);
+      const original=(await records(page)).find(item=>item.kind==='review');
+      await fixture('rotate-study-credential');
+      await page.getByRole('button',{name:'Study settings',exact:true}).click();
+      await expect(page.getByLabel('Learning origin')).toBeVisible();
+      replacementProxy=createServer(forward);
+      await new Promise(resolve=>replacementProxy.listen(0,'127.0.0.1',resolve));
+      replacementEndpoint=`http://127.0.0.1:${replacementProxy.address().port}`;
+      await page.getByLabel('Learning origin').fill(replacementEndpoint);
+      await page.getByLabel('Study credential').fill(replacement_credential);
+      await page.getByRole('button',{name:'Connect to Learning',exact:true}).click();
+      await page.getByRole('button',{name:'Study settings',exact:true}).click();
+      await page.getByLabel('New tactics per day',{exact:true}).fill('3');
+      await page.getByRole('button',{name:'Save Study settings',exact:true}).click();
+      await expect(page.getByText('Study settings saved by Learning.',{exact:true})).toBeVisible();
+      const retained=await records(page);
+      assert.deepEqual(retained.find(item=>item.key===original.key&&item.workspace===original.workspace),original);
+      assert.equal(retained.find(item=>item.kind==='settings-command'&&item.state==='committed').workspace,`${replacementEndpoint}:study:workspace-a`);
     } else if (scenario==='settings') {
       await page.getByRole('button',{name:'Study settings',exact:true}).click();
       await page.getByLabel('New tactics per day',{exact:true}).fill('3');
@@ -276,10 +298,11 @@ try {
   console.log(JSON.stringify({complete:true,scenario,unexpected_requests:unexpected,application_requests:[...applicationRequests].sort(),traffic,confirmed_receipts:confirmedReceipts,fixture_events:fixtureEvents,fault_dropped:dropped,delayed_response_cancelled:delayedResponseCancelled,browser:browser.version()}));
 } catch (error) {
   // Do not record form input, credentials, authenticated headers or raw traces.
-  console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]"));
+  console.error(String(error.stack ?? error).replaceAll(credential, "[redacted]").replaceAll(replacement_credential??'unused-replacement-secret',"[redacted]"));
   console.error((await page?.locator("body").innerText().catch(()=>"") ?? "").slice(0,3000).replaceAll(credential,"[redacted]"));
   console.error(JSON.stringify(traffic)); process.exitCode=1;
 } finally {
   releaseDelayedQueue();
+  if(replacementProxy) {replacementProxy.closeAllConnections();await new Promise(resolve=>replacementProxy.close(resolve));}
   await context.close();await browser.close();proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));
 }
