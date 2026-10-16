@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
@@ -138,8 +138,20 @@ async function verifyStudyPriorityMaintenance() {
   const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
   run('docker',[...compose,'stop',...clients]);
   try {
-    run('docker',[...compose,'-f',priorityResourceLimits,'run','--rm','--no-deps','schema','python',
-      '/source/scripts/check_postgres_study_priority.py','--owned-stack']);
+    await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
+      const evidenceParent = join(process.env.TEMPO_TEST_TIMING_DIR ?? 'test-results/performance', 'study-priority');
+      mkdirSync(evidenceParent, {recursive: true});
+      const evidenceDirectory = resolve(evidenceParent, project);
+      mkdirSync(evidenceDirectory, {mode: 0o700});
+      run('docker',[...compose,'-f',priorityResourceLimits,'run','--rm','--no-deps',
+        '--volume', `${evidenceDirectory}:/evidence`, 'schema','python',
+        '/source/scripts/check_postgres_study_priority.py','--owned-stack','--evidence','/evidence']);
+      const receipt = JSON.parse(readFileSync(join(evidenceDirectory, 'native.json'), 'utf8'));
+      assert.equal(receipt.complete, true, 'Read-only-source priority proof did not retain complete evidence');
+      assert.equal(Object.keys(receipt.cases).length, 6, 'Priority proof omitted native cases');
+      atomicJson(join(evidenceDirectory, 'assembly.json'), {revision: candidateRevision, project,
+        source_mount: 'read-only', evidence_mount: '/evidence', complete: true});
+    });
   } finally {
     run('docker',[...compose,'up','--no-build','-d']);
     await waitForReady();
