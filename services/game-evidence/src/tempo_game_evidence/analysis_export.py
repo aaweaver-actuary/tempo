@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 from tempo_chess_core import canonical_fen_key
 from .snapshot import parse_snapshot
 from .source import INDEX_VERSION
+from .delivery import inspect_delivery
 
 PAGE_SIZE = 64
 KINDS = ("definitions", "routes", "legal_replies", "games", "positions", "comparisons", "deviations")
@@ -102,7 +103,9 @@ def create_export(store, workspace, game_ids=None):
             if game["index_receipt"] != {"input_digest": game["input_digest"], "version": INDEX_VERSION,
                     "position_count": len(game["document"].get("moves", [])) + 1, "complete": True} or positions is None:
                 raise ValueError("analysis_position_inventory_unavailable")
-            revisions.append([game["game_id"], game["revision"], game["report_revision"], game["input_digest"], game["input_token"]])
+            delivery = inspect_delivery(database,game['game_id'],game['report_revision'],game['reconciliation_status'],game['reconciliation_reason'])
+            report = {**report,'delivery':{'inspection_source':'game_evidence_outbox','observed_comparison_revision':game['report_revision'],**delivery}}
+            revisions.append([game["game_id"], game["revision"], game["report_revision"], game["input_digest"], game["input_token"],digest(delivery)])
             records["games"].append({**game["document"], "input_digest": game["input_digest"], "source_digest": game["source_digest"], "comparison_revision": game["report_revision"]})
             opponent_decisions=deviations(game['document'],positions,snapshot,all_opponent_decisions=True)
             by_ply={item['ply']:item for item in opponent_decisions}

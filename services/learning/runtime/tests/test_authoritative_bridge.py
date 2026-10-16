@@ -218,6 +218,10 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         repeated=producer.run('analysis-export','create','--workspace','workspace-a','--output',output)
         assert repeated==exported
         assert producer.run('analysis-export','verify',output)['status']=='verified'
+        comparison_pages=[json.loads((output/item['filename']).read_text()) for item in exported['pages'] if item['kind']=='comparisons']
+        delivered=next(item for page in comparison_pages for item in page['items'] if item['game']['game_id']==game_ids[0])['delivery']
+        assert delivered['status']=='completed' and delivered['inspection_source']=='game_evidence_outbox'
+        assert delivered['batches'] and all(item['acknowledgement']['status']=='completed' for item in delivered['batches'])
         evidence=Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True,exist_ok=True)
         shutil.copytree(output,evidence/'analysis-inputs',dirs_exist_ok=True)

@@ -238,15 +238,10 @@ class EvidenceStore:
               WHERE game.game_id=%s AND game.workspace_id=%s""", (game_id,workspace)).fetchone()
             if not row:
                 raise KeyError(game_id)
-            batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (comparison_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
-                                       (game_id,row["report_revision"])).fetchall()
+            from .delivery import inspect_delivery
+            delivery = inspect_delivery(database,game_id,row['report_revision'],row['reconciliation_status'],row['reconciliation_reason'],has_report=row['report'] is not None)
         report = row["report"] or {"schema_version":1,"game":row["document"],"readiness":"pending","findings":[]}
-        priority = ["blocked","terminal_failure","conflict","stale_revision","retryable_failure","waiting_predecessor","accepted_pending","pending","completed"]
-        status = next((status for status in priority if any(batch["status"]==status for batch in batches)),"not_required" if row["report"] else "not_ready")
-        if row["reconciliation_status"] in {"pending","waiting_predecessor","blocked"}:
-            status = row["reconciliation_status"]
-        report["delivery"] = {"status":status,"reason":row["reconciliation_reason"] or next((batch["reason"] for batch in batches if batch["reason"]),None),
-                              "attempts":sum(batch["attempts"] for batch in batches),"batches":batches}
+        report['delivery'] = delivery
         if report["game"]["revision"] != row["document"]["revision"]:
             report["readiness"] = "pending"
             report["reason"] = "source_revision_changed"
