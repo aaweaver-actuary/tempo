@@ -45,12 +45,14 @@ export class StockfishWorker extends EventEmitter {
   async start() {
     if (this.closing) throw new Error('Worker is closing');
     this.resources = validateResourceBudget(null, await this.resourceInspector());
-    try { await this.prewarm(); }
+    if (this.closing || this.closed) throw Object.assign(new Error('Worker shut down during resource inspection'), { code: 'worker_shutting_down' });
+    try { await this.prewarm(); if (this.closing || this.closed) throw Object.assign(new Error('Worker shut down during initialization'), { code: 'worker_shutting_down' }); }
     catch (error) { await this.close({ drain: false }); throw error; }
     return { identity: this.identity, resources: this.resources };
   }
 
   prewarm() {
+    if (this.interrupting || this.closed) return Promise.reject(Object.assign(new Error('Worker is stopping'), { code: 'worker_shutting_down' }));
     if (this.childReady) return Promise.resolve();
     if (this.spawnPromise) return this.spawnPromise;
     this.spawnPromise = new Promise((resolve, reject) => {
@@ -68,13 +70,14 @@ export class StockfishWorker extends EventEmitter {
       child.on('message', (message) => {
         if (this.child !== child || !message || typeof message !== 'object') return;
         if (message.type === 'ready' && !settled) {
+          if (this.interrupting || this.closed || (this.closing && !this.replacement)) { settled = true; clearTimeout(startupTimer); reject(Object.assign(new Error('Worker stopped during initialization'), { code: 'worker_shutting_down' })); child.kill('SIGKILL'); return; }
           const identity = message.identity;
           if (!identity || ['engine_version', 'runtime_name', 'runtime_version', 'implementation_version'].some((field) => typeof identity[field] !== 'string' || identity[field].length < 1 || identity[field].length > 200)) {
             settled = true; clearTimeout(startupTimer); reject(Object.assign(new Error('Invalid engine identity'), { code: 'engine_provenance_mismatch' })); child.kill('SIGKILL'); return;
           }
           settled = true; clearTimeout(startupTimer); this.identity = identity; this.childReady = true;
           child.stockfishInitialized = true;
-          this.emit('diagnostic', { event: 'ready', identity, resources: this.resources, pid: child.pid, initialization_ms: performance.now() - startupStarted });
+          this.emit('diagnostic', { event: this.closing ? 'draining_ready' : 'ready', identity, resources: this.resources, pid: child.pid, initialization_ms: performance.now() - startupStarted });
           resolve();
           if (this.replacement) {
             const replacement = this.replacement; this.replacement = null;
