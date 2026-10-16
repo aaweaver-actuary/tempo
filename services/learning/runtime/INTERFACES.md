@@ -156,3 +156,9 @@ delivery to its configured Learning origin, rejects redirects and removes legacy
 work-class headers. Browser Origin is browser generated. Credentials stay in
 session storage, outside command envelopes, bundles and evidence. The existing
 Host/Origin/CORS allowlists and restricted database roles remain authoritative.
+
+## Publication receipt request binding
+
+The operator-only `GET /internal/publications/operations/{operation_id}` adds `workspace_id`, `command_name` and the original persisted `request` for known publication operations. These let Content independently verify terminal failure against its immutable delivery checkpoint. Unknown operations remain `unknown`; Study/evidence credentials cannot read or retry publication operations. Generic Study receipt responses and shared publication wire contracts are unchanged.
+
+Study move-membership resolves a physical historical card through its publication-scoped Content alias before reading current accepted definitions. Physical IDs, reviews, FSRS state and attempts stay with Learning; all existing executable-revision and serving-state fences still apply.

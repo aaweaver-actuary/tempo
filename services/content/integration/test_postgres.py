@@ -1282,3 +1282,233 @@ def test_inventory_cli_rejects_invalid_cursor_as_structured_error(service, tmp_p
                             capture_output=True, text=True, timeout=20)
     assert result.returncode == 2 and result.stdout == ''
     assert json.loads(result.stderr)['code'] == 'invalid_cursor'
+
+
+def test_A_semantic_draft_collision_rejects_changed_raw_provenance(service):
+    original = bridge_draft(service)
+    manifest = deepcopy(original["document"]["manifest"])
+    manifest["provenance"]["source_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="immutable.*provenance"):
+        Bridge(service).draft(original["document"]["source"], manifest, 0)
+    assert Bridge(service).draft_show(original["id"])["document"] == original["document"]
+
+
+def test_A_exact_draft_replay_returns_original_immutable_document(service):
+    original = bridge_draft(service)
+    with reopen() as restarted:
+        replay = Bridge(restarted).draft(original["document"]["source"], original["document"]["manifest"], 0)
+    assert replay == original
+
+
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_A_concurrent_proposal_identity_is_unique_across_sessions(service, conflicting):
+    original = bridge_draft(service)
+    proposal = {"workspace_id": service.workspace_id, "source_key": original["source_key"], "proposal_id": "concurrent"}
+    barrier = Barrier(2)
+    def insert(index):
+        candidate = deepcopy(proposal)
+        candidate["accepted_lines"] = [["d2d4" if index and conflicting else "e2e4"]]
+        with reopen() as application:
+            barrier.wait(timeout=5)
+            try:
+                return Bridge(application).draft(original["document"]["source"], original["document"]["manifest"], 0, candidate)
+            except ValueError as error:
+                return error
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(insert, [0, 1]))
+    rows = query("SELECT id FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='concurrent'", (original["source_key"],))
+    assert len(rows) == 1
+    if conflicting:
+        assert sum(isinstance(result, ValueError) for result in results) == 1
+        assert "Proposal idempotency" in str(next(result for result in results if isinstance(result, ValueError)))
+    else:
+        assert results[0]["id"] == results[1]["id"]
+
+
+def failure_fixture(service):
+    bridge = Bridge(service)
+    draft = bridge_draft(service)
+    operation = bridge.prepare(bridge.approve(draft['id'], draft['digest'])['id'], 100)
+    request = {'activation_id': operation['id'] + ':activate', 'publication_id': operation['document']['export']['publication']['publication_id'],
+        'publication_generation': operation['document']['export']['publication']['publication_generation'], 'expected_activation_revision': 0}
+    delivery = {'endpoint': 'http://127.0.0.1:8001', 'retirement': False, 'request': request, 'due_date': '2026-10-16'}
+    operation = bridge.checkpoint(operation['id'], {'delivery': delivery})
+    failure = {'transport': 'authenticated_learning_http', 'endpoint': delivery['endpoint'], 'content_operation_id': operation['id'],
+        'learning_operation_id': request['activation_id'], 'workspace_id': service.workspace_id, 'state': 'failed',
+        'delivery': delivery, 'error': {'status_code': 409}, 'receipt_sha256': 'a' * 64}
+    return operation, failure
+
+
+def test_A_terminal_learning_rejection_releases_source_reservation(service):
+    operation, failure = failure_fixture(service)
+    bridge = Bridge(service)
+    assert bridge.record_terminal_failure(operation['id'], failure)['state'] == 'failed'
+    revision = service.source_show(operation['source_key'])['requested_revision']
+    assert revision == 1
+    corrected = bridge.draft(operation['draft']['source'], operation['draft']['manifest'], revision)
+    successor = bridge.approve(corrected['id'], corrected['digest'])
+    with reopen() as restarted:
+        assert Bridge(restarted).record_terminal_failure(operation['id'], failure)['document']['failure'] == failure
+        assert Bridge(restarted).operation(successor['id'])['state'] == 'approved'
+        with pytest.raises(ValueError):
+            Bridge(restarted).prepare(operation['id'])
+    assert query("SELECT id FROM content.bridge_operations WHERE source_id=%s AND state IN ('approved','applying')", (operation['source_id'],)) == [(successor['id'],)]
+
+
+@pytest.mark.parametrize('conflict', ['completed', 'failure_bytes', 'stale_success'])
+def test_A_terminal_outcomes_cannot_overwrite_each_other(service, conflict):
+    bridge = Bridge(service)
+    operation, failure = failure_fixture(service)
+    publication = operation['document']['export']['publication']
+    receipt = {'transport': 'authenticated_learning_http', 'endpoint': failure['endpoint'], 'acknowledgement': {
+        'contract_version': 1, 'workspace_id': service.workspace_id, 'activation_id': operation['id'] + ':activate',
+        'publication_id': publication['publication_id'], 'publication_generation': publication['publication_generation'],
+        'activation_revision': 1, 'status': 'activated', 'reason': None}}
+    if conflict == 'completed':
+        bridge.record(operation['id'], receipt)
+        with pytest.raises(ValueError):
+            bridge.record_terminal_failure(operation['id'], failure)
+        assert bridge.operation(operation['id'])['state'] == 'completed'
+    else:
+        bridge.record_terminal_failure(operation['id'], failure)
+        with pytest.raises(ValueError):
+            if conflict == 'failure_bytes':
+                bridge.record_terminal_failure(operation['id'], {**failure, 'receipt_sha256': 'b' * 64})
+            else:
+                bridge.record(operation['id'], receipt)
+        assert bridge.operation(operation['id'])['document']['failure'] == failure
+
+
+def test_A_terminal_failure_and_corrected_approval_serialize(service):
+    operation, failure = failure_fixture(service)
+    bridge = Bridge(service)
+    corrected = bridge.draft(operation['draft']['source'], operation['draft']['manifest'], 1)
+    barrier = Barrier(3)
+    def reconcile():
+        with reopen() as application:
+            barrier.wait(timeout=5)
+            return Bridge(application).record_terminal_failure(operation['id'], failure)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first, second = executor.submit(reconcile), executor.submit(reconcile)
+        barrier.wait(timeout=5)
+        try:
+            approved = bridge.approve(corrected['id'], corrected['digest'])
+        except ValueError as error:
+            assert 'approved operation' in str(error)
+            approved = None
+        assert first.result()['state'] == second.result()['state'] == 'failed'
+    approved = approved or bridge.approve(corrected['id'], corrected['digest'])
+    assert approved['state'] == 'approved'
+    assert query("SELECT count(*) FROM content.bridge_operations WHERE source_id=%s AND state IN ('approved','applying')", (operation['source_id'],))[0][0] == 1
+
+
+def test_A_approved_draft_cannot_be_relabelled_by_reimport(service):
+    original = bridge_draft(service)
+    Bridge(service).approve(original['id'], original['digest'])
+    manifest = deepcopy(original['document']['manifest'])
+    manifest['provenance']['source_sha256'] = 'e' * 64
+    with reopen() as restarted, pytest.raises(ValueError, match='immutable.*provenance'):
+        Bridge(restarted).draft(original['document']['source'], manifest, 0)
+    assert Bridge(service).draft_show(original['id']) == original
+
+
+@pytest.mark.parametrize('conflicting', [False, True])
+def test_A_response_proposal_concurrency_and_restart(service, conflicting):
+    operation, _ = failure_fixture(service)
+    bridge = Bridge(service)
+    publication = operation['document']['export']['publication']
+    # Component-local completion fixture; installed cross-service tests separately
+    # establish real authenticated Learning receipts.
+    bridge.record(operation['id'], {'transport':'authenticated_learning_http', 'endpoint':'http://127.0.0.1:8001', 'acknowledgement': {
+        'contract_version':1, 'workspace_id':service.workspace_id, 'activation_id':operation['id']+':activate',
+        'publication_id':publication['publication_id'], 'publication_generation':publication['publication_generation'],
+        'activation_revision':1, 'status':'activated', 'reason':None}})
+    source = service.source_show(operation['source_key'])
+    board = chess.Board(source['snapshot']['routes'][0]['starting_fen'])
+    board.push_uci('e2e4'); board.push_uci('c7c5')
+    proposal = {'schema_version':1, 'kind':'response_proposal', 'status':'draft', 'proposal_id':'response-race',
+        'workspace_id':service.workspace_id, 'source_key':operation['source_key'], 'repertoire_key':'white', 'policy_key':'main',
+        'learner_color':'white', 'expected_source_revision':source['requested_revision'],
+        'source_digest':operation['document']['export']['source']['source_digest'], 'route_key':'e4', 'anchor_ply':1,
+        'opponent_move':'c7c5', 'decision_fen':board.fen(en_passant='fen'), 'accepted_lines':[['g1f3']],
+        'provenance':{'kind':'synthetic','evidence_refs':['game:race']}}
+    barrier = Barrier(2)
+    def propose(index):
+        candidate = deepcopy(proposal)
+        if conflicting and index:
+            candidate['accepted_lines'] = [['b1c3']]
+        with reopen() as application:
+            original_one = application._one
+            def synchronized_read(statement, parameters=()):
+                result = original_one(statement, parameters)
+                if statement.startswith('SELECT id,document FROM content.bridge_drafts'):
+                    barrier.wait(timeout=5)
+                return result
+            application._one = synchronized_read
+            try:
+                return Bridge(application).proposal_draft(candidate)
+            except ValueError as error:
+                return error
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(propose, [0, 1]))
+    winners = [result for result in results if isinstance(result, dict)]
+    assert len(winners) == (1 if conflicting else 2)
+    assert len({winner['id'] for winner in winners}) == 1
+    winner = winners[0]
+    with reopen() as restarted:
+        assert Bridge(restarted).proposal_draft(winner['document']['proposal']) == winner
+        changed = deepcopy(winner['document']['proposal'])
+        changed['accepted_lines'] = [['h2h3']]
+        with pytest.raises(ValueError, match='Proposal idempotency'):
+            Bridge(restarted).proposal_draft(changed)
+    assert query("SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='response-race'", (operation['source_key'],))[0][0] == 1
+
+
+def test_A_proposal_unique_index_rejects_legacy_duplicates_without_deletion(service):
+    from tempo_content.migrate import expected_migrations
+    original = bridge_draft(service)
+    proposal = {'workspace_id':service.workspace_id, 'source_key':original['source_key'], 'proposal_id':'legacy-duplicate'}
+    first = Bridge(service).draft(original['document']['source'], original['document']['manifest'], 0, proposal)
+    owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
+    with psycopg.connect(owner_url) as database:
+        database.execute('DROP INDEX content.bridge_proposal_identity')
+        database.execute('INSERT INTO content.bridge_drafts SELECT %s,source_id,source_key,expected_revision,digest,document FROM content.bridge_drafts WHERE id=%s', ('duplicate-'+first['id'],first['id']))
+        with pytest.raises(psycopg.errors.UniqueViolation), database.transaction():
+            database.execute("CREATE UNIQUE INDEX bridge_proposal_identity ON content.bridge_drafts ((document->'proposal'->>'workspace_id'),source_key,(document->'proposal'->>'proposal_id')) WHERE jsonb_typeof(document->'proposal')='object'")
+        assert database.execute("SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='legacy-duplicate'", (original['source_key'],)).fetchone()[0] == 2
+        database.rollback()
+    assert '0004_bridge_proposal_identity' in expected_migrations()
+    assert query("SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='legacy-duplicate'", (original['source_key'],))[0][0] == 1
+
+
+def test_A_success_and_terminal_failure_race_preserves_one_outcome(service):
+    operation, failure = failure_fixture(service)
+    publication = operation['document']['export']['publication']
+    receipt = {'transport':'authenticated_learning_http', 'endpoint':failure['endpoint'], 'acknowledgement': {
+        'contract_version':1, 'workspace_id':service.workspace_id, 'activation_id':operation['id']+':activate',
+        'publication_id':publication['publication_id'], 'publication_generation':publication['publication_generation'],
+        'activation_revision':1, 'status':'activated', 'reason':None}}
+    barrier = Barrier(2)
+    def record(success):
+        with reopen() as application:
+            barrier.wait(timeout=5)
+            try:
+                bridge = Bridge(application)
+                return bridge.record(operation['id'], receipt) if success else bridge.record_terminal_failure(operation['id'], failure)
+            except ValueError as error:
+                return error
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(record, [True, False]))
+    assert sum(isinstance(result, dict) for result in results) == 1
+    result = Bridge(service).operation(operation['id'])
+    assert result['state'] in ('completed', 'failed')
+    assert ('receipt' in result['document']) != ('failure' in result['document'])
+
+
+def test_A_proposal_identity_is_scoped_to_workspace_and_source(service):
+    first, second = bridge_draft(service), bridge_draft(service)
+    for original in (first, second):
+        proposal = {'workspace_id':service.workspace_id,'source_key':original['source_key'],'proposal_id':'same-permitted-id'}
+        draft = Bridge(service).draft(original['document']['source'],original['document']['manifest'],0,proposal)
+        assert draft['document']['proposal'] == proposal
+    assert query("SELECT count(*) FROM content.bridge_drafts WHERE source_key=ANY(%s) AND document->'proposal'->>'proposal_id'='same-permitted-id'", ([first['source_key'],second['source_key']],))[0][0] == 2

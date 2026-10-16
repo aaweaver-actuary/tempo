@@ -378,3 +378,35 @@ preserving evidence, unique work and durable branch refs; branches are retained.
 The final worktree/ignored-file/stash/process audit and checkout archival receipt
 are preserved as `cleanup.json` outside the checkout; the pre-existing main stash
 is unrelated and remains untouched.
+
+## PR #294 correctness repair
+
+The repair branch starts at `1db44cbdf310f959eb0c839e94166350531cc89b` on base `0edf566ad48f51846a43d3341809379ff0469ada`. The original validation and its recorded failures above remain historical evidence. Fresh repair evidence is maintained separately under `/Users/andy/tempo/test-results/pr294-correctness-20261016/`; final qualification is recorded in the repair report.
+
+### Terminal rejection and corrected approval
+
+The operator now reconciles a persisted terminal Learning rejection into Content `failed`; its JSON reports that state and exits 2. Content independently retrieves and verifies the original receipt before the source/operation transaction. The operator-only Learning receipt includes workspace, command and exact persisted publication request. Failure records retain delivery identity, a receipt fingerprint and sanitized error fields, without raw remote messages or credentials.
+
+```sh
+tempo-content operation record-failure OPERATION_ID \
+  --learning-origin https://learning.example \
+  --operator-token-file /private/operator-token
+tempo-content operation show OPERATION_ID
+tempo-content source show SOURCE_KEY
+```
+
+After failure, plan the corrected complete source using the actual returned `requested_revision`, approve its new draft, and apply that distinct operation. A correction affecting a previously staged bundle must create a new Content publication generation: immutable Learning staging cannot be overwritten. Content never decrements a source revision. Previous Learning serving content remains until a valid successor/retirement commits. Failure replay remains idempotent even after the successor reserves the source; stale success/retry cannot change the failed operation.
+
+Unknown/queued outcomes, malformed responses, authentication/transport errors and timeouts retain original authority and reservation. Stage-only errors have no durable Learning rejection receipt and therefore remain an explicit recovery boundary: restore/reconcile the original authority and staging inputs; do not infer cancellation or terminal failure from HTTP status.
+
+### Snapshot observations and historical aliases
+
+`snapshot_id` is `a-snapshot-v1:` plus SHA256 of UTF-8 compact JSON `["tempo-a-snapshot",1,workspace_id,publication_id,represented_generation]` (`ensure_ascii=False`). Revision is still the authenticated current-serving activation revision. Checkpoints use `snapshot_id:revision`, leaving old numeric-key checkpoints inspectable. Repeated requests return the persisted document. Concurrent requests recover the winning checkpoint only when all content/authority facts match; observation timestamp/local-date differences do not create another identity. Immutable snapshot conflicts remain errors.
+
+Historical-first loading can promote a valid successor; current-first loading rejects stale promotion. Post-retirement observations retain historical activation but cannot claim current serving authority. Study resolves publication-scoped aliases while retaining physical Learning identities, history, FSRS and executable revision checks.
+
+### Draft/proposal durability
+
+Append-only Content migration `0004_bridge_proposal_identity` enforces proposal identity across sessions/processes. Pre-existing duplicate identities abort migration without deleting drafts. Identical replay returns the original durable draft; conflicting proposal bytes fail specifically. Complete immutable draft/provenance digests must match on semantic-ID replay. Stable Content/card identity does not authorize substituting an old raw-file provenance record.
+
+New regressions are listed in each component's local inventory. Shared Content Publication v1 and Game Evidence v1/v2 contracts, frozen introductions, normal allowances and all original installed bridge assertions are preserved.

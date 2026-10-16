@@ -95,3 +95,7 @@ Existing strict receiver calls and subprocesses use an explicit synthetic privat
 credential, retaining production preflight. No existing replay/withdrawal/lease
 assertions are removed. Learning's native suite separately exercises actual
 installed CLI -> authenticated Learning HTTP -> independent databases.
+
+## PR #294 snapshot repair
+
+`integration/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.

@@ -33,14 +33,14 @@ def parser():
     approval.add_argument('identifier')
     approval.add_argument('--digest',required=True)
     operations = subcommands.add_parser('operation').add_subparsers(dest='operation',required=True)
-    for name in ('show','cancel','prepare','record','checkpoint'):
+    for name in ('show','cancel','prepare','record','record-failure','checkpoint'):
         operation = operations.add_parser(name)
         operation.add_argument('identifier')
         if name=='prepare':
             operation.add_argument('--max-slices',type=int,default=64)
         if name in ('record','checkpoint'):
             operation.add_argument('--file',type=Path,required=True)
-        if name=='record':
+        if name in ('record','record-failure'):
             operation.add_argument('--learning-origin',required=True)
             operation.add_argument('--operator-token-file',type=Path,required=True)
     migration = subcommands.add_parser('migrate')
@@ -120,7 +120,11 @@ def main(argv=None):
                 elif arguments.command=='operation':
                     if operation=='prepare' and not 1<=arguments.max_slices<=10000:
                         raise ContentError('invalid_slice_bound','max-slices must be 1..10000')
-                    if operation=='record':
+                    if operation=='record-failure':
+                        from .receipt_transport import verified_terminal_failure
+                        verified=verified_terminal_failure(bridge.operation(arguments.identifier),arguments.learning_origin,arguments.operator_token_file)
+                        result=bridge.record_terminal_failure(arguments.identifier,verified)
+                    elif operation=='record':
                         from .receipt_transport import verified_receipt
                         verified=verified_receipt(bridge.operation(arguments.identifier),json.loads(arguments.file.read_text()),arguments.learning_origin,arguments.operator_token_file)
                         result=bridge.record(arguments.identifier,verified)

@@ -196,3 +196,11 @@ individually, schema USAGE, and all existing prohibited role/schema/database and
 immutable-table powers. Missing grants fail before service operations, naming the
 table/privilege without credentials. Explicit owner migration restores the grants;
 runtime startup never migrates. Historical migration SQL/checksums are unchanged.
+
+## Terminal Learning failure reconciliation
+
+`tempo-content operation record-failure OPERATION_ID --learning-origin ORIGIN --operator-token-file FILE` independently retrieves the original operator-authenticated Learning operation. No caller-provided failure document is accepted. The receipt must bind the original workspace, exact request, command family, publication/generation and delivery authority, and be durably `failed`. Under source/operation locks, Content records a fingerprint and sanitized error status/code then changes `applying` to terminal `failed`. Identical replay is valid after restart or a successor approval; conflicting terminal outcomes are refused. Source revisions are never rolled back.
+
+Timeouts, HTTP errors, unknown/queued operations and stage-only rejection retain the reservation. The stage endpoint has no durable terminal operation receipt; reconcile the original delivery after restoring its original authority/staged inputs. An unresolved stage rejection remains an explicit operator recovery boundary, not permission to cancel an already authorized operation.
+
+Migration `0004_bridge_proposal_identity` adds database uniqueness for `(proposal.workspace_id, source_key, proposal.proposal_id)` on proposal drafts. Existing duplicates stop migration without deletion. Runtime grants do not expand. Identical proposals return the durable winner; changed proposal bytes raise `proposal_identity_conflict`. A semantic draft ID with changed immutable provenance raises `immutable_draft_identity_conflict`, preserving both stable exercise identity and the original draft.

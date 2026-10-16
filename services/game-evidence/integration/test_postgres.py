@@ -1128,3 +1128,26 @@ def test_cancellation_during_invalid_checkpoint_recovery_prevents_commits(state)
         assert import_one(store,client=client)
     assert store.import_status(workspace,import_id)['status']=='cancelled'
     assert not store.list_games(workspace)
+
+
+@pytest.mark.parametrize('historical_first', [True, False])
+def test_A_snapshot_installation_orders_preserve_current_generation(state, historical_first):
+    store, _, _ = state
+    historical = json.loads((FIXTURES / 'bridge-historical-snapshot-v2.json').read_text())
+    successor = json.loads((FIXTURES / 'bridge-successor-snapshot-v2.json').read_text())
+    workspace = successor['publication']['workspace_id']
+    if historical_first:
+        old_digest = store.load_snapshot(historical)
+        current_digest = store.load_snapshot(successor)
+        assert old_digest != current_digest
+    else:
+        current_digest = store.load_snapshot(successor)
+        with pytest.raises(ValueError, match='stale_snapshot_generation'):
+            store.load_snapshot(historical)
+    with store.connect() as database:
+        row = database.execute('SELECT snapshot_digest FROM workspace_inputs WHERE workspace_id=%s', (workspace,)).fetchone()
+    assert row['snapshot_digest'] == current_digest
+    assert store.load_snapshot(successor) == current_digest
+    game = store.import_pgn(workspace, 'pgn', 'current-generation', 'Learner', b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 2. Nf3 1-0')
+    drain(store)
+    assert store.report(workspace, game)['snapshot']['publication_generation'] == 2

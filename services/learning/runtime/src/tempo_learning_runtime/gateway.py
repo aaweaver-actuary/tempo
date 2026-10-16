@@ -5,7 +5,7 @@ import hashlib, json, uuid
 import psycopg
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from .database import connection
+from .database import connection, current_database
 from .review_conflicts import ReviewConflict
 
 _handlers = {}
@@ -133,6 +133,9 @@ def read_operation(operation_id, *, publication=None):
     return {
         "operation_id": operation_id,
         "state": row["state"],
+        **({"workspace_id": current_database.get().configuration.workspace_id,
+            "command_name": row["command_name"], "request": json.loads(row["payload_json"])}
+           if publication is True else {}),
         **(
             {"response": json.loads(row["response_json"])}
             if row["response_json"]

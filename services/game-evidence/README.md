@@ -237,3 +237,7 @@ Local validation does not prove that Learning accepts the credential, nor prove
 previous non-acceptance. The next attempt retries the same immutable delivery;
 Learning's matching completed receipt remains the acceptance authority. Recovery
 never advances accepted history or permits a correction to overtake that receipt.
+
+### Generation-aware operator snapshots
+
+The A operator's snapshot identity hashes the workspace, publication and represented generation; revision remains the observed serving activation revision. Historical activation and current-serving observation remain distinct. The store keeps immutable documents and rejects promotion of older publication generations. An offline observation is point-in-time evidence, not authorization for future Learning effects.

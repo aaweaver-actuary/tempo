@@ -67,3 +67,38 @@ def test_A_proposal_is_not_approval_and_requires_legal_executable_content():
                      {'provenance':{}},{'provenance':{'kind':'synthetic','evidence_refs':[]}}):
         with pytest.raises(ValueError):
             ResponseProposal.model_validate({**proposal,**mutation})
+
+
+@pytest.mark.parametrize('state', ['unknown', 'queued', 'complete', 'failed'])
+@pytest.mark.parametrize('mismatch', [None, 'workspace_id', 'command_name', 'request', 'operation_id'])
+def test_A_terminal_failure_requires_original_authenticated_request(monkeypatch, tmp_path, state, mismatch):
+    from tempo_content import receipt_transport
+    workspace, source_key = 'bridge-test', 'opening'
+    publication_id = stable_id(workspace, source_key, 'publication', 'source')
+    request = {'activation_id': 'original:activate', 'publication_id': publication_id, 'publication_generation': 2, 'expected_activation_revision': 1}
+    operation = {'id': 'original', 'source_key': source_key, 'draft': {'source': {'workspace_id': workspace}},
+        'document': {'delivery': {'endpoint': 'http://127.0.0.1:1', 'retirement': False, 'request': request},
+                     'export': {'publication': {'publication_generation': 2}}}}
+    receipt = {'operation_id': 'original:activate', 'state': state, 'workspace_id': workspace,
+               'command_name': 'publication.activate.v2', 'request': request, 'error': {'status_code': 409, 'detail': 'secret remote data'}}
+    if mismatch:
+        receipt[mismatch] = {'publication_id': 'wrong'} if mismatch == 'request' else 'wrong'
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, maximum): return json.dumps(receipt).encode()
+    class Opener:
+        def open(self, request, timeout):
+            assert request.get_header('Authorization') == 'Bearer ' + 'a' * 40
+            return Response()
+    monkeypatch.setattr(receipt_transport, 'build_opener', lambda *args: Opener())
+    credential = tmp_path / 'token'
+    credential.write_text('a' * 40)
+    credential.chmod(0o600)
+    if state == 'failed' and mismatch is None:
+        failure = receipt_transport.verified_terminal_failure(operation, 'http://127.0.0.1:1', credential)
+        assert failure['error'] == {'status_code': 409}
+        assert 'secret remote data' not in json.dumps(failure)
+    else:
+        with pytest.raises(ContentError):
+            receipt_transport.verified_terminal_failure(operation, 'http://127.0.0.1:1', credential)

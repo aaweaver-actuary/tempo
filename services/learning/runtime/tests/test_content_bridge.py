@@ -263,3 +263,32 @@ def test_A_old_ack_after_replacement_and_final_retirement(case):
     assert retired.json()['stale_attempts_fenced']
     assert case.client.get('/internal/publications/publication-a/status',headers=operator).json()['status']=='retired'
     assert case.query('SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0]==0
+
+
+def test_A_historical_alias_move_membership_accepts_new_alternative(case):
+    activate(case)
+    issued = head(case)
+    physical_id = issued['id']
+    assert submit(case, issued, review_payload(issued)).status_code == 200
+    history = [tuple(row) for row in case.query("SELECT * FROM learning.reviews")]
+    schedule = [tuple(row) for row in case.query("SELECT state,due_date,fsrs_card_json FROM learning.cards WHERE id=%s", (physical_id,))]
+    case.query("UPDATE learning.cards SET publication_id=NULL,serving_active=0 WHERE id=%s", (physical_id,))
+    payload = content_bundle()
+    payload['publication']['publication_id'] = 'content-publication'
+    payload['publication']['definitions'][0]['publication_id'] = 'content-publication'
+    authored_id = payload['publication']['definitions'][0]['card_id']
+    payload['legacy_aliases'] = {authored_id: physical_id}
+    activate_v2(case, payload)
+    successor = deepcopy(payload)
+    successor["publication"].update(publication_generation=2, source_revision=2)
+    successor["publication"]["definitions"][0].update(publication_generation=2, source_revision=2, exercise_revision=2)
+    successor["publication"]["definitions"][0]["specification"]["accepted_lines"].append(["d2d4"])
+    activate_v2(case, successor, 1)
+    for move, expected in (("e2e4", True), ("d2d4", True), ("c2c4", False)):
+        response = case.client.get('/api/cards/' + physical_id + '/move-membership', params={"revision": 2, "fen": chess.STARTING_FEN, "move_uci": move})
+        assert response.status_code == 200, response.text
+        assert response.json()["verified"] is expected
+    assert [tuple(row) for row in case.query("SELECT * FROM learning.reviews")] == history
+    assert [tuple(row) for row in case.query("SELECT state,due_date,fsrs_card_json FROM learning.cards WHERE id=%s", (physical_id,))] == schedule
+    assert case.query("SELECT count(*) FROM learning.cards WHERE id=%s", (authored_id,))[0][0] == 0
+    assert case.client.get('/api/cards/' + physical_id + '/move-membership', params={"revision": 1, "fen": chess.STARTING_FEN, "move_uci": "e2e4"}).status_code == 409

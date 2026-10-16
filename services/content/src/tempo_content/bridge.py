@@ -209,7 +209,20 @@ class Bridge:
         with self.service._transaction() as database:
             database.execute("INSERT INTO content.bridge_drafts VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                 (identifier, source_id, source.source_key, expected_revision, fingerprint, Jsonb(document)))
-        return self.draft_show(identifier)
+        # A conflict may be the primary key or the logical proposal identity.
+        # Read after the INSERT transaction: a concurrent winner is now durable.
+        if proposal is not None:
+            previous = self.service._one("SELECT * FROM content.bridge_drafts WHERE document->'proposal'->>'proposal_id'=%s AND document->'proposal'->>'workspace_id'=%s AND source_key=%s",
+                (proposal["proposal_id"], proposal["workspace_id"], source.source_key))
+            if previous is not None and previous["document"]["proposal"] != proposal:
+                raise ContentError("proposal_identity_conflict", "Proposal idempotency identity was reused with different contents")
+        else:
+            previous = self.service._one("SELECT * FROM content.bridge_drafts WHERE id=%s", (identifier,))
+        if previous is None:
+            raise ContentError("draft_not_found", "Draft is unavailable")
+        if previous["digest"] != fingerprint or digest(previous["document"]) != fingerprint:
+            raise ContentError("immutable_draft_identity_conflict", "An immutable draft identity already has different content or provenance")
+        return {**previous, "status": "draft"}
 
     def draft_show(self, identifier):
         row = self.service._one("SELECT * FROM content.bridge_drafts WHERE id=%s", (identifier,))
@@ -326,6 +339,40 @@ class Bridge:
             if row["state"] == "completed" and row["document"].get("receipt") != receipt:
                 raise ContentError("receipt_conflict", "Completed receipt is immutable")
             database.execute("UPDATE content.bridge_operations SET state='completed',document=document || %s,updated_at=now() WHERE id=%s", (Jsonb({"receipt": receipt}), identifier))
+        return self.operation(identifier)
+
+    def record_terminal_failure(self, identifier, failure):
+        """Persist an independently verified outcome without undoing source history.
+
+        The local CLI obtains `failure` from receipt_transport; this domain port
+        owns only the atomic state transition and rechecks its frozen delivery.
+        """
+        operation = self.operation(identifier)
+        if (failure.get("transport") != "authenticated_learning_http"
+                or failure.get("state") != "failed"
+                or failure.get("content_operation_id") != identifier
+                or failure.get("workspace_id") != self.service.workspace_id
+                or not isinstance(failure.get("delivery"), dict)
+                or failure.get("delivery") != operation["document"].get("delivery")
+                or failure.get("learning_operation_id") != identifier + (":retire" if failure["delivery"].get("retirement") else ":activate")
+                or failure.get("endpoint") != failure["delivery"].get("endpoint")
+                or not isinstance(failure.get("receipt_sha256"), str)
+                or len(failure["receipt_sha256"]) != 64):
+            raise ContentError("failure_receipt_mismatch", "Failure does not bind this authorized delivery")
+        with self.service._transaction() as database:
+            # Terminal replay must also work after a successor reserves the source.
+            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("content:scope:" + operation["source_id"],))
+            row = database.execute("SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
+            if row["state"] == "failed":
+                if row["document"].get("failure") != failure:
+                    raise ContentError("terminal_failure_conflict", "Terminal failure is immutable")
+            elif row["state"] == "applying" and row["document"].get("delivery") == failure["delivery"]:
+                lock_scope(database, operation["source_id"], identifier)
+                if row["document"].get("receipt") is not None:
+                    raise ContentError("terminal_failure_conflict", "A completion receipt cannot become failure")
+                database.execute("UPDATE content.bridge_operations SET state='failed',document=document || %s,updated_at=now() WHERE id=%s", (Jsonb({"failure": failure}), identifier))
+            else:
+                raise ContentError("application_not_authorized", "Terminal failure cannot replace another operation outcome")
         return self.operation(identifier)
 
     def checkpoint(self, identifier, values):

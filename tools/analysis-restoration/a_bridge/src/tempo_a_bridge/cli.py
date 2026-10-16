@@ -1,5 +1,6 @@
 """Restartable Content -> authenticated Learning -> Game Evidence operator bridge."""
 import argparse
+import hashlib
 from datetime import date
 import json
 import os
@@ -10,6 +11,26 @@ import tempfile
 from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
+
+
+class ContentCommandError(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__("content_command_failed:" + code)
+
+
+def snapshot_identity(publication):
+    identity = ["tempo-a-snapshot", 1, publication["workspace_id"],
+                publication["publication_id"], publication["publication_generation"]]
+    encoded = json.dumps(identity, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    return "a-snapshot-v1:" + hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def observation_facts(snapshot):
+    facts = json.loads(json.dumps(snapshot))
+    for field in ("observed_at", "local_date"):
+        facts["current_serving"].pop(field, None)
+    return facts
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -55,7 +76,13 @@ class Operator:
         environment = {key:value for key,value in os.environ.items() if not key.startswith(("PYTHON", "PG", "TEMPO_", "CELERY_")) or key in ("TEMPO_CONTENT_DATABASE_URL","TEMPO_CONTENT_WORKSPACE","TEMPO_CONTENT_RUNTIME_ROLE")}
         process = subprocess.run([self.content_cli,*map(str,arguments)],env=environment,capture_output=True,text=True)
         if process.returncode:
-            raise ValueError("content_command_failed:" + process.stderr[:1000])
+            try:
+                code = json.loads(process.stderr).get("code", "unknown")
+            except (ValueError, AttributeError):
+                code = "unknown"
+            if not isinstance(code, str) or not code.replace("_", "").isalnum():
+                code = "unknown"
+            raise ContentCommandError(code)
         return json.loads(process.stdout)
 
     def save(self, identifier, command, document):
@@ -82,7 +109,7 @@ class Operator:
 
     def apply(self, identifier, max_slices=64):
         operation = self.content("operation","show",identifier)
-        if operation["state"] == "completed":
+        if operation["state"] in ("completed", "failed"):
             return operation
         operation = self.content("operation","prepare",identifier,"--max-slices",max_slices)
         prepared = operation["document"]
@@ -109,25 +136,42 @@ class Operator:
         remote_id = request.get("activation_id") or request["retirement_id"]
         _, receipt = self.http("/internal/publications/operations/"+quote(remote_id,safe=""))
         if receipt["state"] == "failed":
-            raise ValueError("learning_operation_terminal_failure")
-        if receipt["state"] == "complete":
-            acknowledgement = receipt["response"]
-        elif receipt["state"] == "unknown":
-            if not delivery["retirement"]:
-                self.http("/internal/publications/v2/stage",execution_bundle(prepared["export"],delivery["due_date"]))
-            code, acknowledgement = self.http("/internal/publications/retire" if delivery["retirement"] else "/internal/publications/v2/activate",request)
-            if code == 202:
-                return {"operation_id":identifier,"state":"pending_activation","learning_operation_id":remote_id}
-        else:
-            code, acknowledgement = self.http("/internal/publications/operations/"+quote(remote_id,safe="")+"/retry",{})
-            if code == 202:
-                return {"operation_id":identifier,"state":"pending_activation","learning_operation_id":remote_id}
+            return self.record_failure(identifier)
+        try:
+            if receipt["state"] == "complete":
+                acknowledgement = receipt["response"]
+            elif receipt["state"] == "unknown":
+                if not delivery["retirement"]:
+                    self.http("/internal/publications/v2/stage",execution_bundle(prepared["export"],delivery["due_date"]))
+                code, acknowledgement = self.http("/internal/publications/retire" if delivery["retirement"] else "/internal/publications/v2/activate",request)
+                if code == 202:
+                    return {"operation_id":identifier,"state":"pending_activation","learning_operation_id":remote_id}
+            elif receipt["state"] == "queued":
+                code, acknowledgement = self.http("/internal/publications/operations/"+quote(remote_id,safe="")+"/retry",{})
+                if code == 202:
+                    return {"operation_id":identifier,"state":"pending_activation","learning_operation_id":remote_id}
+            else:
+                raise ValueError("invalid_learning_operation_state")
+        except ValueError:
+            # A rejected HTTP response alone is not a terminal outcome. Read the
+            # original durable operation; Content independently verifies failure.
+            _, recovered = self.http("/internal/publications/operations/"+quote(remote_id,safe=""))
+            if recovered.get("state") == "failed":
+                return self.record_failure(identifier)
+            if recovered.get("state") == "complete":
+                acknowledgement = recovered["response"]
+            else:
+                raise
         if delivery["retirement"]:
             acknowledgement = {"contract_version":1,"workspace_id":operation["draft"]["source"]["workspace_id"],
                 "retirement_id":remote_id,"publication_id":request["publication_id"],"publication_generation":request["publication_generation"],
                 "reason":None,**acknowledgement}
         receipt = {"transport":"authenticated_learning_http","endpoint":self.endpoint,"acknowledgement":acknowledgement}
         return self.save(identifier,"record",receipt)
+
+    def record_failure(self, identifier):
+        return self.content("operation", "record-failure", identifier,
+            "--learning-origin", self.endpoint, "--operator-token-file", self.token_file)
 
     def snapshot(self, identifier):
         operation = self.content("operation","show",identifier)
@@ -140,15 +184,24 @@ class Operator:
         _, current = self.http("/internal/publications/"+quote(export["publication"]["publication_id"],safe="")+"/status?generation="+str(export['publication']['publication_generation']))
         acceptance=current.pop('accepted')
         revision = current["activation_revision"]
-        key = str(revision)
+        snapshot_id = snapshot_identity(export["publication"])
+        key = snapshot_id + ":" + str(revision)
         if key in prepared.get("snapshots",{}):
             return prepared["snapshots"][key]
-        snapshot = {"schema_version":2,"snapshot_id":export["publication"]["publication_id"],"revision":revision,
+        snapshot = {"schema_version":2,"snapshot_id":snapshot_id,"revision":revision,
             "complete":export["complete"],"publication":export["publication"],"activation":prepared["receipt"]["acknowledgement"],
             "routes":[{key:value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key")} for route in export["routes"]],
             "content_export":export,"current_serving":current,"activation_origin":{"transport":"authenticated_learning_http","endpoint":self.endpoint}}
         snapshot['acceptance']=acceptance
-        operation = self.save(identifier,"checkpoint",{"snapshots":{key:snapshot}})
+        try:
+            operation = self.save(identifier,"checkpoint",{"snapshots":{key:snapshot}})
+        except ContentCommandError as error:
+            if error.code != "checkpoint_conflict":
+                raise
+            operation = self.content("operation", "show", identifier)
+            winner = operation["document"].get("snapshots", {}).get(key)
+            if winner is None or observation_facts(winner) != observation_facts(snapshot):
+                raise
         return operation["document"]["snapshots"][key]
 
 
@@ -182,7 +235,7 @@ def main(arguments=None):
                 raise ValueError("invalid_slice_bound")
             result = operator.apply(options.operation_id,options.max_slices)
         print(json.dumps(result,sort_keys=True,default=str))
-        return 0
+        return 2 if result.get("state") == "failed" else 0
     except (ValueError,OSError,KeyError) as error:
         # Fixed operator errors only; URLs/credentials/driver exceptions are not printed.
         print(json.dumps({"status":"pending_or_failed","reason":str(error) if isinstance(error,ValueError) else "operator_unavailable:"+type(error).__name__}))

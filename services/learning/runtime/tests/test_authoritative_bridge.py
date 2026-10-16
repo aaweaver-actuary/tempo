@@ -25,7 +25,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo, conninfo_to_dict
 import pytest
 
-from test_game_evidence_runtime import producer
+from test_game_evidence_runtime import producer, installed_producer
 from test_restart import server
 from test_runtime import head, review_payload, submit
 
@@ -256,9 +256,18 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         assert historical['activation']['activation_revision']==1 and historical['current_serving']['activation_revision']==2
         successor_path=tmp_path/'successor-snapshot.json'
         successor=run_cli(bridge_cli,[*arguments,'snapshot',updated['id'],'--output',successor_path],environment,tmp_path)
+        assert historical['snapshot_id'] != successor['snapshot_id']
+        fresh_path = tmp_path / 'historical-first-producer'
+        fresh_path.mkdir()
+        with installed_producer(case, fresh_path) as fresh:
+            fresh.run('load-snapshot', historical_path)
+            fresh.run('load-snapshot', successor_path)
+            assert fresh.query("SELECT document->'publication'->>'publication_generation' FROM snapshots WHERE digest=(SELECT snapshot_digest FROM workspace_inputs WHERE workspace_id='workspace-a')")[0][0] == '2'
         producer.run('load-snapshot',successor_path)
+        current_digest = producer.query("SELECT snapshot_digest FROM workspace_inputs WHERE workspace_id='workspace-a'")[0][0]
         stale=run_cli(producer.python,['-I','-m','tempo_game_evidence.cli','load-snapshot',historical_path],producer.environment,tmp_path,success=False)
         assert isinstance(stale,subprocess.CompletedProcess) and stale.returncode!=0
+        assert producer.query("SELECT snapshot_digest FROM workspace_inputs WHERE workspace_id='workspace-a'")[0][0] == current_digest
         producer.run('work','--max-jobs','100','--learning-endpoint',learning_endpoint)
         assert not outstanding(case,issued['id']), 'Metadata generation replay cannot re-promote settled observations'
         correction=tmp_path/'corrected-miss.pgn'
@@ -278,6 +287,9 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         retired=run_cli(bridge_cli,[*arguments,'apply',retirement_operation['id']],environment,tmp_path)
         assert retired['state']=='completed' and retired['document']['receipt']['acknowledgement']['status']=='retired'
         assert inspect_rows(case,'SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0]==0
+        retired_snapshot_path=tmp_path/'post-retirement-snapshot.json'
+        retired_snapshot=run_cli(bridge_cli,[*arguments,'snapshot',approved['id'],'--output',retired_snapshot_path],environment,tmp_path)
+        assert retired_snapshot['current_serving']['status']=='retired' and retired_snapshot['revision']>historical['revision']
         # Prove all three runtime roles are denied foreign domain databases.
         learning_name=conninfo_to_dict(case.admin)['dbname']
         content_name=conninfo_to_dict(environment['TEMPO_CONTENT_DATABASE_URL'])['dbname']
@@ -289,7 +301,7 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         evidence=Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True,exist_ok=True)
         shutil.copytree(output,evidence/'analysis-inputs',dirs_exist_ok=True)
-        for path in (source_path,manifest_path,snapshot_path,proposal_path,historical_path,successor_path):
+        for path in (source_path,manifest_path,snapshot_path,proposal_path,historical_path,successor_path,retired_snapshot_path):
             shutil.copy2(path,evidence/path.name)
         (evidence/'activation.json').write_text(json.dumps(dropped[0],indent=2))
         (evidence/'retirement.json').write_text(json.dumps(retired['document']['receipt']['acknowledgement'],indent=2))
@@ -340,3 +352,62 @@ def test_A_complete_large_authored_source_traverses_installed_bridge(case,author
             'plan_approval_seconds':planning,'validation_publication_delivery_seconds':applying,
             'maximum_child_rss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'publication_id':publication['publication_id'],
             'publication_generation':publication['publication_generation'],'activation':completed['document']['receipt']['acknowledgement']},indent=2))
+
+
+def test_A_corrected_source_activates_after_original_terminal_failure(case, authored, tmp_path):
+    content_cli, bridge_cli, environment = authored
+    token = tmp_path / 'operator-token'
+    token.write_text(case.configuration.operator_token)
+    token.chmod(0o600)
+    source = source_document()
+    def approve_source(document, revision, aliases=None):
+        source_path = tmp_path / ('source-' + str(revision) + '.json')
+        source_path.write_text(json.dumps(document))
+        manifest = manifest_for(document, source_path)
+        manifest['legacy_aliases'] = aliases or {}
+        manifest_path = tmp_path / ('manifest-' + str(revision) + '.json')
+        manifest_path.write_text(json.dumps(manifest))
+        draft = run_cli(content_cli, ['import', 'plan', source_path, '--manifest', manifest_path, '--expected-revision', revision], environment, tmp_path)
+        return run_cli(content_cli, ['draft', 'approve', draft['id'], '--digest', draft['digest']], environment, tmp_path)
+    original = approve_source(source, 0)
+    with server(case, tmp_path) as (client, process):
+        origin = str(client.base_url).rstrip('/')
+        arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
+        assert run_cli(bridge_cli, [*arguments, 'apply', original['id']], environment, tmp_path)['state'] == 'completed'
+        previous = client.get('/internal/publications/' + run_cli(content_cli, ['source', 'show', source['source_key']], environment, tmp_path)['publication_id'] + '/status', headers={'Authorization': 'Bearer ' + case.configuration.operator_token}).json()
+        board = chess.Board()
+        board.push_uci('e2e4'); board.push_uci('c7c5')
+        source['routes'].append({'key': 'sicilian', 'starting_fen': chess.STARTING_FEN, 'moves': ['e2e4','c7c5','g1f3']})
+        source['memberships'].append({'route_key': 'sicilian', 'policy_key': 'main', 'repertoire_key': 'white'})
+        source['exercises'].append({'key': 'c5-response', 'decision_key': 'c5-response', 'policy_key': 'main', 'starting_fen': board.fen(en_passant='fen'), 'prompt': 'Respond to c5',
+            'specification': {'type':'move_line','mode':'single','grading_policy':'reference','accepted_lines':[['g1f3']]}})
+        source['bindings'].extend([{'route_key': 'sicilian','policy_key':'main','ply':0,'exercise_key':'root'}, {'route_key':'sicilian','policy_key':'main','ply':2,'exercise_key':'c5-response'}])
+        rejected = approve_source(source, 1, {'c5-response': 'missing-historical-card'})
+        result = run_cli(bridge_cli, [*arguments, 'apply', rejected['id']], environment, tmp_path, success=False)
+        assert isinstance(result, subprocess.CompletedProcess) and result.returncode == 2
+        failed = run_cli(content_cli, ['operation', 'show', rejected['id']], environment, tmp_path)
+        assert failed['state'] == 'failed' and failed['document']['failure']['state'] == 'failed'
+        remote_id = rejected['id'] + ':activate'
+        headers = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+        receipt = client.get('/internal/publications/operations/' + remote_id, headers=headers).json()
+        assert receipt['state'] == 'failed' and receipt['request'] == failed['document']['delivery']['request']
+        assert inspect_rows(case, 'SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0] == 2
+        status = client.get('/internal/publications/' + previous['publication_id'] + '/status', headers=headers).json()
+        assert (status['publication_generation'], status['activation_revision']) == (previous['publication_generation'], previous['activation_revision'])
+        process.restart_service()
+        replay = run_cli(content_cli, ['operation','record-failure', rejected['id'], '--learning-origin', origin, '--operator-token-file', token], environment, tmp_path)
+        assert replay['document']['failure'] == failed['document']['failure']
+        current = run_cli(content_cli, ['source','show', source['source_key']], environment, tmp_path)
+        assert current['requested_revision'] == 2
+        source['title'] = 'Corrected complete synthetic source'
+        corrected = approve_source(source, current['requested_revision'])
+        assert corrected['id'] != rejected['id']
+        completed = run_cli(bridge_cli, [*arguments,'apply',corrected['id']], environment, tmp_path)
+        assert completed['state'] == 'completed'
+        assert inspect_rows(case, 'SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0] == 3
+        assert client.post('/internal/publications/operations/' + remote_id + '/retry', json={}, headers=headers).status_code == 409
+        assert run_cli(content_cli, ['operation','record-failure', rejected['id'], '--learning-origin', origin, '--operator-token-file', token], environment, tmp_path)['document']['failure'] == failed['document']['failure']
+        assert run_cli(content_cli, ['operation','show', rejected['id']], environment, tmp_path)['state'] == 'failed'
+        evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence/'terminal-recovery.json').write_text(json.dumps({'failed_content': failed, 'learning_failure': receipt, 'corrected_content': completed}, indent=2, default=str))
