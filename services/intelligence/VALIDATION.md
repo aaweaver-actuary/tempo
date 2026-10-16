@@ -1,5 +1,8 @@
 # Intelligence #109 validation receipt
 
+The original qualification below is historical. The PR #289 repair receipt at the
+end records the separately tested repair revision and its fresh evidence.
+
 Starting main: `0c7ef737bb2daacd8f671f252ce5a1d0787b1871`.
 Tested executable revision: `03ea13ce81900f1e225b5d0b7f2400bc051c233d`.
 Branch: `codex/109-intelligence-sources`.
@@ -109,3 +112,148 @@ binding; it cannot independently attest worker artifact bytes, ordered rating
 pairs or speed conditioning. Single-FEN inputs cannot prove repetition history.
 These supported-subset limits and #108/#110/#156/#4 handoffs are specified in
 [INTERFACES.md](INTERFACES.md); no shared wire schema was changed.
+
+
+## PR #289 repair qualification — October 16, 2026
+
+Starting PR head: `d17c5f687b55c454088deecdf3a6b02dc2184f15`.
+Current main included: `0c7ef737bb2daacd8f671f252ce5a1d0787b1871`.
+Tested executable: `576d5500e0372ae35da4880d05429b49e3e778cc`.
+The following commit changes only this validation receipt. The final published
+SHA, remote status, source bundle and verified checkout cleanup are recorded in
+`handoff.json` and `cleanup.json` in the repair evidence directory below.
+
+### Repairs and independent review
+
+Cancellation cannot become an ordinary retryable error when lease cleanup fails.
+Claim, publication and failure persistence run on an owned serial executor with a
+five-second client I/O deadline; the owner drains operation outcomes before pool
+closure. Repeated cancellation, eventual claim return and committed publication
+are handled explicitly. The complete application teardown is also owned/shielded,
+including cancellation during startup, Store closure and executor join.
+
+Request retry processes only locally eligible sources and durably accepts partial
+or no-op commands. Inspection and retry share eligibility, including provider
+origin restrictions. Command replay, provider cooldowns, generations and retained
+evidence remain protected. Maia new-generation budgets are 1024 MiB / 5000 ms;
+retries preserve complete historical request contents except execution generation.
+No schema, shared wire contract, dependency lock or migration changed.
+
+An independent review found one additional cancellation gap during Store closure.
+Its named failing regression was added and the gap repaired. The final independent
+review reports no outstanding actionable defects; it independently executed all
+31 deterministic lifecycle cases and additional cancellation/closure probes.
+`independent-review.json` separates those executions from inspected native evidence.
+
+### Fresh final results
+
+| Proof | Actual result at the tested executable |
+|---|---|
+| Registered Intelligence deterministic suite | 196 passed |
+| Registered Intelligence native PostgreSQL suite | 99 passed |
+| Declared chess-core dependency | 105 passed |
+| Declared analysis-job contracts | 92 passed |
+| Source-free Python 3.12 wheel | 196 passed |
+| Source-free Python 3.12 sdist | 196 passed |
+| Source-free Python 3.14 wheel | 196 passed |
+| Source-free Python 3.14 sdist | 196 passed |
+| Installed Python 3.12 wheel native/server suite | 99 passed |
+| Installed Python 3.14 sdist native/server suite | 99 passed |
+| Component discovery and dependency/public boundaries | Passed |
+| Zero-selected owning pytest invocation | Rejected with expected exit 5 |
+| Conflict artifacts and whitespace | Passed |
+
+No required cases were skipped, failed, errored or xfailed. The upstream
+Starlette/AnyIO BlockingPortal deprecation remains unsuppressed. Final Python
+runtime versions, individual warnings, command arguments and case identities are
+preserved in the artifact reports/logs. Native server cases include cleanup
+failure, real background SQL delay, responsive health, graceful shutdown and
+restart. The 32 added deterministic and 39 added native cases run in their regular
+owning suites; repeats across consumers are not additional regression identities.
+
+Negative evidence is preserved separately: the original worker/API/CLI produced
+17 failures/8 passes in the controlled lifecycle regression selection, and the
+original installed Store failed all four mixed-source retry cases at the original
+`retry_not_due`/`retry_not_permitted` behavior. The first retry reproduction had a
+test-status payload error; it was corrected and rerun to establish the actual
+source failures. One development native run had 98 passes/one stale test comparison;
+its corrected final runs pass 99. None of those intermediate receipts qualifies
+the final executable.
+
+### Maia producer/consumer proof
+
+Current published #290: `d0b5ee725ad3e884fd6eb7b8c5c9042ac679b24b`.
+Installed worker artifact SHA-256:
+`6c51d0b989d5eddfef72aff6a181285a852888d504d7bf830e8978c772170d2b`.
+A fresh, exact Intelligence-generated job completed in 270.66 ms after readiness,
+with 20 predictions and probability sum 1.0. Its isolated whole-worker cgroup had
+one CPU, 1073741824 bytes memory, zero swap, no network, read-only root, zero OOM
+events and exit 0. Cgroup peak was 500711424 bytes. Five runtime/envelope assertions,
+shared parsing, exact constructor reconstruction and result validation passed.
+The regular native test then accepted and replayed that exact result against the
+exact persisted job. The fixture preserves the exchange without installing or
+running a model in the Intelligence suite.
+
+The 532 MiB process-RSS benchmark does not measure the same resource as admission's
+cgroup hard cap. The published worker requires at least 1 GiB; 512 and 768 MiB job
+allowances are unsupported. This proves compatibility for the qualified 1 GiB
+profile. Existing legacy 768 MiB Compose entries provision another worker, and no
+independent production deployment profile was exercised or changed. Production
+capacity remains unverified rather than silently passing.
+
+### Reproduction commands and preserved artifacts
+
+Executed from `/private/tmp/tempo-intelligence-109-repair` with a task-owned clone
+of the pre-existing cache:
+
+```sh
+UV_CACHE_DIR=/private/tmp/tempo-intelligence-109-repair-uv-cache uv sync --project services/intelligence --locked --offline --no-build-isolation --no-editable --reinstall-package tempo-intelligence
+TEMPO_COMPONENT_PYTHON=$PWD/services/intelligence/.venv/bin/python UV_CACHE_DIR=/private/tmp/tempo-intelligence-109-repair-uv-cache node tools/component-build/test-lane.mjs --component intelligence
+UV_CACHE_DIR=/private/tmp/tempo-intelligence-109-repair-uv-cache services/intelligence/.venv/bin/python services/intelligence/integration/qualify_artifacts.py /private/tmp/tempo-intelligence-109-repair-evidence/artifacts-final
+TEMPO_COMPONENT_PYTHON=$PWD/services/intelligence/.venv/bin/python node tools/component-build/check-components.mjs --component intelligence
+node tools/component-build/test-lane.mjs --component intelligence --list
+npm run check:conflicts
+git diff --check
+```
+
+The only Node setup was the component runner's pinned TypeScript dependency:
+`npm ci --prefix tools/component-build --workspaces=false --offline`.
+`command-manifest.json` records additional baseline, negative, native and lifecycle
+checks; the artifact manifest retains all 32 child commands and 96 hashed inputs.
+
+Repair evidence is preserved at:
+`/Users/andy/tempo-evidence/intelligence-109-repair/20261016-requalification`.
+
+- Wheel SHA-256: `8e96be4beeaa41b870be573cf40a296660a4dc202fa30775141ba1aedccaaf97`.
+- Sdist SHA-256: `ff20c585a14411b0cfcd6cb353021bf67d09aeee718c7f4d9a8b66e5a78d0e32`.
+- `artifacts-final/artifacts.json`: exact inputs, artifact hashes, installed guards,
+  commands and consumer identities. The manifests describe their build-time inputs;
+  the later receipt-only commit does not relabel them as newly executed tests.
+- Four consumer JUnit files and both installed-native JUnit/log/resource receipts
+  are under `artifacts-final/`; registered native evidence is
+  `native-registered-final/`; dependency identities are in `registered-cases.json`.
+- `maia-native-exchange-faa7n7ps/`: actual current producer artifact, exchange,
+  envelope, command and cleanup proof. The earlier Maia trial remains separately
+  labeled with its historical artifact.
+- `acceptance-matrix.json`, `independent-review.json`, `source-inputs.json`,
+  `source.bundle`, `source.tar.gz`, `checksums.json`, `handoff.json` and
+  `cleanup.json`: complete acceptance mapping and preservation/publication audit.
+
+All seven invocation-owned PostgreSQL containers and their seven volumes report
+verified removal, including negative/development runs. Both Maia proof containers
+and their unique image tags were removed, with no Maia volumes. Final disposable
+checkout/cache/consumer removal is separately verified in `cleanup.json` after
+publication and preservation; it is not inferred from this receipt.
+
+### Readiness and limits
+
+Local affected-component and producer/consumer qualification is complete. GitHub
+Actions remains disabled, and current main has no returned branch protection or
+rules; no hosted or release pass is claimed. Current remote head, mergeability and
+non-draft status are checked after publication and retained in the handoff.
+
+No known repair-scope defect or mandatory local failure remains. Deliberate v1
+limits remain unchanged: trusted operator credential identity, configured Maia
+artifact binding without independent result attestation, one rating/no speed pair,
+and no repetition history from one FEN. No live-provider check, full-product gate,
+live migration, independent production provisioning, deployment or merge occurred.
