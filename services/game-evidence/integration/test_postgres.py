@@ -243,9 +243,9 @@ def learning_receiver(store, *, replies=None, lose_first=False, actual_snapshot=
             if actual_snapshot is not None:
                 from tempo_learning_remediation import PostgresRepository
                 from tempo_learning_remediation.models import AcceptedDecision, ReceiveContext
-                from tempo_game_evidence.snapshot import ComparisonSnapshot
+                from tempo_game_evidence.snapshot import parse_snapshot
                 from tempo_chess_core import canonical_fen_key
-                snapshot=ComparisonSnapshot.model_validate(actual_snapshot)
+                snapshot=parse_snapshot(actual_snapshot)
                 class Authority:
                     def decision(self,card_id,decision_id,publication_id,publication_generation):
                         for definition in snapshot.publication.definitions:
@@ -1161,6 +1161,13 @@ def test_A_post_retirement_snapshot_cannot_claim_current_serving(state):
     original_digest = store.load_snapshot(active)
     game = store.import_pgn(workspace, 'pgn', 'retired-comparison', 'Learner', b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. c4 1-0')
     drain(store)
+    # Establish a genuine accepted receipt in the native remediation database;
+    # a never-delivered pending candidate may legitimately be superseded.
+    with learning_receiver(store, actual_snapshot=active) as (endpoint, received, requests):
+        assert deliver_one(store, endpoint)
+    drain(store)
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS count FROM accepted_heads WHERE active').fetchone()['count'] > 0
     with store.connect() as database:
         deliveries = database.execute('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id').fetchall()
     retired_digest = store.load_snapshot(retired)
@@ -1170,4 +1177,5 @@ def test_A_post_retirement_snapshot_cannot_claim_current_serving(state):
     assert report['readiness'] == 'unknown' and report['snapshot']['digest'] == retired_digest
     with store.connect() as database:
         assert database.execute('SELECT count(*) AS count FROM snapshots').fetchone()['count'] == 2
+        assert database.execute('SELECT count(*) AS count FROM accepted_heads WHERE active').fetchone()['count'] > 0
         assert database.execute('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id').fetchall() == deliveries
