@@ -74,7 +74,8 @@ async function main() {
     const health = await worker.start();
     if (command === 'health') { process.stdout.write(JSON.stringify({ ready: true, ...health }) + '\n'); await worker.close({ drain: false }); return; }
     protocol = serveProtocol(worker, { input: process.stdin, output: process.stdout, diagnostic });
-    if (!(await protocol.done).success) process.exitCode = 1;
+    // Owned child shutdown is confirmed before abandoning an undrainable stream.
+    if (!(await protocol.done).success) process.exit(1);
   } catch (error) {
     diagnostic({ event: 'startup_failed', reason: error.code ?? 'worker_start_failed' });
     if (command === 'health') process.stdout.write(JSON.stringify({ ready: false, reason: error.code ?? 'worker_start_failed' }) + '\n');

@@ -113,6 +113,7 @@ export async function qualifyRestricted({ reportPath, artifactsDirectory }) {
 }
 
 export async function qualifyContainer({ reportPath, artifactsDirectory, exchangePath, benchmark = false }) {
+  const builtSource = sourceState();
   await mkdir(artifactsDirectory, { recursive: true });
   const temporary = await mkdtemp(join(tmpdir(), 'tempo-stockfish-image-'));
   try {
@@ -122,7 +123,7 @@ export async function qualifyContainer({ reportPath, artifactsDirectory, exchang
     execute('docker', ['build', '--label', 'tempo.task=analysis-b-stockfish', '--tag', image, temporary], temporary);
     execute(python(), ['-I', join(componentRoot, 'qualify_container.py'), '--image', image, '--report', reportPath, '--exchange', exchangePath, ...(benchmark ? ['--benchmark'] : [])], temporary);
     const report = JSON.parse(await readFile(reportPath, 'utf8'));
-    report.artifacts = [{ name: artifact.name, sha256: artifact.sha256 }]; Object.assign(report, sourceState());
+    report.artifacts = [{ name: artifact.name, sha256: artifact.sha256 }]; Object.assign(report, builtSource);
     report.cases = { success: report.complete, passed: report.cases.length, failed: 0, executedIdentities: report.cases.map(item => item.name), details: report.cases };
     await writeFile(reportPath, JSON.stringify(report, null, 2) + '\n');
     return report;
