@@ -1,3 +1,4 @@
+import { independentStudy } from "../lib/study-connection";
 import { Button } from "./buttons/BaseButton";
 import { useRef, useState } from "react";
 import type { View } from "@/app/types";
@@ -16,6 +17,8 @@ export const WORKSPACES: { id: View; label: string }[] = [
   { id: "insights", label: "Insights" },
   { id: "settings", label: "Settings" },
 ];
+const studyWorkspaces = WORKSPACES.filter(item => ["train", "tactics", "endgames"].includes(item.id));
+const workspaces = independentStudy ? studyWorkspaces : WORKSPACES;
 const PHONE_PRIMARY: View[] = ["train", "tactics", "endgames", "builder"];
 export default function Navbar({
   view,
@@ -45,8 +48,8 @@ export default function Navbar({
       key={item.id}
       className={className}
       aria-current={view === item.id ? "page" : undefined}
-      onPointerEnter={() => void preloadView(item.id).catch(() => undefined)}
-      onFocus={() => void preloadView(item.id).catch(() => undefined)}
+      onPointerEnter={() => { if (!independentStudy) void preloadView(item.id).catch(() => undefined); }}
+      onFocus={() => { if (!independentStudy) void preloadView(item.id).catch(() => undefined); }}
       onClick={() => select(item.id)}
     >
       {item.label}
@@ -59,10 +62,10 @@ export default function Navbar({
       ref={navRef}
     >
       <div className="desktop-navigation">
-        {WORKSPACES.map((item) => destination(item))}
+        {workspaces.map((item) => destination(item))}
       </div>
       <div className="phone-navigation">
-        {WORKSPACES.filter((item) => PHONE_PRIMARY.includes(item.id)).map(
+        {workspaces.filter((item) => PHONE_PRIMARY.includes(item.id)).map(
           (item) => destination(item),
         )}
         <Button
@@ -80,7 +83,7 @@ export default function Navbar({
         aria-controls="workspace-menu"
         onClick={() => setMenuOpen(!menuOpen)}
       >
-        {WORKSPACES.find((item) => item.id === view)?.label ?? "Compare"} ▾
+        {workspaces.find((item) => item.id === view)?.label ?? "Compare"} ▾
       </Button>
       {menuOpen && (
         <div
@@ -89,7 +92,7 @@ export default function Navbar({
           className="workspace-menu"
           aria-label="All sections"
         >
-          {WORKSPACES.map((item) =>
+          {workspaces.map((item) =>
             destination(
               item,
               PHONE_PRIMARY.includes(item.id)

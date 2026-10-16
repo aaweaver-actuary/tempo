@@ -1,3 +1,4 @@
+import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
@@ -25,6 +26,7 @@ export function pendingTacticCapture(): TacticCaptureRequest | null {
 
 // Store exact transport bytes before the first send. Every unresolved retry uses them.
 export async function saveTacticCapture(draft?: TacticCaptureDraft) {
+  if (independentStudy) throw new Error("Tactic capture belongs to Workbench. No capture was saved.");
   let pending = pendingTacticCapture();
   let requestBody = pending ? pendingSchema.parse(JSON.parse(localStorage.getItem(PENDING_KEY)!)).body : "";
   if (pending) {

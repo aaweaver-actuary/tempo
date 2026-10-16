@@ -75,6 +75,8 @@ export function mapQueueCardToPracticeCard(
         ? "puzzle"
         : card.content_type === "endgame"
           ? "endgame"
+          : card.content_type === "middlegame"
+          ? "middlegame"
           : "opening",
     title:
       card.content_type === "study_exercise"

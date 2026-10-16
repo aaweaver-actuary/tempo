@@ -1,8 +1,15 @@
+import { learningFetch as fetch } from "./study-connection";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { isStudyIntentStoreCurrent, studyIntentStore } from "./study-intent-storage";
+import { endgameAttemptSchema } from "../domain/schemas";
+import { studySettingsSchema } from "./study-connection";
+import { z } from "zod";
+
+type StudyCommandKind = "study-command" | "defense-command" | "tactic-command" | "endgame-command" | "burial-command" | "settings-command";
+const commandKinds: StudyCommandKind[] = ["study-command", "defense-command", "tactic-command", "endgame-command", "burial-command", "settings-command"];
 
 type FrozenStudyRequest = { body: Record<string, unknown>; headers: Record<string, string>; scope: string };
 type RejectionReceipt = { type: "rejected"; requestId: string; attemptId: string; status: number; message: string; details?: unknown };
@@ -59,6 +66,11 @@ function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
   if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
   if (record.kind === "defense-command" && !["correct", "incorrect", "needs_analysis", "ambiguous", "illegal", "ready_for_move"].includes(String(body.status)))
     throw new Error("The service did not return a recognized defense assessment.");
+  if (record.kind === "endgame-command") endgameAttemptSchema.parse(body);
+  if (record.kind === "tactic-command") z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
+  if (record.kind === "settings-command") studySettingsSchema.parse(body);
+  if (record.kind === "burial-command" && (body.buried !== true || body.queue_entry_id !== Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1])))
+    throw new Error("Learning did not confirm the original burial.");
   return { state: body.status === "needs_analysis" ? "pending" as const : "committed" as const, receipt: body };
 }
 async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
@@ -68,8 +80,7 @@ async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
     return assessResponse(record, await response.json() as Record<string, unknown>);
   } catch (error) { return rejectionFromError(record, error); }
 }
-registerStudyDeliveryAdapter("study-command", deliver, checkReceipt);
-registerStudyDeliveryAdapter("defense-command", deliver, checkReceipt);
+for (const kind of commandKinds) registerStudyDeliveryAdapter(kind, deliver, checkReceipt);
 
 function practiceScope(scope: string) { return scope.endsWith(":self-assess") ? scope.slice(0, -12) : scope; }
 function boundaryKey(scope: string) { return `practice-reset:${practiceScope(scope)}`; }
@@ -77,7 +88,7 @@ function scopeSelector(scope: string) { const parent = practiceScope(scope); ret
 export async function studyPracticeBoundary(scope: string) {
   return (await (await studyIntentStore()).boundary(boundaryKey(scope), scopeSelector(scope))).value;
 }
-export async function executeStudyRequest(input: { scope: string; endpoint: string; body: Record<string, unknown>; requestId: string; attemptId?: string; revision?: number; kind?: "study-command" | "defense-command"; practiceBoundary?: number }): Promise<Response> {
+export async function executeStudyRequest(input: { scope: string; endpoint: string; body: Record<string, unknown>; requestId: string; attemptId?: string; revision?: number; kind?: StudyCommandKind; practiceBoundary?: number }): Promise<Response> {
   const store = await studyIntentStore();
   const key = `${input.scope}:${input.requestId}`;
   const previous = await store.get(key);
@@ -100,7 +111,7 @@ export async function executeStudyRequest(input: { scope: string; endpoint: stri
 /** Restore evidence without deriving another payload from fresh UI state. Rejections are inspectable but never replayed. */
 export async function retainedStudyRequest(scope: string, parentAttemptId?: string) {
   const snapshot = await (await studyIntentStore()).boundary(boundaryKey(scope), scopeSelector(scope));
-  const retained = snapshot.records.filter(record => ["study-command", "defense-command"].includes(record.kind) &&
+  const retained = snapshot.records.filter(record => commandKinds.includes(record.kind as StudyCommandKind) &&
     (record.payload as FrozenStudyRequest).scope === scope && record.sequence > snapshot.value &&
     (!parentAttemptId || record.attemptId === parentAttemptId) && (record.state !== "discarded" || (record.receipt as RejectionReceipt)?.type === "rejected")).at(-1);
   return retained ? { requestId: retained.requestId, attemptId: retained.attemptId, revision: retained.revision, body: (retained.payload as FrozenStudyRequest).body,
@@ -117,7 +128,7 @@ export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> 
   if (recovery?.store === store && recovery.signal === signal) return recovery.promise;
   const promise = (async () => {
     const coordinator = await studySession();
-    const pending = (await store.list(undefined, true)).filter(record => ["study-command", "defense-command"].includes(record.kind));
+    const pending = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind));
     const cursorKey = "study-command-recovery:cursor";
     let cursor = await store.checkpoint(cursorKey);
     let cursorOwned = true;

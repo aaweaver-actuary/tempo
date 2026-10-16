@@ -20,13 +20,13 @@ def docker(*arguments):
     ).stdout.strip()
 
 
-def main():
+def main(test_paths=None, additional_environment=None, extra_sources=(), evidence_directory=None):
     if len(sys.argv) > 2:
         raise SystemExit("Only an evidence directory is accepted")
     evidence = Path(
-        sys.argv[1]
+        evidence_directory or sys.argv[1]
         if len(sys.argv) == 2
-        else os.environ.get(
+        else evidence_directory or os.environ.get(
             "TEMPO_LEARNING_EVIDENCE_DIR", str(ROOT / "test-results/learning-runtime")
         )
     ).resolve()
@@ -104,6 +104,7 @@ def main():
         ROOT / "app/domain",
         ROOT / "app/const.ts",
         ROOT / "components.json",
+        *extra_sources,
     ]:
         for path in sorted(source.rglob("*")) if source.is_dir() else [source]:
             if path.is_file():
@@ -220,6 +221,7 @@ def main():
             TEMPO_LEARNING_TEST_ADMIN=admin,
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
         )
+        environment.update(additional_environment or {})
         environment.pop("PYTHONPATH", None)
         # A separately installed producer is an integration-test input only. It
         # is absent from the Learning artifact and service container closure.
@@ -270,7 +272,7 @@ def main():
                 "-p",
                 "no:cacheprovider",
                 "--basetemp=" + str(evidence / "temporary-test-data"),
-                str(ROOT / "services/learning/runtime/tests"),
+                *[str(path) for path in (test_paths or [ROOT / "services/learning/runtime/tests"])],
                 *extra,
             ]
             report["commands"].append(command)
@@ -310,7 +312,7 @@ def main():
             if temporary.exists():
                 retained = evidence / "service-logs"
                 retained.mkdir(exist_ok=True)
-                for source in temporary.rglob("server-*.log"):
+                for source in [*temporary.rglob("server-*.log"), *temporary.rglob("study-proof-*.log")]:
                     shutil.copy2(source, retained / source.name)
                 shutil.rmtree(temporary)
             report["temporary_test_data_removed"] = not temporary.exists()
@@ -417,7 +419,7 @@ def main():
                 {
                     key: value
                     for key, value in report.items()
-                    if key not in ("commands", "identities", "source_inputs")
+                    if key not in ("commands", "identities", "source_inputs", "dependency_inputs")
                 }
             ),
             file=sys.stderr,

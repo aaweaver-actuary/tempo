@@ -1,10 +1,10 @@
-import { API_URL } from "../const";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { confirmOperationResponse } from "./operation-status";
 import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
-import { localDayKey } from "../utils/local";
+import { learningDayKey as localDayKey } from "./study-connection";
 import { offlineTrainingDatabase as database } from "./offline-training-storage";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
@@ -130,12 +130,12 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
   const queuePayload = { ...(raw as Record<string, unknown>) };
   delete queuePayload.prepared_at;
   const envelope = queueEnvelopeSchema.parse(queuePayload);
-  if (envelope.projection?.state === "refreshing") throw new PhoneQueueRefreshingError();
+  if (!independentStudy && envelope.projection?.state === "refreshing") throw new PhoneQueueRefreshingError();
   if (envelope.projection?.state === "failed")
     throw new Error(envelope.projection.last_error ?? "Daily queue preparation failed. Check the computer worker and retry.");
-  if (!envelope.local_date || envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)
+  if (!envelope.local_date || (!independentStudy && (envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)))
     throw new Error("The daily queue is not fully prepared yet");
-  const cards = envelope.cards.map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));
+  const cards = (independentStudy ? envelope.cards.slice(0, 1) : envelope.cards).map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));
   const preparedAt = (raw as { prepared_at: string }).prepared_at;
   return updatePreparedTraining((current) => {
     if (current?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged && !attempt.conflict))
@@ -222,7 +222,7 @@ export async function recordOfflineAttempt(
     };
     const remaining = current.cards.filter((_, index) => index !== cardIndex);
     let nextTemporaryId = current.nextTemporaryId;
-    if (repeatPosition !== null) {
+    if (!independentStudy && repeatPosition !== null) {
       const repeatedCard = {
         ...card,
         queue_entry_id: nextTemporaryId++,

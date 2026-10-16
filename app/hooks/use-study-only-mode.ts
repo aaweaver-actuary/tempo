@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_URL } from "../const";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, studySettingsSchema } from "../lib/study-connection";
 import { usesLocalApi } from "../utils/local";
 
 // Unknown mode suppresses optional preparation until authoritative settings arrive.
@@ -13,9 +13,10 @@ export function useStudyOnlyMode() {
       if (reading || document.visibilityState !== "visible") return;
       reading = true;
       try {
-        const response = await fetch(`${API_URL}/api/settings`, { signal: AbortSignal.timeout(5_000) });
+        const response = await fetch(`${API_URL}${independentStudy ? "/api/study/settings" : "/api/settings"}`, { signal: AbortSignal.timeout(5_000) });
         if (!response.ok) throw new Error("Study mode settings unavailable");
-        const settings = await response.json() as { study_only_mode?: unknown };
+        const raw = await response.json();
+        const settings = independentStudy ? studySettingsSchema.parse(raw) : raw as { study_only_mode?: unknown };
         if (settings.study_only_mode !== undefined && typeof settings.study_only_mode !== "boolean")
           throw new Error("Study mode settings are invalid");
         if (!stopped) setStudyOnlyMode(settings.study_only_mode === true);

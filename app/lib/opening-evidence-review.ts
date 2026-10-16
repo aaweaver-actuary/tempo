@@ -1,3 +1,4 @@
+import { learningFetch as fetch } from "./study-connection";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { confirmOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
 import { rejectOpeningEvidence } from "./opening-evidence-journal";

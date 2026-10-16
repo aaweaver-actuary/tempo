@@ -50,7 +50,8 @@
     "test:ui-isolated:list": "node scripts/test-controlled-browser.mjs --list",
     "test:components": "node tools/component-build/test-node.mjs tools/component-build/tests",
     "build:components": "node tools/component-build/restricted-build.mjs",
-    "test:component": "node tools/component-build/test-lane.mjs"
+    "test:component": "node tools/component-build/test-lane.mjs",
+    "build:study": "npm run build:packages && TEMPO_TARGET=study vite build --config vite.static.config.ts"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",

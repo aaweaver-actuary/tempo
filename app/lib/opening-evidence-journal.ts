@@ -1,7 +1,7 @@
+import { LEARNING_URL as API_URL } from "./study-connection";
 import type { PracticeCard } from "../domain/cards";
 import type { AssistanceKind, OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { openingEvidenceCheckpointSchema, openingDecisionEventSchema } from "../domain/opening-evidence";
-import { API_URL } from "../const";
 import { offlineTrainingDatabase } from "./offline-training-storage";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { notifications, publishNotification, resolveNotification } from "./notifications";

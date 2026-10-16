@@ -1,3 +1,5 @@
+import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { TacticCaptureDialog } from "../components/tactic-capture-dialog";
 import { Button } from "../components/buttons/BaseButton";
@@ -14,7 +16,7 @@ import {
 import { OutcomeFlash } from "../components/board/OutcomeFlash";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
-import { API_URL, STANDARD_FEN } from "../const";
+import { STANDARD_FEN } from "../const";
 import { playChessMoveSound } from "../lib/move-sound";
 import { confirmOperationResponse } from "../lib/operation-status";
 import {
@@ -89,13 +91,13 @@ type TacticsViewProps = { theme: BoardTheme; pieceSet: PieceSet; onQueueChanged:
 export default function TacticsView(props: TacticsViewProps) {
   const [captureOpen, setCaptureOpen] = useState(false);
   return <>
-    <div className="tactic-capture-launch"><Button onClick={(event) => {
+    {!independentStudy && <div className="tactic-capture-launch"><Button onClick={(event) => {
       // Safari pointer clicks do not focus buttons; the dialog restores this trigger.
       event.currentTarget.focus();
       setCaptureOpen(true);
-    }}>Capture tactic</Button></div>
+    }}>Capture tactic</Button></div>}
     <TacticsWorkspace {...props} captureOpen={captureOpen} />
-    {captureOpen && <TacticCaptureDialog theme={props.theme} pieceSet={props.pieceSet}
+    {!independentStudy && captureOpen && <TacticCaptureDialog theme={props.theme} pieceSet={props.pieceSet}
       onQueueChanged={props.onQueueChanged} onClose={() => setCaptureOpen(false)} />}
   </>;
 }
@@ -210,7 +212,7 @@ function TacticsWorkspace({
     };
   }, [retry]);
   useEffect(() => {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi() || independentStudy) return;
     let active = true;
     void readWorkspaceData(
       `${API_URL}/api/game-insights/motifs`,
@@ -382,10 +384,7 @@ function TacticsWorkspace({
       setAttempt({ ...completedAttempt, phase: "feedbackPause" });
       if (packagedRecord && usesLocalApi()) {
         try {
-          const response = await fetch(`${API_URL}/api/tactics/attempt`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          const body = {
               attempt_id: completedAttempt.discoveryId,
               puzzle_id: packagedRecord.PuzzleId,
               deck_id: packagedRecord.DeckId,
@@ -394,8 +393,14 @@ function TacticsWorkspace({
               source_fen: packagedRecord.FEN,
               moves: packagedRecord.Moves.split(/\s+/),
               rating: packagedRecord.Rating,
-            }),
-          });
+            };
+          const scope = `tactic:${progressKey}:${packagedRecord.PuzzleId}`;
+          const retained = independentStudy ? await retainedStudyRequest(scope) : undefined;
+          const response = independentStudy ? await executeStudyRequest({ scope, kind: "tactic-command",
+            requestId: retained && retained.state !== "committed" ? retained.requestId : completedAttempt.discoveryId,
+            attemptId: retained && retained.state !== "committed" ? retained.attemptId : completedAttempt.discoveryId,
+            endpoint: `${API_URL}/api/tactics/attempt`, body: retained && retained.state !== "committed" ? retained.body : body })
+            : await fetch(`${API_URL}/api/tactics/attempt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
           const confirmedResponse = await confirmOperationResponse(response);
           if (!confirmedResponse.ok) throw new Error();
           invalidateWorkspaceData();
@@ -555,7 +560,7 @@ function TacticsWorkspace({
           progress={progress}
           selectedPackId={selectedPackId}
           onSelect={selectPack}
-          onActivate={(ids, active) => void activatePacks(ids, active)}
+          onActivate={independentStudy ? undefined : (ids, active) => void activatePacks(ids, active)}
           busy={activationBusy}
           recommendations={recommendations}
           onStartSuggested={(recommendation) => {
@@ -563,7 +568,7 @@ function TacticsWorkspace({
               (pack) => pack.id === recommendation.recommended_pack_id,
             );
             if (!suggestedPack) return;
-            if (!suggestedPack.active)
+            if (!independentStudy && !suggestedPack.active)
               void activatePacks([suggestedPack.id], true);
             selectPack(suggestedPack);
           }}
@@ -596,7 +601,7 @@ function TacticsWorkspace({
             progress={progress}
             selectedPackId={selectedPackId}
             onSelect={selectPack}
-            onActivate={(ids, active) => void activatePacks(ids, active)}
+            onActivate={independentStudy ? undefined : (ids, active) => void activatePacks(ids, active)}
             busy={activationBusy}
             recommendations={recommendations}
             onStartSuggested={(recommendation) => {
@@ -604,7 +609,7 @@ function TacticsWorkspace({
                 (pack) => pack.id === recommendation.recommended_pack_id,
               );
               if (!suggestedPack) return;
-              if (!suggestedPack.active) {
+              if (!independentStudy && !suggestedPack.active) {
                 void activatePacks([suggestedPack.id], true);
               }
               selectPack(suggestedPack);

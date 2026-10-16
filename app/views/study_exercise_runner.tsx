@@ -1,4 +1,5 @@
 "use client";
+import { LEARNING_URL as API_URL, learningFetch as fetch } from "../lib/study-connection";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,7 +10,6 @@ import { Button } from "../components/buttons/BaseButton";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import type { PracticeCard } from "../domain/cards";
-import { API_URL } from "../const";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
 import { executeStudyRequest, retainedStudyRequest, startAnotherStudyPractice, studyPracticeBoundary, StudyRequestRejectedError } from "../lib/study-command-client";
@@ -38,11 +38,12 @@ function responseError(status: number, detail?: string) {
 }
 
 export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTheme, pieceSet,
-  useSharedBoard = false, onAdvance, blocked = false }: {
+  useSharedBoard = false, onAdvance, blocked = false, offline = false }: {
   studyId: string; exerciseId: string; card?: PracticeCard;
   boardTheme: BoardTheme; pieceSet: PieceSet; useSharedBoard?: boolean;
   onAdvance?: () => Promise<void>;
   blocked?: boolean;
+  offline?: boolean;
 }) {
   const [exercise, setExercise] = useState<PresentedStudyExercise | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -57,7 +58,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const [hintSeen, setHintSeen] = useState(false);
   const [reply, setReply] = useState<AttemptReply | null>(null);
   const [feedback, setFeedback] = useState<Record<string, unknown> | null>(null);
-  const [busy, setBusy] = useState(!card?.studySnapshot);
+  const [busy, setBusy] = useState(!offline || !card?.studySnapshot);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const pendingRef = useRef<{ id: string; payload: Record<string, unknown> } | null>(null);
   const offlineAnswerRef = useRef<StudyAnswer | null>(null);
@@ -87,7 +88,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     pendingRef.current = null;
     practiceBoundaryRef.current = undefined;
     offlineAnswerRef.current = null;
-    if (card?.studySnapshot) {
+    if (offline && card?.studySnapshot) {
       const snapshot = card.studySnapshot;
       const specification = snapshot.specification;
       queueMicrotask(() => { if (generation !== generationRef.current) return; setExercise({ id: exerciseId, revision: snapshot.revision, type: specification.type,
@@ -113,7 +114,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
           setLoadError(error instanceof Error ? error.message : "Could not load this exercise.");
       });
     return () => { controller.abort(); generationRef.current += 1; };
-  }, [studyId, exerciseId, card?.studySnapshot]);
+  }, [studyId, exerciseId, card?.studySnapshot, offline]);
 
 
   const answerLocked = Boolean(reply) || uncertain;
@@ -205,7 +206,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
 
   const exerciseRevision = exercise?.revision;
   useEffect(() => {
-    if (!exerciseRevision || card?.studySnapshot) return;
+    if (!exerciseRevision || offline && card?.studySnapshot) return;
     const generation = generationRef.current;
     let active = true;
     queueMicrotask(() => { if (active) setBusy(true); });
@@ -251,12 +252,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     });
     return () => { active = false; unsubscribe(); };
   // Recovery follows retained identities and the shared practice boundary.
-  }, [exerciseRevision, requestScope, studyId, exerciseId, card?.studySnapshot, revealFeedback, practiceRestoration, resetPracticeProjection]);
+  }, [exerciseRevision, requestScope, studyId, exerciseId, card?.studySnapshot, offline, revealFeedback, practiceRestoration, resetPracticeProjection]);
 
   const submit = async () => {
     if (!exercise || reply || busy || blocked) return;
     const generation = generationRef.current;
-    if (card?.studySnapshot && card.queueEntryId) {
+    if (offline && card?.studySnapshot && card.queueEntryId) {
       try {
         const answer = makeAnswer() as StudyAnswer;
         const assessment = evaluateStudyAnswer(card.studySnapshot.specification, answer, card.studySnapshot.fen);
@@ -313,7 +314,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const selfAssess = async (rating: "correct" | "again") => {
     if (!reply || !exercise || busy || blocked) return;
     const generation = generationRef.current;
-    if (card?.studySnapshot && card.queueEntryId && offlineAnswerRef.current) {
+    if (offline && card?.studySnapshot && card.queueEntryId && offlineAnswerRef.current) {
       try {
         await recordOfflineStudyAttempt(Number(card.queueEntryId), studyId, offlineAnswerRef.current, rating, hintSeen);
         if (generation === generationRef.current) setReply({ ...reply, pending_self_assessment: false, rating });

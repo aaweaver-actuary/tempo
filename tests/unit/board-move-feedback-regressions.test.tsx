@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Chess, type Square } from "chess.js";
 import type { Config } from "@lichess-org/chessground/config";
@@ -46,8 +46,9 @@ it.each(promotionCases)("Study underpromotion board feedback uses the selected p
     if (String(input).endsWith("/present")) return Response.json({ id: "feedback-exercise", revision: 1,
       type: "move_line", mode: "single", prompt: "Choose the actual promotion", hint: "", fen });
     if (String(input).endsWith("/attempts")) {
-      submissions.push(JSON.parse(String(init?.body)));
-      return Response.json({ attempt_id: "feedback-attempt", assessment: { outcome: "correct", feedback: "Saved actual move" } });
+      const submitted = JSON.parse(String(init?.body));
+      submissions.push(submitted);
+      return Response.json({ attempt_id: submitted.attempt_id, assessment: { outcome: "correct", feedback: "Saved actual move" } });
     }
     return Response.json({ specification: { type: "move_line", prompt: "Choose the actual promotion", mode: "single",
       accepted_lines: [[`${from}${to}${promotion}`]] } });
@@ -61,6 +62,7 @@ it.each(promotionCases)("Study underpromotion board feedback uses the selected p
   expectedPosition.move({ from, to, promotion });
   expect(view.container.querySelector(".board-frame")?.getAttribute("data-fen")).toBe(expectedPosition.fen());
   expect(playChessMoveSound).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ from, to, promotion, captured: undefined }), givesCheck);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   await screen.findByText("Saved actual move");
   expect(submissions).toMatchObject([{ answer: { type: "move_line", moves: [`${from}${to}${promotion}`] } }]);

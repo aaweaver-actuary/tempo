@@ -64,7 +64,7 @@ outbox consume these HTTP shapes in the native Chromium suite. Native tests also
 cover all family-specific requests/responses against their existing Pydantic
 models. Successful migration/install/startup is not wire-v1 or product acceptance.
 
-The evidence endpoint retains the background writer pool, short lock timeout and nonblocking module lock, with a 1,000 ms atomic batch transaction bound. Ordinary maintenance remains 250 ms. A transaction timeout maps to retryable HTTP 503 and rolls back acceptance/receipt/work effects. See the exact remaining full-Study teaching/routing work in [F2 handoff](../../../docs/study/f2-remediation-handoff.md).
+The evidence endpoint retains the background writer pool, short lock timeout and nonblocking module lock, with a 1,000 ms atomic batch transaction bound. Ordinary maintenance remains 250 ms. A transaction timeout maps to retryable HTTP 503 and rolls back acceptance/receipt/work effects. See Study integration and remaining transition work in [F2 handoff](../../../docs/study/f2-remediation-handoff.md).
 
 ## Recovery guarantees for PR #287
 
@@ -94,3 +94,37 @@ empty accepted obligations. They create no evidence/work/admission authority.
 V2 historical semantic replay and historical exact transport replay remain valid;
 unconverted historical same-frontier requests retain HTTP 409 for either wire.
 Historical tables remain read-only; no obligation conversion is introduced.
+
+## F2 Study connection and teaching
+
+| Interface | Contract |
+| --- | --- |
+| `GET /api/study/bootstrap` | Authenticated `{schema_version:1, workspace_id, timezone, local_date, settings}`; no queue acquisition. |
+| `GET /api/study/settings` | Only the six Learning-owned training settings. |
+| `POST /api/study/settings` | Idempotency-Key required; strict nonempty partial patch, unsupported/null fields rejected before acceptance; confirmed persisted settings. |
+| `GET /api/cards/{card_id}/teaching` | Historical `{states:[{cardId,revision,ply,taughtAt}]}`; active lifecycle is not required to read history. |
+| `POST /api/cards/{card_id}/teaching` | Existing `{revision,ply}`; `teaching:{card}:{revision}:{ply}` identity, exact camel-case fact response. |
+| `GET /api/cards/{card_id}/move-membership` | `revision`, `fen`, `move_uci`; accepted active repertoire routes only, `{card_id,revision,move_uci,verified}`. No scheduling or teaching effect. |
+| `GET /api/tactics/progress` | Existing deck-keyed strict index/clean/cleanIds/discoveredIds from persisted Learning tactic facts. |
+
+The settings names are `study_only_mode`, `new_cards_per_day`,
+`study_new_per_day`, `tactics_new_per_day`,
+`include_defensive_cards_in_daily_stack`, and `light_first_interval_days`.
+Tactics maps to the retained singular database column; timezone is configured and
+read-only. Strict integer bounds are 0–100, or 1–90 for the light interval.
+Provider, account, analysis and coverage fields are forbidden.
+
+Teaching registers `cards.teaching.record` on the existing gateway. It borrows
+that transaction/savepoint, shares the card edit lock with retirement, validates
+the current accepted executable opening revision/lifecycle and learner-turn ply,
+and inserts a single fact under the existing uniqueness constraint. Repeated
+logical delivery preserves the first timestamp. Completed receipts replay after
+lifecycle changes; a new command against retired/deleted work conflicts. Teaching
+has no review, scheduling, issuance or remediation settlement effects. No migration
+or mixed legacy Settings schema is introduced.
+
+The Study client supplies bearer authentication and `X-Tempo-Workspace` only at
+delivery to its configured Learning origin, rejects redirects and removes legacy
+work-class headers. Browser Origin is browser generated. Credentials stay in
+session storage, outside command envelopes, bundles and evidence. The existing
+Host/Origin/CORS allowlists and restricted database roles remain authoritative.

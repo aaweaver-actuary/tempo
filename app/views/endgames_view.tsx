@@ -1,9 +1,10 @@
+import { LEARNING_URL as API_URL, independentStudy } from "../lib/study-connection";
 import { useBoardHistory } from "../hooks/use-board-history";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
 import { Dialog } from "../components/dialog";
 import { BoardTools } from "../components/board/board-workspace";
-import { API_URL, STANDARD_FEN } from "../const";
+import { STANDARD_FEN } from "../const";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -130,7 +131,7 @@ export default function EndgamesView({
   }, [scheduledCard]);
 
   async function admitTemplate() {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi() || independentStudy) return;
     const template = templates[selected];
     try {
       const data = await admitEndgameTemplate({
@@ -394,7 +395,7 @@ export default function EndgamesView({
         <div>
           <h1>Endgames</h1>
         </div>
-        {!scheduledCard && (
+        {!scheduledCard && !independentStudy && (
           <Button
             variant="primary"
             className="primary-button"

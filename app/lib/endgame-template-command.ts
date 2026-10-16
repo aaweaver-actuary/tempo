@@ -1,3 +1,4 @@
+import { independentStudy } from "./study-connection";
 import { API_URL } from "../const";
 import { endgameCreatedSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -22,6 +23,7 @@ function readPending(): PendingTemplate | null {
 }
 
 export async function admitEndgameTemplate(request: TemplateRequest) {
+  if (independentStudy) throw new Error("Endgame template authoring belongs to Workbench. Use an accepted template to study.");
   const body = JSON.stringify(request);
   let pending = readPending();
   if (pending) {

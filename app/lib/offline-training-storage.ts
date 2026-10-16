@@ -1,4 +1,5 @@
 /** One connection/version for prepared queues and incremental shadow journals. */
+import { studyOfflineDatabaseName } from "./study-connection";
 export const offlineTrainingDatabaseName = "tempo-offline-training";
 export const offlineTrainingDatabaseVersion = 2;
 let databasePromise: Promise<IDBDatabase> | undefined;
@@ -6,7 +7,7 @@ let databasePromise: Promise<IDBDatabase> | undefined;
 export function offlineTrainingDatabase(): Promise<IDBDatabase> {
   databasePromise ??= new Promise<IDBDatabase>((resolve, reject) => {
     let blocked = false;
-    const request = indexedDB.open(offlineTrainingDatabaseName, offlineTrainingDatabaseVersion);
+    const request = indexedDB.open(studyOfflineDatabaseName(), offlineTrainingDatabaseVersion);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains("training")) database.createObjectStore("training");

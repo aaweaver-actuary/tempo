@@ -854,10 +854,11 @@ describe("optimistic training review outbox", () => {
   it("keeps a Celery-accepted review until its operation receipt confirms the save", async () => {
     const review = { backendId: "card-pending", queueEntryId: 81, outcome: "correct" as const, guided: false };
     await enqueuePendingReview(review);
+    const operationId = `review-attempt:${pendingReviews()[0].attemptId}`;
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }, { status: 202 }))
-      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }))
-      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "complete", response: { persisted: true } }));
+      .mockResolvedValueOnce(Response.json({ operation_id: operationId, state: "pending" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ operation_id: operationId, state: "pending" }))
+      .mockResolvedValueOnce(Response.json({ operation_id: operationId, state: "complete", response: { persisted: true } }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(flushPendingReviews()).rejects.toThrow("still pending");

@@ -159,6 +159,10 @@ async function readyHome() {
 }
 async function play(uci: string) {
   await act(async () => useBoardShellStore.getState().board.onMove?.(uci.slice(0, 2) as Square, uci.slice(2, 4) as Square));
+  // The board callback starts durable failure persistence without returning it.
+  // Finish that write before the fixture closes its store and the next case opens one.
+  if (useTrainingStore.getState().isAttemptFailed && useTrainingStore.getState().isDatabaseQueueActive)
+    await waitFor(async () => expect((await (await studyIntentStore()).list("failure")).length).toBeGreaterThan(0));
 }
 async function finishPreparation(count: number) {
   const prepare = vi.mocked(study.runStudyTask);
@@ -169,9 +173,11 @@ async function finishPreparation(count: number) {
 async function mutate(kind: string) {
   if (kind === "import" || kind === "re-import") {
     act(() => useTrainingStore.getState().setShowImport(true));
+    await waitFor(() => expect(importCallback).toBeTypeOf("function"));
     await act(async () => { await importCallback(); useTrainingStore.getState().setShowImport(false); });
   } else if (kind === "edit" || kind === "delete") {
     act(() => useTrainingStore.getState().setEditorCard(kind === "edit" ? card : otherCard));
+    await waitFor(() => expect(editorCallbacks?.onSave).toBeTypeOf("function"));
     await act(async () => {
       if (kind === "edit") editorCallbacks.onSave(card);
       else await editorCallbacks.onDelete(otherCard);
@@ -314,8 +320,10 @@ it("issue36_navigation_rejects_an_obsolete_fetch_and_return_acquires_fresh_evide
   await mutate("edit");
   await waitFor(() => expect(lineRequests).toBe(2));
   act(() => screen.getByRole("button", { name: "Repertoire" }).click());
+  await waitFor(() => expect(openPaste).toBeTypeOf("function"));
   sourceLines = [line("changed-while-away", ["e2e4"])];
-  act(() => screen.getAllByRole("button", { name: "Train" })[0].click());
+  const trainingButtons = await screen.findAllByRole("button", { name: "Train" });
+  act(() => trainingButtons[0].click());
   await finishPreparation(2);
   await act(async () => { releaseOld(Response.json({ lines: [line("obsolete")] })); await obsoleteRead; });
   await play("d2d4");
@@ -342,7 +350,9 @@ it("issue36_unmount_cancels_preparation_and_ignores_its_late_failure", async () 
 it("issue36_pasted_lines_and_repertoire_mutations_reload_on_return_to_training", async () => {
   await readyHome();
   act(() => screen.getByRole("button", { name: "Repertoire" }).click());
+  await waitFor(() => expect(openPaste).toBeTypeOf("function"));
   act(() => openPaste());
+  await waitFor(() => expect(pasteCallback).toBeTypeOf("function"));
   sourceLines = [line("pasted", ["e2e4"])];
   await act(async () => { pasteCallback(["issue36"], []); await repertoireChanged(); });
   act(() => screen.getAllByRole("button", { name: "Train" })[0].click());

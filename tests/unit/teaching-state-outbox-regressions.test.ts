@@ -31,3 +31,11 @@ it("failed teaching save remains queued for a later retry", async () => {
   await expect(flushTeachingStates()).rejects.toThrow("Database unavailable");
   expect(pendingTeachingStates()).toEqual([state]);
 });
+
+it("teaching receipt for another fact cannot settle the retained original", async () => {
+  const state = { cardId: "original", revision: 2, ply: 0 };
+  await enqueueTeachingState(state);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ...state, cardId: "other", taughtAt: "saved" })));
+  await expect(flushTeachingStates()).rejects.toThrow("original teaching fact");
+  expect(pendingTeachingStates()).toEqual([state]);
+});

@@ -113,3 +113,37 @@ The producer validates its private credential before processing work when a
 Learning endpoint is configured. HTTP 401 schedules the same immutable delivery
 for retry after at least 60 seconds. See the [producer recovery command](../../game-evidence/README.md#authentication-recovery)
 for narrowly recovering rows blocked by the previous classification.
+
+## Run the production Study client
+
+Install root frontend dependencies only when building or qualifying Study, then
+run `npm run build:study`. Serve the resulting static assets at `/` with the
+existing service-worker headers; the connection screen asks for the exact Learning
+origin, workspace and distinct Study credential. Allow that frontend origin in
+`TEMPO_LEARNING_ORIGINS`. `TEMPO_WORKBENCH_URL` is an optional build-time link to
+a separately launched Workbench. It receives no credential or mutable Study state.
+The demo and legacy build targets retain their existing configuration.
+
+The client validates authenticated bootstrap before acquiring a queue, routes all
+essential calls through its explicit Learning client, and keeps credentials only
+in session storage until disconnect. Retained records bind origin and workspace;
+unresolved foreign/ambiguous work blocks switching and can be inspected/exported
+for recovery through its original service. Do not clear browser stores to change
+authority. Independent offline Study can retain an answer only for an already
+issued attempt, with no local successor authorization before Learning confirms it.
+
+The registered full application acceptance command is:
+
+```sh
+services/learning/runtime/.venv/bin/python \
+  services/learning/runtime/integration/run_study.py \
+  /absolute/task-owned/evidence/full-study
+```
+
+It builds production assets, refreshes the installed runtime, activates accepted
+fixtures and reuses the native runner's owned disposable PostgreSQL, restricted
+roles, exact nonzero inventory and cleanup. It requires Docker, root/frontend
+and component-local browser dependencies. It never takes an external database
+URL or converts a live profile. The minimal Learning runtime qualification remains
+separate and does not require frontend installation. See the
+[F2 acceptance map](../../../docs/validation/f2-study-learning.md).

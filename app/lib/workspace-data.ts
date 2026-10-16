@@ -1,4 +1,5 @@
-import { API_URL, assetUrl } from "../const";
+import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
+import { assetUrl } from "../const";
 import type { PackagedPuzzle, PracticeCard, View } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { runStudyTask } from "./background-study";

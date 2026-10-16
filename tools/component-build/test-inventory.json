@@ -4,7 +4,8 @@
     "controlled-browser": [
       "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
       "tests/controlled-browser/unit/registration-regressions.test.ts",
-      "tests/controlled-browser/unit/runner-regressions.test.ts"
+      "tests/controlled-browser/unit/runner-regressions.test.ts",
+      "tests/controlled-browser/unit/storage-probes.test.ts"
     ],
     "frontend": [
       "tests/unit/activity-control-pending-regressions.test.ts",
@@ -127,8 +128,11 @@
       "tests/unit/status-polling-regressions.test.tsx",
       "tests/unit/storage-cache-regressions.test.ts",
       "tests/unit/study-attempt-pending-regressions.test.tsx",
+      "tests/unit/study-authoring-capability-regressions.test.tsx",
+      "tests/unit/study-cached-startup-regressions.test.tsx",
       "tests/unit/study-exercise-grading.test.ts",
       "tests/unit/study-intent-storage-regressions.test.ts",
+      "tests/unit/study-learning-connection-regressions.test.ts",
       "tests/unit/study-only-settings-regressions.test.tsx",
       "tests/unit/study-position-index-regressions.test.tsx",
       "tests/unit/study-position-store-regressions.test.ts",

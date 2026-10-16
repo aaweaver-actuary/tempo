@@ -1,3 +1,4 @@
+import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
@@ -14,6 +15,7 @@ export function pendingCardDeletion() {
 }
 
 export async function deleteCardCommand(cardId: string, expectedRevision: number): Promise<void> {
+  if (independentStudy) throw new Error("Card deletion belongs to Workbench. Saved deletion work is retained.");
   let pending = pendingCardDeletion();
   if (pending) {
     if (pending.cardId !== cardId || pending.expectedRevision !== expectedRevision)

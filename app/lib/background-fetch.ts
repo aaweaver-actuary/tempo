@@ -1,3 +1,4 @@
+import { learningFetch as fetch } from "./study-connection";
 /** Fetch an API resource without allowing the request to outrank active UI work. */
 export function backgroundFetch(
   input: RequestInfo | URL,

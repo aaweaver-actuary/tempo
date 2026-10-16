@@ -1,3 +1,12 @@
+## Independent Study connection (F2)
+
+Regular owner: `tests/unit/study-learning-connection-regressions.test.ts`.
+Named F2 cases cover authenticated bootstrap/delivery, forbidden destinations,
+workspace/date binding, original-origin retention, terminal history, unscoped
+legacy data and denied storage. The teaching outbox suite additionally rejects
+receipts for another fact. Native product persistence belongs to Learning's
+registered full-Study assembly, not these mocked transport checks.
+
 ## Supported frontend-only browser lane (#199)
 
 Owning discovery and named regressions: [controlled browser](controlled-browser/REGRESSIONS.md).
@@ -4571,6 +4580,11 @@ establish PostgreSQL exactly-once effects or offline/service-worker behavior.
 
 `services/learning/runtime/REGRESSIONS.md` owns the installed/runtime, native PostgreSQL and focused Chromium client/API inventory. `backend/tests/test_durable_task_enqueue_identity.py` retains #144 coverage for event/result identity after concurrent UPSERT selection. The component manifest registers the runtime and real client/runner inputs; no complete Study UI or hosted gate qualification follows from these focused checks.
 
+The F2 native inspection helper has its own regular controlled-browser unit
+regression in `unit/storage-probes.test.ts`: reading before lazy application
+startup aborts an absent database open rather than creating an empty incompatible
+schema. The existing two native legacy receipt/reimport scenarios retain their
+original assertions against that non-mutating inspector.
 ## Independent Maia worker (#110)
 
 [`workers/maia/REGRESSIONS.md`](../workers/maia/REGRESSIONS.md) owns the registered
@@ -4582,3 +4596,10 @@ routing, containment, failure propagation and zero-case proofs remain in
 browser/Node parity cases retain their root registration and now exercise the
 shared computation owner. These proofs do not establish Intelligence persistence,
 Learning behavior, or full-system qualification.
+
+## PR #291 independent Study review repairs
+
+- `study-learning-connection-regressions.test.ts` owns authenticated original-authority resumption/registered recovery with multiple retained authorities, conservative cutover/workspace fencing, pre/post-bootstrap races, generation/disconnect fencing, storage validation and read-only legacy capture/deletion inventory.
+- `study-cached-startup-regressions.test.tsx` owns browser-online and browser-offline transport startup, HTTP/auth rejection, invalid cache identity/schema/timezone, unavailable storage and first-connect blocking.
+- `study-authoring-capability-regressions.test.tsx` owns read-only pack selection and command-level capture/deletion rejection before pending-data access, mutation or network. Existing catalog, capture, deletion, endgame, intent, attempt and offline regressions retain their legacy/Workbench assertions.
+- The regular `learning-full-study` native suite owns the browser-online Learning outage, same-context/two-origin recovery (including lost sessionStorage), real settings receipt reconciliation and Study authoring request inventory. Two forwarding origins share one installed Learning database; this is not a multi-database proof.

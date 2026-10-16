@@ -923,3 +923,32 @@ independently buildable claims. See [component build/discovery commands](../tool
 for restricted installed-artifact proofs, separate frontend/runner/Python-producer
 lanes, exact file ownership and zero-selection rejection. Existing global wrappers
 remain available; this transition does not alter hosted qualification selection.
+
+
+## Independent Study / Learning acceptance (F2)
+
+With root Study dependencies, installed Learning and its local browser harness
+available, use the registered owning shared suite:
+
+```sh
+TEMPO_COMPONENT_PYTHON="$PWD/services/learning/runtime/.venv/bin/python" \
+  node tools/component-build/test-lane.mjs --suite learning-full-study
+```
+
+For an explicit absolute task-owned evidence destination:
+
+```sh
+services/learning/runtime/.venv/bin/python \
+  services/learning/runtime/integration/run_study.py \
+  /absolute/task-owned/evidence/full-study
+```
+
+The runner builds the production Study target, refreshes installed Learning,
+activates accepted fixtures, and uses the existing disposable PostgreSQL and exact
+collection/execution/JUnit qualification machinery. Root frontend installation is
+needed only for this explicit assembly lane; Learning's component-local runtime,
+source-removed package and native API lanes retain their minimal dependency setup.
+Optional/legacy services are absent from this test assembly. Live services elsewhere
+on the host are neither used nor stopped. Fault injection forwards real traffic;
+no essential API response is fabricated. See the source-bound
+[F2 acceptance map](validation/f2-study-learning.md) for exact results and limits.

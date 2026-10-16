@@ -1,3 +1,4 @@
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, studyConnection } from "../lib/study-connection";
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
 import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../lib/study-intent-storage";
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
@@ -22,9 +23,8 @@ import { localRepertoireSchema } from "../domain/schemas";
 import { measureTempoOperation, measureTempoDragPhase } from "../lib/performance";
 import { isCurrentAttempt } from "../domain/attempt";
 import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
-import { API_URL } from "../const";
 import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../lib/teaching-state-outbox";
 import {
   invalidateWorkspaceData,
@@ -32,11 +32,9 @@ import {
   readWorkspaceData,
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
-import { ImportDialogBox } from "../ImportDialogBox";
-import {
-  AnalysisPasteDialog,
-  type AnalysisPasteContext,
-} from "../AnalysisPasteDialog";
+const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
+import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
+const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 import {
   cancelMoveSounds,
   moveSoundEnabled,
@@ -65,18 +63,18 @@ import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
 import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
-import BuilderView from "./analysis_view";
-import ComparisonView from "./comparison_view";
+const BuilderView = lazy(() => import("./analysis_view"));
+const ComparisonView = lazy(() => import("./comparison_view"));
 import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
-import CardEditor from "./card_editor";
+const CardEditor = lazy(() => import("./card_editor"));
 import EndgamesView from "./endgames_view";
-import GamesView from "./games_view";
-import InsightsView from "./insights_view";
-import RepertoireView from "./repertoire_view";
-import SettingsView from "./settings_view";
+const GamesView = lazy(() => import("./games_view"));
+const InsightsView = lazy(() => import("./insights_view"));
+const RepertoireView = lazy(() => import("./repertoire_view"));
+const SettingsView = lazy(() => import("./settings_view"));
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
-import { WorkbenchGameSync } from "../components/workbench-game-sync";
+const WorkbenchGameSync = lazy(() => import("../components/workbench-game-sync").then(module => ({ default: module.WorkbenchGameSync })));
 import { Chess, Move, Square } from "chess.js";
 import {
   useTrainingStore,
@@ -91,7 +89,7 @@ import SoundToggleButton from "../components/buttons/SoundToggleButton";
 import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
-import StudiesView from "./studies_view";
+const StudiesView = lazy(() => import("./studies_view"));
 import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQueueCache, rememberConfirmedQueueEntry, QueueProcessingError } from "./fetchAndInitializeQueue";
 import { capturePreparedNext, advancePreparedContinuation, type PreparedContinuation } from "../lib/prepared-review-continuation";
 import type { PracticeCard } from "../domain/cards";
@@ -116,27 +114,25 @@ import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
-import { IntegrityRepairStatus } from "../components/integrity-repair-status";
-import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
+const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
+const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { NotificationCenter } from "../components/notification-center";
 import { OfflineReviewConflicts } from "../components/offline-review-conflicts";
 import { notifications, publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
-import { ServiceStatusPanel } from "../components/service-status-panel";
-import {
-  DiscoveriesTray,
-  type DiscoveryItem,
-} from "../components/discoveries-tray";
+const ServiceStatusPanel = lazy(() => import("../components/service-status-panel").then(module => ({ default: module.ServiceStatusPanel })));
+import type { DiscoveryItem } from "../components/discoveries-tray";
+const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then(module => ({ default: module.DiscoveriesTray })));
 import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
-export default function Home() { return <StudyStorageBoundary><StudyComposition /></StudyStorageBoundary>; }
+export default function Home() { return <Suspense fallback={<p role="status">Loading workspace…</p>}><StudyStorageBoundary><StudyComposition /></StudyStorageBoundary></Suspense>; }
 
 function StudyComposition() {
   const studyOnlyMode = useStudyOnlyMode();
   useEffect(() => prepareMoveSounds(), []);
   useEffect(() => {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi() || independentStudy) return;
     let lastSentAt = 0;
     const markActivity = () => {
       if (Date.now() - lastSentAt < 1_000) return;
@@ -412,7 +408,7 @@ function StudyComposition() {
   }, [currentView]);
 
   const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi() || independentStudy) return;
     const integrityRequestSequence = ++nextIntegrityRequestSequence.current;
     if (preferred && !passive) {
       deferredRepairIds.current.delete(preferred);
@@ -588,6 +584,7 @@ function StudyComposition() {
     }
   }, [refreshDatabaseQueue, invalidateBranchEvidence]);
   const recoverCardDeletion = useCallback(async () => {
+    if (independentStudy) return;
     try {
       const pending = pendingCardDeletion();
       if (!pending) { setDeletionRecoveryError(""); return; }
@@ -597,7 +594,7 @@ function StudyComposition() {
     } catch (failure) { setDeletionRecoveryError(failure instanceof Error ? failure.message : "Could not confirm the earlier card deletion."); }
   }, [finishPermanentDeletion]);
   useEffect(() => {
-    if (!databaseQueue || offlineQueue || deletionRecoveryStarted.current) return;
+    if (independentStudy || !databaseQueue || offlineQueue || deletionRecoveryStarted.current) return;
     deletionRecoveryStarted.current = true;
     void recoverCardDeletion();
   }, [databaseQueue, offlineQueue, recoverCardDeletion]);
@@ -693,14 +690,14 @@ function StudyComposition() {
 
   useEffect(() => {
     const timer = window.setTimeout(
-      () => void preloadView("tactics").catch(() => undefined),
+      () => { if (!independentStudy) void preloadView("tactics").catch(() => undefined); },
       100,
     );
     return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    if (usesLocalApi() && currentView === "train" && studyOnlyMode === false) {
+    if (usesLocalApi() && !independentStudy && currentView === "train" && studyOnlyMode === false) {
       let active = true;
       const generation = ++repertoirePositionGeneration.current;
       const controller = new AbortController();
@@ -750,8 +747,8 @@ function StudyComposition() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       if (
-        params.has("code") ||
-        ["analysis", "builder"].includes(
+        (!independentStudy && params.has("code")) ||
+        !independentStudy && ["analysis", "builder"].includes(
           sessionStorage.getItem("tempo-return-view") ?? "",
         )
       ) {
@@ -1076,7 +1073,7 @@ function StudyComposition() {
         ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
             card.repertoireId, currentFenString, responseUci)
         : undefined;
-      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && studyOnlyMode === true && card.repertoireId) {
+      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && (independentStudy || studyOnlyMode === true) && card.repertoireId) {
         const verification = new AbortController();
         pendingMoveVerification.current = verification;
         const capturedAttempt = useTrainingStore.getState().attempt;
@@ -1087,7 +1084,16 @@ function StudyComposition() {
         setBoardAttempt((value) => value + 1);
         setQueueNotice("Checking this move against saved repertoire lines...");
         try {
-          indexedAlternative = await verifySavedRepertoireMove(String(card.repertoireId), currentFenString, responseUci, verification.signal);
+          if (independentStudy) {
+            if (card.kind !== "opening") indexedAlternative = false;
+            else {
+              const parameters = new URLSearchParams({ revision: String(card.revision), fen: currentFenString, move_uci: responseUci });
+              const response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(String(card.backendId))}/move-membership?${parameters}`, { signal: verification.signal });
+              const result = z.strictObject({ card_id: z.string(), revision: z.number().int(), move_uci: z.string(), verified: z.boolean() }).parse(await response.json());
+              if (!response.ok || result.card_id !== card.backendId || result.revision !== card.revision || result.move_uci !== responseUci) throw new Error("Accepted move evidence is unavailable. Retry.");
+              indexedAlternative = result.verified;
+            }
+          } else indexedAlternative = await verifySavedRepertoireMove(String(card.repertoireId), currentFenString, responseUci, verification.signal);
           if (!isCurrent()) return;
         } catch (error) {
           if (!isCurrent()) return;
@@ -1619,7 +1625,7 @@ function StudyComposition() {
 
   useEffect(() => {
     const repertoireId = card.repertoireId;
-    if (!attemptFailed || !repertoireId || currentFenString !== failureFen) {
+    if (independentStudy || !attemptFailed || !repertoireId || currentFenString !== failureFen) {
       queueMicrotask(() => setFailureAnnotation(undefined));
       return;
     }
@@ -1772,10 +1778,10 @@ function StudyComposition() {
         <Navbar view={currentView} setView={changeWorkspace} />
         <div className="top-actions">
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
-          <SavedLocallyButton setShowImport={setShowImport} />
+          {!independentStudy && <SavedLocallyButton setShowImport={setShowImport} />}
           <NotificationCenter />
-          <ServiceStatusPanel studyOnlyMode={studyOnlyMode} />
-          <DiscoveriesTray
+          {!independentStudy && <ServiceStatusPanel studyOnlyMode={studyOnlyMode} />}
+          {!independentStudy && <DiscoveriesTray
             safeToOpen={
               !(["train", "tactics", "endgames", "builder"] as View[]).includes(
                 currentView,
@@ -1795,7 +1801,7 @@ function StudyComposition() {
             pieceSet={pieceSet}
             openRequest={discoveryOpenRequest}
             onQueueChanged={() => refreshDatabaseQueue()}
-          />
+          />}
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
@@ -1880,7 +1886,7 @@ function StudyComposition() {
                 issueCount={pausedIntegrity.issueCount}
                 onResume={() => openRepairDialog(pausedIntegrity.id)}
               />}
-              dateLabel={new Date().toLocaleDateString()}
+              dateLabel={new Date().toLocaleDateString(undefined, independentStudy ? { timeZone: studyConnection()?.bootstrap?.timezone } : undefined)}
               serviceError={serviceError}
               offlineQueue={offlineQueue}
               refreshDatabaseQueue={refreshDatabaseQueue}
@@ -2241,7 +2247,7 @@ function StudyComposition() {
           }}
         />
       )}
-      <IntegrityRepairStatus
+      {!independentStudy && <IntegrityRepairStatus
         onReconcile={(repertoireId) => {
           invalidateBranchEvidence();
           deferredRepairIds.current.delete(repertoireId);
@@ -2254,7 +2260,7 @@ function StudyComposition() {
           if (!hasPlayableTrainingCard) void refreshDatabaseQueue(false).catch(() => undefined);
         }}
         onResume={openRepairDialog}
-      />
+      />}
       {repairRepertoireId && (
         <RepertoireIntegrityDialog
           repertoireId={repairRepertoireId}

@@ -1,4 +1,4 @@
-import { API_URL } from "../const";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { backgroundFetch } from "./background-fetch";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
@@ -37,12 +37,15 @@ export async function readOperationResponse(operationId: string, options: Operat
   if (!status.ok)
     throw new PendingOperationError(operationId);
   const receipt = await status.json() as {
+    operation_id?: string;
     state?: string;
     response?: unknown;
     error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
     last_error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
     message?: string;
   };
+  if ((independentStudy || receipt.operation_id !== undefined) && receipt.operation_id !== operationId)
+    throw new PendingOperationError(operationId, "Learning did not confirm the original operation identity.");
   // A lost admission response can leave no receipt at all. Only callers that
   // retain the original immutable command may replay that missing admission.
   if (receipt.state === "unknown" && options.allowMissing)

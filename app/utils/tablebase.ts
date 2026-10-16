@@ -1,6 +1,6 @@
 import { Chess } from "chess.js";
 import type { TablebaseResult } from "../types";
-import { API_URL } from "../const";
+import { LEARNING_URL as API_URL, learningFetch as fetch } from "../lib/study-connection";
 import { usesLocalApi } from "./local";
 import { tablebaseResponseSchema } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";

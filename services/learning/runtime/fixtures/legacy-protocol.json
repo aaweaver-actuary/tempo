@@ -2,15 +2,139 @@
   "protocol": "legacy-learning-http",
   "schema_version": 1,
   "authentication": {
-    "study": {"Authorization": "Bearer <workspace-study-credential>", "Origin": "http://localhost:5173", "X-Tempo-Workspace": "workspace-a"},
-    "publication": {"Authorization": "Bearer <distinct-publication-credential>"},
-    "evidence": {"Authorization": "Bearer <distinct-evidence-credential>"},
-    "denied": {"status": 401, "body": {"detail": "Learning workspace credential required"}}
+    "study": {
+      "Authorization": "Bearer <workspace-study-credential>",
+      "Origin": "http://localhost:5173",
+      "X-Tempo-Workspace": "workspace-a"
+    },
+    "publication": {
+      "Authorization": "Bearer <distinct-publication-credential>"
+    },
+    "evidence": {
+      "Authorization": "Bearer <distinct-evidence-credential>"
+    },
+    "denied": {
+      "status": 401,
+      "body": {
+        "detail": "Learning workspace credential required"
+      }
+    }
   },
-  "review": {"method": "POST", "path": "/api/cards/card-a/review", "headers": {"Idempotency-Key": "review-attempt:attempt-a"}, "request": {"outcome": "correct", "guided": false, "attempt_id": "attempt-a", "queue_entry_id": 1, "expected_revision": 1}},
-  "review_conflict": {"status": 409, "body": {"detail": "Operation ID was already used for another request", "code": "command_identity_reused", "retryable": false}},
-  "operation_unknown": {"operation_id": "missing", "state": "unknown"},
-  "operation_pending": {"status": 202, "headers": {"Location": "/api/operations/operation-a"}, "body": {"operation_id": "operation-a", "state": "queued"}},
-  "queue": {"cards": [], "local_date": "2026-10-15", "count": 0, "diagnostics": [], "projection": {"state": "refreshing", "generation": 0, "updated_at": null, "refresh_pending": 1, "last_error": null}},
-  "unavailable": {"status": 503, "headers": {"Retry-After": "1"}, "body": {"detail": "Learning database unavailable; retain the original operation identity and retry"}}
+  "review": {
+    "method": "POST",
+    "path": "/api/cards/card-a/review",
+    "headers": {
+      "Idempotency-Key": "review-attempt:attempt-a"
+    },
+    "request": {
+      "outcome": "correct",
+      "guided": false,
+      "attempt_id": "attempt-a",
+      "queue_entry_id": 1,
+      "expected_revision": 1
+    }
+  },
+  "review_conflict": {
+    "status": 409,
+    "body": {
+      "detail": "Operation ID was already used for another request",
+      "code": "command_identity_reused",
+      "retryable": false
+    }
+  },
+  "operation_unknown": {
+    "operation_id": "missing",
+    "state": "unknown"
+  },
+  "operation_pending": {
+    "status": 202,
+    "headers": {
+      "Location": "/api/operations/operation-a"
+    },
+    "body": {
+      "operation_id": "operation-a",
+      "state": "queued"
+    }
+  },
+  "queue": {
+    "cards": [],
+    "local_date": "2026-10-15",
+    "count": 0,
+    "diagnostics": [],
+    "projection": {
+      "state": "refreshing",
+      "generation": 0,
+      "updated_at": null,
+      "refresh_pending": 1,
+      "last_error": null
+    }
+  },
+  "unavailable": {
+    "status": 503,
+    "headers": {
+      "Retry-After": "1"
+    },
+    "body": {
+      "detail": "Learning database unavailable; retain the original operation identity and retry"
+    }
+  },
+  "study_bootstrap": {
+    "schema_version": 1,
+    "workspace_id": "workspace-a",
+    "timezone": "America/New_York",
+    "local_date": "2026-10-16",
+    "settings": {
+      "study_only_mode": false,
+      "new_cards_per_day": 10,
+      "study_new_per_day": 10,
+      "tactics_new_per_day": 5,
+      "include_defensive_cards_in_daily_stack": true,
+      "light_first_interval_days": 7
+    }
+  },
+  "teaching": {
+    "method": "POST",
+    "path": "/api/cards/card-a/teaching",
+    "headers": {
+      "Idempotency-Key": "teaching:card-a:1:0"
+    },
+    "request": {
+      "revision": 1,
+      "ply": 0
+    },
+    "response": {
+      "cardId": "card-a",
+      "revision": 1,
+      "ply": 0,
+      "taughtAt": "2026-10-16T12:00:00+00:00"
+    }
+  },
+  "study_settings": {
+    "read": {
+      "method": "GET",
+      "path": "/api/study/settings"
+    },
+    "write": {
+      "method": "POST",
+      "path": "/api/study/settings",
+      "headers": {
+        "Idempotency-Key": "settings:original-command"
+      },
+      "request": {
+        "study_only_mode": true
+      }
+    },
+    "response": {
+      "study_only_mode": true,
+      "new_cards_per_day": 10,
+      "study_new_per_day": 10,
+      "tactics_new_per_day": 5,
+      "include_defensive_cards_in_daily_stack": true,
+      "light_first_interval_days": 7
+    }
+  },
+  "endgame_templates": {
+    "templates": []
+  },
+  "tactic_progress": {}
 }

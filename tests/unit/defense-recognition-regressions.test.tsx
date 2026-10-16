@@ -222,7 +222,9 @@ it("issue219 ambiguous defense retains its original command and permits a new im
       rubric_version: 3, recognition_required: false, proposed_move_uci: "a2a3", proposed_move_san: "a3", preview_fen: previewFen });
   }));
   render(<DefenseTrainingView card={card} boardTheme="brown" pieceSet="cburnett" useSharedBoard={false} onAdvance={vi.fn()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Play defensive a4" }));
+  const moveButton = await screen.findByRole("button", { name: "Play defensive a4" });
+  await waitFor(() => expect((moveButton as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(moveButton);
   await screen.findByText(/too close to the grading threshold/);
   const first = structuredClone(moves[0]);
   fireEvent.click(screen.getByRole("button", { name: "Play defensive a4" }));

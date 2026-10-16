@@ -98,3 +98,42 @@ port double. Native suites separately own actual persistence and concurrency.
 PostgreSQL task-table lock ownership at continuation binding.
 `test_stale_content_receipt_binds_identity_without_acceptance` additionally covers
 durable rejected-content identity and acceptance only under a fresh transport.
+
+## F2 actual Study adoption
+
+`test_study_bootstrap_teaching.py` owns strict settings/bootstrap/progress,
+unsupported patches before acceptance, original teaching time and transport
+identity, concurrent incremental facts, lifecycle/revision/deletion/learner-turn
+fences, historical reads/replay, every accepted opening alternative, malformed
+chess input and the actual endgame frontend envelope. `test_families.py` additionally
+asserts the accepted defense candidate identity in the issued queue.
+
+`integration/study_tests/test_study_ui.py` is registered as `learning-full-study`.
+It owns production Home/Study native board/control interaction against installed
+Learning and real restricted PostgreSQL: progression, teaching/reload, guided
+failure, original-command loss recovery, saved-review/next-load separation, two
+tabs, denied/quota/aborted/incompatible storage, old authority, actual cached-shell
+offline answer/reconnect, all five typed specifications, tactics/middlegame,
+defense covered/uncovered, endgame cached/unavailable, settings and auth/CORS denial.
+Real installed producer delivery stops before Study settlement; late delivery
+cannot settle from the already issued attempt. Task-owned Learning and database
+interruptions recover unchanged commands. Forwarding faults never invent essential
+responses. These tests supplement rather than replace F1 and durable-session proofs.
+
+Regular frontend ownership is in `tests/REGRESSIONS.md` and
+`tools/component-build/test-inventory.json`; connection and delivery, connected
+snapshot grading, matching teaching/operation receipts and existing queue/claim/
+older-writer/cancellation tests remain in their normal suites.
+
+## PR #291 Study review repair acceptance
+
+The existing `learning-full-study` suite adds `service-unavailable-browser-online`,
+`multi-authority-resume`, `registered-authority-recovery`, and
+`study-authoring-boundary`. Transport loss preserves an actual issued head and its
+original offline answer until a real Learning receipt and one PostgreSQL review
+confirm it. Two pages share one browser context/frontend storage and use separate
+session bindings and forwarding origins. Real settings commands commit with lost
+replies, then reconcile only through their original origins; an unrelated C is
+blocked. The forwarding origins share one installed Learning database, so this
+proves origin/storage isolation and actual receipts, not separate-database isolation.
+Existing F1, restart, storage, exercise-family and offline-shell cases remain selected.

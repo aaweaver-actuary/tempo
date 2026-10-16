@@ -34,7 +34,7 @@ export function TacticalCatalogPanel({
   progress: TacticProgress;
   selectedPackId: string;
   onSelect: (pack: TacticalPack) => void;
-  onActivate: (ids: string[], active: boolean) => void;
+  onActivate?: (ids: string[], active: boolean) => void;
   busy: boolean;
   recommendations?: MotifRecommendation[];
   onStartSuggested?: (recommendation: MotifRecommendation) => void;
@@ -99,11 +99,11 @@ export function TacticalCatalogPanel({
           ))}
         </section>
       )}
-      <p>
+      {onActivate ? <p>
         Activate packs to introduce up to your daily tactics limit. Due reviews
         continue after deactivation. Practicing any puzzle also adds it to daily
         reviews, in addition to automatic introductions.
-      </p>
+      </p> : <p>Select a packaged pack to practice. Pack activation belongs to Workbench.</p>}
       <div
         className="tactic-catalog-filters"
         aria-label="Filter tactical packs"
@@ -169,7 +169,7 @@ export function TacticalCatalogPanel({
             </summary>
             {expandedGroups.includes(group.id) && (
               <>
-                <div className="tactic-group-actions">
+                {onActivate && <div className="tactic-group-actions">
                   <Button
                     disabled={busy}
                     onClick={() =>
@@ -192,7 +192,7 @@ export function TacticalCatalogPanel({
                   >
                     Deactivate {active} packs
                   </Button>
-                </div>
+                </div>}
                 {catalog.themes
                   .filter((theme) => theme.group === group.id)
                   .filter(
@@ -263,7 +263,7 @@ export function TacticalCatalogPanel({
                                   {pack.introduced} introduced · {pack.due} due
                                 </small>
                               </Button>
-                              <Button
+                              {onActivate && <Button
                                 aria-label={`${pack.active ? "Deactivate" : "Activate"} ${theme.name} ${pack.difficulty} pack ${pack.ordinal}`}
                                 aria-pressed={pack.active}
                                 disabled={busy}
@@ -272,7 +272,7 @@ export function TacticalCatalogPanel({
                                 }
                               >
                                 {pack.active ? "Active" : "Activate"}
-                              </Button>
+                              </Button>}
                             </article>
                           ))}
                         </div>
