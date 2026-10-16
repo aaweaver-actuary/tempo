@@ -80,3 +80,47 @@ def test_host_activity_endpoint_authenticates_and_needs_no_database(tmp_path):
     disabled = create_app(replace(configuration, host_activity_directory=None))
     with TestClient(disabled) as client:
         assert client.post("/api/study/activity?session_id=tab-a", headers=headers).status_code == 503
+
+
+def test_host_activity_reporting_thread_failure_does_not_prevent_service_startup(tmp_path, monkeypatch, caplog):
+    import threading
+    from tempo_learning_runtime.config import Configuration
+    original_start = threading.Thread.start
+
+    def start_thread(thread):
+        if thread.name == "learning-host-activity":
+            raise RuntimeError("injected reporter thread unavailable")
+        return original_start(thread)
+
+    monkeypatch.setattr(threading.Thread, "start", start_thread)
+    configuration = Configuration("thread-failure", "postgresql://unused/learning", "postgresql://reader/learning", "x" * 40,
+                                  maintenance=False, host_activity_directory=tmp_path)
+    app = create_app(configuration)
+    with TestClient(app) as client:
+        assert client.get("/health/live").status_code == 200
+        with app.state.host_activity.request():
+            snapshot = json.loads(next(tmp_path.glob("*.json")).read_text())
+            assert snapshot["pendingRequests"] is True
+    assert not list(tmp_path.glob("*.json"))
+    assert "reporter thread unavailable" in caplog.text
+
+
+def test_host_activity_shutdown_reporting_failure_is_diagnostic_and_retains_owned_snapshot(tmp_path, monkeypatch, caplog):
+    from pathlib import Path
+    activity = HostActivity(tmp_path)
+    activity.record("held")
+    path = tmp_path / (activity.producer + ".json")
+    retained = path.read_bytes()
+    original_unlink = Path.unlink
+
+    def unlink(candidate, *arguments, **options):
+        if candidate == path:
+            raise OSError("injected owned snapshot removal unavailable")
+        return original_unlink(candidate, *arguments, **options)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", unlink)
+        activity.close()
+    assert path.read_bytes() == retained
+    assert "removal unavailable" in caplog.text
+    activity.close()
