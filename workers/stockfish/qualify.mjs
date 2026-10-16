@@ -99,8 +99,12 @@ export async function qualifyRestricted({ reportPath, artifactsDirectory }) {
       const tests = join(temporary, 'client-tests-' + version); await mkdir(tests);
       await cp(join(componentRoot, 'tests/contracts'), join(tests, 'tests/contracts'), { recursive: true });
       await cp(join(componentRoot, 'fixtures'), join(tests, 'fixtures'), { recursive: true });
-      execute(interpreter, ['-I', '-m', 'pytest', join(tests, 'tests/contracts/test_exchange.py'), '--import-mode=importlib', '-q'], temporary);
-      passed('independent installed Python client and shared contract tests on ' + version);
+      const junit = join(temporary, 'client-' + version + '.xml');
+      const output = execute(interpreter, ['-I', '-m', 'pytest', join(tests, 'tests/contracts/test_exchange.py'), '--import-mode=importlib', '-q', '--junitxml=' + junit], temporary);
+      const cases = JSON.parse(execute(interpreter, ['-I', '-c', 'import json,sys,xml.etree.ElementTree as E; root=E.parse(sys.argv[1]).getroot(); print(json.dumps([{**case.attrib,"failed":case.find("failure") is not None or case.find("error") is not None,"skipped":case.find("skipped") is not None} for case in root.iter("testcase")]))', junit], temporary));
+      if (!cases.length || cases.some(item => item.failed || item.skipped)) throw new Error('Installed Python suite lacks complete passing case evidence');
+      (report.pythonSuites ??= []).push({ version, output: output.trim(), cases });
+      for (const item of cases) passed('installed Python ' + version + ' ' + item.classname + '::' + item.name);
     }
     report.complete = true; report.cases.success = true;
     report.cases.passed = report.cases.executedIdentities.length;
