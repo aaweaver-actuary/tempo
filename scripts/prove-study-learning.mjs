@@ -115,6 +115,9 @@ async function proveMultipleAuthorities(first) {
     if(scenario==='registered-authority-recovery') {await tab.evaluate(()=>sessionStorage.removeItem('tempo-learning-connection-v1'));await connect(tab,origin);}
     else await tab.reload();
     await expect(tab.getByRole('button',{name:'Disconnect Learning',exact:true})).toBeVisible();
+    // Mounting the shell precedes this tab's own recovery pass. Wait for its
+    // queue before attributing any later foreign-record change to the peer.
+    await expect(tab.locator('cg-board:visible')).toBeVisible();
   }
   const immutable=record=>({workspace:record.workspace,key:record.key,requestId:record.requestId,attemptId:record.attemptId,endpoint:record.endpoint,payload:record.payload,createdAt:record.createdAt,revision:record.revision});
   await expect.poll(async()=> (await records(first)).filter(item=>item.kind==='settings-command'&&item.claim).length).toBe(0);
