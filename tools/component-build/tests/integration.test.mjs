@@ -8,6 +8,33 @@ import { checkComponents, repository, validateManifest } from "../check-componen
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
 const original = JSON.parse(readFileSync(join(repository, "components.json")));
+test("F1 main adoption discovers Game Evidence alongside independent Learning and Study owners", () => {
+  const componentIds = ["game-evidence", "learning"];
+  const checked = checkComponents(repository, python, { componentIds });
+  assert.deepEqual(new Set(checked.map(component => component.id)), new Set([
+    ...componentIds, "chess-core", "content-publication-contracts", "game-evidence-contracts",
+    "learning-review-application", "scheduling",
+  ]));
+  for (const id of ["browser-intents", "study-session"]) {
+    assert.equal(original.components.find(component => component.id === id)?.status, "implemented");
+  }
+  const environment = { ...process.env, TEMPO_COMPONENT_PYTHON: "/python-must-not-run" };
+  delete environment.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [join(repository, "tools/component-build/test-lane.mjs"),
+    "--component", "game-evidence", "--component", "learning", "--list"],
+  { env: environment, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const { selected } = JSON.parse(result.stdout);
+  assert.deepEqual(selected.filter(suite => componentIds.includes(suite.owner))
+    .map(suite => [suite.owner, suite.kind, suite.cwd]), [
+    ["game-evidence", "python", "services/game-evidence"],
+    ["game-evidence", "postgres", "."],
+    ["learning", "postgres", "."],
+  ]);
+  for (const owner of ["chess-core", "content-publication-contracts", "game-evidence-contracts", "scheduling"]) {
+    assert.equal(selected.filter(suite => suite.owner === owner).length, 1);
+  }
+});
 test("#200 registered pure packages validate and list their actual owning suites without setup", () => {
   const componentIds = ["scheduling", "chess-core"];
   const checked = checkComponents(repository, python, { componentIds });

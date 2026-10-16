@@ -161,21 +161,97 @@
     {
       "id": "game-evidence",
       "type": "service",
-      "maintainer": "Tempo",
-      "status": "planned",
+      "maintainer": "Tempo / #41",
+      "status": "implemented",
       "root": "services/game-evidence",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "normalize_pgn",
+        "replay_positions",
+        "ComparisonSnapshot",
+        "compare_game",
+        "EvidenceStore"
+      ],
+      "dependencies": [
+        "chess",
+        "tempo_chess_core",
+        "tempo_content_publication_contracts",
+        "tempo_game_evidence_contracts",
+        "fastapi",
+        "uvicorn",
+        "httpx",
+        "psycopg",
+        "pydantic"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "fixtures",
+        "tests",
+        "integration",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-game-evidence",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "game-evidence",
+          "kind": "python",
+          "cwd": "services/game-evidence",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "fixtures",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        },
+        {
+          "owner": "game-evidence",
+          "kind": "postgres",
+          "cwd": ".",
+          "command": "python services/game-evidence/integration/run_postgres.py",
+          "inputs": [
+            "services/game-evidence/integration/run_postgres.py",
+            "services/game-evidence/integration/test_postgres.py",
+            "services/game-evidence/src",
+            "services/game-evidence/fixtures",
+            "services/game-evidence/pyproject.toml",
+            "services/game-evidence/uv.lock",
+            "services/learning/remediation/src",
+            "services/learning/remediation/migrations",
+            "services/learning/remediation/pyproject.toml"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
       "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": []
-      }
+        "authority": "#41",
+        "databases": [
+          "game_evidence"
+        ],
+        "migrations": [
+          "src/tempo_game_evidence/migrations"
+        ],
+        "documents": [
+          "contracts/OWNERSHIP.md",
+          "services/game-evidence/README.md"
+        ],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "intelligence",

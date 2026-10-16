@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "game": {
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [
+      "c2c4"
+    ],
+    "observed_color": "white",
+    "player": "learner",
+    "played_at": null,
+    "source_digest": "28c07bb2e2621e20e5ede1d381b300b5151a1c819326b0833ea40618f8448ffa",
+    "headers": {
+      "Event": "?",
+      "Site": "?",
+      "Date": "2026.10.15",
+      "Round": "?",
+      "White": "Learner",
+      "Black": "Opponent",
+      "Result": "1/2-1/2"
+    },
+    "workspace_id": "fixture",
+    "game_id": "7209b8437ce9df82d1c979dbca7dc08d59fb1145b957f26c5b3102d2f0f91bb1",
+    "revision": 1,
+    "provider": "pgn",
+    "provider_game_id": "miss",
+    "imported_at": "2026-10-15T12:00:00+00:00"
+  },
+  "comparison_revision": 1,
+  "readiness": "ready",
+  "reason": null,
+  "snapshot": {
+    "digest": "d990d1f87b5e8c398321111734a561359cbd68d5d274078433afebfc3a83f162",
+    "snapshot_id": "snapshot-fixture",
+    "revision": 1,
+    "publication_id": "publication-fixture",
+    "publication_generation": 1,
+    "source_revision": 1
+  },
+  "findings": [
+    {
+      "ply": 0,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "comparison_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "turn": "white",
+      "move": "c2c4",
+      "status": "missed",
+      "expected_moves": [
+        "d2d4",
+        "e2e4"
+      ],
+      "memberships": [
+        {
+          "repertoire_id": "repertoire-main",
+          "route_id": "route-main"
+        }
+      ],
+      "card_id": "card-shared",
+      "decision_id": "decision-root",
+      "policy_id": "policy-main",
+      "explanation": "defined_repertoire_move_not_played",
+      "decision_position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "encounter_id": "571a961602fd637da2ef0c33dc69b8a7409832dde405fbdc66be607c2b7b3367"
+    }
+  ],
+  "delivery": {
+    "status": "pending",
+    "reason": null,
+    "attempts": 0,
+    "batches": [
+      {
+        "delivery_id": "c01026af0f955094823058d8a17b96f39d074aed6c9b48e749ccf669bacf3047",
+        "status": "pending",
+        "reason": null,
+        "attempts": 0,
+        "acknowledgement": null
+      }
+    ]
+  }
+}

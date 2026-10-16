@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "game": {
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [],
+    "observed_color": "white",
+    "player": "learner",
+    "played_at": null,
+    "source_digest": "f728174fb449d938fc5e4d5551530148836ce862ac263472c077062fe10ed2e2",
+    "headers": {
+      "Event": "?",
+      "Site": "?",
+      "Date": "2026.10.15",
+      "Round": "?",
+      "White": "Learner",
+      "Black": "Opponent",
+      "Result": "1/2-1/2"
+    },
+    "workspace_id": "fixture",
+    "game_id": "ca320fe9b8377a921861e761dbc964ba9d99a6716d118fe66e9bc0822552123e",
+    "revision": 1,
+    "provider": "pgn",
+    "provider_game_id": "empty",
+    "imported_at": "2026-10-15T12:00:00+00:00"
+  },
+  "comparison_revision": 1,
+  "readiness": "ready",
+  "reason": null,
+  "snapshot": {
+    "digest": "d990d1f87b5e8c398321111734a561359cbd68d5d274078433afebfc3a83f162",
+    "snapshot_id": "snapshot-fixture",
+    "revision": 1,
+    "publication_id": "publication-fixture",
+    "publication_generation": 1,
+    "source_revision": 1
+  },
+  "findings": [],
+  "delivery": {
+    "status": "not_required",
+    "reason": null,
+    "attempts": 0,
+    "batches": []
+  }
+}
