@@ -1,0 +1,11 @@
+{
+  "activation_revision": 3,
+  "contract_version": 1,
+  "publication_generation": 2,
+  "publication_id": "5d296cd6-fe52-538b-ae4d-e59be30b6287",
+  "reason": null,
+  "retirement_id": "5e7bf56d-55e2-5589-ad99-f79ff4c7ca9a:retire",
+  "stale_attempts_fenced": true,
+  "status": "retired",
+  "workspace_id": "workspace-a"
+}

@@ -155,7 +155,10 @@ class ContentService:
                 values.extend(row['payload'] for row in page)
                 offset += len(page)
             payload[kind] = values
-        return SourceSnapshot.model_validate(payload)
+        snapshot = SourceSnapshot.model_validate(payload)
+        if any(len(payload[kind])!=manifest['counts'][kind] for kind in KINDS) or _digest(canonical_source(snapshot))!=manifest['digest']:
+            raise ContentError('source_manifest_mismatch','Immutable source count/digest differs from its manifest')
+        return snapshot
 
     def _exercise_revisions(self,source_id,generation):
         revisions = {}
@@ -167,7 +170,7 @@ class ContentService:
                 return revisions
             after = page[-1]['exercise_key']
 
-    def load_source(self,snapshot,expected_revision=0,hook=None):
+    def load_source(self,snapshot,expected_revision=0,hook=None,operation_id=None):
         if type(expected_revision) is not int or expected_revision<0:
             raise ContentError('invalid_source_revision','Expected revision must be a nonnegative integer')
         snapshot = SourceSnapshot.model_validate(snapshot)
@@ -205,8 +208,17 @@ class ContentService:
             if any(actual.get(kind,0)!=count for kind,count in counts.items()):
                 raise ContentError('incomplete_staging','Staged input count differs')
             database.execute('INSERT INTO content.input_manifests VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(stage_id,source_id,digest,Jsonb(header),Jsonb(counts)))
+            persisted = database.execute('SELECT source_id,digest,header,counts FROM content.input_manifests WHERE stage_id=%s',(stage_id,)).fetchone()
+            if (persisted['source_id'],persisted['digest'],persisted['header'],persisted['counts'])!=(source_id,digest,header,counts):
+                raise ContentError('source_manifest_conflict','Immutable source manifest differs from accepted content')
         _hook(hook,'after_staging',source_id=source_id,stage_id=stage_id)
         with self._transaction() as database:
+            from .bridge import lock_scope
+            lock_scope(database,source_id,operation_id)
+            if operation_id is not None:
+                authority = database.execute('SELECT state,source_id FROM content.bridge_operations WHERE id=%s FOR UPDATE', (operation_id,)).fetchone()
+                if authority is None or authority['source_id'] != source_id or authority['state'] != 'applying':
+                    raise ContentError('application_not_authorized', 'Source admission requires the original still-applying operation')
             database.execute('INSERT INTO content.sources(id,source_key,publication_id) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING',(source_id,snapshot.source_key,publication_id))
             source = self._lock_source(database,source_id,hook)
             previous = database.execute('SELECT digest FROM content.source_revisions WHERE source_id=%s AND revision=%s',(source_id,source['requested_revision'])).fetchone()

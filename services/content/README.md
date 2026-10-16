@@ -1,5 +1,13 @@
 # Independent Content service
 
+The [authoritative bridge operator workflow](../../docs/analysis-restoration/a-bridge.md)
+adds durable import/proposal drafts, exact approval, recovery and verified Learning
+delivery. Its Learning bundle v2 targets complete opening sources up to 2,048
+definitions and 8 MiB; v1 retains its historical 128-fact boundary. Native results
+and any unverified limits are recorded in that handoff. Content's independent
+shared Publication v1 limit remains 10,000. The historical consumer notes below
+describe v1 compatibility rather than permission to rewrite Content identities.
+
 `tempo-content` owns structured authored repertoires and exercises, stable source
 identities, complete legal opponent replies, bounded inventory reconciliation,
 and immutable Content v1 publications. Its Python namespace is `tempo_content`;

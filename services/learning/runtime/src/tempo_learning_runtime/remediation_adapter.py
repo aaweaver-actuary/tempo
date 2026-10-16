@@ -59,6 +59,12 @@ class AcceptedDefinitions:
         return self.decision(card_id, None, row[0], row[1])
 
     def decision(self, card_id, decision_id, publication_id, publication_generation):
+        from .publication_bridge import physical_id
+        authored_id = card_id
+        card_id = physical_id(self.database, card_id)
+        alias = self.database.execute("SELECT content_card_id FROM content_card_aliases WHERE learning_card_id=? AND publication_id=?", (card_id,publication_id)).fetchone()
+        if alias:
+            authored_id = alias[0]
         row = self.database.execute(
             """SELECT publication.payload_json,card.revision,card.serving_active,card.archived,
                       card.superseded_by FROM cards card
@@ -76,7 +82,7 @@ class AcceptedDefinitions:
         if publication["workspace_id"] != workspace_id():
             return None
         definition = next(
-            (fact for fact in publication["definitions"] if fact["card_id"] == card_id),
+            (fact for fact in publication["definitions"] if fact["card_id"] == authored_id),
             None,
         )
         if definition is None or decision_id not in (None, definition["decision_id"]):
@@ -102,6 +108,7 @@ class AcceptedDefinitions:
                 and not row[4]
                 and row[1] == definition["exercise_revision"]
             ),
+            aliases=(authored_id,) if authored_id != card_id else (),
         )
 
 
@@ -129,7 +136,8 @@ def receive(database, delivery, *, background=False, historical_evidence_revisio
     from .admission import lock_card
 
     owned = repository(database, background=background)
-    affected = {obligation.card_id for obligation in delivery.obligations}
+    from .publication_bridge import physical_id
+    affected = {physical_id(database,obligation.card_id) for obligation in delivery.obligations}
     for withdrawal in getattr(delivery, "withdrawals", ()):
         row = database.execute_native(
             "SELECT card_id FROM remediation_obligation_heads WHERE workspace_id=%s AND obligation_id=%s",

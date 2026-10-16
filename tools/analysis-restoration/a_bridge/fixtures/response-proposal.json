@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kind": "response_proposal",
+  "status": "draft",
+  "proposal_id": "synthetic-response-1",
+  "workspace_id": "bridge-synthetic",
+  "source_key": "synthetic-opening",
+  "repertoire_key": "white",
+  "policy_key": "white-main",
+  "learner_color": "white",
+  "expected_source_revision": 1,
+  "source_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "route_key": "e4-e5",
+  "anchor_ply": 1,
+  "opponent_move": "c7c5",
+  "decision_fen": "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
+  "accepted_lines": [["g1f3"]],
+  "provenance": {"kind": "synthetic", "evidence_refs": ["fixture:off-book-game"]}
+}

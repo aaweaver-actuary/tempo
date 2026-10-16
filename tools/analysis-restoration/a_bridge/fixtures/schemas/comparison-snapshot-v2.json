@@ -1,0 +1,640 @@
+{
+  "$defs": {
+    "ActivationAcknowledgement": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Activation Id",
+          "type": "string"
+        },
+        "activation_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Activation Revision",
+          "type": "integer"
+        },
+        "contract_version": {
+          "const": 1,
+          "title": "Contract Version",
+          "type": "integer"
+        },
+        "publication_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Publication Generation",
+          "type": "integer"
+        },
+        "publication_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Publication Id",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "accepted_pending",
+            "activated",
+            "rejected",
+            "retryable_failure",
+            "stale_generation"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "workspace_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "workspace_id",
+        "activation_id",
+        "publication_id",
+        "publication_generation",
+        "activation_revision",
+        "status",
+        "reason"
+      ],
+      "title": "ActivationAcknowledgement",
+      "type": "object"
+    },
+    "Binding": {
+      "additionalProperties": false,
+      "properties": {
+        "card_id": {
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "ply": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Ply",
+          "type": "integer"
+        },
+        "reentry": {
+          "default": false,
+          "title": "Reentry",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ply",
+        "card_id"
+      ],
+      "title": "Binding",
+      "type": "object"
+    },
+    "Choice": {
+      "additionalProperties": false,
+      "properties": {
+        "correct_option_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Correct Option Ids",
+          "type": "array"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/ChoiceOption"
+          },
+          "maxItems": 12,
+          "minItems": 2,
+          "title": "Options",
+          "type": "array"
+        },
+        "type": {
+          "const": "choice",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "options",
+        "correct_option_ids"
+      ],
+      "title": "Choice",
+      "type": "object"
+    },
+    "ChoiceOption": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "ChoiceOption",
+      "type": "object"
+    },
+    "ExecutableExercise": {
+      "additionalProperties": false,
+      "properties": {
+        "card_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "exercise_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Exercise Revision",
+          "type": "integer"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "publication_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Publication Generation",
+          "type": "integer"
+        },
+        "publication_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Publication Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "specification": {
+          "discriminator": {
+            "mapping": {
+              "choice": "#/$defs/Choice",
+              "explanation": "#/$defs/Explanation",
+              "knight_path": "#/$defs/KnightPath",
+              "move_line": "#/$defs/MoveLine",
+              "square_set": "#/$defs/SquareSet"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/MoveLine"
+            },
+            {
+              "$ref": "#/$defs/SquareSet"
+            },
+            {
+              "$ref": "#/$defs/KnightPath"
+            },
+            {
+              "$ref": "#/$defs/Choice"
+            },
+            {
+              "$ref": "#/$defs/Explanation"
+            }
+          ],
+          "title": "Specification"
+        },
+        "starting_fen": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Starting Fen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "decision_id",
+        "policy_id",
+        "source_revision",
+        "publication_id",
+        "publication_generation",
+        "exercise_revision",
+        "starting_fen",
+        "prompt",
+        "specification"
+      ],
+      "title": "ExecutableExercise",
+      "type": "object"
+    },
+    "Explanation": {
+      "additionalProperties": false,
+      "properties": {
+        "rubric": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Rubric",
+          "type": "string"
+        },
+        "type": {
+          "const": "explanation",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "rubric"
+      ],
+      "title": "Explanation",
+      "type": "object"
+    },
+    "KnightPath": {
+      "additionalProperties": false,
+      "properties": {
+        "hop_rule": {
+          "enum": [
+            "at_most",
+            "exact"
+          ],
+          "title": "Hop Rule",
+          "type": "string"
+        },
+        "maximum_hops": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Maximum Hops",
+          "type": "integer"
+        },
+        "minimum_hops": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Minimum Hops",
+          "type": "integer"
+        },
+        "occupancy_rule": {
+          "const": "static_non_capturing",
+          "title": "Occupancy Rule",
+          "type": "string"
+        },
+        "start_square": {
+          "pattern": "^[a-h][1-8]$",
+          "title": "Start Square",
+          "type": "string"
+        },
+        "target_squares": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Target Squares",
+          "type": "array"
+        },
+        "type": {
+          "const": "knight_path",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "start_square",
+        "target_squares",
+        "minimum_hops",
+        "maximum_hops",
+        "hop_rule",
+        "occupancy_rule"
+      ],
+      "title": "KnightPath",
+      "type": "object"
+    },
+    "MoveLine": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_lines": {
+          "items": {
+            "items": {
+              "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+              "type": "string"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Accepted Lines",
+          "type": "array"
+        },
+        "grading_policy": {
+          "enum": [
+            "reference",
+            "open_judgment"
+          ],
+          "title": "Grading Policy",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "single",
+            "stepwise_line"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "type": {
+          "const": "move_line",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "accepted_lines",
+        "mode",
+        "grading_policy"
+      ],
+      "title": "MoveLine",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "properties": {
+        "built_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Built At",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": 1,
+          "title": "Contract Version",
+          "type": "integer"
+        },
+        "definitions": {
+          "items": {
+            "$ref": "#/$defs/ExecutableExercise"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Definitions",
+          "type": "array"
+        },
+        "publication_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Publication Generation",
+          "type": "integer"
+        },
+        "publication_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Publication Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "workspace_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "workspace_id",
+        "publication_id",
+        "source_revision",
+        "publication_generation",
+        "built_at",
+        "definitions"
+      ],
+      "title": "Publication",
+      "type": "object"
+    },
+    "RouteV2": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "items": {
+            "$ref": "#/$defs/Binding"
+          },
+          "maxItems": 1000,
+          "title": "Bindings",
+          "type": "array"
+        },
+        "learner_color": {
+          "enum": [
+            "white",
+            "black"
+          ],
+          "title": "Learner Color",
+          "type": "string"
+        },
+        "moves": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "title": "Moves",
+          "type": "array"
+        },
+        "policy_id": {
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "repertoire_id": {
+          "minLength": 1,
+          "title": "Repertoire Id",
+          "type": "string"
+        },
+        "route_id": {
+          "minLength": 1,
+          "title": "Route Id",
+          "type": "string"
+        },
+        "starting_fen": {
+          "title": "Starting Fen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repertoire_id",
+        "route_id",
+        "learner_color",
+        "starting_fen",
+        "moves",
+        "bindings",
+        "policy_id"
+      ],
+      "title": "RouteV2",
+      "type": "object"
+    },
+    "SquareSet": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "optional": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Optional",
+          "type": "array"
+        },
+        "required": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Required",
+          "type": "array"
+        },
+        "type": {
+          "const": "square_set",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "required",
+        "optional",
+        "criterion"
+      ],
+      "title": "SquareSet",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptance": {
+      "additionalProperties": true,
+      "title": "Acceptance",
+      "type": "object"
+    },
+    "activation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ActivationAcknowledgement"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "activation_origin": {
+      "additionalProperties": true,
+      "title": "Activation Origin",
+      "type": "object"
+    },
+    "complete": {
+      "default": false,
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "content_export": {
+      "additionalProperties": true,
+      "title": "Content Export",
+      "type": "object"
+    },
+    "current_serving": {
+      "additionalProperties": true,
+      "title": "Current Serving",
+      "type": "object"
+    },
+    "publication": {
+      "$ref": "#/$defs/Publication"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "routes": {
+      "items": {
+        "$ref": "#/$defs/RouteV2"
+      },
+      "maxItems": 10000,
+      "title": "Routes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "snapshot_id": {
+      "minLength": 1,
+      "title": "Snapshot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "snapshot_id",
+    "revision",
+    "publication",
+    "activation",
+    "routes",
+    "content_export",
+    "current_serving",
+    "activation_origin",
+    "acceptance"
+  ],
+  "title": "ComparisonSnapshotV2",
+  "type": "object"
+}

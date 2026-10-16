@@ -1,5 +1,14 @@
 # Supported producer/consumer combinations
 
+## A bridge local adapters
+
+The A bridge does not change shared Content Publication v1 or Game Evidence wire
+v1/v2. Learning publication bundle v2 and Game Evidence comparison snapshot v2 are
+version-addressable service-local adapters, not a shared v1 extension. Analysis
+inputs and response proposals use separate local schema version 1. Their tested
+installed combinations, generated synthetic fixtures, limits and unresolved
+real-data qualification belong to `docs/analysis-restoration/a-bridge.md`.
+
 ## Game Evidence artifact 2.0.0
 
 The Game Evidence artifact additionally exports explicit wire v2 alongside

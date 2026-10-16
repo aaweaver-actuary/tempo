@@ -23,6 +23,33 @@ Learning needs no Node or broker.
 Programmatic `Configuration.host_activity_directory=None` disables this optional
 adapter; applications embedding Learning must configure the shared directory to
 claim host-level development protection. Browser-local priority remains separate.
+## Content bridge v2
+
+`POST /internal/publications/v2/stage` accepts the service-local version-2 opening
+bundle (maximum 2,048 definitions / 8 MiB). `publication-schema` exports its schema.
+It retains shared Publication v1, real route occurrences, source digest, and
+optional one-to-one legacy aliases. Content IDs remain authored identifiers;
+validated aliases retain existing physical Learning/history identities. Adoption
+requires exact legacy FEN, primary line, revision, family and learner color;
+unknown historical alternative sets cannot be invented. No history importer is
+provided.
+
+`POST /internal/publications/v2/activate` uses the existing durable command gateway
+with `{publication_id, publication_generation, expected_activation_revision,
+activation_id}`. Initial expected activation revision is zero. Successful v2
+responses are actual shared v1 ActivationAcknowledgement values. Stage acceptance
+alone creates no serving cards. Replacement validates unchanged executable
+revisions against their original accepted generation and preserves schedules;
+changed executables require a newer revision. Route occurrences own prerequisites.
+
+Operator-only receipt read/retry routes are
+`/internal/publications/operations/{id}` and `.../{id}/retry`.
+`GET /internal/publications/{id}/status` separately returns current generation,
+activation revision/state, bundle digest, workspace-local date and observation
+time. A historical activation acknowledgement is not current serving authority.
+Study operation routes reject publication receipt/retry access. Existing v1
+publication and retirement endpoints remain available; all publication routes use
+the separate operator credential. No Study or evidence credential is upgraded.
 
 Artifact: `tempo-learning-runtime` 0.1.0; workspace: one configured identity per database.
 All API routes except health require a workspace-scoped bearer credential. Study routes use the study token; `/internal/publications/*` requires the separate operator token and `/internal/evidence` requires the separate evidence token. Missing integration tokens disable those endpoints.
@@ -154,3 +181,34 @@ session storage, outside command envelopes, bundles and evidence. The existing
 Host/Origin/CORS allowlists and restricted database roles remain authoritative.
 
 Before starting an expected independent Learning runtime on the protected host, register its workspace identity in the managed runners’ `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` JSON array, for example `["workspace-a"]`. Learning snapshots include that stable `source` alongside the unique process producer. Missing first publication, total reporting failure, and clean shutdown remain unavailable until an operator explicitly changes the expected-source configuration. Essential Learning progress remains independent of reporting success.
+## Publication receipt request binding
+
+The operator-only `GET /internal/publications/operations/{operation_id}` adds `workspace_id`, `command_name` and the original persisted `request` for known publication operations. These let Content independently verify terminal failure against its immutable delivery checkpoint. Unknown operations remain `unknown`; Study/evidence credentials cannot read or retry publication operations. Generic Study receipt responses and shared publication wire contracts are unchanged.
+
+Study move-membership resolves a physical historical card through its publication-scoped Content alias before reading current accepted definitions. Physical IDs, reviews, FSRS state and attempts stay with Learning; all existing executable-revision and serving-state fences still apply.
+
+## Publication terminal fence
+
+Operator-only `POST /internal/publications/operations/{operation_id}/abort` accepts
+`{"workspace_id": WORKSPACE, "command_name": FAMILY, "request": ORIGINAL_REQUEST}`.
+FAMILY is `publication.activate.v2` or `publication.retire`; ORIGINAL_REQUEST has
+exactly publication_id, publication_generation, expected_activation_revision and
+activation_id or retirement_id. Integers are strict, generation positive and
+expected revision nonnegative. The request ID equals the path ID (1–128 characters).
+Workspace must equal this installed Learning authority. Other families are denied.
+
+The same operation advisory lock and receipt row lock as execution bind the
+original command/request hash. An absent identity is inserted; unknown/queued
+operations become immutable failed receipts with code
+`publication_abandoned_before_execution`. Existing complete or failed receipts are
+returned unchanged. Conflicting requests fail. A successful abort response may
+therefore report genuine completion; consumers must reconcile that outcome.
+The authenticated GET port exposes the exact original request and terminal receipt.
+No independent cancellation table or new migration is used.
+
+V2 activation rediscovers matching terminal receipts before requiring staging.
+Activation and retirement reject differing header/body operation identities.
+Gateway execution and maintenance re-read terminal state under the same locks,
+including workers selected before fencing. Staging alone never grants serving
+authority. Fencing neither deletes immutable staged bundles nor retires old serving
+content; corrected sources use the ordinary new generation/revision workflow.
