@@ -99,7 +99,7 @@ Regular native `integration/test_postgres.py` owns:
 - `test_A_terminal_learning_rejection_releases_source_reservation`: durable failure, current source revision, corrected approval, restart and replay after successor reservation.
 - `test_A_terminal_outcomes_cannot_overwrite_each_other` and `test_A_terminal_failure_and_corrected_approval_serialize`: immutable outcomes and independent-session races.
 - `test_A_concurrent_proposal_identity_is_unique_across_sessions` and `test_A_response_proposal_concurrency_and_restart`: identical/conflicting concurrent requests, actual proposal validation and restart.
-- `test_A_proposal_unique_index_rejects_legacy_duplicates_without_deletion`: duplicate refusal with rollback, preserving immutable records.
+- `test_A_proposal_unique_index_rejects_legacy_duplicates_without_deletion`: actual owner migration from pre-0004 history, duplicate refusal with rollback preserving both drafts, incompatible readiness, successful upgrade after fixture-only duplicate cleanup, immutable draft replay and unchanged checksum history on migration replay.
 - `test_A_semantic_draft_collision_rejects_changed_raw_provenance`, `test_A_exact_draft_replay_returns_original_immutable_document`, and `test_A_approved_draft_cannot_be_relabelled_by_reimport`: exact immutable provenance.
 
 Regular installed pure `tests/test_bridge.py::test_A_terminal_failure_requires_original_authenticated_request` covers terminal state and request/workspace/command/operation mismatches, and safe failure details. Real authenticated rejection and corrected activation are owned by Learning's installed `test_A_corrected_source_activates_after_original_terminal_failure`.

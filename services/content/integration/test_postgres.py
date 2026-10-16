@@ -1465,19 +1465,42 @@ def test_A_response_proposal_concurrency_and_restart(service, conflicting):
 
 
 def test_A_proposal_unique_index_rejects_legacy_duplicates_without_deletion(service):
-    from tempo_content.migrate import expected_migrations
+    from tempo_content.migrate import expected_migrations, readiness
     original = bridge_draft(service)
     proposal = {'workspace_id':service.workspace_id, 'source_key':original['source_key'], 'proposal_id':'legacy-duplicate'}
     first = Bridge(service).draft(original['document']['source'], original['document']['manifest'], 0, proposal)
     owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
+    migration_id = '0004_bridge_proposal_identity'
+    history = query('SELECT id,checksum FROM content.migration_history ORDER BY id')
+    duplicate_id = 'duplicate-'+first['id']
+    # Recreate the pre-0004 state in this runner's disposable database, then
+    # exercise the real owner upgrade entrypoint rather than duplicating its SQL.
     with psycopg.connect(owner_url) as database:
         database.execute('DROP INDEX content.bridge_proposal_identity')
-        database.execute('INSERT INTO content.bridge_drafts SELECT %s,source_id,source_key,expected_revision,digest,document FROM content.bridge_drafts WHERE id=%s', ('duplicate-'+first['id'],first['id']))
-        with pytest.raises(psycopg.errors.UniqueViolation), database.transaction():
-            database.execute("CREATE UNIQUE INDEX bridge_proposal_identity ON content.bridge_drafts ((document->'proposal'->>'workspace_id'),source_key,(document->'proposal'->>'proposal_id')) WHERE jsonb_typeof(document->'proposal')='object'")
-        assert database.execute("SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='legacy-duplicate'", (original['source_key'],)).fetchone()[0] == 2
-        database.rollback()
-    assert '0004_bridge_proposal_identity' in expected_migrations()
+        database.execute('DELETE FROM content.migration_history WHERE id=%s', (migration_id,))
+        database.execute('INSERT INTO content.bridge_drafts SELECT %s,source_id,source_key,expected_revision,digest,document FROM content.bridge_drafts WHERE id=%s', (duplicate_id,first['id']))
+    try:
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            migrate(owner_url,service.workspace_id,os.environ['TEMPO_CONTENT_RUNTIME_ROLE'])
+        assert query('SELECT id,checksum FROM content.migration_history ORDER BY id') == [row for row in history if row[0] != migration_id]
+        assert query("SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='legacy-duplicate'", (original['source_key'],))[0][0] == 2
+        assert query("SELECT to_regclass('content.bridge_proposal_identity')")[0][0] is None
+        with pytest.raises(ValueError,match='Content schema incompatible'):
+            with psycopg.connect(os.environ['TEMPO_CONTENT_DATABASE_URL']) as database:
+                readiness(database,service.workspace_id)
+    finally:
+        # Only remove the exact duplicate manufactured above. Migration itself
+        # must never delete or choose either pre-existing draft.
+        with psycopg.connect(owner_url) as database:
+            database.execute('DELETE FROM content.bridge_drafts WHERE id=%s', (duplicate_id,))
+        migrate(owner_url,service.workspace_id,os.environ['TEMPO_CONTENT_RUNTIME_ROLE'])
+    assert migration_id in expected_migrations()
+    assert query('SELECT id,checksum FROM content.migration_history ORDER BY id') == history
+    with psycopg.connect(os.environ['TEMPO_CONTENT_DATABASE_URL']) as database:
+        assert readiness(database,service.workspace_id)['status'] == 'ready'
+    migrate(owner_url,service.workspace_id,os.environ['TEMPO_CONTENT_RUNTIME_ROLE'])
+    assert query('SELECT id,checksum FROM content.migration_history ORDER BY id') == history
+    assert Bridge(service).draft(original['document']['source'], original['document']['manifest'], 0, proposal) == first
     assert query("SELECT count(*) FROM content.bridge_drafts WHERE source_key=%s AND document->'proposal'->>'proposal_id'='legacy-duplicate'", (original['source_key'],))[0][0] == 1
 
 
