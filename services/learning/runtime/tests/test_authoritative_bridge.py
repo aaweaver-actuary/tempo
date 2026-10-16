@@ -15,6 +15,8 @@ import socket
 import subprocess
 import time
 import resource
+import signal
+import sys
 from threading import Thread
 import uuid
 
@@ -50,7 +52,25 @@ def source_document():
 
 
 def run_cli(executable,arguments,environment,directory,success=True,timeout=120):
-    process=subprocess.run([str(executable),*map(str,arguments)],env=environment,cwd=directory,capture_output=True,text=True,timeout=timeout)
+    command = [str(executable), *map(str, arguments)]
+    # The operator spawns Content. A timed-out parent must not leave that child
+    # holding the disposable database and defeating the owning fixture cleanup.
+    child = subprocess.Popen(command, env=environment, cwd=directory,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        output, errors = child.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            child.communicate(timeout=3)
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.communicate(timeout=3)
+        raise
+    process = subprocess.CompletedProcess(command, child.returncode, output, errors)
     if success:
         assert process.returncode==0,(process.stdout+process.stderr)[-3000:]
     return json.loads(process.stdout) if process.returncode==0 else process
@@ -347,7 +367,15 @@ def test_A_complete_large_authored_source_traverses_installed_bridge(case,author
     with server(case,tmp_path) as (client,process):
         arguments=['--content-cli',content_cli,'--learning-origin',str(client.base_url).rstrip('/'),'--operator-token-file',token]
         started=time.perf_counter()
-        completed=run_cli(bridge_cli,[*arguments,'apply',approved['id'],'--max-slices','10000'],environment,tmp_path,timeout=300)
+        invocations = 0
+        # Exercise durable bounded resume with the same original 10,000-slice
+        # allowance. Each invocation retains the unchanged 300-second limit.
+        for consumed in range(0, 10000, 64):
+            invocations += 1
+            completed=run_cli(bridge_cli,[*arguments,'apply',approved['id'],'--max-slices',min(64,10000-consumed)],environment,tmp_path,timeout=300)
+            if completed['state']=='completed':
+                break
+            assert completed['state']=='pending_validation' and completed['operation_id']==approved['id']
         applying=time.perf_counter()-started
         assert completed['state']=='completed',completed
         publication=completed['document']['export']['publication']
@@ -359,7 +387,7 @@ def test_A_complete_large_authored_source_traverses_installed_bridge(case,author
         evidence.mkdir(parents=True,exist_ok=True)
         (evidence/f'installed-capacity-{count}.json').write_text(json.dumps({'definitions':count,'source_bytes':source_path.stat().st_size,
             'publication_bytes':len(json.dumps(publication).encode()),'route_count':len(source['routes']),'route_plies':1,
-            'plan_approval_seconds':planning,'validation_publication_delivery_seconds':applying,
+            'plan_approval_seconds':planning,'validation_publication_delivery_seconds':applying,'operator_invocations':invocations,'maximum_slices_per_invocation':64,'total_slice_allowance':10000,
             'maximum_child_rss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'publication_id':publication['publication_id'],
             'publication_generation':publication['publication_generation'],'activation':completed['document']['receipt']['acknowledgement']},indent=2))
 
@@ -421,3 +449,13 @@ def test_A_corrected_source_activates_after_original_terminal_failure(case, auth
         evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
         evidence.mkdir(parents=True, exist_ok=True)
         (evidence/'terminal-recovery.json').write_text(json.dumps({'failed_content': failed, 'learning_failure': receipt, 'corrected_content': completed}, indent=2, default=str))
+
+
+def test_A_cli_timeout_terminates_owned_descendants(tmp_path):
+    marker = tmp_path / 'orphan-finished'
+    child_code = "import time; from pathlib import Path; time.sleep(1); Path(" + repr(str(marker)) + ").write_text('unexpected surviving child')"
+    parent_code = "import subprocess,sys; subprocess.run([sys.executable,'-c'," + repr(child_code) + "])"
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_cli(sys.executable, ['-c', parent_code], os.environ.copy(), tmp_path, timeout=0.2)
+    time.sleep(1.1)
+    assert not marker.exists()

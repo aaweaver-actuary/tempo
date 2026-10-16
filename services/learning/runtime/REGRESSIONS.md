@@ -164,3 +164,5 @@ Existing F1, restart, storage, exercise-family and offline-shell cases remain se
 The complete regular native and production Study suites retain credential separation, issuance, review, retirement, optional-services-off and resource-budget owners.
 
 The installed bridge proof also loads the real post-retirement generation-2 observation, recomputes evidence, and requires unknown readiness with unchanged delivery receipts; response loss explicitly retains Content applying authority.
+
+`test_A_cli_timeout_terminates_owned_descendants` prevents a timed-out installed operator from leaving a Content child connected to the disposable database. Large installed-source cases retain the original 10,000 total slices and 300-second child limit, using 64-slice resumable invocations; total duration and invocation counts are reported without changing production budgets.
