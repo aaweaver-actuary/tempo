@@ -410,7 +410,8 @@ def test_A_publication_abort_is_idempotent_after_restart(case):
 @pytest.mark.parametrize('first', ['activate', 'abort'])
 @pytest.mark.parametrize('retry', [False, True])
 def test_A_publication_abort_serializes_with_activation(case, monkeypatch, first, retry):
-    from threading import Event, local
+    from threading import Event
+    from contextvars import ContextVar
     from tempo_learning_runtime import gateway, publication_bridge
     from tempo_learning_runtime.postgres_store import PostgresConnection
     payload = content_bundle()
@@ -421,29 +422,25 @@ def test_A_publication_abort_serializes_with_activation(case, monkeypatch, first
         with case.database.scope():
             gateway.record_intent(identifier, 'publication.activate.v2', request)
     entered, contending, release = Event(), Event(), Event()
-    role = local()
+    role = ContextVar('publication_race_role', default=None)
     original_execute = PostgresConnection.execute_native
     def execute_native(database, statement, parameters=()):
         tracked = statement.startswith('SELECT pg_advisory_xact_lock') and parameters == (identifier,)
-        if tracked and role.action != first:
+        if tracked and role.get() != first:
             contending.set()
         result = original_execute(database, statement, parameters)
-        if tracked and role.action == first:
+        if tracked and role.get() == first:
             entered.set()
             assert release.wait(timeout=2)
         return result
     monkeypatch.setattr(PostgresConnection, 'execute_native', execute_native)
     def perform(action):
-        role.action = action
-        with case.database.scope():
-            if action == 'abort':
-                return gateway.fence_publication(identifier, 'publication.activate.v2', request)
-            try:
-                return publication_bridge.dispatch_activation(request, identifier)
-            except Exception as error:
-                from tempo_learning_runtime.review_conflicts import ReviewConflict
-                assert isinstance(error, ReviewConflict)
-                return {'state': 'failed', 'code': error.code}
+        role.set(action)
+        operator = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+        if action == 'abort':
+            return abort_publication(case, request)
+        path = '/internal/publications/operations/' + identifier + '/retry' if retry else '/internal/publications/v2/activate'
+        return case.client.post(path, json={} if retry else request, headers=operator)
     with ThreadPoolExecutor(max_workers=2) as executor:
         winner = executor.submit(perform, first)
         try:
@@ -452,7 +449,8 @@ def test_A_publication_abort_serializes_with_activation(case, monkeypatch, first
             assert contending.wait(timeout=3)
         finally:
             release.set()
-        winner.result(); loser.result()
+        assert winner.result().status_code == 200
+        assert loser.result().status_code == (200 if first == 'activate' else 409)
     receipt = case.client.get('/internal/publications/operations/' + identifier,
         headers={'Authorization': 'Bearer ' + case.configuration.operator_token}).json()
     assert receipt['state'] == ('complete' if first == 'activate' else 'failed')
@@ -497,3 +495,38 @@ def test_A_publication_fence_measured_under_existing_budgets(case, monkeypatch):
     evidence.mkdir(parents=True, exist_ok=True)
     (evidence / 'fence-timing.json').write_text(json.dumps({'api_seconds': elapsed, 'transactions': timings,
         'lock_timeout_ms': 250, 'statement_timeout_ms': 1500, 'foreground_transaction_timeout_ms': 2500}, indent=2))
+
+
+def test_A_selected_maintenance_cannot_resurrect_terminally_fenced_retirement(case, monkeypatch):
+    from threading import Event
+    from tempo_learning_runtime import gateway, maintenance
+    payload = content_bundle()
+    activate_v2(case, payload)
+    request = {'retirement_id': uuid.uuid4().hex, 'publication_id': payload['publication']['publication_id'],
+        'publication_generation': 1, 'expected_activation_revision': 1}
+    with case.database.scope():
+        gateway.record_intent(request['retirement_id'], 'publication.retire', request)
+    selected, release = Event(), Event()
+    original_execute = gateway.execute
+    def execute_after_selection(identifier, **options):
+        assert identifier == request['retirement_id']
+        selected.set()
+        assert release.wait(timeout=3)
+        return original_execute(identifier, **options)
+    monkeypatch.setattr(gateway, 'execute', execute_after_selection)
+    def maintain():
+        with case.database.scope():
+            return maintenance.run_once()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        worker = executor.submit(maintain)
+        try:
+            assert selected.wait(timeout=3)
+            receipt = abort_publication(case, request, retirement=True).json()
+            assert receipt['state'] == 'failed'
+        finally:
+            release.set()
+        assert worker.result()
+    assert case.query('SELECT count(*) FROM learning.cards WHERE serving_active=1')[0][0] == 1
+    assert case.query('SELECT activation_revision FROM learning.serving_publications')[0][0] == 1
+    with case.database.scope():
+        assert gateway.read_operation(request['retirement_id'], publication=True) == receipt

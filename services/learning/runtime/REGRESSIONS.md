@@ -203,3 +203,12 @@ already retired source, retirement changing after preflight), and
 `test_A_installed_concurrent_operators_preserve_one_authority` (two installed apply
 or abandon commands). All use actual restricted databases, installed CLIs and
 Learning HTTP authority, including corrected approval and stale-operation denial.
+
+`test_A_selected_maintenance_cannot_resurrect_terminally_fenced_retirement` pauses
+actual maintenance after selecting a queued retirement and before execution;
+fencing wins before it resumes, preserving active cards and the original revision.
+Abort/activation race parameters use the actual activation and retry HTTP routes.
+`test_A_publication_fence_measured_under_existing_budgets` retains API and owner
+transaction timings without changing production budgets or asserting a host SLO.
+`test_A_installed_completion_cannot_substitute_checkpointed_request` verifies a real
+wrong-publication completion cannot release the original reservation.
