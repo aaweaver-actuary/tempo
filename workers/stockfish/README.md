@@ -150,7 +150,7 @@ Build the container from a directory containing only `Dockerfile` and the tarbal
 renamed `artifact.tgz`. The supported execution command is:
 
 ```sh
-docker run --rm -i --network=none --cpus=1 --memory=512m --memory-swap=512m --pids-limit=64 --read-only "$IMAGE_ID" serve
+docker run --pull=never --rm -i --network=none --cpus=1 --memory=512m --memory-swap=512m --pids-limit=64 --read-only "$IMAGE_ID" serve
 ```
 
 Use the exact image ID and artifact SHA-256 from qualification reports. Install

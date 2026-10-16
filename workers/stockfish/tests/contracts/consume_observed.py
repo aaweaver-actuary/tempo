@@ -2,26 +2,31 @@
 from __future__ import annotations
 import argparse
 import json
+import hashlib
 from pathlib import Path
 import chess
 from tempo_analysis_jobs_contracts import v1
-from tempo_stockfish_client import stockfish_input_digest
 
 
 def consume(exchange):
     jobs = {}
     accepted = {}
+    cancellations = {}
+    terminated = set()
     counts = {"results": 0, "statuses": 0, "acknowledgements": 0}
     for record in exchange["records"]:
         model = getattr(v1, record["model"])
         payload = model.model_validate(record["payload"])
         key = (payload.workspace_id, payload.job_id, payload.request_revision, payload.execution_generation)
         if isinstance(payload, v1.StockfishJob):
-            assert stockfish_input_digest(payload) == payload.input_digest
+            preimage = payload.model_dump(mode="json", exclude={"input_digest", "execution_generation"})
+            canonical = json.dumps(preimage, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            assert "sha256:" + hashlib.sha256(("tempo.stockfish.input.v1\n" + canonical).encode()).hexdigest() == payload.input_digest
             if key in jobs:
                 assert jobs[key] == payload
             jobs[key] = payload
         elif isinstance(payload, v1.StockfishResult):
+            assert key not in terminated
             job = jobs[key]
             assert payload.engine_version == job.engine_version
             assert payload.provenance.input_digest == job.input_digest
@@ -51,7 +56,19 @@ def consume(exchange):
             counts["results"] += 1
         elif isinstance(payload, v1.JobStatus):
             counts["statuses"] += 1
+        elif type(payload) is v1.CancellationRequest:
+            identity = (payload.workspace_id, payload.cancellation_id)
+            if identity in cancellations:
+                assert cancellations[identity] == payload.model_dump()
+            cancellations[identity] = payload.model_dump()
         elif isinstance(payload, v1.CancellationAcknowledgement):
+            request = cancellations[(payload.workspace_id, payload.cancellation_id)]
+            assert all(getattr(payload, field) == value for field, value in request.items())
+            if payload.status == "terminated":
+                assert key not in accepted
+                terminated.add(key)
+            elif payload.status == "already_completed":
+                assert key in accepted
             counts["acknowledgements"] += 1
     assert counts["results"] > 0
     return {"success": True, **counts, "distinct_accepted_executions": len(accepted)}

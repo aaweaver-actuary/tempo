@@ -43,3 +43,33 @@ def test_synthetic_examples_validate_without_becoming_actual_evidence():
     for file in (ROOT / "fixtures/synthetic").glob("*.json"):
         record = json.loads(file.read_text())
         getattr(v1, record["model"]).model_validate(record["payload"])
+
+
+def _consumer():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("independent_consumer", ROOT / "tests/contracts/consume_observed.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_B_installed_consumer():
+    exchange = json.loads((ROOT / "fixtures/observed/exchange.json").read_text())
+    result = _consumer().consume(exchange)
+    assert result["results"] > result["distinct_accepted_executions"] > 0
+    assert result["acknowledgements"] > 0
+
+
+def test_independent_consumer_rejects_illegal_pv_and_cancellation_identity():
+    import copy
+    exchange = json.loads((ROOT / "fixtures/observed/exchange.json").read_text())
+    illegal = copy.deepcopy(exchange)
+    result = next(record for record in illegal["records"] if record["model"] == "StockfishResult")
+    result["payload"]["variations"][0]["moves"] = ["a1a8"]
+    with pytest.raises(AssertionError):
+        _consumer().consume(illegal)
+    invalid_ack = copy.deepcopy(exchange)
+    acknowledgement = next(record for record in invalid_ack["records"] if record["model"] == "CancellationAcknowledgement")
+    acknowledgement["payload"]["execution_generation"] += 1
+    with pytest.raises(AssertionError):
+        _consumer().consume(invalid_ack)

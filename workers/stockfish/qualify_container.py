@@ -41,7 +41,7 @@ class Qualification:
     def command(self):
         name = "tempo-stockfish-b-" + uuid.uuid4().hex[:12]
         self.containers.append(name)
-        return name, ["docker", "run", "--rm", "-i", "--name", name, "--label", f"tempo.task={TASK}", "--label", f"tempo.run={self.run_id}", "--network=none", "--cpus=1", "--memory=512m", "--memory-swap=512m", "--pids-limit=64", "--read-only", self.image, "serve"]
+        return name, ["docker", "run", "--pull=never", "--rm", "-i", "--name", name, "--label", f"tempo.task={TASK}", "--label", f"tempo.run={self.run_id}", "--network=none", "--cpus=1", "--memory=512m", "--memory-swap=512m", "--pids-limit=64", "--read-only", self.image, "serve"]
 
     def job(self, client, **changes):
         self.counter += 1
@@ -185,7 +185,9 @@ class Qualification:
             memory_peak=int(docker("exec",name,"cat","/sys/fs/cgroup/memory.peak").stdout)
             self.measurements.append({"kind":"whole_worker_memory_peak","bytes":memory_peak,"includes_deliberate_pressure":True})
             self.last_identity=client.identity
-        self.passed("B_clean_shutdown", container_removed=docker("inspect",name,check=False).returncode != 0)
+        removed=docker("inspect",name,check=False).returncode != 0
+        assert removed, "owned container survived EOF shutdown"
+        self.passed("B_clean_shutdown", container_removed=removed)
         name2, command2=self.command()
         async with StockfishClient(command2) as client:
             retried=replay_job.model_copy(update={"execution_generation":replay_job.execution_generation+1})
