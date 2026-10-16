@@ -39,6 +39,11 @@ def server(case, tmp_path, maintenance=False, origins=()):
         evidence_token.write_text(case.configuration.evidence_token)
         evidence_token.chmod(0o600)
         environment["TEMPO_LEARNING_EVIDENCE_TOKEN_FILE"] = str(evidence_token)
+    if case.configuration.operator_token:
+        operator_token = tmp_path / "operator-credential"
+        operator_token.write_text(case.configuration.operator_token)
+        operator_token.chmod(0o600)
+        environment["TEMPO_LEARNING_OPERATOR_TOKEN_FILE"] = str(operator_token)
     output = (tmp_path / ("server-" + uuid.uuid4().hex + ".log")).open("w+")
     process = subprocess.Popen(
         [

@@ -13,6 +13,11 @@ def config(**changes):
                          since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc),**changes)
 
 
+def test_A_snapshot_version_validation_preserves_provider_json_datetime_roundtrip():
+    value=config()
+    assert AccountImport.model_validate_json(value.model_dump_json())==value
+
+
 def test_lichess_boundary_overlap_is_deduplicated_without_skipping_games():
     value=config(page_size=2)
     timestamp=int(value.since.timestamp()*1000)

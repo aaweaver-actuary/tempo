@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 import psycopg
 from tempo_content_publication_contracts.v1 import serialize_contract
@@ -16,6 +17,32 @@ def parser():
     command = argparse.ArgumentParser(prog='tempo-content')
     subcommands = command.add_subparsers(dest='command',required=True)
     subcommands.add_parser('readiness')
+    schema = subcommands.add_parser('schema')
+    schema.add_argument('--model',choices=('import-manifest','response-proposal'),required=True)
+    importing = subcommands.add_parser('import').add_subparsers(dest='operation',required=True)
+    plan = importing.add_parser('plan')
+    plan.add_argument('file',type=Path)
+    plan.add_argument('--manifest',type=Path,required=True)
+    plan.add_argument('--expected-revision',type=int,required=True)
+    proposal = subcommands.add_parser('proposal').add_subparsers(dest='operation',required=True)
+    proposal.add_parser('inspect').add_argument('file',type=Path)
+    drafts = subcommands.add_parser('draft').add_subparsers(dest='operation',required=True)
+    drafts.add_parser('create').add_argument('--proposal',type=Path,required=True)
+    drafts.add_parser('show').add_argument('identifier')
+    approval = drafts.add_parser('approve')
+    approval.add_argument('identifier')
+    approval.add_argument('--digest',required=True)
+    operations = subcommands.add_parser('operation').add_subparsers(dest='operation',required=True)
+    for name in ('show','cancel','prepare','record','record-failure','checkpoint','fail-before-delivery'):
+        operation = operations.add_parser(name)
+        operation.add_argument('identifier')
+        if name=='prepare':
+            operation.add_argument('--max-slices',type=int,default=64)
+        if name in ('record','checkpoint'):
+            operation.add_argument('--file',type=Path,required=True)
+        if name in ('record','record-failure'):
+            operation.add_argument('--learning-origin',required=True)
+            operation.add_argument('--operator-token-file',type=Path,required=True)
     migration = subcommands.add_parser('migrate')
     migration.add_argument('--runtime-role',default=os.environ.get('TEMPO_CONTENT_RUNTIME_ROLE','content_runtime'))
     source = subcommands.add_parser('source').add_subparsers(dest='operation',required=True)
@@ -55,12 +82,20 @@ def parser():
     show = publication.add_parser('show')
     show.add_argument('publication_id')
     show.add_argument('--generation',type=int)
+    export = publication.add_parser('export')
+    export.add_argument('publication_id')
+    export.add_argument('--generation',type=int,required=True)
     return command
 
 
 def main(argv=None):
     arguments = parser().parse_args(argv)
     try:
+        if arguments.command in ('schema','proposal'):
+            from .bridge import ImportManifest,ResponseProposal
+            result = (ImportManifest if arguments.model=='import-manifest' else ResponseProposal).model_json_schema() if arguments.command=='schema' else ResponseProposal.model_validate_json(arguments.file.read_bytes()).model_dump(mode='json')
+            print(json.dumps(result,sort_keys=True))
+            return 0
         workspace = os.environ['TEMPO_CONTENT_WORKSPACE']
         if arguments.command=='migrate':
             migrate(os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL'],workspace,arguments.runtime_role)
@@ -71,7 +106,33 @@ def main(argv=None):
         else:
             with ContentService(os.environ['TEMPO_CONTENT_DATABASE_URL'],workspace) as service:
                 operation = arguments.operation
-                if arguments.command=='source':
+                from .bridge import Bridge, ResponseProposal, map_import
+                bridge = Bridge(service)
+                if arguments.command=='import':
+                    if arguments.file.stat().st_size>8*1024*1024:
+                        raise ContentError('source_byte_bound','Import exceeds 8 MiB')
+                    source,manifest = map_import(arguments.file.read_bytes(),json.loads(arguments.manifest.read_text()))
+                    result = bridge.draft(source.model_dump(mode='json'),manifest.model_dump(mode='json'),arguments.expected_revision)
+                elif arguments.command=='proposal':
+                    result = ResponseProposal.model_validate_json(arguments.file.read_bytes()).model_dump(mode='json')
+                elif arguments.command=='draft':
+                    result = bridge.proposal_draft(json.loads(arguments.proposal.read_text())) if operation=='create' else bridge.approve(arguments.identifier,arguments.digest) if operation=='approve' else bridge.draft_show(arguments.identifier)
+                elif arguments.command=='operation':
+                    if operation=='prepare' and not 1<=arguments.max_slices<=10000:
+                        raise ContentError('invalid_slice_bound','max-slices must be 1..10000')
+                    if operation=='record-failure':
+                        from .receipt_transport import verified_terminal_failure
+                        verified=verified_terminal_failure(bridge.operation(arguments.identifier),arguments.learning_origin,arguments.operator_token_file)
+                        result=bridge.record_terminal_failure(arguments.identifier,verified)
+                    elif operation=='record':
+                        from .receipt_transport import verified_receipt
+                        verified=verified_receipt(bridge.operation(arguments.identifier),json.loads(arguments.file.read_text()),arguments.learning_origin,arguments.operator_token_file)
+                        result=bridge.record(arguments.identifier,verified)
+                    elif operation=='fail-before-delivery':
+                        result=bridge.fail_before_delivery(arguments.identifier)
+                    else:
+                        result = bridge.prepare(arguments.identifier,arguments.max_slices) if operation=='prepare' else bridge.checkpoint(arguments.identifier,json.loads(arguments.file.read_text())) if operation=='checkpoint' else bridge.cancel(arguments.identifier) if operation=='cancel' else bridge.operation(arguments.identifier)
+                elif arguments.command=='source':
                     if operation=='load':
                         with open(arguments.file,encoding='utf-8') as source_file:
                             result = service.load_source(json.load(source_file),arguments.expected_revision)
@@ -103,6 +164,8 @@ def main(argv=None):
                     result = service.publication_build(arguments.source_key)
                 elif operation=='show':
                     result = service.publication_show(arguments.publication_id,arguments.generation)
+                elif operation=='export':
+                    result = bridge.export(arguments.publication_id,arguments.generation)
                 else:
                     result = service.publication_status(arguments.source_key)
         if hasattr(result,'model_dump'):

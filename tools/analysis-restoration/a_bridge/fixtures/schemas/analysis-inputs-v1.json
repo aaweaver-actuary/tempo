@@ -1,0 +1,252 @@
+{
+  "manifest": {
+    "$defs": {
+      "PageReference": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 64,
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "filename": {
+            "pattern": "^(definitions|routes|legal_replies|games|positions|comparisons|deviations)-[0-9]{6}\\.json$",
+            "title": "Filename",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "definitions",
+              "routes",
+              "legal_replies",
+              "games",
+              "positions",
+              "comparisons",
+              "deviations"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0,
+            "title": "Page Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "page_index",
+          "digest",
+          "filename",
+          "count"
+        ],
+        "title": "PageReference",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "acceptance": {
+        "additionalProperties": true,
+        "title": "Acceptance",
+        "type": "object"
+      },
+      "activation": {
+        "additionalProperties": true,
+        "title": "Activation",
+        "type": "object"
+      },
+      "activation_origin": {
+        "additionalProperties": true,
+        "title": "Activation Origin",
+        "type": "object"
+      },
+      "complete": {
+        "title": "Complete",
+        "type": "boolean"
+      },
+      "content_export_digest": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Content Export Digest",
+        "type": "string"
+      },
+      "counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "title": "Counts",
+        "type": "object"
+      },
+      "current_serving": {
+        "additionalProperties": true,
+        "title": "Current Serving",
+        "type": "object"
+      },
+      "input_id": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Input Id",
+        "type": "string"
+      },
+      "kind": {
+        "const": "tempo-analysis-inputs",
+        "title": "Kind",
+        "type": "string"
+      },
+      "manifest_digest": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Manifest Digest",
+        "type": "string"
+      },
+      "pages": {
+        "items": {
+          "$ref": "#/$defs/PageReference"
+        },
+        "maxItems": 10000,
+        "title": "Pages",
+        "type": "array"
+      },
+      "provenance": {
+        "additionalProperties": true,
+        "title": "Provenance",
+        "type": "object"
+      },
+      "publication": {
+        "additionalProperties": true,
+        "title": "Publication",
+        "type": "object"
+      },
+      "publication_digest": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Publication Digest",
+        "type": "string"
+      },
+      "readiness": {
+        "enum": [
+          "ready",
+          "unknown"
+        ],
+        "title": "Readiness",
+        "type": "string"
+      },
+      "revision": {
+        "const": 1,
+        "title": "Revision",
+        "type": "integer"
+      },
+      "schema_version": {
+        "const": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      },
+      "snapshot": {
+        "additionalProperties": true,
+        "title": "Snapshot",
+        "type": "object"
+      },
+      "source": {
+        "additionalProperties": true,
+        "title": "Source",
+        "type": "object"
+      },
+      "workspace_id": {
+        "minLength": 1,
+        "title": "Workspace Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "kind",
+      "input_id",
+      "revision",
+      "workspace_id",
+      "source",
+      "publication",
+      "publication_digest",
+      "content_export_digest",
+      "snapshot",
+      "activation",
+      "activation_origin",
+      "acceptance",
+      "current_serving",
+      "complete",
+      "readiness",
+      "provenance",
+      "counts",
+      "pages",
+      "manifest_digest"
+    ],
+    "title": "AnalysisManifest",
+    "type": "object"
+  },
+  "page": {
+    "additionalProperties": false,
+    "properties": {
+      "input_id": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Input Id",
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "maxItems": 64,
+        "minItems": 1,
+        "title": "Items",
+        "type": "array"
+      },
+      "kind": {
+        "enum": [
+          "definitions",
+          "routes",
+          "legal_replies",
+          "games",
+          "positions",
+          "comparisons",
+          "deviations"
+        ],
+        "title": "Kind",
+        "type": "string"
+      },
+      "page_index": {
+        "minimum": 0,
+        "title": "Page Index",
+        "type": "integer"
+      },
+      "revision": {
+        "const": 1,
+        "title": "Revision",
+        "type": "integer"
+      },
+      "schema_version": {
+        "const": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      },
+      "workspace_id": {
+        "minLength": 1,
+        "title": "Workspace Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "input_id",
+      "workspace_id",
+      "revision",
+      "kind",
+      "page_index",
+      "items"
+    ],
+    "title": "AnalysisPage",
+    "type": "object"
+  }
+}

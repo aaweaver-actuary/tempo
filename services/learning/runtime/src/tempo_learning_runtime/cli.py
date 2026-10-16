@@ -9,6 +9,7 @@ from .database import Database
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser('publication-schema')
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8001)
@@ -22,6 +23,10 @@ def main():
         publication = commands.add_parser(action)
         publication.add_argument("--file", type=Path, required=True)
     arguments = parser.parse_args()
+    if arguments.command=='publication-schema':
+        from .publication_bridge import PublicationBundleV2
+        print(json.dumps(PublicationBundleV2.model_json_schema(),sort_keys=True))
+        return
     if arguments.command == "migrate":
         from .migrate import migrate
 

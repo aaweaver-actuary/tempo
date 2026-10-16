@@ -21,5 +21,11 @@
     "depends_on": [
       "learning.runtime/0002"
     ]
+  },
+  {
+    "id": "learning.bridge/0001",
+    "owner": "#193/A",
+    "path": "0003_content_bridge.sql",
+    "depends_on": ["learning.remediation/0001"]
   }
 ]

@@ -965,3 +965,5 @@ runs only labeled task-owned offline, read-only, hard-capped containers. It does
 not access Study, providers or domain databases. The separate serial benchmark is
 not an SLO or C's durable scheduler acceptance. See the local regression inventory
 for all 25 B8 regression identities and actual versus fake-engine proof owners.
+
+The native `test_postgres_daily_queue_large_graph_unlock_meets_transaction_budget` fixture includes publication readiness and expects 6,251 bounded pages across its unchanged 100,000 locked cards and 900,021 graph steps. This replaces the retired sparse selector's three-page assumption; the exact 21 unlocked cards and 250 ms per-transaction limit remain asserted.

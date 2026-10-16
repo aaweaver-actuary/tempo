@@ -69,7 +69,7 @@ def private_database(parent_url):
             parent.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(identity)))
 
 
-def advance_unlock_checkpoint():
+def _advance_unlock_checkpoint_attempt(*, force_timeout=False):
     from app import postgres_store
     from app.services import queue_application
     from app.services.postgres_queue_refresh import _ELIGIBILITY_PHASES
@@ -77,10 +77,36 @@ def advance_unlock_checkpoint():
         row=database.execute("SELECT payload_json FROM background_tasks WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased' FOR UPDATE").fetchone()
         assert row is not None
         payload=json.loads(row[0])
+        if force_timeout:
+            database.execute_native('SELECT pg_sleep(0.3)')
         cursor=queue_application._unlock_eligible_opening_cards(database,date.today().isoformat(),after_card_id=payload.get('after_card_id',''),batch_size=8)
         payload={'queue_date':date.today().isoformat(),'_queue_phase':'unlock_opening' if cursor else _ELIGIBILITY_PHASES[1],**({'after_card_id':cursor} if cursor else {})}
         assert database.execute("UPDATE background_tasks SET payload_json=?,phase=? WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased'",(json.dumps(payload),payload['_queue_phase'])).rowcount==1
         return cursor
+
+
+def advance_unlock_checkpoint(*, force_timeout=False):
+    """Exercise the production retry contract without extending any DB deadline."""
+    from app import postgres_store
+    def persisted():
+        with postgres_store.connection(read_only=True) as database:
+            row = database.execute("SELECT payload_json FROM background_tasks WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased'").fetchone()
+            assert row is not None
+            return row[0]
+    original_payload = persisted()
+    for attempt in range(4):
+        try:
+            return _advance_unlock_checkpoint_attempt(force_timeout=force_timeout and attempt == 0)
+        except psycopg.errors.TransactionTimeout:
+            assert persisted() == original_payload, 'Aborted slice advanced its durable checkpoint'
+            destination = os.environ.get('TEMPO_PRIORITY_CHECKPOINT_RETRY_EVIDENCE')
+            if destination:
+                with open(destination, 'a') as output:
+                    output.write(json.dumps({'attempt': attempt, 'forced': force_timeout and attempt == 0,
+                        'checkpoint_unchanged': True, 'payload': json.loads(original_payload)})+'\n')
+            if attempt == 3:
+                raise
+            time.sleep(0.05)  # Yield outside the transaction, as the owning task does.
 
 
 def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
@@ -93,7 +119,9 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
         configuration.update(TEMPO_DATABASE_READ_URL=owned_url, TEMPO_DATABASE_WRITE_URL=owned_url,
             TEMPO_REDIS_URL=redis_url, TEMPO_ADMISSION_NAMESPACE='tempo:priority:' + uuid4().hex,
             TEMPO_REDIS_NAMESPACE='tempo:priority:' + uuid4().hex + ':', TEMPO_COORDINATOR_MODE='external',
-            TEMPO_TRAINING_TIMINGS='1', TEMPO_TEST_INSTANCE='disposable', PYTHONPATH=str(ROOT / 'backend'))
+            TEMPO_TRAINING_TIMINGS='1', TEMPO_TEST_INSTANCE='disposable', PYTHONPATH=str(ROOT / 'backend'),
+            TEMPO_PRIORITY_CHECKPOINT_RETRY_EVIDENCE=str(evidence / 'checkpoint-retries.jsonl'),
+            TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS='250', TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS='25')
         original = dict(os.environ)
         os.environ.update(configuration)
         from app import main, postgres_store
@@ -139,7 +167,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
             cursor = ''
             pages = 0
             while cursor is not None:
-                cursor = advance_unlock_checkpoint()
+                cursor = advance_unlock_checkpoint(force_timeout=pages == 0)
                 pages += 1
                 if pages == 2:
                     postgres_store.close_pools()
@@ -164,7 +192,9 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 queue_application._unlock_eligible_opening_cards(database,date.today().isoformat(),after_card_id='z-previous',batch_size=8)
             with psycopg.connect(owned_url) as database:
                 assert database.execute("SELECT state FROM cards WHERE id='z-root'").fetchone()[0] == 'new'
-            results[CASES[0]] = {'pages': pages, 'examined': 2048, 'restart_after_page': 2, 'fresh_process_resumed_durable_checkpoint':True, 'published_graph_steps':graph_rows}
+            checkpoint_retries = [json.loads(line) for line in (evidence / 'checkpoint-retries.jsonl').read_text().splitlines()]
+            assert any(item['forced'] and item['checkpoint_unchanged'] for item in checkpoint_retries)
+            results[CASES[0]] = {'transaction_deadline_rollback_retries': checkpoint_retries, 'pages': pages, 'examined': 2048, 'restart_after_page': 2, 'fresh_process_resumed_durable_checkpoint':True, 'published_graph_steps':graph_rows}
             timings = []
             recovered = []
             for _ in range(4):

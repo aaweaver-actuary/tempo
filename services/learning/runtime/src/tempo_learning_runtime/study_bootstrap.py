@@ -85,9 +85,10 @@ def move_membership(database, card_id, revision, fen, move_uci):
         raise HTTPException(422, "Invalid submitted position or move")
     position_key = " ".join(position.fen().split()[:4])
     rows = database.execute(
-        "SELECT c.id,c.revision,c.trained_color,p.payload_json FROM cards c "
+        "SELECT c.id,c.revision,c.trained_color,p.payload_json,COALESCE(alias.content_card_id,c.id) AS authored_id FROM cards c "
         "JOIN accepted_publications p ON p.publication_id=c.publication_id AND p.generation=c.publication_generation "
         "JOIN serving_publications serving ON serving.publication_id=p.publication_id AND serving.generation=p.generation "
+        "LEFT JOIN content_card_aliases alias ON alias.learning_card_id=c.id AND alias.publication_id=p.publication_id "
         "WHERE p.state='active' AND c.serving_active=1 "
         "AND c.archived=0 AND c.superseded_by IS NULL AND c.content_type='opening' "
         "AND NOT EXISTS (SELECT 1 FROM deleted_cards d WHERE d.card_id=c.id) "
@@ -101,7 +102,7 @@ def move_membership(database, card_id, revision, fen, move_uci):
         if serialized not in publications:
             publications[serialized] = {definition["card_id"]: definition
                 for definition in json.loads(serialized)["publication"]["definitions"]}
-        definition = publications[serialized].get(row["id"])
+        definition = publications[serialized].get(row["authored_id"])
         if not definition or definition["exercise_revision"] != row["revision"]:
             continue
         for line in definition["specification"]["accepted_lines"]:

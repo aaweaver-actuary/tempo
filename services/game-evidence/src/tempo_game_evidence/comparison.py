@@ -39,8 +39,8 @@ def compare_game(game, positions, snapshot):
             finding = {**position, "status": "unknown", "expected_moves": [], "memberships": [],
                        "card_id": None, "decision_id": None, "policy_id": None,
                        "explanation": "missing_or_ambiguous_route_policy"}
-            if snapshot.activation is None:
-                finding["explanation"] = "publication_acceptance_unknown"
+            if not snapshot.serving_current():
+                finding["explanation"] = "publication_acceptance_unknown" if snapshot.activation is None else "publication_not_current"
             elif selected:
                 policy_id, decision_id, card_id, expected = selected
                 matched = position["move"] in expected

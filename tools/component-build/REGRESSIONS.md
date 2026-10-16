@@ -23,6 +23,11 @@ after #283 merged into its former dependency branch instead of main.
 `tests/boundaries.test.mjs` retains the #270 AST/dependency, public API, inventory,
 package prerequisite and structured Node reporter protections unchanged.
 
+`M02 manifest rejects duplicate missing escaping and false implemented components`
+selects a genuine planned component by identity for its false-implemented fixture;
+the manifest's first entry may already be implemented. All five rejection cases
+remain mandatory as implemented component registrations advance.
+
 The same file owns `M02 unrelated lanes execute without controlled browser modules`,
 `M02 controlled browser inventory distinguishes absent lanes from broken ownership`,
 and `M02 controlled browser dispatch awaits and catches asynchronous failures`.

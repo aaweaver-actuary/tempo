@@ -5,7 +5,7 @@ import hashlib, json, uuid
 import psycopg
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from .database import connection
+from .database import connection, current_database
 from .review_conflicts import ReviewConflict
 
 _handlers = {}
@@ -48,7 +48,7 @@ def record_intent(operation_id, name, payload):
             )
 
 
-def execute(operation_id, *, background=False):
+def execute(operation_id, *, background=False, publication=None):
     with connection(background=background) as database:
         database.execute_native(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (operation_id,)
@@ -59,6 +59,8 @@ def execute(operation_id, *, background=False):
         ).fetchone()
         if row is None:
             raise HTTPException(404, "Unknown operation")
+        if publication is not None and row['command_name'].startswith('publication.') != publication:
+            raise HTTPException(403,'Operation requires its owning credential')
         if row["state"] in ("complete", "failed"):
             return
         payload = json.loads(row["payload_json"])
@@ -119,16 +121,47 @@ def execute(operation_id, *, background=False):
             )
 
 
-def read_operation(operation_id):
+def fence_publication(operation_id, name, payload):
+    """Terminate one publication identity under execution's exact lock discipline.
+
+    An executing handler holds this advisory lock through effects and receipt
+    commit. Intent insertion alone holds no execution authority. A queued worker
+    that was selected before this fence must re-read the terminal row in execute.
+    The publication boundary validates the request before calling this method.
+    """
+    if name not in ('publication.activate.v2', 'publication.retire'):
+        raise HTTPException(422, 'Unsupported publication fence family')
+    fingerprint = request_digest(name, payload)
+    with connection() as database:
+        database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (operation_id,))
+        database.execute_native(
+            'INSERT INTO operation_receipts(operation_id,command_name,request_hash,payload_json) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING',
+            (operation_id, name, fingerprint, json.dumps(payload)))
+        row = database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
+        if (row['command_name'], row['request_hash']) != (name, fingerprint):
+            raise ReviewConflict('command_identity_reused', 'Operation ID was already used for another request')
+        if row['state'] not in ('complete', 'failed'):
+            error = {'status_code': 409, 'code': 'publication_abandoned_before_execution',
+                     'detail': 'Publication operation was durably abandoned before execution', 'retryable': False}
+            database.execute_native("UPDATE operation_receipts SET state='failed',error_json=%s,updated_at=NOW() WHERE operation_id=%s", (json.dumps(error), operation_id))
+    return read_operation(operation_id, publication=True)
+
+
+def read_operation(operation_id, *, publication=None):
     with connection(read_only=True) as database:
         row = database.execute_native(
             "SELECT * FROM operation_receipts WHERE operation_id=%s", (operation_id,)
         ).fetchone()
     if row is None:
         return {"operation_id": operation_id, "state": "unknown"}
+    if publication is not None and row['command_name'].startswith('publication.') != publication:
+        raise HTTPException(403,'Operation requires its owning credential')
     return {
         "operation_id": operation_id,
         "state": row["state"],
+        **({"workspace_id": current_database.get().configuration.workspace_id,
+            "command_name": row["command_name"], "request": json.loads(row["payload_json"])}
+           if publication is True else {}),
         **(
             {"response": json.loads(row["response_json"])}
             if row["response_json"]

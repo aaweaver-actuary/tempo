@@ -68,6 +68,8 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
     report["dependency_inputs"] = {}
     manifest = json.loads((ROOT / "components.json").read_text())
     owners = {
+        "content",
+        "analysis-a-bridge",
         "learning-remediation",
         "game-evidence",
         "learning-review-application",
@@ -120,30 +122,23 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
             "image", "inspect", "postgres:18.6-trixie", "--format", "{{.Id}}"
         )
         runtime_tag = "tempo-learning:" + identity
-        runtime_image_attempted = True
-        built = subprocess.run(
-            [
-                "docker",
-                "build",
-                "-f",
-                "services/learning/runtime/Dockerfile",
-                "--label",
-                "tempo.owner=" + identity,
-                "-t",
-                runtime_tag,
-                ".",
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        (evidence / "container-build.log").write_text(built.stdout + built.stderr)
-        if built.returncode:
-            raise RuntimeError(
-                "Minimal runtime image build failed; see container-build.log"
+        # Explicit file diagnostics build only their actual dependencies. The
+        # regular suite and directory selections retain the image acceptance.
+        require_runtime_image = not test_paths or any(path.is_dir() or path.name=='test_container.py' for path in test_paths)
+        runtime_image = ''
+        if require_runtime_image:
+            runtime_image_attempted = True
+            built = subprocess.run(
+                ["docker", "build", "-f", "services/learning/runtime/Dockerfile",
+                 "--label", "tempo.owner=" + identity, "-t", runtime_tag, "."],
+                cwd=ROOT, capture_output=True, text=True,
             )
-        runtime_image = docker("image", "inspect", runtime_tag, "--format", "{{.Id}}")
-        report["runtime_image"] = runtime_image
+            (evidence / "container-build.log").write_text(built.stdout + built.stderr)
+            if built.returncode:
+                raise RuntimeError("Minimal runtime image build failed; see container-build.log")
+            runtime_image = docker("image", "inspect", runtime_tag, "--format", "{{.Id}}")
+            report["runtime_image"] = runtime_image
+        report['runtime_image_required'] = require_runtime_image
 
         report["image"] = image
         volume_attempted = True
@@ -199,15 +194,21 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
             password=password,
             connect_timeout=2,
         )
-        for attempt in range(100):
+        readiness_started=time.monotonic()
+        readiness_deadline=readiness_started+60
+        while True:
             try:
                 with psycopg.connect(admin) as database:
                     database.execute("SELECT 1")
                 break
             except psycopg.OperationalError:
+                if time.monotonic()>=readiness_deadline:
+                    captured=subprocess.run(['docker','logs',identity],capture_output=True,text=True)
+                    logs=(captured.stdout+captured.stderr).replace(password,'[disposable-secret-redacted]')
+                    (evidence/'postgres-startup.log').write_text(logs)
+                    raise RuntimeError("Owned PostgreSQL did not become ready; see postgres-startup.log") from None
                 time.sleep(0.1)
-        else:
-            raise RuntimeError("Owned PostgreSQL did not become ready")
+        report['postgres_readiness_seconds']=time.monotonic()-readiness_started
         environment = {
             key: value
             for key, value in controlled_environment().items()
@@ -234,7 +235,6 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
                 str(producer),
                 "--locked",
                 "--no-editable",
-                "--no-dev",
                 "--python",
                 "3.12",
                 "--reinstall-package",
@@ -252,12 +252,23 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
         environment["TEMPO_LEARNING_TEST_GAME_EVIDENCE_PYTHON"] = str(
             producer / ".venv/bin/python"
         )
+        for component, package, variable, executable in (
+            (ROOT / 'services/learning/runtime','tempo-learning-runtime','TEMPO_LEARNING_TEST_RUNTIME_CLI','tempo-learning'),
+            (ROOT / 'services/content','tempo-content','TEMPO_LEARNING_TEST_CONTENT_CLI','tempo-content'),
+            (ROOT / 'tools/analysis-restoration/a_bridge','tempo-a-bridge','TEMPO_LEARNING_TEST_BRIDGE_CLI','tempo-a-bridge'),
+        ):
+            installed = subprocess.run(['uv','sync','--project',str(component),'--locked','--no-editable','--python','3.12','--reinstall-package',package],env=environment,capture_output=True,text=True)
+            (evidence / (package+'-install.log')).write_text(installed.stdout+installed.stderr)
+            if installed.returncode:
+                raise RuntimeError('Installed bridge component unavailable: '+package)
+            environment[variable] = str(component / '.venv/bin' / executable)
+        environment['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'] = str(evidence / 'bridge')
         receipts = {}
         for stage, extra in [
             ("collected", ["--collect-only", "-q"]),
             (
                 "executed",
-                ["-v", "--tb=line", "--junitxml=" + str(evidence / "native.xml")],
+                ["-v", "--tb=short", "--junitxml=" + str(evidence / "native.xml")],
             ),
         ]:
             receipt = evidence / (stage + ".json")
