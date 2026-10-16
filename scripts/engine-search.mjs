@@ -12,10 +12,10 @@ export function engineControlPath(job, kind) {
 
 export async function engineSearchAllowed(job, kind, request) {
   try {
-    const control = await request(engineControlPath(job, kind), { signal: AbortSignal.timeout(1_500) });
+    const control = await request(engineControlPath(job, kind), { signal: AbortSignal.timeout(75), requestAttempts:1 });
     return kind === "engine_defense"
       ? control.search_allowed === true && control.foreground_active === false
-      : control.active === false && control.study_only_mode !== true;
+      : control.active === false && control.available !== false && control.study_only_mode !== true;
   } catch {
     // A control outage cannot authorize continuing a background search.
     return false;
@@ -53,13 +53,14 @@ export function createEngineSearch(engine, request) {
         clearTimeout(timeout);
         stopWatchdog = setTimeout(() => {
           fatalEngineError = true;
+          engine.terminate?.();
           finished = true;
           clearTimeout(timeout);
           clearInterval(foregroundPoll);
           const error = new Error("Stockfish did not drain after cancellation");
           error.diagnostics = finishDiagnostic(stopReason === "preempted" ? "preempted" : "timeout");
           rejectReport(error);
-        }, 5_000);
+        }, 75);
         engine.uci("stop");
       };
       const position = specification.position_prefix_uci ?? [];
@@ -78,7 +79,7 @@ export function createEngineSearch(engine, request) {
         } finally {
           controlPollPending = false;
         }
-      }, 750);
+      }, 75);
       engine.listen = (text) => {
         if (finished) return;
         if (text.startsWith("info ") && text.includes(" pv ") && !preempted) {
@@ -123,6 +124,7 @@ export function createEngineSearch(engine, request) {
       engine.onError = (message) => {
         if (!finished) {
           fatalEngineError = true;
+          engine.terminate?.();
           finished = true;
           clearTimeout(timeout);
           clearInterval(foregroundPoll);

@@ -18,16 +18,17 @@ afterEach(() => vi.unstubAllGlobals());
 it("rapid Builder positions coalesce queued matches to the latest FEN", async () => {
   class ControlledWorker {
     static instance: ControlledWorker;
+    static instances: ControlledWorker[] = [];
     onmessage: ((event: MessageEvent) => void) | null = null;
     onerror: ((event: ErrorEvent) => void) | null = null;
     posted: Array<{ id: number; task: { fen: string } }> = [];
-    constructor() { ControlledWorker.instance = this; }
+    constructor() { ControlledWorker.instance = this; ControlledWorker.instances.push(this); }
     postMessage(message: { id: number; task: { fen: string } }) { this.posted.push(message); }
     complete(requestIndex: number) {
       const request = this.posted[requestIndex];
       this.onmessage?.({ data: { id: request.id, result: [] } } as MessageEvent);
     }
-    terminate() {}
+    terminate = vi.fn();
   }
   vi.stubGlobal("Worker", ControlledWorker);
   const timingCountBefore = tempoPerformanceTimings().length;
@@ -43,14 +44,14 @@ it("rapid Builder positions coalesce queued matches to the latest FEN", async ()
   await expect(obsolete).rejects.toThrow("Superseded");
   firstAbort.abort();
   await expect(first).rejects.toThrow("Cancelled");
+  await vi.waitFor(() => expect(ControlledWorker.instances).toHaveLength(2));
+  expect(ControlledWorker.instances[0].terminate).toHaveBeenCalledOnce();
+  expect(ControlledWorker.instance.posted.map(({ task }) => task.fen)).toEqual([fens[2]]);
   ControlledWorker.instance.complete(0);
-  await vi.waitFor(() => expect(ControlledWorker.instance.posted.map(({ task }) => task.fen))
-    .toEqual([fens[0], fens[2]]));
-  ControlledWorker.instance.complete(1);
   await expect(latest).resolves.toEqual([]);
   const next = runCoalescedStudyMatch(task(fens[0]));
-  await vi.waitFor(() => expect(ControlledWorker.instance.posted).toHaveLength(3));
-  ControlledWorker.instance.complete(2);
+  await vi.waitFor(() => expect(ControlledWorker.instance.posted).toHaveLength(2));
+  ControlledWorker.instance.complete(1);
   await expect(next).resolves.toEqual([]);
   const waits = tempoPerformanceTimings().slice(timingCountBefore)
     .filter(({ operation }) => operation === "study-match-coalesced-wait");

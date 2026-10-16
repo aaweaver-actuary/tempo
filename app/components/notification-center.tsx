@@ -25,7 +25,7 @@ function useNotifications() {
 function NotificationDetails({ record }: { record: NotificationRecord }) {
   if (!record.details || !Object.keys(record.details).length) return null;
   return <details className="notification-details">
-    <summary>Details</summary>
+    <summary>{record.resolvedAt && record.details.error ? 'Earlier diagnostic details (resolved)' : 'Details'}</summary>
     <dl>{Object.entries(record.details).map(([name, value]) => <div key={name}>
       <dt>{name}</dt><dd>{Array.isArray(value) ? value.join(", ") : String(value)}</dd>
     </div>)}</dl>

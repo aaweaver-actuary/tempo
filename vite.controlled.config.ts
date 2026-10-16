@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/postcss";
 import { defineConfig } from "vite";
@@ -11,5 +12,5 @@ export default defineConfig({
   define: { __TEMPO_DEMO__: "false", __TEMPO_API_URL__: JSON.stringify("") },
   css: { postcss: { plugins: [tailwindcss()] } },
   plugins: [react(), offlineShellAssets()],
-  build: { outDir: process.env.TEMPO_CONTROLLED_BUILD_DIR, emptyOutDir: true, sourcemap: true },
+  build: { outDir: process.env.TEMPO_CONTROLLED_BUILD_DIR, emptyOutDir: true, sourcemap: true, rollupOptions: { input: { index: resolve("static/index.html"), priority: resolve("static/study-priority-proof.html") } } },
 });

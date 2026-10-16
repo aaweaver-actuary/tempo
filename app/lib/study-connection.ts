@@ -1,3 +1,4 @@
+import { holdActiveStudyRequest } from "./study-priority";
 import { z } from "zod";
 import { API_URL } from "../const";
 
@@ -81,8 +82,15 @@ export function learningDayKey(date = new Date()) {
 }
 const learningPaths = /^\/api\/(?:study\/(?:bootstrap|settings)|queue\/(?:window|today|prepared|entries\/)|cards\/[^/]+\/(?:review|teaching|move-membership)|operations\/|opening-evidence\/|studies\/[^/]+\/exercises\/|tactics\/(?:attempt|progress)|defense-exercises\/|endgames\/)/;
 export function learningFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
-  if (!independentStudy) return globalThis.fetch(input, options);
-  return authenticatedLearningFetch(input, options);
+  const address = input instanceof Request ? input.url : String(input);
+  const path = new URL(address, typeof window === "undefined" ? "http://tempo.local" : window.location.href).pathname;
+  const background = new Headers(options.headers ?? (input instanceof Request ? input.headers : undefined)).get("X-Tempo-Work-Class") === "background";
+  const essential = !background && /^\/api\/(queue\/|operations\/|cards\/[^/]+\/(review|teaching|move-membership)|tactics\/attempt|defense-exercises\/|endgames\/)/.test(path);
+  const release = essential ? holdActiveStudyRequest() : () => {};
+  try {
+    const request = independentStudy ? authenticatedLearningFetch(input, options) : globalThis.fetch(input, options);
+    return request.finally(release);
+  } catch (error) { release(); throw error; }
 }
 async function authenticatedLearningFetch(input: RequestInfo | URL, options: RequestInit, connection = studyConnection(), notifyAuthentication = true): Promise<Response> {
   if (!connection) throw new Error("Connect to Learning before studying.");
