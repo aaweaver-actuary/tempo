@@ -1,0 +1,11 @@
+{
+  "model": "CancellationRequest",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "job_id": "job-a",
+    "request_revision": 1,
+    "execution_generation": 1,
+    "cancellation_id": "cancel-a"
+  }
+}
