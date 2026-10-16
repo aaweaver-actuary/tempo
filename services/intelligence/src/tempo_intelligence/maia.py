@@ -12,6 +12,12 @@ def build_maia_job(descriptor: dict, workspace: str, cache_id: str, work_generat
     if not descriptor.get("legal_moves"):
         raise ValueError("terminal_position")
     try:
+        terminal = descriptor.get("terminal_reason") or chess.Board(descriptor["canonical_fen"]).is_game_over(claim_draw=False)
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("invalid_maia_descriptor") from None
+    if terminal:
+        raise ValueError("terminal_position")
+    try:
         return MaiaJob.model_validate({
             "contract_version": 1,
             "workspace_id": workspace,

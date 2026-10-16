@@ -63,6 +63,10 @@ Optional variables are `CREDENTIAL_FILE`, `MODEL_PROFILES_FILE`,
 `POLL_INTERVAL` (default 1 second), `WORKER_ENABLED` (`0` or `1`, default `1`) and
 `HOSTS` (comma-separated exact hosts). The default provider origin is
 `https://explorer.lichess.org`; HTTP overrides are restricted to loopback.
+Scheme, host and default ports are normalized. Explorer descriptors and cache
+identities include that origin: changing it cannot reuse a different source's
+evidence. Retained records from an old origin remain readable, but their pending
+work is not claimed by a runtime configured for another origin.
 
 ```sh
 services/intelligence/.venv/bin/tempo-intelligence serve --host 127.0.0.1 --port 8049
@@ -105,6 +109,12 @@ per-move observations, exact query parameters, retrieval identity/time, digests
 and limitations. Requesting every legal move does not prove the provider returned
 every move. Unreported mass remains explicit; an empty sample remains unknown.
 These counts are not fused probabilities, repertoire coverage or study priority.
+Checkmate, stalemate, intrinsic insufficient material and automatic 75-move draws
+are terminal inputs and do not enqueue source distributions. Their complete legal
+move inventories remain intact, including legal moves in drawn positions. The
+75-move rule uses the original full FEN before clock normalization; its terminal
+variant has a distinct cache identity. Repetition cannot be inferred from a
+single FEN and is outside this input's available history.
 
 Provider calls use a 5-second connection timeout, a 20-second overall timeout and
 a 1 MiB decoded-response limit. PostgreSQL stores a single shared provider permit,

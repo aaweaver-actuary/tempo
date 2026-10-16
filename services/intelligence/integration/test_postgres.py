@@ -53,6 +53,8 @@ def test_fresh_and_idempotent_migrations_and_workspace_rebind_refusal(state):
     "UPDATE intelligence.instance SET workspace_id='other'", "DELETE FROM intelligence.migration_history",
     "UPDATE intelligence.model_profiles SET artifact_sha256='changed'",
     "DELETE FROM intelligence.evidence", "UPDATE intelligence.requests SET revision=2",
+    "UPDATE intelligence.caches SET descriptor='{}'", "UPDATE intelligence.maia_jobs SET payload='{}'",
+    "UPDATE intelligence.snapshots SET payload='{}'", "UPDATE intelligence.commands SET payload='{}'",
 ])
 def test_restricted_runtime_denies_ddl_authority_and_immutable_record_changes(state,statement):
     with psycopg.connect(os.environ["TEMPO_INTELLIGENCE_TEST_RUNTIME_URL"]) as database:
@@ -142,6 +144,26 @@ def test_policy_and_content_revision_changes_reuse_identical_source_query(state)
     assert submit(store,changed)["sources"][0]["cache_id"]==original["sources"][0]["cache_id"]
 
 
+def test_changed_provider_origin_has_distinct_cache_and_cannot_claim_old_origin_work(state):
+    store,config,_=state
+    register(state)
+    original=submit(store)
+    alternate=Store(replace(config,provider_base_url="http://127.0.0.1:9"))
+    try:
+        alternate.validate_startup()
+        assert alternate.claim() is None
+        changed=submit(alternate,request_value(request_id="alternate-origin"))
+        assert changed["sources"][0]["cache_id"]!=original["sources"][0]["cache_id"]
+        assert alternate.inspect("request")["sources"][0]["provider_configuration_status"]=="unavailable"
+        claim=alternate.claim()
+        assert claim["descriptor"]["provider_origin"]=="http://127.0.0.1:9"
+        assert alternate.publish(claim,{"source":"fixture-origin","total_games":1})
+        ready(store)
+        assert store.claim()["descriptor"]["provider_origin"]==config.provider_base_url
+    finally:
+        alternate.close()
+
+
 def test_expired_claim_cannot_publish_after_replacement_and_restart_recovers(state):
     store,config,_=state
     register(state)
@@ -218,6 +240,24 @@ def test_snapshot_identity_rejects_changed_input_without_rewriting_history(state
     with pytest.raises(DomainError,match="snapshot_replay_conflict"):
         submit(store,value)
     assert store.inspect("request")["snapshot"]["fen"].endswith("0 1")
+
+
+@pytest.mark.parametrize("fen",["7k/8/8/8/8/8/8/K7 w - - 0 1","rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 150 1"])
+def test_board_terminal_positions_with_legal_moves_do_not_queue_source_distributions(state,fen):
+    import chess
+    from tempo_intelligence.identity import canonical_position,legal_universe_digest
+    store,_,_=state
+    active=submit(store)
+    value=request_value(request_id="board-terminal")
+    value["snapshot"].update(fen=fen,source_revision=2,publication_generation=2)
+    board=chess.Board(fen)
+    assert board.is_game_over(claim_draw=False) and list(board.legal_moves)
+    key,_=canonical_position(fen)
+    moves=sorted(move.uci() for move in board.legal_moves)
+    value["snapshot"].update(position_key=key,legal_moves=moves,legal_universe_digest=legal_universe_digest(key,moves,value["snapshot"]["legal_universe_version"]))
+    terminal=submit(store,value)
+    assert {source["state"] for source in terminal["sources"]}=={"terminal"}
+    assert terminal["sources"][0]["cache_id"]!=active["sources"][0]["cache_id"]
 
 
 def test_native_maia_digest_and_legal_set_mismatches_are_not_accepted(state):

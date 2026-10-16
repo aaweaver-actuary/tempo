@@ -47,6 +47,7 @@ def legal_universe_digest(position_key: str, legal_moves: list[str], version: st
 def source_descriptor(snapshot: Snapshot, source: Source) -> dict:
     position_key, canonical_fen = canonical_position(snapshot.fen)
     legal_moves = sorted(snapshot.legal_moves)
+    outcome = chess.Board(snapshot.fen).outcome(claim_draw=False)
     descriptor = {
         "schema_version": 1,
         "kind": source.kind,
@@ -54,6 +55,7 @@ def source_descriptor(snapshot: Snapshot, source: Source) -> dict:
         "position_key": position_key,
         "legal_moves": legal_moves,
         "legal_universe_digest": snapshot.legal_universe_digest,
+        "terminal_reason": outcome.termination.name.lower() if outcome else None,
     }
     if source.kind == "maia":
         descriptor.update({"rating": source.rating, "model_id": source.model_id, "model_version": source.model_version, "artifact_sha256": source.artifact_sha256})

@@ -116,3 +116,22 @@ def test_terminal_position_does_not_create_a_maia_distribution():
     descriptor = source_descriptor(terminal, request.sources[2])
     with pytest.raises(ValueError, match="terminal_position"):
         build_maia_job(descriptor, "fixture", "terminal-cache", 1, 1)
+
+
+@pytest.mark.parametrize("name", ["insufficient-material-position-v1.json", "seventyfive-move-position-v1.json"])
+def test_terminal_draw_with_legal_moves_cannot_create_maia_job(name):
+    request = RequestInput.model_validate(fixture("request-v1.json"))
+    snapshot = Snapshot.model_validate(fixture(name))
+    descriptor = source_descriptor(snapshot, request.sources[2])
+    assert descriptor["legal_moves"]
+    with pytest.raises(ValueError, match="terminal_position"):
+        build_maia_job(descriptor, "fixture", "terminal-cache", 1, 1)
+
+
+def test_intrinsically_dead_board_cannot_bypass_maia_guard_by_omitting_terminal_flag():
+    request = RequestInput.model_validate(fixture("request-v1.json"))
+    snapshot = Snapshot.model_validate(fixture("insufficient-material-position-v1.json"))
+    descriptor = source_descriptor(snapshot, request.sources[2])
+    descriptor.pop("terminal_reason")
+    with pytest.raises(ValueError, match="terminal_position"):
+        build_maia_job(descriptor, "fixture", "terminal-cache", 1, 1)

@@ -54,8 +54,17 @@ def grant_runtime(owner_url, runtime_role):
         database.execute(sql.SQL("GRANT USAGE ON SCHEMA intelligence TO {}").format(role))
         database.execute(sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA intelligence TO {}").format(role))
         database.execute(sql.SQL("GRANT INSERT ON intelligence.requests,intelligence.evidence,intelligence.snapshots TO {}").format(role))
-        database.execute(sql.SQL("GRANT INSERT ON intelligence.model_profiles TO {}").format(role))
-        for table in ("request_heads","caches","commands","provider_control","credential_registrations","credential_head","maia_jobs"):
-            database.execute(sql.SQL("GRANT INSERT,UPDATE ON intelligence.{} TO {}").format(sql.Identifier(table),role))
+        database.execute(sql.SQL("GRANT INSERT ON intelligence.model_profiles,intelligence.commands TO {}").format(role))
+        updates={
+            "request_heads":["revision"],
+            "caches":["generation","execution_generation","state","attempts","retryable","next_attempt_at","error_code","lease_token","leased_until","accepted_id","updated_at"],
+            "provider_control":["next_attempt_at","lease_token","leased_until"],
+            "credential_registrations":["status"],
+            "credential_head":["generation","registration_id"],
+            "maia_jobs":["status","status_payload","result_payload","evidence_id"],
+        }
+        for table,columns in updates.items():
+            database.execute(sql.SQL("GRANT INSERT ON intelligence.{} TO {}").format(sql.Identifier(table),role))
+            database.execute(sql.SQL("GRANT UPDATE ({}) ON intelligence.{} TO {}").format(sql.SQL(',').join(map(sql.Identifier,columns)),sql.Identifier(table),role))
         # Runtime cannot rewrite accepted evidence, caller intent, or migration/workspace authority.
         database.execute(sql.SQL("REVOKE INSERT,UPDATE,DELETE ON intelligence.migration_history,intelligence.instance FROM {}").format(role))

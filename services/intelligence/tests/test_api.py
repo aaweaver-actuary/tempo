@@ -21,6 +21,12 @@ def configuration(**changes):
     return Configuration(**values)
 
 
+def test_equivalent_provider_origins_normalize_host_case_and_default_port():
+    assert configuration(provider_base_url="https://EXPLORER.LICHESS.ORG:443/").provider_base_url=="https://explorer.lichess.org"
+    assert configuration(provider_base_url="http://[::1]:80/").provider_base_url=="http://[::1]"
+    assert configuration(provider_base_url="http://127.0.0.1:9002/").provider_base_url=="http://127.0.0.1:9002"
+
+
 class FakeStore:
     def __init__(self):
         self.calls = []

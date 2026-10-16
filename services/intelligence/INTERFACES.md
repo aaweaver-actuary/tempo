@@ -76,7 +76,7 @@ Snapshot fields are required unless shown otherwise:
 | `fen`, `position_key` | Legal standard position and matching normalized first four FEN fields |
 | `legal_universe_version`, `legal_universe_digest` | Version and verified digest of complete move inputs |
 | `complete` | Must be true for this supported subset |
-| `legal_moves` | Exactly every legal UCI move; unique, at most 256; empty for terminal positions |
+| `legal_moves` | Exactly every legal UCI move; unique, at most 256; retained even when a drawn terminal position has legal moves |
 | `policy_context` | Optional JSON object or null; caller context, not provider identity |
 
 Board legality, position key, full move set and digest are checked. A chess library
@@ -100,7 +100,9 @@ The legal-universe digest is `sha256:` plus the SHA-256 of compact, key-sorted
 UTF-8 JSON containing `legal_universe_version`, `position_key` and sorted
 `legal_moves`. Canonical JSON preserves array order generally, explicit nulls and
 finite values. Fixtures live in `fixtures/position-v1.json`,
-`terminal-position-v1.json` and `request-v1.json`.
+`terminal-position-v1.json` and `request-v1.json`. Separate
+`insufficient-material-position-v1.json` and `seventyfive-move-position-v1.json`
+fixtures retain legal moves while demonstrating terminal draws.
 
 ## Source subset and exact descriptors
 
@@ -121,8 +123,17 @@ rating; separate ordered player/opponent ratings or speed conditioning are not
 supported. Model execution belongs to the external worker.
 
 Every descriptor contains `schema_version:1`, `kind`, normalized `canonical_fen`,
-`position_key`, sorted complete `legal_moves` and first-acquisition
-`legal_universe_digest`. Explorer descriptors add this exact `parameters` object:
+`position_key`, sorted complete `legal_moves`, first-acquisition
+`legal_universe_digest` and `terminal_reason` (null or the board outcome name).
+The latter is determined from the original full FEN with `claim_draw=False` before
+clocks are normalized. Checkmate, stalemate, insufficient material and automatic
+75-move draws do not produce source distributions, even when legal moves exist.
+Repetition history and claim-dependent draws cannot be inferred from a single
+FEN; no such history is invented. Ordinary nonterminal clock differences continue
+to share computation, while a 75-move terminal variant has a distinct identity.
+
+Explorer descriptors additionally record the normalized configured
+`provider_origin` and this exact `parameters` object:
 
 | Parameter | Lichess | Masters |
 |---|---|---|
@@ -147,7 +158,8 @@ Caller intent and shared work are different identities. A cache ID hashes
 algorithm above. The semantic descriptor excludes `legal_universe_digest`: a
 Content inventory-version change with the same validated position/move inputs
 does not change the provider/model computation. All other descriptor fields,
-including actual query parameters, kind, schema and model artifact, participate.
+including actual query parameters, provider origin, terminal reason, kind, schema
+and model artifact, participate.
 Policy, repertoire, route, publication identity and freshness tolerance do not.
 
 The cache stores its first immutable acquisition descriptor and `input_snapshot`;
@@ -156,6 +168,13 @@ exact snapshot lineage. Reusing that cache does not claim the cache's original
 legal-universe provenance belongs to a newer caller snapshot.
 Equivalent transpositions and policies share work; changed cohorts, source
 families, actual model inputs or schema variants do not.
+
+Changing the configured provider origin creates distinct Explorer cache identities.
+Inspection exposes `provider_origin` and `provider_configuration_status`
+(`configured` or `unavailable`); retained old-origin evidence remains readable.
+Workers only claim work for their configured origin, so a new endpoint cannot
+silently execute an old source's pending query. Configuration normalizes scheme,
+host and default ports before identity comparison.
 
 Each cache has a desired work generation, an execution generation, an immutable
 accepted-evidence pointer and separate progress/failure/retry facts. New input
@@ -185,7 +204,7 @@ credential/provider-cooldown facts. Source state and evidence age are independen
 | `retry_wait` | Recoverable provider failure/delay with a deadline |
 | `waiting_credentials` | Missing/rejected/expired/revoked/unavailable registration or storage |
 | `failed` | Execution failed; retryability remains explicit |
-| `terminal` | Complete empty legal move set; no nonterminal distribution or queued work |
+| `terminal` | Terminal board outcome, including insufficient material/automatic 75-move draws; full legal inventory retained, no source distribution or queued work |
 
 Freshness is `absent`, `current` or `stale` according to the current caller's
 age tolerance and the evidence's database acceptance time. It is a local retrieval
@@ -302,8 +321,9 @@ with #110; no new v1 fields are invented. The shared contracts' initial-position
 Maia shape fixture lists only two of twenty legal moves: it remains a shared parser
 example but is not accepted as complete-position evidence here. The service's own
 `maia-job-v1.json`/`maia-result-v1.json` contain all twenty legal initial moves and
-preserve explicit zero probabilities. Terminal positions cannot form v1 Maia jobs
-because the shared job/result lists require at least one item.
+preserve explicit zero probabilities. Terminal inputs never form Maia jobs,
+including drawn positions with legal moves. Checkmate/stalemate also have empty
+move sets, which cannot satisfy the shared v1 lists' minimum length.
 
 ## Database ownership and limits
 
@@ -317,7 +337,10 @@ its ordered manifest and SHA-256 checksum are checked on startup.
 Migrations require separate owner credentials. Runtime is nonadministrative,
 NOINHERIT, has no role memberships or foreign database CONNECT privilege, and
 cannot create schema/table/temp objects or rewrite migration/workspace authority,
-accepted evidence, caller revisions or model bindings. Independent foreground
+accepted evidence, snapshots, caller revisions, command receipts or model bindings.
+UPDATE grants name only required progress columns: semantic cache descriptors,
+acquisition snapshots and registered job payloads are not updateable by runtime.
+Independent foreground
 and background pools default to 4/1 connections, with short statement/lock/
 transaction deadlines. Deployment provisioning must enforce the role/database
 configuration; table grants alone do not establish it. A shared PostgreSQL server

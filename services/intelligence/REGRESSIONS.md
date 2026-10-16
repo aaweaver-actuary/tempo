@@ -5,7 +5,7 @@ cases expand these test names; actual case identities, counts, outcomes and test
 revision come from preserved JUnit/runner reports, not from this inventory. Unit
 and mock assertions do not establish PostgreSQL persistence or role isolation.
 
-Run `tests/` through the installed distribution. Run both native files through
+Run `tests/` through the installed distribution. Run the native files through
 `integration/run_postgres.py`, which provisions only invocation-owned disposable
 resources and rejects arbitrary database URLs. The native fixture disables external
 network access and uses local fake providers; no live credential is required.
@@ -52,6 +52,8 @@ Complete legal-position inputs, strict versions, terminal positions, transpositi
 - `test_masters_cannot_claim_rating_or_speed_conditioning`
 - `test_maia_accepts_only_existing_single_rating_context`
 - `test_canonical_hash_is_stable_and_rejects_nonfinite_payloads`
+- `test_terminal_draw_snapshot_preserves_legal_moves_without_querying`
+- `test_automatic_draw_input_is_distinct_from_ordinary_clock_canonicalization`
 
 ## `tests/test_maia_validation.py`
 
@@ -69,6 +71,8 @@ Shared-v1 result coherence, exact legal moves, identity/provenance/model fences,
 - `test_maia_result_revalidates_finite_nonnegative_normalized_mass`
 - `test_maia_result_rejects_duplicate_moves_even_if_mass_still_one`
 - `test_terminal_position_does_not_create_a_maia_distribution`
+- `test_terminal_draw_with_legal_moves_cannot_create_maia_job`
+- `test_intrinsically_dead_board_cannot_bypass_maia_guard_by_omitting_terminal_flag`
 
 ## `tests/test_credentials.py`
 
@@ -128,6 +132,7 @@ HTTP authentication scopes, strict bounded bodies, workspace binding, safe error
 - `test_provider_endpoint_override_requires_safe_configured_origin`
 - `test_private_configuration_files_reject_shared_permissions_symlinks_and_empty_content`
 - `test_installed_public_imports_and_help_need_no_optional_infrastructure`
+- `test_equivalent_provider_origins_normalize_host_case_and_default_port`
 
 ## `tests/test_cli.py`
 
@@ -166,6 +171,8 @@ Real PostgreSQL ownership, immutable persistence, revision/cache/lease races, re
 - `test_failed_maia_retry_fences_old_results_and_preserves_terminal_status`
 - `test_model_version_mapping_cannot_change_and_removed_profile_cannot_request`
 - `test_actual_installed_api_cli_acceptance_without_unrelated_services`
+- `test_changed_provider_origin_has_distinct_cache_and_cannot_claim_old_origin_work`
+- `test_board_terminal_positions_with_legal_moves_do_not_queue_source_distributions`
 
 ## `integration/test_provider_postgres.py`
 
@@ -183,3 +190,11 @@ Real local HTTP against task-owned PostgreSQL: provider/session failures, rate l
 - `test_postgres_invalid_provider_response_is_failed_without_automatic_retry`
 - `test_postgres_late_auth_rejection_cannot_replace_explicit_revoked_state`
 - `test_postgres_provider_secret_never_reaches_any_owned_durable_table`
+- `test_postgres_expired_registration_waits_without_http_or_failure_attempts`
+- `test_postgres_provider_outage_stops_after_three_failures_and_explicit_retry_recovers`
+
+## `integration/test_server_postgres.py`
+
+Actual installed HTTP server process, private registration, persisted counts and restart recovery against invocation-owned PostgreSQL.
+
+- `test_installed_server_missing_credentials_explicit_reload_counts_and_restart`

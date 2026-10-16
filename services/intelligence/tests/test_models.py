@@ -54,6 +54,31 @@ def test_terminal_snapshot_has_no_nonterminal_distribution():
     assert source_descriptor(snapshot, MastersSource(kind="masters"))["parameters"]["moves"] == 0
 
 
+@pytest.mark.parametrize("name,reason", [
+    ("insufficient-material-position-v1.json", "insufficient_material"),
+    ("seventyfive-move-position-v1.json", "seventyfive_moves"),
+])
+def test_terminal_draw_snapshot_preserves_legal_moves_without_querying(name, reason):
+    snapshot = Snapshot.model_validate(fixture(name))
+    assert snapshot.legal_moves
+    descriptor = source_descriptor(snapshot, MastersSource(kind="masters"))
+    assert descriptor["legal_moves"] == sorted(snapshot.legal_moves)
+    assert descriptor["terminal_reason"] == reason
+
+
+def test_automatic_draw_input_is_distinct_from_ordinary_clock_canonicalization():
+    drawn = fixture("seventyfive-move-position-v1.json")
+    ordinary = {**drawn, "snapshot_id": "before-automatic-draw", "fen": drawn["fen"].replace("150 80", "100 80")}
+    earlier = {**ordinary, "snapshot_id": "earlier-position", "fen": ordinary["fen"].replace("100 80", "0 1")}
+    source = MastersSource(kind="masters")
+    descriptors = [source_descriptor(Snapshot.model_validate(value), source) for value in (drawn, ordinary, earlier)]
+    assert descriptors[0]["canonical_fen"] == descriptors[1]["canonical_fen"] == descriptors[2]["canonical_fen"]
+    assert descriptors[0]["terminal_reason"] == "seventyfive_moves"
+    assert descriptors[1]["terminal_reason"] is None
+    assert descriptors[1] == descriptors[2]
+    assert digest(descriptors[0]) != digest(descriptors[1])
+
+
 @pytest.mark.parametrize("schema_version", [True, "1", 2, None])
 def test_local_input_requires_explicit_integer_schema_one(schema_version):
     payload = fixture("request-v1.json")

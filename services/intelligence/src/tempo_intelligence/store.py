@@ -121,14 +121,17 @@ class Store:
                 if existing_snapshot["payload"] != immutable_snapshot:
                     raise DomainError("snapshot_replay_conflict")
                 descriptors=[source_descriptor(request.snapshot,source) for source in request.sources]
+                for descriptor in descriptors:
+                    if descriptor["kind"] != "maia":
+                        descriptor["provider_origin"]=self.configuration.provider_base_url
                 bindings=[]
                 descriptors.sort(key=lambda descriptor:digest({"workspace":self.workspace_id,"descriptor":{key:value for key,value in descriptor.items() if key != "legal_universe_digest"}}))
                 for descriptor in descriptors:
                     semantic={key:value for key,value in descriptor.items() if key != "legal_universe_digest"}
                     cache_id=digest({"workspace":self.workspace_id,"descriptor":semantic})
-                    if descriptor["kind"] == "maia" and descriptor["legal_moves"]:
+                    terminal=descriptor["terminal_reason"] is not None
+                    if descriptor["kind"] == "maia" and not terminal:
                         self._profile(database,descriptor)
-                    terminal=not descriptor["legal_moves"]
                     database.execute("INSERT INTO caches(cache_id,descriptor,input_snapshot,kind,state) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(cache_id,Jsonb(descriptor),Jsonb(snapshot),descriptor["kind"],"terminal" if terminal else "queued"))
                     bindings.append({"kind":descriptor["kind"],"cache_id":cache_id})
                     cache=database.execute("SELECT * FROM caches WHERE cache_id=%s FOR UPDATE",(cache_id,)).fetchone()
@@ -164,6 +167,10 @@ class Store:
                 source={"kind":cache["kind"],"cache_id":cache["cache_id"],"work_generation":cache["generation"],"execution_generation":cache["execution_generation"],"state":cache["state"],"freshness":freshness,"evidence_id":cache["accepted_id"],"error_code":cache["error_code"],"attempts":cache["attempts"],"retryable":cache["retryable"],"retry_at":cache["next_attempt_at"],"retry_eligible":cache["retryable"] and cache["state"] in ("failed","waiting_credentials","retry_wait") and (cache["next_attempt_at"] is None or cache["next_attempt_at"]<=utcnow())}
                 if cache["kind"] != "maia":
                     source["credential"]=self._credential_status(database)
+                    source["provider_origin"]=cache["descriptor"]["provider_origin"]
+                    source["provider_configuration_status"]="configured" if source["provider_origin"]==self.configuration.provider_base_url else "unavailable"
+                    if source["provider_configuration_status"] == "unavailable":
+                        source["retry_eligible"]=False
                     control=database.execute("SELECT next_attempt_at FROM provider_control WHERE id=1").fetchone()
                     source["provider_retry_at"]=control["next_attempt_at"]
                 sources.append(source)
@@ -277,7 +284,7 @@ class Store:
             now=utcnow()
             if not control or (control["next_attempt_at"] and control["next_attempt_at"]>now) or (control["leased_until"] and control["leased_until"]>now):
                 return None
-            cache=database.execute("SELECT * FROM caches WHERE kind<>'maia' AND ((state IN ('queued','retry_wait','waiting_credentials') AND (next_attempt_at IS NULL OR next_attempt_at<=now())) OR (state='running' AND leased_until<=now())) ORDER BY updated_at,cache_id FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
+            cache=database.execute("SELECT * FROM caches WHERE kind<>'maia' AND descriptor->>'provider_origin'=%s AND ((state IN ('queued','retry_wait','waiting_credentials') AND (next_attempt_at IS NULL OR next_attempt_at<=now())) OR (state='running' AND leased_until<=now())) ORDER BY updated_at,cache_id FOR UPDATE SKIP LOCKED LIMIT 1",(self.configuration.provider_base_url,)).fetchone()
             if not cache:
                 return None
             credential=self._credential_status(database)

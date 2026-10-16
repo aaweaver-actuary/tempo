@@ -116,7 +116,11 @@ class Configuration:
             or port is not None and not 1 <= port <= 65535
         ):
             raise ValueError("invalid_provider_endpoint")
-        object.__setattr__(self, "provider_base_url", self.provider_base_url.rstrip("/"))
+        host=endpoint.hostname.lower()
+        authority="["+host+"]" if ":" in host else host
+        if port is not None and port != (443 if endpoint.scheme=="https" else 80):
+            authority += ":"+str(port)
+        object.__setattr__(self, "provider_base_url", endpoint.scheme+"://"+authority)
         profiles = tuple(self.model_profiles)
         identities = set()
         normalized_profiles = []

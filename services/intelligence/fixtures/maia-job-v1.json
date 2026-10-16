@@ -1,10 +1,10 @@
 {
   "contract_version": 1,
   "workspace_id": "fixture",
-  "job_id": "maia:045e94c2bd6a93d36fd7865dbb6ccb51ec2a5e62bb3756ae066302dce437e563",
+  "job_id": "maia:8948e1c3d48f02f7319909498d19d04dea89e70af0a1a9a11d23309ec79cdedd",
   "request_revision": 1,
   "execution_generation": 1,
-  "input_digest": "sha256:babcb370a503b0b988e62214966424546866ced482a75623f39e753ff9861488",
+  "input_digest": "sha256:59006aa6fc4682aa9e7b942559b6d2c3e7b3fc022e8922ebbc466b6be3bccc6e",
   "constraints": {
     "max_wall_time_ms": 5000,
     "max_memory_mb": 512

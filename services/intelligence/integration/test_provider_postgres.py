@@ -2,7 +2,7 @@
 
 import asyncio
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -13,7 +13,7 @@ import psycopg
 import pytest
 from tempo_analysis_jobs_contracts.v1 import MaiaResult
 
-from tempo_intelligence.credentials import PrivateCredentials
+from tempo_intelligence.credentials import CredentialMaterial, PrivateCredentials
 from tempo_intelligence.errors import DomainError
 from tempo_intelligence.models import RequestInput
 from tempo_intelligence.provider import ExplorerClient
@@ -414,9 +414,44 @@ def test_postgres_provider_secret_never_reaches_any_owned_durable_table(state):
         ready(store)
         assert asyncio.run(worker(state, url).work_once())
         assert len(paths) == 2
-    tables = ("requests", "request_heads", "caches", "evidence", "commands", "maia_jobs",
+    tables = ("snapshots", "requests", "request_heads", "caches", "evidence", "commands", "maia_jobs",
               "model_profiles", "credential_head", "credential_registrations", "provider_control",
               "instance", "migration_history")
     for table in tables:
         rows = owner_execute(f"SELECT to_jsonb(owned_row)::text FROM intelligence.{table} owned_row")
         assert all(token not in row[0] for row in rows), "provider_material_reached_durable_state"
+
+
+def test_postgres_expired_registration_waits_without_http_or_failure_attempts(state,monkeypatch):
+    store,_,_=state
+    original=register(state)
+    expiry=datetime.now(timezone.utc)+timedelta(hours=1)
+    # Provision an explicit finite registration, then advance the service clock.
+    from uuid import uuid4
+    material=CredentialMaterial(str(uuid4()),original.token,expiry)
+    store.credential_reload(material,1)
+    submit(state)
+    monkeypatch.setattr("tempo_intelligence.store.utcnow",lambda:expiry+timedelta(seconds=1))
+    with fake_provider() as (url,paths):
+        assert not asyncio.run(worker(state,url).work_once())
+        status=sources(store)["lichess"]
+        assert status["state"]=="waiting_credentials" and status["credential"]["status"]=="expired"
+        assert status["attempts"]==0 and paths==[]
+
+
+def test_postgres_provider_outage_stops_after_three_failures_and_explicit_retry_recovers(state):
+    store,_,_=state
+    register(state)
+    submit(state)
+    with fake_provider(lambda number:(503,{}, {}) if number<=3 else (200,{},valid_counts())) as (url,paths):
+        for attempt in range(1,4):
+            ready(store)
+            assert asyncio.run(worker(state,url).work_once())
+            assert sources(store)["lichess"]["attempts"]==attempt
+        assert sources(store)["lichess"]["state"]=="failed"
+        ready(store)
+        assert not asyncio.run(worker(state,url).work_once()) and len(paths)==3
+        store.retry("request","explicit-outage-retry",1)
+        ready(store)
+        assert asyncio.run(worker(state,url).work_once()) and len(paths)==4
+        assert sources(store)["lichess"]["state"]=="complete"

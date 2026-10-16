@@ -83,7 +83,7 @@ def main():
             TEMPO_INTELLIGENCE_TEST_UPGRADE_URL=make_conninfo(owner_url,dbname="intelligence_upgrade"),
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
         junit=destination/"native.xml"
-        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
+        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),str(SERVICE/"integration/test_server_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
         for value in shlex.split(os.environ.get("PYTEST_ADDOPTS","")):
             if not value.startswith("--junitxml="):
                 raise RuntimeError("only_external_junit_destination_supported")
