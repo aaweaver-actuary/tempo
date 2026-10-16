@@ -131,13 +131,18 @@ def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("suite", choices=("pure",))
     parser.add_argument("--junitxml", "--junit-xml")
+    parser.add_argument("--evidence", type=Path, help="Retain collection, execution and JUnit receipts")
     options = parser.parse_args(arguments)
     try:
         junit_destination(os.environ.get("PYTEST_ADDOPTS", ""))
-        with tempfile.TemporaryDirectory(prefix="tempo-content-suite-") as directory:
-            result = run_pytest([SERVICE / "tests"], directory, cwd=SERVICE,
+        if options.evidence:
+            result = run_pytest([SERVICE / "tests"], options.evidence, cwd=SERVICE,
                                 external_junit=options.junitxml)
-            print(json.dumps({"suite": options.suite, **result}))
+        else:
+            with tempfile.TemporaryDirectory(prefix="tempo-content-suite-") as directory:
+                result = run_pytest([SERVICE / "tests"], directory, cwd=SERVICE,
+                                    external_junit=options.junitxml)
+        print(json.dumps({"suite": options.suite, **result}))
         return 0
     except (OSError, ValueError, RuntimeError) as error:
         print(str(error), file=sys.stderr)

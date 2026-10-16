@@ -185,3 +185,41 @@ Learning protocol or fabricate activation acknowledgements.
 and extraction of durable source/entity keys. This increment accepts validated
 structured snapshots. The importer should emit that boundary and retain its
 diagnostics and provenance instead of reaching into Content or Learning tables.
+
+## Inventory continuations and actionable errors
+
+Position and route pages identify their source revision/generation and return an
+opaque `next_cursor`. Save the exact string from a completed first page and pass
+it quoted; for example, with `CONTENT_CURSOR` set to that returned value:
+
+```sh
+.venv/bin/tempo-content inventory routes structured-example --limit 1
+.venv/bin/tempo-content inventory routes structured-example --limit 1 --after "$CONTENT_CURSOR"
+```
+
+The versioned JSON cursor binds workspace, source, reader, revision and generation.
+Do not construct or modify it. After `stale_inventory_cursor`, start again without
+`--after`. Old position keys/route pairs and malformed tokens return
+`invalid_cursor`. Wait for complete reconciliation before collecting a stable
+inventory across pages. A single read remains coherent if replacement/collection
+occurs while it runs; coverage identifies both available and unavailable generations.
+
+Use `repertoire show KEY --source-key SOURCE` when keys appear in several sources.
+Unscoped ambiguity returns `ambiguous_repertoire`, never an arbitrary first source.
+CLI failures exit nonzero with structured JSON on stderr and no partial result.
+
+A distinct stale source edit returns `stale_source_revision` before staging input.
+Read the current source, reconcile the intended edit, and submit its actual current
+revision. Identical current content remains idempotent even with an old expected
+revision. Crashed and race-losing writers can still leave resumable input;
+[#292](https://github.com/aaweaver-actuary/tempo/issues/292) owns safe reclamation.
+
+Readiness rejects missing required grants, for example `content.input_items INSERT`
+or `content.tasks UPDATE`, as well as excessive powers. An authorized operator can
+reapply `.venv/bin/tempo-content migrate` using the Content owner credential and
+then rerun readiness. Runtime credentials cannot perform that repair. This does
+not change migration history or imply a deployment.
+
+For retained regular-suite receipts, add `--evidence DIRECTORY` to
+`services/content/run_suite.py pure`. The same strict collection/execution/JUnit
+validation runs whether evidence is retained or temporary.

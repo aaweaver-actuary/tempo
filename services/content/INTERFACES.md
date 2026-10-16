@@ -101,3 +101,59 @@ connection strings using the Content runtime credential; those connections must
 fail. It never identifies live component databases. The native runner's admin
 credential exists solely for fresh provisioning, targeted test assertions and
 owned resource recovery.
+
+## Inventory snapshots and continuation cursors
+
+`inventory_status`, source-scoped `positions`/`routes`, and `coverage` use one
+short PostgreSQL `REPEATABLE READ READ ONLY` transaction per operation. Every
+contributing query uses that connection, with the established five-second lock
+and ten-second statement timeouts. Readers take no source/worker/artifact row
+locks. A read begun against G1 can finish with coherent G1 data after G2 replaces
+it and collection deletes G1's mutable cache. A fresh invocation selects G2.
+Incomplete current coverage remains unavailable; missing mandatory records in a
+complete inventory raise `inventory_incomplete` rather than successful emptiness.
+
+Position/route pages return `source_revision`, `generation`, `status`, `stale`,
+`items`, and `next_cursor`. Available and unavailable coverage include revision
+and generation. `stale` retains its existing comparison against the last published
+complete revision; reconciliation completion and publication remain distinct.
+Only complete inventories provide stable traversal; pending inventory may grow
+within its generation and should be paginated again once complete.
+
+Treat cursors as opaque strings and return them unchanged. Their canonical JSON
+is versioned and binds workspace, source, reader kind, revision and generation:
+
+```json
+{"generation":2,"kind":"positions","last":"position-key","source_key":"source-key","source_revision":2,"version":1,"workspace_id":"workspace"}
+```
+
+For `kind="routes"`, `last` is the ordered `["route-key","policy-key"]` pair.
+Missing fields, incorrect primitive types, unsupported versions, wrong reader or
+workspace/source identity, malformed JSON and old unversioned cursors raise
+`invalid_cursor`. Revision/generation mismatch raises `stale_inventory_cursor`;
+restart without `--after`. Canonical global `replies()` retains its UCI cursor.
+
+## Admission, repertoire lookup and readiness
+
+Source loading validates shape/workspace and computes the canonical digest before
+a coherent read-only revision preflight. Distinct already-stale edits and unknown
+sources with a nonzero expected revision raise `stale_source_revision` before any
+input write. Identical current content returns replay even with an old expected
+revision and creates no stage/task/generation. Final source-locked admission still
+rechecks digest/revision after bounded staging, fencing concurrent editors.
+Interrupted stages remain resumable. Crash/race-loser stage reclamation is a
+separate lifecycle task, [#292](https://github.com/aaweaver-actuary/tempo/issues/292).
+
+Repertoire keys belong to sources. An unscoped lookup inspects at most two current
+matches in a consistent snapshot: zero returns `repertoire_not_found`, one returns
+its ordinary authored fields/stable ID/source key, and multiple return
+`ambiguous_repertoire` directing the caller to `--source-key`. Explicit selection
+preserves source identity; no full authored snapshots are reconstructed.
+
+One table privilege map drives owner grants and readiness. Metadata requires
+SELECT; immutable runtime tables require SELECT/INSERT; mutable runtime tables
+require SELECT/INSERT/UPDATE/DELETE. Readiness checks each required privilege
+individually, schema USAGE, and all existing prohibited role/schema/database and
+immutable-table powers. Missing grants fail before service operations, naming the
+table/privilege without credentials. Explicit owner migration restores the grants;
+runtime startup never migrates. Historical migration SQL/checksums are unchanged.

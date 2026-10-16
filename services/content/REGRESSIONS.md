@@ -46,3 +46,36 @@ exit separately. No selected skip, deselection or absent native proof is a pass.
 The Content entry in `components.json` is the regular component discovery owner;
 this local inventory replaces a duplicate root regression list for Content.
 Source-bound results and any remaining gaps are recorded in `VALIDATION.md`.
+
+## PR #288 correctness repairs
+
+`tests/test_inventory_cursors.py` owns canonical round trips, every missing field,
+strict primitive types, reader/workspace/source identity, malformed/legacy tokens,
+route composite keys and obsolete revision/generation rejection. These execute in
+every Python 3.12/3.14 wheel/sdist consumer.
+
+Native owners in `integration/test_postgres.py`:
+
+- R1: `test_coverage_snapshot_survives_generation_replacement_and_collection`
+  pauses after the G1 occurrence, proves G2 completion and committed G1 membership,
+  occurrence and artifact deletion, then requires the covered G1 reply and metadata.
+- R1: `test_inventory_cursor_rejects_changed_source_generation` and
+  `test_inventory_cursor_rejects_malformed_and_cross_source_tokens`, both readers;
+  `test_inventory_cli_rejects_invalid_cursor_as_structured_error`;
+  `test_coverage_rejects_missing_mandatory_complete_inventory` (six faults);
+  `test_inventory_read_snapshot_is_read_only_and_rolls_back_on_error`.
+- R2: `test_stale_revision_is_rejected_before_any_input_staging` (installed CLI,
+  distinct payloads and actual database counts),
+  `test_identical_source_replay_with_old_expected_revision_is_idempotent`,
+  `test_unknown_source_wrong_initial_revision_rejects_without_staging`, and
+  `test_concurrent_distinct_source_edits_admit_only_one_revision` (both writers
+  staged before final admission; winner-only source/publication).
+- R3: `test_unscoped_repertoire_lookup_rejects_ambiguous_source_keys` includes
+  installed CLI stderr/exit assertions and distinct scoped stable identities;
+  `test_unique_and_missing_repertoire_lookups` owns zero/one cases.
+- R4: `test_runtime_readiness_rejects_missing_required_grant_and_owner_repairs_it`
+  revokes input INSERT, task UPDATE and response SELECT individually, restores
+  grants in finally, and proves idempotent owner repair without ledger changes.
+
+The original donor lock-order, collector, interrupted-stage, stale-worker,
+publication, legal-reply, policy and consumer owners above remain selected.

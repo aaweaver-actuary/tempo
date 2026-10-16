@@ -33,6 +33,37 @@ def _hook(hook,event,**context):
         hook(event,context)
 
 
+def _decode_inventory_cursor(after,kind,workspace_id,source_key,source_revision,generation):
+    if after is None:
+        return '' if kind=='positions' else ['','']
+    try:
+        if type(after) is not str:
+            raise ValueError('cursor must be a JSON string')
+        cursor = json.loads(after)
+        required = {'version','workspace_id','kind','source_key','source_revision','generation','last'}
+        if not isinstance(cursor,dict) or not required<=cursor.keys():
+            raise ValueError('missing cursor fields')
+        if type(cursor['version']) is not int or cursor['version']!=1:
+            raise ValueError('unsupported cursor version')
+        for field in ('source_revision','generation'):
+            if type(cursor[field]) is not int or cursor[field]<1:
+                raise ValueError('invalid cursor revision or generation')
+        for field,expected in (('workspace_id',workspace_id),('source_key',source_key),('kind',kind)):
+            if type(cursor[field]) is not str or cursor[field]!=expected:
+                raise ValueError('cursor belongs to another workspace, source, or reader')
+        last = cursor['last']
+        if kind=='positions':
+            if type(last) is not str or not last:
+                raise ValueError('position cursor requires a position key')
+        elif type(last) is not list or len(last)!=2 or any(type(key) is not str or not key for key in last):
+            raise ValueError('route cursor requires a route/policy pair')
+    except (ValueError,TypeError) as error:
+        raise ContentError('invalid_cursor','Invalid versioned inventory cursor: '+str(error)) from error
+    if (cursor['source_revision'],cursor['generation'])!=(source_revision,generation):
+        raise ContentError('stale_inventory_cursor','Source inventory changed; restart pagination without --after')
+    return last
+
+
 class ContentService:
     def __init__(self,database_url,workspace_id,pool_size=2):
         self.workspace_id = workspace_id
@@ -71,6 +102,14 @@ class ContentService:
             self.transactions.append(time.perf_counter()-started)
             if len(self.transactions)>10000:
                 del self.transactions[:5000]
+
+    @contextmanager
+    def _read_snapshot(self):
+        with self.pool.connection() as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            database.execute("SET LOCAL lock_timeout='5s'")
+            database.execute("SET LOCAL statement_timeout='10s'")
+            yield database
 
     def _query(self,query,parameters=()):
         with self.pool.connection() as database:
@@ -140,6 +179,14 @@ class ContentService:
         source_id = stable_id(self.workspace_id,snapshot.source_key,'source',snapshot.source_key)
         publication_id = stable_id(self.workspace_id,snapshot.source_key,'publication','source')
         stage_id = stable_id(self.workspace_id,snapshot.source_key,'stage',digest)
+        with self._read_snapshot() as database:
+            current = database.execute('SELECT s.requested_revision,r.digest,t.generation,t.state FROM content.sources s LEFT JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision LEFT JOIN LATERAL (SELECT generation,state FROM content.tasks WHERE source_id=s.id AND revision=s.requested_revision ORDER BY generation DESC LIMIT 1) t ON true WHERE s.id=%s',(source_id,)).fetchone()
+            if current and (current['digest'] is None or current['generation'] is None):
+                raise ContentError('inventory_incomplete','Current source revision or task is missing')
+            if current and current['digest']==digest:
+                return {'source_id':source_id,'source_revision':current['requested_revision'],'generation':current['generation'],'status':current['state'],'replayed':True}
+            if (current['requested_revision'] if current else 0)!=expected_revision:
+                raise ContentError('stale_source_revision','Expected source revision differs')
         counts = {kind:len(payload[kind]) for kind in KINDS}
         # Each staged section is bounded. A crash before manifest/admission leaves
         # only immutable resumable input, never a requested source revision.
@@ -184,22 +231,43 @@ class ContentService:
         return {**source,'snapshot':self._snapshot(manifest).model_dump(mode='json')}
 
     def repertoire_show(self,repertoire_key,source_key=None):
-        candidates = [self._source(source_key)] if source_key else self._query('SELECT * FROM content.sources ORDER BY source_key')
-        for source in candidates:
-            manifest = self._manifest(source['id'],source['requested_revision'])
-            row = self._one("SELECT payload FROM content.input_items WHERE stage_id=%s AND kind='repertoires' AND item_key=%s",(manifest['stage_id'],repertoire_key))
-            if row:
-                return {**row['payload'],'repertoire_id':stable_id(self.workspace_id,source['source_key'],'repertoire',repertoire_key),'source_key':source['source_key']}
-        raise ContentError('repertoire_not_found',repertoire_key)
+        with self._read_snapshot() as database:
+            if source_key is not None and not database.execute('SELECT 1 FROM content.sources WHERE source_key=%s',(source_key,)).fetchone():
+                raise ContentError('source_not_found',source_key)
+            query = "SELECT s.source_key,i.payload FROM content.sources s JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision JOIN content.input_manifests m ON m.stage_id=r.stage_id JOIN content.input_items i ON i.stage_id=m.stage_id WHERE i.kind='repertoires' AND i.item_key=%s"
+            parameters = (repertoire_key,)
+            if source_key is not None:
+                query += ' AND s.source_key=%s'
+                parameters += (source_key,)
+            matches = database.execute(query+' ORDER BY s.source_key LIMIT 2',parameters).fetchall()
+            if not matches:
+                raise ContentError('repertoire_not_found',repertoire_key)
+            if len(matches)>1:
+                raise ContentError('ambiguous_repertoire','Repertoire key matches multiple sources; supply --source-key')
+            row = matches[0]
+            return {**row['payload'],'repertoire_id':stable_id(self.workspace_id,row['source_key'],'repertoire',repertoire_key),'source_key':row['source_key']}
 
     def request_inventory(self,source_key):
         # Admission always leaves a durable task; repeated requests preserve it.
         return self.inventory_status(source_key)
 
     def inventory_status(self,source_key):
-        source = self._source(source_key)
-        task = self._one('SELECT * FROM content.tasks WHERE source_id=%s AND revision=%s ORDER BY generation DESC LIMIT 1',(source['id'],source['requested_revision']))
-        manifest = self._manifest(source['id'],source['requested_revision'])
+        with self._read_snapshot() as database:
+            return self._inventory_status(database,source_key)
+
+    def _inventory_status(self,database,source_key):
+        source = database.execute('SELECT * FROM content.sources WHERE source_key=%s',(source_key,)).fetchone()
+        if not source:
+            raise ContentError('source_not_found',source_key)
+        task = database.execute('SELECT * FROM content.tasks WHERE source_id=%s AND revision=%s ORDER BY generation DESC LIMIT 1',(source['id'],source['requested_revision'])).fetchone()
+        manifest = database.execute('SELECT m.* FROM content.input_manifests m JOIN content.source_revisions r ON r.stage_id=m.stage_id WHERE r.source_id=%s AND r.revision=%s',(source['id'],source['requested_revision'])).fetchone()
+        if not task or not manifest:
+            raise ContentError('inventory_incomplete','Current source task or manifest is missing')
+        if task['state']=='complete':
+            for table,kind in (('generation_routes','memberships'),('generation_exercises','exercises'),('responses','bindings')):
+                count = database.execute('SELECT count(*) AS count FROM content.'+table+' WHERE source_id=%s AND generation=%s',(source['id'],task['generation'])).fetchone()['count']
+                if count!=manifest['counts'][kind]:
+                    raise ContentError('inventory_incomplete','Complete generation has missing '+kind)
         state = 'retirement_required' if task['state']=='complete' and manifest['counts']['exercises']==0 else task['state']
         return {**source,**task,'state':state,'status':state,'stale':source['last_complete_revision']!=source['requested_revision']}
 
@@ -522,11 +590,20 @@ class ContentService:
         if type(limit) is not int or not 1<=limit<=256:
             raise ContentError('invalid_page_size','Page size must be 1..256')
 
+    def _page_metadata(self,status):
+        return {'source_revision':status['revision'],'generation':status['generation'],'status':status['status'],'stale':status['stale']}
+
+    def _page_cursor(self,status,kind,last):
+        return _json({'version':1,'workspace_id':self.workspace_id,'kind':kind,'source_key':status['source_key'],
+                      'source_revision':status['revision'],'generation':status['generation'],'last':last})
+
     def positions(self,source_key,limit=64,after=None):
         self._page(limit)
-        status = self.inventory_status(source_key)
-        rows = self._query('SELECT DISTINCT p.* FROM content.positions p JOIN content.occurrences o ON o.position_key=p.position_key JOIN content.generation_routes r ON r.artifact_id=o.artifact_id WHERE r.source_id=%s AND r.generation=%s AND o.opponent AND p.position_key>%s ORDER BY p.position_key LIMIT %s',(status['source_id'],status['generation'],after or '',limit))
-        return {'items':rows,'next_cursor':rows[-1]['position_key'] if len(rows)==limit else None,'status':status['status'],'stale':status['stale']}
+        with self._read_snapshot() as database:
+            status = self._inventory_status(database,source_key)
+            cursor = _decode_inventory_cursor(after,'positions',self.workspace_id,source_key,status['revision'],status['generation'])
+            rows = database.execute('SELECT DISTINCT p.* FROM content.positions p JOIN content.occurrences o ON o.position_key=p.position_key JOIN content.generation_routes r ON r.artifact_id=o.artifact_id WHERE r.source_id=%s AND r.generation=%s AND o.opponent AND p.position_key>%s ORDER BY p.position_key LIMIT %s',(status['source_id'],status['generation'],cursor,limit)).fetchall()
+            return {**self._page_metadata(status),'items':rows,'next_cursor':self._page_cursor(status,'positions',rows[-1]['position_key']) if len(rows)==limit else None}
 
     def replies(self,position_key,limit=64,after=None):
         self._page(limit)
@@ -535,31 +612,41 @@ class ContentService:
 
     def routes(self,source_key,limit=64,after=None):
         self._page(limit)
-        status = self.inventory_status(source_key)
-        try:
-            cursor = json.loads(after) if after is not None else ['','']
-            if not isinstance(cursor,list) or len(cursor)!=2 or any(type(item) is not str for item in cursor):
-                raise ValueError('invalid route cursor')
-        except (ValueError,TypeError) as error:
-            raise ContentError('invalid_cursor','Route cursor must be a JSON string pair') from error
-        rows = self._query('SELECT r.*,a.complete,a.cursor,a.epoch FROM content.generation_routes r JOIN content.artifacts a ON a.id=r.artifact_id WHERE r.source_id=%s AND r.generation=%s AND (r.route_key,r.policy_key)>(%s,%s) ORDER BY r.route_key,r.policy_key LIMIT %s',(status['source_id'],status['generation'],*cursor,limit))
-        return {'items':rows,'next_cursor':_json([rows[-1]['route_key'],rows[-1]['policy_key']]) if len(rows)==limit else None,'status':status['status']}
+        with self._read_snapshot() as database:
+            status = self._inventory_status(database,source_key)
+            cursor = _decode_inventory_cursor(after,'routes',self.workspace_id,source_key,status['revision'],status['generation'])
+            rows = database.execute('SELECT r.*,a.complete,a.cursor,a.epoch FROM content.generation_routes r JOIN content.artifacts a ON a.id=r.artifact_id WHERE r.source_id=%s AND r.generation=%s AND (r.route_key,r.policy_key)>(%s,%s) ORDER BY r.route_key,r.policy_key LIMIT %s',(status['source_id'],status['generation'],*cursor,limit)).fetchall()
+            return {**self._page_metadata(status),'items':rows,'next_cursor':self._page_cursor(status,'routes',[rows[-1]['route_key'],rows[-1]['policy_key']]) if len(rows)==limit else None}
 
-    def coverage(self,source_key,route_key,policy_key,ply):
-        status = self.inventory_status(source_key)
-        if status['state']!='complete':
-            return {'status':'unavailable','items':[],'stale':True}
-        route = self._one('SELECT * FROM content.generation_routes WHERE source_id=%s AND generation=%s AND route_key=%s AND policy_key=%s',(status['source_id'],status['generation'],route_key,policy_key))
-        if not route:
-            raise ContentError('route_not_found',route_key)
-        occurrence = self._one('SELECT * FROM content.occurrences WHERE artifact_id=%s AND ply=%s',(route['artifact_id'],ply))
-        if not occurrence or not occurrence['opponent']:
-            raise ContentError('opponent_position_required',str(ply))
-        replies = self._query('SELECT * FROM content.legal_replies WHERE position_key=%s ORDER BY move_uci',(occurrence['position_key'],))
-        result = []
-        for reply in replies:
-            authored = reply['move_uci']==occurrence['authored_move']
-            direct = self._one('SELECT 1 FROM content.responses p JOIN content.occurrences o ON o.artifact_id=%s AND o.ply=p.ply WHERE p.source_id=%s AND p.generation=%s AND p.route_key=%s AND p.policy_key=%s AND p.ply=%s AND p.position_key=%s AND jsonb_array_length(p.accepted_moves)>0 AND (o.authored_move IS NULL OR p.accepted_moves ? o.authored_move)',(route['artifact_id'],status['source_id'],status['generation'],route_key,policy_key,ply+1,reply['resulting_position_key'])) if authored else None
-            transposed = self._one('SELECT 1 FROM content.responses p JOIN content.generation_routes r USING(source_id,generation,route_key,policy_key) WHERE p.source_id=%s AND p.generation=%s AND p.policy_key=%s AND r.repertoire_key=%s AND p.position_key=%s AND (p.route_key,p.ply)<>(%s,%s) AND jsonb_array_length(p.accepted_moves)>0 LIMIT 1',(status['source_id'],status['generation'],policy_key,route['repertoire_key'],reply['resulting_position_key'],route_key,ply+1))
-            result.append({**reply,'legal':True,'authored':authored,'covered':bool(direct),'transposition_supported':bool(transposed) and not bool(direct),'status':'covered' if direct else 'transposition_supported' if transposed else 'uncovered'})
-        return {'status':'complete','position_key':occurrence['position_key'],'items':result,'stale':False}
+    def coverage(self,source_key,route_key,policy_key,ply,hook=None):
+        with self._read_snapshot() as database:
+            status = self._inventory_status(database,source_key)
+            metadata = {'source_revision':status['revision'],'generation':status['generation']}
+            if status['state']!='complete':
+                return {**metadata,'status':'unavailable','items':[],'stale':True}
+            route = database.execute('SELECT r.*,a.complete FROM content.generation_routes r JOIN content.artifacts a ON a.id=r.artifact_id WHERE r.source_id=%s AND r.generation=%s AND route_key=%s AND policy_key=%s',(status['source_id'],status['generation'],route_key,policy_key)).fetchone()
+            if not route:
+                raise ContentError('route_not_found',route_key)
+            if not route['complete']:
+                raise ContentError('inventory_incomplete','Complete generation has an incomplete route artifact')
+            occurrence = database.execute('SELECT * FROM content.occurrences WHERE artifact_id=%s AND ply=%s',(route['artifact_id'],ply)).fetchone()
+            if not occurrence:
+                raise ContentError('inventory_incomplete','Requested route occurrence is missing')
+            if not occurrence['opponent']:
+                raise ContentError('opponent_position_required',str(ply))
+            _hook(hook,'after_coverage_occurrence',generation=status['generation'],occurrence=occurrence)
+            position = database.execute('SELECT * FROM content.positions WHERE position_key=%s',(occurrence['position_key'],)).fetchone()
+            replies = database.execute('SELECT * FROM content.legal_replies WHERE position_key=%s ORDER BY move_uci',(occurrence['position_key'],)).fetchall()
+            fingerprint = _digest(_json([[row['move_uci'],row['resulting_position_key']] for row in replies]))
+            if not position or (position['legal_version'],position['reply_count'],position['fingerprint'])!=(INVENTORY_VERSION,len(replies),fingerprint):
+                raise ContentError('inventory_incomplete','Canonical legal-reply inventory is missing or inconsistent')
+            missing_response_occurrence = database.execute('SELECT 1 FROM content.responses p LEFT JOIN content.generation_routes r USING(source_id,generation,route_key,policy_key) LEFT JOIN content.occurrences o ON o.artifact_id=r.artifact_id AND o.ply=p.ply WHERE p.source_id=%s AND p.generation=%s AND (o.position_key IS DISTINCT FROM p.position_key OR o.opponent) LIMIT 1',(status['source_id'],status['generation'])).fetchone()
+            if missing_response_occurrence:
+                raise ContentError('inventory_incomplete','Validated response occurrence is missing or inconsistent')
+            result = []
+            for reply in replies:
+                authored = reply['move_uci']==occurrence['authored_move']
+                direct = database.execute('SELECT 1 FROM content.responses p JOIN content.occurrences o ON o.artifact_id=%s AND o.ply=p.ply WHERE p.source_id=%s AND p.generation=%s AND p.route_key=%s AND p.policy_key=%s AND p.ply=%s AND p.position_key=%s AND jsonb_array_length(p.accepted_moves)>0 AND (o.authored_move IS NULL OR p.accepted_moves ? o.authored_move)',(route['artifact_id'],status['source_id'],status['generation'],route_key,policy_key,ply+1,reply['resulting_position_key'])).fetchone() if authored else None
+                transposed = database.execute('SELECT 1 FROM content.responses p JOIN content.generation_routes r USING(source_id,generation,route_key,policy_key) WHERE p.source_id=%s AND p.generation=%s AND p.policy_key=%s AND r.repertoire_key=%s AND p.position_key=%s AND (p.route_key,p.ply)<>(%s,%s) AND jsonb_array_length(p.accepted_moves)>0 LIMIT 1',(status['source_id'],status['generation'],policy_key,route['repertoire_key'],reply['resulting_position_key'],route_key,ply+1)).fetchone()
+                result.append({**reply,'legal':True,'authored':authored,'covered':bool(direct),'transposition_supported':bool(transposed) and not bool(direct),'status':'covered' if direct else 'transposition_supported' if transposed else 'uncovered'})
+            return {**metadata,'status':'complete','position_key':occurrence['position_key'],'items':result,'stale':False}
