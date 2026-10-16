@@ -98,3 +98,15 @@ This initial interface commit is a handoff, not runtime completion or qualificat
 Subsequent commits register owning suites, restricted artifacts, actual exchanges,
 resource proofs and measurements. No fixture establishes deployment, current live
 Study latency, or C's durable scheduler acceptance.
+
+## Initial actual output
+
+`fixtures/observed/exchange.json` is real output from the independently installed
+container, including both colors, history, restricted roots, MultiPV, castling,
+en-passant, promotion, typed mate scores, cancellation, wall failure, exact replay,
+restart and a twelve-job fixture backlog. `provenance.json` binds its actual image,
+npm artifact and runtime identity. An independently installed Python contract and
+python-chess consumer accepted it. These initial fixtures are available before final
+harness registration and full qualification; final evidence will supersede the
+initial measurements. The memory-pressure helper, not the engine, was OOM-killed;
+its kernel event proves the cap without inventing an engine-specific failure cause.
