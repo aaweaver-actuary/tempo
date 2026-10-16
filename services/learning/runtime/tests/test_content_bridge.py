@@ -292,3 +292,11 @@ def test_A_historical_alias_move_membership_accepts_new_alternative(case):
     assert [tuple(row) for row in case.query("SELECT state,due_date,fsrs_card_json FROM learning.cards WHERE id=%s", (physical_id,))] == schedule
     assert case.query("SELECT count(*) FROM learning.cards WHERE id=%s", (authored_id,))[0][0] == 0
     assert case.client.get('/api/cards/' + physical_id + '/move-membership', params={"revision": 1, "fen": chess.STARTING_FEN, "move_uci": "e2e4"}).status_code == 409
+    destination = os.environ.get('TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE')
+    if destination:
+        Path(destination).mkdir(parents=True, exist_ok=True)
+        (Path(destination)/'alias-membership.json').write_text(json.dumps({
+            'physical_card_id':physical_id, 'authored_card_id':authored_id,
+            'reviews_before':history, 'reviews_after':[tuple(row) for row in case.query('SELECT * FROM learning.reviews')],
+            'schedule_before':schedule, 'schedule_after':[tuple(row) for row in case.query('SELECT state,due_date,fsrs_card_json FROM learning.cards WHERE id=%s',(physical_id,))],
+            'accepted_moves':['e2e4','d2d4'], 'rejected_legal_move':'c2c4', 'obsolete_revision_status':409}, indent=2, default=str))

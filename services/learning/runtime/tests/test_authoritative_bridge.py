@@ -4,6 +4,7 @@ Synthetic authored content is labeled. Every activation/receipt below comes from
 the actual restricted Learning runtime; no acknowledgement is manufactured.
 """
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,7 +18,7 @@ import time
 import resource
 import signal
 import sys
-from threading import Thread
+from threading import Barrier, Lock, Thread
 import uuid
 
 import chess
@@ -106,12 +107,23 @@ def authored(case,tmp_path):
 
 
 @contextmanager
-def drop_first_activation(origin):
+def drop_first_activation(origin, snapshot_barrier=None):
     dropped=[]
+    snapshot_tickets=[0,1] if snapshot_barrier else []
+    snapshot_lock=Lock()
     class Forward(BaseHTTPRequestHandler):
         def forward(self):
             raw=self.rfile.read(int(self.headers.get('Content-Length','0')))
             response=httpx.request(self.command,origin+self.path,content=raw or None,headers={'Authorization':self.headers['Authorization'],'Content-Type':'application/json'},timeout=15)
+            if '/status?generation=' in self.path:
+                with snapshot_lock:
+                    synchronize=bool(snapshot_tickets)
+                    if synchronize:
+                        snapshot_tickets.pop()
+                if synchronize:
+                    # Both real observations were read before either operator
+                    # may checkpoint them into actual Content PostgreSQL.
+                    snapshot_barrier.wait(timeout=10)
             if self.path=='/internal/publications/v2/activate' and not dropped:
                 assert response.status_code==200,response.text
                 dropped.append(response.json())
@@ -191,7 +203,7 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
     token=tmp_path/'operator-token'
     token.write_text(case.configuration.operator_token)
     token.chmod(0o600)
-    with server(case,tmp_path) as (client,process),drop_first_activation(str(client.base_url).rstrip('/')) as (origin,dropped):
+    with server(case,tmp_path) as (client,process),drop_first_activation(str(client.base_url).rstrip('/'),Barrier(2)) as (origin,dropped):
         arguments=['--content-cli',content_cli,'--learning-origin',origin,'--operator-token-file',token]
         for _ in range(5):
             failed=run_cli(bridge_cli,[*arguments,'apply',approved['id']],environment,tmp_path,success=False)
@@ -209,7 +221,13 @@ def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,
         assert completed['document']['receipt']['acknowledgement']==dropped[0]
         assert inspect_rows(case,'SELECT count(*) FROM learning.cards')[0][0]==2
         snapshot_path=tmp_path/'actual-snapshot.json'
-        snapshot=run_cli(bridge_cli,[*arguments,'snapshot',approved['id'],'--output',snapshot_path],environment,tmp_path)
+        duplicate_snapshot_path=tmp_path/'duplicate-snapshot.json'
+        def concurrent_snapshot(path):
+            return run_cli(bridge_cli,[*arguments,'snapshot',approved['id'],'--output',path],environment,tmp_path)
+        with ThreadPoolExecutor(max_workers=2) as snapshots:
+            first_snapshot,second_snapshot=list(snapshots.map(concurrent_snapshot,[snapshot_path,duplicate_snapshot_path]))
+        assert first_snapshot==second_snapshot
+        snapshot=first_snapshot
         assert snapshot['activation']==dropped[0] and snapshot['content_export']['provenance']['kind']=='synthetic'
         producer.run('load-snapshot',snapshot_path)
         issued=served_head(client)
