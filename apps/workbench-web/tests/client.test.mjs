@@ -265,3 +265,19 @@ test('R7 original v2 command records remain recoverable',async()=>{
   assert.equal(restored.version,2);assert.equal(restored.body,JSON.stringify(durableCommand));
   await h.commands.recover(h.client,restored);assert.equal(await h.commands.pending(h.client),null);
 });
+
+test('R7 incomplete authoritative scope cannot borrow client request defaults',async()=>{
+  for(const field of ['expected_revision','policy_version','position_budget','ranking_source','source_evidence_ids','ranking_evidence_id']){
+    const omit=status=>{delete status.scope[field];return status;};
+    const h=runHarness();await assert.rejects(()=>h.commands.submitRun(h.client,creation));
+    const pending=await h.commands.pending(h.client);h.mode({post:'success',change:omit});
+    await assert.rejects(()=>h.commands.recoverRun(h.client,pending));
+    assert.deepEqual(await h.commands.pending(h.client),pending,field);
+    await assert.rejects(()=>h.commands.retryRun(h.client,pending));
+    assert.deepEqual(await h.commands.pending(h.client),pending,field);
+    const first=runHarness();first.mode({post:'success',change:omit});
+    await assert.rejects(()=>first.commands.submitRun(first.client,creation));
+    assert.equal((await first.commands.pending(first.client)).kind,'run_create',field);
+    assert.equal(first.calls.filter(call=>call.method==='GET').length,0,'Malformed POST scope reached confirmation');
+  }
+});

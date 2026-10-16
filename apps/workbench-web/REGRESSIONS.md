@@ -33,6 +33,7 @@ R7 owning client regressions in `tests/client.test.mjs`:
 - `R7 malformed or changed pending creation retains evidence and sends nothing`
 - `R7 disconnected response cannot clear pending creation or another authority`
 - `R7 original v2 command records remain recoverable`
+- `R7 incomplete authoritative scope cannot borrow client request defaults`
 
 `tests/browser.mjs` invokes the strict real-browser scenarios in
 `tests/run-creation.mjs`: `R7 browser response-loss`, `R7 browser repeated-click`,

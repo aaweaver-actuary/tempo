@@ -9,15 +9,28 @@ export const bootstrapSchema=z.strictObject({...envelope,capabilities:z.array(z.
 export const listSchema=z.object({...envelope,items:z.array(z.record(z.string(),z.unknown()))}).passthrough();
 export const detailSchema=z.object({...envelope,run_id:z.string(),generation:z.number().int(),finding:findingSchema});
 export const commandSchema=z.object({...envelope,accepted:z.literal(true),command_id:z.string(),request_digest:z.string().regex(/^sha256:[0-9a-f]{64}$/)}).passthrough();
-export const runRequestSchema=z.strictObject({
+const runScopeShape={
   ...envelope,run_id:z.string().min(1),revision:z.number().int().positive(),
-  expected_revision:z.number().int().positive().nullable().default(null),
+  expected_revision:z.number().int().positive().nullable(),
   input_id:z.string().min(1),input_revision:z.number().int().positive(),
-  policy_version:z.literal('c-analysis-v1').default('c-analysis-v1'),
-  position_budget:z.number().int().min(0).max(10000).default(250),
-  ranking_source:z.enum(['actual','lichess','masters','maia']).default('actual'),
-  source_evidence_ids:z.array(z.string().min(1)).max(1024).default([]),
-  ranking_evidence_id:z.string().min(1).nullable().default(null),
-}).refine(scope=>scope.ranking_source==='actual'||scope.ranking_evidence_id!==null&&scope.source_evidence_ids.includes(scope.ranking_evidence_id),'Explicit ranking evidence is required.');
+  policy_version:z.literal('c-analysis-v1'),
+  position_budget:z.number().int().min(0).max(10000),
+  ranking_source:z.enum(['actual','lichess','masters','maia']),
+  source_evidence_ids:z.array(z.string().min(1)).max(1024),
+  ranking_evidence_id:z.string().min(1).nullable(),
+};
+function explicitRanking(scope:{ranking_source:string;ranking_evidence_id:string|null;source_evidence_ids:string[]}){
+  return scope.ranking_source==='actual'||scope.ranking_evidence_id!==null&&scope.source_evidence_ids.includes(scope.ranking_evidence_id);
+}
+export const runRequestSchema=z.strictObject({...runScopeShape,
+  expected_revision:runScopeShape.expected_revision.default(null),
+  policy_version:runScopeShape.policy_version.default('c-analysis-v1'),
+  position_budget:runScopeShape.position_budget.default(250),
+  ranking_source:runScopeShape.ranking_source.default('actual'),
+  source_evidence_ids:runScopeShape.source_evidence_ids.default([]),
+  ranking_evidence_id:runScopeShape.ranking_evidence_id.default(null),
+}).refine(explicitRanking,'Explicit ranking evidence is required.');
 export type RunCreationRequest=Omit<z.input<typeof runRequestSchema>,'run_id'>&{run_id?:string};
-export const runStatusSchema=z.object({...envelope,run_id:z.string().min(1),revision:z.number().int().positive(),scope:runRequestSchema}).passthrough();
+// A server status must actually supply its normalized scope; request defaults cannot prove it.
+const runScopeSchema=z.strictObject(runScopeShape).refine(explicitRanking,'Explicit ranking evidence is required.');
+export const runStatusSchema=z.object({...envelope,run_id:z.string().min(1),revision:z.number().int().positive(),scope:runScopeSchema}).passthrough();
