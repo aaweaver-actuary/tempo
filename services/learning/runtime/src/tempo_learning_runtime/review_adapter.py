@@ -276,7 +276,7 @@ class LearningReviewAdapter:
     def reconcile_completed(
         self, command, attempt, context, *, guided, revision, competing_review=None
     ):
-        return reconcile_completed_review(
+        result = reconcile_completed_review(
             self.database,
             command.card_id,
             attempt.id,
@@ -288,6 +288,11 @@ class LearningReviewAdapter:
             timezone_name=self.policy().timezone,
             competing_review=competing_review,
         )
+        if result.get("review_id") is not None:
+            from .receivers import settle
+            settle(self.database, command.card_id, result["review_id"],
+                queue_entry_id=attempt.id, revision=revision)
+        return result
 
     def bind_receipt(self, command, request_json, *, restore_original=False):
         if restore_original:
@@ -317,6 +322,8 @@ class LearningReviewAdapter:
                 light_first_interval_days=policy.light_first_interval_days,
                 reviewed_at=context.reviewed_at,
                 review_day=context.review_day,
+                queue_entry_id=command.queue_entry_id,
+                expected_revision=command.expected_revision if command.expected_revision is not None else self.current_revision(command.card_id),
             )
 
     def complete_attempt(self, command, context, *, guided):

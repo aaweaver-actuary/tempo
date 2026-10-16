@@ -14,8 +14,8 @@ def enqueue_task_in_transaction(
     delay_seconds=0,
     minimum_generation=0,
 ):
-    if kind != "daily_queue":
-        raise ValueError("Only essential daily_queue work is registered")
+    if kind not in {"daily_queue", "remediation"}:
+        raise ValueError("Only essential daily_queue and remediation work is registered")
     queued = database.execute_native(
         """INSERT INTO background_tasks(id,kind,deduplication_key,generation,payload_json,priority,max_attempts,next_attempt_at)
         VALUES(%s,%s,%s,%s,%s,%s,%s,NOW()+(%s * INTERVAL '1 second'))
@@ -45,7 +45,7 @@ def enqueue_task_in_transaction(
 
 def claim(database):
     token = uuid.uuid4().hex
-    row = database.execute_native("""SELECT id FROM background_tasks WHERE kind='daily_queue'
+    row = database.execute_native("""SELECT id FROM background_tasks WHERE kind IN ('daily_queue','remediation')
       AND ((state IN ('queued','retrying') AND next_attempt_at<=NOW()) OR (state='leased' AND lease_expires_at<=NOW()))
       ORDER BY priority,updated_at,id LIMIT 1 FOR UPDATE SKIP LOCKED""").fetchone()
     if row is None:

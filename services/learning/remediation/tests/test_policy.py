@@ -79,3 +79,35 @@ def test_eligible_ordinary_duplicates_keep_first_route_and_frozen_card_order():
     ordinary = replace(BASE, outstanding_miss=False, progression_allowed=True, remaining_allowance=1)
     candidates = tuple(replace(ordinary, card_id=name) for name in ("z", "a", "m"))
     assert order_candidates((*candidates, replace(candidates[0], route_id="later-route"))) == candidates
+
+
+def test_single_card_preparation_advances_one_cursor_without_skipping_unapplied_work():
+    from tempo_learning_remediation import WorkItem, WorkPage, prepare_admissions
+    calls=[]
+    class Repository:
+        def pending_page(self,cursor,*,limit):
+            calls.append((cursor,limit))
+            return WorkPage((WorkItem("card",1,"pending",None),),"card",True)
+        def has_current_miss(self,candidate): return True
+    class Facts:
+        def candidates(self,items): return (BASE,)
+    prepared=prepare_admissions(Repository(),Facts(),page_size=1,max_pages=1)
+    assert calls==[("",1)]
+    assert prepared.candidates==(BASE,) and prepared.cursor=="card" and prepared.has_more
+    assert prepared.examined_pages==1
+
+
+@pytest.mark.parametrize("page_size,max_pages",[(0,1),(17,1),(1,0),(1,5)])
+def test_smaller_preparation_cannot_expand_existing_module_bounds(page_size,max_pages):
+    from tempo_learning_remediation import prepare_admissions
+    with pytest.raises(ValueError,match="bounds"):
+        prepare_admissions(None,None,page_size=page_size,max_pages=max_pages)
+
+
+def test_correlated_current_miss_predicate_retains_frontier_fence_and_rejects_sql_text():
+    from tempo_learning_remediation import current_miss_sql
+    predicate=current_miss_sql("accepted_card")
+    assert predicate.count("%s")==1
+    assert "head.card_id=accepted_card.id" in predicate and "OFFSET 0" in predicate
+    assert "contribution.card_revision=accepted_card.revision" in predicate
+    with pytest.raises(ValueError): current_miss_sql("card; DROP TABLE cards")

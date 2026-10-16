@@ -4,10 +4,11 @@
   "type": "module",
   "dependencies": {
     "@playwright/test": "1.63.0",
-    "esbuild": "0.27.3",
-    "zod": "4.5.4",
     "chess.js": "1.4.0",
-    "zustand": "5.0.15",
-    "react": "19.2.6"
+    "esbuild": "0.27.3",
+    "react": "19.2.6",
+    "typescript": "5.9.3",
+    "zod": "4.5.4",
+    "zustand": "5.0.15"
   }
 }

@@ -382,3 +382,7 @@ is retained as `independent-review-current.json`. Its same coverage limits apply
 saved execution evidence was reviewed, not rerun, and native Python 3.12 or
 whole-product/hosted CI coverage is not claimed. Subsequent commits change only
 this validation record; final current input equivalence is verified after commit.
+
+## F1 adoption
+
+The historical results above describe the original runtime extraction. F1 adds the separately installed remediation library, authenticated v2 producer delivery and issuance-bound settlement. Its current source-bound results and explicit remaining #194/#224 work are recorded in [F1 validation](../../../docs/validation/f1-game-evidence-learning.md) and [F2 handoff](../../../docs/study/f2-remediation-handoff.md). No live activation or conversion is implied.

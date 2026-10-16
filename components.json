@@ -78,7 +78,8 @@
         "sqlglot",
         "chess",
         "fsrs",
-        "httpx"
+        "httpx",
+        "tempo_learning_remediation"
       ],
       "buildInputs": [
         "pyproject.toml",
@@ -113,7 +114,9 @@
             "services/learning/application/qualification.py",
             "app/lib",
             "app/domain",
-            "app/const.ts"
+            "app/const.ts",
+            "services/learning/remediation",
+            "services/game-evidence"
           ]
         }
       ],
@@ -1143,7 +1146,8 @@
         "propose_admission",
         "validate_delivery",
         "prepare_admissions",
-        "apply_admission"
+        "apply_admission",
+        "current_miss_sql"
       ],
       "dependencies": [
         "tempo_game_evidence_contracts"

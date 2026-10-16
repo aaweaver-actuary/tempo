@@ -12,49 +12,17 @@ GET queue issuance authenticates and commits issuance before returning an attemp
 Projection generation is never an attempt token. Pending operation responses keep
 202, operation_id, state and Location; errors retain detail and review conflict codes.
 
-Remediation registration: `register_evidence_receiver(handler)` accepts a callable
-`handler(transaction, delivery: EvidenceDelivery, admission) -> EvidenceAcknowledgement`.
-`admission(transaction, card_id, queue_day, reason)` is the only admission writer.
-`register_settlement(handler)` accepts `handler(transaction, card_id, review_id)`;
-this required effect runs before the command transaction commits. Neither callable
-may acquire a database connection or commit. Registration rejects replacements.
-The default retained receiver/settlement operates on Learning-owned obligations;
-F may install B's module in place of these defaults, never alongside a second writer.
+`POST /internal/evidence` accepts the existing discriminated Game Evidence v1/v2 contracts. The default adapter uses `tempo-learning-remediation` on the same borrowed transaction; its per-query tuple cursors do not change the shared row factory. A workspace-bound evidence credential authorizes the producer's observed facts. Learning derives publication, decision position, complete accepted alternatives and immutable card revision from its own active definitions. There is no source database import or network lookup inside this boundary.
 
-The installed `tempo-game-evidence-contracts==2.0.0` producer retains both versioned
-interfaces. This runtime default still imports `v1`; installing that producer
-does not activate v2 remediation or adopt the separately merged remediation module.
+Accepted evidence, source/semantic revisions, acknowledgement and the durable `remediation` sweep request commit together. A completed acknowledgement does not promise admission or study completion. V2 retains explicit revision-targeted withdrawals and immutable historical semantic replay. V1 retains transport-first replay/stale behavior and HTTP 409 conflicts. Current v1 observations now require coherent linkage to accepted definitions; arbitrary fixture obligations are not authority. Historical receipts in the old transport table replay unchanged, but new delivery IDs at an unconverted historical revision conflict. Old obligation rows are preserved for explicit #224 conversion and are not written or broadly settled by the adopted runtime.
 
-Default evidence ordering uses `(workspace_id, evidence_id)`. Transport identity
-is checked first, so a completed delivery always replays its original result.
-Semantic identity is sorted-key canonical JSON of every delivery field except
-`delivery_id`. A new ID with identical current revision/content returns a completed
-acknowledgement with that ID and the previously accepted obligations, without
-repeating effects. Conflicting current content returns HTTP 409. Older revisions
-return `status=stale_revision`, a reason, empty accepted obligations and null
-`learning_revision`; their transport acknowledgement is persisted. New revisions
-(even zero-obligation corrections) and all effects commit together. Newer
-acceptance does not retract older obligations; richer correction belongs to B/F.
+Registration compatibility remains `register_evidence_receiver(handler)` with `handler(transaction, delivery, admission) -> acknowledgement`, and `register_settlement(handler)` with `handler(transaction, card_id, review_id)`. Registration rejects replacements. These hooks replace their respective default authority. The default runtime settlement additionally receives internal queue-entry/revision context, loads the exact actual review, and resolves the frontier bound at first issuance. No hook owns a connection or commit.
 
-The default receiver acquires the global delivery identity advisory lock before
-the evidence identity lock. Global obligation identity is checked against the
-stored payload after the insert's conflict wait, before admission/frontier/receipt
-effects. Concurrent cross-evidence reuse with conflicting transport or obligation
-content returns HTTP 409 and rolls back the losing delivery.
+The stable remediation attempt identity is `queue:<entry_id>:revision:<revision>`, scoped by the database workspace. Only first authoritative head issuance binds it; retries retain its issuance time/frontier, and pre-existing issued origins are never bound retrospectively. Prepared continuations use the same issuance command. Review submission cannot create authority. A missing/incompatible binding cannot claim settlement. Qualifying reviews are unaided correct valid study; failed/guided/Again/stale work cannot satisfy it. Settlement and all required review effects share the existing transaction/savepoint; independent practice does not manufacture queue authority.
 
-Migration registration is an ordered JSON array under the installed package's
-`migrations/manifest.json`: `{id, owner, path, depends_on}`. Paths are package-local
-SQL files. Existing entries are append-only and checked against installed checksums.
-Dependencies must precede a migration. B supplies a namespaced id and SQL; F adds
-its dependency registration after runtime and remediation land. Legacy migration
-numbers do not carry across database boundaries.
+The sole admission writer has a prelocked capability for the remediation module. Runtime card/queue locks precede the module lock; callbacks acquire no additional encompassing locks. The registered essential work kinds are `daily_queue` and `remediation`, with one persisted cursor/application slice per transaction. Claims release their task-row lock before application. Final lease/generation checks roll back superseded effects, and bounded contention releases only the current lease for retry. Ordinary relative order, protected positions and immutable frozen input validation remain owned by the existing queue code; the library supplies the miss overlay and existing eligibility exception.
 
-`learning.runtime/0002` adds default receiver revision authority after
-`learning.runtime/0001`. Existing completed receipts establish their maximum
-revision with a null semantic digest because the original semantic payload is
-unavailable. Exact historical transport retries remain valid; unverifiable new
-IDs at that revision return HTTP 409. A newer revision establishes a digest.
-Reapply `grant_runtime` after migration so restricted roles can use the new table.
+Migration registration remains an append-only ordered JSON manifest `{id, owner, path, depends_on}`. The optional `package` field permits only `tempo_learning_runtime` (default) or the declared `tempo_learning_remediation` dependency. `learning.remediation/0001` loads its installed module migration after `learning.runtime/0002`. Existing SQL/checksums are unchanged. Owner-only migration and grant reapplication remain explicit; HTTP startup only checks readiness. No live backfill/cutover is provided.
 
 Authoring, live import/cutover, worker credentials and producer scheduling remain
 outside the Learning API. Endgame cache misses may use the configured online
@@ -95,3 +63,5 @@ conflict and unavailable envelopes. The existing strict client schemas and revie
 outbox consume these HTTP shapes in the native Chromium suite. Native tests also
 cover all family-specific requests/responses against their existing Pydantic
 models. Successful migration/install/startup is not wire-v1 or product acceptance.
+
+The evidence endpoint retains the background writer pool, short lock timeout and nonblocking module lock, with a 1,000 ms atomic batch transaction bound. Ordinary maintenance remains 250 ms. A transaction timeout maps to retryable HTTP 503 and rolls back acceptance/receipt/work effects. See the exact remaining full-Study teaching/routing work in [F2 handoff](../../../docs/study/f2-remediation-handoff.md).

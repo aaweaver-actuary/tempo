@@ -18,3 +18,38 @@ The complete native inventory is discovered by `integration/run_postgres.py` fro
 | `test_installation.py` | Installed closure, packaged append-only migration dependency/resources, forbidden optional imports, transaction owner and denied-auth startup without infrastructure |
 
 Legacy compatibility adapters retain the regular scheduling application/package/boundary and defensive grading/validation/detection suites. Scheduling ownership metadata records the packaged owner. The retained enqueue primitive changes its returned row/event identity to PostgreSQL's `RETURNING` result; `backend/tests/test_durable_task_enqueue_identity.py` exercises the retained consumer's event/result binding, while native concurrency evidence lives in Learning's regular suite rather than a parallel harness. Shared runner normalization has a named regression in the existing component-build boundary suite.
+
+## F1 adoption
+
+`test_remediation.py` owns the integrated v2 intake/borrowed-row-factory proof;
+issuance-only frontier binding and reload reuse; qualifying settlement and logical
+review replay; late/unknown-time evidence requiring a fresh attempt; immutable
+corrections, historical semantic replay and exact withdrawals; validity/lifecycle
+fences; guided/failed nonsettlement; required-settlement rollback (including handled
+reconciliation); superseded/expired lease rollback; zero-cap locked-card
+introduction; protected positions and unchanged frozen inputs; concurrent delivery;
+both actual review/evidence commit orders; acceptance/receipt/work-request rollback;
+trusted alternatives/position/alias rejection; ordinary-work fairness; and stable
+library miss order across single-card maintenance slices.
+
+`test_game_evidence_runtime.py` owns actual installed producer CLI -> authenticated
+Learning HTTP -> separate PostgreSQL database integration. A real forwarding proxy
+drops the acknowledgement after Learning commits; a new producer process replays
+after Learning restarts. Role-denial checks prove the runtime identities cannot
+connect to the other domain database. Its Chromium proof stops the producer and
+Learning, restarts only Learning, settles remediation with real response-loss/reload
+recovery, then follows existing reinforcement and saves ordinary newly introduced
+work. No optional provider/model/broker is started, and browser traffic to any
+other origin is rejected. These are focused client/API proofs, not the complete
+Study UI switch owned by F2.
+
+The existing `test_evidence_revisions.py` cases now exercise the same remediation
+authority using coherent accepted v1 observations. Their original monotonicity,
+global identity-race, rollback, migration, restricted-role and transport replay
+invariants remain; old raw-obligation/frontier writes are replaced by equivalent
+repository assertions. Historical v1 receipts remain a read-only replay boundary.
+No selected check is skipped or weakened. Existing `test_eligibility.py` promotion
+and settlement now observes the durable maintenance boundary, rather than assuming
+intake performs synchronous admission. The native browser harness awaits #285's
+durable enqueue and compiles the two unchanged Study package public entries using
+its local TypeScript dependency; no root frontend install is required.

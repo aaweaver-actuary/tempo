@@ -14,6 +14,7 @@ test("F1 main adoption discovers Game Evidence alongside independent Learning an
   assert.deepEqual(new Set(checked.map(component => component.id)), new Set([
     ...componentIds, "chess-core", "content-publication-contracts", "game-evidence-contracts",
     "learning-review-application", "scheduling",
+    "learning-remediation",
   ]));
   for (const id of ["browser-intents", "study-session"]) {
     assert.equal(original.components.find(component => component.id === id)?.status, "implemented");

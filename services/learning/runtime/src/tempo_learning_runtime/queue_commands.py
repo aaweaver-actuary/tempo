@@ -104,6 +104,11 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
         )
     except ReviewConflict:
         return {"issued": False}
+    prior = database.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=? AND revision=?",
+        (entry_id, payload["card_id"], payload["expected_revision"])).fetchone()
+    if prior and not prior[0]:
+        from .remediation_adapter import bind_issued_attempt
+        bind_issued_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
     changed = database.execute(
         "UPDATE queue_attempt_origins SET issued_as_head=1 "
         "WHERE queue_entry_id=? AND card_id=? AND revision=?",

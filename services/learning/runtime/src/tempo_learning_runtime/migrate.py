@@ -4,6 +4,22 @@ from pathlib import Path
 import hashlib, json
 import psycopg
 from psycopg import sql
+import tempo_learning_remediation
+
+
+def migration_source(entry):
+    path = entry["path"]
+    if "/" in path or ".." in path or not path.endswith(".sql"):
+        raise ValueError("Migration path escapes package")
+    package = entry.get("package", "tempo_learning_runtime")
+    if package not in {"tempo_learning_runtime", "tempo_learning_remediation"}:
+        raise ValueError("Undeclared Learning migration package")
+    directory = (
+        Path(tempo_learning_remediation.__file__).parent
+        if package == "tempo_learning_remediation"
+        else Path(__file__).parent
+    )
+    return directory.joinpath("migrations", path).read_bytes()
 
 
 def migrate(owner_url, workspace_id, timezone_name):
@@ -31,16 +47,14 @@ def migrate(owner_url, workspace_id, timezone_name):
         for entry in manifest:
             if entry["id"] in seen or not set(entry["depends_on"]) <= seen:
                 raise ValueError("Migration order or identity is invalid")
-            path = entry["path"]
-            if "/" in path or ".." in path or not path.endswith(".sql"):
-                raise ValueError("Migration path escapes package")
-            content = resources.joinpath(path).read_text()
-            digest = hashlib.sha256(content.encode()).hexdigest()
+            content = migration_source(entry)
+            digest = hashlib.sha256(content).hexdigest()
             if entry["id"] in applied:
                 if applied[entry["id"]] != digest:
                     raise ValueError("Applied migration checksum changed")
             else:
-                database.execute(content, prepare=False)
+                database.execute("SET LOCAL search_path=learning,pg_catalog")
+                database.execute(content.decode(), prepare=False)
                 database.execute(
                     "INSERT INTO learning.migration_history(id,checksum) VALUES(%s,%s)",
                     (entry["id"], digest),
@@ -161,8 +175,6 @@ def grant_runtime(owner_url, writer_role, reader_role):
 def expected_migrations():
     directory = Path(__file__).parent / "migrations"
     return {
-        entry["id"]: hashlib.sha256(
-            (directory / entry["path"]).read_bytes()
-        ).hexdigest()
+        entry["id"]: hashlib.sha256(migration_source(entry)).hexdigest()
         for entry in json.loads((directory / "manifest.json").read_text())
     }

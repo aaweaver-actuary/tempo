@@ -116,6 +116,8 @@ def apply_scheduling_review(
     light_first_interval_days: int,
     reviewed_at: datetime,
     review_day: date,
+    queue_entry_id: int | None = None,
+    expected_revision: int | None = None,
 ) -> dict:
     from .scheduling_review_application import (
         apply_scheduling_review as apply_review_to_store,
@@ -141,7 +143,13 @@ def apply_scheduling_review(
         "SELECT MAX(id) FROM reviews WHERE card_id=?", (card_id,)
     ).fetchone()[0]
     if source_kind == "study":
-        settle(database, card_id, review)
+        settle(
+            database,
+            card_id,
+            review,
+            queue_entry_id=queue_entry_id,
+            revision=expected_revision,
+        )
     unlock_legacy_children_after_review(
         database, card_id, review_day.isoformat(), result["state"]
     )
@@ -156,6 +164,7 @@ def ensure_card_queued_after(
     priority_reason: str | None = None,
     *,
     queue_date: str | None = None,
+    protected_ids: set[int] | None = None,
 ) -> None:
     day = queue_date or date.today().isoformat()
     entry = database.execute(
@@ -164,30 +173,94 @@ def ensure_card_queued_after(
     ).fetchone()
     if not entry:
         cycle = database.execute(
-            "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
-            (day, card_id),
+            "SELECT COALESCE(MAX(cycle),-1)+1 FROM (SELECT cycle FROM daily_queue WHERE queue_date=? AND card_id=? UNION ALL SELECT cycle FROM queue_attempt_origins WHERE queue_date=? AND card_id=?) cycles",
+            (day, card_id, day, card_id),
         ).fetchone()[0]
+        append_position = (
+            database.execute(
+                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
+                (day,),
+            ).fetchone()[0]
+            if protected_ids is not None
+            else 2_000_000_000
+        )
         entry = database.execute(
             "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?) RETURNING id",
-            (day, card_id, cycle, 2_000_000_000, attempt_state, priority_reason),
+            (day, card_id, cycle, append_position, attempt_state, priority_reason),
         ).fetchone()
     elif priority_reason:
         database.execute(
             "UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",
             (priority_reason, entry["id"]),
         )
-    ordered_ids = [
-        row[0]
-        for row in database.execute(
-            "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
-            (day, entry["id"]),
+    if protected_ids is not None:
+        from tempo_learning_remediation import (
+            Candidate,
+            current_miss_sql,
+            order_candidates,
         )
-    ]
-    ordered_ids.insert(min(after_cards, len(ordered_ids)), entry["id"])
-    for position, entry_id in enumerate(ordered_ids):
-        database.execute(
-            "UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id)
-        )
+        from .database import current_database
+
+        rows = database.execute_native(
+            """SELECT q.id,q.position,q.card_id,q.gameplay_priority_reason,q.admission_repertoire_id,
+                      card.revision,card.publication_id,card.publication_generation,
+                      CASE WHEN q.gameplay_priority_reason IS NOT NULL THEN """
+            + current_miss_sql("card")
+            + """
+                      ELSE FALSE END AS current_miss
+               FROM daily_queue q JOIN cards card ON card.id=q.card_id
+               WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.position,q.id""",
+            (current_database.get().configuration.workspace_id, day),
+        ).fetchall()
+        if entry["id"] not in protected_ids:
+            misses = [
+                row
+                for row in rows
+                if row["id"] not in protected_ids
+                and row["gameplay_priority_reason"] == priority_reason
+                and row["current_miss"]
+            ]
+            preferences = order_candidates(
+                tuple(
+                    Candidate(
+                        row["card_id"],
+                        row["revision"],
+                        row["publication_id"] or "",
+                        row["publication_generation"],
+                        row["admission_repertoire_id"] or "",
+                        True,
+                        True,
+                    )
+                    for row in misses
+                )
+            )
+            priority_ids = [
+                row["id"]
+                for preference in preferences
+                for row in misses
+                if row["card_id"] == preference.card_id
+            ]
+            priority_set = set(priority_ids)
+            movable = iter(
+                [
+                    *priority_ids,
+                    *[
+                        row["id"]
+                        for row in rows
+                        if row["id"] not in protected_ids
+                        and row["id"] not in priority_set
+                    ],
+                ]
+            )
+            updates = []
+            for row in rows:
+                target = row["id"] if row["id"] in protected_ids else next(movable)
+                updates.append((row["position"], target))
+            database.executemany(
+                "UPDATE daily_queue SET position=? WHERE id=?", updates
+            )
+    else:
+        _position_requeued_card(database, day, entry["id"], after_cards)
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
@@ -199,3 +272,18 @@ def ensure_card_queued_after(
         (entry["id"],),
     )
     preserve_daily_queue_order(database, day)
+
+
+def _position_requeued_card(database, day, entry_id, after_cards):
+    ordered_ids = [
+        row[0]
+        for row in database.execute(
+            "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
+            (day, entry_id),
+        )
+    ]
+    ordered_ids.insert(min(after_cards, len(ordered_ids)), entry_id)
+    for position, entry_id in enumerate(ordered_ids):
+        database.execute(
+            "UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id)
+        )

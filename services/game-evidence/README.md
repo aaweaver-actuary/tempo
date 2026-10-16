@@ -119,12 +119,9 @@ Provider references: [Lichess guidance](https://lichess.org/page/api-tips),
 
 ## Delivery boundary and remaining scope
 
-Set `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` or `work --learning-endpoint URL` to
-an explicit EvidenceDelivery-v2 receiver. This producer depends on B's published
-contract 2.0.0 in PR #281, integrated at c4384c16. Native tests use a strict
-receiver and a test-only installed remediation repository in a separate disposable
-Learning database. This does not provide a production receiver or authentication. Reports and JSON fixtures can be used
-without starting this service.
+Set `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` or `work --learning-endpoint URL` to Learning's `/internal/evidence` receiver. Set `TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE` (or `--learning-token-file`) to a private credential file readable only by its owner, containing Learning's distinct workspace evidence token (at least 32 characters). The credential is separate from the durable outbox lease identity. Redirects remain disabled and HTTP runs outside database transactions; credentials never enter persisted payloads, command output or error messages.
+
+The independent Learning runtime now provides the authenticated v1/v2 receiver and adopts B's remediation module against its own accepted definitions. Native Game Evidence tests retain their strict receiver and test-only installed repository fixture. The Learning runtime's owning native suite separately proves actual installed producer-to-HTTP delivery, lost acknowledgement/restart, restricted database boundaries and studying after the producer stops. Neither proves live provider import, live deployment, legacy Games UI adoption or historical data conversion. Reports/fixtures remain usable without starting this service.
 
 Desired comparisons and durable reconciliation requests commit together. When
 eligible, finalization and immutable outbox insertion share that transaction.

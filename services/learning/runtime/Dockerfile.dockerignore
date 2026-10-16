@@ -13,6 +13,12 @@
 !services/learning/application/pyproject.toml
 !services/learning/application/src/
 !services/learning/application/src/**
+!services/learning/remediation/
+!services/learning/remediation/pyproject.toml
+!services/learning/remediation/src/
+!services/learning/remediation/src/**
+!services/learning/remediation/migrations/
+!services/learning/remediation/migrations/**
 !packages/
 !packages/scheduling/
 !packages/scheduling/pyproject.toml

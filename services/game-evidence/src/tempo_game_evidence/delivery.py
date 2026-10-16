@@ -1,6 +1,7 @@
 """Immutable v2 delivery with durable, acknowledgement-aware reconciliation."""
 from datetime import timedelta
 import uuid
+from pathlib import Path
 
 import httpx
 from psycopg.types.json import Jsonb
@@ -11,7 +12,17 @@ from .source import utc_now
 from .transport import RemoteFailure, request_bytes
 
 
-def deliver_one(store, endpoint, *, client=None):
+def learning_token(path):
+    credential = Path(path)
+    if credential.stat().st_mode & 0o077:
+        raise ValueError("learning_credential_file_must_be_private")
+    token = credential.read_text().strip()
+    if len(token) < 32 or "\n" in token or "\r" in token:
+        raise ValueError("invalid_learning_credential")
+    return token
+
+
+def deliver_one(store, endpoint, *, client=None, token=None):
     if not endpoint:
         return False
     with store.connect() as database:
@@ -51,16 +62,17 @@ def deliver_one(store, endpoint, *, client=None):
                     row['payload']['game_revision'] != game['revision'] or
                     (report.get('snapshot') or {}).get('digest') != inputs['snapshot_digest']):
                 return False
-        token = uuid.uuid4().hex
+        lease_token = uuid.uuid4().hex
         database.execute("UPDATE outbox SET lease_token=%s,leased_until=now()+interval '90 seconds',attempts=attempts+1 WHERE delivery_id=%s",
-                         (token,row['delivery_id']))
+                         (lease_token,row['delivery_id']))
     payload = EvidenceDelivery.model_validate(row['payload'])
     owned = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(15,read=10),follow_redirects=False)
     acknowledgement = None
     delay = min(900,2**min(row['attempts'],10))
     try:
-        raw = request_bytes(client,'POST',endpoint,max_bytes=65536,json=payload.model_dump(mode='json'))
+        raw = request_bytes(client,'POST',endpoint,max_bytes=65536,json=payload.model_dump(mode='json'),
+                            headers={"Authorization":"Bearer "+token} if token else {})
         acknowledgement = EvidenceAcknowledgement.model_validate_json(raw)
         validate_receipt(row['payload'],acknowledgement.model_dump(mode='json'))
         status,reason = acknowledgement.status,acknowledgement.reason
@@ -82,7 +94,7 @@ def deliver_one(store, endpoint, *, client=None):
         changed = database.execute("""UPDATE outbox SET status=%s,reason=%s,acknowledgement=%s,
           next_attempt_at=%s,lease_token=NULL,leased_until=NULL WHERE delivery_id=%s AND lease_token=%s
           RETURNING *""",(status,reason,Jsonb(acknowledgement.model_dump(mode='json')) if acknowledgement else None,
-          utc_now()+timedelta(seconds=delay),row['delivery_id'],token)).fetchone()
+          utc_now()+timedelta(seconds=delay),row['delivery_id'],lease_token)).fetchone()
         if changed:
             if status=='completed':
                 apply_completed(database,changed)

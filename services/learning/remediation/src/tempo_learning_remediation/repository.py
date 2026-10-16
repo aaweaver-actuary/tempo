@@ -1,6 +1,7 @@
 """Learning-only PostgreSQL persistence borrowing an explicit outer transaction."""
 from dataclasses import asdict
 import json
+import re
 
 from tempo_game_evidence_contracts import v1, v2
 
@@ -39,6 +40,25 @@ _OUTSTANDING = """
 # The parameterized OFFSET/LATERAL boundary is intentional: first reject old
 # frontiers using the frontier index, then inspect a matching attempt's marker.
 # An ordinary flattened anti-join can scan historical review pairs per incident.
+
+
+def current_miss_sql(card_alias: str = "card") -> str:
+    """Correlated read predicate for Learning's existing queue/frozen readers.
+
+    The one parameter is the authenticated workspace. Only a SQL identifier,
+    never request text, may select the caller's accepted-card row alias.
+    The frontier/settlement query remains owned here, including its plan fence.
+    """
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", card_alias):
+        raise ValueError("card alias must be an SQL identifier")
+    outstanding = _OUTSTANDING.replace("head.card_id=%s", f"head.card_id={card_alias}.id")
+    return "EXISTS(SELECT 1" + outstanding + f"""
+        AND contribution.card_revision={card_alias}.revision
+        AND contribution.publication_id={card_alias}.publication_id
+        AND contribution.publication_generation={card_alias}.publication_generation
+        AND EXISTS(SELECT 1 FROM remediation_game_heads game
+            WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
+              AND game.game_revision=contribution.game_revision))"""
 
 
 class PostgresRepository:
@@ -235,13 +255,15 @@ class PostgresRepository:
             (self.workspace_id, candidate.card_id, candidate.card_revision, candidate.publication_id,
              candidate.publication_generation)).fetchone()[0]
 
-    def pending_page(self, cursor: str = "") -> WorkPage:
+    def pending_page(self, cursor: str = "", *, limit: int = PAGE_SIZE) -> WorkPage:
+        if not 1 <= limit <= PAGE_SIZE:
+            raise ValueError("pending page limit exceeds the module bound")
         rows = self._execute("""SELECT card_id,sequence,work_state,reason FROM remediation_cards
             WHERE workspace_id=%s AND card_id>%s ORDER BY card_id LIMIT %s""",
-            (self.workspace_id, cursor, PAGE_SIZE + 1)).fetchall()
-        scanned = rows[:PAGE_SIZE]
+            (self.workspace_id, cursor, limit + 1)).fetchall()
+        scanned = rows[:limit]
         return WorkPage(tuple(WorkItem(*row) for row in scanned if self.has_outstanding(row[0])),
-                        scanned[-1][0] if scanned else cursor, len(rows) > PAGE_SIZE)
+                        scanned[-1][0] if scanned else cursor, len(rows) > limit)
 
     def record_admission(self, card_id: str, result: AdmissionResult):
         if result.status not in {"applied", "deferred", "rejected"}:

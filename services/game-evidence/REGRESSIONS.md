@@ -1,5 +1,11 @@
 # Game Evidence regression ownership
 
+`tests/test_credentials.py` owns private Learning credential-file validation.
+The Learning runtime's regular `test_game_evidence_runtime.py` owns actual bearer
+delivery, separate database credentials, lost acknowledgement/restart and producer
+shutdown with continued studying. This complements the component's strict-receiver
+and library fixture proofs; it does not replace them or claim full Study UI adoption.
+
 The installed package's regular `tests/` suite owns legal PGN replay, precise ply
 and board side, alternatives versus misses, route ambiguity, Italian/Ruy separation,
 shared membership, explicit transposition re-entry, repeated occurrences, custom

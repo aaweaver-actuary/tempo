@@ -52,6 +52,10 @@ def main():
             service_sdist=next(distributions.glob("tempo_game_evidence-0*.tar.gz"))
             for path in distributions.iterdir():
                 report["artifacts"][path.name]=hashlib.sha256(path.read_bytes()).hexdigest()
+            # Consumers must survive without any copied producer source tree.
+            for copied in workspace.glob("*-build"):
+                shutil.rmtree(copied)
+            report["build_sources_removed"] = not any(workspace.glob("*-build"))
             for version in ("3.12","3.14"):
                 for kind,artifact in (("wheel",service_wheel),("sdist",service_sdist)):
                     label="python-"+version+"-"+kind

@@ -560,6 +560,25 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = "==2.12.5" }]
 
 [[package]]
+name = "tempo-learning-remediation"
+version = "0.1.0"
+source = { directory = "../services/learning/remediation" }
+dependencies = [
+    { name = "tempo-game-evidence-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tempo-game-evidence-contracts", directory = "../contracts/game-evidence" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "hatchling", specifier = "==1.27.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
+
+[[package]]
 name = "tempo-learning-review"
 version = "0.1.0"
 source = { directory = "../services/learning/application" }
@@ -590,6 +609,7 @@ dependencies = [
     { name = "tempo-chess-core" },
     { name = "tempo-content-publication-contracts" },
     { name = "tempo-game-evidence-contracts" },
+    { name = "tempo-learning-remediation" },
     { name = "tempo-learning-review" },
     { name = "tempo-scheduling" },
     { name = "uvicorn" },
@@ -609,6 +629,7 @@ requires-dist = [
     { name = "tempo-chess-core", directory = "../packages/chess-core" },
     { name = "tempo-content-publication-contracts", directory = "../contracts/content-publication" },
     { name = "tempo-game-evidence-contracts", directory = "../contracts/game-evidence" },
+    { name = "tempo-learning-remediation", directory = "../services/learning/remediation" },
     { name = "tempo-learning-review", directory = "../services/learning/application" },
     { name = "tempo-scheduling", directory = "../packages/scheduling" },
     { name = "uvicorn", specifier = "==0.35.0" },

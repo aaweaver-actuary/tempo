@@ -65,6 +65,51 @@ def main():
         )
     }
     report["runtime"] = sys.version
+    report["dependency_inputs"] = {}
+    manifest = json.loads((ROOT / "components.json").read_text())
+    owners = {
+        "learning-remediation",
+        "game-evidence",
+        "learning-review-application",
+        "scheduling",
+        "chess-core",
+        "content-publication-contracts",
+        "game-evidence-contracts",
+        "browser-intents",
+        "study-session",
+    }
+    for component in manifest["components"]:
+        if component["id"] not in owners:
+            continue
+        for name in component["buildInputs"]:
+            source = ROOT / component["root"] / name
+            for path in sorted(source.rglob("*")) if source.is_dir() else [source]:
+                if path.is_file() and not any(
+                    part
+                    in {
+                        ".venv",
+                        "node_modules",
+                        "__pycache__",
+                        ".pytest_cache",
+                        "dist",
+                        "test-results",
+                    }
+                    for part in path.parts
+                ):
+                    report["dependency_inputs"][str(path.relative_to(ROOT))] = (
+                        hashlib.sha256(path.read_bytes()).hexdigest()
+                    )
+    for source in [
+        ROOT / "app/lib",
+        ROOT / "app/domain",
+        ROOT / "app/const.ts",
+        ROOT / "components.json",
+    ]:
+        for path in sorted(source.rglob("*")) if source.is_dir() else [source]:
+            if path.is_file():
+                report["dependency_inputs"][str(path.relative_to(ROOT))] = (
+                    hashlib.sha256(path.read_bytes()).hexdigest()
+                )
     report["evidence"] = str(evidence)
     attempted = False
     volume_attempted = False
@@ -174,6 +219,36 @@ def main():
             TEMPO_LEARNING_TEST_IMAGE=runtime_image,
             TEMPO_LEARNING_TEST_ADMIN=admin,
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+        )
+        environment.pop("PYTHONPATH", None)
+        # A separately installed producer is an integration-test input only. It
+        # is absent from the Learning artifact and service container closure.
+        producer = ROOT / "services/game-evidence"
+        installed = subprocess.run(
+            [
+                "uv",
+                "sync",
+                "--project",
+                str(producer),
+                "--locked",
+                "--no-editable",
+                "--no-dev",
+                "--python",
+                "3.12",
+                "--reinstall-package",
+                "tempo-game-evidence",
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        (evidence / "producer-install.log").write_text(
+            installed.stdout + installed.stderr
+        )
+        if installed.returncode:
+            raise RuntimeError("Installed Game Evidence producer unavailable")
+        environment["TEMPO_LEARNING_TEST_GAME_EVIDENCE_PYTHON"] = str(
+            producer / ".venv/bin/python"
         )
         receipts = {}
         for stage, extra in [

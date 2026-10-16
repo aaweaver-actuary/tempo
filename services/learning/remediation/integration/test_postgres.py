@@ -558,3 +558,49 @@ def test_native_new_miss_review_completion_race_preserves_newer_work(workspace, 
             assert repository.bind_attempt(bound, DECISION) == 1
             assert repository.settle(review(bound), DECISION)
             assert repository.has_outstanding("card")
+
+
+def test_native_single_card_page_advances_past_rejected_rows_without_skipping_pending(
+    workspace,
+):
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        for card in ("a", "b"):
+            connection.execute(
+                "INSERT INTO remediation_cards(workspace_id,card_id) VALUES(%s,%s)",
+                (workspace, card),
+            )
+        value = scoped(delivery(card="c"), workspace)
+        accept(repository, value, accepted=replace(DECISION, card_id="c"))
+        first = repository.pending_page(limit=1)
+        assert first.items == () and first.cursor == "a" and first.has_more
+        second = repository.pending_page(first.cursor, limit=1)
+        assert second.items == () and second.cursor == "b" and second.has_more
+        third = repository.pending_page(second.cursor, limit=1)
+        assert (
+            [item.card_id for item in third.items] == ["c"]
+            and third.cursor == "c"
+            and not third.has_more
+        )
+
+
+def test_native_correlated_queue_predicate_matches_repository_and_settlement(workspace):
+    from tempo_learning_remediation import current_miss_sql
+
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        accept(repository, scoped(delivery(), workspace))
+
+        def queued_miss():
+            return connection.execute(
+                "SELECT "
+                + current_miss_sql("accepted_card")
+                + " FROM (VALUES(%s::text,%s::bigint,%s::text,%s::bigint)) accepted_card(id,revision,publication_id,publication_generation)",
+                (workspace, "card", 1, "publication", 1),
+            ).fetchone()[0]
+
+        assert queued_miss() is True
+        bound = attempt()
+        repository.bind_attempt(bound, DECISION)
+        assert repository.settle(review(bound), DECISION)
+        assert queued_miss() is False

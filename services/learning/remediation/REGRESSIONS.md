@@ -41,3 +41,10 @@ previously visited 1,001,000 history rows and failed the unchanged bound.
 - `test_native_same_frontier_nonsettling_history_lookup_is_bounded` records a
   second EXPLAIN plan for 1,000 matching-frontier nonsettling attempts and guards
   against a quadratic scan. The original lower-frontier bound remains unchanged.
+# F1 runtime interface extensions
+
+`tests/test_policy.py` owns smaller preparation bounds, one-card cursor advancement
+and SQL-alias validation. `integration/test_postgres.py` additionally owns
+`test_native_single_card_page_advances_past_rejected_rows_without_skipping_pending`
+and `test_native_correlated_queue_predicate_matches_repository_and_settlement`.
+The original frontier-first query-plan checks and their row limits are unchanged.

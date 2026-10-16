@@ -9,7 +9,7 @@ import threading
 import uvicorn
 
 from .api import create_app
-from .delivery import deliver_one
+from .delivery import deliver_one, learning_token
 from .providers import AccountImport, enqueue_import, import_one, cancel_import
 from .snapshot import ComparisonSnapshot
 from .store import EvidenceStore
@@ -46,6 +46,7 @@ def main(arguments=None):
     worker.add_argument("--max-jobs",type=int,default=64)
     worker.add_argument("--poll",action="store_true")
     worker.add_argument("--learning-endpoint",default=os.environ.get("TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT"))
+    worker.add_argument("--learning-token-file",type=Path,default=os.environ.get("TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE"))
     serve = commands.add_parser("serve")
     serve.add_argument("--host",default="127.0.0.1")
     serve.add_argument("--port",type=int,default=8041)
@@ -82,13 +83,14 @@ def main(arguments=None):
             if not 1<=options.max_jobs<=10000 or options.once and options.poll:
                 raise ValueError("invalid_worker_bounds")
             stopped = threading.Event()
+            token = learning_token(options.learning_token_file) if options.learning_token_file else None
             signal.signal(signal.SIGTERM,lambda *_:stopped.set())
             signal.signal(signal.SIGINT,lambda *_:stopped.set())
             processed = 0
             while not stopped.is_set():
                 progressed = False
                 for operation in (lambda:import_one(store,cancelled=stopped.is_set),store.process_one,
-                                  lambda:deliver_one(store,options.learning_endpoint)):
+                                  lambda:deliver_one(store,options.learning_endpoint,token=token)):
                     if stopped.is_set() or processed>=options.max_jobs:
                         break
                     if operation():

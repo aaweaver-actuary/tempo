@@ -11,3 +11,4 @@ grimp==3.17
 ./contracts/content-publication
 ./contracts/game-evidence
 ./services/learning/runtime
+./services/learning/remediation

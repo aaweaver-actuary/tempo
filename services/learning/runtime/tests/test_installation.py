@@ -20,10 +20,12 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
     assert [entry["id"] for entry in migrations] == [
         "learning.runtime/0001",
         "learning.runtime/0002",
+        "learning.remediation/0001",
     ]
     assert migrations[1]["depends_on"] == ["learning.runtime/0001"]
     assert all(
-        (package / "migrations" / entry["path"]).is_file() for entry in migrations
+        __import__("tempo_learning_runtime.migrate", fromlist=["migration_source"]).migration_source(entry)
+        for entry in migrations
     )
     assert (
         json.loads((package / "fixtures/legacy-protocol.json").read_text())["protocol"]
@@ -42,7 +44,7 @@ import sys, pkgutil
 from importlib.abc import MetaPathFinder
 class RejectOptional(MetaPathFinder):
     def find_spec(self,fullname,path=None,target=None):
-        if fullname.split('.')[0] in {'app','celery','redis','torch','onnxruntime','transformers','sqlite3'}:
+        if fullname.split('.')[0] in {'app','celery','redis','torch','onnxruntime','transformers','sqlite3','tempo_game_evidence'}:
             raise AssertionError('Forbidden runtime dependency: '+fullname)
 sys.meta_path.insert(0,RejectOptional())
 def refuse_connection(event,arguments):

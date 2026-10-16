@@ -102,6 +102,21 @@ backfill, HTTP receiver, settings switch, or FSRS/history writes.
 
 ## Owning checks
 
+F1's independent Learning runtime now adopts this library separately. The default
+preparation bound remains 16 identities per page and four pages. Callers may request
+smaller positive `page_size`/`max_pages`; the runtime uses one identity and one page
+to commit every application with its exact cursor. Rejected/settled rows still
+advance. `pending_page(limit=...)` has the same maximum of 16. These extensions do
+not change eligibility, scheduling or the default scan contract.
+
+`current_miss_sql(card_alias)` is the read-only correlated predicate for existing
+Learning queue/frozen readers. Its single bound value is the authenticated
+workspace; the alias must be an SQL identifier. The module retains ownership of
+the frontier-first settlement query and its OFFSET/LATERAL plan fence. The runtime
+does not privately replace that predicate or read source-game tables. Native
+predicate/settlement parity and single-card cursor checks supplement the unchanged
+historical query-plan regression.
+
 Install only this component with `uv sync --locked --no-editable` from this
 directory, then `uv run --locked --no-editable python -m pytest tests`.
 `integration/run_postgres.py` runs the actual repository on a uniquely owned

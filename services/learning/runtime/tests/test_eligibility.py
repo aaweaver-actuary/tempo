@@ -126,37 +126,8 @@ def test_local_evidence_delivery_promotes_miss_and_required_review_settles(case)
     activate(case)
     card = head(case)
     assert submit(case, card, review_payload(card)).status_code == 200
-    payload = {
-        "contract_version": 1,
-        "workspace_id": "workspace-a",
-        "delivery_id": "delivery-a",
-        "evidence_id": "evidence-a",
-        "evidence_revision": 1,
-        "game_id": "game-a",
-        "game_revision": 1,
-        "encounters": [
-            {
-                "encounter_id": "encounter-a",
-                "ply": 0,
-                "position_key": "position-a",
-                "decision_id": "decision-0",
-                "observed_move": "d2d4",
-            }
-        ],
-        "comparisons": [],
-        "misses": [],
-        "obligations": [
-            {
-                "obligation_id": "miss-a",
-                "source_evidence_id": "evidence-a",
-                "source_revision": 1,
-                "card_id": card["id"],
-                "decision_id": "decision-0",
-                "publication_generation": 1,
-                "kind": "real_game_miss",
-            }
-        ],
-    }
+    from test_evidence_revisions import delivery, drain
+    payload = delivery(card["id"])
     headers = {"Authorization": "Bearer " + case.configuration.evidence_token}
     delivered = case.client.post("/internal/evidence", json=payload, headers=headers)
     assert delivered.status_code == 200, delivered.text
@@ -165,18 +136,19 @@ def test_local_evidence_delivery_promotes_miss_and_required_review_settles(case)
         case.client.post("/internal/evidence", json=payload, headers=headers).json()
         == delivered.json()
     )
+    drain(case)
     assert (
         case.query(
             "SELECT COUNT(*) FROM learning.daily_queue WHERE status='queued' AND gameplay_priority_reason IS NOT NULL"
         )[0][0]
         == 1
-    )
+    ), [(table,[tuple(row) for row in case.query("SELECT * FROM learning."+table)]) for table in ("remediation_cards","background_tasks","daily_queue")]
     promoted = head(case)
     saved = submit(case, promoted, review_payload(promoted))
     assert saved.status_code == 200, saved.text
     assert (
         case.query(
-            "SELECT satisfied_at IS NOT NULL FROM learning.learning_obligations"
+            "SELECT settled FROM learning.remediation_review_receipts WHERE settled"
         )[0][0]
         is True
     )

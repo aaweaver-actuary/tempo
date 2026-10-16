@@ -2,13 +2,17 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from threading import Event
 import hashlib, json
+import chess
+from tempo_chess_core import canonical_fen_key
+from tempo_learning_runtime.remediation_adapter import BorrowedConnection
+from tempo_learning_runtime.admission import lock_card
+from tempo_learning_runtime.maintenance import run_once
 import psycopg, pytest
 from fastapi import HTTPException
 from tempo_game_evidence_contracts.v1 import EvidenceAcknowledgement
 from tempo_learning_runtime import receivers
 from tempo_learning_runtime.database import connection
 from tempo_learning_runtime.migrate import migrate, grant_runtime, expected_migrations
-from tempo_learning_runtime.postgres_store import PostgresConnection
 from psycopg.conninfo import make_conninfo, conninfo_to_dict
 from test_runtime import activate, head, review_payload, submit
 from concurrency_helpers import extend_gate_budget, wait_for_lock
@@ -27,13 +31,30 @@ def delivery(card_id, revision=1, transport=None, obligations=True):
             {
                 "encounter_id": "encounter-a",
                 "ply": 0,
-                "position_key": "position-a",
+                "position_key": canonical_fen_key(chess.STARTING_FEN),
                 "decision_id": "decision-0",
                 "observed_move": "d2d4",
             }
         ],
-        "comparisons": [],
-        "misses": [],
+        "comparisons": [
+            {
+                "encounter_id": "encounter-a",
+                "card_id": card_id,
+                "decision_id": "decision-0",
+                "publication_id": "publication-a",
+                "publication_generation": 1,
+                "expected_moves": ["e2e4"],
+                "status": "missed",
+            }
+        ],
+        "misses": [
+            {
+                "miss_id": "observed-miss",
+                "encounter_id": "encounter-a",
+                "decision_id": "decision-0",
+                "reason": "repertoire_deviation",
+            }
+        ],
         "obligations": [
             {
                 "obligation_id": f"miss-{revision}",
@@ -67,10 +88,22 @@ def domain_state(case):
         for table in (
             "cards",
             "daily_queue",
-            "learning_obligations",
-            "accepted_evidence_revisions",
+            "remediation_cards",
+            "remediation_source_heads",
+            "remediation_game_heads",
+            "remediation_contributions",
+            "remediation_incident_versions",
+            "remediation_obligation_heads",
         )
     }
+
+
+def drain(case):
+    with case.database.scope():
+        for _ in range(100):
+            if not run_once():
+                return
+        raise AssertionError("Durable Learning work did not finish")
 
 
 def studied_card(case):
@@ -107,6 +140,7 @@ def test_semantic_retry_does_not_readmit_a_settled_miss(case):
     card = studied_card(case)
     payload = delivery(card["id"])
     accepted = send(case, payload).json()
+    drain(case)
     promoted = head(case)
     assert submit(case, promoted, review_payload(promoted)).status_code == 200
     before = domain_state(case)
@@ -115,7 +149,7 @@ def test_semantic_retry_does_not_readmit_a_settled_miss(case):
     assert response.status_code == 200
     assert response.json() == {**accepted, "delivery_id": "another-transport"}
     assert domain_state(case) == before
-    assert case.query("SELECT COUNT(*) FROM learning.evidence_deliveries")[0][0] == 2
+    assert case.query("SELECT COUNT(*) FROM learning.remediation_deliveries")[0][0] == 2
     conflicting = {**payload, "delivery_id": "conflict", "game_revision": 9}
     assert send(case, conflicting).status_code == 409
     assert domain_state(case) == before
@@ -130,9 +164,9 @@ def test_empty_correction_advances_frontier_and_cannot_reintroduce_obligations(c
     assert response.json()["status"] == "stale_revision"
     assert domain_state(case) == before
     assert (
-        case.query(
-            "SELECT evidence_revision FROM learning.accepted_evidence_revisions"
-        )[0][0]
+        case.query("SELECT evidence_revision FROM learning.remediation_source_heads")[
+            0
+        ][0]
         == 2
     )
 
@@ -143,20 +177,20 @@ def test_evidence_frontier_obligations_queue_and_receipt_rollback_together(
     card = studied_card(case)
     assert send(case, delivery(card["id"], obligations=False)).status_code == 200
     before = domain_state(case)
-    execute = PostgresConnection.execute
+    execute = BorrowedConnection.execute
 
     def fail_receipt(self, statement, *args, **kwargs):
-        if statement.startswith("INSERT INTO evidence_deliveries"):
+        if statement.startswith("INSERT INTO remediation_deliveries"):
             raise HTTPException(
                 409, "Injected receipt failure after revision and admission"
             )
         return execute(self, statement, *args, **kwargs)
 
     with monkeypatch.context() as patch:
-        patch.setattr(PostgresConnection, "execute", fail_receipt)
+        patch.setattr(BorrowedConnection, "execute", fail_receipt)
         assert send(case, delivery(card["id"], 2)).status_code == 409
     assert domain_state(case) == before
-    assert case.query("SELECT COUNT(*) FROM learning.evidence_deliveries")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.remediation_deliveries")[0][0] == 1
     assert send(case, delivery(card["id"], 2)).json()["status"] == "completed"
 
 
@@ -171,10 +205,7 @@ def test_concurrent_evidence_revisions_serialize_on_durable_frontier(
     def first():
         with case.database.scope(), connection() as database:
             extend_gate_budget(database)
-            database.execute_native(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                ("learning:evidence:evidence-a",),
-            )
+            lock_card(database, card["id"])
             owns_identity.set()
             assert release.wait(3)
             return receivers.receive(
@@ -205,15 +236,15 @@ def test_concurrent_evidence_revisions_serialize_on_durable_frontier(
             "completed" if first_revision == 1 else "stale_revision"
         )
     assert (
-        case.query(
-            "SELECT evidence_revision FROM learning.accepted_evidence_revisions"
-        )[0][0]
+        case.query("SELECT evidence_revision FROM learning.remediation_source_heads")[
+            0
+        ][0]
         == 2
     )
     revisions = [
         row[0]
         for row in case.query(
-            "SELECT source_revision FROM learning.learning_obligations ORDER BY source_revision"
+            "SELECT evidence_revision FROM learning.remediation_contributions ORDER BY evidence_revision"
         )
     ]
     assert revisions == ([1, 2] if first_revision == 1 else [2])
@@ -314,10 +345,11 @@ def test_revision_migration_backfills_legacy_receipts_and_preserves_replay(case)
         == "stale_revision"
     )
     assert send(case, delivery("unused", 5, obligations=False)).status_code == 200
+    assert send(case, payload).json() == original
     with psycopg.connect(case.configuration.reader_url) as reader_database:
         assert (
             reader_database.execute(
-                "SELECT evidence_revision FROM learning.accepted_evidence_revisions"
+                "SELECT evidence_revision FROM learning.remediation_source_heads"
             ).fetchone()[0]
             == 5
         )
@@ -350,8 +382,7 @@ def test_registered_receiver_retains_sole_revision_authority(case, monkeypatch):
     assert send(case, delivery("custom-owned", obligations=False)).status_code == 200
     assert len(calls) == 1 and calls[0][1] is receivers.admit
     assert (
-        case.query("SELECT COUNT(*) FROM learning.accepted_evidence_revisions")[0][0]
-        == 0
+        case.query("SELECT COUNT(*) FROM learning.remediation_source_heads")[0][0] == 0
     )
 
 
@@ -367,33 +398,42 @@ def test_cross_evidence_identity_reuse_conflicts_atomically(
         first_payload = delivery(cards[0], transport="first-delivery")
         second_payload = delivery(cards[1], transport="second-delivery")
         second_payload["obligations"][0]["source_evidence_id"] = "evidence-b"
-        gated_insert = "INSERT INTO learning_obligations"
+        second_payload["encounters"][0].update(
+            decision_id="decision-1", observed_move="g1f3"
+        )
+        second_payload["comparisons"][0].update(
+            decision_id="decision-1", expected_moves=["d2d4"]
+        )
+        second_payload["obligations"][0]["decision_id"] = "decision-1"
+        second_payload["misses"][0]["decision_id"] = "decision-1"
+
+        gated_insert = "INSERT INTO remediation_contributions"
     else:
         first_payload = delivery(
             "unused", transport="shared-delivery", obligations=False
         )
         second_payload = deepcopy(first_payload)
-        gated_insert = "INSERT INTO evidence_deliveries"
+        gated_insert = "INSERT INTO remediation_deliveries"
     second_payload["evidence_id"] = "evidence-b"
     second_payload["game_id"] = "game-b"
     inserted, release, contender_started = Event(), Event(), Event()
     contender_backend = []
-    execute = PostgresConnection.execute
+    execute = BorrowedConnection.execute
 
     def gate_creator_after_insert(self, statement, parameters=()):
         cursor = execute(self, statement, parameters)
         if statement.startswith(gated_insert):
             evidence_id = (
-                parameters[1]
+                parameters[3]
                 if identity_kind == "obligation"
-                else json.loads(parameters[2])["evidence_id"]
+                else json.loads(parameters[3])["evidence_id"]
             )
             if evidence_id == "evidence-a":
                 inserted.set()
                 assert release.wait(3)
         return cursor
 
-    monkeypatch.setattr(PostgresConnection, "execute", gate_creator_after_insert)
+    monkeypatch.setattr(BorrowedConnection, "execute", gate_creator_after_insert)
 
     def receive(payload, contender=False):
         try:
@@ -423,15 +463,15 @@ def test_cross_evidence_identity_reuse_conflicts_atomically(
     assert [
         tuple(row)
         for row in case.query(
-            "SELECT evidence_id FROM learning.accepted_evidence_revisions"
+            "SELECT evidence_id FROM learning.remediation_source_heads"
         )
     ] == [("evidence-a",)]
-    assert case.query("SELECT COUNT(*) FROM learning.evidence_deliveries")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.remediation_deliveries")[0][0] == 1
     if identity_kind == "obligation":
         assert [
             tuple(row)
             for row in case.query(
-                "SELECT source_evidence_id,card_id FROM learning.learning_obligations"
+                "SELECT evidence_id,card_id FROM learning.remediation_contributions"
             )
         ] == [("evidence-a", cards[0])]
         assert (

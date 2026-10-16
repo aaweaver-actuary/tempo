@@ -20,15 +20,19 @@ class Preparation:
 
 
 def prepare_admissions(repository: PostgresRepository, facts: CandidateFactsPort,
-                       cursor: str = "") -> Preparation:
+                       cursor: str = "", *, page_size: int = PAGE_SIZE,
+                       max_pages: int = MAX_PREPARATION_PAGES) -> Preparation:
+    if not 1 <= page_size <= PAGE_SIZE or not 1 <= max_pages <= MAX_PREPARATION_PAGES:
+        raise ValueError("preparation exceeds the module bounds")
     candidates = []
     has_more = False
-    for page_index in range(MAX_PREPARATION_PAGES):
-        page = repository.pending_page(cursor)
+    for page_index in range(max_pages):
+        page = (repository.pending_page(cursor) if page_size == PAGE_SIZE else
+                repository.pending_page(cursor, limit=page_size))
         cursor, has_more = page.cursor, page.has_more
         outstanding = {item.card_id for item in page.items}
         supplied = facts.candidates(page.items) if page.items else ()
-        if len(supplied) > PAGE_SIZE:
+        if len(supplied) > page_size:
             raise ValueError("candidate facts must be bounded to one route per requested card")
         if any(candidate.card_id not in outstanding for candidate in supplied):
             raise ValueError("candidate facts escaped the requested page")
