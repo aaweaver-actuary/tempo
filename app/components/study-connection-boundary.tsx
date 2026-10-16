@@ -30,7 +30,7 @@ export default function StudyConnectionBoundary() {
   if (ready) return <><div className="study-connection-controls">
     <button onClick={() => setShowSettings(value => !value)}>Study settings</button>
     <button onClick={() => { disconnectStudy(); window.location.reload(); }}>Disconnect Learning</button>
-    {typeof __TEMPO_WORKBENCH_URL__ !== "undefined" && __TEMPO_WORKBENCH_URL__ && <a href={__TEMPO_WORKBENCH_URL__} rel="noreferrer">Open Workbench</a>}
+    {typeof __TEMPO_WORKBENCH_URL__ !== "undefined" && __TEMPO_WORKBENCH_URL__ && <a href={__TEMPO_WORKBENCH_URL__} target="_blank" rel="noopener noreferrer">Open Workbench</a>}
   </div><Suspense fallback={<p role="status">Loading Study…</p>}>{showSettings && <StudySettingsPanel />}<Home /></Suspense></>;
   return <main className="study-connect"><h1>Connect Study to Learning</h1>
     <p>Use the Learning workspace and its Study credential.</p>
