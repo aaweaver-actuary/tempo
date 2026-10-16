@@ -128,3 +128,9 @@ Native `integration/test_postgres.py` owns:
 
 Pure installed `test_A_bridge_scope_preflight_is_local_and_preserves_general_types`
 checks explanation, open judgment, missing/terminal bindings and alias collisions.
+
+`test_A_completion_receipt_requires_exact_original_authority` shares success/failure
+workspace/family/request/publication/generation binding. The real installed
+`test_A_installed_completion_cannot_substitute_checkpointed_request` completes a
+different publication's retirement under the same remote ID and proves that both
+reconcile and abandon retain the original Content reservation and serving content.

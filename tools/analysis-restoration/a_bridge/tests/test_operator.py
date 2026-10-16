@@ -218,7 +218,7 @@ def test_A_initial_empty_source_without_active_publication_is_recoverable(status
     assert len(operator.requests) == 1
 
 
-@pytest.mark.parametrize('fault', ['offline', 'workspace', 'publication', 'date', 'generation', 'revision', 'status', '401', '403', '500', 'malformed'])
+@pytest.mark.parametrize('fault', ['offline', 'workspace', 'publication', 'date', 'generation', 'revision', 'status', 'version', '401', '403', '500', 'malformed'])
 def test_A_unavailable_retirement_preflight_preserves_original_operation(fault):
     from tempo_a_bridge.cli import LearningHTTPError
     operator = RecoveryOperator(empty=True)
@@ -230,8 +230,8 @@ def test_A_unavailable_retirement_preflight_preserves_original_operation(fault):
         operator.http = lambda *args: (200, [])
     else:
         field = {'workspace': 'workspace_id', 'publication': 'publication_id', 'date': 'local_date',
-            'generation': 'publication_generation', 'revision': 'activation_revision', 'status': 'status'}[fault]
-        operator.current[field] = 'wrong'
+            'generation': 'publication_generation', 'revision': 'activation_revision', 'status': 'status', 'version': 'schema_version'}[fault]
+        operator.current[field] = True if fault == 'version' else 'wrong'
     with pytest.raises((ValueError, OSError)):
         operator.apply('operation')
     assert operator.operation['state'] == 'approved'

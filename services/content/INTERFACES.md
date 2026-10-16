@@ -226,3 +226,8 @@ Checkpointed operations require the original authenticated Learning terminal
 receipt, including a Learning publication fence. `record-failure` independently
 fetches and binds that receipt; no caller-supplied HTTP error or failed-state claim
 releases a reservation. No new state, migration or shared wire contract is added.
+
+Completion verification applies the same exact original envelope binding as
+terminal failure. Retirement response fields alone cannot identify the retired
+publication; reconstruction is permitted only after the authenticated receipt's
+workspace, command, original request, publication, generation and ID all match.

@@ -583,6 +583,10 @@ def test_A_installed_pre_activation_recovery(case, authored, tmp_path, scenario)
                 completed = run_cli(bridge_cli, [*arguments, 'reconcile', original['id']], environment, tmp_path)
                 assert completed['state'] == 'completed'
                 assert inspect_rows(case, 'SELECT count(*) FROM learning.activation_receipts')[0][0] == 1
+                evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+                evidence.mkdir(parents=True, exist_ok=True)
+                (evidence / 'preactivation-lost_stage.json').write_text(json.dumps({'initial': before,
+                    'remote_before_restart': remote, 'recovered': completed, 'observed': observed}, indent=2, default=str))
                 return
             if scenario == 'lost_abort':
                 assert persisted['state'] == 'applying' and len(observed) == 2
@@ -659,7 +663,12 @@ def test_A_installed_preflight_preserves_previous_serving_authority(case, author
                 assert run_cli(content_cli, ['operation', 'cancel', operation['id']], environment, tmp_path)['cancelled']
             source['title'] = 'Corrected after ' + scenario
             corrected = approve_authored(content_cli, environment, tmp_path, source, revision)
-            assert run_cli(bridge_cli, [*arguments, 'apply', corrected['id']], environment, tmp_path)['state'] == 'completed'
+            corrected = run_cli(bridge_cli, [*arguments, 'apply', corrected['id']], environment, tmp_path)
+            assert corrected['state'] == 'completed'
+            evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+            evidence.mkdir(parents=True, exist_ok=True)
+            (evidence / ('preflight-' + scenario + '.json')).write_text(json.dumps({'previous': previous,
+                'original': persisted, 'corrected': corrected, 'observed': observed}, indent=2, default=str))
 
 
 @pytest.mark.parametrize('action', ['apply', 'abandon'])
@@ -692,3 +701,46 @@ def test_A_installed_concurrent_operators_preserve_one_authority(case, authored,
         replay = run_cli(bridge_cli, [*arguments, action, operation['id']], environment, tmp_path, success=False)
         if action == 'apply': assert replay['document'] == persisted['document']
         else: assert isinstance(replay, subprocess.CompletedProcess) and replay.returncode == 2
+        evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence / ('concurrent-' + action + '.json')).write_text(json.dumps({'content': persisted, 'remote': receipt}, indent=2, default=str))
+
+
+def test_A_installed_completion_cannot_substitute_checkpointed_request(case, authored, tmp_path):
+    from test_content_bridge import content_bundle, request_for
+    content_cli, bridge_cli, environment = authored
+    token = tmp_path / 'operator-token'
+    token.write_text(case.configuration.operator_token); token.chmod(0o600)
+    source = source_document()
+    operation = approve_authored(content_cli, environment, tmp_path, source, 0)
+    headers = {'Authorization': 'Bearer ' + case.configuration.operator_token}
+    with server(case, tmp_path) as (client, process):
+        origin = str(client.base_url).rstrip('/')
+        arguments = ['--content-cli', content_cli, '--learning-origin', origin, '--operator-token-file', token]
+        completed = run_cli(bridge_cli, [*arguments, 'apply', operation['id']], environment, tmp_path)
+        publication_id = completed['document']['export']['publication']['publication_id']
+        source.update(title='Retirement with mismatched remote receipt', routes=[], memberships=[], exercises=[], bindings=[])
+        retirement = approve_authored(content_cli, environment, tmp_path, source, 1)
+        run_cli(content_cli, ['operation', 'prepare', retirement['id']], environment, tmp_path)
+        request = {'publication_id': publication_id, 'publication_generation': 1, 'expected_activation_revision': 1,
+            'retirement_id': retirement['id'] + ':retire'}
+        checkpoint = tmp_path / 'checkpoint.json'
+        checkpoint.write_text(json.dumps({'delivery': {'endpoint': origin, 'request': request, 'retirement': True, 'due_date': '2026-10-16'}}))
+        run_cli(content_cli, ['operation', 'checkpoint', retirement['id'], '--file', checkpoint], environment, tmp_path)
+        other = content_bundle()
+        assert other['publication']['publication_id'] != publication_id
+        assert client.post('/internal/publications/v2/stage', json=other, headers=headers).status_code == 200
+        assert client.post('/internal/publications/v2/activate', json=request_for(other), headers=headers).status_code == 200
+        wrong_request = {**request, 'publication_id': other['publication']['publication_id']}
+        assert client.post('/internal/publications/retire', json=wrong_request, headers=headers).status_code == 200
+        remote = client.get('/internal/publications/operations/' + request['retirement_id'], headers=headers).json()
+        assert remote['state'] == 'complete' and remote['request'] != request
+        for command in ('reconcile', 'abandon'):
+            result = run_cli(bridge_cli, [*arguments, command, retirement['id']], environment, tmp_path, success=False)
+            assert isinstance(result, subprocess.CompletedProcess) and result.returncode == 2
+            persisted = run_cli(content_cli, ['operation', 'show', retirement['id']], environment, tmp_path)
+            assert persisted['state'] == 'applying' and 'receipt' not in persisted['document']
+        assert client.get('/internal/publications/' + publication_id + '/status', headers=headers).json()['status'] == 'active'
+        evidence = Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence / 'conflicting-completion.json').write_text(json.dumps({'content': persisted, 'remote': remote}, indent=2, default=str))

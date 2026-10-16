@@ -48,6 +48,7 @@ def authenticated_operation(operation, origin, token_file):
 
 def verified_receipt(operation, proposed, origin, token_file):
     receipt = authenticated_operation(operation, origin, token_file)
+    verify_operation_binding(operation, receipt)
     delivery = operation['document']['delivery']
     request = delivery['request']
     identifier = request.get('activation_id') or request['retirement_id']
@@ -63,9 +64,8 @@ def verified_receipt(operation, proposed, origin, token_file):
     return actual
 
 
-def verified_terminal_failure(operation, origin, token_file):
-    """Only the original authenticated immutable Learning failure is authority."""
-    receipt = authenticated_operation(operation, origin, token_file)
+def verify_operation_binding(operation, receipt):
+    """Success and failure carry the same exact original request authority."""
     delivery = operation['document']['delivery']
     request = delivery['request']
     retirement = delivery['retirement']
@@ -80,7 +80,17 @@ def verified_terminal_failure(operation, origin, token_file):
             or receipt.get('request') != request
             or request.get('publication_id') != publication_id
             or request.get('publication_generation') != expected_generation):
-        raise ContentError('failure_receipt_mismatch', 'Learning failure does not bind the original workspace/publication request')
+        raise ContentError('failure_receipt_mismatch', 'Learning receipt does not bind the original workspace/publication request')
+
+
+def verified_terminal_failure(operation, origin, token_file):
+    """Only the original authenticated immutable Learning failure is authority."""
+    receipt = authenticated_operation(operation, origin, token_file)
+    verify_operation_binding(operation, receipt)
+    delivery = operation['document']['delivery']
+    retirement = delivery['retirement']
+    identifier = operation['id'] + (':retire' if retirement else ':activate')
+    workspace = operation['draft']['source']['workspace_id']
     if receipt.get('state') != 'failed' or 'response' in receipt or not isinstance(receipt.get('error'), dict):
         raise ContentError('terminal_failure_not_confirmed', 'Learning has not confirmed an immutable terminal failure')
     error = receipt['error']

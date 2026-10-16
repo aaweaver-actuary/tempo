@@ -410,3 +410,56 @@ Historical-first loading can promote a valid successor; current-first loading re
 Append-only Content migration `0004_bridge_proposal_identity` enforces proposal identity across sessions/processes. Pre-existing duplicate identities abort migration without deleting drafts. Identical replay returns the original durable draft; conflicting proposal bytes fail specifically. Complete immutable draft/provenance digests must match on semantic-ID replay. Stable Content/card identity does not authorize substituting an old raw-file provenance record.
 
 New regressions are listed in each component's local inventory. Shared Content Publication v1 and Game Evidence v1/v2 contracts, frozen introductions, normal allowances and all original installed bridge assertions are preserved.
+
+## Pre-activation recovery protocol (supersedes the stage-only limitation)
+
+The earlier qualification sections are historical evidence for their recorded
+inputs. The pre-activation repair adds a supported terminal fence; statements
+above requiring permanently rejected staging to retain a reservation indefinitely
+are superseded by this section. Network uncertainty still retains authority.
+
+Content checks A-specific compatibility before `approved -> applying`. Rejection
+records `failed`, releases the reservation, and leaves the requested source
+revision unchanged. General Content v1 explanation/other typed capabilities remain
+valid. A corrected draft uses the actual current source revision.
+
+For an empty approved source the operator first reads Learning's authenticated
+publication status using Content's source-owned publication ID. No active or an
+already retired publication leaves the operation approved and cancellable, with
+no source admission. Invalid/unavailable status has the same conservative local
+state. Cancel through the existing Content command before approving a correction.
+An active observation binds the real retirement request's expected revision;
+concurrent serving changes are adjudicated by Learning's durable retirement receipt.
+
+After Content application starts, every remote request requires the immutable
+original delivery checkpoint. A definite staging HTTP 409/413/422 triggers receipt
+reconciliation and then, if necessary, Learning's operator-only terminal fence.
+That transaction shares the gateway's operation advisory/row locks with execution.
+If execution wins, reconcile its actual completion. If fencing wins, the original
+operation cannot execute afterward. Existing failure receipts remain unchanged.
+Content independently authenticates the original operation before recording failure.
+An HTTP rejection or `unknown` receipt alone never releases a reservation.
+
+Lost staging/activation/fence responses, 401/403/5xx, malformed documents and
+transport failures remain pending. Reconcile the same original operation, endpoint,
+request and due date; do not select a new identity to retry an uncertain outcome.
+For deliberate abandonment:
+
+```sh
+tempo-a-bridge --content-cli /absolute/installed/bin/tempo-content \
+  --learning-origin https://learning.example \
+  --operator-token-file /private/operator-token abandon OPERATION_ID
+```
+
+This uses Content's atomic `operation fail-before-delivery OPERATION_ID` only when
+no checkpoint exists. Otherwise it fences the exact original Learning operation
+and verifies its actual terminal outcome. A failed fence response preserves the
+reservation. Repeat the original command after restart to rediscover its outcome.
+`abandon` requires applying authority; approved operations use ordinary cancellation.
+
+A durable failure is inspectable and returns operator exit 2; completion returns
+exit 0. Existing cancelled/completed/failed states cannot be overwritten. A failed
+operation never reports successful retirement or activation. Already admitted
+source revisions and immutable staged/publication data are retained; corrected
+source content follows normal generation advancement under a distinct operation.
+The operator remains database-free and imports no domain implementation.

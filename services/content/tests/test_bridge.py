@@ -166,3 +166,33 @@ def test_A_bridge_scope_preflight_is_local_and_preserves_general_types(fault):
     with pytest.raises(ContentError) as rejected:
         validate_bridge_execution_scope(valid_source, description)
     assert rejected.value.code == 'bridge_scope_unsupported'
+
+
+@pytest.mark.parametrize('retirement', [False, True])
+@pytest.mark.parametrize('mismatch', [None, 'workspace_id', 'command_name', 'request', 'operation_id'])
+def test_A_completion_receipt_requires_exact_original_authority(monkeypatch, retirement, mismatch):
+    from tempo_content import receipt_transport
+    workspace, source_key = 'bridge-test', 'opening'
+    publication_id = stable_id(workspace, source_key, 'publication', 'source')
+    remote_id = 'original:retire' if retirement else 'original:activate'
+    request = {'retirement_id' if retirement else 'activation_id': remote_id, 'publication_id': publication_id,
+        'publication_generation': 2, 'expected_activation_revision': 1}
+    delivery = {'endpoint': 'http://127.0.0.1:1', 'retirement': retirement, 'request': request}
+    operation = {'id': 'original', 'source_key': source_key, 'draft': {'source': {'workspace_id': workspace}},
+        'document': {'delivery': delivery, 'export': {'publication': {'publication_generation': 2}}}}
+    response = {'status': 'retired', 'stale_attempts_fenced': True, 'activation_revision': 2} if retirement else {
+        'contract_version': 1, 'workspace_id': workspace, 'publication_id': publication_id, 'publication_generation': 2,
+        'activation_id': remote_id, 'status': 'activated', 'activation_revision': 2}
+    acknowledgement = {'contract_version': 1, 'workspace_id': workspace, 'retirement_id': remote_id,
+        'publication_id': publication_id, 'publication_generation': 2, 'reason': None, **response} if retirement else response
+    proposed = {'transport': 'authenticated_learning_http', 'endpoint': delivery['endpoint'], 'acknowledgement': acknowledgement}
+    receipt = {'operation_id': remote_id, 'workspace_id': workspace, 'command_name': 'publication.retire' if retirement else 'publication.activate.v2',
+        'request': deepcopy(request), 'state': 'complete', 'response': response}
+    if mismatch:
+        receipt[mismatch] = {**request, 'publication_id': 'another-publication'} if mismatch == 'request' else 'wrong'
+    monkeypatch.setattr(receipt_transport, 'authenticated_operation', lambda *args: receipt)
+    if mismatch:
+        with pytest.raises(ContentError):
+            receipt_transport.verified_receipt(operation, proposed, delivery['endpoint'], '/unused/token')
+    else:
+        assert receipt_transport.verified_receipt(operation, proposed, delivery['endpoint'], '/unused/token') == proposed

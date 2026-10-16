@@ -122,7 +122,7 @@ class Operator:
         if publication_id is None:
             publication_id = self.content('source', 'show', operation['source_key'])['publication_id']
         _, current = self.http('/internal/publications/' + quote(publication_id, safe='') + '/status')
-        if (not isinstance(current, dict) or current.get('schema_version') != 1
+        if (not isinstance(current, dict) or type(current.get('schema_version')) is not int or current['schema_version'] != 1
                 or current.get('workspace_id') != operation['draft']['source']['workspace_id']
                 or current.get('publication_id') != publication_id
                 or current.get('status') not in ('active', 'retired', 'unavailable')
