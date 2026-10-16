@@ -39,21 +39,82 @@
     {
       "id": "workbench-web",
       "type": "app",
-      "maintainer": "Tempo",
-      "status": "planned",
+      "maintainer": "Tempo / C #4",
+      "status": "implemented",
       "root": "apps/workbench-web",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "publicExports": [
+        "IntelligenceClient",
+        "PendingCommands",
+        "PendingMutation",
+        "RunCreationRequest",
+        "mountWorkbench"
+      ],
+      "dependencies": [
+        "@lichess-org/chessground",
+        "chess.js",
+        "zod"
+      ],
+      "buildInputs": [
+        "src",
+        "public",
+        "index.html",
+        "tsconfig.json",
+        "package.json",
+        "package-lock.json",
+        "tests",
+        "test.mjs",
+        "qualify.mjs",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "npm ci --workspaces=false && npm run build",
+      "artifact": {
+        "name": "@tempo/workbench-web",
+        "version": "0.1.0",
+        "format": "static web + npm tarball"
+      },
+      "tests": [
+        {
+          "owner": "workbench-web",
+          "kind": "node",
+          "command": "npm test",
+          "inputs": [
+            "src",
+            "tests",
+            "public",
+            "index.html",
+            "tsconfig.json",
+            "package.json",
+            "package-lock.json",
+            "test.mjs"
+          ]
+        },
+        {
+          "owner": "workbench-web",
+          "kind": "node",
+          "command": "node tests/browser.mjs tests/fixtures/producer.json",
+          "inputs": [
+            "src",
+            "tests",
+            "public",
+            "package.json",
+            "package-lock.json",
+            "index.html",
+            "tsconfig.json"
+          ]
+        }
+      ],
+      "toolchain": {
+        "node": ">=22.13.0",
+        "qualificationNode": "26.10.0",
+        "browser": "Playwright 1.63.0 Chromium"
+      },
       "dataOwnership": {
         "authority": null,
         "databases": [],
         "migrations": []
-      }
+      },
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "learning",
@@ -300,7 +361,9 @@
       "root": "services/intelligence",
       "publicExports": [
         "Configuration",
-        "create_app"
+        "create_app",
+        "analysis_v1",
+        "run_analysis_work"
       ],
       "dependencies": [
         "chess",
@@ -1590,6 +1653,85 @@
           "services/learning/remediation/migrations/001_remediation.sql"
         ],
         "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "analysis-pilot",
+      "type": "tool",
+      "maintainer": "Tempo / C #266",
+      "status": "implemented",
+      "root": "tools/analysis-restoration/c_pilot",
+      "publicExports": [
+        "main",
+        "normalize",
+        "connect"
+      ],
+      "dependencies": [
+        "tempo_intelligence",
+        "tempo_stockfish_client",
+        "tempo_analysis_jobs_contracts",
+        "chess"
+      ],
+      "buildInputs": [
+        "src",
+        "pyproject.toml",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md",
+        "integration",
+        "qualify.py"
+      ],
+      "buildCommand": "python -m build --no-isolation",
+      "artifact": {
+        "name": "tempo-analysis-pilot",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "analysis-pilot",
+          "kind": "python",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "src",
+            "tests",
+            "pyproject.toml"
+          ]
+        },
+        {
+          "owner": "analysis-pilot",
+          "kind": "python",
+          "command": "python -m pytest integration/test_actual_consumers.py --import-mode=importlib -q",
+          "inputs": [
+            "integration/actual_consumers.py",
+            "integration/test_actual_consumers.py",
+            "src",
+            "pyproject.toml"
+          ]
+        },
+        {
+          "owner": "analysis-pilot",
+          "kind": "postgres",
+          "cwd": ".",
+          "command": "python tools/analysis-restoration/c_pilot/integration/run_study_off.py",
+          "inputs": [
+            "tools/analysis-restoration/c_pilot/integration",
+            "services/learning/runtime/integration",
+            "services/learning/runtime/tests",
+            "app",
+            "static",
+            "scripts/prove-study-learning.mjs"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15"
+      },
+      "dataOwnership": {
+        "authority": "external manual pilot only",
+        "databases": [],
+        "migrations": []
       },
       "testInventory": "REGRESSIONS.md"
     }

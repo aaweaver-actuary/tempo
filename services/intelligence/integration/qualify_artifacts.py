@@ -25,11 +25,13 @@ def successful_cases(path):
 
 def main(arguments=None):
     arguments = sys.argv[1:] if arguments is None else arguments
+    package_only=bool(arguments and arguments[0]=="--package-only")
+    if package_only:arguments=arguments[1:]
     if len(arguments) > 1:
         raise SystemExit("only_evidence_directory_is_supported")
     destination = Path(arguments[0]).resolve() if arguments else SERVICE / "test-results/artifacts"
     destination.mkdir(parents=True, exist_ok=True)
-    report = {"complete": False, "commands": [], "artifacts": {}, "cases": {}, "native": {}, "source_inputs": {}}
+    report = {"mode":"package-only" if package_only else "package-and-native", "native_status":"not_selected" if package_only else "required", "complete": False, "commands": [], "artifacts": {}, "cases": {}, "native": {}, "source_inputs": {}}
     environment = {
         key: value for key, value in os.environ.items()
         if not key.startswith(("PG", "TEMPO_", "PYTHON", "PYTEST_", "VIRTUAL_ENV", "CELERY_"))
@@ -107,7 +109,7 @@ assert (package/'migrations/manifest.json').is_file()
 assert (package/'migrations/0001_sources.sql').is_file()
 assert not (Path.cwd()/'src').exists()
 assert not any('backend' in path for path in sys.path)
-for name in ('tempo-learning-runtime','tempo-game-evidence','celery','redis','torch','onnxruntime','transformers'):
+for name in ('tempo-learning-runtime','tempo-game-evidence','tempo-content','tempo-stockfish-client','celery','redis','torch','onnxruntime','transformers'):
     try: metadata.distribution(name)
     except metadata.PackageNotFoundError: pass
     else: raise AssertionError('Unrelated runtime distribution: '+name)
@@ -117,7 +119,7 @@ for name in ('tempo-learning-runtime','tempo-game-evidence','celery','redis','to
                     run([python, "-I", "-m", "pytest", "tests", "--import-mode=importlib", "-q", "--junitxml=" + str(junit)], consumer, label + "-tests")
                     report["cases"][label] = successful_cases(junit)
                     run([consumer / ".venv/bin/tempo-intelligence", "--help"], consumer, label + "-cli")
-                    if (version, kind) in {("3.12", "wheel"), ("3.14", "sdist")}:
+                    if not package_only and (version, kind) in {("3.12", "wheel"), ("3.14", "sdist")}:
                         native_destination = destination / (label + "-native")
                         run([python, "integration/run_postgres.py", native_destination], consumer, label + "-native", extra_environment={"TEMPO_INTELLIGENCE_TEST_REVISION": report["revision"]})
                         native_report = json.loads((native_destination / "native-resource.json").read_text())

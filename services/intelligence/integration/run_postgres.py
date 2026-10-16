@@ -1,5 +1,6 @@
 """Invocation-owned PostgreSQL proof; no external database URL is accepted."""
 import hashlib
+import re
 import json
 import os
 from pathlib import Path
@@ -81,20 +82,33 @@ def main():
         environment.update(TEMPO_INTELLIGENCE_TEST_OWNER_URL=owner_url,TEMPO_INTELLIGENCE_TEST_RUNTIME_URL=runtime_url,
             TEMPO_INTELLIGENCE_TEST_ADMIN_URL=admin,TEMPO_INTELLIGENCE_TEST_CONTAINER=owner,
             TEMPO_INTELLIGENCE_TEST_UPGRADE_URL=make_conninfo(owner_url,dbname="intelligence_upgrade"),
-            PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
+            PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", TEMPO_C_BROWSER_FIXTURE_FILE=str(destination/"workbench-producer.json"))
         junit=destination/"native.xml"
-        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),str(SERVICE/"integration/test_server_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
+        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_analysis_postgres.py"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),str(SERVICE/"integration/test_server_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
+        if os.environ.get("TEMPO_C_STOCKFISH_PROFILE"):
+            environment["TEMPO_C_STOCKFISH_PROFILE"]=str(Path(os.environ["TEMPO_C_STOCKFISH_PROFILE"]).resolve())
+            command.insert(command.index("-q"),str(SERVICE/"integration/test_actual_analysis.py"))
+        if os.environ.get("TEMPO_C_A_EXPORT") or os.environ.get("TEMPO_C_GAME_IDS_FILE"):
+            for name in ('TEMPO_C_A_EXPORT','TEMPO_C_GAME_IDS_FILE','TEMPO_C_STOCKFISH_PROFILE'):
+                if not os.environ.get(name):raise RuntimeError('explicit_actual_a_inputs_required')
+                environment[name]=str(Path(os.environ[name]).resolve())
+            command.insert(command.index('-q'),str(SERVICE/'integration/test_actual_a.py'))
+        if os.environ.get("TEMPO_C_NATIVE_SELECTION"):
+            if os.environ["TEMPO_C_NATIVE_SELECTION"]!="analysis":raise RuntimeError("unknown_native_selection")
+            command=[argument for argument in command if not argument.endswith(("/test_postgres.py","/test_provider_postgres.py","/test_server_postgres.py"))]
+        command.extend(["-o","faulthandler_timeout=45","-vv"])
+        environment["PYTHONUNBUFFERED"]="1"
         for value in shlex.split(os.environ.get("PYTEST_ADDOPTS","")):
             if not value.startswith("--junitxml="):
                 raise RuntimeError("only_external_junit_destination_supported")
             command.append(value)
         report["commands"].append(command)
-        result=subprocess.run(command,env=environment,cwd=SERVICE,capture_output=True,text=True)
-        output=result.stdout+result.stderr
-        for secret in private_values:
-            output=output.replace(secret,"[owned-secret-redacted]")
-        (destination/"native.log").write_text(output)
-        print(output,end="")
+        process=subprocess.Popen(command,env=environment,cwd=SERVICE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        with (destination/"native.log").open("w") as log:
+            for line in process.stdout:
+                for secret in private_values:line=line.replace(secret,"[owned-secret-redacted]")
+                log.write(line);log.flush();print(line,end="",flush=True)
+        returncode=process.wait()
         actual=Path(next(value.split("=",1)[1] for value in reversed(command) if value.startswith("--junitxml=")))
         if actual.exists():
             contents=actual.read_text()
@@ -106,10 +120,19 @@ def main():
         cases=ET.parse(junit).getroot().findall(".//testcase") if junit.exists() else []
         report["cases"]=[case.attrib for case in cases]
         report["passed"]=sum(not any(case.find(tag) is not None for tag in ("failure","error","skipped")) for case in cases)
-        report["complete"]=result.returncode==0 and bool(cases) and report["passed"]==len(cases)
+        report["complete"]=returncode==0 and bool(cases) and report["passed"]==len(cases)
     except Exception as error:
-        report["error"]=type(error).__name__
-        print("Native Intelligence proof failed: "+type(error).__name__,file=sys.stderr)
+        report["error"]=str(error) if isinstance(error,RuntimeError) and re.fullmatch("[a-z_]+",str(error)) else type(error).__name__
+        if created_container:
+            try:
+                state=json.loads(docker("container","inspect",owner,"--format","{{json .State}}").stdout)
+                report["owned_database_state"]={key:state.get(key) for key in ("Status","Running","OOMKilled","ExitCode","StartedAt","FinishedAt")}
+                logs=docker("logs","--tail","100",owner,check=False)
+                diagnostic=logs.stdout+logs.stderr
+                for secret in private_values:diagnostic=diagnostic.replace(secret,"[owned-secret-redacted]")
+                (destination/"owned-postgres.log").write_text(diagnostic)
+            except Exception:report["database_diagnostic"]="unavailable"
+        print("Native Intelligence proof failed: "+report["error"],file=sys.stderr)
     finally:
         try:
             for kind,name,created in (("container",owner,created_container),("volume",volume,created_volume)):

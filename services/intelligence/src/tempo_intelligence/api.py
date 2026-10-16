@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from tempo_analysis_jobs_contracts.v1 import MaiaResult, JobStatus
 
 from .config import Configuration
@@ -98,6 +99,10 @@ def create_app(configuration: Configuration, store=None, worker=None):
                     while not stopping:
                         try:
                             progressed = await app.state.worker.work_once()
+                            from .analysis.store import AnalysisStore
+                            analysis_owner = AnalysisStore(app.state.store)
+                            derived = await runner.run(analysis_owner.derive_next)
+                            progressed = progressed or derived
                             app.state.worker_error = None
                         except asyncio.CancelledError:
                             raise
@@ -177,9 +182,11 @@ def create_app(configuration: Configuration, store=None, worker=None):
                 # reach its exception logger after a sanitized response.
                 return JSONResponse({"error": "intelligence_unavailable"}, status_code=503)
 
+        if request.headers.get("origin") and request.headers["origin"] not in configuration.origins:
+            return JSONResponse({"error":"origin_not_allowed"},status_code=403)
         if request.url.path == "/healthz":
             return await safely_forward()
-        if request.url.path.startswith("/v1/credentials/"):
+        if request.url.path.startswith("/v1/credentials/") or request.url.path.startswith("/v1/analysis/inputs") and request.method=="POST":
             expected = configuration.operator_token
         elif request.url.path in {"/v1/maia/results", "/v1/maia/status"}:
             expected = configuration.worker_token
@@ -256,4 +263,7 @@ def create_app(configuration: Configuration, store=None, worker=None):
     def credential_revoke(payload: CredentialCommand):
         return app.state.store.credential_revoke(payload.expected_generation)
 
+    from .analysis.api import register
+    register(app)
+    app.add_middleware(CORSMiddleware, allow_origins=list(configuration.origins), allow_methods=["GET","POST"], allow_headers=["Authorization","Content-Type","X-Tempo-Workspace"], allow_credentials=False)
     return app

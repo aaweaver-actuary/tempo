@@ -416,3 +416,122 @@ compatibility. This service does not publish rankings or claim Learning eligibil
 readiness, admission, FSRS changes, live-provider validation, legacy migration or
 deployment. Test execution and resource-cleanup claims belong to candidate-specific
 preserved validation reports, not this interface description.
+
+## Analysis component-local wire 1 (C)
+
+New public namespace: `from tempo_intelligence import analysis_v1` exports Manifest,
+Page, RunRequest, Command, Finding and ReportPage plus the pure Stockfish job factory.
+Packaged JSON Schemas live under `analysis/schemas/v1`; regular tests reject drift.
+This is distinct from the existing position-source schema and shared strict v1.
+`run_analysis_work(Configuration, run_id, maximum, client)` is the installed owning
+composition API for an external B dispatcher. Report serving installs no B client.
+
+All new HTTP routes use `/v1/analysis`, scoped authentication, and the existing
+workspace binding. Input writes require the operator credential; the browser uses only the caller credential. Exact `TEMPO_INTELLIGENCE_ORIGINS` enables browser CORS; absent
+configuration enables no cross-origin browser callers. Allowed origins can observe
+401/403. No redirect or credential-bearing URL is part of the browser contract.
+
+New routes: authenticated bootstrap; GET/POST inputs; POST inputs/pages and
+inputs/{id}/finalize; GET/POST runs; GET runs/{id}, runs/{id}/report and /remaining;
+POST runs/{id}/commands; GET findings/{id}, /export; POST findings/{id}/commands;
+GET commands/{id}; GET results/{id} (accepted job/result/provenance inspection).
+Finding routes require run_id and generation. Report filters are category and
+dismissal, limit 1–100; cursors bind the complete selected view and run revision.
+Report and remaining-work cursors bind their ordering and input revision. A generation change conflicts rather than mixing report pages. Retained generations are
+immutable. A newer source revision retains the previous report as stale until
+new publication. GET operations do not enqueue or compute analysis/provider work.
+
+Manifest contains immutable normalized references and A's original manifest/digest.
+Pages carry at most 64 games; HTTP/CLI byte limits still apply. Finalization requires
+all declared pages and exact selected game identities. The external pilot verifies
+A's original hashes and exported position histories before normalization. Pure C
+fixtures remain labeled synthetic; they are not A acceptance or real games.
+
+`tempo-intelligence analysis accept-input --manifest FILE --pages-directory DIR`,
+`run --file FILE`, `inputs`, `runs`, `status RUN`, `report RUN`, `remaining RUN`,
+`work RUN --max-jobs N`, and explicit continue/retry/cancel/resume commands are new.
+Commands take `--file` containing command_id/action/expected_revision; continue's
+budget defaults to 250. Dismiss/reopen/export take RUN FINDING --generation N.
+Receipts recover through `analysis receipt ID`. C's own work publishes source
+findings and truthfully records absent engine configuration. Actual execution is
+`tempo-analysis-pilot work RUN --profile FILE --max-jobs N` using B's installed
+public client and C's public owning composition. Credentials stay in private files.
+
+Input finalization, command receipts, execution attempts and result acceptance are
+durable. Engine requests bind full root/history, restrictions, constraints/profile,
+request revision and execution generation. Claims commit before dispatch; accepted
+results and new derivation generation commit together. Live worker-session exact
+replay follows B; failed/lost sessions cause a higher durable generation before
+execution. A heartbeat cannot accept a result. Retry preserves original age;
+explicit cancellation remains pending until actual termination/session loss.
+
+Initial policy is c-analysis-v1, 250 decisions, max depth20/wall10s, completed equal
+depth>=18, 100cp advisory significance. Mate stays typed. Proactive source thresholds
+are 5%, and Explorer sample>=200; no calibration or learning-benefit claim. Maia
+must cover all legal replies. Explorer coverage remains bounded with unallocated
+mass. Actual games, each Explorer cohort and Maia stay separate. A's explicit opponent-decision inventory supplies distinct eligible-game denominators at the pre-deviation root. Missing or incomplete inventories remain unknown, never resulting-position denominators. Searches with insufficient quality remain in the remaining-work view and are selected by explicit retry.
+
+Finding identity is semantic/workspace/policy/color conditioned. Evidence digest,
+report generation, dismissal and delivery/settlement/activation are distinct.
+Dismissal survives replay/enrichment, reopening after three additional distinct
+supporting games. An executable export requires A's exact target/anchor/digest and
+a legal supported odd-length learner response line. It is a draft, never approval,
+publication, activation, admission, or a second remediation-obligation path.
+
+### PR295 corrective derivation and recovery
+
+Engine opportunities retain their observed supporting game/count, significant
+root/played comparison, exact attribution and worker provenance. They have
+`eligible_encounter_games:null` and `actual_frequency:null`: an analyzed position
+does not establish an eligible repertoire-encounter population. Global ordering
+still compares distinct support first, then known selected-source frequency,
+supported engine significance/loss, proposal cost and stable identity. Selected
+Lichess, Masters and Maia evidence identities remain independent populations.
+The R6 correction stays within undeployed derivation version 2 and applies to new
+derivations. Immutable historical report rows and semantic dismissal identities
+are preserved; an explicit new run revision obtains corrected historical analyses.
+
+Run creation remains `POST /v1/analysis/runs`, recovered through the existing GET
+run-status endpoint, without a command receipt or new table. Identical immutable
+run ID/revision submission is idempotent, including concurrent staging replay;
+changed scope conflicts. Workbench verifies the status workspace, run/revision and
+complete normalized immutable request scope before clearing its saved creation.
+
+New report generations carry `derivation_version:2` and
+`ordering:source-rank-semantic-v2`. Ranking applies globally across categories.
+Old immutable generations retain their ordinals and legacy cursor ordering;
+missing derivation metadata means version 1. Workbench labels legacy engine
+associations unverified. Recompute through an explicit new run revision; historical
+report/result bytes and prior dismissal records are not rewritten or aliased to a
+corrected semantic identity.
+
+An engine finding's repertoire, policy and lineage are either all supported by
+one exact accepted decision association, or all null. Ambiguous candidates and
+context evidence references remain informational. Source misses/gaps still require
+lineage. Activation is unknown for an unscoped engine finding.
+
+Command responses and receipt reads add `request_digest`, using the existing
+stored canonical normalized command digest (target run/finding/generation plus
+Command defaults). Historical receipts expose their existing digest without a
+migration. A different request under the same command ID conflicts.
+
+Played searches fence the accepted root against B's public ready identity before
+dispatch and against typed provenance plus original jobs before acceptance.
+Permanent `incompatible_engine_profile` retains the root, releases capacity, does
+not consume ordinary retries, and is excluded from retry/resume. Create an explicit
+RunRequest with the same run/input IDs, `revision:N+1`, `expected_revision:N` and
+choose the new qualified profile in the external pilot. Searches recompute in the
+new revision; original results/generations remain inspectable. Completed unequal
+depths remain insufficient quality; mate stays typed. Pending/incompatible
+comparisons cannot produce executable response drafts. Work receipts include the
+connected public `engine_identity` when configured.
+
+Legacy revisions are pinned: run payloads created before the correction have no
+internal derivation marker. Their dismissal/reopen generations copy the retained
+finding identities/evidence and ordering; they never silently upgrade attribution.
+Continue/retry/resume, engine work, and executable proposal export instead return
+`legacy_analysis_revision_required`. An explicit new RunRequest revision selects
+corrected derivation. Legacy read contracts also accept the reviewed borrowed-
+lineage/null-ID engine shape, with the legacy warning; new derivation never emits
+that shape. The internal marker is exposed separately in run status, not injected
+into the public RunRequest scope or its immutable digest.
