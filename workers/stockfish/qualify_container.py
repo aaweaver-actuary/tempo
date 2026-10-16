@@ -233,7 +233,7 @@ const {spawn}=require('node:child_process');const fs=require('node:fs');
  const {stockfishInputDigest}=await import('/opt/stockfish/wire.mjs');
  const template=JSON.parse(process.argv[1]),newline=String.fromCharCode(10);
  const child=spawn(process.execPath,['/opt/stockfish/cli.mjs','serve'],{stdio:['pipe','pipe','pipe']});
- let buffer='',sent=0,timedOut=false,feeding=false,feedTimer,stdoutBytes=0,enginePid=null,reported=false;
+ let buffer='',sent=0,timedOut=false,feeding=false,replaying=false,feedTimer,stdoutBytes=0,enginePid=null,reported=false;
  const events=[];
  function finish(code){
   if(reported)return;reported=true;feeding=false;clearTimeout(feedTimer);clearTimeout(watchdog);
@@ -246,10 +246,13 @@ const {spawn}=require('node:child_process');const fs=require('node:fs');
  }
  const watchdog=setTimeout(()=>{timedOut=true;clearTimeout(feedTimer);child.kill('SIGKILL');setTimeout(()=>finish(null),1000);},38000);
  function feed(){
-  if(child.exitCode!==null||!feeding)return;
-  const job={...template,job_id:'slow-'+sent++,max_depth:4,max_nodes:null,search_moves:[]};
+  if(child.exitCode!==null||!feeding||sent>=65)return;
+  sent++;
+  const job={...template,job_id:'slow-replay',max_depth:4,max_nodes:null,multi_pv:20,search_moves:[]};
   job.input_digest=stockfishInputDigest(job);
-  if(!child.stdin.write(JSON.stringify({model:'StockfishJob',payload:job})+newline))child.stdin.once('drain',()=>{feedTimer=setTimeout(feed,1);});
+  const writable=child.stdin.write(JSON.stringify({model:'StockfishJob',payload:job})+newline);
+  if(!replaying){feeding=false;return;}
+  if(!writable)child.stdin.once('drain',()=>{feedTimer=setTimeout(feed,1);});
   else feedTimer=setTimeout(feed,1);
  }
  child.stdin.on('error',()=>{feeding=false;clearTimeout(feedTimer);});
@@ -258,10 +261,13 @@ const {spawn}=require('node:child_process');const fs=require('node:fs');
   while((end=buffer.indexOf(newline))>=0){
    const text=buffer.slice(0,end);buffer=buffer.slice(end+1);
    try{const event=JSON.parse(text);events.push(event);if(events.length>128)events.shift();
-    if(event.event==='ready'&&!feeding){enginePid=event.pid;feeding=true;feed();}
+    if(event.event==='ready'&&enginePid===null){enginePid=event.pid;feeding=true;feed();}
+    if(event.event==='execution_finished'&&!replaying){replaying=true;feeding=true;feed();}
    }catch{}
   }
  });
+ // One real 20-root search and 64 exact replays exceed the unread pipe.
+ // The finite requests stay below the input-buffer cap; no ingress flood.
  // stdout deliberately remains paused until server exit.
  child.once('exit',code=>{
   feeding=false;clearTimeout(feedTimer);child.stdin.destroy();
