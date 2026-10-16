@@ -21,6 +21,7 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
         "learning.runtime/0001",
         "learning.runtime/0002",
         "learning.remediation/0001",
+        "learning.bridge/0001",
     ]
     assert migrations[1]["depends_on"] == ["learning.runtime/0001"]
     assert all(

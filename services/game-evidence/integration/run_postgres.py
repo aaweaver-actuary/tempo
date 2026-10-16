@@ -99,6 +99,7 @@ def main():
             database.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
             database.execute("GRANT USAGE ON SCHEMA public TO evidence_runtime")
             database.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON workspace_inputs,snapshots,games,jobs,game_sources,comparisons,outbox,import_cursors,import_pages,provider_leases,accepted_heads TO evidence_runtime")
+            database.execute('GRANT SELECT,INSERT ON analysis_exports,analysis_export_pages TO evidence_runtime')
             database.execute("GRANT SELECT ON evidence_schema_migrations TO evidence_runtime")
         learning_owner_password,learning_runtime_password=secrets.token_urlsafe(32),secrets.token_urlsafe(32)
         secrets_to_redact.extend([learning_owner_password,learning_runtime_password])

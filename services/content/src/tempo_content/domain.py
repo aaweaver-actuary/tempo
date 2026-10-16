@@ -132,7 +132,7 @@ def validate_exercise_step(exercise: SourceExercise, state: dict | None = None) 
     digest = hashlib.sha256(_canonical_json(exercise.model_dump(mode="json")).encode()).hexdigest()
     line_index = 0
     move_index = 0
-    board = starting_board
+    board = starting_board.copy(stack=False)
     if state is not None:
         if (set(state) != {"exercise_digest", "line_index", "move_index", "fen"}
                 or state.get("exercise_digest") != digest

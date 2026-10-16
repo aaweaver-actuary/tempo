@@ -1,5 +1,33 @@
 # Learning runtime integration surface
 
+## Content bridge v2
+
+`POST /internal/publications/v2/stage` accepts the service-local version-2 opening
+bundle (maximum 2,048 definitions / 8 MiB). `publication-schema` exports its schema.
+It retains shared Publication v1, real route occurrences, source digest, and
+optional one-to-one legacy aliases. Content IDs remain authored identifiers;
+validated aliases retain existing physical Learning/history identities. Adoption
+requires exact legacy FEN, primary line, revision, family and learner color;
+unknown historical alternative sets cannot be invented. No history importer is
+provided.
+
+`POST /internal/publications/v2/activate` uses the existing durable command gateway
+with `{publication_id, publication_generation, expected_activation_revision,
+activation_id}`. Initial expected activation revision is zero. Successful v2
+responses are actual shared v1 ActivationAcknowledgement values. Stage acceptance
+alone creates no serving cards. Replacement validates unchanged executable
+revisions against their original accepted generation and preserves schedules;
+changed executables require a newer revision. Route occurrences own prerequisites.
+
+Operator-only receipt read/retry routes are
+`/internal/publications/operations/{id}` and `.../{id}/retry`.
+`GET /internal/publications/{id}/status` separately returns current generation,
+activation revision/state, bundle digest, workspace-local date and observation
+time. A historical activation acknowledgement is not current serving authority.
+Study operation routes reject publication receipt/retry access. Existing v1
+publication and retirement endpoints remain available; all publication routes use
+the separate operator credential. No Study or evidence credential is upgraded.
+
 Artifact: `tempo-learning-runtime` 0.1.0; workspace: one configured identity per database.
 All API routes except health require a workspace-scoped bearer credential. Study routes use the study token; `/internal/publications/*` requires the separate operator token and `/internal/evidence` requires the separate evidence token. Missing integration tokens disable those endpoints.
 Browser requests also require an exact configured Origin. Existing request bodies,
@@ -128,3 +156,9 @@ delivery to its configured Learning origin, rejects redirects and removes legacy
 work-class headers. Browser Origin is browser generated. Credentials stay in
 session storage, outside command envelopes, bundles and evidence. The existing
 Host/Origin/CORS allowlists and restricted database roles remain authoritative.
+
+## Publication receipt request binding
+
+The operator-only `GET /internal/publications/operations/{operation_id}` adds `workspace_id`, `command_name` and the original persisted `request` for known publication operations. These let Content independently verify terminal failure against its immutable delivery checkpoint. Unknown operations remain `unknown`; Study/evidence credentials cannot read or retry publication operations. Generic Study receipt responses and shared publication wire contracts are unchanged.
+
+Study move-membership resolves a physical historical card through its publication-scoped Content alias before reading current accepted definitions. Physical IDs, reviews, FSRS state and attempts stay with Learning; all existing executable-revision and serving-state fences still apply.

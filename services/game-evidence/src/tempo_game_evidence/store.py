@@ -8,7 +8,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .comparison import compare_game
-from .snapshot import ComparisonSnapshot
+from .snapshot import ComparisonSnapshot, parse_snapshot
 from .source import INDEX_VERSION, MAX_SOURCE_BYTES, identity, normalize_pgn, replay_positions, utc_now
 
 
@@ -89,7 +89,7 @@ class EvidenceStore:
             ("compare:"+game_id, workspace, game_id))
 
     def load_snapshot(self, snapshot):
-        snapshot = ComparisonSnapshot.model_validate(snapshot) if isinstance(snapshot, dict) else snapshot
+        snapshot = parse_snapshot(snapshot)
         document = snapshot.model_dump(mode="json")
         digest = identity(document)
         workspace = snapshot.publication.workspace_id
@@ -103,8 +103,14 @@ class EvidenceStore:
             if existing and existing["digest"] != digest:
                 raise ValueError("immutable_snapshot_revision_conflict")
             previous = database.execute("SELECT document FROM snapshots WHERE digest=%s", (current["snapshot_digest"],)).fetchone()
+            if previous and snapshot.schema_version == 2:
+                old = parse_snapshot(previous['document'])
+                if old.snapshot_id == snapshot.snapshot_id and old.revision >= snapshot.revision:
+                    raise ValueError('stale_snapshot_revision')
+                if old.publication.publication_id == snapshot.publication.publication_id and old.publication.publication_generation > snapshot.publication.publication_generation:
+                    raise ValueError('stale_snapshot_generation')
             affected = set(current["changed_positions"])
-            for item in [snapshot, ComparisonSnapshot.model_validate(previous["document"]) if previous else None]:
+            for item in [snapshot, parse_snapshot(previous["document"]) if previous else None]:
                 if item:
                     affected.update(key for _, keys, _ in item.compiled_routes() for key in keys)
             database.execute("INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
@@ -191,7 +197,7 @@ class EvidenceStore:
                     "position_count": len(game.get("moves", []))+1, "complete": True}
                     and row["positions"] is not None and len(row["positions"]) == receipt["position_count"])
         positions = row["positions"] if reusable else replay_positions(game) if "source_error" not in game else []
-        snapshot = ComparisonSnapshot.model_validate(snapshot_row["document"]) if snapshot_row else None
+        snapshot = parse_snapshot(snapshot_row["document"]) if snapshot_row else None
         findings = compare_game(game, positions, snapshot) if snapshot and positions else []
         token = identity(row["revision"],row["input_digest"],inputs["epoch"],inputs["snapshot_digest"],INDEX_VERSION)
         if before_publish:
@@ -209,7 +215,7 @@ class EvidenceStore:
             if not existing:
                 revision = current_game["report_revision"] + 1
                 report = {"schema_version": 1, "game": game, "comparison_revision": revision,
-                          "readiness": "unknown" if not snapshot or snapshot.activation is None or "source_error" in game else "ready",
+                          "readiness": "unknown" if not snapshot or not snapshot.serving_current() or "source_error" in game else "ready",
                           "reason": game.get("source_error") or ("snapshot_missing" if not snapshot else None),
                           "snapshot": {"digest": inputs["snapshot_digest"], "snapshot_id": snapshot.snapshot_id,
                               "revision": snapshot.revision, "publication_id": snapshot.publication.publication_id,
@@ -232,15 +238,10 @@ class EvidenceStore:
               WHERE game.game_id=%s AND game.workspace_id=%s""", (game_id,workspace)).fetchone()
             if not row:
                 raise KeyError(game_id)
-            batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (comparison_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
-                                       (game_id,row["report_revision"])).fetchall()
+            from .delivery import inspect_delivery
+            delivery = inspect_delivery(database,game_id,row['report_revision'],row['reconciliation_status'],row['reconciliation_reason'],has_report=row['report'] is not None)
         report = row["report"] or {"schema_version":1,"game":row["document"],"readiness":"pending","findings":[]}
-        priority = ["blocked","terminal_failure","conflict","stale_revision","retryable_failure","waiting_predecessor","accepted_pending","pending","completed"]
-        status = next((status for status in priority if any(batch["status"]==status for batch in batches)),"not_required" if row["report"] else "not_ready")
-        if row["reconciliation_status"] in {"pending","waiting_predecessor","blocked"}:
-            status = row["reconciliation_status"]
-        report["delivery"] = {"status":status,"reason":row["reconciliation_reason"] or next((batch["reason"] for batch in batches if batch["reason"]),None),
-                              "attempts":sum(batch["attempts"] for batch in batches),"batches":batches}
+        report['delivery'] = delivery
         if report["game"]["revision"] != row["document"]["revision"]:
             report["readiness"] = "pending"
             report["reason"] = "source_revision_changed"

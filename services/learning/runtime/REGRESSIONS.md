@@ -1,5 +1,22 @@
 # Learning runtime regression ownership
 
+## A authoritative bridge
+
+`test_content_bridge.py` owns measured complete 129/512/2,048-definition activation
+and replacement, original receipt replay and credential separation, genuine
+review/schedule retention through explicit aliases and metadata successors,
+identity conflict rollback, historical status versus replacement, and retirement.
+Accepted historical aliases cannot be silently dropped by a successor. The
+2,048-definition metadata successor test measures actual writer/lock durations,
+concurrent foreground reads and a predecessor-issued attempt saving after commit.
+`test_authoritative_bridge.py` owns actual installed Content import/approval,
+authenticated operator activation with real response loss/restart, installed
+producer delivery to the existing receiver, late-evidence and qualifying Study
+settlement, immutable offline export/replay, proposal draft versus approval and
+application, three-domain role denial, and complete authored-source capacity.
+These tests are discovered by the regular native runner; its dependency closure
+now records Content and the database-free operator tool as test inputs only.
+
 The complete native inventory is discovered by `integration/run_postgres.py` from `tests/`; collection, every setup/call/teardown phase and JUnit must agree. No selection flags or skips are accepted. `components.json` registers the owning native suite and its real client/runner inputs. Installation checks also run in source-removed Python consumers through `qualify.py`.
 
 | Regular file | Proof |
@@ -146,3 +163,17 @@ replies, then reconcile only through their original origins; an unrelated C is
 blocked. The forwarding origins share one installed Learning database, so this
 proves origin/storage isolation and actual receipts, not separate-database isolation.
 Existing F1, restart, storage, exercise-family and offline-shell cases remain selected.
+
+## PR #294 repair regressions
+
+- `tests/test_content_bridge.py::test_A_historical_alias_move_membership_accepts_new_alternative`: genuine prior review, retained physical ID/schedule/history, accepted original and new alternative, legal unaccepted move and obsolete executable revision. Existing activation compatibility/retirement regressions remain selected.
+- `tests/test_authoritative_bridge.py::test_A_corrected_source_activates_after_original_terminal_failure`: installed Content/operator, actual failed Learning receipt, restart, source release, corrected revision and immutable failed-operation retry.
+- `test_A_actual_evidence_delivery_export_proposal_and_optional_off_study` additionally loads historical then current snapshots into a separate fresh installed producer; the original producer still proves current-then-historical rejection without current-pointer mutation. Post-retirement observations are genuine HTTP-produced fixtures.
+
+The complete regular native and production Study suites retain credential separation, issuance, review, retirement, optional-services-off and resource-budget owners.
+
+The installed bridge proof also loads the real post-retirement generation-2 observation, recomputes evidence, and requires unknown readiness with unchanged delivery receipts; response loss explicitly retains Content applying authority.
+
+`test_A_cli_timeout_terminates_owned_descendants` prevents a timed-out installed operator from leaving a Content child connected to the disposable database. Large installed-source cases retain the original 10,000 total slices and 300-second child limit, using 64-slice resumable invocations; total duration and invocation counts are reported without changing production budgets.
+
+The installed bridge uses a two-party barrier after genuine Learning status reads to race two installed operators against actual Content snapshot checkpoints; both must return exactly the same persisted observation. The alias regression saves its exact before/after review and FSRS tuples in `bridge/alias-membership.json` for audit.

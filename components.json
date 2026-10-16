@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "analysis-a-bridge",
+      "type": "tool",
+      "maintainer": "Tempo / #193 A",
+      "status": "implemented",
+      "root": "tools/analysis-restoration/a_bridge",
+      "publicExports": ["main"],
+      "dependencies": [],
+      "buildInputs": ["pyproject.toml", "uv.lock", "src", "tests", "fixtures", "REGRESSIONS.md", "qualify.py"],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {"name": "tempo-a-bridge", "version": "0.1.0", "format": "wheel + sdist"},
+      "tests": [{"owner": "analysis-a-bridge", "kind": "python", "cwd": "tools/analysis-restoration/a_bridge", "command": "python -m pytest tests --import-mode=importlib -q", "inputs": ["tests", "src", "fixtures", "pyproject.toml", "uv.lock"]}],
+      "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"]},
+      "dataOwnership": {"authority": "#193 A external integration tooling", "databases": [], "migrations": []},
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
       "id": "study-web",
       "type": "app",
       "maintainer": "Tempo",
@@ -116,7 +132,9 @@
             "app/domain",
             "app/const.ts",
             "services/learning/remediation",
-            "services/game-evidence"
+            "services/game-evidence",
+            "services/content",
+            "tools/analysis-restoration/a_bridge"
           ]
         }
       ],
@@ -1611,6 +1629,9 @@
       "cwd": ".",
       "command": "python services/learning/runtime/integration/run_study.py",
       "inputs": [
+        "services/content",
+        "services/game-evidence",
+        "tools/analysis-restoration/a_bridge",
         "services/learning/runtime",
         "services/learning/application/qualification.py",
         "app",

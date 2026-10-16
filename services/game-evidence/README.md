@@ -1,5 +1,28 @@
 # Game Evidence 0.1.0
 
+The [A bridge](../../docs/analysis-restoration/a-bridge.md) adds service-local
+snapshot v2 and immutable analysis-input v1. V1 snapshots and evidence delivery
+wire v1/v2 remain supported. V2 pins actual Content source/route/reply output and
+separates historical activation from observed current serving status.
+
+`analysis-export create --workspace W --output DIRECTORY` freezes up to 100 exact
+current game comparisons; repeat `--game-id ID` to select an explicit scope.
+`analysis-export page INPUT --workspace W --kind KIND --after CURSOR` reads pinned
+64-item pages. `analysis-export schema` and `analysis-export verify DIRECTORY`
+work without a database. The manifest and hashed pages can be consumed while all
+producer services are stopped. Output files are exclusive and atomically linked;
+the manifest is written last. A partial directory can resume from the retained
+database export without replacing accepted bytes.
+
+Every game position retains actual FEN/move and game/source/comparison lineage.
+Established opponent decisions additionally include positive route/policy/color
+context for both covered replies and deviations, supporting distinct-game
+denominators. Legal reply records contain complete policy/prefix-conditioned
+response inventories, including explicit uncovered, ambiguous and unknown states.
+Re-entry traces identify the actual authorizing binding; FEN coincidence alone
+does not establish route context. Exports remain observations, never admission or
+content-approval authority. Bounds are 8 MiB per page and 64 MiB per export.
+
 Independently installed repertoire review, source/index storage, read API and durable
 Learning delivery intent. A repertoire miss is an authored move not played; it is
 not an engine judgment. This increment supports completed standard/from-position
@@ -21,7 +44,9 @@ runtime role/database and `TEMPO_GAME_EVIDENCE_MIGRATION_URL` to its owner URL.
 There is no fallback to legacy database variables. Revoke PUBLIC database/schema
 access and runtime DDL/role/database creation and foreign-domain connections.
 Grant runtime CONNECT, schema USAGE and table SELECT/INSERT/UPDATE/DELETE,
-excluding writes to `evidence_schema_migrations`. The disposable native runner
+excluding writes to `evidence_schema_migrations`. The immutable
+`analysis_exports` and `analysis_export_pages` tables receive SELECT/INSERT only.
+The disposable native runner
 demonstrates provisioning; production provisioning remains separate.
 
 Use the full installed path below, or add its directory to PATH:
@@ -212,3 +237,7 @@ Local validation does not prove that Learning accepts the credential, nor prove
 previous non-acceptance. The next attempt retries the same immutable delivery;
 Learning's matching completed receipt remains the acceptance authority. Recovery
 never advances accepted history or permits a correction to overtake that receipt.
+
+### Generation-aware operator snapshots
+
+The A operator's snapshot identity hashes the workspace, publication and represented generation; revision remains the observed serving activation revision. Historical activation and current-serving observation remain distinct. The store keeps immutable documents and rejects promotion of older publication generations. An offline observation is point-in-time evidence, not authorization for future Learning effects.
