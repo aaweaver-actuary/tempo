@@ -4,7 +4,8 @@
     "controlled-browser": [
       "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
       "tests/controlled-browser/unit/registration-regressions.test.ts",
-      "tests/controlled-browser/unit/runner-regressions.test.ts"
+      "tests/controlled-browser/unit/runner-regressions.test.ts",
+      "tests/controlled-browser/unit/storage-probes.test.ts"
     ],
     "frontend": [
       "tests/unit/activity-control-pending-regressions.test.ts",

@@ -386,3 +386,15 @@ this validation record; final current input equivalence is verified after commit
 ## F1 adoption
 
 The historical results above describe the original runtime extraction. F1 adds the separately installed remediation library, authenticated v2 producer delivery and issuance-bound settlement. Its current source-bound results and explicit remaining #194/#224 work are recorded in [F1 validation](../../../docs/validation/f1-game-evidence-learning.md) and [F2 handoff](../../../docs/study/f2-remediation-handoff.md). No live activation or conversion is implied.
+
+## F2 production Study adoption
+
+F2 adds the registered `learning-full-study` assembly using the production Study
+assets, installed Learning, explicit accepted fixtures and restricted disposable
+PostgreSQL. The new strict bootstrap/settings/teaching regression owner remains
+in the regular native suite. The exact source-bound acceptance map, commands,
+inventories, failed explorations, artifact identities and remaining transition
+work are in [F2 validation](../../../docs/validation/f2-study-learning.md).
+Runtime assembly qualification is separate from frontend artifact extraction,
+source-removed Python packaging, controlled HTTP fixtures and hosted policy. No
+live conversion, provider deployment, Actions change or merge is implied.

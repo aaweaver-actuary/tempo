@@ -20,13 +20,13 @@ def docker(*arguments):
     ).stdout.strip()
 
 
-def main(test_paths=None, additional_environment=None, extra_sources=()):
+def main(test_paths=None, additional_environment=None, extra_sources=(), evidence_directory=None):
     if len(sys.argv) > 2:
         raise SystemExit("Only an evidence directory is accepted")
     evidence = Path(
-        sys.argv[1]
+        evidence_directory or sys.argv[1]
         if len(sys.argv) == 2
-        else os.environ.get(
+        else evidence_directory or os.environ.get(
             "TEMPO_LEARNING_EVIDENCE_DIR", str(ROOT / "test-results/learning-runtime")
         )
     ).resolve()

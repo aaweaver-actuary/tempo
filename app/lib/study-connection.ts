@@ -49,8 +49,11 @@ export function learningDayKey(date = new Date()) {
     : `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 }
 const learningPaths = /^\/api\/(?:study\/(?:bootstrap|settings)|queue\/(?:window|today|prepared|entries\/)|cards\/[^/]+\/(?:review|teaching|move-membership)|operations\/|opening-evidence\/|studies\/[^/]+\/exercises\/|tactics\/(?:attempt|progress)|defense-exercises\/|endgames\/)/;
-export async function learningFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
+export function learningFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
   if (!independentStudy) return globalThis.fetch(input, options);
+  return authenticatedLearningFetch(input, options);
+}
+async function authenticatedLearningFetch(input: RequestInfo | URL, options: RequestInit): Promise<Response> {
   const connection = studyConnection();
   if (!connection) throw new Error("Connect to Learning before studying.");
   const original = input instanceof Request ? input.url : String(input);

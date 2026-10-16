@@ -4579,3 +4579,9 @@ establish PostgreSQL exactly-once effects or offline/service-worker behavior.
 ## Independent Learning runtime
 
 `services/learning/runtime/REGRESSIONS.md` owns the installed/runtime, native PostgreSQL and focused Chromium client/API inventory. `backend/tests/test_durable_task_enqueue_identity.py` retains #144 coverage for event/result identity after concurrent UPSERT selection. The component manifest registers the runtime and real client/runner inputs; no complete Study UI or hosted gate qualification follows from these focused checks.
+
+The F2 native inspection helper has its own regular controlled-browser unit
+regression in `unit/storage-probes.test.ts`: reading before lazy application
+startup aborts an absent database open rather than creating an empty incompatible
+schema. The existing two native legacy receipt/reimport scenarios retain their
+original assertions against that non-mutating inspector.

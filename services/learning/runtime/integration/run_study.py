@@ -33,7 +33,8 @@ def run():
              {"TEMPO_LEARNING_STUDY_ASSETS": str(build)},
              [ROOT / "app", ROOT / "static", ROOT / "vite.static.config.ts",
               ROOT / "package.json", ROOT / "package-lock.json", ROOT / "module-resolution.ts",
-              ROOT / "scripts/prove-study-learning.mjs", ROOT / "scripts/offline-shell-assets.ts", ROOT / "public"])
+              ROOT / "scripts/prove-study-learning.mjs", ROOT / "scripts/offline-shell-assets.ts", ROOT / "public"],
+             evidence_directory=evidence)
     finally:
         shutil.rmtree(build)
         (evidence / "study-build-cleanup.json").write_text(json.dumps({"removed": not build.exists()}))

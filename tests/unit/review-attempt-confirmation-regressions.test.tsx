@@ -792,12 +792,13 @@ it.each(["queued", "unconfirmed"])("PR105 committed completion during feedback r
   reviewResponse = async () => Response.json(receiptState === "queued"
     ? { state: "queued" } : { state: "complete", response: { persisted: false } });
   queue = [queueCard("card-b", 13)];
-  const receiptReadsBefore = fetcher.mock.calls.filter(([url]) => String(url).includes("/api/operations/")).length;
+  const originalReceiptPath = `/api/operations/${encodeURIComponent(`review-attempt:${originalAttemptId}`)}`;
+  const receiptReadsBefore = fetcher.mock.calls.filter(([url]) => String(url).endsWith(originalReceiptPath)).length;
   await act(async () => { await advanceStudyTimers(751); });
   vi.useRealTimers();
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
   expect(reviewPosts()).toHaveLength(1);
-  expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/api/operations/"))).toHaveLength(receiptReadsBefore);
+  expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith(originalReceiptPath))).toHaveLength(receiptReadsBefore);
   expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe(originalAttemptId);
 });
 

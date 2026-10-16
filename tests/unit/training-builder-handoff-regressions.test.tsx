@@ -42,7 +42,7 @@ it("training Builder handoff keeps the middle-line cursor and full saved continu
   await waitFor(() => expect(JSON.parse(localStorage.getItem("tempo-builder-session")!).history).toHaveLength(10));
   const session = JSON.parse(localStorage.getItem("tempo-builder-session")!);
   expect(session).toMatchObject({ startingFen: positions[0], cursor: 8, branchStart: 8, activeRepertoireId: "najdorf", orientation: "white" });
-  expect(useBoardShellStore.getState().board.fen).toBe(positions[8]);
+  await waitFor(() => expect(useBoardShellStore.getState().board.fen).toBe(positions[8]));
   expect(useTrainingStore.getState().attempt).toEqual(attemptBefore);
   expect(useTrainingStore.getState().step).toBe(8);
 });

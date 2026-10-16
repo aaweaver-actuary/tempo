@@ -4,7 +4,9 @@ import type { Page } from "@playwright/test";
 export function connectedReviewState(page: Page, attemptId: string): Promise<string> {
   return page.evaluate(async identity => new Promise<string>((resolve, reject) => {
     const opening = indexedDB.open("tempo-study-intents", 1);
-    opening.onerror = () => reject(opening.error);
+    let absent = false;
+    opening.onupgradeneeded = () => { absent = true; opening.transaction!.abort(); };
+    opening.onerror = () => absent ? resolve("missing") : reject(opening.error);
     opening.onsuccess = () => {
       const database = opening.result;
       if (!database.objectStoreNames.contains("intents")) { database.close(); resolve("missing"); return; }
@@ -20,9 +22,12 @@ export function connectedReviewState(page: Page, attemptId: string): Promise<str
 export function nativeStudyRecords(page: Page): Promise<Array<{ key: string; kind: string; state: string; requestId: string; payload: unknown; receipt?: unknown }>> {
   return page.evaluate(() => new Promise((resolve, reject) => {
     const opening = indexedDB.open("tempo-study-intents", 1);
-    opening.onerror = () => reject(opening.error);
+    let absent = false;
+    opening.onupgradeneeded = () => { absent = true; opening.transaction!.abort(); };
+    opening.onerror = () => absent ? resolve([]) : reject(opening.error);
     opening.onsuccess = () => {
       const database = opening.result;
+      if (!database.objectStoreNames.contains("intents")) { database.close(); reject(new Error("Incompatible Study intent storage")); return; }
       const transaction = database.transaction("intents");
       const request = transaction.objectStore("intents").getAll();
       request.onsuccess = () => resolve(request.result);
