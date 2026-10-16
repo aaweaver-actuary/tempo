@@ -943,7 +943,7 @@ def test_version_one_migration_recovers_completed_history_in_bounded_pages(state
     with upgrade.connect() as database:
         assert database.execute('SELECT heads_initialized FROM games').fetchone()['heads_initialized']
         assert database.execute('SELECT obligation_revision FROM accepted_heads').fetchone()['obligation_revision']==65
-        assert database.execute('SELECT count(*) AS count FROM evidence_schema_migrations').fetchone()['count']==2
+        assert database.execute('SELECT count(*) AS count FROM evidence_schema_migrations').fetchone()['count']==3
     upgrade.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/'empty.pgn').read_bytes())
     drain(upgrade)
     with upgrade.connect() as database:

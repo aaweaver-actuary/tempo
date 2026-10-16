@@ -1,5 +1,11 @@
 # Game Evidence regression ownership
 
+`tests/test_analysis_schema.py` owns offline immutable manifest/page integrity,
+replay, mixed input/workspace/version rejection, missing pages/counts, corruption
+and non-overwriting output. Learning's regular `test_authoritative_bridge.py`
+owns producer-created snapshot v2 and analysis fixtures from genuine activation,
+covered/opponent-deviation denominator contexts and proposal consumption.
+
 `tests/test_credentials.py` owns private Learning credential-file validation.
 The Learning runtime's regular `test_game_evidence_runtime.py` owns actual bearer
 delivery, separate database credentials, lost acknowledgement/restart and producer

@@ -5,7 +5,7 @@ from psycopg.types.json import Jsonb
 from tempo_game_evidence_contracts.v2 import EvidenceAcknowledgement, EvidenceDelivery
 
 from .payloads import make_deliveries
-from .snapshot import ComparisonSnapshot
+from .snapshot import parse_snapshot
 
 
 
@@ -88,7 +88,7 @@ def finalize(database, game_id):
         _state(database,game_id,'pending','current_comparison_required')
         return
     snapshot_row = database.execute('SELECT document FROM snapshots WHERE digest=%s',(inputs['snapshot_digest'],)).fetchone()
-    snapshot = ComparisonSnapshot.model_validate(snapshot_row['document']) if snapshot_row else None
+    snapshot = parse_snapshot(snapshot_row['document']) if snapshot_row else None
     heads = database.execute('SELECT * FROM accepted_heads WHERE game_id=%s AND active ORDER BY bucket,obligation_id',(game_id,)).fetchall()
     prior = {}
     for head in heads:
@@ -99,7 +99,7 @@ def finalize(database, game_id):
     revision = game['evidence_revision']+1
     findings = report['findings']
     payloads = make_deliveries(game['document'],findings,revision,snapshot.publication if snapshot else None,prior.values())
-    incomplete = bool(heads) and (not snapshot or not snapshot.activation or not snapshot.complete or 'source_error' in game['document'])
+    incomplete = bool(heads) and (not snapshot or not snapshot.serving_current() or not snapshot.complete or 'source_error' in game['document'])
     known_plies = {item['ply'] for item in findings if item['status'] != 'unknown'}
     current_cards = {item.card_id for item in snapshot.publication.definitions} if snapshot else set()
     current_ids = {item['obligation_id'] for _,payload in payloads for item in payload['obligations']}

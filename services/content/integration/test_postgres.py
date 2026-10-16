@@ -25,6 +25,7 @@ from tempo_content.domain import build_publication, canonical_position, stable_i
 from tempo_content.models import SourceSnapshot
 from tempo_content.store import ContentService
 from tempo_content_publication_contracts.v1 import Publication, serialize_contract
+from tempo_content.bridge import Bridge, digest
 
 
 def source_fixture():
@@ -96,6 +97,152 @@ def publish(service, source):
     loaded = service.load_source(source, expected_revision=0)
     finish(service, source["source_key"])
     return loaded, service.publication_build(source["source_key"])
+
+
+def bridge_draft(service):
+    import hashlib
+    source = source_fixture()
+    manifest = {"schema_version":1,"kind":"authored_import","workspace_id":service.workspace_id,
+        "source_key":source["source_key"],"title":source["title"],"complete":True,
+        "provenance":{"kind":"synthetic","source_sha256":hashlib.sha256(json.dumps(source).encode()).hexdigest(),"description":"Native A fixture"}}
+    return Bridge(service).draft(source,manifest,0)
+
+
+def test_A_approval_not_persisted_cannot_authorize_apply(service):
+    draft = bridge_draft(service)
+    with pytest.raises(ValueError,match="No durable approved"):
+        Bridge(service).prepare(draft['id'])
+    assert query('SELECT count(*) FROM content.sources WHERE id=%s',(draft['source_id'],))[0][0]==0
+
+
+def test_A_restart_after_approval_recovers_same_operation(service):
+    bridge = Bridge(service)
+    draft = bridge_draft(service)
+    operation = bridge.approve(draft['id'],draft['digest'])
+    with reopen() as restarted:
+        repeated = Bridge(restarted).approve(draft['id'],draft['digest'])
+        assert repeated['id']==operation['id']
+        prepared = Bridge(restarted).prepare(operation['id'],100)
+        assert prepared['document']['export']['publication']['definitions']
+        assert Bridge(restarted).prepare(operation['id'],100)['document']==prepared['document']
+
+
+@pytest.mark.parametrize('first',['cancel','apply'])
+def test_A_cancel_activation_race_authoritative_orders(service,first):
+    bridge = Bridge(service)
+    draft = bridge_draft(service)
+    operation = bridge.approve(draft['id'],draft['digest'])
+    if first=='cancel':
+        assert bridge.cancel(operation['id'])['cancelled']
+        with reopen() as restarted,pytest.raises(ValueError,match='Cancelled'):
+            Bridge(restarted).prepare(operation['id'])
+        assert query('SELECT count(*) FROM content.sources WHERE id=%s',(draft['source_id'],))[0][0]==0
+    else:
+        bridge.prepare(operation['id'],100)
+        assert bridge.cancel(operation['id'])=={'operation_id':operation['id'],'cancelled':False,'reason':'application_started'}
+
+
+def test_A_competing_approval_reserves_source_and_digest(service):
+    bridge=Bridge(service)
+    draft=bridge_draft(service)
+    with pytest.raises(ValueError,match='exact inspected'):
+        bridge.approve(draft['id'],'0'*64)
+    approved=bridge.approve(draft['id'],draft['digest'])
+    source=deepcopy(draft['document']['source'])
+    source['title']='Conflicting editor'
+    with pytest.raises(ValueError,match='approved operation'):
+        service.load_source(source,0)
+    assert bridge.cancel(approved['id'])['cancelled']
+    assert service.load_source(source,0)['source_revision']==1
+
+
+@pytest.mark.parametrize('fault',['count','digest'])
+def test_A_incomplete_stage_manifest_cannot_be_admitted(service,fault):
+    source=source_fixture()
+    captured={}
+    def interrupt(event,context):
+        if event=='after_staging':
+            captured.update(context)
+            raise RuntimeError('Simulated crash before source admission')
+    with pytest.raises(RuntimeError,match='Simulated crash'):
+        service.load_source(source,0,hook=interrupt)
+    with psycopg.connect(os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']) as database:
+        if fault=='count':
+            database.execute("UPDATE content.input_manifests SET counts=jsonb_set(counts,'{exercises}','999'::jsonb) WHERE stage_id=%s",(captured['stage_id'],))
+        else:
+            database.execute("UPDATE content.input_manifests SET digest=%s WHERE stage_id=%s",('0'*64,captured['stage_id']))
+    with pytest.raises(ValueError,match='Immutable source manifest'):
+        service.load_source(source,0)
+    assert query('SELECT count(*) FROM content.sources WHERE id=%s',(captured['source_id'],))[0][0]==0
+
+
+def test_A_conflicting_page_replay_keeps_accepted_bytes(service):
+    source=source_fixture()
+    captured={}
+    def interrupt(event,context):
+        if event=='after_staging':
+            captured.update(context)
+            raise RuntimeError('Simulated stage crash')
+    with pytest.raises(RuntimeError):
+        service.load_source(source,0,hook=interrupt)
+    with psycopg.connect(os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']) as database:
+        database.execute("UPDATE content.input_items SET payload=jsonb_set(payload,'{prompt}','\"Conflicting accepted bytes\"'::jsonb) WHERE stage_id=%s AND kind='exercises' AND ordinal=0",(captured['stage_id'],))
+    with pytest.raises(ValueError,match='Immutable input page'):
+        service.load_source(source,0)
+    assert query("SELECT payload->>'prompt' FROM content.input_items WHERE stage_id=%s AND kind='exercises' AND ordinal=0",(captured['stage_id'],))[0][0]=='Conflicting accepted bytes'
+    assert query('SELECT count(*) FROM content.sources WHERE id=%s',(captured['source_id'],))[0][0]==0
+
+
+@pytest.mark.parametrize('first',['cancel','apply'])
+def test_A_cancel_and_apply_contend_at_durable_authorization(service,first):
+    from tempo_content.bridge import lock_scope
+    bridge=Bridge(service)
+    draft=bridge_draft(service)
+    operation=bridge.approve(draft['id'],draft['digest'])
+    names={action:'a-'+action+'-'+uuid.uuid4().hex[:8] for action in ('cancel','apply')}
+    def perform(action):
+        with reopen(names[action]) as application:
+            adapter=Bridge(application)
+            return adapter.cancel(operation['id']) if action=='cancel' else adapter.prepare(operation['id'],100)
+    def blocked(action):
+        deadline=time.monotonic()+3
+        while time.monotonic()<deadline:
+            if query("SELECT 1 FROM pg_stat_activity WHERE application_name=%s AND wait_event_type='Lock'",(names[action],)):
+                return
+            time.sleep(.005)
+        raise AssertionError('Expected actual PostgreSQL scope-lock contention')
+    second='apply' if first=='cancel' else 'cancel'
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        with service._transaction() as database:
+            lock_scope(database,draft['source_id'],operation['id'])
+            first_future=executor.submit(perform,first)
+            blocked(first)
+            second_future=executor.submit(perform,second)
+            blocked(second)
+        if first=='cancel':
+            assert first_future.result()['cancelled']
+            with pytest.raises(ValueError,match='Cancelled'):
+                second_future.result()
+        else:
+            assert first_future.result()['document']['export']
+            assert second_future.result()['reason']=='application_started'
+
+
+def test_A_known_validation_failure_releases_scope_without_claiming_cancellation(service):
+    bridge=Bridge(service)
+    original=bridge_draft(service)
+    source=deepcopy(original['document']['source'])
+    source['exercises'][0]['specification']['accepted_lines']=[['e2e5']]
+    draft=bridge.draft(source,original['document']['manifest'],0)
+    approved=bridge.approve(draft['id'],draft['digest'])
+    with pytest.raises(ValueError,match='Illegal accepted move'):
+        bridge.prepare(approved['id'],100)
+    failed=bridge.operation(approved['id'])
+    assert failed['state']=='failed' and not failed['document'].get('delivery')
+    with pytest.raises(ValueError,match='Failed pre-delivery'):
+        bridge.prepare(approved['id'])
+    corrected=bridge.draft(original['document']['source'],original['document']['manifest'],1)
+    assert bridge.approve(corrected['id'],corrected['digest'])['state']=='approved'
 
 
 def test_runtime_migration_and_foreign_database_access_are_denied(service):

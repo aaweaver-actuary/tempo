@@ -48,7 +48,7 @@ def record_intent(operation_id, name, payload):
             )
 
 
-def execute(operation_id, *, background=False):
+def execute(operation_id, *, background=False, publication=None):
     with connection(background=background) as database:
         database.execute_native(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (operation_id,)
@@ -59,6 +59,8 @@ def execute(operation_id, *, background=False):
         ).fetchone()
         if row is None:
             raise HTTPException(404, "Unknown operation")
+        if publication is not None and row['command_name'].startswith('publication.') != publication:
+            raise HTTPException(403,'Operation requires its owning credential')
         if row["state"] in ("complete", "failed"):
             return
         payload = json.loads(row["payload_json"])
@@ -119,13 +121,15 @@ def execute(operation_id, *, background=False):
             )
 
 
-def read_operation(operation_id):
+def read_operation(operation_id, *, publication=None):
     with connection(read_only=True) as database:
         row = database.execute_native(
             "SELECT * FROM operation_receipts WHERE operation_id=%s", (operation_id,)
         ).fetchone()
     if row is None:
         return {"operation_id": operation_id, "state": "unknown"}
+    if publication is not None and row['command_name'].startswith('publication.') != publication:
+        raise HTTPException(403,'Operation requires its owning credential')
     return {
         "operation_id": operation_id,
         "state": row["state"],

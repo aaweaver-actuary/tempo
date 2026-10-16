@@ -1,5 +1,17 @@
 # Content regression ownership
 
+## A bridge
+
+`tests/test_bridge.py` owns source/rename/permutation mapping, explicit provenance
+and color, legal executable proposals, informational-context rejection, and the
+accepted-alternative board-copy regression. `integration/test_postgres.py` owns
+the named `test_A_*` approval-not-persisted, restart/replay, cancellation orders,
+source reservation/CAS, incomplete count/digest manifest, and conflicting-page
+replay cases. Existing source concurrency, failed-generation preservation,
+retirement-required, immutability and foreign-database tests remain selected.
+The actual installed cross-service producer/receipt proof belongs to Learning's
+regular `test_authoritative_bridge.py`, not a fabricated Content fixture.
+
 Content's regular installed `tests/` suite owns strict authored-input validation,
 legal-state canonicalization, both colors, castling/en-passant, promotions,
 terminal positions, complete reply identities, shared/transposed position reuse,

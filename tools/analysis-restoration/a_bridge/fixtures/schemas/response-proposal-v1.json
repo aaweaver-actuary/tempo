@@ -1,0 +1,116 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "accepted_lines": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Accepted Lines",
+      "type": "array"
+    },
+    "anchor_ply": {
+      "maximum": 999,
+      "minimum": 0,
+      "title": "Anchor Ply",
+      "type": "integer"
+    },
+    "decision_fen": {
+      "title": "Decision Fen",
+      "type": "string"
+    },
+    "expected_source_revision": {
+      "minimum": 1,
+      "title": "Expected Source Revision",
+      "type": "integer"
+    },
+    "kind": {
+      "const": "response_proposal",
+      "title": "Kind",
+      "type": "string"
+    },
+    "learner_color": {
+      "enum": [
+        "white",
+        "black"
+      ],
+      "title": "Learner Color",
+      "type": "string"
+    },
+    "opponent_move": {
+      "title": "Opponent Move",
+      "type": "string"
+    },
+    "policy_key": {
+      "title": "Policy Key",
+      "type": "string"
+    },
+    "proposal_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": true,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "repertoire_key": {
+      "title": "Repertoire Key",
+      "type": "string"
+    },
+    "route_key": {
+      "title": "Route Key",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Digest",
+      "type": "string"
+    },
+    "source_key": {
+      "title": "Source Key",
+      "type": "string"
+    },
+    "status": {
+      "const": "draft",
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "status",
+    "proposal_id",
+    "workspace_id",
+    "source_key",
+    "repertoire_key",
+    "policy_key",
+    "learner_color",
+    "expected_source_revision",
+    "source_digest",
+    "route_key",
+    "anchor_ply",
+    "opponent_move",
+    "decision_fen",
+    "accepted_lines",
+    "provenance"
+  ],
+  "title": "ResponseProposal",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+{
+  "activation.json": "db746d16119b6c8d28100c93d015f1256b1ddf6aba716826e905ddaf92e1ba66",
+  "actual-snapshot.json": "ed3e8f307d327b6bb43695f7475f9b71b10d1023f18b5969e8c84798a17cc6a7",
+  "analysis-inputs/comparisons-000000.json": "cd98fbb706ba26d477b8230da7114401782ff799d3c137babeb1bf742bb726d7",
+  "analysis-inputs/definitions-000000.json": "5dc25178e55fe767d6519dfc179508aca4fbf67dae36bd92061c4ffd68c55f3e",
+  "analysis-inputs/deviations-000000.json": "087e2a82e8e53df90fa424fb373da64265b49f8b9d5160773b24ca2d38728519",
+  "analysis-inputs/games-000000.json": "a548fcf6fcdc1d7049e692940bb9111b883f4f65f1a815612402b52f25a8f4f3",
+  "analysis-inputs/legal_replies-000000.json": "d9b13682dee781e8f607f3b6646c6006baf08da8b85ef2bf6aa2f6875daec007",
+  "analysis-inputs/manifest.json": "0462956780474f193be1488da2f58b5ad5879deba1f6485357742849fe826286",
+  "analysis-inputs/positions-000000.json": "f60d834fb2a7c50684a7371cd01a89fdace55450f7d3695285e2e45035fb2ed7",
+  "analysis-inputs/routes-000000.json": "19c55787105621b91795db8fbc117b5d1d718ede98628926fed1082c3b8a21b3",
+  "historical-snapshot.json": "4ebb34eff5b4768bfba0badb81ffe50d4918d4704e6ffa881260d0f7601a763a",
+  "response-proposal.json": "98a6ca0798a8e8c7fb6bd5df9e137c7847a1bbf1dd065fabac94ef68bc4b7669",
+  "retirement.json": "a43783764a2c2fb3c1f22e5acfd56665e6b4893a18e459b6526b03dfcc2949ec",
+  "source-manifest.json": "1a23529703115ee7f135bab290e3447f6a777e3cc7114cecad87f7d48f2862f3",
+  "source.json": "89c0ebac833794885dd6aa2ef0ab8f852fb33923966fb30a0682073d8882851e",
+  "successor-snapshot.json": "b98fd6d5d453124d665a3e5a59c730dba4c608c3848800a9b63c65136379c400"
+}

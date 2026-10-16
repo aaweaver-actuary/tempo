@@ -1,5 +1,44 @@
 # Content interfaces and ownership
 
+## Authoritative bridge operator surface
+
+`schema --model import-manifest|response-proposal` exports service-local schema 1
+without database access. `proposal inspect FILE` is also pure. Import planning
+persists an immutable draft; it cannot publish or activate. The approved workflow
+and serialized consumer boundary are in
+[A bridge](../../docs/analysis-restoration/a-bridge.md).
+
+| Input field | Content mapping / authority |
+| --- | --- |
+| workspace/source/entity keys | Existing stable UUID identities; titles and input order do not identify cards |
+| PGN SetUp/FEN and ordered paths | Exact authored starting FEN and legal UCI routes; every variation requires a manifest assignment |
+| explicit repertoire/policy/color | Authored memberships and policy-scoped learner decisions; never inferred from titles |
+| structured exercise/decision keys | Retained unchanged; PGN derives decision keys from explicit policy and exact decision FEN |
+| accepted lines | Every authored learner alternative, preserved in order within each line |
+| binding/re-entry manifest | Exact route/policy/ply/card binding; re-entry defaults false |
+| source SHA/completeness/provenance | Retained original export evidence; incomplete scope cannot be approved for replacement |
+| legacy_aliases | Exercise-key to historical Learning-card linkage, validated by Learning; missing history remains absent |
+
+Draft IDs deduplicate semantic source permutations while retaining the first
+original-byte provenance. Draft digest approval binds that exact retained record.
+Source admission, approval and cancellation share a source-scope advisory lock.
+Approved/applying operations reserve the whole source. Cancellation is effective
+only before the committed `applying` transition; afterwards it returns
+`application_started` and requires reconciliation. Runtime cannot modify drafts.
+
+`operation record` is a local operator port requiring the original Learning origin
+and private operator credential file. It independently reads the original
+authenticated Learning operation receipt before recording matching bytes. Merely
+asserting an `activated` status or transport label cannot confirm completion.
+Delivery requests and snapshot observations are immutable Content checkpoints.
+No operator credential is supplied to Game Evidence or serialized into documents.
+
+`publication export ID --generation N` returns source/publication lineage, actual
+routes/bindings, policy-scoped complete legal reply support, provenance and digest.
+Coverage conditions replies on established route prefixes, preserving unknown
+terminal scopes and distinct policies. Completed operation exports remain readable
+after source/cache replacement. Shared Publication v1 itself is unchanged.
+
 ## Structured authored source v1
 
 `tempo_content.SourceSnapshot` is the supported authored-input model. It rejects

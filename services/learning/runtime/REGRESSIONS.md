@@ -1,5 +1,19 @@
 # Learning runtime regression ownership
 
+## A authoritative bridge
+
+`test_content_bridge.py` owns measured complete 129/512/2,048-definition activation
+and replacement, original receipt replay and credential separation, genuine
+review/schedule retention through explicit aliases and metadata successors,
+identity conflict rollback, historical status versus replacement, and retirement.
+`test_authoritative_bridge.py` owns actual installed Content import/approval,
+authenticated operator activation with real response loss/restart, installed
+producer delivery to the existing receiver, late-evidence and qualifying Study
+settlement, immutable offline export/replay, proposal draft versus approval and
+application, three-domain role denial, and complete authored-source capacity.
+These tests are discovered by the regular native runner; its dependency closure
+now records Content and the database-free operator tool as test inputs only.
+
 The complete native inventory is discovered by `integration/run_postgres.py` from `tests/`; collection, every setup/call/teardown phase and JUnit must agree. No selection flags or skips are accepted. `components.json` registers the owning native suite and its real client/runner inputs. Installation checks also run in source-removed Python consumers through `qualify.py`.
 
 | Regular file | Proof |

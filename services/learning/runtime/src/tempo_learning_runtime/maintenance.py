@@ -61,7 +61,7 @@ def run_once():
 
     with connection(read_only=True, background=True) as database:
         operation = database.execute_native(
-            "SELECT operation_id FROM operation_receipts WHERE state='queued' AND (next_retry_at IS NULL OR next_retry_at<=NOW()) ORDER BY created_at,operation_id LIMIT 1"
+            "SELECT operation_id FROM operation_receipts WHERE state='queued' AND command_name!='publication.activate.v2' AND (next_retry_at IS NULL OR next_retry_at<=NOW()) ORDER BY created_at,operation_id LIMIT 1"
         ).fetchone()
     if operation:
         try:
