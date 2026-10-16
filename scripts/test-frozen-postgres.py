@@ -10,6 +10,8 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from datetime import date
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
@@ -233,6 +235,8 @@ def main():
                 database.execute("INSERT INTO queue_attempt_origins(queue_entry_id,card_id,revision,queue_date,cycle,admission_kind,attempt_failed,last_status,legacy,start_fen,moves_json,content_type) VALUES(?,?,?,?,0,'new',0,'queued',1,?,'[]','opening')",(100000+index,identifier,1,day,chess.STARTING_FEN))
 
         from contextlib import contextmanager
+from datetime import date
+from unittest.mock import patch
         @contextmanager
         def reader_factory():
             with psycopg.connect(reader_url,row_factory=tempo_row_factory) as raw:
@@ -327,7 +331,15 @@ def main():
             database.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=? AND card_id=?',(legacy_queue_id,legacy_id))
             assert legacy_queue_id in [row[0] for row in database.execute(_AVAILABLE_ATTEMPT_SQL,(day,)).fetchall()]
         from app import main as application
-        assert legacy_id in {row['id'] for row in application._queue_payload()['cards']}
+        # The native fixture deliberately spans fixed queue days. Match the API's
+        # clock to its owning queue instead of reading the host calendar.
+        class FixtureDay(date):
+            @classmethod
+            def today(cls):
+                return cls.fromisoformat(day)
+        with patch.object(application, 'date', FixtureDay):
+            assert legacy_id in {row['id'] for row in application._queue_payload()['cards']}
+        print(json.dumps({'test_frozen_legacy_confirmation_uses_fixture_day': day}))
         legacy_moves=['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4']
         with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
             database=PostgresConnection(raw)
