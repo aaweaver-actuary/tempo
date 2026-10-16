@@ -57,7 +57,7 @@ def _decode_inventory_cursor(after,kind,workspace_id,source_key,source_revision,
                 raise ValueError('position cursor requires a position key')
         elif type(last) is not list or len(last)!=2 or any(type(key) is not str or not key for key in last):
             raise ValueError('route cursor requires a route/policy pair')
-    except (ValueError,TypeError) as error:
+    except (ValueError,TypeError,RecursionError) as error:
         raise ContentError('invalid_cursor','Invalid versioned inventory cursor: '+str(error)) from error
     if (cursor['source_revision'],cursor['generation'])!=(source_revision,generation):
         raise ContentError('stale_inventory_cursor','Source inventory changed; restart pagination without --after')

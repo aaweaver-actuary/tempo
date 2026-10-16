@@ -1126,11 +1126,12 @@ def test_inventory_read_snapshot_is_read_only_and_rolls_back_on_error(service):
         database.execute('UPDATE content.collector SET pending=pending WHERE id=1')
 
 
-def test_inventory_cli_rejects_invalid_cursor_as_structured_error(service, tmp_path):
+@pytest.mark.parametrize('cursor', ['{', pytest.param('['*20000+']'*20000, id='excessive-nesting')])
+def test_inventory_cli_rejects_invalid_cursor_as_structured_error(service, tmp_path, cursor):
     source = source_fixture()
     publish(service, source)
     result = subprocess.run([str(Path(sys.executable).with_name('tempo-content')), 'inventory', 'positions',
-                             source['source_key'], '--after', '{'], cwd=tmp_path, env=cli_environment(),
+                             source['source_key'], '--after', cursor], cwd=tmp_path, env=cli_environment(),
                             capture_output=True, text=True, timeout=20)
     assert result.returncode == 2 and result.stdout == ''
     assert json.loads(result.stderr)['code'] == 'invalid_cursor'

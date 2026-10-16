@@ -52,7 +52,8 @@ def test_route_cursor_requires_ordered_string_pair(value):
     assert rejected.value.code == 'invalid_cursor'
 
 
-@pytest.mark.parametrize('after', ['{', 'null', '[]', '"old-position"', '["route","policy"]', 1])
+@pytest.mark.parametrize('after', ['{', 'null', '[]', '"old-position"', '["route","policy"]', 1,
+    pytest.param('['*20000+']'*20000, id='excessive-nesting')])
 def test_inventory_cursor_rejects_malformed_and_legacy_tokens(after):
     with pytest.raises(ContentError) as rejected:
         _decode_inventory_cursor(after, 'positions', 'workspace', 'source', 2, 3)
