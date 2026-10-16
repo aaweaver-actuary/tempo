@@ -93,8 +93,12 @@ class HostActivity:
             while not self.stopping.wait(5):
                 publish()
 
-        self.thread = threading.Thread(target=renew, name="learning-host-activity", daemon=True)
-        self.thread.start()
+        try:
+            self.thread = threading.Thread(target=renew, name="learning-host-activity", daemon=True)
+            self.thread.start()
+        except RuntimeError:
+            self.thread = None
+            logger.exception("Host activity renewal unavailable; managed work must defer when control expires")
 
     def close(self):
         self.stopping.set()
@@ -110,3 +114,5 @@ class HostActivity:
                         path.unlink()
                 except FileNotFoundError:
                     pass
+                except (OSError, ValueError, KeyError, TypeError):
+                    logger.exception("Host activity cleanup unverified; retain the owned snapshot for reconciliation")
