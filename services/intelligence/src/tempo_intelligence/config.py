@@ -72,6 +72,7 @@ class Configuration:
     background_pool_size: int = 1
     poll_interval: float = 1.0
     worker_enabled: bool = True
+    origins: tuple[str, ...] = ()
     hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]", "testserver")
 
     def __post_init__(self):
@@ -97,6 +98,10 @@ class Configuration:
             raise ValueError("invalid_worker_enabled")
         if not self.hosts or any(not isinstance(host, str) or not host or "*" in host or "/" in host for host in self.hosts):
             raise ValueError("exact_allowed_hosts_required")
+        for origin in self.origins:
+            parsed = urlsplit(origin)
+            if parsed.scheme not in {"http","https"} or not parsed.hostname or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment or "*" in origin:
+                raise ValueError("exact_browser_origins_required")
         try:
             endpoint = urlsplit(self.provider_base_url)
             port = endpoint.port
@@ -163,6 +168,7 @@ class Configuration:
                 background_pool_size=int(os.environ.get("TEMPO_INTELLIGENCE_BACKGROUND_POOL_SIZE", "1")),
                 poll_interval=float(os.environ.get("TEMPO_INTELLIGENCE_POLL_INTERVAL", "1")),
                 worker_enabled=enabled == "1",
+                origins=tuple(filter(None, os.environ.get("TEMPO_INTELLIGENCE_ORIGINS", "").split(","))),
                 hosts=tuple(os.environ.get("TEMPO_INTELLIGENCE_HOSTS", "localhost,127.0.0.1,[::1]").split(",")),
             )
         except KeyError:

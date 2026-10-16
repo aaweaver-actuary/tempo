@@ -1,0 +1,775 @@
+{
+  "$defs": {
+    "Action": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "available"
+      ],
+      "title": "Action",
+      "type": "object"
+    },
+    "Lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activation Id"
+        },
+        "activation_revision": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activation Revision"
+        },
+        "activation_status": {
+          "default": "unknown",
+          "enum": [
+            "activated",
+            "unknown",
+            "retired"
+          ],
+          "title": "Activation Status",
+          "type": "string"
+        },
+        "publication_generation": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication Generation"
+        },
+        "publication_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication Id"
+        },
+        "serving_status": {
+          "default": "unknown",
+          "enum": [
+            "current",
+            "historical",
+            "unknown"
+          ],
+          "title": "Serving Status",
+          "type": "string"
+        },
+        "source_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "source_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_revision",
+        "source_digest"
+      ],
+      "title": "Lineage",
+      "type": "object"
+    },
+    "Representative": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_move": {
+          "anyOf": [
+            {
+              "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Actual Move"
+        },
+        "fen": {
+          "maxLength": 120,
+          "title": "Fen",
+          "type": "string"
+        },
+        "game_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Game Id"
+        },
+        "history": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "title": "History",
+          "type": "array"
+        },
+        "learner_color": {
+          "enum": [
+            "white",
+            "black"
+          ],
+          "title": "Learner Color",
+          "type": "string"
+        },
+        "learner_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Learner Id"
+        },
+        "played_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Played At"
+        },
+        "ply": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ply"
+        },
+        "position_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position Id"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "provider_game_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Game Id"
+        },
+        "source_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Digest"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "starting_fen": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starting Fen"
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workspace Id"
+        }
+      },
+      "required": [
+        "game_id",
+        "source_revision",
+        "fen",
+        "actual_move",
+        "learner_color"
+      ],
+      "title": "Representative",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Action"
+      },
+      "title": "Actions",
+      "type": "object"
+    },
+    "activation_status": {
+      "enum": [
+        "activated",
+        "unknown",
+        "retired"
+      ],
+      "title": "Activation Status",
+      "type": "string"
+    },
+    "actual_frequency": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actual Frequency"
+    },
+    "card_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Card Id"
+    },
+    "category": {
+      "enum": [
+        "repertoire_miss",
+        "practical_gap",
+        "engine_opportunity"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "decision_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Decision Id"
+    },
+    "delivery": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Delivery"
+    },
+    "delivery_status": {
+      "title": "Delivery Status",
+      "type": "string"
+    },
+    "dismissal_state": {
+      "enum": [
+        "open",
+        "dismissed"
+      ],
+      "title": "Dismissal State",
+      "type": "string"
+    },
+    "eligible_encounter_games": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Eligible Encounter Games"
+    },
+    "engine": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Engine"
+    },
+    "evidence_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 4096,
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "evidence_revision": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidence Revision",
+      "type": "string"
+    },
+    "evidence_status": {
+      "enum": [
+        "current",
+        "stale",
+        "partial",
+        "unknown",
+        "unavailable"
+      ],
+      "title": "Evidence Status",
+      "type": "string"
+    },
+    "expected_moves": {
+      "items": {
+        "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+        "type": "string"
+      },
+      "title": "Expected Moves",
+      "type": "array"
+    },
+    "finding_id": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Finding Id",
+      "type": "string"
+    },
+    "finding_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Finding Revision",
+      "type": "integer"
+    },
+    "gap_kind": {
+      "anyOf": [
+        {
+          "enum": [
+            "observed",
+            "proactive"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Gap Kind"
+    },
+    "incident_id": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "input_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Input Id",
+      "type": "string"
+    },
+    "input_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Input Revision",
+      "type": "integer"
+    },
+    "learner_color": {
+      "enum": [
+        "white",
+        "black"
+      ],
+      "title": "Learner Color",
+      "type": "string"
+    },
+    "learning_settlement": {
+      "const": "unknown",
+      "title": "Learning Settlement",
+      "type": "string"
+    },
+    "lineage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Lineage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "opponent_fen": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Opponent Fen"
+    },
+    "opponent_move": {
+      "anyOf": [
+        {
+          "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Opponent Move"
+    },
+    "opponent_ply": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Opponent Ply"
+    },
+    "policy_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Policy Id"
+    },
+    "policy_version": {
+      "const": "c-analysis-v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "proposal_anchor": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposal Anchor"
+    },
+    "proposal_cost": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposal Cost"
+    },
+    "proposal_status": {
+      "const": "not_created",
+      "title": "Proposal Status",
+      "type": "string"
+    },
+    "reason_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reason Codes",
+      "type": "array"
+    },
+    "related_findings": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Related Findings",
+      "type": "array"
+    },
+    "repertoire_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Repertoire Id"
+    },
+    "representative": {
+      "$ref": "#/$defs/Representative"
+    },
+    "response_proposal": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Response Proposal"
+    },
+    "route_ids": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Route Ids"
+    },
+    "scope_revision": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Revision"
+    },
+    "source_evidence": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Source Evidence",
+      "type": "array"
+    },
+    "supporting_game_count": {
+      "minimum": 0,
+      "title": "Supporting Game Count",
+      "type": "integer"
+    },
+    "supporting_games": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "title": "Supporting Games",
+      "type": "array"
+    },
+    "uncertainty": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Uncertainty",
+      "type": "array"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "finding_id",
+    "finding_revision",
+    "evidence_revision",
+    "category",
+    "policy_version",
+    "workspace_id",
+    "repertoire_id",
+    "policy_id",
+    "learner_color",
+    "lineage",
+    "representative",
+    "incident_id",
+    "supporting_games",
+    "supporting_game_count",
+    "evidence_ids",
+    "evidence_status",
+    "reason_codes",
+    "uncertainty",
+    "expected_moves",
+    "card_id",
+    "decision_id",
+    "engine",
+    "gap_kind",
+    "source_evidence",
+    "delivery_status",
+    "learning_settlement",
+    "activation_status",
+    "proposal_status",
+    "dismissal_state",
+    "actions",
+    "input_id",
+    "input_revision"
+  ],
+  "title": "Finding",
+  "type": "object"
+}

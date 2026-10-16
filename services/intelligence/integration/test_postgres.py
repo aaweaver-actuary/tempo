@@ -45,7 +45,7 @@ def test_fresh_and_idempotent_migrations_and_workspace_rebind_refusal(state):
     with pytest.raises(ValueError,match="workspace_rebind_refused"):
         migrate(upgrade,"different")
     with psycopg.connect(upgrade) as database:
-        assert database.execute("SELECT count(*) FROM intelligence.migration_history").fetchone()[0]==1
+        assert database.execute("SELECT count(*) FROM intelligence.migration_history").fetchone()[0]==len(__import__("tempo_intelligence.migrate",fromlist=["expected_migrations"]).expected_migrations())
 
 
 @pytest.mark.parametrize("statement",[

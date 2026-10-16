@@ -200,3 +200,17 @@ publication/rankings. No advice, Learning admission, UI, live deployment, legacy
 database migration or live-provider smoke result is established here. A real
 provider smoke test requires separate authorization and separate external
 validation evidence.
+
+## Source-backed Analysis (C)
+
+The new analysis-v1 report path accepts explicit immutable game/repertoire inputs
+and owns durable bounded engine intent, result acceptance, findings and dismissal.
+See INTERFACES.md and `docs/analysis-restoration/c-findings.md`. Existing provider
+source APIs remain independent. C has no Content/Game Evidence/Stockfish runtime
+installation dependency for serving an already accepted report. The external
+`tools/analysis-restoration/c_pilot` tool consumes A's serialized export and B's
+public installed client; it never imports their service implementations.
+
+PR295 corrections retain component-local schema 1 and existing migrations. See
+INTERFACES.md for global ranking, nullable unscoped engine lineage, digest-bound
+receipts, historical generation compatibility and explicit engine-profile recovery.

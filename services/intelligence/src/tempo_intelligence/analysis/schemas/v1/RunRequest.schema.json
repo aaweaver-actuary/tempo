@@ -1,0 +1,112 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "expected_revision": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Revision"
+    },
+    "input_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Input Id",
+      "type": "string"
+    },
+    "input_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Input Revision",
+      "type": "integer"
+    },
+    "policy_version": {
+      "const": "c-analysis-v1",
+      "default": "c-analysis-v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "position_budget": {
+      "default": 250,
+      "maximum": 10000,
+      "minimum": 0,
+      "title": "Position Budget",
+      "type": "integer"
+    },
+    "ranking_evidence_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ranking Evidence Id"
+    },
+    "ranking_source": {
+      "default": "actual",
+      "enum": [
+        "actual",
+        "lichess",
+        "masters",
+        "maia"
+      ],
+      "title": "Ranking Source",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "run_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_evidence_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 1024,
+      "title": "Source Evidence Ids",
+      "type": "array"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "workspace_id",
+    "run_id",
+    "revision",
+    "input_id",
+    "input_revision"
+  ],
+  "title": "RunRequest",
+  "type": "object"
+}
