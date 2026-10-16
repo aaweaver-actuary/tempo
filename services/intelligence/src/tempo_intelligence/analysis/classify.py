@@ -46,10 +46,34 @@ def base_finding(kind, selection, position, target, reason):
             "uncertainty": [], "expected_moves": [], "card_id": None, "decision_id": None,
             "engine": None, "gap_kind": None, "source_evidence": [],
             "delivery_status": "not_required", "learning_settlement": "unknown",
-            "activation_status": selection["lineage"]["activation_status"], "proposal_status": "not_created",
+            "activation_status": (selection["lineage"] or {}).get("activation_status", "unknown"), "proposal_status": "not_created",
             "dismissal_state": "open", "proposal_cost": None,
             "actions": {"dismiss": {"available": True}, "reopen": {"available": False, "reason": "not_dismissed"},
                         "context_export": {"available": True}, "response_proposal": {"available": False, "reason": "validated_A_proposal_unavailable"}}}
+
+
+def engine_association(manifest, game, position):
+    """Consume exact accepted decision facts; never reconstruct A's route algorithm."""
+    selections = {(item["repertoire_id"], item["policy_id"], item["learner_color"]): item
+                  for item in manifest["selections"]}
+    candidates = {}
+    diverged = set()
+    for context in sorted(game["contexts"], key=lambda item: (item["ply"], item["repertoire_id"], item["policy_id"], item["evidence_id"])):
+        if context["ply"] > position["ply"]:
+            continue
+        key = (context["repertoire_id"], context["policy_id"], position["learner_color"])
+        if context.get("reentry_authorized"):
+            diverged.discard(key)
+        positive = (context.get("route_established") and context.get("coverage") in {"covered", "uncovered"}
+                    and key not in diverged and (not context.get("after_divergence") or context.get("reentry_authorized")))
+        if context["ply"] == position["ply"] and key in selections and positive:
+            candidate = candidates.setdefault(key, {"repertoire_id": key[0], "policy_id": key[1], "evidence_ids": []})
+            candidate["evidence_ids"] = sorted(set(candidate["evidence_ids"] + [context["evidence_id"]]))
+        if context.get("coverage") == "uncovered" and context.get("route_established"):
+            diverged.add(key)
+    known = [candidates[key] for key in sorted(candidates)]
+    selection = selections[next(iter(candidates))] if len(candidates) == 1 else None
+    return selection, known
 
 
 def source_findings(manifest, games):

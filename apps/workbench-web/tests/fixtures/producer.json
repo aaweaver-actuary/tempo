@@ -52,6 +52,34 @@
       {
         "schema_version": 1,
         "workspace_id": "fixture",
+        "run_id": "unscoped-browser",
+        "revision": 1,
+        "state": "complete",
+        "scope": {
+          "run_id": "unscoped-browser",
+          "input_id": "unscoped-browser",
+          "revision": 1,
+          "workspace_id": "fixture",
+          "input_revision": 1,
+          "policy_version": "c-analysis-v1",
+          "ranking_source": "actual",
+          "schema_version": 1,
+          "position_budget": 250,
+          "expected_revision": null,
+          "ranking_evidence_id": null,
+          "source_evidence_ids": []
+        },
+        "progress": {
+          "complete": 1
+        },
+        "requested_generation": 4,
+        "published_generation": 4,
+        "last_complete_generation": 4,
+        "engine_scan_complete": true
+      },
+      {
+        "schema_version": 1,
+        "workspace_id": "fixture",
         "run_id": "run",
         "revision": 1,
         "state": "pending",
@@ -72,8 +100,8 @@
         "progress": {
           "pending": 5
         },
-        "requested_generation": 1,
-        "published_generation": 1,
+        "requested_generation": 3,
+        "published_generation": 3,
         "last_complete_generation": null,
         "engine_scan_complete": false
       }
@@ -131,109 +159,10 @@
     "insufficient_quality_count": 0,
     "finding_count": 2,
     "complete": false,
+    "derivation_version": 2,
+    "ordering": "source-rank-semantic-v2",
     "policy_version": "c-analysis-v1",
     "items": [
-      {
-        "finding_id": "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6",
-        "finding_revision": 1,
-        "evidence_revision": "sha256:d7db315b11a57c37c8995ad9920c27f817ff66f4f981823bcca52057781648db",
-        "category": "practical_gap",
-        "policy_version": "c-analysis-v1",
-        "workspace_id": "fixture",
-        "repertoire_id": "rep",
-        "policy_id": "policy",
-        "learner_color": "white",
-        "lineage": {
-          "source_id": "synthetic-source",
-          "source_revision": 1,
-          "source_digest": "synthetic-source-digest",
-          "publication_id": "synthetic-publication",
-          "publication_generation": 1,
-          "activation_id": "synthetic-activation",
-          "activation_revision": 1,
-          "activation_status": "activated",
-          "serving_status": "unknown"
-        },
-        "representative": {
-          "game_id": "gap",
-          "learner_id": null,
-          "provider": null,
-          "provider_game_id": null,
-          "source_revision": 1,
-          "source_digest": "synthetic-game-digest",
-          "ply": 2,
-          "fen": "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
-          "actual_move": "g1f3",
-          "learner_color": "white",
-          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-          "history": [
-            "e2e4",
-            "a7a6"
-          ],
-          "played_at": null,
-          "position_id": null,
-          "workspace_id": null
-        },
-        "incident_id": "sha256:5b822757f30fbbee746b5357c7c34c2aa9afb575b6d1281e93c0c69b7adf2120",
-        "supporting_games": [
-          "gap"
-        ],
-        "supporting_game_count": 1,
-        "eligible_encounter_games": null,
-        "actual_frequency": null,
-        "evidence_ids": [
-          "synthetic-2"
-        ],
-        "evidence_status": "current",
-        "reason_codes": [
-          "observed_uncovered_response"
-        ],
-        "uncertainty": [
-          "eligible_encounter_denominator_unavailable"
-        ],
-        "expected_moves": [],
-        "card_id": null,
-        "decision_id": null,
-        "engine": null,
-        "gap_kind": "observed",
-        "source_evidence": [],
-        "related_findings": [],
-        "delivery": null,
-        "delivery_status": "not_required",
-        "learning_settlement": "unknown",
-        "activation_status": "activated",
-        "proposal_status": "not_created",
-        "dismissal_state": "open",
-        "proposal_cost": null,
-        "actions": {
-          "reopen": {
-            "available": false,
-            "reason": "not_dismissed"
-          },
-          "dismiss": {
-            "available": true,
-            "reason": null
-          },
-          "context_export": {
-            "available": true,
-            "reason": null
-          },
-          "response_proposal": {
-            "available": false,
-            "reason": "validated_A_proposal_unavailable"
-          }
-        },
-        "opponent_move": "a7a6",
-        "opponent_ply": 1,
-        "route_ids": [
-          "route"
-        ],
-        "scope_revision": 1,
-        "proposal_anchor": null,
-        "response_proposal": null,
-        "input_id": "synthetic-C",
-        "input_revision": 1
-      },
       {
         "finding_id": "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e",
         "finding_revision": 1,
@@ -322,10 +251,113 @@
             "reason": "validated_A_proposal_unavailable"
           }
         },
+        "opponent_fen": null,
         "opponent_move": null,
         "opponent_ply": null,
         "route_ids": null,
         "scope_revision": null,
+        "proposal_anchor": null,
+        "response_proposal": null,
+        "input_id": "synthetic-C",
+        "input_revision": 1
+      },
+      {
+        "finding_id": "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6",
+        "finding_revision": 1,
+        "evidence_revision": "sha256:d58d447423ac76d798903d289f24fb6172712f2913e8dbc2d2e16dd76a96ea88",
+        "category": "practical_gap",
+        "policy_version": "c-analysis-v1",
+        "workspace_id": "fixture",
+        "repertoire_id": "rep",
+        "policy_id": "policy",
+        "learner_color": "white",
+        "lineage": {
+          "source_id": "synthetic-source",
+          "source_revision": 1,
+          "source_digest": "synthetic-source-digest",
+          "publication_id": "synthetic-publication",
+          "publication_generation": 1,
+          "activation_id": "synthetic-activation",
+          "activation_revision": 1,
+          "activation_status": "activated",
+          "serving_status": "unknown"
+        },
+        "representative": {
+          "game_id": "gap",
+          "learner_id": null,
+          "provider": null,
+          "provider_game_id": null,
+          "source_revision": 1,
+          "source_digest": "synthetic-game-digest",
+          "ply": 2,
+          "fen": "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+          "actual_move": "g1f3",
+          "learner_color": "white",
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "history": [
+            "e2e4",
+            "a7a6"
+          ],
+          "played_at": null,
+          "position_id": null,
+          "workspace_id": null
+        },
+        "incident_id": "sha256:5b822757f30fbbee746b5357c7c34c2aa9afb575b6d1281e93c0c69b7adf2120",
+        "supporting_games": [
+          "gap"
+        ],
+        "supporting_game_count": 1,
+        "eligible_encounter_games": null,
+        "actual_frequency": null,
+        "evidence_ids": [
+          "synthetic-2"
+        ],
+        "evidence_status": "current",
+        "reason_codes": [
+          "observed_uncovered_response"
+        ],
+        "uncertainty": [
+          "eligible_encounter_denominator_unavailable"
+        ],
+        "expected_moves": [],
+        "card_id": null,
+        "decision_id": null,
+        "engine": null,
+        "gap_kind": "observed",
+        "source_evidence": [],
+        "related_findings": [],
+        "delivery": null,
+        "delivery_status": "not_required",
+        "learning_settlement": "unknown",
+        "activation_status": "activated",
+        "proposal_status": "not_created",
+        "dismissal_state": "open",
+        "proposal_cost": null,
+        "actions": {
+          "reopen": {
+            "available": false,
+            "reason": "not_dismissed"
+          },
+          "dismiss": {
+            "available": true,
+            "reason": null
+          },
+          "context_export": {
+            "available": true,
+            "reason": null
+          },
+          "response_proposal": {
+            "available": false,
+            "reason": "validated_A_proposal_unavailable"
+          }
+        },
+        "opponent_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "opponent_move": "a7a6",
+        "opponent_ply": 1,
+        "route_ids": [
+          "route"
+        ],
+        "scope_revision": 1,
         "proposal_anchor": null,
         "response_proposal": null,
         "input_id": "synthetic-C",
@@ -335,6 +367,110 @@
     "next_cursor": null
   },
   "details": {
+    "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "run_id": "run",
+      "generation": 1,
+      "finding": {
+        "engine": null,
+        "actions": {
+          "reopen": {
+            "reason": "not_dismissed",
+            "available": false
+          },
+          "dismiss": {
+            "reason": null,
+            "available": true
+          },
+          "context_export": {
+            "reason": null,
+            "available": true
+          },
+          "response_proposal": {
+            "reason": "validated_A_proposal_unavailable",
+            "available": false
+          }
+        },
+        "card_id": "existing-card",
+        "lineage": {
+          "source_id": "synthetic-source",
+          "activation_id": "synthetic-activation",
+          "source_digest": "synthetic-source-digest",
+          "publication_id": "synthetic-publication",
+          "serving_status": "unknown",
+          "source_revision": 1,
+          "activation_status": "activated",
+          "activation_revision": 1,
+          "publication_generation": 1
+        },
+        "category": "repertoire_miss",
+        "delivery": null,
+        "gap_kind": null,
+        "input_id": "synthetic-C",
+        "policy_id": "policy",
+        "route_ids": null,
+        "finding_id": "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e",
+        "decision_id": "existing-decision",
+        "incident_id": "sha256:3f2a511dec9c9295a7e94224d1db81c149b8ab6b9dc1e4fcf8d31d14621ee248",
+        "uncertainty": [],
+        "evidence_ids": [
+          "synthetic-0"
+        ],
+        "opponent_fen": null,
+        "opponent_ply": null,
+        "reason_codes": [
+          "accepted_response_not_played"
+        ],
+        "workspace_id": "fixture",
+        "learner_color": "white",
+        "opponent_move": null,
+        "proposal_cost": null,
+        "repertoire_id": "rep",
+        "expected_moves": [
+          "d2d4",
+          "e2e4"
+        ],
+        "input_revision": 1,
+        "policy_version": "c-analysis-v1",
+        "representative": {
+          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "ply": 0,
+          "game_id": "miss",
+          "history": [],
+          "provider": null,
+          "played_at": null,
+          "learner_id": null,
+          "actual_move": "g1f3",
+          "position_id": null,
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "workspace_id": null,
+          "learner_color": "white",
+          "source_digest": "synthetic-game-digest",
+          "source_revision": 1,
+          "provider_game_id": null
+        },
+        "scope_revision": null,
+        "delivery_status": "accepted",
+        "dismissal_state": "open",
+        "evidence_status": "current",
+        "proposal_anchor": null,
+        "proposal_status": "not_created",
+        "source_evidence": [],
+        "actual_frequency": 0.3333333333333333,
+        "finding_revision": 1,
+        "related_findings": [],
+        "supporting_games": [
+          "miss"
+        ],
+        "activation_status": "activated",
+        "evidence_revision": "sha256:1a1bd0bf055b8a00901de3f871df895ce518439cd5ee7909a0ed7640a94da80c",
+        "response_proposal": null,
+        "learning_settlement": "unknown",
+        "supporting_game_count": 1,
+        "eligible_encounter_games": 3
+      }
+    },
     "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6": {
       "schema_version": 1,
       "workspace_id": "fixture",
@@ -389,6 +525,7 @@
         "evidence_ids": [
           "synthetic-2"
         ],
+        "opponent_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
         "opponent_ply": 1,
         "reason_codes": [
           "observed_uncovered_response"
@@ -435,114 +572,11 @@
           "gap"
         ],
         "activation_status": "activated",
-        "evidence_revision": "sha256:d7db315b11a57c37c8995ad9920c27f817ff66f4f981823bcca52057781648db",
+        "evidence_revision": "sha256:d58d447423ac76d798903d289f24fb6172712f2913e8dbc2d2e16dd76a96ea88",
         "response_proposal": null,
         "learning_settlement": "unknown",
         "supporting_game_count": 1,
         "eligible_encounter_games": null
-      }
-    },
-    "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e": {
-      "schema_version": 1,
-      "workspace_id": "fixture",
-      "run_id": "run",
-      "generation": 1,
-      "finding": {
-        "engine": null,
-        "actions": {
-          "reopen": {
-            "reason": "not_dismissed",
-            "available": false
-          },
-          "dismiss": {
-            "reason": null,
-            "available": true
-          },
-          "context_export": {
-            "reason": null,
-            "available": true
-          },
-          "response_proposal": {
-            "reason": "validated_A_proposal_unavailable",
-            "available": false
-          }
-        },
-        "card_id": "existing-card",
-        "lineage": {
-          "source_id": "synthetic-source",
-          "activation_id": "synthetic-activation",
-          "source_digest": "synthetic-source-digest",
-          "publication_id": "synthetic-publication",
-          "serving_status": "unknown",
-          "source_revision": 1,
-          "activation_status": "activated",
-          "activation_revision": 1,
-          "publication_generation": 1
-        },
-        "category": "repertoire_miss",
-        "delivery": null,
-        "gap_kind": null,
-        "input_id": "synthetic-C",
-        "policy_id": "policy",
-        "route_ids": null,
-        "finding_id": "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e",
-        "decision_id": "existing-decision",
-        "incident_id": "sha256:3f2a511dec9c9295a7e94224d1db81c149b8ab6b9dc1e4fcf8d31d14621ee248",
-        "uncertainty": [],
-        "evidence_ids": [
-          "synthetic-0"
-        ],
-        "opponent_ply": null,
-        "reason_codes": [
-          "accepted_response_not_played"
-        ],
-        "workspace_id": "fixture",
-        "learner_color": "white",
-        "opponent_move": null,
-        "proposal_cost": null,
-        "repertoire_id": "rep",
-        "expected_moves": [
-          "d2d4",
-          "e2e4"
-        ],
-        "input_revision": 1,
-        "policy_version": "c-analysis-v1",
-        "representative": {
-          "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-          "ply": 0,
-          "game_id": "miss",
-          "history": [],
-          "provider": null,
-          "played_at": null,
-          "learner_id": null,
-          "actual_move": "g1f3",
-          "position_id": null,
-          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-          "workspace_id": null,
-          "learner_color": "white",
-          "source_digest": "synthetic-game-digest",
-          "source_revision": 1,
-          "provider_game_id": null
-        },
-        "scope_revision": null,
-        "delivery_status": "accepted",
-        "dismissal_state": "open",
-        "evidence_status": "current",
-        "proposal_anchor": null,
-        "proposal_status": "not_created",
-        "source_evidence": [],
-        "actual_frequency": 0.3333333333333333,
-        "finding_revision": 1,
-        "related_findings": [],
-        "supporting_games": [
-          "miss"
-        ],
-        "activation_status": "activated",
-        "evidence_revision": "sha256:1a1bd0bf055b8a00901de3f871df895ce518439cd5ee7909a0ed7640a94da80c",
-        "response_proposal": null,
-        "learning_settlement": "unknown",
-        "supporting_game_count": 1,
-        "eligible_encounter_games": 3
       }
     }
   },
@@ -561,7 +595,8 @@
       "accepted": true,
       "command_id": "browser-dismiss-gap",
       "dismissal_state": "dismissed",
-      "publication_pending": true
+      "publication_pending": true,
+      "request_digest": "sha256:011c7d6db049405bbf4151faff31fdbff05e0f6da33ffc1e070a2c841f344fd9"
     },
     "report": {
       "schema_version": 1,
@@ -615,109 +650,10 @@
       "insufficient_quality_count": 0,
       "finding_count": 2,
       "complete": false,
+      "derivation_version": 2,
+      "ordering": "source-rank-semantic-v2",
       "policy_version": "c-analysis-v1",
       "items": [
-        {
-          "finding_id": "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6",
-          "finding_revision": 2,
-          "evidence_revision": "sha256:d7db315b11a57c37c8995ad9920c27f817ff66f4f981823bcca52057781648db",
-          "category": "practical_gap",
-          "policy_version": "c-analysis-v1",
-          "workspace_id": "fixture",
-          "repertoire_id": "rep",
-          "policy_id": "policy",
-          "learner_color": "white",
-          "lineage": {
-            "source_id": "synthetic-source",
-            "source_revision": 1,
-            "source_digest": "synthetic-source-digest",
-            "publication_id": "synthetic-publication",
-            "publication_generation": 1,
-            "activation_id": "synthetic-activation",
-            "activation_revision": 1,
-            "activation_status": "activated",
-            "serving_status": "unknown"
-          },
-          "representative": {
-            "game_id": "gap",
-            "learner_id": null,
-            "provider": null,
-            "provider_game_id": null,
-            "source_revision": 1,
-            "source_digest": "synthetic-game-digest",
-            "ply": 2,
-            "fen": "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
-            "actual_move": "g1f3",
-            "learner_color": "white",
-            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            "history": [
-              "e2e4",
-              "a7a6"
-            ],
-            "played_at": null,
-            "position_id": null,
-            "workspace_id": null
-          },
-          "incident_id": "sha256:5b822757f30fbbee746b5357c7c34c2aa9afb575b6d1281e93c0c69b7adf2120",
-          "supporting_games": [
-            "gap"
-          ],
-          "supporting_game_count": 1,
-          "eligible_encounter_games": null,
-          "actual_frequency": null,
-          "evidence_ids": [
-            "synthetic-2"
-          ],
-          "evidence_status": "current",
-          "reason_codes": [
-            "observed_uncovered_response"
-          ],
-          "uncertainty": [
-            "eligible_encounter_denominator_unavailable"
-          ],
-          "expected_moves": [],
-          "card_id": null,
-          "decision_id": null,
-          "engine": null,
-          "gap_kind": "observed",
-          "source_evidence": [],
-          "related_findings": [],
-          "delivery": null,
-          "delivery_status": "not_required",
-          "learning_settlement": "unknown",
-          "activation_status": "activated",
-          "proposal_status": "not_created",
-          "dismissal_state": "dismissed",
-          "proposal_cost": null,
-          "actions": {
-            "reopen": {
-              "available": true,
-              "reason": null
-            },
-            "dismiss": {
-              "available": false,
-              "reason": "already_dismissed"
-            },
-            "context_export": {
-              "available": true,
-              "reason": null
-            },
-            "response_proposal": {
-              "available": false,
-              "reason": "validated_A_proposal_unavailable"
-            }
-          },
-          "opponent_move": "a7a6",
-          "opponent_ply": 1,
-          "route_ids": [
-            "route"
-          ],
-          "scope_revision": 1,
-          "proposal_anchor": null,
-          "response_proposal": null,
-          "input_id": "synthetic-C",
-          "input_revision": 1
-        },
         {
           "finding_id": "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e",
           "finding_revision": 2,
@@ -806,10 +742,113 @@
               "reason": "validated_A_proposal_unavailable"
             }
           },
+          "opponent_fen": null,
           "opponent_move": null,
           "opponent_ply": null,
           "route_ids": null,
           "scope_revision": null,
+          "proposal_anchor": null,
+          "response_proposal": null,
+          "input_id": "synthetic-C",
+          "input_revision": 1
+        },
+        {
+          "finding_id": "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6",
+          "finding_revision": 2,
+          "evidence_revision": "sha256:d58d447423ac76d798903d289f24fb6172712f2913e8dbc2d2e16dd76a96ea88",
+          "category": "practical_gap",
+          "policy_version": "c-analysis-v1",
+          "workspace_id": "fixture",
+          "repertoire_id": "rep",
+          "policy_id": "policy",
+          "learner_color": "white",
+          "lineage": {
+            "source_id": "synthetic-source",
+            "source_revision": 1,
+            "source_digest": "synthetic-source-digest",
+            "publication_id": "synthetic-publication",
+            "publication_generation": 1,
+            "activation_id": "synthetic-activation",
+            "activation_revision": 1,
+            "activation_status": "activated",
+            "serving_status": "unknown"
+          },
+          "representative": {
+            "game_id": "gap",
+            "learner_id": null,
+            "provider": null,
+            "provider_game_id": null,
+            "source_revision": 1,
+            "source_digest": "synthetic-game-digest",
+            "ply": 2,
+            "fen": "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+            "actual_move": "g1f3",
+            "learner_color": "white",
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "history": [
+              "e2e4",
+              "a7a6"
+            ],
+            "played_at": null,
+            "position_id": null,
+            "workspace_id": null
+          },
+          "incident_id": "sha256:5b822757f30fbbee746b5357c7c34c2aa9afb575b6d1281e93c0c69b7adf2120",
+          "supporting_games": [
+            "gap"
+          ],
+          "supporting_game_count": 1,
+          "eligible_encounter_games": null,
+          "actual_frequency": null,
+          "evidence_ids": [
+            "synthetic-2"
+          ],
+          "evidence_status": "current",
+          "reason_codes": [
+            "observed_uncovered_response"
+          ],
+          "uncertainty": [
+            "eligible_encounter_denominator_unavailable"
+          ],
+          "expected_moves": [],
+          "card_id": null,
+          "decision_id": null,
+          "engine": null,
+          "gap_kind": "observed",
+          "source_evidence": [],
+          "related_findings": [],
+          "delivery": null,
+          "delivery_status": "not_required",
+          "learning_settlement": "unknown",
+          "activation_status": "activated",
+          "proposal_status": "not_created",
+          "dismissal_state": "dismissed",
+          "proposal_cost": null,
+          "actions": {
+            "reopen": {
+              "available": true,
+              "reason": null
+            },
+            "dismiss": {
+              "available": false,
+              "reason": "already_dismissed"
+            },
+            "context_export": {
+              "available": true,
+              "reason": null
+            },
+            "response_proposal": {
+              "available": false,
+              "reason": "validated_A_proposal_unavailable"
+            }
+          },
+          "opponent_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+          "opponent_move": "a7a6",
+          "opponent_ply": 1,
+          "route_ids": [
+            "route"
+          ],
+          "scope_revision": 1,
           "proposal_anchor": null,
           "response_proposal": null,
           "input_id": "synthetic-C",
@@ -822,6 +861,34 @@
       "schema_version": 1,
       "workspace_id": "fixture",
       "items": [
+        {
+          "schema_version": 1,
+          "workspace_id": "fixture",
+          "run_id": "unscoped-browser",
+          "revision": 1,
+          "state": "complete",
+          "scope": {
+            "run_id": "unscoped-browser",
+            "input_id": "unscoped-browser",
+            "revision": 1,
+            "workspace_id": "fixture",
+            "input_revision": 1,
+            "policy_version": "c-analysis-v1",
+            "ranking_source": "actual",
+            "schema_version": 1,
+            "position_budget": 250,
+            "expected_revision": null,
+            "ranking_evidence_id": null,
+            "source_evidence_ids": []
+          },
+          "progress": {
+            "complete": 1
+          },
+          "requested_generation": 4,
+          "published_generation": 4,
+          "last_complete_generation": 4,
+          "engine_scan_complete": true
+        },
         {
           "schema_version": 1,
           "workspace_id": "fixture",
@@ -845,14 +912,118 @@
           "progress": {
             "pending": 5
           },
-          "requested_generation": 2,
-          "published_generation": 2,
+          "requested_generation": 3,
+          "published_generation": 3,
           "last_complete_generation": null,
           "engine_scan_complete": false
         }
       ]
     },
     "details": {
+      "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e": {
+        "schema_version": 1,
+        "workspace_id": "fixture",
+        "run_id": "run",
+        "generation": 2,
+        "finding": {
+          "engine": null,
+          "actions": {
+            "reopen": {
+              "reason": "not_dismissed",
+              "available": false
+            },
+            "dismiss": {
+              "reason": null,
+              "available": true
+            },
+            "context_export": {
+              "reason": null,
+              "available": true
+            },
+            "response_proposal": {
+              "reason": "validated_A_proposal_unavailable",
+              "available": false
+            }
+          },
+          "card_id": "existing-card",
+          "lineage": {
+            "source_id": "synthetic-source",
+            "activation_id": "synthetic-activation",
+            "source_digest": "synthetic-source-digest",
+            "publication_id": "synthetic-publication",
+            "serving_status": "unknown",
+            "source_revision": 1,
+            "activation_status": "activated",
+            "activation_revision": 1,
+            "publication_generation": 1
+          },
+          "category": "repertoire_miss",
+          "delivery": null,
+          "gap_kind": null,
+          "input_id": "synthetic-C",
+          "policy_id": "policy",
+          "route_ids": null,
+          "finding_id": "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e",
+          "decision_id": "existing-decision",
+          "incident_id": "sha256:3f2a511dec9c9295a7e94224d1db81c149b8ab6b9dc1e4fcf8d31d14621ee248",
+          "uncertainty": [],
+          "evidence_ids": [
+            "synthetic-0"
+          ],
+          "opponent_fen": null,
+          "opponent_ply": null,
+          "reason_codes": [
+            "accepted_response_not_played"
+          ],
+          "workspace_id": "fixture",
+          "learner_color": "white",
+          "opponent_move": null,
+          "proposal_cost": null,
+          "repertoire_id": "rep",
+          "expected_moves": [
+            "d2d4",
+            "e2e4"
+          ],
+          "input_revision": 1,
+          "policy_version": "c-analysis-v1",
+          "representative": {
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "ply": 0,
+            "game_id": "miss",
+            "history": [],
+            "provider": null,
+            "played_at": null,
+            "learner_id": null,
+            "actual_move": "g1f3",
+            "position_id": null,
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "workspace_id": null,
+            "learner_color": "white",
+            "source_digest": "synthetic-game-digest",
+            "source_revision": 1,
+            "provider_game_id": null
+          },
+          "scope_revision": null,
+          "delivery_status": "accepted",
+          "dismissal_state": "open",
+          "evidence_status": "current",
+          "proposal_anchor": null,
+          "proposal_status": "not_created",
+          "source_evidence": [],
+          "actual_frequency": 0.3333333333333333,
+          "finding_revision": 2,
+          "related_findings": [],
+          "supporting_games": [
+            "miss"
+          ],
+          "activation_status": "activated",
+          "evidence_revision": "sha256:1a1bd0bf055b8a00901de3f871df895ce518439cd5ee7909a0ed7640a94da80c",
+          "response_proposal": null,
+          "learning_settlement": "unknown",
+          "supporting_game_count": 1,
+          "eligible_encounter_games": 3
+        }
+      },
       "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6": {
         "schema_version": 1,
         "workspace_id": "fixture",
@@ -907,6 +1078,7 @@
           "evidence_ids": [
             "synthetic-2"
           ],
+          "opponent_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
           "opponent_ply": 1,
           "reason_codes": [
             "observed_uncovered_response"
@@ -953,18 +1125,360 @@
             "gap"
           ],
           "activation_status": "activated",
-          "evidence_revision": "sha256:d7db315b11a57c37c8995ad9920c27f817ff66f4f981823bcca52057781648db",
+          "evidence_revision": "sha256:d58d447423ac76d798903d289f24fb6172712f2913e8dbc2d2e16dd76a96ea88",
           "response_proposal": null,
           "learning_settlement": "unknown",
           "supporting_game_count": 1,
           "eligible_encounter_games": null
         }
+      }
+    }
+  },
+  "reopening": {
+    "path": "/v1/analysis/findings/sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6/commands?run_id=run&generation=2",
+    "command": {
+      "schema_version": 1,
+      "command_id": "browser-reopen-gap",
+      "action": "reopen",
+      "expected_revision": 2,
+      "budget": 250
+    },
+    "receipt": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "accepted": true,
+      "command_id": "browser-reopen-gap",
+      "dismissal_state": "open",
+      "publication_pending": true,
+      "request_digest": "sha256:08aa5c3aaa762a94d64d26ce78238827f202371a8472d685c2509dd5868d221a"
+    },
+    "report": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "run_id": "run",
+      "revision": 1,
+      "generation": 3,
+      "status": "current",
+      "input_id": "synthetic-C",
+      "input_revision": 1,
+      "input_producer": "synthetic",
+      "source_provenance": {
+        "kind": "synthetic"
       },
+      "scope": {
+        "game_ids": [
+          "miss",
+          "gap",
+          "alternative"
+        ],
+        "selections": [
+          {
+            "lineage": {
+              "source_id": "synthetic-source",
+              "activation_id": "synthetic-activation",
+              "source_digest": "synthetic-source-digest",
+              "publication_id": "synthetic-publication",
+              "serving_status": "unknown",
+              "source_revision": 1,
+              "activation_status": "activated",
+              "activation_revision": 1,
+              "publication_generation": 1
+            },
+            "policy_id": "policy",
+            "learner_color": "white",
+            "repertoire_id": "rep"
+          }
+        ],
+        "window_end": null,
+        "window_start": null,
+        "producer_version": "c-fixture-v1",
+        "source_artifact_digest": "sha256:b805d286c3d3a08841739e431781a89fec2577e16c55dba36afbd3f2c87b6a23"
+      },
+      "source_completeness": "complete",
+      "reasons": [],
+      "unknown_coverage": [],
+      "unknown_coverage_count": 0,
+      "engine_scan_complete": false,
+      "unprocessed_count": 5,
+      "engine_availability": "pending_or_available",
+      "insufficient_quality_count": 0,
+      "finding_count": 2,
+      "complete": false,
+      "derivation_version": 2,
+      "ordering": "source-rank-semantic-v2",
+      "policy_version": "c-analysis-v1",
+      "items": [
+        {
+          "finding_id": "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e",
+          "finding_revision": 3,
+          "evidence_revision": "sha256:1a1bd0bf055b8a00901de3f871df895ce518439cd5ee7909a0ed7640a94da80c",
+          "category": "repertoire_miss",
+          "policy_version": "c-analysis-v1",
+          "workspace_id": "fixture",
+          "repertoire_id": "rep",
+          "policy_id": "policy",
+          "learner_color": "white",
+          "lineage": {
+            "source_id": "synthetic-source",
+            "source_revision": 1,
+            "source_digest": "synthetic-source-digest",
+            "publication_id": "synthetic-publication",
+            "publication_generation": 1,
+            "activation_id": "synthetic-activation",
+            "activation_revision": 1,
+            "activation_status": "activated",
+            "serving_status": "unknown"
+          },
+          "representative": {
+            "game_id": "miss",
+            "learner_id": null,
+            "provider": null,
+            "provider_game_id": null,
+            "source_revision": 1,
+            "source_digest": "synthetic-game-digest",
+            "ply": 0,
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "actual_move": "g1f3",
+            "learner_color": "white",
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "history": [],
+            "played_at": null,
+            "position_id": null,
+            "workspace_id": null
+          },
+          "incident_id": "sha256:3f2a511dec9c9295a7e94224d1db81c149b8ab6b9dc1e4fcf8d31d14621ee248",
+          "supporting_games": [
+            "miss"
+          ],
+          "supporting_game_count": 1,
+          "eligible_encounter_games": 3,
+          "actual_frequency": 0.3333333333333333,
+          "evidence_ids": [
+            "synthetic-0"
+          ],
+          "evidence_status": "current",
+          "reason_codes": [
+            "accepted_response_not_played"
+          ],
+          "uncertainty": [],
+          "expected_moves": [
+            "d2d4",
+            "e2e4"
+          ],
+          "card_id": "existing-card",
+          "decision_id": "existing-decision",
+          "engine": null,
+          "gap_kind": null,
+          "source_evidence": [],
+          "related_findings": [],
+          "delivery": null,
+          "delivery_status": "accepted",
+          "learning_settlement": "unknown",
+          "activation_status": "activated",
+          "proposal_status": "not_created",
+          "dismissal_state": "open",
+          "proposal_cost": null,
+          "actions": {
+            "reopen": {
+              "available": false,
+              "reason": "not_dismissed"
+            },
+            "dismiss": {
+              "available": true,
+              "reason": null
+            },
+            "context_export": {
+              "available": true,
+              "reason": null
+            },
+            "response_proposal": {
+              "available": false,
+              "reason": "validated_A_proposal_unavailable"
+            }
+          },
+          "opponent_fen": null,
+          "opponent_move": null,
+          "opponent_ply": null,
+          "route_ids": null,
+          "scope_revision": null,
+          "proposal_anchor": null,
+          "response_proposal": null,
+          "input_id": "synthetic-C",
+          "input_revision": 1
+        },
+        {
+          "finding_id": "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6",
+          "finding_revision": 3,
+          "evidence_revision": "sha256:d58d447423ac76d798903d289f24fb6172712f2913e8dbc2d2e16dd76a96ea88",
+          "category": "practical_gap",
+          "policy_version": "c-analysis-v1",
+          "workspace_id": "fixture",
+          "repertoire_id": "rep",
+          "policy_id": "policy",
+          "learner_color": "white",
+          "lineage": {
+            "source_id": "synthetic-source",
+            "source_revision": 1,
+            "source_digest": "synthetic-source-digest",
+            "publication_id": "synthetic-publication",
+            "publication_generation": 1,
+            "activation_id": "synthetic-activation",
+            "activation_revision": 1,
+            "activation_status": "activated",
+            "serving_status": "unknown"
+          },
+          "representative": {
+            "game_id": "gap",
+            "learner_id": null,
+            "provider": null,
+            "provider_game_id": null,
+            "source_revision": 1,
+            "source_digest": "synthetic-game-digest",
+            "ply": 2,
+            "fen": "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+            "actual_move": "g1f3",
+            "learner_color": "white",
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "history": [
+              "e2e4",
+              "a7a6"
+            ],
+            "played_at": null,
+            "position_id": null,
+            "workspace_id": null
+          },
+          "incident_id": "sha256:5b822757f30fbbee746b5357c7c34c2aa9afb575b6d1281e93c0c69b7adf2120",
+          "supporting_games": [
+            "gap"
+          ],
+          "supporting_game_count": 1,
+          "eligible_encounter_games": null,
+          "actual_frequency": null,
+          "evidence_ids": [
+            "synthetic-2"
+          ],
+          "evidence_status": "current",
+          "reason_codes": [
+            "observed_uncovered_response"
+          ],
+          "uncertainty": [
+            "eligible_encounter_denominator_unavailable"
+          ],
+          "expected_moves": [],
+          "card_id": null,
+          "decision_id": null,
+          "engine": null,
+          "gap_kind": "observed",
+          "source_evidence": [],
+          "related_findings": [],
+          "delivery": null,
+          "delivery_status": "not_required",
+          "learning_settlement": "unknown",
+          "activation_status": "activated",
+          "proposal_status": "not_created",
+          "dismissal_state": "open",
+          "proposal_cost": null,
+          "actions": {
+            "reopen": {
+              "available": false,
+              "reason": "not_dismissed"
+            },
+            "dismiss": {
+              "available": true,
+              "reason": null
+            },
+            "context_export": {
+              "available": true,
+              "reason": null
+            },
+            "response_proposal": {
+              "available": false,
+              "reason": "validated_A_proposal_unavailable"
+            }
+          },
+          "opponent_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+          "opponent_move": "a7a6",
+          "opponent_ply": 1,
+          "route_ids": [
+            "route"
+          ],
+          "scope_revision": 1,
+          "proposal_anchor": null,
+          "response_proposal": null,
+          "input_id": "synthetic-C",
+          "input_revision": 1
+        }
+      ],
+      "next_cursor": null
+    },
+    "runs": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "items": [
+        {
+          "schema_version": 1,
+          "workspace_id": "fixture",
+          "run_id": "unscoped-browser",
+          "revision": 1,
+          "state": "complete",
+          "scope": {
+            "run_id": "unscoped-browser",
+            "input_id": "unscoped-browser",
+            "revision": 1,
+            "workspace_id": "fixture",
+            "input_revision": 1,
+            "policy_version": "c-analysis-v1",
+            "ranking_source": "actual",
+            "schema_version": 1,
+            "position_budget": 250,
+            "expected_revision": null,
+            "ranking_evidence_id": null,
+            "source_evidence_ids": []
+          },
+          "progress": {
+            "complete": 1
+          },
+          "requested_generation": 4,
+          "published_generation": 4,
+          "last_complete_generation": 4,
+          "engine_scan_complete": true
+        },
+        {
+          "schema_version": 1,
+          "workspace_id": "fixture",
+          "run_id": "run",
+          "revision": 1,
+          "state": "pending",
+          "scope": {
+            "run_id": "run",
+            "input_id": "synthetic-C",
+            "revision": 1,
+            "workspace_id": "fixture",
+            "input_revision": 1,
+            "policy_version": "c-analysis-v1",
+            "ranking_source": "actual",
+            "schema_version": 1,
+            "position_budget": 250,
+            "expected_revision": null,
+            "ranking_evidence_id": null,
+            "source_evidence_ids": []
+          },
+          "progress": {
+            "pending": 5
+          },
+          "requested_generation": 3,
+          "published_generation": 3,
+          "last_complete_generation": null,
+          "engine_scan_complete": false
+        }
+      ]
+    },
+    "details": {
       "sha256:358b3c04c0dfe32925aba32925f0ee132e6a55b2e044d4d531611e112ae0604e": {
         "schema_version": 1,
         "workspace_id": "fixture",
         "run_id": "run",
-        "generation": 2,
+        "generation": 3,
         "finding": {
           "engine": null,
           "actions": {
@@ -1010,6 +1524,7 @@
           "evidence_ids": [
             "synthetic-0"
           ],
+          "opponent_fen": null,
           "opponent_ply": null,
           "reason_codes": [
             "accepted_response_not_played"
@@ -1050,7 +1565,7 @@
           "proposal_status": "not_created",
           "source_evidence": [],
           "actual_frequency": 0.3333333333333333,
-          "finding_revision": 2,
+          "finding_revision": 3,
           "related_findings": [],
           "supporting_games": [
             "miss"
@@ -1061,6 +1576,809 @@
           "learning_settlement": "unknown",
           "supporting_game_count": 1,
           "eligible_encounter_games": 3
+        }
+      },
+      "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6": {
+        "schema_version": 1,
+        "workspace_id": "fixture",
+        "run_id": "run",
+        "generation": 3,
+        "finding": {
+          "engine": null,
+          "actions": {
+            "reopen": {
+              "reason": "not_dismissed",
+              "available": false
+            },
+            "dismiss": {
+              "reason": null,
+              "available": true
+            },
+            "context_export": {
+              "reason": null,
+              "available": true
+            },
+            "response_proposal": {
+              "reason": "validated_A_proposal_unavailable",
+              "available": false
+            }
+          },
+          "card_id": null,
+          "lineage": {
+            "source_id": "synthetic-source",
+            "activation_id": "synthetic-activation",
+            "source_digest": "synthetic-source-digest",
+            "publication_id": "synthetic-publication",
+            "serving_status": "unknown",
+            "source_revision": 1,
+            "activation_status": "activated",
+            "activation_revision": 1,
+            "publication_generation": 1
+          },
+          "category": "practical_gap",
+          "delivery": null,
+          "gap_kind": "observed",
+          "input_id": "synthetic-C",
+          "policy_id": "policy",
+          "route_ids": [
+            "route"
+          ],
+          "finding_id": "sha256:155ffa78b73c6fa88eebf714b21733994b31cc0204dbb5f47be6da7c66c2cef6",
+          "decision_id": null,
+          "incident_id": "sha256:5b822757f30fbbee746b5357c7c34c2aa9afb575b6d1281e93c0c69b7adf2120",
+          "uncertainty": [
+            "eligible_encounter_denominator_unavailable"
+          ],
+          "evidence_ids": [
+            "synthetic-2"
+          ],
+          "opponent_fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+          "opponent_ply": 1,
+          "reason_codes": [
+            "observed_uncovered_response"
+          ],
+          "workspace_id": "fixture",
+          "learner_color": "white",
+          "opponent_move": "a7a6",
+          "proposal_cost": null,
+          "repertoire_id": "rep",
+          "expected_moves": [],
+          "input_revision": 1,
+          "policy_version": "c-analysis-v1",
+          "representative": {
+            "fen": "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+            "ply": 2,
+            "game_id": "gap",
+            "history": [
+              "e2e4",
+              "a7a6"
+            ],
+            "provider": null,
+            "played_at": null,
+            "learner_id": null,
+            "actual_move": "g1f3",
+            "position_id": null,
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "workspace_id": null,
+            "learner_color": "white",
+            "source_digest": "synthetic-game-digest",
+            "source_revision": 1,
+            "provider_game_id": null
+          },
+          "scope_revision": 1,
+          "delivery_status": "not_required",
+          "dismissal_state": "open",
+          "evidence_status": "current",
+          "proposal_anchor": null,
+          "proposal_status": "not_created",
+          "source_evidence": [],
+          "actual_frequency": null,
+          "finding_revision": 3,
+          "related_findings": [],
+          "supporting_games": [
+            "gap"
+          ],
+          "activation_status": "activated",
+          "evidence_revision": "sha256:d58d447423ac76d798903d289f24fb6172712f2913e8dbc2d2e16dd76a96ea88",
+          "response_proposal": null,
+          "learning_settlement": "unknown",
+          "supporting_game_count": 1,
+          "eligible_encounter_games": null
+        }
+      }
+    }
+  },
+  "unscoped": {
+    "report": {
+      "schema_version": 1,
+      "workspace_id": "fixture",
+      "run_id": "unscoped-browser",
+      "revision": 1,
+      "generation": 3,
+      "status": "current",
+      "input_id": "unscoped-browser",
+      "input_revision": 1,
+      "input_producer": "synthetic",
+      "source_provenance": {
+        "kind": "synthetic"
+      },
+      "scope": {
+        "game_ids": [
+          "miss"
+        ],
+        "selections": [
+          {
+            "lineage": {
+              "source_id": "synthetic-source",
+              "activation_id": "synthetic-activation",
+              "source_digest": "synthetic-source-digest",
+              "publication_id": "synthetic-publication",
+              "serving_status": "unknown",
+              "source_revision": 1,
+              "activation_status": "activated",
+              "activation_revision": 1,
+              "publication_generation": 1
+            },
+            "policy_id": "policy",
+            "learner_color": "white",
+            "repertoire_id": "rep"
+          }
+        ],
+        "window_end": null,
+        "window_start": null,
+        "producer_version": "c-fixture-v1",
+        "source_artifact_digest": "sha256:b805d286c3d3a08841739e431781a89fec2577e16c55dba36afbd3f2c87b6a23"
+      },
+      "source_completeness": "complete",
+      "reasons": [],
+      "unknown_coverage": [
+        {
+          "ply": null,
+          "reason": "comparison_unavailable",
+          "game_id": "miss"
+        }
+      ],
+      "unknown_coverage_count": 1,
+      "engine_scan_complete": true,
+      "unprocessed_count": 0,
+      "engine_availability": "pending_or_available",
+      "insufficient_quality_count": 0,
+      "finding_count": 1,
+      "complete": true,
+      "derivation_version": 2,
+      "ordering": "source-rank-semantic-v2",
+      "policy_version": "c-analysis-v1",
+      "items": [
+        {
+          "finding_id": "sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a",
+          "finding_revision": 3,
+          "evidence_revision": "sha256:d217822f8f68ef5ed7d379cbb08a0a5320d80d83228970bb40fc84d59664dae2",
+          "category": "engine_opportunity",
+          "policy_version": "c-analysis-v1",
+          "workspace_id": "fixture",
+          "repertoire_id": null,
+          "policy_id": null,
+          "learner_color": "white",
+          "lineage": null,
+          "representative": {
+            "game_id": "miss",
+            "learner_id": null,
+            "provider": null,
+            "provider_game_id": null,
+            "source_revision": 1,
+            "source_digest": "synthetic-game-digest",
+            "ply": 0,
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "actual_move": "g1f3",
+            "learner_color": "white",
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "history": [],
+            "played_at": null,
+            "position_id": "sha256:b75f0c0214c131c3994127653c9d81a71b5c73ce383f126d469b35a6dffc24cc",
+            "workspace_id": "fixture"
+          },
+          "incident_id": "sha256:39a0f9c388ef04a4b70977d7dd82704fbcd678509688b264a8480e9e0c2070db",
+          "supporting_games": [
+            "miss"
+          ],
+          "supporting_game_count": 1,
+          "eligible_encounter_games": 1,
+          "actual_frequency": 1.0,
+          "evidence_ids": [
+            "sha256:6b0a41c51df78849cd893f9ad7217a4f12d31852d74924bc101b575760b526f3",
+            "sha256:b2439001fb10953ef1cf96a1b949642552c983345879fcfac6ed111477bd3dff"
+          ],
+          "evidence_status": "current",
+          "reason_codes": [
+            "stronger_continuation_supported_by_search"
+          ],
+          "uncertainty": [
+            "repertoire_association_unknown"
+          ],
+          "expected_moves": [],
+          "card_id": null,
+          "decision_id": null,
+          "engine": {
+            "best": {
+              "rank": 1,
+              "depth": 20,
+              "moves": [
+                "g1h3"
+              ],
+              "score": {
+                "kind": "centipawns",
+                "value": 200
+              },
+              "score_perspective": "side_to_move"
+            },
+            "played": {
+              "rank": 1,
+              "depth": 20,
+              "moves": [
+                "g1f3"
+              ],
+              "score": {
+                "kind": "centipawns",
+                "value": 0
+              },
+              "score_perspective": "side_to_move"
+            },
+            "status": "supported",
+            "loss_cp": 200,
+            "significant": true,
+            "engine_version": "synthetic-test-profile",
+            "root_provenance": {
+              "started_at": "2026-10-16T00:00:00Z",
+              "finished_at": "2026-10-16T00:00:01Z",
+              "input_digest": "sha256:9d13aabf82da9d7005fe426bdcbf6ff57ef2c856d318018e15cd11b361733fde",
+              "runtime_name": "synthetic",
+              "runtime_version": "test",
+              "implementation_version": "test"
+            },
+            "played_provenance": {
+              "started_at": "2026-10-16T00:00:00Z",
+              "finished_at": "2026-10-16T00:00:01Z",
+              "input_digest": "sha256:9fc51862db6bba52761e3843a177a94b0595c446d9cbd8d72a9d3a80ac4253d2",
+              "runtime_name": "synthetic",
+              "runtime_version": "test",
+              "implementation_version": "test"
+            }
+          },
+          "gap_kind": null,
+          "source_evidence": [],
+          "related_findings": [],
+          "delivery": null,
+          "delivery_status": "not_required",
+          "learning_settlement": "unknown",
+          "activation_status": "unknown",
+          "proposal_status": "not_created",
+          "dismissal_state": "open",
+          "proposal_cost": null,
+          "actions": {
+            "reopen": {
+              "available": false,
+              "reason": "not_dismissed"
+            },
+            "dismiss": {
+              "available": true,
+              "reason": null
+            },
+            "context_export": {
+              "available": true,
+              "reason": null
+            },
+            "response_proposal": {
+              "available": false,
+              "reason": "validated_A_proposal_unavailable"
+            }
+          },
+          "opponent_fen": null,
+          "opponent_move": null,
+          "opponent_ply": null,
+          "route_ids": null,
+          "scope_revision": null,
+          "proposal_anchor": null,
+          "response_proposal": null,
+          "input_id": "unscoped-browser",
+          "input_revision": 1
+        }
+      ],
+      "next_cursor": null
+    },
+    "details": {
+      "sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a": {
+        "schema_version": 1,
+        "workspace_id": "fixture",
+        "run_id": "unscoped-browser",
+        "generation": 3,
+        "finding": {
+          "engine": {
+            "best": {
+              "rank": 1,
+              "depth": 20,
+              "moves": [
+                "g1h3"
+              ],
+              "score": {
+                "kind": "centipawns",
+                "value": 200
+              },
+              "score_perspective": "side_to_move"
+            },
+            "played": {
+              "rank": 1,
+              "depth": 20,
+              "moves": [
+                "g1f3"
+              ],
+              "score": {
+                "kind": "centipawns",
+                "value": 0
+              },
+              "score_perspective": "side_to_move"
+            },
+            "status": "supported",
+            "loss_cp": 200,
+            "significant": true,
+            "engine_version": "synthetic-test-profile",
+            "root_provenance": {
+              "started_at": "2026-10-16T00:00:00Z",
+              "finished_at": "2026-10-16T00:00:01Z",
+              "input_digest": "sha256:9d13aabf82da9d7005fe426bdcbf6ff57ef2c856d318018e15cd11b361733fde",
+              "runtime_name": "synthetic",
+              "runtime_version": "test",
+              "implementation_version": "test"
+            },
+            "played_provenance": {
+              "started_at": "2026-10-16T00:00:00Z",
+              "finished_at": "2026-10-16T00:00:01Z",
+              "input_digest": "sha256:9fc51862db6bba52761e3843a177a94b0595c446d9cbd8d72a9d3a80ac4253d2",
+              "runtime_name": "synthetic",
+              "runtime_version": "test",
+              "implementation_version": "test"
+            }
+          },
+          "actions": {
+            "reopen": {
+              "reason": "not_dismissed",
+              "available": false
+            },
+            "dismiss": {
+              "reason": null,
+              "available": true
+            },
+            "context_export": {
+              "reason": null,
+              "available": true
+            },
+            "response_proposal": {
+              "reason": "validated_A_proposal_unavailable",
+              "available": false
+            }
+          },
+          "card_id": null,
+          "lineage": null,
+          "category": "engine_opportunity",
+          "delivery": null,
+          "gap_kind": null,
+          "input_id": "unscoped-browser",
+          "policy_id": null,
+          "route_ids": null,
+          "finding_id": "sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a",
+          "decision_id": null,
+          "incident_id": "sha256:39a0f9c388ef04a4b70977d7dd82704fbcd678509688b264a8480e9e0c2070db",
+          "uncertainty": [
+            "repertoire_association_unknown"
+          ],
+          "evidence_ids": [
+            "sha256:6b0a41c51df78849cd893f9ad7217a4f12d31852d74924bc101b575760b526f3",
+            "sha256:b2439001fb10953ef1cf96a1b949642552c983345879fcfac6ed111477bd3dff"
+          ],
+          "opponent_fen": null,
+          "opponent_ply": null,
+          "reason_codes": [
+            "stronger_continuation_supported_by_search"
+          ],
+          "workspace_id": "fixture",
+          "learner_color": "white",
+          "opponent_move": null,
+          "proposal_cost": null,
+          "repertoire_id": null,
+          "expected_moves": [],
+          "input_revision": 1,
+          "policy_version": "c-analysis-v1",
+          "representative": {
+            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "ply": 0,
+            "game_id": "miss",
+            "history": [],
+            "provider": null,
+            "played_at": null,
+            "learner_id": null,
+            "actual_move": "g1f3",
+            "position_id": "sha256:b75f0c0214c131c3994127653c9d81a71b5c73ce383f126d469b35a6dffc24cc",
+            "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "workspace_id": "fixture",
+            "learner_color": "white",
+            "source_digest": "synthetic-game-digest",
+            "source_revision": 1,
+            "provider_game_id": null
+          },
+          "scope_revision": null,
+          "delivery_status": "not_required",
+          "dismissal_state": "open",
+          "evidence_status": "current",
+          "proposal_anchor": null,
+          "proposal_status": "not_created",
+          "source_evidence": [],
+          "actual_frequency": 1.0,
+          "finding_revision": 3,
+          "related_findings": [],
+          "supporting_games": [
+            "miss"
+          ],
+          "activation_status": "unknown",
+          "evidence_revision": "sha256:d217822f8f68ef5ed7d379cbb08a0a5320d80d83228970bb40fc84d59664dae2",
+          "response_proposal": null,
+          "learning_settlement": "unknown",
+          "supporting_game_count": 1,
+          "eligible_encounter_games": 1
+        }
+      }
+    },
+    "dismissal": {
+      "path": "/v1/analysis/findings/sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a/commands?run_id=unscoped-browser&generation=3",
+      "command": {
+        "schema_version": 1,
+        "command_id": "browser-dismiss-engine",
+        "action": "dismiss",
+        "expected_revision": 3,
+        "budget": 250
+      },
+      "receipt": {
+        "schema_version": 1,
+        "workspace_id": "fixture",
+        "accepted": true,
+        "command_id": "browser-dismiss-engine",
+        "dismissal_state": "dismissed",
+        "publication_pending": true,
+        "request_digest": "sha256:e5ff12acc2f4ab8dc97a256f8dab71d50dfaf3f8920c003a152fcafe73e5ac98"
+      },
+      "report": {
+        "schema_version": 1,
+        "workspace_id": "fixture",
+        "run_id": "unscoped-browser",
+        "revision": 1,
+        "generation": 4,
+        "status": "current",
+        "input_id": "unscoped-browser",
+        "input_revision": 1,
+        "input_producer": "synthetic",
+        "source_provenance": {
+          "kind": "synthetic"
+        },
+        "scope": {
+          "game_ids": [
+            "miss"
+          ],
+          "selections": [
+            {
+              "lineage": {
+                "source_id": "synthetic-source",
+                "activation_id": "synthetic-activation",
+                "source_digest": "synthetic-source-digest",
+                "publication_id": "synthetic-publication",
+                "serving_status": "unknown",
+                "source_revision": 1,
+                "activation_status": "activated",
+                "activation_revision": 1,
+                "publication_generation": 1
+              },
+              "policy_id": "policy",
+              "learner_color": "white",
+              "repertoire_id": "rep"
+            }
+          ],
+          "window_end": null,
+          "window_start": null,
+          "producer_version": "c-fixture-v1",
+          "source_artifact_digest": "sha256:b805d286c3d3a08841739e431781a89fec2577e16c55dba36afbd3f2c87b6a23"
+        },
+        "source_completeness": "complete",
+        "reasons": [],
+        "unknown_coverage": [
+          {
+            "ply": null,
+            "reason": "comparison_unavailable",
+            "game_id": "miss"
+          }
+        ],
+        "unknown_coverage_count": 1,
+        "engine_scan_complete": true,
+        "unprocessed_count": 0,
+        "engine_availability": "pending_or_available",
+        "insufficient_quality_count": 0,
+        "finding_count": 1,
+        "complete": true,
+        "derivation_version": 2,
+        "ordering": "source-rank-semantic-v2",
+        "policy_version": "c-analysis-v1",
+        "items": [
+          {
+            "finding_id": "sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a",
+            "finding_revision": 4,
+            "evidence_revision": "sha256:d217822f8f68ef5ed7d379cbb08a0a5320d80d83228970bb40fc84d59664dae2",
+            "category": "engine_opportunity",
+            "policy_version": "c-analysis-v1",
+            "workspace_id": "fixture",
+            "repertoire_id": null,
+            "policy_id": null,
+            "learner_color": "white",
+            "lineage": null,
+            "representative": {
+              "game_id": "miss",
+              "learner_id": null,
+              "provider": null,
+              "provider_game_id": null,
+              "source_revision": 1,
+              "source_digest": "synthetic-game-digest",
+              "ply": 0,
+              "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "actual_move": "g1f3",
+              "learner_color": "white",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "history": [],
+              "played_at": null,
+              "position_id": "sha256:b75f0c0214c131c3994127653c9d81a71b5c73ce383f126d469b35a6dffc24cc",
+              "workspace_id": "fixture"
+            },
+            "incident_id": "sha256:39a0f9c388ef04a4b70977d7dd82704fbcd678509688b264a8480e9e0c2070db",
+            "supporting_games": [
+              "miss"
+            ],
+            "supporting_game_count": 1,
+            "eligible_encounter_games": 1,
+            "actual_frequency": 1.0,
+            "evidence_ids": [
+              "sha256:6b0a41c51df78849cd893f9ad7217a4f12d31852d74924bc101b575760b526f3",
+              "sha256:b2439001fb10953ef1cf96a1b949642552c983345879fcfac6ed111477bd3dff"
+            ],
+            "evidence_status": "current",
+            "reason_codes": [
+              "stronger_continuation_supported_by_search"
+            ],
+            "uncertainty": [
+              "repertoire_association_unknown"
+            ],
+            "expected_moves": [],
+            "card_id": null,
+            "decision_id": null,
+            "engine": {
+              "best": {
+                "rank": 1,
+                "depth": 20,
+                "moves": [
+                  "g1h3"
+                ],
+                "score": {
+                  "kind": "centipawns",
+                  "value": 200
+                },
+                "score_perspective": "side_to_move"
+              },
+              "played": {
+                "rank": 1,
+                "depth": 20,
+                "moves": [
+                  "g1f3"
+                ],
+                "score": {
+                  "kind": "centipawns",
+                  "value": 0
+                },
+                "score_perspective": "side_to_move"
+              },
+              "status": "supported",
+              "loss_cp": 200,
+              "significant": true,
+              "engine_version": "synthetic-test-profile",
+              "root_provenance": {
+                "started_at": "2026-10-16T00:00:00Z",
+                "finished_at": "2026-10-16T00:00:01Z",
+                "input_digest": "sha256:9d13aabf82da9d7005fe426bdcbf6ff57ef2c856d318018e15cd11b361733fde",
+                "runtime_name": "synthetic",
+                "runtime_version": "test",
+                "implementation_version": "test"
+              },
+              "played_provenance": {
+                "started_at": "2026-10-16T00:00:00Z",
+                "finished_at": "2026-10-16T00:00:01Z",
+                "input_digest": "sha256:9fc51862db6bba52761e3843a177a94b0595c446d9cbd8d72a9d3a80ac4253d2",
+                "runtime_name": "synthetic",
+                "runtime_version": "test",
+                "implementation_version": "test"
+              }
+            },
+            "gap_kind": null,
+            "source_evidence": [],
+            "related_findings": [],
+            "delivery": null,
+            "delivery_status": "not_required",
+            "learning_settlement": "unknown",
+            "activation_status": "unknown",
+            "proposal_status": "not_created",
+            "dismissal_state": "dismissed",
+            "proposal_cost": null,
+            "actions": {
+              "reopen": {
+                "available": true,
+                "reason": null
+              },
+              "dismiss": {
+                "available": false,
+                "reason": "already_dismissed"
+              },
+              "context_export": {
+                "available": true,
+                "reason": null
+              },
+              "response_proposal": {
+                "available": false,
+                "reason": "validated_A_proposal_unavailable"
+              }
+            },
+            "opponent_fen": null,
+            "opponent_move": null,
+            "opponent_ply": null,
+            "route_ids": null,
+            "scope_revision": null,
+            "proposal_anchor": null,
+            "response_proposal": null,
+            "input_id": "unscoped-browser",
+            "input_revision": 1
+          }
+        ],
+        "next_cursor": null
+      },
+      "details": {
+        "sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a": {
+          "schema_version": 1,
+          "workspace_id": "fixture",
+          "run_id": "unscoped-browser",
+          "generation": 4,
+          "finding": {
+            "engine": {
+              "best": {
+                "rank": 1,
+                "depth": 20,
+                "moves": [
+                  "g1h3"
+                ],
+                "score": {
+                  "kind": "centipawns",
+                  "value": 200
+                },
+                "score_perspective": "side_to_move"
+              },
+              "played": {
+                "rank": 1,
+                "depth": 20,
+                "moves": [
+                  "g1f3"
+                ],
+                "score": {
+                  "kind": "centipawns",
+                  "value": 0
+                },
+                "score_perspective": "side_to_move"
+              },
+              "status": "supported",
+              "loss_cp": 200,
+              "significant": true,
+              "engine_version": "synthetic-test-profile",
+              "root_provenance": {
+                "started_at": "2026-10-16T00:00:00Z",
+                "finished_at": "2026-10-16T00:00:01Z",
+                "input_digest": "sha256:9d13aabf82da9d7005fe426bdcbf6ff57ef2c856d318018e15cd11b361733fde",
+                "runtime_name": "synthetic",
+                "runtime_version": "test",
+                "implementation_version": "test"
+              },
+              "played_provenance": {
+                "started_at": "2026-10-16T00:00:00Z",
+                "finished_at": "2026-10-16T00:00:01Z",
+                "input_digest": "sha256:9fc51862db6bba52761e3843a177a94b0595c446d9cbd8d72a9d3a80ac4253d2",
+                "runtime_name": "synthetic",
+                "runtime_version": "test",
+                "implementation_version": "test"
+              }
+            },
+            "actions": {
+              "reopen": {
+                "reason": null,
+                "available": true
+              },
+              "dismiss": {
+                "reason": "already_dismissed",
+                "available": false
+              },
+              "context_export": {
+                "reason": null,
+                "available": true
+              },
+              "response_proposal": {
+                "reason": "validated_A_proposal_unavailable",
+                "available": false
+              }
+            },
+            "card_id": null,
+            "lineage": null,
+            "category": "engine_opportunity",
+            "delivery": null,
+            "gap_kind": null,
+            "input_id": "unscoped-browser",
+            "policy_id": null,
+            "route_ids": null,
+            "finding_id": "sha256:eabc56b1dec3c62be86143810e71896b6ff28e252e623411ff1cbd8d0787864a",
+            "decision_id": null,
+            "incident_id": "sha256:39a0f9c388ef04a4b70977d7dd82704fbcd678509688b264a8480e9e0c2070db",
+            "uncertainty": [
+              "repertoire_association_unknown"
+            ],
+            "evidence_ids": [
+              "sha256:6b0a41c51df78849cd893f9ad7217a4f12d31852d74924bc101b575760b526f3",
+              "sha256:b2439001fb10953ef1cf96a1b949642552c983345879fcfac6ed111477bd3dff"
+            ],
+            "opponent_fen": null,
+            "opponent_ply": null,
+            "reason_codes": [
+              "stronger_continuation_supported_by_search"
+            ],
+            "workspace_id": "fixture",
+            "learner_color": "white",
+            "opponent_move": null,
+            "proposal_cost": null,
+            "repertoire_id": null,
+            "expected_moves": [],
+            "input_revision": 1,
+            "policy_version": "c-analysis-v1",
+            "representative": {
+              "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "ply": 0,
+              "game_id": "miss",
+              "history": [],
+              "provider": null,
+              "played_at": null,
+              "learner_id": null,
+              "actual_move": "g1f3",
+              "position_id": "sha256:b75f0c0214c131c3994127653c9d81a71b5c73ce383f126d469b35a6dffc24cc",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "workspace_id": "fixture",
+              "learner_color": "white",
+              "source_digest": "synthetic-game-digest",
+              "source_revision": 1,
+              "provider_game_id": null
+            },
+            "scope_revision": null,
+            "delivery_status": "not_required",
+            "dismissal_state": "dismissed",
+            "evidence_status": "current",
+            "proposal_anchor": null,
+            "proposal_status": "not_created",
+            "source_evidence": [],
+            "actual_frequency": 1.0,
+            "finding_revision": 4,
+            "related_findings": [],
+            "supporting_games": [
+              "miss"
+            ],
+            "activation_status": "unknown",
+            "evidence_revision": "sha256:d217822f8f68ef5ed7d379cbb08a0a5320d80d83228970bb40fc84d59664dae2",
+            "response_proposal": null,
+            "learning_settlement": "unknown",
+            "supporting_game_count": 1,
+            "eligible_encounter_games": 1
+          }
         }
       }
     }

@@ -39,6 +39,22 @@ def validate_result(job, result):
     return result.model_dump(mode="json")
 
 
+def worker_identity(value):
+    provenance = value.get("provenance", value)
+    return (value.get("engine_version"), *(provenance.get(key) for key in
+            ("runtime_name", "runtime_version", "implementation_version")))
+
+
+def compatible_worker(root, identity):
+    expected, actual = worker_identity(root), worker_identity(identity)
+    return all(expected) and expected == actual
+
+
+def validate_pair_jobs(root, played, actual_move):
+    if (root["fen"], root["moves"], root["search_moves"], played["search_moves"]) != (played["fen"], played["moves"], [], [actual_move]):
+        raise ValueError("incompatible_engine_inputs")
+
+
 def comparison(root, played, actual_move):
     best = root["variations"][0]
     if best["moves"][0] == actual_move:
@@ -46,7 +62,7 @@ def comparison(root, played, actual_move):
     elif played is None:
         return {"status":"played_analysis_pending","significant":False,"best":best,"engine_version":root["engine_version"],"root_provenance":root["provenance"]}
     else:
-        if played["engine_version"] != root["engine_version"]:
+        if not compatible_worker(root, played):
             raise ValueError("incompatible_engine_profile")
         played_variation = next((v for v in played["variations"] if v["moves"][0] == actual_move),None)
         if played_variation is None:

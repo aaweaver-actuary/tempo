@@ -233,3 +233,42 @@ The final actual-delivery assertion and handoff changes do not alter the qualifi
 Intelligence runtime or its default matrix suites. The final Workbench wording
 was rebuilt and independently qualified. Consumed shared analysis-job tests pass
 92 cases; chess-core identity/purity tests pass 105 cases.
+
+## PR295 independent corrective implementation — 2026-10-16
+
+The original handoff above remains historical evidence. Repairs start at
+`4c8078b81b35003ac741bf40f9ebb450d55cbdd4`, against unchanged main
+`0edf566ad48f51846a43d3341809379ff0469ada`. A remains
+`1db44cbdf310f959eb0c839e94166350531cc89b`; B's published head at baseline is
+`603822b2c2f3618ddd2055001a6c5afdfecde3f8`. Both remain separate unmerged PRs.
+The new task checkout/evidence parent is `/private/tmp/tempo-pr295-repair-20261016`.
+Existing development copies and historical C/B artifacts were not reused as
+mutable resources.
+
+R1 removes category-first ranking and binds cursor ordering to immutable report
+metadata. R2 uses exact decision associations, keeps ambiguous/unassociated engine
+findings with null lineage, retains candidate facts, and preserves all explicit
+serialized A memberships. R3 removes the configured pilot's extra engine-less work
+call. R4 persists immutable commands per origin/workspace, verifies stored request
+digests, migrates legacy pending intent, and recovers exact requests. R5 checks
+ready/result implementation identities and original job roots, treats mismatch as
+permanent without ordinary retries, and recovers via explicit new run revisions.
+No shared strict contract or migration payload changes.
+
+Original-source red evidence is retained in `evidence/red-pure.*`, `red-native/`,
+`red-pilot.*`, and `red-r4.*`. The latter executes the original Workbench
+save-command body and reproduces overwrite after a lost response. The native
+baseline has four intended failures and 21 passes. Early exploratory editable
+installation, missing parser, and browser fixture-sequence failures are retained;
+none is counted as passing qualification.
+
+Fresh initial actual final-image acceptance used
+`sha256:21172218ef8fb1c5d1edf6dabae11ab7de13f829b0cdb2c001974a4fdbe07f81`,
+the unchanged qualified computational profile and verified client wheel. It
+accepted eight actual searches from A's four synthetic games/six decisions and a
+separate two-search equal-depth typed-mate comparison. A manifest/page identity is
+unchanged (`924b65aa…267b`). The fresh combined exchange is independently consumed
+and a real exported response draft passes the installed A Content inspector.
+This supersedes neither historical artifact bytes nor producer ownership. C3 and
+live-data usefulness remain unverified. Final source-bound package/browser/native
+qualification and cleanup accounting are recorded in the completion supplement.

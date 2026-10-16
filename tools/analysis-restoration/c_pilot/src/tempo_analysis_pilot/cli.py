@@ -21,6 +21,8 @@ def main():
     options=parser.parse_args();config=json.loads(options.config.read_text())
     allowed={'schema_version','workspace_id','a_export_directory','game_ids','intelligence_command','run_id','position_budget','engine_profile','max_jobs'}
     if set(config)-allowed or config.get('schema_version')!=1:raise ValueError('invalid_pilot_configuration')
+    maximum=config.get('max_jobs',1)
+    if type(maximum) is not int or not 1<=maximum<=1000:raise ValueError('invalid_analysis_work_bound')
     destination=options.evidence.resolve();destination.mkdir(parents=True,exist_ok=True)
     manifest,pages=normalize(config['a_export_directory'],workspace=config['workspace_id'],selected_game_ids=config['game_ids'])
     (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
@@ -42,9 +44,15 @@ def main():
     if config.get('engine_profile'):
         from tempo_intelligence import Configuration,run_analysis_work
         from .stockfish_client import connect
-        worker_result=run_analysis_work(Configuration.environment(),config['run_id'],config.get('max_jobs',1),client=connect(config['engine_profile']))
+        try:
+            worker_result=run_analysis_work(Configuration.environment(),config['run_id'],maximum,client=connect(config['engine_profile']))
+        except Exception as error:
+            (destination/'engine-work-failure.json').write_text(json.dumps({'schema_version':1,'completed':False,'error':getattr(error,'code','engine_startup_or_execution_failed')},indent=2)+'\n')
+            raise
         (destination/'engine-work.json').write_text(json.dumps(worker_result,indent=2)+'\n')
-    invoke('work',work);report=invoke('report',['report',config['run_id']]);remaining=invoke('remaining',['remaining',config['run_id']])
+    else:
+        invoke('work',work)
+    report=invoke('report',['report',config['run_id']]);remaining=invoke('remaining',['remaining',config['run_id']])
     summary={'schema_version':1,'C1':'report-produced','C2':'requires exact installed A/B artifact receipt; work output retained','C3':'unverified' if manifest['producer_manifest']['provenance']['kind']=='synthetic' else 'explicit scoped export consumed; inspect exclusions/scan completion','source_manifest_digest':manifest['source_artifact_digest'],'selected_game_ids':config['game_ids'],'position_budget':request['position_budget'],'unprocessed_count':report.get('unprocessed_count'),'commands':commands}
     (destination/'pilot.json').write_text(json.dumps(summary,indent=2)+'\n');print(json.dumps(summary))
 

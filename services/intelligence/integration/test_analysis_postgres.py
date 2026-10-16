@@ -149,6 +149,24 @@ def test_native_workbench_producer_contract(state):
         receipt=response.json();assert client.get('/v1/analysis/commands/'+command['command_id']).json()==receipt
         owner.derive('run');dismissed=owner.report('run')
         payload['dismissal']={'path':path,'command':command,'receipt':receipt,'report':dismissed,'runs':owner.runs(),'details':{item['finding_id']:owner.finding('run',item['finding_id'],dismissed['generation']) for item in dismissed['items']}}
+        reopen={**command,'command_id':'browser-reopen-gap','action':'reopen','expected_revision':dismissed['generation']}
+        reopen_path='/v1/analysis/findings/'+gap['finding_id']+'/commands?run_id=run&generation='+str(dismissed['generation'])
+        reopen_response=client.post(reopen_path,json=reopen);assert reopen_response.status_code==200
+        owner.derive('run');reopened=owner.report('run')
+        payload['reopening']={'path':reopen_path,'command':reopen,'receipt':reopen_response.json(),'report':reopened,'runs':owner.runs(),'details':{item['finding_id']:owner.finding('run',item['finding_id'],reopened['generation']) for item in reopened['items']}}
+    unscoped=repair_scope(state,run_id='unscoped-browser')
+    game=json.loads((FIXTURES/'games-0.json').read_text())['games'][0]['game_id']
+    finish_repair_positions(unscoped,'unscoped-browser',game)
+    unscoped_report=unscoped.report('unscoped-browser')
+    payload['unscoped']={'report':unscoped_report,'details':{item['finding_id']:unscoped.finding('unscoped-browser',item['finding_id'],unscoped_report['generation']) for item in unscoped_report['items']}}
+    engine_item=unscoped_report['items'][0]
+    engine_command=Command(command_id='browser-dismiss-engine',action='dismiss',expected_revision=engine_item['finding_revision'])
+    engine_path='/v1/analysis/findings/'+engine_item['finding_id']+'/commands?run_id=unscoped-browser&generation='+str(unscoped_report['generation'])
+    engine_receipt=unscoped.dismiss('unscoped-browser',engine_item['finding_id'],unscoped_report['generation'],engine_command)
+    unscoped.derive('unscoped-browser');engine_dismissed=unscoped.report('unscoped-browser')
+    payload['unscoped']['dismissal']={'path':engine_path,'command':engine_command.model_dump(mode='json'),'receipt':engine_receipt,'report':engine_dismissed,'details':{item['finding_id']:unscoped.finding('unscoped-browser',item['finding_id'],engine_dismissed['generation']) for item in engine_dismissed['items']}}
+    payload['runs']=owner.runs()
+    payload['dismissal']['runs']=owner.runs();payload['reopening']['runs']=owner.runs()
     path=os.environ.get('TEMPO_C_BROWSER_FIXTURE_FILE')
     assert path, 'owning runner must provide task-owned producer output'
     Path(path).write_text(json.dumps(public(payload),indent=2)+'\n')
@@ -230,7 +248,7 @@ def test_engine_opportunity_without_repertoire_color_mapping(state):
     wire['variations'][0].update(moves=[alternative],score={'kind':'centipawns','value':200});owner.accept(root,wire)
     played=owner.claim('unmapped',builder);owner.accept(played,result(played));owner.derive('unmapped')
     finding=next(item for item in owner.report('unmapped')['items'] if item['category']=='engine_opportunity')
-    assert finding['learner_color']=='black' and finding['repertoire_id'] is None and finding['policy_id'] is None
+    assert finding['learner_color']=='black' and finding['repertoire_id'] is None and finding['policy_id'] is None and finding['lineage'] is None
 
 
 def test_first_report_cannot_publish_over_a_sibling_run_dismissal(state):
@@ -241,3 +259,170 @@ def test_first_report_cannot_publish_over_a_sibling_run_dismissal(state):
     assert not owner.derive('sibling',before_publish=dismiss)
     assert owner.derive('sibling')
     assert next(f for f in owner.report('sibling')['items'] if f['finding_id']==item['finding_id'])['dismissal_state']=='dismissed'
+
+
+def repair_scope(state, *, contexts=None, extra_selection=False, games=None, run_id='repair', reverse_selections=False):
+    from copy import deepcopy
+    owner=AnalysisStore(state[0])
+    raw=json.loads((FIXTURES/'games-0.json').read_text())
+    if games is None:
+        game=deepcopy(raw['games'][0]);game['contexts']=contexts or [];games=[game]
+    page=Page.model_validate({**raw,'input_id':run_id,'games':games})
+    manifest=json.loads((FIXTURES/'manifest.json').read_text())
+    manifest.update(input_id=run_id,game_ids=[g['game_id'] for g in games],pages=[{'page_id':page.page_id,'game_count':len(games),'digest':digest(page.model_dump(mode='json'))}])
+    if extra_selection:
+        selection=deepcopy(manifest['selections'][0]);selection.update(repertoire_id='another',policy_id='another');manifest['selections'].append(selection)
+    if reverse_selections:manifest["selections"].reverse()
+    owner.manifest(Manifest.model_validate(manifest));owner.page(page)
+    owner.finalize(run_id,Command(command_id='finalize-'+run_id,action='finalize',expected_revision=1))
+    owner.submit(RunRequest(schema_version=1,workspace_id='fixture',run_id=run_id,revision=1,input_id=run_id,input_revision=1,position_budget=250))
+    return owner
+
+
+def finish_repair_positions(owner, run_id, engine_game=None, job_builder=builder):
+    import chess
+    while (claim:=owner.claim(run_id,job_builder)) is not None:
+        wire=result(claim)
+        if claim['payload']['game_id']==engine_game and claim['payload']['ply']==0 and claim['stage']=='root':
+            board=chess.Board(claim['payload']['fen'])
+            alternative=next(move.uci() for move in board.legal_moves if move.uci()!=claim['payload']['actual_move'])
+            wire['variations'][0].update(moves=[alternative],score={'kind':'centipawns','value':200})
+        owner.accept(claim,wire)
+    owner.derive(run_id)
+
+
+def test_R1_global_cross_category_priority_and_pagination(state):
+    from copy import deepcopy
+    raw=json.loads((FIXTURES/'games-0.json').read_text())['games'];games=[]
+    for category,count,template in [('miss',20,raw[0]),('gap',5,raw[1]),('engine',1,raw[0])]:
+        for index in range(count):
+            game=deepcopy(template);game['game_id']=category+str(index)
+            if category=='engine':game['contexts']=[]
+            games.append(game)
+    owner=repair_scope(state,games=games)
+    finish_repair_positions(owner,'repair','engine0')
+    report=owner.report('repair');items=report['items']
+    assert [(item['category'],item['supporting_game_count']) for item in items]==[('repertoire_miss',20),('practical_gap',5),('engine_opportunity',1)]
+    seen=[];cursor=None
+    while True:
+        page=owner.report('repair',limit=1,after=cursor);seen.extend(item['finding_id'] for item in page['items'])
+        cursor=page['next_cursor']
+        if not cursor:break
+    assert seen==[item['finding_id'] for item in items] and len(set(seen))==3
+    first=owner.report('repair',limit=1)
+    assert owner.report('repair',limit=1,after=first['next_cursor'])['items'][0]==items[1]
+    owner.command('repair',Command(command_id='refresh-repair',action='continue',expected_revision=1,budget=1));owner.derive('repair')
+    with pytest.raises(DomainError,match='stale_analysis_cursor'):owner.report('repair',limit=1,after=first['next_cursor'])
+    assert owner.report('repair',limit=1,after=first['next_cursor'],generation=report['generation'])['items'][0]==items[1]
+
+
+def test_R2_same_color_without_exact_context_has_no_lineage(state):
+    owner=repair_scope(state,extra_selection=True)
+    game=json.loads((FIXTURES/'games-0.json').read_text())['games'][0]['game_id']
+    finish_repair_positions(owner,'repair',game)
+    item=next(item for item in owner.report('repair')['items'] if item['category']=='engine_opportunity')
+    assert item['repertoire_id'] is None and item['policy_id'] is None and item['lineage'] is None
+    assert item['activation_status']=='unknown'
+    owner.dismiss('repair',item['finding_id'],item['finding_revision'],Command(command_id='repair-dismiss',action='dismiss',expected_revision=item['finding_revision']))
+    owner.derive('repair');assert owner.report('repair')['items'][0]['dismissal_state']=='dismissed'
+
+
+def test_R5_incompatible_result_releases_lease_and_new_revision_recovers(state):
+    import chess
+    from tempo_intelligence.analysis.worker import work
+    owner=repair_scope(state)
+    root=owner.claim('repair',builder);wire=result(root)
+    board=chess.Board(root['payload']['fen']);alternative=next(m.uci() for m in board.legal_moves if m.uci()!=root['payload']['actual_move'])
+    wire['variations'][0].update(moves=[alternative],score={'kind':'centipawns','value':200});accepted=owner.accept(root,wire)
+    owner.derive('repair');old_report=owner.report('repair')
+    class ChangedWorker:
+        identity={'engine_version':'synthetic-test-profile','runtime_name':'synthetic','runtime_version':'test','implementation_version':'changed'}
+        build_job=staticmethod(builder)
+        def execute(self,job):raise AssertionError('incompatible played search was dispatched')
+        def close(self):pass
+    with pytest.raises(DomainError,match='incompatible_engine_profile'):work(owner,'repair',1,client=ChangedWorker())
+    remaining=owner.remaining('repair')['items'];blocked=next(item for item in remaining if item['position_id']==root['position_id'])
+    assert blocked['error_code']=='incompatible_engine_profile' and blocked['state']=='failed'
+    with state[0].transaction(read_only=True) as db:
+        row=db.execute('SELECT * FROM analysis_positions WHERE position_id=%s',(root['position_id'],)).fetchone()
+        assert row['accepted_root']==accepted['result_id'] and row['lease_token'] is None and row['attempts']==0
+    owner.command('repair',Command(command_id='not-transient',action='retry',expected_revision=1))
+    assert next(item for item in owner.remaining('repair')['items'] if item['position_id']==root['position_id'])['state']=='failed'
+    owner.submit(RunRequest(schema_version=1,workspace_id='fixture',run_id='repair',revision=2,expected_revision=1,input_id='repair',input_revision=1,position_budget=250))
+    def new_builder(*args):
+        job=builder(*args);job['engine_version']='new-profile';job['input_digest']=digest({k:v for k,v in job.items() if k not in ('input_digest','execution_generation')});return job
+    finish_repair_positions(owner,'repair',job_builder=new_builder)
+    assert owner.engine_result(accepted['result_id'])['result']==wire
+    assert owner.report('repair',generation=old_report['generation'])['generation']==old_report['generation']
+
+
+def test_R4_receipt_binds_original_request_digest(state):
+    owner=setup(state);command=Command(command_id='digest-bound',action='continue',expected_revision=1,budget=1)
+    receipt=owner.command('run',command)
+    assert receipt['request_digest']==digest({'run_id':'run',**command.model_dump(mode='json')})
+    assert owner.receipt(command.command_id)==receipt
+    with pytest.raises(DomainError,match='analysis_command_conflict'):
+        owner.command('run',Command(command_id='digest-bound',action='cancel',expected_revision=1))
+
+
+def test_R5_played_cancellation_and_acceptance_fence_preserve_root(state):
+    import chess
+    owner=repair_scope(state);root=owner.claim('repair',builder);wire=result(root)
+    board=chess.Board(root['payload']['fen']);wire['variations'][0]['moves']=[next(m.uci() for m in board.legal_moves if m.uci()!=root['payload']['actual_move'])]
+    accepted=owner.accept(root,wire);played=owner.claim('repair',builder)
+    owner.command('repair',Command(command_id='cancel-played',action='cancel',expected_revision=1))
+    with pytest.raises(DomainError,match='stale_analysis_execution'):owner.accept(played,result(played))
+    owner.failure(played,code='cancelled');assert owner.engine_result(accepted['result_id'])['result']==wire
+    assert owner.accept(root,wire)['replayed']
+    owner.derive('repair');assert not any(item['category']=='engine_opportunity' for item in owner.report('repair')['items'])
+
+
+def test_R5_acceptance_fence_rejects_changed_result_without_consuming_attempt(state):
+    import chess
+    from tempo_intelligence.analysis.worker import work
+    owner=repair_scope(state);root=owner.claim('repair',builder);wire=result(root)
+    board=chess.Board(root['payload']['fen']);wire['variations'][0]['moves']=[next(m.uci() for m in board.legal_moves if m.uci()!=root['payload']['actual_move'])]
+    owner.accept(root,wire)
+    class ChangedResult:
+        build_job=staticmethod(builder)
+        def execute(self,job):
+            claim={'job':job,'payload':root['payload']};value=result(claim);value['provenance']['implementation_version']='changed';return value
+        def close(self):pass
+    with pytest.raises(DomainError,match='incompatible_engine_profile'):work(owner,'repair',1,client=ChangedResult())
+    with state[0].transaction(read_only=True) as db:
+        assert db.execute('SELECT count(*) FROM analysis_results').fetchone()['count']==1
+        row=db.execute('SELECT * FROM analysis_positions WHERE position_id=%s',(root['position_id'],)).fetchone()
+        assert row['state']=='failed' and row['attempts']==0 and row['lease_token'] is None
+
+
+@pytest.mark.parametrize('association',['none','one','ambiguous'])
+def test_R2_finding_and_dismissal_identity_ignore_selection_order(state,association):
+    from copy import deepcopy
+    game=json.loads((FIXTURES/'games-0.json').read_text())['games'][0]
+    contexts=[] if association=='none' else deepcopy(game['contexts'][:1])
+    if association=='ambiguous':contexts.append({**contexts[0],'repertoire_id':'another','policy_id':'another','evidence_id':'second-association'})
+    first=repair_scope(state,contexts=contexts,extra_selection=True,run_id='order-a')
+    finish_repair_positions(first,'order-a',game['game_id'])
+    before=next(item for item in first.report('order-a')['items'] if item['category']=='engine_opportunity')
+    first.dismiss('order-a',before['finding_id'],before['finding_revision'],Command(command_id='order-dismiss',action='dismiss',expected_revision=before['finding_revision']))
+    second=repair_scope(state,contexts=list(reversed(contexts)),extra_selection=True,run_id='order-b',reverse_selections=True)
+    finish_repair_positions(second,'order-b',game['game_id'])
+    after=next(item for item in second.report('order-b')['items'] if item['category']=='engine_opportunity')
+    for name in ['finding_id','incident_id','repertoire_id','policy_id','lineage','source_evidence']:
+        assert before[name]==after[name]
+    assert after['dismissal_state']=='dismissed'
+
+
+def test_R5_compatible_session_restart_at_played_stage_and_replay_conflict(state):
+    import chess
+    from copy import deepcopy
+    owner=repair_scope(state);root=owner.claim('repair',builder);wire=result(root)
+    board=chess.Board(root['payload']['fen']);wire['variations'][0]['moves']=[next(m.uci() for m in board.legal_moves if m.uci()!=root['payload']['actual_move'])]
+    root_receipt=owner.accept(root,wire)
+    played=owner.claim('repair',builder);owner.failure(played,code='worker_session_lost')
+    with state[0].transaction() as db:db.execute("UPDATE analysis_positions SET next_attempt_at=now()-interval '1 second' WHERE position_id=%s",(root['position_id'],))
+    retried=owner.claim('repair',builder)
+    assert retried['stage']=='played' and retried['execution_generation']>played['execution_generation']
+    owner.accept(retried,result(retried));assert owner.engine_result(root_receipt['result_id'])['result']==wire
+    changed=deepcopy(wire);changed['variations'][0]['score']['value']+=1
+    with pytest.raises(DomainError,match='analysis_result_replay_conflict'):owner.accept(root,changed)

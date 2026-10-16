@@ -71,7 +71,7 @@ def test_C_maia_full_legal_set():
     assert maia_distribution({'legal_moves':['e2e4']},{'predictions':[{'move':'e2e4','probability':1.0}]},['e2e4'])=={'e2e4':1.0}
 
 def test_C_engine_played_move():
-    root={'variations':[variation(200)],'engine_version':'synthetic','provenance':{}}
+    root={'variations':[variation(200)],'engine_version':'synthetic','provenance':{'runtime_name':'synthetic','runtime_version':'test','implementation_version':'test'}}
     assert comparison(root,None,'d2d4')['status']=='played_analysis_pending'
     assert comparison(root,{**root,'variations':[variation(0,move='d2d4')]},'d2d4')['significant']
 

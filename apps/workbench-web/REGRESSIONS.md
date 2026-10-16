@@ -7,3 +7,11 @@ connection/filter/detail/board controls, pending dismissal receipts, a lost POST
 The explicit producer JSON must come from the native Intelligence runner. Missing
 fixture/browser/build and unexpected traffic fail. No backend or live API fallback.
 `qualify.mjs` owns source-removed installed public-client and native browser proof.
+
+PR295: `tests/client.test.mjs` additionally owns the named R4 unresolved-overwrite,
+exact byte retry, reload/receipt/missing-receipt, workspace/origin partition,
+authentication/receipt mismatch, storage failure, credential-free legacy migration,
+and continue/retry/cancel/resume recovery cases. `tests/browser.mjs` exercises
+second-command blocking while dismissal outcome is unresolved, lost response,
+reload, authoritative receipt recovery, actual reopening/reload, and an actual
+C-produced null-lineage engine finding with board rendering/dismissal/reload.

@@ -9,8 +9,8 @@ from ..errors import DomainError
 from ..identity import digest, canonical_json
 from ..store import public
 from .models import Manifest, Page, RunRequest, payload_digest
-from .classify import ordered_positions, source_findings, base_finding, rank_key
-from .engine import validate_result, comparison
+from .classify import ordered_positions, source_findings, base_finding, rank_key, engine_association
+from .engine import validate_result, comparison, compatible_worker, validate_pair_jobs
 
 
 class AnalysisStore:
@@ -150,17 +150,18 @@ class AnalysisStore:
         row=db.execute("SELECT * FROM analysis_commands WHERE command_id=%s",(command_id,)).fetchone()
         if row and row["digest"]!=digest(payload):
             raise DomainError("analysis_command_conflict")
-        return row["payload"] if row else None
+        return {**row["payload"], "request_digest": row["digest"]} if row else None
 
     def _save_receipt(self,db,command_id,payload,result):
+        result["request_digest"] = digest(payload)
         db.execute("INSERT INTO analysis_commands VALUES(%s,%s,%s)",(command_id,digest(payload),Jsonb(result)))
 
     def receipt(self,command_id):
         with self.owner.transaction(read_only=True) as db:
-            row=db.execute("SELECT payload FROM analysis_commands WHERE command_id=%s",(command_id,)).fetchone()
+            row=db.execute("SELECT payload,digest FROM analysis_commands WHERE command_id=%s",(command_id,)).fetchone()
             if not row:
                 raise DomainError("analysis_command_not_found",404)
-            return row["payload"]
+            return {**row["payload"], "request_digest": row["digest"]}
 
     def command(self,run_id,command):
         payload={"run_id":run_id,**command.model_dump(mode="json")}
@@ -180,7 +181,7 @@ class AnalysisStore:
                 if command.action=="retry":
                     db.execute("UPDATE analysis_positions SET state='pending',stage='root',accepted_root=NULL,accepted_played=NULL,attempts=0,next_attempt_at=NULL,error_code=NULL WHERE run_id=%s AND revision=%s AND state='complete' AND error_code='insufficient_quality'",(run_id,run["revision"]))
                 if command.action in {"retry","resume"}:
-                    db.execute("UPDATE analysis_positions SET state='pending',attempts=0,next_attempt_at=NULL WHERE run_id=%s AND revision=%s AND state IN ('failed','cancelled')",(run_id,run["revision"]))
+                    db.execute("UPDATE analysis_positions SET state='pending',attempts=0,next_attempt_at=NULL WHERE run_id=%s AND revision=%s AND state IN ('failed','cancelled') AND error_code IS DISTINCT FROM 'incompatible_engine_profile'",(run_id,run["revision"]))
                 db.execute("UPDATE analysis_runs SET state='pending',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
             elif command.action=="cancel":
                 db.execute("UPDATE analysis_runs SET state='cancel_requested',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
@@ -218,12 +219,20 @@ class AnalysisStore:
                 existing["evidence_ids"]=sorted(set(existing["evidence_ids"]+advice["evidence_ids"]))
             else:
                 findings.append(advice)
+        incompatible_positions=set()
         for row in rows:
             if not row["accepted_root"]:
                 continue
             root=results[row["accepted_root"]]
             played=results.get(row["accepted_played"])
-            evidence=comparison(root,played,row["payload"]["actual_move"])
+            try:
+                evidence=comparison(root,played,row["payload"]["actual_move"])
+            except ValueError as error:
+                if str(error)!="incompatible_engine_profile":
+                    raise
+                incompatible_positions.add(row["position_id"])
+                unknown.append({"game_id":row["payload"]["game_id"],"ply":row["payload"]["ply"],"reason":"incompatible_engine_profile"})
+                continue
             for existing in findings:
                 representative=existing["representative"]
                 if (representative["game_id"],representative["ply"])==(row["payload"]["game_id"],row["payload"]["ply"]):
@@ -231,21 +240,26 @@ class AnalysisStore:
                     anchor=existing.get("proposal_anchor")
                     line=root["variations"][0]["moves"][:5]
                     if len(line)%2==0:line=line[:-1]
-                    if anchor and source["payload"]["producer"]=="a-analysis-export" and root["variations"][0]["depth"]>=18 and line:
+                    if anchor and source["payload"]["producer"]=="a-analysis-export" and evidence["status"] not in {"played_analysis_pending", "insufficient_quality"} and root["variations"][0]["depth"]>=18 and line:
                         existing["response_proposal"]={"schema_version":1,"kind":"response_proposal","status":"draft","proposal_id":"c:"+existing["finding_id"][-64:]+":"+str(run["requested_generation"]),"workspace_id":self.workspace,**anchor,"learner_color":existing["learner_color"],"expected_source_revision":existing["lineage"]["source_revision"],"source_digest":existing["lineage"]["source_digest"],"opponent_move":existing["opponent_move"],"decision_fen":representative["fen"],"accepted_lines":[line],"provenance":{"kind":"analysis_proposal","evidence_refs":existing["evidence_ids"]+[row["accepted_root"]]}}
                         existing["actions"]["response_proposal"]={"available":True}
                         existing["proposal_cost"]=sum(1 for index in range(0,len(line),2))
             if not evidence["significant"]:
                 continue
-            selection=next((s for s in source["payload"]["selections"] if s["learner_color"]==row["payload"]["learner_color"]),None)
-            if not selection:
-                selection={"workspace_id":self.workspace,"repertoire_id":None,"policy_id":None,"lineage":source["payload"]["selections"][0]["lineage"]}
+            game = next(game for game in games if game["game_id"] == row["payload"]["game_id"])
+            selection, associations = engine_association(source["payload"], game, row["payload"])
+            if selection is None:
+                selection = {"repertoire_id": None, "policy_id": None, "lineage": None}
             item=base_finding("engine_opportunity",{**selection,"workspace_id":self.workspace},row["payload"],row["payload"]["actual_move"],"stronger_continuation_supported_by_search")
             # Engine incidents are game/history specific; do not aggregate incompatible roots.
             item["finding_id"]=digest({"semantic":item["finding_id"],"game":row["payload"]["game_id"],"history":row["payload"]["history"],"starting_fen":row["payload"]["starting_fen"],"ply":row["payload"]["ply"]})
             item.update(engine=evidence,evidence_ids=[row["accepted_root"]]+([row["accepted_played"]] if row["accepted_played"] else []),eligible_encounter_games=1,actual_frequency=1)
+            item["source_evidence"] = [{"kind": "repertoire_association", **association} for association in associations]
+            item["evidence_ids"] = sorted(set(item["evidence_ids"] + [identity for association in associations for identity in association["evidence_ids"]]))
+            if selection["lineage"] is None:
+                item["uncertainty"].append("ambiguous_repertoire_association" if associations else "repertoire_association_unknown")
             findings.append(item)
-        findings.sort(key=lambda f:(f["category"],rank_key(f,run["payload"]["ranking_source"],run["payload"].get("ranking_evidence_id"))))
+        findings.sort(key=lambda finding:rank_key(finding,run["payload"]["ranking_source"],run["payload"].get("ranking_evidence_id")))
         automatic_reopens=[]
         incident_findings=defaultdict(list)
         for item in findings:incident_findings[item["incident_id"]].append({"finding_id":item["finding_id"],"category":item["category"]})
@@ -268,8 +282,8 @@ class AnalysisStore:
             with self.owner.transaction(background=True) as db:
                 for ordinal,item in enumerate(findings[start:start+64],start):
                     db.execute("INSERT INTO analysis_report_items VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(run_id,run["revision"],generation,item["finding_id"],ordinal,Jsonb(item)))
-        complete=source["payload"]["completeness"]=="complete" and all(r["state"]=="complete" and r["error_code"] is None for r in rows)
-        metadata={"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"revision":run["revision"],"generation":generation,"input_id":source["input_id"],"input_revision":source["revision"],"input_producer":source["payload"]["producer"],"source_provenance":(source["payload"].get("producer_manifest") or {}).get("provenance",{"kind":"synthetic"}),"scope":{key:source["payload"][key] for key in ("game_ids","window_start","window_end","selections","producer_version","source_artifact_digest")},"source_completeness":source["payload"]["completeness"],"reasons":source["payload"]["reasons"],"unknown_coverage":unknown[:100],"unknown_coverage_count":len(unknown),"engine_scan_complete":all(r["state"]=="complete" for r in rows),"unprocessed_count":sum(r["state"]!="complete" for r in rows),"engine_availability":"unavailable" if any(r["error_code"]=="engine_unavailable" for r in rows) else "pending_or_available","insufficient_quality_count":sum(r["error_code"]=="insufficient_quality" for r in rows),"finding_count":len(findings),"complete":complete,"policy_version":"c-analysis-v1"}
+        complete=not incompatible_positions and source["payload"]["completeness"]=="complete" and all(r["state"]=="complete" and r["error_code"] is None for r in rows)
+        metadata={"derivation_version":2,"ordering":"source-rank-semantic-v2","schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"revision":run["revision"],"generation":generation,"input_id":source["input_id"],"input_revision":source["revision"],"input_producer":source["payload"]["producer"],"source_provenance":(source["payload"].get("producer_manifest") or {}).get("provenance",{"kind":"synthetic"}),"scope":{key:source["payload"][key] for key in ("game_ids","window_start","window_end","selections","producer_version","source_artifact_digest")},"source_completeness":source["payload"]["completeness"],"reasons":source["payload"]["reasons"]+(["incompatible_engine_profile"] if incompatible_positions or any(row["error_code"]=="incompatible_engine_profile" for row in rows) else []),"unknown_coverage":unknown[:100],"unknown_coverage_count":len(unknown),"engine_scan_complete":not incompatible_positions and all(r["state"]=="complete" for r in rows),"unprocessed_count":sum(r["state"]!="complete" or r["position_id"] in incompatible_positions for r in rows),"engine_availability":"unavailable" if any(r["error_code"]=="engine_unavailable" for r in rows) else "pending_or_available","insufficient_quality_count":sum(r["error_code"]=="insufficient_quality" for r in rows),"finding_count":len(findings),"complete":complete,"policy_version":"c-analysis-v1"}
         if before_publish:
             before_publish()
         with self.owner.transaction(background=True) as db:
@@ -309,7 +323,10 @@ class AnalysisStore:
                 if historical:report_revision=historical["revision"]
             if selected is None:
                 return {"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"status":"pending","items":[],"next_cursor":None,"generation":None}
-            cursor_scope={"version":1,"workspace":self.workspace,"run":run_id,"revision":report_revision,"head_revision":run["revision"],"generation":selected,"category":category,"dismissal":dismissal,"ordering":"category-source-rank-semantic-v1"}
+            report=db.execute("SELECT payload FROM analysis_reports WHERE run_id=%s AND revision=%s AND generation=%s",(run_id,report_revision,selected)).fetchone()
+            if not report:
+                raise DomainError("analysis_generation_not_found",404)
+            cursor_scope={"version":1,"workspace":self.workspace,"run":run_id,"revision":report_revision,"head_revision":run["revision"],"generation":selected,"category":category,"dismissal":dismissal,"ordering":report["payload"].get("ordering","category-source-rank-semantic-v1")}
             last=-1
             if after:
                 try:
@@ -373,7 +390,7 @@ class AnalysisStore:
         context={key:value for key,value in item.items() if key not in {"engine","response_proposal","actions"}}
         return {"schema_version":1,"workspace_id":self.workspace,"kind":"informational_gap_context" if item["category"]=="practical_gap" else "informational_finding_context","status":"proposal_only","finding":context,"authority":"No approval, publication, activation or Learning effect"}
 
-    def claim(self,run_id,build_job):
+    def claim(self,run_id,build_job,worker_identity=None):
         """build_job is a pure B client helper; it performs no process/network I/O."""
         with self.owner.transaction(background=True) as db:
             run=self._head(db,run_id,True)
@@ -398,6 +415,10 @@ class AnalysisStore:
             if row["accepted_root"]:
                 root=db.execute("SELECT payload FROM analysis_results WHERE result_id=%s",(row["accepted_root"],)).fetchone()["payload"]
                 depth=root["variations"][0]["depth"]
+                if worker_identity is not None and not compatible_worker(root, worker_identity):
+                    db.execute("UPDATE analysis_positions SET state='failed',error_code='incompatible_engine_profile',lease_token=NULL,leased_until=NULL WHERE run_id=%s AND revision=%s AND position_id=%s",(run_id,run["revision"],row["position_id"]))
+                    db.execute("UPDATE analysis_runs SET requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
+                    return {"error":"incompatible_engine_profile"}
             job=build_job(row["payload"],run_id,run["revision"],generation,row["stage"],depth)
             from tempo_analysis_jobs_contracts.v1 import StockfishJob
             job=StockfishJob.model_validate(job).model_dump(mode="json")
@@ -432,13 +453,15 @@ class AnalysisStore:
                 db.execute("UPDATE analysis_positions SET accepted_root=%s,state=%s,stage=%s,attempts=0,lease_token=NULL,leased_until=NULL,error_code=%s WHERE run_id=%s AND revision=%s AND position_id=%s",(result_id,"complete" if complete else "pending","root" if complete else "played","insufficient_quality" if wire["variations"][0]["depth"]<18 else None,claim["run_id"],claim["revision"],claim["position_id"]))
             else:
                 root=db.execute("SELECT payload FROM analysis_results WHERE result_id=%s",(row["accepted_root"],)).fetchone()["payload"]
+                root_job=db.execute("SELECT e.payload FROM analysis_results r JOIN analysis_executions e USING(job_id,execution_generation) WHERE r.result_id=%s",(row["accepted_root"],)).fetchone()["payload"]
+                validate_pair_jobs(root_job, claim["job"], row["payload"]["actual_move"])
                 compared=comparison(root,wire,row["payload"]["actual_move"])
                 db.execute("UPDATE analysis_positions SET accepted_played=%s,state='complete',lease_token=NULL,leased_until=NULL,error_code=%s WHERE run_id=%s AND revision=%s AND position_id=%s",(result_id,"insufficient_quality" if compared["status"]=="insufficient_quality" else None,claim["run_id"],claim["revision"],claim["position_id"]))
             db.execute("UPDATE analysis_runs SET requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(claim["run_id"],claim["revision"]))
         return {"result_id":result_id,"replayed":False}
 
     def failure(self,claim,*,retryable=True,code="engine_unavailable",deferred=False,status_payload=None):
-        allowed={"engine_unavailable","worker_session_lost","worker_busy","execution_failed","cancelled"}
+        allowed={"engine_unavailable","worker_session_lost","worker_busy","execution_failed","cancelled","incompatible_engine_profile"}
         if code not in allowed:
             code="execution_failed"
         with self.owner.transaction(background=True) as db:

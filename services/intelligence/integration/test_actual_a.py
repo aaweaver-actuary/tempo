@@ -47,20 +47,15 @@ def test_actual_A_export_and_B_dispatch_through_C(state):
             assert len(misses)==1 and set(misses[0]['expected_moves'])=={'e2e4','d2d4'}
             assert misses[0]['delivery_status']=='completed' and misses[0]['learning_settlement']=='unknown'
             assert len(gaps)==1 and gaps[0]['opponent_move']=='c7c5' and gaps[0]['eligible_encounter_games']==2 and gaps[0]['actual_frequency']==0.5
+        work_receipt=run_analysis_work(configuration,'actual-A-B',8,client=connect(Path(os.environ['TEMPO_C_STOCKFISH_PROFILE'])))
+        assert work_receipt['jobs'] > 0
         worker_outcome='accepted_result'
-        try:run_analysis_work(configuration,'actual-A-B',8,client=connect(Path(os.environ['TEMPO_C_STOCKFISH_PROFILE'])))
-        except DomainError as error:
-            assert error.code=='analysis_worker_failed'
-            with store.transaction(read_only=True) as db:
-                events=db.execute('SELECT payload FROM analysis_execution_events').fetchall()
-            assert len(events)==1 and events[0]['payload']['model']=='JobStatus' and events[0]['payload']['payload']['status']=='failed'
-            worker_outcome='typed_worker_failure'
         owner.derive('actual-A-B');report=owner.report('actual-A-B')
         with store.transaction(read_only=True) as db:
             executions=db.execute('SELECT payload FROM analysis_executions').fetchall()
             accepted=db.execute('SELECT payload FROM analysis_results').fetchall()
             events=db.execute('SELECT payload FROM analysis_execution_events').fetchall()
-        assert 1<=len(executions)<=8 and (accepted or events)
+        assert 1<=len(executions)<=8 and accepted and not events
         output=Path(os.environ['TEMPO_C_BROWSER_FIXTURE_FILE']).parent/'actual-A-B.json'
         output.write_text(json.dumps({'case':'C_actual_A_B_durable','passed':True,'synthetic_games':True,'A_manifest_digest':original['manifest_digest'],'worker_outcome':worker_outcome,'executions':executions,'accepted':accepted,'events':events,'report':report},indent=2)+'\n')
     finally:store.close()

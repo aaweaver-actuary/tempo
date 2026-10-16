@@ -322,3 +322,26 @@ selected only with explicit artifact/profile paths; missing selected inputs fail
 The external pilot owns the exact named `test_C_actual_AB_consumers` and
 `test_C_optional_off_study` cases. All 28 requested C identities have owning suites;
 actual acceptance and synthetic compatibility remain separate executions.
+
+## PR295 repairs
+
+`tests/test_repairs.py` owns named R1 known/unknown frequency, selected actual/
+lichess/masters/Maia population, significance/cost, source-order independence;
+R2 exact association (none/one/ambiguous/deduplicated/earlier/diverged/re-entry) and
+nullable-lineage invariants; R5 version/runtime/implementation compatibility,
+completed depth, typed mate, original root/history/restriction checks.
+
+`integration/test_analysis_postgres.py` owns:
+- `test_R1_global_cross_category_priority_and_pagination`
+- `test_R2_same_color_without_exact_context_has_no_lineage`
+- `test_R2_finding_and_dismissal_identity_ignore_selection_order`
+- `test_R4_receipt_binds_original_request_digest`
+- `test_R5_incompatible_result_releases_lease_and_new_revision_recovers`
+- `test_R5_played_cancellation_and_acceptance_fence_preserve_root`
+- `test_R5_acceptance_fence_rejects_changed_result_without_consuming_attempt`
+
+Existing result replay/conflict, session-loss, source-correction, dismissal and
+stale-generation regressions retain ownership. Native producer output now includes
+actual reopen receipts and an unscoped engine finding/dismissal for browser tests.
+Actual A/B success requires accepted executions; a typed failure is not successful
+artifact integration.

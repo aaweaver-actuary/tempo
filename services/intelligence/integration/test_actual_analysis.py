@@ -33,5 +33,8 @@ def test_actual_B_durable_same_root_result_acceptance(state):
     assert finding['engine']['best']['depth']==finding['engine']['played']['depth']>=18
     with state[0].transaction(read_only=True) as db:
         assert db.execute('SELECT count(*) FROM analysis_results').fetchone()['count']==2
+    with state[0].transaction(read_only=True) as db:
+        executions=db.execute('SELECT payload FROM analysis_executions').fetchall()
+        accepted=db.execute('SELECT payload FROM analysis_results').fetchall()
     output=Path(os.environ['TEMPO_C_BROWSER_FIXTURE_FILE']).parent/'actual-B.json'
-    output.write_text(json.dumps({'case':'C_actual_B_durable','passed':True,'synthetic_game':True,'worker_profile':json.loads(Path(os.environ['TEMPO_C_STOCKFISH_PROFILE']).read_text()),'report':report},indent=2)+'\n')
+    output.write_text(json.dumps({'case':'C_actual_B_durable','passed':True,'synthetic_game':True,'worker_profile':json.loads(Path(os.environ['TEMPO_C_STOCKFISH_PROFILE']).read_text()),'report':report,'executions':executions,'accepted':accepted,'work_receipt':result},indent=2)+'\n')

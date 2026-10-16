@@ -23,3 +23,17 @@ Chessground base CSS is copied unchanged from its pinned 10.1.1 package.
 
 Use the existing F2 `TEMPO_WORKBENCH_URL` launch setting to link this independent
 static origin. No Study source change or credential handoff is required.
+
+PR295 recovery uses the exported small `PendingCommands` coordinator. It keeps one
+immutable serialized request per exact origin/workspace in session storage,
+persists before dispatch, and blocks new commands until authoritative receipt
+recovery or identical retry succeeds. Receipts must match workspace, command ID
+and request digest. Lost responses, missing receipts and authentication failures
+retain pending intent. Legacy v1 pending records migrate without credentials;
+conflicting/malformed records remain retained and block transmission. The public
+client's `requestSerialized` method preserves saved request bytes and its existing
+connection-generation fences. Storage failure prevents transmission.
+
+Unknown engine repertoire/lineage is displayed explicitly. Old report generations
+remain readable with a legacy attribution notice. A report or response draft does
+not approve, publish, activate or admit training content.

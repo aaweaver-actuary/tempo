@@ -41,6 +41,7 @@ class Adapter:
         except BaseException:
             self.close()
             raise DomainError("stockfish_profile_unavailable",503) from None
+        self.identity=dict(self.client.identity)
         self.records=self.client.records()
         self.completed_requests=set()
 

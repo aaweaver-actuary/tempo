@@ -1,6 +1,6 @@
 """Versioned, packaged read contracts; evidence/user/training states stay separate."""
 from typing import Literal
-from pydantic import Field
+from pydantic import Field, model_validator
 from ..models import StrictModel,Identifier,Digest,Revision,UciMove
 from .models import Lineage
 
@@ -35,7 +35,7 @@ class Finding(StrictModel):
     repertoire_id: Identifier | None
     policy_id: Identifier | None
     learner_color: Literal['white','black']
-    lineage: Lineage
+    lineage: Lineage | None
     representative: Representative
     incident_id: Digest
     supporting_games: list[Identifier] = Field(max_length=1000)
@@ -71,6 +71,15 @@ class Finding(StrictModel):
     input_id: Identifier
     input_revision: Revision
 
+    @model_validator(mode="after")
+    def supported_scope(self):
+        identities = (self.repertoire_id, self.policy_id, self.lineage)
+        if self.category != 'engine_opportunity' and any(value is None for value in identities):
+            raise ValueError('source_finding_lineage_required')
+        if any(value is None for value in identities) and any(value is not None for value in identities):
+            raise ValueError('partial_finding_association')
+        return self
+
 class ReportPage(StrictModel):
     schema_version: Literal[1]
     workspace_id: Identifier
@@ -93,6 +102,8 @@ class ReportPage(StrictModel):
     insufficient_quality_count: int | None = Field(default=None,ge=0)
     finding_count: int | None = Field(default=None,ge=0)
     complete: bool = False
+    derivation_version: Literal[1,2] = 1
+    ordering: str = "category-source-rank-semantic-v1"
     policy_version: Literal['c-analysis-v1'] = 'c-analysis-v1'
     items: list[Finding] = Field(max_length=100)
     next_cursor: str | None

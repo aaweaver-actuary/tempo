@@ -36,3 +36,11 @@ Source-removed qualification: `python qualify.py --c-artifacts ABSOLUTE_C_WHEEL_
 --b-client ABSOLUTE_B_CLIENT_WHEEL --requirements ABSOLUTE_LOCKED_REQUIREMENTS
 ABSOLUTE_EVIDENCE`. Requirements come from the selected Intelligence lock; the B
 client digest and all output artifact digests are retained in the report.
+
+With an engine profile, the pilot performs only the bounded installed-client work
+call, then reads report/remaining state. Reaching `max_jobs` preserves pending work
+and never applies the no-engine marker. Without a profile, the explicit engine-less
+path remains. Startup/execution failures retain a sanitized failure record and
+exit unsuccessfully; accepted progress stays durable. Permanent engine-profile
+incompatibility requires an explicit new run revision as documented in the
+Intelligence interfaces; ordinary retry does not erase or replace accepted roots.

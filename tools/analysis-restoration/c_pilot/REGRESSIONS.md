@@ -19,3 +19,9 @@ Component registration uses the existing Node/Python/PostgreSQL case accounting.
 
 `qualify.py` builds wheel/sdist copies, removes the build source, and runs the
 regular pure inventory against installed public artifacts on Python 3.12/3.14.
+
+`tests/test_cli.py` owns PR295 R3 bounded partial-backlog configured/unconfigured
+orchestration, startup failure and strict job-bound validation before startup.
+The controlled dependencies are installed public packages. Existing installed
+adapter tests cover session/trailing-status/provenance failures; actual qualified
+B execution remains in the explicit native A/B lane.

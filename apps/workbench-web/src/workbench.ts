@@ -3,8 +3,9 @@ import type { Api } from "@lichess-org/chessground/api";
 import { Chess } from "chess.js";
 import { z } from "zod";
 import { IntelligenceClient, type Connection } from "./client.js";
-import { listSchema, reportSchema, detailSchema, commandSchema, type Finding, type Report } from "./contracts.js";
-const key="tempo-analysis-connection-v1",pendingKey="tempo-analysis-command-v1";
+import { listSchema, reportSchema, detailSchema, type Finding, type Report } from "./contracts.js";
+import { PendingCommands } from "./commands.js";
+const key="tempo-analysis-connection-v1";
 const labels:Record<string,string>={repertoire_miss:"Repertoire miss",practical_gap:"Practical gap",engine_opportunity:"Engine opportunity"};
 function node<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string){const value=document.createElement(tag);if(text!==undefined)value.textContent=text;return value;}
 function button(text:string,action:()=>void|Promise<void>){const value=node("button",text);value.type="button";value.onclick=()=>{void action();};return value;}
@@ -12,6 +13,7 @@ function field(label:string,value="",type="text"){const wrapper=node("label",lab
 function select(label:string,choices:Record<string,string>,value:string,onChange:(value:string)=>void){const wrapper=node("label",label);const input=node("select");input.setAttribute("aria-label",label);for(const [id,title]of Object.entries(choices)){const option=node("option",title);option.value=id;input.append(option);}input.value=value;input.onchange=()=>onChange(input.value);wrapper.append(input);return wrapper;}
 function record(value:unknown){return value as Record<string,unknown>;}
 export function mountWorkbench(root:HTMLElement){
+  const commands=new PendingCommands(sessionStorage);
   let client:IntelligenceClient|undefined,board:Api|undefined,renderGeneration=0;
   let runId=new URL(location.href).searchParams.get("run")??"",category=new URL(location.href).searchParams.get("category")??"",dismissal=new URL(location.href).searchParams.get("dismissal")??"",report:Report|undefined;
   const header=node("header");const title=node("div");title.append(node("small","TEMPO WORKBENCH"),node("h1","Your games, understood."));header.append(title,node("span","Analysis"));
@@ -30,16 +32,15 @@ export function mountWorkbench(root:HTMLElement){
     }));content.append(panel);
   }
   async function saveCommand(path:string,command:{command_id:string;[key:string]:unknown}){
-    sessionStorage.setItem(pendingKey,JSON.stringify({origin:client!.connection.origin,workspace:client!.connection.workspace,path,command}));
-    const receipt=await client!.request(path,commandSchema,command);
-    if(receipt.command_id!==command.command_id)throw new Error("Command receipt identity mismatch");
-    sessionStorage.removeItem(pendingKey);return receipt;
+    const authority=client!;
+    return commands.submit(authority,path,command);
   }
   async function pendingCommand(toolbar:HTMLElement){
-    const saved=JSON.parse(sessionStorage.getItem(pendingKey)??"null") as {origin:string;workspace:string;path:string;command:{command_id:string;[key:string]:unknown}}|null;
-    if(!saved||saved.origin!==client!.connection.origin||saved.workspace!==client!.connection.workspace)return;
-    try{const receipt=await client!.request(`/v1/analysis/commands/${encodeURIComponent(saved.command.command_id)}`,commandSchema);if(receipt.command_id!==saved.command.command_id)throw new Error("Command receipt identity mismatch");sessionStorage.removeItem(pendingKey);status("Saved command confirmed by Intelligence.");}
-    catch{status("Command persistence is unconfirmed. Current server state is shown below.");toolbar.append(button("Retry pending command",async()=>{try{await saveCommand(saved.path,saved.command);status("Command confirmed by Intelligence.");await home();}catch(value){error(value);}}));}
+    const authority=client!;
+    const saved=await commands.pending(authority);
+    if(!saved)return;
+    try{await commands.recover(authority,saved);status("Saved command confirmed by Intelligence.");}
+    catch{status("Command persistence is unconfirmed. Recover it before another change.");toolbar.append(button("Retry pending command",async()=>{try{await commands.retry(authority,saved);status("Command confirmed by Intelligence.");if(client===authority)await home();}catch(value){error(value);}}));}
   }
   async function home(){
     const generation=++renderGeneration;board?.destroy();board=undefined;content.replaceChildren();
@@ -53,6 +54,7 @@ export function mountWorkbench(root:HTMLElement){
       let selected="";importPanel.append(select("Imported input",inputChoices,"",value=>{selected=value;}),button("Start analysis · 250 decisions",async()=>{
         if(!selected){status("Choose an accepted input first.");return;}
         const input=inputs.items.find(item=>String(item.input_id)+":"+String(item.revision)===selected)!;
+        try{await commands.assertAvailable(client!);}catch(value){error(value);return;}
         const id=crypto.randomUUID();const payload={schema_version:1,workspace_id:client!.connection.workspace,run_id:id,revision:1,input_id:input.input_id,input_revision:input.revision,position_budget:250};
         status("Saving analysis request…");try{const saved=await client!.request("/v1/analysis/runs",z.object({schema_version:z.literal(1),workspace_id:z.string(),run_id:z.string()}).passthrough(),payload);if(saved.run_id!==id)throw new Error("Created run identity mismatch");runId=id;history();status("Request saved. Findings and engine progress are separate.");await home();}catch(value){error(value);}
       }));content.append(importPanel);
@@ -73,6 +75,8 @@ export function mountWorkbench(root:HTMLElement){
       const next=await client!.request(`/v1/analysis/runs/${encodeURIComponent(runId)}/report?${query}`,reportSchema);if(generation!==renderGeneration)return;if(next.run_id!==runId)throw new Error("Report identity mismatch");report=next;
       if(!after)target.replaceChildren();else target.querySelector(".more")?.remove();
       const state=node("p",`${String(record(next.source_provenance??{}).kind??"explicit source")} · ${next.status} · ${String(next.source_completeness??"inputs pending")} · ${String(next.unprocessed_count??"unknown")} engine decisions unprocessed · ${String(next.insufficient_quality_count??0)} searches need better evidence`);state.className="report-state";target.append(state);
+      if(Array.isArray(next.reasons)&&next.reasons.includes("incompatible_engine_profile"))target.append(node("p","The engine changed during this comparison. Start a new analysis revision with the selected engine profile. Earlier results are preserved."));
+      if(next.derivation_version!==2)target.append(node("p","Legacy report: engine repertoire associations are unverified. Create a new analysis revision to verify them."));
       if(next.items.length===0)target.append(node("p",next.status==="pending"?"Report pending. Run the manual worker or refresh after publication.":"No findings in this page and filter. Unprocessed or unknown scope is shown separately."));
       const grid=node("div");grid.className="finding-grid";for(const finding of next.items){const card=node("article");card.append(node("small",labels[finding.category]),node("h3",finding.category==="practical_gap"?"A response is missing":finding.category==="repertoire_miss"?"An accepted response was missed":"A stronger continuation was found"),node("p",`${finding.supporting_game_count} supporting game${finding.supporting_game_count===1?"":"s"} · ${finding.dismissal_state}`),node("p",`Played ${finding.representative.actual_move??"unavailable"} · ${finding.evidence_status}`),button("Inspect finding",()=>detail(finding)));grid.append(card);}target.append(grid);
       if(next.next_cursor){const more=button("More findings",()=>load(next.next_cursor!));more.className="more";target.append(more);}
@@ -95,6 +99,7 @@ export function mountWorkbench(root:HTMLElement){
       info.append(node("p",`Remediation delivery: ${String(finding.delivery_status??"unknown").replaceAll("_"," ")} · Study settlement: ${String(finding.learning_settlement??"unknown")}`));
       if(finding.engine){const engine=record(finding.engine);const best=record(engine.best??{});const played=record(engine.played??{});info.append(node("p",`Best continuation: ${Array.isArray(best.moves)?best.moves.join(" "):"pending"}`));const score=(value:Record<string,unknown>)=>{const point=record(value.score??{});return point.kind==="mate"?`mate ${String(point.value)}`:point.kind==="centipawns"?`${String(point.value)} cp`:"pending";};info.append(node("p",`Search: ${score(best)} best · ${score(played)} played · completed depth ${String(best.depth??"unknown")} · learner perspective`));}
       if(finding.actions.response_proposal?.available){info.append(button("Export response draft",async()=>{try{const result=await client!.request(`/v1/analysis/findings/${encodeURIComponent(finding.finding_id)}/export?${query}&kind=response-proposal`,z.object({workspace_id:z.string(),status:z.literal("draft")}).passthrough());const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:"application/json"}));const link=node("a");link.href=url;link.download="tempo-response-proposal.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(value){error(value);}}));}else info.append(node("p",`Response proposal unavailable: ${finding.actions.response_proposal?.reason==="validated_A_proposal_unavailable"?"a validated response draft is required":finding.actions.response_proposal?.reason?.replaceAll("_"," ")??"validated response line required"}. Export does not approve or activate content.`));
+      if(finding.lineage===null)info.append(node("p","Repertoire, policy and source lineage are unknown for this engine finding."));
       const provenance=node("details");provenance.append(node("summary","Provenance and uncertainty"),node("pre",JSON.stringify(finding,null,2)));info.append(provenance);layout.append(info);content.append(layout);
       board=Chessground(boardElement,{fen:finding.representative.fen,orientation,viewOnly:true,coordinates:true,animation:{enabled:false}});
       if(finding.engine){const moves=record(record(finding.engine).best??{}).moves;if(Array.isArray(moves)&&typeof moves[0]==="string")boardActions.append(button("Show engine move",()=>{chess.load(finding.representative.fen);chess.move(moves[0]);board!.set({fen:chess.fen()});}));}

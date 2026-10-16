@@ -528,7 +528,14 @@
       "type": "string"
     },
     "lineage": {
-      "$ref": "#/$defs/Lineage"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Lineage"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "opponent_fen": {
       "anyOf": [

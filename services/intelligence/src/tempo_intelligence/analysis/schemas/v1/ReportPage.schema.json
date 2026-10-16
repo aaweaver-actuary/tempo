@@ -235,7 +235,14 @@
           "type": "string"
         },
         "lineage": {
-          "$ref": "#/$defs/Lineage"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Lineage"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "opponent_fen": {
           "anyOf": [
@@ -774,6 +781,15 @@
       "title": "Complete",
       "type": "boolean"
     },
+    "derivation_version": {
+      "default": 1,
+      "enum": [
+        1,
+        2
+      ],
+      "title": "Derivation Version",
+      "type": "integer"
+    },
     "engine_availability": {
       "anyOf": [
         {
@@ -888,6 +904,11 @@
         }
       ],
       "title": "Next Cursor"
+    },
+    "ordering": {
+      "default": "category-source-rank-semantic-v1",
+      "title": "Ordering",
+      "type": "string"
     },
     "policy_version": {
       "const": "c-analysis-v1",

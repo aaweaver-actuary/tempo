@@ -477,3 +477,34 @@ Dismissal survives replay/enrichment, reopening after three additional distinct
 supporting games. An executable export requires A's exact target/anchor/digest and
 a legal supported odd-length learner response line. It is a draft, never approval,
 publication, activation, admission, or a second remediation-obligation path.
+
+### PR295 corrective derivation and recovery
+
+New report generations carry `derivation_version:2` and
+`ordering:source-rank-semantic-v2`. Ranking applies globally across categories.
+Old immutable generations retain their ordinals and legacy cursor ordering;
+missing derivation metadata means version 1. Workbench labels legacy engine
+associations unverified. Recompute through an explicit new run revision; historical
+report/result bytes and prior dismissal records are not rewritten or aliased to a
+corrected semantic identity.
+
+An engine finding's repertoire, policy and lineage are either all supported by
+one exact accepted decision association, or all null. Ambiguous candidates and
+context evidence references remain informational. Source misses/gaps still require
+lineage. Activation is unknown for an unscoped engine finding.
+
+Command responses and receipt reads add `request_digest`, using the existing
+stored canonical normalized command digest (target run/finding/generation plus
+Command defaults). Historical receipts expose their existing digest without a
+migration. A different request under the same command ID conflicts.
+
+Played searches fence the accepted root against B's public ready identity before
+dispatch and against typed provenance plus original jobs before acceptance.
+Permanent `incompatible_engine_profile` retains the root, releases capacity, does
+not consume ordinary retries, and is excluded from retry/resume. Create an explicit
+RunRequest with the same run/input IDs, `revision:N+1`, `expected_revision:N` and
+choose the new qualified profile in the external pilot. Searches recompute in the
+new revision; original results/generations remain inspectable. Completed unequal
+depths remain insufficient quality; mate stays typed. Pending/incompatible
+comparisons cannot produce executable response drafts. Work receipts include the
+connected public `engine_identity` when configured.
