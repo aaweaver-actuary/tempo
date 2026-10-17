@@ -148,11 +148,11 @@ async function withPriorityMaintenanceAllocation(proof) {
   });
 }
 
-async function runAllocatedNativeProof(scriptPath, proofName) {
+async function runAllocatedNativeProof(scriptPath, proofName, containerOptions = []) {
     const limit=resourceBudgets.priorityRehearsalServices.schema;
     const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
     await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
-      "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python", "-c", proof]));
+      "run", "--rm", "--no-deps", ...containerOptions, "schema", "python", "-c", proof]));
 }
 
 async function verifyStudyPriorityMaintenance() {
@@ -1069,7 +1069,7 @@ const actions = {
   },
   background_workloads: async () => {
     await runAllocatedNativeProof("/source/scripts/check_postgres_daily_study_dispatch.py",
-      "test_postgres_daily_dispatch_uses_bounded_maintenance_allocation");
+      "test_postgres_daily_dispatch_uses_bounded_maintenance_allocation", ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
