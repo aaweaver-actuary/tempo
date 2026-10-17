@@ -1,0 +1,36 @@
+@import "./chessground.base.css";
+@import "./chessground.cburnett.css";
+
+.tempo-board { width: 100%; min-width: 0; }
+.tempo-board:focus-visible { outline: 3px solid #5074b8; outline-offset: 4px; }
+.tempo-board-surface { position: relative; --tempo-light: #f0d9b5; --tempo-dark: #b58863; }
+.tempo-board .cg-wrap { width: 100%; height: 100%; }
+/* The package owns integral CSS squares. Override Chessground's device-pixel
+   rounding so fractional zoom cannot shrink cg-container inside the surface. */
+.tempo-board cg-container { width: 100% !important; height: 100% !important; }
+.tempo-board .tempo-theme-blue { --tempo-light: #dee3e6; --tempo-dark: #6f8fa8; }
+.tempo-board .tempo-theme-green { --tempo-light: #e5e3ce; --tempo-dark: #6e8268; }
+.tempo-board cg-board {
+  background-color: var(--tempo-light);
+  background-image: conic-gradient(from 90deg, var(--tempo-dark) 25%, var(--tempo-light) 0 50%, var(--tempo-dark) 0 75%, var(--tempo-light) 0);
+  background-size: 25% 25%;
+  touch-action: none;
+}
+.tempo-board square.last-move { background: rgba(155, 199, 0, 0.4); }
+.tempo-board square.selected { background: rgba(20, 85, 30, 0.5); }
+.tempo-board square.move-dest { background: radial-gradient(rgba(20, 85, 30, 0.5) 19%, transparent 20%); }
+.tempo-board square.oc.move-dest { background: radial-gradient(transparent 79%, rgba(20, 85, 30, 0.5) 80%); }
+.tempo-board square.check { background: radial-gradient(ellipse at center, rgba(255, 35, 35, 0.6), transparent 75%); }
+.tempo-board coords { color: #222; font-weight: bold; }
+.tempo-board .tempo-pieces-merida piece.pawn.white { background-image: url("../assets/merida/wP.svg"); }
+.tempo-board .tempo-pieces-merida piece.knight.white { background-image: url("../assets/merida/wN.svg"); }
+.tempo-board .tempo-pieces-merida piece.bishop.white { background-image: url("../assets/merida/wB.svg"); }
+.tempo-board .tempo-pieces-merida piece.rook.white { background-image: url("../assets/merida/wR.svg"); }
+.tempo-board .tempo-pieces-merida piece.queen.white { background-image: url("../assets/merida/wQ.svg"); }
+.tempo-board .tempo-pieces-merida piece.king.white { background-image: url("../assets/merida/wK.svg"); }
+.tempo-board .tempo-pieces-merida piece.pawn.black { background-image: url("../assets/merida/bP.svg"); }
+.tempo-board .tempo-pieces-merida piece.knight.black { background-image: url("../assets/merida/bN.svg"); }
+.tempo-board .tempo-pieces-merida piece.bishop.black { background-image: url("../assets/merida/bB.svg"); }
+.tempo-board .tempo-pieces-merida piece.rook.black { background-image: url("../assets/merida/bR.svg"); }
+.tempo-board .tempo-pieces-merida piece.queen.black { background-image: url("../assets/merida/bQ.svg"); }
+.tempo-board .tempo-pieces-merida piece.king.black { background-image: url("../assets/merida/bK.svg"); }
