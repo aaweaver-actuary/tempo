@@ -179,7 +179,7 @@ def test_A_activation_response_loss_replays_original_operator_receipt(case):
     assert case.client.post('/api/operations/'+request['activation_id']+'/retry').status_code==403
     assert case.client.get('/internal/publications/publication-a/status').status_code==401
     assert case.client.get('/internal/publications/publication-a/status',headers={'Authorization':'Bearer '+case.configuration.evidence_token}).status_code==401
-    assert case.client.post('/internal/publications/v2/stage',content=b' '* (8*1024*1024+1),headers={**operator,'Content-Type':'application/json'}).status_code==413
+    assert case.client.post('/internal/publications/v2/stage',content=b' '* (12*1024*1024+1),headers={**operator,'Content-Type':'application/json'}).status_code==413
     assert case.query('SELECT count(*) FROM learning.cards')[0][0]==1
 
 
