@@ -28,7 +28,6 @@ export async function reconcileRecordedHostProcesses(records,{directory,token},{
     assert.equal(record.directory,directory,'Qualification process directory changed');
     assert.equal(record.token,token,'Qualification process lease changed');
     assert.match(record.nonce,/^[0-9a-f]{32}$/,'Qualification process nonce is missing');
-    if(record.exited===true){results.push({pid:record.pid,absent:true,confirmed_exit:true});continue;}
     assert(Number.isInteger(record.pid)&&record.pid>0,'Process creation is unverified; retain its journal and reconcile the recorded nonce');
     const verify=()=>{
       const current=inspectProcess(record.pid);

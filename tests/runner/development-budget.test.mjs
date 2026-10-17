@@ -424,6 +424,7 @@ test('qualification cleanup reaps a recorded owned process and refuses a foreign
     assert.deepEqual(result[0].signals,['SIGTERM','SIGKILL']);assert.equal(result[0].absent,true);await owned.child.completion;
     const foreign=await launch('another-owner',randomUUID().replaceAll('-',''));
     await assert.rejects(reconcileRecordedHostProcesses([{...foreign.record,nonce}],{directory,token},{graceMilliseconds:75,killMilliseconds:1000}),/ownership changed/);
+    await assert.rejects(reconcileRecordedHostProcesses([{...foreign.record,nonce,exited:true}],{directory,token}),/ownership changed/);
     assert.doesNotThrow(()=>process.kill(foreign.child.pid,0),'A foreign process was signalled');
     await assert.rejects(reconcileRecordedHostProcesses([{...owned.record,pid:null}],{directory,token}),/creation is unverified/);
   }finally{
