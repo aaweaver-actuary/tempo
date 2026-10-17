@@ -330,11 +330,19 @@ export function planAffected(input) {
     selected.get(key).reasonIds.add(cause);
     if (!index.suites.has(id)) diagnose("MISSING_REQUIRED_PROOF", "Declare the required suite and its collection contract", { snapshot: index.label, boundary: id });
   }
-  function seed(owner, additions, cause) {
-    if (!owner || !additions.length) return;
-    if (!seeds.has(owner)) seeds.set(owner, { effects: new Set(), reasons: new Set() });
-    for (const effect of additions) seeds.get(owner).effects.add(effect);
-    seeds.get(owner).reasons.add(cause);
+  function retainEffects(collection, origin, owner, additions, cause) {
+    const requiredEffects = [...additions];
+    if (!owner || !requiredEffects.length) return;
+    // Base obligations survive at head; head additions never create base obligations.
+    for (const snapshot of origin.label === "base" ? ["base", "head"] : ["head"]) {
+      if (!collection.has(snapshot)) collection.set(snapshot, new Map());
+      const owners = collection.get(snapshot);
+      if (!owners.has(owner)) owners.set(owner, new Map());
+      for (const effect of requiredEffects) {
+        if (!owners.get(owner).has(effect)) owners.get(owner).set(effect, new Set());
+        owners.get(owner).get(effect).add(cause);
+      }
+    }
   }
   function requireOwnerEffects(index, owner, requiredEffects, cause) {
     const component = index.components.get(owner);
@@ -382,7 +390,7 @@ export function planAffected(input) {
         if (rule.role === "documentation" && (runtimeRules.length || inventoryProofs.length || declarations.some(match => match.type === "suite"))) continue;
         const cause = reason(rule.role === "documentation" ? "DOCUMENTATION_ONLY" : rule.role === "production" ? "OWNED_PRODUCTION" : "DECLARED_INPUT", { snapshot: index.label, path, ruleId: rule.id, to: rule.owner });
         const additions = ruleEffects(rule);
-        seed(rule.owner, additions, cause);
+        retainEffects(seeds, index, rule.owner, additions, cause);
         for (const id of rule.proofIds) addProof(index, id, cause);
         if (rule.role !== "documentation" && !additions.length && !rule.proofIds.length && !inventoryProofs.length && !declarations.some(match => match.type === "suite")) diagnose("UNCOVERED_REQUIRED_INPUT", "Map this selected build/test/runner input to a required proof", { snapshot: index.label, path, candidates: rule.owner ? [rule.owner] : [] });
       }
@@ -409,27 +417,23 @@ export function planAffected(input) {
             const other = index === base ? newDeclaration : oldDeclaration;
             const otherTriggers = new Set((other?.ownerProofs ?? []).map(canonical));
             const changedEffects = declaration.ownerProofs.filter(trigger => !otherTriggers.has(canonical(trigger))).flatMap(trigger => trigger.on);
-            seed(id, unique(["artifact", ...changedEffects]), cause);
+            retainEffects(seeds, index, id, unique(["artifact", ...changedEffects]), cause);
           }
           else if (field === "suites") {
             addProof(index, id, cause);
             for (const [owner, triggerEffects] of index.ownerTriggersByProof.get(id) ?? []) {
-              if (!metadataContracts.has(owner)) metadataContracts.set(owner, new Map());
-              for (const effect of triggerEffects) {
-                if (!metadataContracts.get(owner).has(effect)) metadataContracts.get(owner).set(effect, new Set());
-                metadataContracts.get(owner).get(effect).add(cause);
-              }
+              retainEffects(metadataContracts, index, owner, triggerEffects, cause);
             }
           }
           else {
-            seed(declaration.owner ?? declaration.consumer, field === "rules" ? ruleEffects(declaration) : ["artifact"], cause);
+            retainEffects(seeds, index, declaration.owner ?? declaration.consumer, field === "rules" ? ruleEffects(declaration) : ["artifact"], cause);
             for (const proofId of declaration.proofIds) addProof(index, proofId, cause);
           }
         }
       }
     }
     // Proof edits retain endpoint contracts without seeding production cascades.
-    for (const [owner, contracts] of metadataContracts) for (const [effect, causes] of contracts) for (const index of indexes) {
+    for (const index of indexes) for (const [owner, contracts] of metadataContracts.get(index.label) ?? []) for (const [effect, causes] of contracts) {
       requireOwnerEffects(index, owner, [effect], reason("RETAINED_OWNER_CONTRACT", { snapshot: index.label, to: owner, effect }, causes));
     }
     for (const index of indexes) {
@@ -450,7 +454,10 @@ export function planAffected(input) {
         if (role === "owner") state.role = role;
         if (changed) queue.push(id);
       };
-      for (const [id, source] of seeds) reach(id, source.effects, reason("CHANGED_OWNER", { snapshot: index.label, to: id }, source.reasons), "owner");
+      for (const [id, requirements] of seeds.get(index.label) ?? []) {
+        const causes = [...requirements.values()].flatMap(effectCauses => [...effectCauses]);
+        reach(id, requirements.keys(), reason("CHANGED_OWNER", { snapshot: index.label, to: id }, causes), "owner");
+      }
       const walked = new Set();
       for (let position = 0; position < queue.length; position++) {
         const producer = queue[position], state = reached.get(producer);

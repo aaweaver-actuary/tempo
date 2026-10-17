@@ -102,6 +102,20 @@ wrapper. No additional legacy file registration is needed.
   `A202-explicit-rule-owner-declaration` retains declarations associated through
   rules as well as owning triggers. Evidence keeps associated component
   declarations separate from execution prerequisites and dependency graph roots.
+- Endpoint provenance adds 40 regular cases (148 A202 cases total).
+  `A202-lifecycle-{owner,suite,effect}-{added,retained,modified,replaced,removed}`
+  is a 30-case table over pure security and native persistence contracts. Base
+  requirements survive into head; head-only additions never require historical
+  owners, proofs or effects. Explicit suite replacements retain base proof IDs;
+  removed owners, missing replacements and reclassified/removed base effects
+  continue to block. Unchanged effect contracts do not activate native work for
+  unrelated owner metadata.
+- `A202-lifecycle-native-{owner,effect}-added` checks six head-only native
+  kind/resource/owner failures. `A202-head-only-source-effect` checks security
+  and persistence path additions without invented base obligations;
+  `A202-lifecycle-added-owner` preserves unknown-source rejection for both.
+  Source seeds, component/rule/boundary deltas and suite metadata contracts all
+  use the same directional endpoint-retention rule.
 
 This is an injected-snapshot algorithm increment, not production manifest
 coverage, a Git/CLI adapter, evidence cache or runner integration. C3 retains the

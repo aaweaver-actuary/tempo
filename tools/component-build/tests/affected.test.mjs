@@ -750,3 +750,118 @@ test("A202-shared-owner-declarations exclude unrelated component metadata", () =
   const updated = planAffected(changed); assert.equal(updated.disposition, "executable");
   assert.deepEqual(updated.evidenceRequirements, initial.evidenceRequirements); assert.deepEqual(updated.dependencyInputs, initial.dependencyInputs);
 });
+
+const lifecycleOwner = snapshot => snapshot.components.find(item => item.id === "lifecycle");
+const lifecycleProofId = effect => "component/lifecycle/" + effect;
+const lifecycleSource = "packages/lifecycle/src/value.mjs";
+const lifecycleTest = "packages/lifecycle/tests/unit.test.mjs";
+function lifecycleFixture(effect) {
+  const input = fixture();
+  both(input, snapshot => {
+    const owner = component("lifecycle");
+    owner.ownerProofs = [{ on: ["artifact"], proofIds: ["component/lifecycle/unit"] }, { on: [effect], proofIds: [lifecycleProofId(effect)] }];
+    const proof = { ...suite("lifecycle"), id: lifecycleProofId(effect) };
+    if (effect === "persistence") { proof.kind = "postgres"; proof.resources = ["python", "postgres"]; }
+    snapshot.components.push(owner); snapshot.suites.push(suite("lifecycle"), proof);
+    snapshot.rules.push(rule("lifecycle-source", owner.id, directory("packages/lifecycle/src"), "production", ["artifact", effect]));
+    snapshot.entries.push({ path: lifecycleSource, kind: "file", objectId: "lifecycle-source" }, { path: lifecycleTest, kind: "file", objectId: "lifecycle-test" });
+  });
+  return input;
+}
+function removeLifecycleOwner(snapshot) {
+  snapshot.components = snapshot.components.filter(item => item.id !== "lifecycle");
+  snapshot.suites = snapshot.suites.filter(item => item.owner !== "lifecycle");
+  snapshot.rules = snapshot.rules.filter(item => item.owner !== "lifecycle");
+  snapshot.entries = snapshot.entries.filter(item => !item.path.startsWith("packages/lifecycle/"));
+}
+function removeLifecycleEffect(snapshot, effect, removeProof = false) {
+  lifecycleOwner(snapshot).ownerProofs = lifecycleOwner(snapshot).ownerProofs.filter(item => !item.on.includes(effect));
+  snapshot.rules.find(item => item.id === "lifecycle-source").effects = ["artifact"];
+  if (removeProof) snapshot.suites = snapshot.suites.filter(item => item.id !== lifecycleProofId(effect));
+}
+const lifecycleCases = [
+  { entity: "owner", stage: "added", change(input) {
+    removeLifecycleOwner(input.base); input.changes = [lifecycleSource, lifecycleTest].map(newPath => ({ status: "A", newPath }));
+  } },
+  { entity: "owner", stage: "retained", change(input) { input.changes = [edit(lifecycleSource)]; } },
+  { entity: "owner", stage: "modified", change(input) {
+    lifecycleOwner(input.head).dependencies.push({ kind: "external", ecosystem: "npm", name: "new-tool" });
+  } },
+  { entity: "owner", stage: "replaced", blocked: "REMOVED_PROOF_UNREPLACED", change(input) {
+    lifecycleOwner(input.head).id = "lifecycle-v2";
+    for (const proof of input.head.suites.filter(item => item.owner === "lifecycle")) proof.owner = "lifecycle-v2";
+    input.head.rules.find(item => item.id === "lifecycle-source").owner = "lifecycle-v2";
+  } },
+  { entity: "owner", stage: "removed", blocked: "REMOVED_PROOF_UNREPLACED", change(input) {
+    removeLifecycleOwner(input.head); input.changes = [lifecycleSource, lifecycleTest].map(oldPath => ({ status: "D", oldPath }));
+  } },
+  { entity: "suite", stage: "added", change(input, effect) {
+    const proof = { ...input.head.suites.find(item => item.id === lifecycleProofId(effect)), id: lifecycleProofId(effect) + "-extra" };
+    input.head.suites.push(proof); lifecycleOwner(input.head).ownerProofs[1].proofIds.push(proof.id);
+  } },
+  { entity: "suite", stage: "retained", change(input) { input.changes = [edit(lifecycleTest)]; } },
+  { entity: "suite", stage: "modified", change(input, effect) {
+    input.head.suites.find(item => item.id === lifecycleProofId(effect)).command += " --updated";
+  } },
+  { entity: "suite", stage: "replaced", change(input, effect) {
+    const proof = input.head.suites.find(item => item.id === lifecycleProofId(effect));
+    proof.replaces = [proof.id]; proof.id += "-v2"; lifecycleOwner(input.head).ownerProofs[1].proofIds = [proof.id];
+  } },
+  { entity: "suite", stage: "removed", blocked: "REMOVED_PROOF_UNREPLACED", change(input, effect) { removeLifecycleEffect(input.head, effect, true); } },
+  { entity: "effect", stage: "added", change(input, effect) { removeLifecycleEffect(input.base, effect, true); } },
+  { entity: "effect", stage: "retained", change(input) { input.changes = [edit(lifecycleSource)]; } },
+  { entity: "effect", stage: "modified", change(input, effect) {
+    lifecycleOwner(input.head).ownerProofs = [{ on: ["artifact", effect], proofIds: [lifecycleProofId(effect)] }];
+  } },
+  { entity: "effect", stage: "replaced", blocked: "MISSING_REQUIRED_PROOF", change(input) {
+    lifecycleOwner(input.head).ownerProofs[1].on = ["runtime"];
+    input.head.rules.find(item => item.id === "lifecycle-source").effects = ["artifact", "runtime"];
+  } },
+  { entity: "effect", stage: "removed", blocked: "MISSING_REQUIRED_PROOF", change(input, effect) { removeLifecycleEffect(input.head, effect); } },
+];
+for (const effect of ["security", "persistence"]) for (const row of lifecycleCases) test("A202-lifecycle-" + row.entity + "-" + row.stage + " " + effect + " keeps endpoint obligations directional", () => {
+  const input = lifecycleFixture(effect); row.change(input, effect);
+  const plan = row.blocked ? blocked(input, row.blocked) : planAffected(input);
+  if (!row.blocked) assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  const selection = id => plan.selectedSuites.find(item => item.id === id);
+  if (row.entity === "owner" && row.stage === "added") {
+    assert.deepEqual(owners(plan), ["lifecycle"]);
+    assert.ok(plan.selectedSuites.every(item => item.baseObligations.length === 0));
+    assert.ok(!plan.reasons.some(item => item.snapshot === "base" && item.to === "lifecycle"));
+  }
+  if (row.entity === "owner" && row.stage === "modified") {
+    assert.deepEqual(proofs(plan), ["component/lifecycle/unit"]); assert.deepEqual(plan.requiredResources, ["node"]);
+  }
+  if (row.entity === "suite" && row.stage === "added") assert.deepEqual(selection(lifecycleProofId(effect) + "-extra").baseObligations, []);
+  if (row.entity === "suite" && row.stage === "replaced") assert.deepEqual(selection(lifecycleProofId(effect) + "-v2").baseObligations, [lifecycleProofId(effect)]);
+  if (row.entity === "effect" && row.stage === "added") {
+    assert.deepEqual(selection(lifecycleProofId(effect)).baseObligations, []);
+    assert.ok(!plan.reasons.some(item => item.code === "RETAINED_OWNER_CONTRACT" && item.snapshot === "base" && item.to === "lifecycle" && item.effect === effect));
+  }
+  if (row.stage === "retained" || row.entity === "suite" && row.stage === "modified") assert.deepEqual(selection(lifecycleProofId(effect)).baseObligations, [lifecycleProofId(effect)]);
+  if (row.entity === "effect" && row.stage === "replaced") assert.ok(!plan.diagnostics.some(item => item.snapshot === "base" && item.reason.includes("runtime")));
+  if (effect === "persistence" && row.entity === "effect" && ["replaced", "removed"].includes(row.stage)) assert.ok(plan.diagnostics.some(item => item.code === "PROOF_SCOPE_GAP" && item.snapshot === "head"));
+  assert.equal(plan.qualification, "not-evaluated");
+});
+for (const entity of ["owner", "effect"]) for (const variant of ["kind", "resources", "owner"]) test("A202-lifecycle-native-" + entity + "-added rejects head " + variant + " gaps without historical obligations", () => {
+  const input = lifecycleFixture("persistence"); lifecycleCases.find(row => row.entity === entity && row.stage === "added").change(input, "persistence");
+  const proof = input.head.suites.find(item => item.id === lifecycleProofId("persistence"));
+  if (variant === "kind") proof.kind = "node";
+  if (variant === "resources") proof.resources = ["node"];
+  if (variant === "owner") proof.owner = "tooling";
+  const plan = blocked(input, "PROOF_SCOPE_GAP");
+  assert.ok(plan.diagnostics.every(item => item.snapshot !== "base"));
+  assert.ok(plan.diagnostics.some(item => item.code === "PROOF_SCOPE_GAP" && item.snapshot === "head"));
+});
+for (const effect of ["security", "persistence"]) test("A202-head-only-source-effect " + effect + " does not invent base proof obligations", () => {
+  const input = lifecycleFixture(effect), path = "packages/lifecycle/src/added.mjs";
+  input.head.entries.push({ path, kind: "file", objectId: "added" }); input.changes = [{ status: "A", newPath: path }];
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.ok(plan.selectedSuites.every(item => item.baseObligations.length === 0));
+  assert.ok(!plan.reasons.some(item => item.code === "AFFECTED_COMPONENT" && item.snapshot === "base"));
+});
+for (const effect of ["security", "persistence"]) test("A202-lifecycle-added-owner " + effect + " still rejects unknown production mapping", () => {
+  const input = lifecycleFixture(effect); lifecycleCases.find(row => row.entity === "owner" && row.stage === "added").change(input, effect);
+  input.head.rules = input.head.rules.filter(item => item.id !== "lifecycle-source");
+  blocked(input, "UNKNOWN_OWNER", lifecycleSource);
+});
