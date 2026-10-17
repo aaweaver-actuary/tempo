@@ -188,3 +188,10 @@ Gateway execution and maintenance re-read terminal state under the same locks,
 including workers selected before fencing. Staging alone never grants serving
 authority. Fencing neither deletes immutable staged bundles nor retires old serving
 content; corrected sources use the ordinary new generation/revision workflow.
+
+C3 retains the existing 2.5-second foreground transaction limit. Activation now
+indexes integrity by physical card before filtering memberships, replacing a
+quadratic scan. The complete-publication native regression includes 7,258
+definitions, with replacement/replay/history assertions across three generations.
+The expanded validated bundle and HTTP body both retain a hard 12 MiB bound;
+rejection does not permit an operator to reuse a terminal failed command.

@@ -302,7 +302,8 @@ def activate(database, payload):
     member_rows = [{"repertoire_id": membership, "card_id": identifiers[fact.card_id]} for fact in bundle.facts for membership in fact.memberships]
     database.execute_native("INSERT INTO repertoire_cards SELECT * FROM jsonb_to_recordset(%s) AS x(repertoire_id text,card_id text)", (Jsonb(member_rows),))
     database.execute("DELETE FROM repertoire_integrity_card_blocks WHERE card_id=ANY(?)", (list(identifiers.values()),))
-    blocked = [item for item in member_rows if not next(fact for fact in bundle.facts if identifiers[fact.card_id] == item["card_id"]).integrity_allowed]
+    integrity_by_card = {identifiers[fact.card_id]: fact.integrity_allowed for fact in bundle.facts}
+    blocked = [item for item in member_rows if not integrity_by_card[item["card_id"]]]
     if blocked:
         database.execute_native("INSERT INTO repertoire_integrity_card_blocks SELECT * FROM jsonb_to_recordset(%s) AS x(repertoire_id text,card_id text)", (Jsonb(blocked),))
     graph_rows, line_rows = [], []

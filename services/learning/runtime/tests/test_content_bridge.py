@@ -64,7 +64,7 @@ def activate_v2(case,payload,expected=0,request=None):
     return response.json()
 
 
-@pytest.mark.parametrize('count',[129,512,2048])
+@pytest.mark.parametrize('count',[129,512,2048,7258])
 def test_A_complete_large_publication_measured_without_truncation(case,count,tmp_path):
     payload=content_bundle(count)
     started=time.perf_counter()

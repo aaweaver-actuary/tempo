@@ -142,3 +142,6 @@ reproduces an authored reply incorrectly exported as uncovered and requires an
 unknown, incomplete scope. Game Evidence independently reconstructs this rule.
 The import manifest can explicitly mark normalized exercises with unresolved
 historical mapping; these definitions cannot establish existing-card misses.
+`test_C3_preparation_persists_packed_export_and_public_operation_rehydrates` is the
+native storage regression: it failed on the original inline checkpoint and proves
+both actual packed persistence and exact public export/replay after the repair.
