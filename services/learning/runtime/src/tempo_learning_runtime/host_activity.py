@@ -50,7 +50,7 @@ class HostActivity:
         if self.directory is None:
             raise RuntimeError("Host activity reporting is not configured")
         with self.lock:
-            self.sessions[session] = self.clock() + remaining_ms * 1_000_000
+            self.sessions[session] = max(self.sessions.get(session, 0), self.clock() + remaining_ms * 1_000_000)
             self._publish()
 
     @contextmanager

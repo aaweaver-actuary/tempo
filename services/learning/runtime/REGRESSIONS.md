@@ -225,3 +225,5 @@ two actual apply processes share one retirement outcome; two abandon processes
 fence a genuinely queued retirement without changing the active predecessor.
 
 `test_host_activity_reporting_thread_failure_does_not_prevent_service_startup` proves an unavailable optional renewal thread leaves authenticated Study service startup and essential request protection usable. `test_host_activity_shutdown_reporting_failure_is_diagnostic_and_retains_owned_snapshot` proves cleanup reporting cannot escape shutdown or erase uncertain ownership. Both use injected standard-library failures and remain in the regular native Learning suite.
+
+`test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session` keeps a renewed same-session deadline monotonic when an older short pulse arrives late. The legacy native priority proof's `test_postgres_priority_monotonic_activity_renewal` executes the actual Redis Lua and checks both per-member deadlines and the shared key lifetime against a longer pending foreground lease.
