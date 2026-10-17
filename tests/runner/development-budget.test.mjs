@@ -387,3 +387,19 @@ else if(args[0]==='run'){
     assert.deepEqual(await readdir(join(directory,'resources')),[]);
   }finally{await lease.release();await rm(parent,{recursive:true,force:true});}
 });
+
+test('saturation qualification listing and invalid destinations remain lightweight during another owner',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'tempo-saturation-list-'));
+  try{
+    const {spawnSync}=await import('node:child_process');
+    const executable=join(directory,'docker'),calls=join(directory,'calls');
+    await writeFile(executable,`#!${process.execPath}\nimport{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(calls)},'unexpected external effect');process.exit(1);\n`,{mode:0o700});
+    const environment={...process.env,PATH:directory+':'+process.env.PATH};delete environment.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
+    const entry=new URL('../../scripts/study-priority-qualification/index.mjs',import.meta.url);
+    const listed=spawnSync(process.execPath,[entry.pathname,'--list'],{env:environment,encoding:'utf8',timeout:3000});
+    assert.equal(listed.status,0,listed.stderr);assert.equal(JSON.parse(listed.stdout).scenarios.length,7);
+    const invalid=spawnSync(process.execPath,[entry.pathname,'--evidence','relative'],{env:environment,encoding:'utf8',timeout:3000});
+    assert.notEqual(invalid.status,0);assert.match(invalid.stderr,/absolute private evidence directory/);
+    await assert.rejects(readFile(calls),{code:'ENOENT'});
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
