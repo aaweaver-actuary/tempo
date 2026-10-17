@@ -119,3 +119,17 @@ cache to one validated snapshot and invalidates it on either identity or byte
 change. Publication still rechecks workspace epoch, game revision and lease.
 The real cohort exposed repeated full-snapshot validation near the 30-second
 lease bound; no lease or timeout was increased.
+
+C3 existing-position/re-entry uncertainty:
+`test_C3_existing_authored_position_does_not_become_a_new_content_gap` reproduces
+an uncovered ordered path arriving at an existing same-policy authored position.
+That is unknown re-entry authority, not evidence for a new card. Other policies
+cannot suppress a genuine selected-policy gap. The observation retains existing
+Content definition IDs and normalizes legal en-passant identity without granting
+re-entry. The independent real cohort audit exposed this case before report
+acceptance.
+
+`test_C3_export_derivation_upgrade_preserves_reserved_original_bytes` owns the
+export identity transition: new exports use derivation2 (schema remains v1), while
+existing directory reservations retain their original immutable manifest/pages.
+A correctness repair never rewrites an accepted input under its old identity.

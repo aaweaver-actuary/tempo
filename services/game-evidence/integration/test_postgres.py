@@ -1179,3 +1179,25 @@ def test_A_post_retirement_snapshot_cannot_claim_current_serving(state):
         assert database.execute('SELECT count(*) AS count FROM snapshots').fetchone()['count'] == 2
         assert database.execute('SELECT count(*) AS count FROM accepted_heads WHERE active').fetchone()['count'] > 0
         assert database.execute('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id').fetchall() == deliveries
+
+
+def test_C3_export_derivation_upgrade_preserves_reserved_original_bytes(state,tmp_path,monkeypatch):
+    from tempo_game_evidence import analysis_export
+    from tempo_game_evidence.analysis_schema import verify_directory
+    store,_,_=state
+    snapshot=json.loads((FIXTURES/'bridge-snapshot-v2.json').read_text())
+    workspace=snapshot['publication']['workspace_id']
+    store.load_snapshot(snapshot)
+    game=store.import_pgn(workspace,'pgn','derivation-upgrade','Learner',
+        b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 2. Nf3 1-0')
+    drain(store)
+    with monkeypatch.context() as previous:
+        previous.setattr(analysis_export,'EXPORT_DERIVATION_VERSION',1)
+        original=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'original')
+    original_bytes={path.name:path.read_bytes() for path in (tmp_path/'original').iterdir()}
+    current=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'current')
+    assert current['input_id']!=original['input_id']
+    resumed=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'original')
+    assert resumed==original
+    assert {path.name:path.read_bytes() for path in (tmp_path/'original').iterdir()}==original_bytes
+    assert verify_directory(tmp_path/'original')['status']=='verified'

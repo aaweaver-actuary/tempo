@@ -13,6 +13,7 @@ from .source import INDEX_VERSION
 from .delivery import inspect_delivery
 
 PAGE_SIZE = 64
+EXPORT_DERIVATION_VERSION = 2
 KINDS = ("definitions", "routes", "legal_replies", "games", "positions", "comparisons", "deviations")
 
 
@@ -58,16 +59,28 @@ def deviations(game, positions, snapshot, *, all_opponent_decisions=False):
                 scopes=[scope for scope in (inventory or {}).get('scopes',[]) if any(scope['policy_id']==context['policy_id'] and scope['repertoire_id']==context['repertoire_id'] and any(node['route_id']==context['route_id'] and node['ply']==context['route_ply'] for node in scope['route_contexts']) for context in contexts)]
                 selected=[reply for scope in scopes for reply in scope['replies'] if reply['move_uci']==position['move']]
                 complete=bool(complete and scopes and all(scope['complete'] for scope in scopes) and all(reply['status']!='ambiguous' for reply in selected))
+                # An uncovered ordered route can arrive at content already
+                # authored under this policy. FEN equality cannot authorize
+                # re-entry, and it cannot establish that new content is needed.
+                existing_position_ids=[]
+                if complete and is_deviation and not any(reply['responses'] for reply in selected):
+                    policies={context['policy_id'] for context in contexts}
+                    position_key=canonical_fen_key(board.fen(en_passant='legal'))
+                    existing_position_ids=sorted(definition.card_id for definition in snapshot.publication.definitions
+                        if definition.policy_id in policies and canonical_fen_key(chess.Board(definition.starting_fen).fen(en_passant='legal'))==position_key)
+                    if existing_position_ids:
+                        complete=False
+
                 result.append({"game_id": game["game_id"], "game_revision": game["revision"], "ply": position["ply"],
                     "fen": position["fen"], "opponent_move": position["move"], "route_contexts": contexts,
                     "decision_ply": position["ply"] + 1, "decision_fen": board.fen(en_passant="fen"),
                     "history": game["moves"][:position["ply"] + 1], "authored_opponent_moves": sorted(authored),
                     "is_deviation":is_deviation,
-                    "status": ("established_opponent_deviation" if is_deviation else 'covered_opponent_reply') if complete else "unknown", "reason": "complete_route_scope" if complete else "incomplete_or_unavailable_scope",
+                    "status": ("established_opponent_deviation" if is_deviation else 'covered_opponent_reply') if complete else "unknown", "reason": "existing_authored_position_reentry_unverified" if existing_position_ids else "complete_route_scope" if complete else "incomplete_or_unavailable_scope",
                     "response_inventory": {"complete": complete, "source_revision": snapshot.publication.source_revision,
                         "publication_generation": snapshot.publication.publication_generation,
                         "digest": snapshot.content_export["export_digest"], "accepted_responses": [response for reply in selected for response in reply['responses']],
-                        "scope_digests":[scope['digest'] for scope in scopes],"selected_reply_states":[reply['status'] for reply in selected]},
+                        "scope_digests":[scope['digest'] for scope in scopes],"selected_reply_states":[reply['status'] for reply in selected],**({'existing_position_content_ids':existing_position_ids} if existing_position_ids else {})},
                     "legal_reply_inventory": inventory, "reentry_evidence": [evidence for item in contexts for evidence in item['reentry_evidence']]})
         successors={(index,ply+1):entry_evidence.get((index,ply),[]) for index,ply in candidates if ply<len(routes[index][0].moves) and routes[index][0].moves[ply]==position['move']}
         active=set(successors)
@@ -112,7 +125,7 @@ def create_export(store, workspace, game_ids=None):
             records["positions"].extend({**position, "game_id": game["game_id"], "game_revision": game["revision"], "comparison_revision": game["report_revision"],'opponent_decision':by_ply.get(position['ply'])} for position in positions)
             records["comparisons"].append(report)
             records["deviations"].extend(item for item in opponent_decisions if item['is_deviation'])
-    input_id = digest([workspace, row["snapshot_digest"], revisions, 1])
+    input_id = digest([workspace, row["snapshot_digest"], revisions, EXPORT_DERIVATION_VERSION])
     pages = []
     for kind in KINDS:
         for offset in range(0, len(records[kind]), PAGE_SIZE):
