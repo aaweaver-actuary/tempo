@@ -51,6 +51,14 @@ This is a task-local database provisioning choice, not a runtime change or live
 migration. Keep the same durable intent when retrying after verified provisioning;
 do not remove card-edit locks or raise transaction timeouts to hide the failure.
 
+The Learning-owned disposable restore helper advances review identity allocation
+after copying explicit historical IDs. For an earlier unfinished rehearsal,
+`restore_rehearsal.py --repair-review-identity` uses the same explicit
+configuration/capture/manifest/output arguments. It verifies owned-container
+labels, endpoint, workspace and exact unchanged copied review contents before
+advancing the sequence; it never lowers an existing sequence or changes history.
+Do this before any new scripted rehearsal review. It is not a live migration.
+
 ## Selected games and analysis
 
 `python -m tempo_analysis_pilot.cohort --accounts ACCOUNTS --capture CAPTURE

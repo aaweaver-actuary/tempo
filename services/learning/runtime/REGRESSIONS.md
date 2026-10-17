@@ -15,6 +15,14 @@ It retains both card-edit lock namespaces and verifies receipt replay. The owned
 native PostgreSQL startup declares and records shared lock capacity; it does not
 change production settings or increase the transaction timeout.
 
+`test_C3_copied_review_identity_advances_without_reusing_or_reordering_history`
+reproduces an actual sequence collision after explicit copied review IDs, repairs
+it through the Learning-owned rehearsal helper, preserves the original review,
+and saves the next ordinary Study review with a new ID. Its second case requires
+an already advanced sequence to remain ahead. Empty-rehearsal restoration now
+finishes review identity allocation; explicit repair refuses changed copied
+history and remains restricted to verified disposable C3 storage.
+
 ## A authoritative bridge
 
 `test_content_bridge.py` owns measured complete 129/512/2,048-definition activation

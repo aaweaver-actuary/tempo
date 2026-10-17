@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 import chess
+import psycopg
 import pytest
 from test_runtime import bundle, activate, head, review_payload, submit
 
@@ -289,6 +290,42 @@ def test_C3_complete_historical_alias_activation_fits_documented_lock_capacity(c
             'synthetic':True,'aliases':6524,'distinct_card_edit_lock_keys':13048,
             'activation_including_stage_seconds':elapsed,'preserved_reviews':len(history),
             'preserved_schedules':len(scheduled),'receipt':receipt},indent=2))
+
+
+@pytest.mark.parametrize('sequence_already_ahead',[False,True])
+def test_C3_copied_review_identity_advances_without_reusing_or_reordering_history(case,sequence_already_ahead):
+    import importlib.util
+    helper_path=Path(__file__).parents[1]/'integration/restore_rehearsal.py'
+    specification=importlib.util.spec_from_file_location('learning_owned_rehearsal_restore',helper_path)
+    helper=importlib.util.module_from_spec(specification);specification.loader.exec_module(helper)
+    activate(case)
+    first=head(case)
+    saved=submit(case,first,review_payload(first))
+    assert saved.status_code==200,saved.text
+    history=[tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]
+    assert len(history)==1 and saved.json()['review_id']==1
+    with psycopg.connect(case.admin,options='-c search_path=learning,pg_catalog') as database:
+        database.execute("SELECT setval('learning.reviews_id_seq',1,false)")
+        # The pre-repair restore shape really rejects the next ordinary INSERT;
+        # a rolled-back collision is not fabricated accepted review history.
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            with database.transaction():
+                database.execute('INSERT INTO learning.reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,%s,%s,0,0)',
+                    (first['id'],'correct',datetime.now(timezone.utc).isoformat()))
+        database.execute("SELECT setval('learning.reviews_id_seq',1,false)")
+        repaired=helper.advance_review_identity(database)
+        assert repaired['changed'] and repaired['next_generated_id']==2
+        assert not helper.advance_review_identity(database)['changed']
+        if sequence_already_ahead:
+            database.execute("SELECT setval('learning.reviews_id_seq',10000,true)")
+            retained=helper.advance_review_identity(database)
+            assert not retained['changed'] and retained['next_generated_id']==10001
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]==history
+    subsequent=head(case)
+    response=submit(case,subsequent,review_payload(subsequent))
+    assert response.status_code==200,response.text
+    assert response.json()['review_id']==(10001 if sequence_already_ahead else 2)
+    assert tuple(case.query('SELECT * FROM learning.reviews WHERE id=1')[0])==history[0]
 
 
 def test_A_identity_conflict_rolls_back_activation(case):
