@@ -12,9 +12,11 @@
 
 ## Study Priority v1 browser and inference repairs
 
-- `tests/runner/inference-priority.test.mjs`: C1–C14 cover normal completion,
+- `tests/runner/inference-priority.test.mjs`: C1–C15 cover normal completion,
   delayed/missing exit, failed termination, quarantine, late results, control
   failure, active/idle child failure, admission/probe races and immutable release retries.
+  C15 preserves the original preemption or process failure when an IPC error
+  arrives during verified termination.
   Existing real inference cases retain requested depth/full legal output.
 - `tests/unit/study-interaction-priority.test.ts`: B remaining-quiet-time pulses
   prevent renewal from extending the server pause beyond three seconds.
