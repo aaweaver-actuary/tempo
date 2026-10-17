@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import json
+from os import fstat
 from pathlib import Path
 import sys
 from tempo_evidence_math import (OpeningRankingError, canonical_json, load_snapshot, PrecomputedValuationScorer)
@@ -51,13 +52,20 @@ def emit_report(result,output):
         sys.stdout.buffer.write(rendered)
         sys.stdout.buffer.flush()
         return
-    created=False
+    created_identity=None
     try:
         with output.open('xb') as destination:
-            created=True
+            identity=fstat(destination.fileno())
+            created_identity=(identity.st_dev,identity.st_ino)
             destination.write(rendered)
     except BaseException:
-        if created:output.unlink(missing_ok=True)
+        if created_identity is not None:
+            try:
+                current=output.lstat()
+                if (current.st_dev,current.st_ino)==created_identity:
+                    output.unlink()
+            except FileNotFoundError:
+                pass
         raise
 
 

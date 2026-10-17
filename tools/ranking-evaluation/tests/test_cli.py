@@ -84,6 +84,7 @@ def test_cli_write_failure_removes_only_new_partial_output(tmp_path,monkeypatch)
     class FailedWriter:
         def __enter__(self):
             self.stream=original(output,'xb');return self
+        def fileno(self):return self.stream.fileno()
         def write(self,value):
             self.stream.write(value[:3]);raise OSError('injected full disk')
         def __exit__(self,*arguments):self.stream.close()
@@ -151,3 +152,18 @@ def test_frozen_precomputed_scorer_identity_cannot_be_changed():
     from tempo_ranking_evaluation import PrecomputedScoreScorer
     scorer=PrecomputedScoreScorer({'name':'fixed','version':'1','scores':{'card':{'score':None,'reason':'unknown'}}})
     with pytest.raises(FrozenInstanceError):scorer.name='changed'
+
+
+def test_cli_write_failure_preserves_replaced_foreign_output(tmp_path,monkeypatch):
+    output=tmp_path/'report.json';original=Path.open
+    class ReplacedWriter:
+        def __enter__(self):self.stream=original(output,'xb');return self
+        def fileno(self):return self.stream.fileno()
+        def write(self,value):
+            output.unlink()
+            with original(output,'wb') as replacement:replacement.write(b'other owner')
+            raise OSError('output replaced during failed write')
+        def __exit__(self,*arguments):self.stream.close()
+    monkeypatch.setattr(Path,'open',lambda self,*args,**kwargs:ReplacedWriter() if self==output and args==('xb',) else original(self,*args,**kwargs))
+    with pytest.raises(OSError):cli.emit_report({'complete':True},output)
+    assert output.read_bytes()==b'other owner'

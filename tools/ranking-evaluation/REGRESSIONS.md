@@ -18,6 +18,7 @@ Estimator-only tests remain explicitly adapter-owned.
 - `test_corpus_resolved_symlink_cannot_escape_directory` — tests/test_cli.py
 - `test_corpus_scenario_count_is_bounded_before_ranking` — tests/test_cli.py
 - `test_frozen_precomputed_scorer_identity_cannot_be_changed` — tests/test_cli.py
+- `test_cli_write_failure_preserves_replaced_foreign_output` — tests/test_cli.py
 - `test_harness_all_thirteen_scenarios_have_substantive_legal_evidence` — tests/test_harness.py
 - `test_harness_routes_reference_true_supporting_prefix_parents` — tests/test_harness.py
 - `test_harness_unknown_probability_candidate_has_unassigned_authored_reply` — tests/test_harness.py
