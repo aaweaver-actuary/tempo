@@ -2,6 +2,7 @@ import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import { Chess } from "chess.js";
 import { gameSourceUrl } from "./game-source.js";
+import { mountGameBrowser } from "./game-browser.js";
 import { z } from "zod";
 import { IntelligenceClient, type Connection } from "./client.js";
 import { listSchema, reportSchema, detailSchema, type Finding, type Report } from "./contracts.js";
@@ -16,6 +17,8 @@ function record(value:unknown){return value as Record<string,unknown>;}
 export function mountWorkbench(root:HTMLElement){
   const commands=new PendingCommands(sessionStorage);
   let client:IntelligenceClient|undefined,board:Api|undefined,renderGeneration=0;
+  let closeGameBrowser:(()=>void)|undefined;
+  let gameInspectionAvailable=false;
   let runId=new URL(location.href).searchParams.get("run")??"",category=new URL(location.href).searchParams.get("category")??"",dismissal=new URL(location.href).searchParams.get("dismissal")??"",report:Report|undefined;
   const header=node("header");const title=node("div");title.append(node("small","TEMPO WORKBENCH"),node("h1","Your games, understood."));header.append(title,node("span","Analysis"));
   const message=node("p");message.setAttribute("role","status");
@@ -24,13 +27,13 @@ export function mountWorkbench(root:HTMLElement){
   function error(value:unknown){status(value instanceof Error?value.message:"Analysis unavailable. Retry explicitly.");}
   function history(){const url=new URL(location.href);for(const [key,value]of Object.entries({run:runId,category,dismissal})){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key);}window.history.replaceState({},"",url);}
   function connectionForm(saved?:Partial<Connection>){
-    renderGeneration++;
+    renderGeneration++;closeGameBrowser?.();closeGameBrowser=undefined;
     board?.destroy();board=undefined;content.replaceChildren();
     const panel=node("section");panel.className="connection";panel.append(node("h2","Connect to Intelligence"),node("p","Use the caller credential for this workspace. Study connects separately."));
     const origin=field("Intelligence origin",saved?.origin??"http://127.0.0.1:8049"),workspace=field("Workspace",saved?.workspace),credential=field("Caller credential",saved?.credential,"password");
     panel.append(origin.wrapper,workspace.wrapper,credential.wrapper,button("Connect",async()=>{
       status("Checking connection…");
-      try{const next=new IntelligenceClient({origin:origin.input.value,workspace:workspace.input.value,credential:credential.input.value});await next.bootstrap();client?.disconnect();client=next;sessionStorage.setItem(key,JSON.stringify(next.connection));status("Connected");await home();}catch(value){error(value);}
+      try{const next=new IntelligenceClient({origin:origin.input.value,workspace:workspace.input.value,credential:credential.input.value});const capabilities=await next.bootstrap();gameInspectionAvailable=capabilities.capabilities.includes("selected-games-v1");client?.disconnect();client=next;sessionStorage.setItem(key,JSON.stringify(next.connection));status("Connected");await home();}catch(value){error(value);}
     }));content.append(panel);
   }
   async function saveCommand(path:string,command:{command_id:string;[key:string]:unknown}){
@@ -60,7 +63,7 @@ export function mountWorkbench(root:HTMLElement){
     catch{status("Command persistence is unconfirmed. Recover it before another change.");toolbar.append(button("Retry pending command",async()=>{try{await commands.retry(authority,saved);status("Command confirmed by Intelligence.");if(client===authority)await home();}catch(value){error(value);}}));}
   }
   async function home(){
-    const generation=++renderGeneration;board?.destroy();board=undefined;content.replaceChildren();
+    const generation=++renderGeneration;closeGameBrowser?.();closeGameBrowser=undefined;board?.destroy();board=undefined;content.replaceChildren();
     const toolbar=node("section");toolbar.className="toolbar";toolbar.append(node("h2","Analysis runs"),button("Refresh",()=>home()),button("Disconnect",()=>{client?.disconnect();client=undefined;sessionStorage.removeItem(key);connectionForm();}));content.append(toolbar);
     try{
       await pendingCommand(toolbar);if(generation!==renderGeneration)return;
@@ -97,7 +100,7 @@ export function mountWorkbench(root:HTMLElement){
       const progress=node("section");progress.className="progress";progress.append(node("p",`Ranking: ${String(record(run.scope).ranking_source??"actual")} · ${String(record(run.scope).ranking_evidence_id??"distinct selected games")}`));progress.append(node("h3","Scope and progress"),node("p",`Input ${String(record(run.scope).input_id)} · ${String(run.state)}`),node("p",Object.entries(record(run.progress)).map(([name,count])=>`${count} ${name}`).join(" · ")));
       const legacyRun=run.derivation_version!==2||run.recovery_required==="legacy_analysis_revision_required";
       if(legacyRun)progress.append(node("p","This older analysis requires a new revision before continuing. Cancel remains available."));
-      for(const action of (legacyRun?["cancel"]:["continue","retry","cancel","resume"])){progress.append(button(action==="continue"?"Continue · next 250 decisions":action[0].toUpperCase()+action.slice(1),async()=>{const command={schema_version:1,command_id:crypto.randomUUID(),action,expected_revision:run.revision,budget:250};status("Saving command…");try{await saveCommand(`/v1/analysis/runs/${encodeURIComponent(runId)}/commands`,command);status("Command confirmed; work may still be pending.");await home();}catch(value){error(value);}}));}content.append(progress);
+      for(const action of (legacyRun?["cancel"]:["continue","retry","cancel","resume"])){progress.append(button(action==="continue"?"Continue · next 250 decisions":action[0].toUpperCase()+action.slice(1),async()=>{const command={schema_version:1,command_id:crypto.randomUUID(),action,expected_revision:run.revision,budget:250};status("Saving command…");try{await saveCommand(`/v1/analysis/runs/${encodeURIComponent(runId)}/commands`,command);status("Command confirmed; work may still be pending.");await home();}catch(value){error(value);}}));}if(gameInspectionAvailable)progress.append(button("Browse selected games",()=>{renderGeneration++;board?.destroy();board=undefined;status("Selected game scope");const scope=record(run.scope);closeGameBrowser=mountGameBrowser(content,client!,runId,{revision:Number(run.revision),input_id:String(scope.input_id),input_revision:Number(scope.input_revision)},()=>{void home();},error);}));else progress.append(node("p","Selected-game browsing is unavailable with this Intelligence version."));content.append(progress);
       const filters=node("section");filters.className="filters";filters.append(select("Category",{"":"All categories",...labels},category,value=>{category=value;history();void load();}),select("Dismissal",{"":"All findings",open:"Open",dismissed:"Dismissed"},dismissal,value=>{dismissal=value;history();void load();}));content.append(filters);
       const findings=node("div");findings.id="findings";content.append(findings);await load();
     }catch(value){error(value);}
@@ -154,8 +157,8 @@ export function mountWorkbench(root:HTMLElement){
       boardActions.append(button("Flip board",()=>{orientation=orientation==="white"?"black":"white";board!.set({orientation});}),button("Decision position",()=>{chess.load(finding.representative.fen);board!.set({fen:chess.fen()});}),button("Show played move",()=>{chess.load(finding.representative.fen);if(finding.representative.actual_move){chess.move(finding.representative.actual_move);board!.set({fen:chess.fen()});}}),button("Show response",()=>{try{chess.load(finding.representative.fen);if(candidate){chess.move(candidate);board!.set({fen:chess.fen()});}else status("Response analysis unavailable or pending.");}catch(value){error(value);}}));
     }catch(value){error(value);}
   }
-  try{const saved=JSON.parse(sessionStorage.getItem(key)??"null") as Connection|null;if(saved){client=new IntelligenceClient(saved);void client.bootstrap().then(()=>home()).catch(value=>{connectionForm(saved);error(value);});}else connectionForm();}catch{connectionForm();}
+  try{const saved=JSON.parse(sessionStorage.getItem(key)??"null") as Connection|null;if(saved){client=new IntelligenceClient(saved);void client.bootstrap().then(capabilities=>{gameInspectionAvailable=capabilities.capabilities.includes("selected-games-v1");return home();}).catch(value=>{connectionForm(saved);error(value);});}else connectionForm();}catch{connectionForm();}
   const navigate=()=>{const url=new URL(location.href);runId=url.searchParams.get("run")??"";if(client)void home();};
   window.addEventListener("popstate",navigate);
-  return ()=>{renderGeneration++;window.removeEventListener("popstate",navigate);board?.destroy();client?.disconnect();};
+  return ()=>{renderGeneration++;window.removeEventListener("popstate",navigate);closeGameBrowser?.();board?.destroy();client?.disconnect();};
 }

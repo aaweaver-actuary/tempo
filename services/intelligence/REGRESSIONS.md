@@ -380,3 +380,12 @@ legacy recovery from blocking corrected runs or retaining orphaned capacity.
 no-engine → configured bounded success → continuation → explicit no-engine again.
 Acceptance clears only the current revision's pending absence markers, preserving
 other failures, states, results and other runs.
+
+## C3 accepted game inspection
+
+`tests/test_game_browser.py` owns read-only game paging, complete selected scope,
+strict limits, malformed cursors and cursor fencing across runs/revisions.
+`integration/test_analysis_postgres.py::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free`
+compares responses with actual accepted input, checks authentication/workspace
+rejection and proves unchanged run/job progress across reads. The native
+Workbench producer exports this real read response for its constructed fixture.

@@ -85,3 +85,9 @@ The corrected export uses derivation2 for new input identities while retaining
 `tempo-analysis-inputs` schema v1. Reusing an existing reserved output directory
 still returns its original frozen bytes. Choose a new directory to obtain the
 corrected derivation; do not overwrite historical evidence.
+
+The Workbench's selected-game browser uses the advertised `selected-games-v1`
+capability and pages through Intelligence's accepted input, including games with
+no positive finding. It replays supplied legal moves for display and shows the
+original comparison context; it does not infer repertoire authority in the
+browser. A different run/input revision is rejected before board rendering.

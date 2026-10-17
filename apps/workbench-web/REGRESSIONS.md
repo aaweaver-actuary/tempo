@@ -41,3 +41,11 @@ and `R7 browser authority-switch`. They prove one logical run, original input an
 budget, real storage/reload recovery, retained 404 uncertainty, and origin/workspace
 isolation. Unexpected service traffic fails. These cases also run from the
 source-removed package qualifier and registered Workbench component lane.
+
+C3 game inspection: `tests/client.test.mjs` owns supplied source URL validation and
+legal full-history frames (including exact en-passant FEN and custom full-move
+numbers). `tests/browser.mjs` additionally requires the native producer's accepted
+games response, rejects a wrong input identity before board rendering, inspects
+an unknown comparison through its actual move order, checks desktop/phone bounds
+and asserts zero mutations from game browsing. Source-only checks do not establish
+this browser proof; the actual native producer fixture must be regenerated.

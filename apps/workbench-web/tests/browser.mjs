@@ -11,7 +11,7 @@ const fixtures=JSON.parse(await readFile(fixturePath,'utf8'));
 assert.equal(fixtures.producer,'installed Intelligence with real disposable PostgreSQL');
 const dist=resolve(root,'dist');
 async function files(dir){return(await Promise.all((await readdir(dir,{withFileTypes:true})).map(entry=>entry.isDirectory()?files(resolve(dir,entry.name)):[relative(dist,resolve(dir,entry.name))]))).flat();}
-const inventory=new Set(await files(dist));const unexpected=[],traffic=[];let browser,page,releaseDismissal;let active=fixtures;let unscopedActive=fixtures.unscoped;let receiptVisible=false;let legacyView=false;
+const inventory=new Set(await files(dist));const unexpected=[],traffic=[];let browser,page,releaseDismissal;let wrongGameScope=true;let active=fixtures;let unscopedActive=fixtures.unscoped;let receiptVisible=false;let legacyView=false;
 assert.ok(fixtures.dismissal?.receipt,'Actual producer dismissal receipt required');
 const mime={'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml'};
 const host=createServer(async(request,response)=>{
@@ -39,6 +39,7 @@ try{
       else if(path==='/v1/analysis/inputs'){assert.equal(url.search,'');body=fixtures.inputs;}
       else if(path==='/v1/analysis/runs'){assert.equal(url.search,'');body=legacyView?{...active.runs,items:active.runs.items.map(run=>({...run,derivation_version:1,recovery_required:'legacy_analysis_revision_required'}))}:active.runs;}
       else if(path==='/v1/analysis/commands/'+fixtures.dismissal.command.command_id){if(!receiptVisible){await route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({error:'analysis_command_not_found'})});return;}assert.equal(url.search,'');body=fixtures.dismissal.receipt;}
+      else if(path==='/v1/analysis/runs/run/games'){assert.equal(url.search,'');assert.ok(fixtures.games,'Actual native game-read fixture required');body=wrongGameScope?{...fixtures.games,input_id:'wrong-input'}:fixtures.games;}
       else if(path==='/v1/analysis/runs/unscoped-browser/report'){body=unscopedActive.report;}
       else if(path==='/v1/analysis/runs/run/report'){
         assert.ok([...url.searchParams.keys()].every(key=>['category','dismissal'].includes(key)));
@@ -59,6 +60,31 @@ try{
   await expect(page.getByRole('button',{name:'Continue · next 250 decisions',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Retry',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Resume',exact:true})).toHaveCount(1);
+  const writesBeforeGames=traffic.filter(item=>item.method==='POST').length;
+  await page.getByRole('button',{name:'Browse selected games',exact:true}).click();
+  await page.getByRole('heading',{name:'Selected games',exact:true}).waitFor();
+  await expect(page.getByRole('status')).toHaveText('Game scope identity mismatch');
+  assert.equal(await page.getByLabel('Game chessboard').count(),0);wrongGameScope=false;
+  await page.getByRole('button',{name:'Back to findings',exact:true}).click();
+  await page.getByRole('button',{name:'Browse selected games',exact:true}).click();
+  await page.getByRole('heading',{name:'Selected games',exact:true}).waitFor();
+  const unknownGame=fixtures.games.items.find(game=>game.contexts.some(context=>context.status==='unknown'&&context.coverage!=='uncovered'));
+  assert.ok(unknownGame,'Native selected game with an unknown comparison required');
+  await page.getByRole('button',{name:'Inspect game '+(unknownGame.provider_game_id??unknownGame.game_id),exact:true}).click();
+  await page.getByLabel('Game chessboard').waitFor();
+  const unknownContext=unknownGame.contexts.find(context=>context.status==='unknown'&&context.coverage!=='uncovered');
+  await page.getByLabel('Game position',{exact:true}).selectOption(String(unknownContext.ply));
+  await expect(page.getByLabel('Accepted comparison')).toContainText('unknown');
+  await expect(page.getByLabel('Accepted comparison')).toContainText(unknownContext.reason.replaceAll('_',' '));
+  await page.getByRole('button',{name:'Next position',exact:true}).click();
+  assert.equal(await page.getByLabel('Game position',{exact:true}).inputValue(),String(unknownContext.ply+1));
+  await page.screenshot({path:resolve(evidence,'game-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:resolve(evidence,'game-phone.png'),fullPage:true});
+  assert.equal(traffic.filter(item=>item.method==='POST').length,writesBeforeGames,'Game browsing caused a mutation');
+  await page.getByRole('button',{name:'Back to selected games',exact:true}).click();
+  await page.getByRole('button',{name:'Back to findings',exact:true}).click();
+  await page.setViewportSize({width:1280,height:960});await page.getByLabel('Category',{exact:true}).waitFor();
   await page.getByLabel('Category',{exact:true}).selectOption('practical_gap');await expect(page.getByRole('button',{name:'Inspect finding'})).toHaveCount(1);
   await page.getByRole('button',{name:'Inspect finding'}).click();await page.getByLabel('Finding chessboard').waitFor();await expect(page.locator('piece')).toHaveCount(32);
   await page.getByRole('button',{name:'Flip board'}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Show played move'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','f3']);await page.getByRole('button',{name:'Decision position'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','g1']);

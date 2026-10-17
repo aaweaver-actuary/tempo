@@ -535,3 +535,14 @@ corrected derivation. Legacy read contracts also accept the reviewed borrowed-
 lineage/null-ID engine shape, with the legacy warning; new derivation never emits
 that shape. The internal marker is exposed separately in run status, not injected
 into the public RunRequest scope or its immutable digest.
+
+## Accepted game inspection
+
+`GET /v1/analysis/runs/{run_id}/games` (caller scope) returns exact accepted input
+games independently of findings/engine progress. `limit` is 1–10, default10;
+`after` is an opaque cursor bound to workspace, run revision, input identity and
+input revision. A changed head rejects the old cursor explicitly. The response
+retains source metadata, legal move history, original comparison contexts and
+selected-policy titles. It does not refresh a provider, derive a report, enqueue
+work or mutate Learning. `tempo-intelligence analysis games RUN` provides the same
+read with `--after`/`--limit`. Old reports and input pages remain immutable.

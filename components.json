@@ -47,6 +47,8 @@
         "PendingCommands",
         "PendingMutation",
         "RunCreationRequest",
+        "gameFrames",
+        "gameSourceUrl",
         "mountWorkbench"
       ],
       "dependencies": [

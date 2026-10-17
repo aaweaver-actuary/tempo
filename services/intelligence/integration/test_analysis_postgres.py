@@ -140,6 +140,7 @@ def test_native_workbench_producer_contract(state):
         client.headers.update({'Authorization':'Bearer '+state[1].caller_token,'X-Tempo-Workspace':'fixture'})
         payload={'producer':'installed Intelligence with real disposable PostgreSQL','synthetic_source':True,
                  'bootstrap':client.get('/v1/analysis/bootstrap').json(),
+                 'games':client.get('/v1/analysis/runs/run/games').json(),
                  'inputs':client.get('/v1/analysis/inputs').json(),'runs':client.get('/v1/analysis/runs').json(),'report':report,
                  'details':{item['finding_id']:owner.finding('run',item['finding_id'],report['generation']) for item in report['items']}}
         gap=next(item for item in report['items'] if item['category']=='practical_gap')
@@ -643,3 +644,24 @@ def test_R3_configured_success_clears_only_current_pending_absence_markers(state
     assert work(owner,'run',1,client=GoodWorker())['jobs']==1
     with state[0].transaction(read_only=True) as db:assert db.execute('SELECT count(*) FROM analysis_results').fetchone()['count']==2
     work(owner,'run',1);assert owner.report('run')['engine_availability']=='unavailable'
+
+
+def test_C3_actual_game_read_is_exact_paginated_and_side_effect_free(state):
+    owner=setup(state)
+    before=owner.status('run');first=owner.games('run',limit=1)
+    _,source_games=owner._input(first['input_id'],first['input_revision'])
+    assert first['game_count']==len(source_games) and first['items']==sorted(source_games,key=lambda game:game['game_id'])[:1]
+    assert first['next_after']
+    remainder=owner.games('run',first['next_after'])
+    assert [game['game_id'] for game in first['items']+remainder['items']]==sorted(game['game_id'] for game in source_games)
+    assert owner.status('run')==before
+    app=create_app(state[1],store=state[0])
+    with TestClient(app) as client:
+        path='/v1/analysis/runs/run/games'
+        assert client.get(path).status_code==401
+        client.headers.update({'Authorization':'Bearer '+state[1].caller_token,'X-Tempo-Workspace':'fixture'})
+        assert client.get(path).json()==owner.games('run')
+        assert client.get(path+'?limit=11').status_code==422
+        client.headers['X-Tempo-Workspace']='foreign'
+        assert client.get(path).status_code==403
+    assert owner.status('run')==before
