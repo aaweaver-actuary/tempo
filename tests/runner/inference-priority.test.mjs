@@ -128,6 +128,19 @@ test('C14 an idle child exit launches a fresh Maia process for the next job',asy
   } finally {inference.close();await retry;}
 });
 
+test('C15 a late IPC failure cannot replace the original Maia stop reason',async()=>{
+  for(const originalFailure of [undefined,new Error('original model process failure')]) {
+    const child=fakeMaia({missingExit:true}),inference=fakeOwner(child);
+    const pending=observe(inference.analyze(fen,1500,async()=>true));await child.started;
+    if(originalFailure)child.emit('error',originalFailure);else inference.close();
+    child.emit('error',new Error('late IPC disconnect during termination'));
+    const {error}=await pending;
+    if(originalFailure)assert.equal(error,originalFailure);
+    else assert.equal(error.code,'STUDY_PREEMPTED');
+    assert.equal(inference.terminationVerified(),true);
+  }
+});
+
 test('real Maia inference yields to study and resumes the same full-quality legal distribution', {timeout:60_000}, async()=>{
   let priority=false, startedAt, child;
   const inference=createCancellableMaia({launch:()=>{
