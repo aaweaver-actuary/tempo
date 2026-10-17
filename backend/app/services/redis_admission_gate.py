@@ -25,8 +25,11 @@ class BackgroundAdmissionDeferred(RuntimeError):
 _REGISTER_FOREGROUND = """
 local now = tonumber(ARGV[1])
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
-redis.call('ZADD', KEYS[1], now + tonumber(ARGV[3]), ARGV[2])
-redis.call('EXPIRE', KEYS[1], math.ceil(tonumber(ARGV[3]) / 1000) + 1)
+local existing = tonumber(redis.call('ZSCORE', KEYS[1], ARGV[2]) or '0')
+local expires = math.max(existing, now + tonumber(ARGV[3]))
+redis.call('ZADD', KEYS[1], expires, ARGV[2])
+local latest = redis.call('ZREVRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+redis.call('PEXPIRE', KEYS[1], math.max(1, tonumber(latest[2]) - now + 1000))
 return 1
 """
 

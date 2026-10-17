@@ -109,6 +109,27 @@ def advance_unlock_checkpoint(*, force_timeout=False):
             time.sleep(0.05)  # Yield outside the transaction, as the owning task does.
 
 
+def assert_monotonic_activity_renewal(server, namespace, *, script=None):
+    """Actual Redis: a short pulse cannot retire another live foreground lease."""
+    from app.services.redis_admission_gate import _REGISTER_FOREGROUND
+    key = namespace + ':monotonic-renewal:' + uuid4().hex
+    now = int(time.time() * 1000)
+    try:
+        registration = script if script is not None else _REGISTER_FOREGROUND
+        server.eval(registration, 1, key, now, 'essential-pending', 30_000)
+        server.eval(registration, 1, key, now + 1, 'held', 3000)
+        server.eval(registration, 1, key, now + 2, 'held', 1)
+        assert server.zscore(key, 'held') == now + 3001, 'An old short pulse shortened a held session'
+        server.eval(registration, 1, key, now + 3, 'other-session', 1)
+        lifetime = server.pttl(key)
+        assert 29_000 <= lifetime <= 32_000, ('A short session changed the shared key lifetime', lifetime)
+        assert server.zscore(key, 'essential-pending') == now + 30_000
+        return {'name': 'test_postgres_priority_monotonic_activity_renewal', 'shared_key_pttl_ms': lifetime,
+                'shorter_pulses_preserve_held_and_pending_leases': True}
+    finally:
+        server.delete(key)
+
+
 def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
     from apply_postgres_migrations import apply_migrations
     with private_database(parent_url) as owned_url:
@@ -309,6 +330,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                         if postgres_container: docker('unpause',postgres_container)
                 results[CASES[3]] = {'database_paused':bool(postgres_container),'settings_locked':True,'control_ms':control_times}
                 shared = study_priority.control_client()
+                results[CASES[3]]['monotonic_renewal'] = assert_monotonic_activity_renewal(shared, configuration['TEMPO_ADMISSION_NAMESPACE'])
                 foreground_key = redis_admission_gate._FOREGROUND_KEY
                 for session in ('device_a','device_b'):
                     assert client.post('/api/system/browser-activity?session_id='+session,headers={'X-Tempo-Work-Class':'background'}).status_code == 200
