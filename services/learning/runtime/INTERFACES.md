@@ -195,3 +195,5 @@ quadratic scan. The complete-publication native regression includes 7,258
 definitions, with replacement/replay/history assertions across three generations.
 The expanded validated bundle and HTTP body both retain a hard 12 MiB bound;
 rejection does not permit an operator to reuse a terminal failed command.
+Replacement revision checks likewise index physical-card revisions, rather than
+searching the full replacement list once per accepted historical card.

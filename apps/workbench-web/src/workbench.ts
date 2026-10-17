@@ -135,6 +135,7 @@ export function mountWorkbench(root:HTMLElement){
       const sourceUrl=gameSourceUrl(finding.representative.provider,finding.representative.game_url);
       if(sourceUrl){const sourceLink=node("a","Open original game");sourceLink.href=sourceUrl;sourceLink.target="_blank";sourceLink.rel="noopener noreferrer";info.append(sourceLink);}
       info.append(node("p",`Repertoire: ${String(finding.repertoire_title??finding.repertoire_id??"unknown")} · Policy: ${String(finding.policy_id??"unknown")}`));
+      info.append(node("p",`Move ${finding.representative.fen.split(" ")[5]}${finding.representative.learner_color==="black"?"…":"."} · ${finding.representative.learner_color} to play. Publication and activation evidence are frozen as exported; a proposed response still requires separate Content approval and Learning activation.`));
       const encounterCount=finding.eligible_encounter_games;
       info.append(node("p",typeof encounterCount==="number"?`Observed in ${finding.supporting_game_count} of ${encounterCount} eligible selected games.`:"Eligible encounter denominator: unknown."));
       info.append(node("p",finding.category==="repertoire_miss"?`Review existing Content card ${String(finding.card_id??"unknown")}; a repertoire miss does not establish an engine mistake.`:finding.category==="practical_gap"?"Review a proposed continuation through Content before adding training content.":"Informational engine opportunity; repertoire relevance may be unknown."));

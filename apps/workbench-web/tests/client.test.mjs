@@ -284,7 +284,7 @@ test('R7 incomplete authoritative scope cannot borrow client request defaults',a
 
 
 test('C3 supplied real game links retain provider identity and reject unsafe URLs', async () => {
-  const {gameSourceUrl}=await import('../lib/game-source.js');
+  const {gameSourceUrl}=await import('@tempo/workbench-web');
   assert.equal(gameSourceUrl('chess.com','https://www.chess.com/game/live/123'),'https://www.chess.com/game/live/123');
   assert.equal(gameSourceUrl('lichess','https://lichess.org/AbCd1234'),'https://lichess.org/AbCd1234');
   for(const url of ['javascript:alert(1)','https://lichess.org.evil.test/AbCd1234','https://user:secret@lichess.org/AbCd1234','https://lichess.org/AbCd1234?token=secret','https://www.chess.com/game/live/not-a-numeric-id']) assert.equal(gameSourceUrl('lichess',url),null);
