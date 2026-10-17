@@ -124,3 +124,14 @@ def test_host_activity_shutdown_reporting_failure_is_diagnostic_and_retains_owne
     assert path.read_bytes() == retained
     assert "removal unavailable" in caplog.text
     activity.close()
+
+
+def test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session(tmp_path):
+    now = [100_000_000_000]
+    activity = HostActivity(tmp_path, clock=lambda: now[0])
+    activity.record("held", 3000)
+    now[0] += 10_000_000
+    activity.record("held", 1)
+    snapshot = json.loads((tmp_path / (activity.producer + ".json")).read_text())
+    assert int(snapshot["sessions"]["held"]) == 103_000_000_000
+    activity.close()
