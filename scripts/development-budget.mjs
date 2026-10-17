@@ -36,6 +36,18 @@ export async function validateDevelopmentBudgetOwner({ directory = budgetDirecto
   return requireBudgetOwner(directory, token);
 }
 
+// Serialize admission until Docker exposes the new allocation. Execution may
+// overlap after this short section; it must still fit the aggregate allocation.
+export async function acquireDevelopmentAdmission({ directory = budgetDirectory(), token = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN } = {}) {
+  const lane = join(directory, 'admission-lane');
+  for (;;) {
+    await requireBudgetOwner(directory, token);
+    try { await mkdir(lane, { mode: 0o700 }); break; }
+    catch (error) { if (error.code !== 'EEXIST') throw error; await wait(20); }
+  }
+  return { release: async () => { await requireBudgetOwner(directory, token); await rm(lane, { recursive: true }); } };
+}
+
 const defaultDocker = async args => (await execute('docker', args, { maxBuffer: 1024 * 1024 })).stdout;
 
 async function inspectBuilder(name, docker) {
@@ -120,11 +132,14 @@ export async function managedBuild(build, { docker = defaultDocker, quiet = wait
   const lane = join(directory, 'builder-lane');
   try {
     await requireBudgetOwner(directory, token);
-    try { await mkdir(lane, {mode: 0o700}); ownsLane = true; }
-    catch (error) {
-      if (error.code === 'EEXIST') throw new Error('The owned builder execution lane is occupied; reconcile or finish it first');
-      throw error;
-    }
+    const admission = await acquireDevelopmentAdmission({directory, token});
+    try {
+      try { await mkdir(lane, {mode: 0o700}); ownsLane = true; }
+      catch (error) {
+        if (error.code === 'EEXIST') throw new Error('The owned builder execution lane is occupied; reconcile or finish it first');
+        throw error;
+      }
+    } finally { await admission.release(); }
     buildDirectory = await mkdtemp(join(tmpdir(), 'tempo-managed-builder-'));
     const buildConfig = join(buildDirectory, 'buildkitd.toml');
     await prepare(buildConfig);

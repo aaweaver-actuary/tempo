@@ -317,7 +317,7 @@ test('managed Docker capability survives a sanitized worker environment and cann
   try {
     lease=await acquireDevelopmentBudget({directory:lock});
     const executable=join(directory,'real-docker'),log=join(directory,'calls.jsonl');
-    await writeFile(executable,`#!${process.execPath}\nimport {appendFileSync}from'node:fs';const args=process.argv.slice(2);appendFileSync(${JSON.stringify(log)},JSON.stringify(args)+'\\n');if(args[0]==='run')console.log(JSON.stringify(args));\n`,{mode:0o700});
+    await writeFile(executable,`#!${process.execPath}\nimport {appendFileSync}from'node:fs';const args=process.argv.slice(2);appendFileSync(${JSON.stringify(log)},JSON.stringify(args)+'\\n');if(args[0]==='container'&&args[1]==='inspect'){console.error('No such container: '+args.at(-1));process.exit(1);}if(args[0]==='run')console.log(JSON.stringify(args));\n`,{mode:0o700});
     const adapter=join(directory,'adapter');await mkdir(adapter);
     const environment=managedDockerEnvironment({...process.env,TEMPO_REAL_DOCKER:executable,
       TEMPO_DEVELOPMENT_BUDGET_TOKEN:lease.token,TEMPO_DEVELOPMENT_BUDGET_DIRECTORY:lock,
@@ -332,4 +332,57 @@ test('managed Docker capability survives a sanitized worker environment and cann
     const stale=spawnSync(wrapper,['run','image'],{env:sanitized,encoding:'utf8'});
     assert.notEqual(stale.status,0);assert.equal(await readFile(log,'utf8'),before,'A released capability invoked Docker');
   }finally{await lease?.release();await rm(directory,{recursive:true,force:true});}
+});
+
+
+test('A12 an inherited managed container cannot consume the active builder allocation', () => builderFixture(async ({directory,state,options}) => {
+  const {managedDockerEnvironment}=await import('../../scripts/development-docker.mjs');
+  const {mkdir}=await import('node:fs/promises');
+  const {spawnSync}=await import('node:child_process');
+  const lease=await acquireDevelopmentBudget({directory});
+  const parent=join(directory,'adapter');await mkdir(parent);
+  const executable=join(parent,'docker'),log=join(parent,'calls');
+  await writeFile(executable,`#!${process.execPath}\nimport{appendFileSync}from'node:fs';appendFileSync(${JSON.stringify(log)},'unexpected Docker call');\n`,{mode:0o700});
+  const environment=managedDockerEnvironment({...process.env,TEMPO_REAL_DOCKER:executable,TEMPO_DEVELOPMENT_BUDGET_TOKEN:lease.token,TEMPO_DEVELOPMENT_BUDGET_DIRECTORY:directory,TEMPO_STUDY_ACTIVITY_LEGACY:'absent',TEMPO_STUDY_ACTIVITY_DIRECTORY:join(parent,'activity'),TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES:'[]'},parent);
+  try{
+    await managedBuild(async()=>{
+      const result=spawnSync(join(parent,'managed-bin/docker'),['run','image'],{env:environment,encoding:'utf8'});
+      assert.notEqual(result.status,0);assert.match(result.stderr,/builder execution lane is occupied/);
+      await assert.rejects(readFile(log),{code:'ENOENT'});
+    },{...options,token:lease.token});
+    assert.equal(state.builder,false);
+  }finally{await lease.release();}
+}));
+
+test('A13 separate inherited Docker processes serialize admission until the allocation is visible',async()=>{
+  const {managedDockerEnvironment}=await import('../../scripts/development-docker.mjs');
+  const {mkdir}=await import('node:fs/promises');
+  const parent=await mkdtemp(join(tmpdir(),'tempo-admission-race-'));
+  const directory=join(parent,'lease');const lease=await acquireDevelopmentBudget({directory});
+  try{
+    const executable=join(parent,'real-docker'),state=join(parent,'container.json'),events=join(parent,'events.jsonl');
+    await writeFile(executable,`#!${process.execPath}
+import{readFileSync,writeFileSync,appendFileSync,rmSync}from'node:fs';
+const args=process.argv.slice(2),state=${JSON.stringify(state)},events=${JSON.stringify(events)};
+const get=()=>{try{return JSON.parse(readFileSync(state));}catch{return undefined;}};
+if(args[0]==='ps'){if(get())console.log('owned');}
+else if(args[0]==='inspect')console.log(JSON.stringify([get()]));
+else if(args[0]==='container'&&args[1]==='inspect'){const value=get();if(value&&value.Name===args.at(-1))console.log(JSON.stringify([value]));else{console.error('No such container: '+args.at(-1));process.exitCode=1;}}
+else if(args[0]==='run'){
+ const name=args[args.indexOf('--name')+1],owner=args.find(value=>value.startsWith('tempo.resource-owner=')).split('=')[1];
+ appendFileSync(events,JSON.stringify({event:'start',name})+'\\n');
+ await new Promise(resolve=>setTimeout(resolve,150));
+ writeFileSync(state,JSON.stringify({Name:name,State:{Running:true},Config:{Labels:{'tempo.resource-owner':owner}},HostConfig:{NanoCpus:1.5e9,Memory:512*1024**2}}));
+ await new Promise(resolve=>setTimeout(resolve,1200));rmSync(state,{force:true});appendFileSync(events,JSON.stringify({event:'end',name})+'\\n');
+}else throw new Error(JSON.stringify(args));`,{mode:0o700});
+    const adapter=join(parent,'adapter');await mkdir(adapter);
+    const environment=managedDockerEnvironment({...process.env,TEMPO_REAL_DOCKER:executable,TEMPO_DEVELOPMENT_BUDGET_TOKEN:lease.token,TEMPO_DEVELOPMENT_BUDGET_DIRECTORY:directory,TEMPO_STUDY_ACTIVITY_LEGACY:'absent',TEMPO_STUDY_ACTIVITY_DIRECTORY:join(parent,'activity'),TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES:'[]'},adapter);
+    const run=name=>new Promise((resolve,reject)=>{const child=spawn(join(adapter,'managed-bin/docker'),['run','--rm','--cpus','1.5','--memory','512m','--name',name,'image'],{env:environment,stdio:['ignore','pipe','pipe']});let stderr='';child.stderr.on('data',part=>stderr+=part);child.once('error',reject);child.once('exit',code=>resolve({code,stderr}));});
+    const results=await Promise.all([run('first'),run('second')]);
+    assert.deepEqual(results.map(result=>result.code).sort(),[0,1]);
+    assert.match(results.find(result=>result.code!==0).stderr,/exceed the aggregate/);
+    const records=(await readFile(events,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+    assert.deepEqual(records.map(record=>record.event),['start','end']);
+    assert.deepEqual(await readdir(join(directory,'resources')),[]);
+  }finally{await lease.release();await rm(parent,{recursive:true,force:true});}
 });

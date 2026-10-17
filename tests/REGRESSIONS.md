@@ -4723,3 +4723,8 @@ The complete native frozen-order proof reads the authoritative schema version an
 `test_postgres_priority_recovery_uses_bounded_maintenance_allocation` runs in the regular full/durability priority-recovery stage. It inspects the real helper cgroup before executing the original recovery script under the existing 1.5-CPU/1,536-MiB maintenance allocation, with only invocation-owned application clients quiesced and verified restored afterward. PostgreSQL plus Redis plus the helper remain within 2 CPUs/2 GiB. No transaction deadline, recovery assertion, or selected scenario is changed.
 
 `test_postgres_operation_recovery_uses_bounded_maintenance_allocation` applies the same inspected maintenance profile to the direct operation-recovery proof. Its original exact retry/cycle counts, response retention, and exhaustion checks remain unchanged; application clients are restored and checked before the next full-gate stage.
+
+
+### Nested Docker admission and builder exclusion
+
+`A12 an inherited managed container cannot consume the active builder allocation` and `A13 separate inherited Docker processes serialize admission until the allocation is visible` are owned by `tests/runner/development-budget.test.mjs`. The pre-repair runner admits a child beside the full-budget builder and two concurrent 1.5-CPU children. The shared admission lane now excludes builder overlap and holds the capacity decision until a new run is visible or verified finished. Container identities are journaled before invocation; removal clears only verified absent owned identities. Uncertain startup retains admission and the resource journal.
