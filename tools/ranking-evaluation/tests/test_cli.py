@@ -9,13 +9,14 @@ from tempo_evidence_math import canonical_json, load_valuation_snapshot, evaluat
 from tempo_ranking_evaluation import score_snapshot, replay_opening_card_valuation, rank
 from tempo_ranking_evaluation import cli, harness
 from tempo_ranking_evaluation.resources import installed_corpus_directory
+from .isolated_python import run_python, assert_fixed_seeds_honored
 
 FIXTURES=Path(__file__).parent/'fixtures'
 CLI=Path(sys.executable).parent/'tempo-evaluate-opening-rankings'
 
 
 def run(*arguments,env=None):
-    return subprocess.run([sys.executable,'-I','-B',str(CLI),*map(str,arguments)],capture_output=True,text=True,env=env,timeout=20)
+    return run_python([str(CLI),*map(str,arguments)],env=env)
 
 
 def test_computed_snapshot_replays_without_recalculation_and_reserved_bundle_conflict():
@@ -104,6 +105,29 @@ def test_cli_compare_amplification_is_rejected_before_rank(tmp_path,monkeypatch,
     assert json.loads(captured.err)['code']=='limit_exceeded'
 
 
+@pytest.mark.parametrize('dimension',['repertoires','routes'])
+def test_cli_repeated_concentration_labels_are_bounded_before_ranking(tmp_path,monkeypatch,capsys,dimension):
+    from tempo_evidence_math import OpeningRankingCandidate, OpeningRankingContext, snapshot_document
+    metadata={'moves':['e2e4']}
+    if dimension=='repertoires':metadata['memberships']=[{'repertoire_id':'x'*5000}]
+    else:metadata['routes']=[{'repertoire_id':'x'*5000,'generation':1,'line_id':'quoted"\\line'}]
+    document=snapshot_document((OpeningRankingCandidate('a',1,canonical_json(metadata)),),
+        OpeningRankingContext('2026-10-10T12:00:00Z','2026-10-10','fixture'))
+    load_snapshot(document)  # Valid input; rejection must be the preflight bound.
+    source=tmp_path/'snapshot.json';source.write_text(canonical_json(document))
+    ceiling=512*1024
+    assert source.stat().st_size*3*20<ceiling  # Reproduces the former undercount.
+    monkeypatch.setattr(cli,'MAX_REPORT_BYTES',ceiling)
+    monkeypatch.setattr(cli,'rank',lambda *a,**k:pytest.fail('repeated labels reached rank'))
+    output=tmp_path/'report.json'
+    arguments=['compare','--snapshot',str(source),'--output',str(output)]
+    for k in range(1,17):arguments.extend(('--top-k',str(k)))
+    assert cli.main(arguments)==2
+    captured=capsys.readouterr()
+    assert captured.out=='' and json.loads(captured.err)['code']=='limit_exceeded'
+    assert not output.exists()
+
+
 def test_complete_corpus_validates_unselected_scenario_content_before_rank(tmp_path,monkeypatch):
     corpus=installed_corpus_directory()
     for file in corpus.glob('*.json'):(tmp_path/file.name).write_bytes(file.read_bytes())
@@ -120,12 +144,17 @@ def test_complete_corpus_validates_unselected_scenario_content_before_rank(tmp_p
 
 
 def test_installed_cli_bytes_are_hash_seed_timezone_independent_for_score():
+    assert_fixed_seeds_honored()
     outputs=[]
     for seed,zone in (('1','UTC'),('22','Pacific/Honolulu'),('random','Asia/Tokyo'),('77','UTC')):
         result=run('score','--snapshot',FIXTURES/'valuation-v2.json',env=dict(os.environ,PYTHONHASHSEED=seed,TZ=zone))
         assert result.returncode==0,result.stderr
         outputs.append(result.stdout)
     assert len(set(outputs))==1
+
+
+def test_installed_python_honors_fixed_hash_seeds_without_source_or_user_paths():
+    assert_fixed_seeds_honored()
 
 
 def test_corpus_resolved_symlink_cannot_escape_directory(tmp_path):

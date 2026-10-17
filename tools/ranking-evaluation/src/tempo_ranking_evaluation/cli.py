@@ -10,6 +10,7 @@ from .ranking import ProductionOrderScorer, ShorterCardTestScorer, rank, compare
 from .harness import run_corpus, MAX_FILE_BYTES, MAX_REPORT_BYTES, MAX_TOP_K_VALUES
 from .resources import installed_corpus_directory
 from .replay import score_snapshot
+from .budgets import comparison_expansion
 
 SCORERS={'production-order':ProductionOrderScorer,'shorter-card-test':ShorterCardTestScorer,'valuation':PrecomputedValuationScorer}
 
@@ -26,8 +27,10 @@ def check_top_k(values):
         raise OpeningRankingError('invalid_top_k','K values must be distinct positive exact integers')
 
 
-def check_expansion(size,bundles,top_k,*,multiplier=1):
-    if size*(bundles+1)*(len(top_k)+4)*multiplier>MAX_REPORT_BYTES:
+def check_expansion(size,bundles,top_k,*,multiplier=1,document=None):
+    projected=(comparison_expansion(document,size,bundles,top_k) if document is not None
+        else size*(bundles+1)*(8*len(top_k)+16))
+    if projected*multiplier>MAX_REPORT_BYTES:
         raise OpeningRankingError('limit_exceeded','Projected report expansion exceeds 64 MiB before ranking')
 
 
@@ -102,7 +105,7 @@ def main(arguments=None):
             else:
                 scorers=options.scorer or ['production-order','shorter-card-test']
                 if len(set(scorers))!=len(scorers):raise OpeningRankingError('duplicate_scorer','Scorers must be unique')
-                check_expansion(size,len(scorers),top_k)
+                check_expansion(size,len(scorers),top_k,document=document)
                 candidates,context=load_snapshot(document)
                 result=compare(candidates,[rank(candidates,context,SCORERS[name]()) for name in scorers],top_k)
                 result.update(snapshot_id=context.snapshot_id,as_of=context.as_of,study_day=context.study_day,

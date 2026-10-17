@@ -18,6 +18,7 @@ from tempo_evidence_math import (
 
 from .ranking import ProductionOrderScorer, compare, rank
 from .content import validate_fixture_content
+from .budgets import comparison_expansion
 
 SCENARIOS = (
     "common_italian", "common_ruy_lopez", "shared_prefixes", "rare_sidelines",
@@ -162,7 +163,8 @@ def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
     if not isinstance(entries, list) or not 1 <= len(entries) <= 32:
         _invalid("Corpus must declare between 1 and 32 scenarios.")
     loaded, covered = {}, set()
-    projected_report_bytes = 0
+    # Manifest provenance is emitted too, even for a selected subset.
+    projected_report_bytes = total_bytes + 4096
     for entry in entries:
         if not isinstance(entry, dict) or not _text(entry.get("id")) or entry["id"] in loaded:
             _invalid("Scenario IDs must be nonempty and unique.")
@@ -184,9 +186,8 @@ def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
         candidates, context, bundles, baseline = evaluate_snapshot(document)
         if json.loads(context.source_versions_json).get("scenario_id") != entry["id"]:
             _invalid("Manifest scenario identity must match source_versions.scenario_id.")
-        # Comparison rows repeat metadata per bundle, and concentration repeats it
-        # per K. Reserve a conservative expansion budget before any ranking.
-        projected_report_bytes += document_bytes * (len(bundles) + 1) * (len(top_k) + 4)
+        projected_report_bytes += comparison_expansion(document, document_bytes,
+            len(bundles) + 1, top_k, summaries=True)
         if projected_report_bytes > MAX_REPORT_BYTES:
             raise OpeningRankingError("limit_exceeded", "Corpus comparison expansion exceeds the 64 MiB budget.")
         if entry.get("snapshot_id") != context.snapshot_id:

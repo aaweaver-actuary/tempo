@@ -62,3 +62,8 @@ Estimator-only tests remain explicitly adapter-owned.
 - `test_shadow_missing_or_foreign_policy_cannot_be_ranked_or_serialized` — tests/test_ranking.py
 - `test_shadow_policy_snapshot_replay_and_comparison_retain_and_fence_identity` — tests/test_ranking.py
 - `test_shadow_legacy_snapshot_is_only_global_diagnostic` — tests/test_ranking.py
+- `test_harness_repeated_concentration_and_summary_labels_are_bounded_before_ranking` — tests/test_harness.py
+- `test_harness_rejects_missing_or_misattributed_coverage_before_any_ranking` — tests/test_harness.py
+- `test_qualifier_rejects_changed_locked_producer_or_dependency_before_candidate_install` — tests/test_qualify.py
+- `test_cli_repeated_concentration_labels_are_bounded_before_ranking` — tests/test_cli.py
+- `test_installed_python_honors_fixed_hash_seeds_without_source_or_user_paths` — tests/test_cli.py

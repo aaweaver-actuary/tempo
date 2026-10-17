@@ -30,7 +30,9 @@ def bounded(command, cwd, timeout=180, environment=None):
         timeout = min(timeout, max(0.01, DEADLINE-started))
     def limits():
         import resource
-        resource.setrlimit(resource.RLIMIT_CPU, (120,120))
+        inherited_hard=resource.getrlimit(resource.RLIMIT_CPU)[1]
+        cpu_limit=120 if inherited_hard==resource.RLIM_INFINITY else min(120,inherited_hard)
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit,cpu_limit))
         if sys.platform.startswith('linux'):
             resource.setrlimit(resource.RLIMIT_AS, (1024**3,1024**3))
     try:
@@ -95,6 +97,17 @@ def suite(root, python, report, junit):
 def fingerprint(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def install_candidate(python, wheelhouse, wheel, consumer, lock):
+    # Let the installer enforce every direct/transitive artifact hash before
+    # installing candidate bytes or executing any suite. Never flatten the lock
+    # into version-only arguments. Disallow cached substitutions and source builds.
+    bounded(['uv','pip','install','--no-cache','--python',str(python),
+        '--no-index','--find-links',str(wheelhouse),'--only-binary',':all:',
+        '--require-hashes','-r',str(lock)],consumer)
+    bounded(['uv','pip','install','--no-cache','--python',str(python),
+        '--no-index','--no-deps',str(wheel)],consumer)
+
+
 def artifacts(options):
     global DEADLINE
     DEADLINE = time.monotonic()+900
@@ -127,12 +140,7 @@ def artifacts(options):
                 environment=consumer/'venv'
                 bounded(['uv','venv','--python',interpreter,str(environment)],consumer)
                 python=environment/'bin/python'
-                # Resolve only exact locked versions, from prebuilt local artifacts.
-                requirements=[]
-                for line in (ROOT/'requirements-dev.lock').read_text().splitlines():
-                    if line and not line.startswith((' ','#','--')):
-                        requirements.append(line.split(' \\')[0])
-                bounded(['uv','pip','install','--python',str(python),'--no-index','--find-links',str(wheelhouse),*requirements,str(wheel)],consumer)
+                install_candidate(python,wheelhouse,wheel,consumer,ROOT/'requirements-dev.lock')
                 for item in ('tests','qualification','pyproject.toml','qualify.py'):
                     source=rebuilt/item
                     shutil.copytree(source,consumer/item) if source.is_dir() else shutil.copy2(source,consumer/item)

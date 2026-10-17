@@ -14,6 +14,7 @@ from tempo_evidence_math import MoveProbabilityDistribution, move_universe
 from . import shadow
 from tempo_ranking_evaluation import harness
 from tempo_evidence_math import opening_position_key
+from .isolated_python import run_python, assert_fixed_seeds_honored
 
 from tempo_ranking_evaluation.resources import installed_corpus_directory
 CORPUS = installed_corpus_directory()
@@ -306,6 +307,7 @@ def test_harness_invalid_digest_and_size_budgets(copied_corpus):
 
 def test_harness_cli_offline_hash_seed_and_clock_independent_replay_preserves_inputs(tmp_path):
     import os
+    assert_fixed_seeds_honored()
     inputs = {path: path.read_bytes() for path in CORPUS.glob("*.json")}
     bootstrap = '''
 import builtins, runpy, socket, sys
@@ -325,8 +327,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
     for seed, tz in (("1", "UTC"), ("22", "Pacific/Honolulu"), ("random", "Asia/Tokyo")):
         environment = dict(os.environ, PYTHONHASHSEED=seed, TZ=tz,
             TEMPO_DATABASE_WRITE_URL="postgresql://invalid/never", TEMPO_REDIS_URL="redis://invalid")
-        completed = subprocess.run([sys.executable, "-I", "-B", "-c", bootstrap, str(CLI)],
-            env=environment, capture_output=True, text=True, timeout=20)
+        completed = run_python(["-c", bootstrap, str(CLI)],env=environment)
         assert completed.returncode == 0, completed.stderr
         outputs.append(completed.stdout)
     assert outputs[0] == outputs[1] == outputs[2]
@@ -390,3 +391,52 @@ def test_harness_bounds_report_amplification_before_ranking(copied_corpus, monke
     with pytest.raises(shadow.OpeningRankingError) as failure:
         harness.run_corpus(copied_corpus, top_k=tuple(range(1, 18)) if resource == "top_k_count" else (1, 2, 3, 5, 10))
     assert failure.value.code == "limit_exceeded"
+
+
+def test_harness_repeated_concentration_and_summary_labels_are_bounded_before_ranking(copied_corpus, monkeypatch):
+    # Bounded synthetic labels keep the old whole-corpus projection below 32 MiB,
+    # while repeated top-K concentration maps and their summaries exceed it.
+    def amplify(document):
+        document['candidates'][0]['metadata']['memberships'][0]['repertoire_id']='x'*100000
+    change_snapshot(copied_corpus,amplify)
+    top_k=tuple(range(1,17));ceiling=32*1024*1024
+    old_projection=0
+    for entry in read(copied_corpus)['scenarios']:
+        path=copied_corpus.parent/entry['snapshot'];document=read(path)
+        old_projection+=path.stat().st_size*(len(document['scorer_configuration']['precomputed_score_bundles'])+1)*(len(top_k)+4)
+    assert old_projection<ceiling
+    monkeypatch.setattr(harness,'MAX_REPORT_BYTES',ceiling)
+    monkeypatch.setattr(harness,'rank',lambda *a,**k:pytest.fail('repeated corpus labels reached rank'))
+    with pytest.raises(shadow.OpeningRankingError) as failure:harness.run_corpus(copied_corpus,top_k=top_k)
+    assert failure.value.code=='limit_exceeded'
+
+
+@pytest.mark.parametrize('selection',['italian-common','ruy-common'])
+@pytest.mark.parametrize('corruption',[
+    'missing_probability_evidence','unrelated_probability_position','foreign_cohort',
+    'foreign_failed_decision','foreign_support_policy','forged_support_decision',
+    'illegal_support_moves','future_observation','empty_support_decisions'])
+def test_harness_rejects_missing_or_misattributed_coverage_before_any_ranking(copied_corpus,monkeypatch,selection,corruption):
+    scenario='italian-common' if 'probability' in corruption or corruption=='foreign_cohort' else 'cumulative-history'
+    def corrupt(document):
+        source=document['source_versions']
+        failed=next(card for card in source['supporting_cards'] if 'observation' in card)
+        if corruption=='missing_probability_evidence':source['opponent_evidence']=[]
+        elif corruption=='unrelated_probability_position':
+            # Legal, internally consistent distribution copied from another opening.
+            source['opponent_evidence']=[deepcopy(read(CORPUS/'ruy-common.json')['source_versions']['opponent_evidence'][0])]
+        elif corruption=='foreign_cohort':source['opponent_evidence'][0]['cohort_id']='foreign-cohort'
+        elif corruption=='foreign_failed_decision':failed['observation']['decision_id']='foreign-decision'
+        elif corruption=='foreign_support_policy':failed['policy_id']='foreign-policy'
+        elif corruption=='forged_support_decision':
+            failed['decisions'][0]['move_uci']='a1a8'
+            failed['decisions'][0]['decision_id']='white:'+failed['decisions'][0]['position_key']+':a1a8'
+            failed['observation']['decision_id']=failed['decisions'][0]['decision_id']
+        elif corruption=='illegal_support_moves':failed['moves'][0]='a1a8'
+        elif corruption=='future_observation':failed['observation']['observed_at']='2027-10-10T10:00:00Z'
+        elif corruption=='empty_support_decisions':failed['decisions']=[]
+    change_snapshot(copied_corpus,corrupt,scenario=scenario)
+    monkeypatch.setattr(harness,'rank',lambda *a,**k:pytest.fail('invalid coverage reached rank'))
+    with pytest.raises(shadow.OpeningRankingError) as failure:
+        harness.run_corpus(copied_corpus,scenario_ids=[selection])
+    assert failure.value.code=='invalid_corpus'
