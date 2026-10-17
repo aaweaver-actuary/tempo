@@ -68,11 +68,11 @@ try{
   await page.getByRole('button',{name:'Back to findings',exact:true}).click();
   await page.getByRole('button',{name:'Browse selected games',exact:true}).click();
   await page.getByRole('heading',{name:'Selected games',exact:true}).waitFor();
-  const unknownGame=fixtures.games.items.find(game=>game.contexts.some(context=>context.status==='unknown'&&context.coverage!=='uncovered'));
+  const unknownGame=fixtures.games.items.find(game=>game.contexts.some(context=>context.status==='unknown'&&context.after_divergence===true));
   assert.ok(unknownGame,'Native selected game with an unknown comparison required');
   await page.getByRole('button',{name:'Inspect game '+(unknownGame.provider_game_id??unknownGame.game_id),exact:true}).click();
   await page.getByLabel('Game chessboard').waitFor();
-  const unknownContext=unknownGame.contexts.find(context=>context.status==='unknown'&&context.coverage!=='uncovered');
+  const unknownContext=unknownGame.contexts.find(context=>context.status==='unknown'&&context.after_divergence===true);
   await page.getByLabel('Game position',{exact:true}).selectOption(String(unknownContext.ply));
   await expect(page.getByLabel('Accepted comparison')).toContainText('unknown');
   await expect(page.getByLabel('Accepted comparison')).toContainText(unknownContext.reason.replaceAll('_',' '));

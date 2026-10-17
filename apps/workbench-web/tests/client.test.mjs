@@ -299,5 +299,5 @@ test('C3 game frames preserve real move order and reject illegal history', async
   assert.equal(frames.length,4);assert.equal(frames[1].fen.split(' ')[3],'e3');assert.equal(frames[1].label,'1. e4');assert.equal(frames[2].label,'1… c5');
   assert.equal(frames[3].fen,'rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2');
   assert.throws(()=>gameFrames(root,['e2e5']));
-  assert.equal(gameFrames('8/P7/8/8/8/8/7p/K5k1 b - - 0 37',['h2h1q'])[1].label,'37… h1=Q+');
+  assert.equal(gameFrames('8/P7/8/8/8/8/7p/K5k1 b - - 0 37',['h2h1q'])[1].label,'37… h1=Q');
 });

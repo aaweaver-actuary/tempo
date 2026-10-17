@@ -17,7 +17,11 @@ export function gameFrames(startingFen:string,moves:string[]){
   const chess=new Chess(startingFen);const frames=[{fen:chess.fen({forceEnpassantSquare:true}),label:"Start"}];
   for(const move of moves){
     const number=chess.fen().split(" ")[5],separator=chess.turn()==="w"?".":"…";
-    const played=chess.move(move);frames.push({fen:chess.fen({forceEnpassantSquare:true}),label:`${number}${separator} ${played.san}`});
+    const played=chess.move(move);const fen=chess.fen({forceEnpassantSquare:true}).split(" ");
+    // Standard PGN FEN retains the target after every legal double pawn move;
+    // chess.js internally omits it when no adjacent capturing pawn exists.
+    if(played.piece==="p"&&Math.abs(Number(played.from[1])-Number(played.to[1]))===2)fen[3]=played.from[0]+String((Number(played.from[1])+Number(played.to[1]))/2);
+    frames.push({fen:fen.join(" "),label:`${number}${separator} ${played.san}`});
   }
   return frames;
 }
@@ -40,7 +44,7 @@ export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,ru
         observation.replaceChildren(node("p",`Actual move: ${game.moves[selectedPly]??"game ended"}`),node("p",`FEN: ${frames[selectedPly].fen}`));
         const contexts=game.contexts.filter(context=>context.ply===selectedPly);
         if(!contexts.length)observation.append(node("p","No selected-policy comparison at this position."));
-        for(const context of contexts){const selection=selections.find(item=>item.policy_id===context.policy_id&&item.repertoire_id===context.repertoire_id);observation.append(node("p",`Policy ${selection?.repertoire_title??context.policy_id}: ${context.coverage==="uncovered"?"observed response gap":context.status} · ${context.reason.replaceAll("_"," ")}`));if(context.expected_moves.length)observation.append(node("p",`Accepted moves: ${context.expected_moves.join(", ")}`));}
+        for(const context of contexts){const selection=selections.find(item=>item.policy_id===context.policy_id&&item.repertoire_id===context.repertoire_id);observation.append(node("p",`Policy ${selection?.repertoire_title??context.policy_id}: ${context.status} · ${context.reason.replaceAll("_"," ")} · source coverage ${context.coverage}${context.after_divergence===true?" · after divergence; consult the finding report for verified conclusions":""}`));if(context.expected_moves.length)observation.append(node("p",`Accepted moves: ${context.expected_moves.join(", ")}`));}
       }
       position.onchange=()=>show(Number(position.value));
       const actions=node("div");actions.className="board-actions";actions.append(button("Previous position",()=>show(selectedPly-1)),button("Next position",()=>show(selectedPly+1)),button("Flip board",()=>board!.toggleOrientation()));boardPanel.append(actions);
