@@ -152,7 +152,7 @@ async function runAllocatedNativeProof(scriptPath, proofName) {
     const limit=resourceBudgets.priorityRehearsalServices.schema;
     const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
     await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
-      "run", "--rm", "--no-deps", "schema", "python", "-c", proof]));
+      "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python", "-c", proof]));
 }
 
 async function verifyStudyPriorityMaintenance() {
@@ -1068,14 +1068,14 @@ const actions = {
     }
   },
   background_workloads: async () => {
+    await runAllocatedNativeProof("/source/scripts/check_postgres_daily_study_dispatch.py",
+      "test_postgres_daily_dispatch_uses_bounded_maintenance_allocation");
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/scripts/check_postgres_daily_study_dispatch.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
