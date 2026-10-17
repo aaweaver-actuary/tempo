@@ -160,3 +160,19 @@ def test_C3_shared_policy_prefix_is_unknown_before_authoritative_anchor():
     findings=compare_game(game,positions,parse_snapshot(document))
     assert findings[0]['status']=='unknown'
     assert findings[0]['card_id'] is None
+
+
+def test_C3_worker_reuses_only_byte_identical_validated_snapshot(monkeypatch):
+    from tempo_game_evidence import store as module
+    parsed=[]
+    def parse(document):
+        value=object();parsed.append((document,value));return value
+    monkeypatch.setattr(module,'parse_snapshot',parse)
+    worker=module.EvidenceStore('explicit-test-only')
+    first=worker.comparison_snapshot('one',{'revision':1})
+    assert worker.comparison_snapshot('one',{'revision':1}) is first
+    assert len(parsed)==1
+    assert worker.comparison_snapshot('one',{'revision':2}) is not first
+    worker.comparison_snapshot('two',{'revision':2})
+    assert len(parsed)==3
+    assert worker._validated_snapshot[0][0]=='two'

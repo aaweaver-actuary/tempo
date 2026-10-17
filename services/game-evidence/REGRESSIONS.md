@@ -114,3 +114,8 @@ source, custom FEN, authority, durable delivery and immutable export regressions
 The private cohort is separate from these constructed edge cases. A reconstructed
 PGN digest identifies the supplied local source bytes, not unavailable original
 provider PGN bytes.
+`test_C3_worker_reuses_only_byte_identical_validated_snapshot` bounds the worker
+cache to one validated snapshot and invalidates it on either identity or byte
+change. Publication still rechecks workspace epoch, game revision and lease.
+The real cohort exposed repeated full-snapshot validation near the 30-second
+lease bound; no lease or timeout was increased.

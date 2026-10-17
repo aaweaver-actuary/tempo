@@ -321,7 +321,8 @@ def activate(database, payload):
     database.execute_native("INSERT INTO opening_graph_publications SELECT value,%s,'ready' FROM unnest(%s::text[]) value ON CONFLICT(repertoire_id) DO UPDATE SET generation=excluded.generation,state='ready'", (generation, memberships))
     database.execute_native("INSERT INTO opening_graph_steps SELECT * FROM jsonb_to_recordset(%s) AS x(repertoire_id text,generation bigint,line_id text,decision_index bigint,card_id text,parent_card_id text,starting_fen text,moves_json text,trained_color text)", (Jsonb(graph_rows),))
     removed = list(old_ids - set(identifiers.values()))
-    changed = [identifier for identifier, old in existing.items() if identifier in identifiers.values() and old["revision"] != next(item["revision"] for item in card_rows if item["id"] == identifier)]
+    revisions_by_card = {item["id"]: item["revision"] for item in card_rows}
+    changed = [identifier for identifier, old in existing.items() if identifier in revisions_by_card and old["revision"] != revisions_by_card[identifier]]
     database.execute("UPDATE daily_queue SET status='superseded' WHERE status='queued' AND card_id=ANY(?)", (removed + changed,))
     database.execute("UPDATE accepted_publications SET state='superseded' WHERE publication_id=? AND state='active'", (identity,))
     database.execute("UPDATE accepted_publications SET state='active' WHERE publication_id=? AND generation=?", (identity, generation))

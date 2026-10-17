@@ -229,13 +229,13 @@ def append_export_scope(inventory, scope, budget):
     budget['bytes'] += additional
 
 
-MAX_BRIDGE_DOCUMENT_BYTES = 64 * 1024 * 1024
+MAX_BRIDGE_DOCUMENT_BYTES = 128 * 1024 * 1024
 
 
 def pack_bridge_document(document):
     raw=canonical(document).encode()
     if len(raw)>MAX_BRIDGE_DOCUMENT_BYTES:
-        raise ContentError('bridge_document_limit','Bridge document exceeds 64 MiB')
+        raise ContentError('bridge_document_limit','Bridge snapshot document exceeds 128 MiB')
     return {'encoding':'zlib-base64-v1','sha256':hashlib.sha256(raw).hexdigest(),
             'data':base64.b64encode(zlib.compress(raw)).decode('ascii')}
 

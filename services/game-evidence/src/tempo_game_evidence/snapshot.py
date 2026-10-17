@@ -235,7 +235,7 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
             raise ValueError('response_scope_inventory_incomplete')
 
 
-MAX_STORED_SNAPSHOT_BYTES = 64 * 1024 * 1024
+MAX_STORED_SNAPSHOT_BYTES = 128 * 1024 * 1024
 
 
 def snapshot_storage(document):

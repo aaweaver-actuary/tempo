@@ -253,6 +253,7 @@ existing explicit binding authority.
 
 Complete bridge scope now permits 8192 definitions; the Learning execution bundle
 is bounded at 12 MiB and the immutable export at 64 MiB. Authored CLI inputs
-are bounded at 16 MiB. Large immutable internal bridge checkpoints use bounded,
+are bounded at 16 MiB. The enclosing comparison snapshot is separately bounded at 128 MiB because it
+contains the export plus publication/routes/activation evidence. Large immutable internal bridge checkpoints use bounded,
 hash-verified compression; public operation/export/snapshot documents retain their
 original canonical contents. Existing inline checkpoints remain readable.
