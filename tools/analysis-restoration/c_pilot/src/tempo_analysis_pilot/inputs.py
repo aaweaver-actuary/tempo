@@ -46,6 +46,37 @@ def scoped_coverage(scopes):
     return result
 
 
+
+def shared_prefix_anchor(source_key, routes, contexts, deviation, game):
+    """Choose a stable branch only when every route proves the actual prefix.
+
+    Multiple authored continuations at one opponent decision are normal. They
+    need not prevent a draft, but FEN overlap or unproven re-entry cannot anchor it.
+    Content still inspects and approves the resulting proposal independently.
+    """
+    anchors=[]
+    for context in sorted(contexts,key=lambda item:(item['route_id'],item['route_ply'])):
+        route=routes[(context['route_id'],context['policy_id'],context['repertoire_id'])]
+        ply=context['route_ply']
+        if type(ply) is not int or not 0<=ply<len(route['moves']) or route['moves'][:ply]!=deviation['history'][:-1]:
+            return None
+        board=chess.Board(route['starting_fen'])
+        if board.fen(en_passant='fen')!=chess.Board(game['starting_fen']).fen(en_passant='fen'):
+            return None
+        try:
+            for move in route['moves'][:ply]:board.push_uci(move)
+            if board.turn==(route['learner_color']=='white'):
+                return None
+            board.push_uci(deviation['opponent_move'])
+        except ValueError:
+            return None
+        if board.fen(en_passant='fen')!=deviation['decision_fen']:
+            return None
+        anchors.append({**{key:route[key] for key in ('repertoire_key','policy_key','route_key')},
+            'source_key':source_key,'anchor_ply':ply})
+    return anchors[0] if anchors else None
+
+
 def normalize(directory,*,workspace,selected_game_ids):
     directory=Path(directory).resolve();original=read_json(directory/'manifest.json',1024*1024)
     if original.get('kind')!='tempo-analysis-inputs' or type(original.get('schema_version')) is not int or original['schema_version']!=1 or original['workspace_id']!=workspace:
@@ -124,6 +155,8 @@ def normalize(directory,*,workspace,selected_game_ids):
                 if len(route_contexts)==1:
                     context=route_contexts[0];route=routes[(context['route_id'],policy,repertoire)]
                     anchor={k:route[k] for k in ('repertoire_key','policy_key','route_key')};anchor.update(source_key=source['source_key'],anchor_ply=context['route_ply'])
+                elif valid and source_metadata:
+                    anchor=shared_prefix_anchor(source['source_key'],routes,route_contexts,deviation,game)
                 contexts.append({'ply':deviation['decision_ply'],'repertoire_id':repertoire,'policy_id':policy,'coverage':'uncovered' if valid else 'unknown','route_established':valid,'scope_complete':valid,'scope_revision':deviation['response_inventory']['source_revision'],'opponent_ply':deviation['ply'],'opponent_move':deviation['opponent_move'],'route_ids':[c['route_id'] for c in route_contexts],'reentry_authorized':bool(deviation['reentry_evidence']),'reason':deviation['reason'],'evidence_id':digest(deviation),'proposal_anchor':anchor})
         games.append({'game_url':game.get('headers',{}).get('Site') if source_metadata else None,'game_id':game['game_id'],'learner_id':game.get('player'),'provider':game.get('provider'),'provider_game_id':game.get('provider_game_id'),'source_revision':game['revision'],'source_digest':game['source_digest'],'learner_color':game['observed_color'],'starting_fen':game['starting_fen'],'moves':game['moves'],'played_at':game['played_at'],'opponent_encounters_complete':bool(original['complete'] and current and all('opponent_decision' in position for position in observed.values())),'opponent_encounters':encounters,'contexts':contexts})
     # Verify every producer page above, then project coverage to the exact

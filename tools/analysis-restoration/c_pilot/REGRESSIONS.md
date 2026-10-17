@@ -31,3 +31,11 @@ B execution remains in the explicit native A/B lane.
 `tests/test_cohort.py` owns deterministic provider/color selection, duplicate and
 conflicting provider identities, legal local-PGN reconstruction, and explicit
 unknown opponent metadata. Local PGN hashes never claim original provider bytes.
+`test_C3_shared_prefix_can_anchor_a_draft_only_with_exact_route_history` covers
+multiple authored continuations at a genuine shared opponent decision. The old
+adapter withheld every draft when more than one route survived. The consumer now
+chooses a deterministic source route only after every context reconstructs the
+actual ordered history, root, opponent turn and exact next learner FEN. A mismatched
+context retains an unavailable draft; Content still owns inspection and approval.
+The extension is gated to the new source metadata; older export normalization
+retains its previous bytes. Context order cannot change the selected anchor.

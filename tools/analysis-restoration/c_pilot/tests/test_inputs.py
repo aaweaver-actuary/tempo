@@ -88,3 +88,37 @@ def test_C3_transposed_coverage_disagreement_is_unknown_not_a_merged_gap():
     same={**scope,'evidence_id':'equivalent-route'}
     assert scoped_coverage([scope,same])[0]['complete'] is True
     assert len(scoped_coverage([scope,{**other,'policy_id':'separate-policy'}]))==2
+
+
+@pytest.mark.parametrize('compatible',[True,False])
+@pytest.mark.parametrize('source_metadata',[True,False])
+def test_C3_shared_prefix_can_anchor_a_draft_only_with_exact_route_history(tmp_path,compatible,source_metadata):
+    export_fixture(tmp_path)
+    route_page=json.loads((tmp_path/'routes-000000.json').read_text())
+    if source_metadata:route_page['items'][0]['repertoire_title']='Authored white policy'
+    duplicate=deepcopy(route_page['items'][0]);duplicate.update(route_id='route-two',route_key='second-route')
+    route_page['items'].append(duplicate)
+    deviation_page=json.loads((tmp_path/'deviations-000000.json').read_text())
+    deviation=deviation_page['items'][0]
+    deviation['route_contexts'].append({**deviation['route_contexts'][0],'route_id':'route-two','route_ply':1 if compatible else 2})
+    manifest=json.loads((tmp_path/'manifest.json').read_text())
+    for kind,page in [('routes',route_page),('deviations',deviation_page)]:
+        (tmp_path/(kind+'-000000.json')).write_text(json.dumps(page))
+        reference=next(item for item in manifest['pages'] if item['kind']==kind)
+        reference.update(digest=fingerprint(page),count=len(page['items']))
+        manifest['counts'][kind]=len(page['items'])
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    _,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    anchor=pages[0]['games'][0]['contexts'][-1]['proposal_anchor']
+    if compatible and source_metadata:
+        assert anchor=={'source_key':'source','repertoire_key':'white','policy_key':'main','route_key':'e4-e5','anchor_ply':1}
+    else:
+        assert anchor is None
+    deviation['route_contexts'].reverse()
+    (tmp_path/'deviations-000000.json').write_text(json.dumps(deviation_page))
+    next(item for item in manifest['pages'] if item['kind']=='deviations')['digest']=fingerprint(deviation_page)
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    _,repeated=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    assert repeated[0]['games'][0]['contexts'][-1]['proposal_anchor']==anchor
