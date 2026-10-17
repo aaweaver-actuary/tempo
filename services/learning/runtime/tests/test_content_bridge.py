@@ -237,6 +237,60 @@ def test_A_identity_rename_replay_preserves_genuine_review_and_alias(case):
         assert accepted.card_id==card['id'] and definition['card_id'] in accepted.aliases
 
 
+def test_C3_complete_historical_alias_activation_fits_documented_lock_capacity(case):
+    """A full alias cutover needs both physical and Content card edit locks.
+
+    This constructed capacity cohort is separate from the real-game rehearsal.
+    Do not reduce its count: the small-alias bridge regression cannot expose the
+    shared lock-table failure found with the actual 6,524-card captured source.
+    """
+    from tempo_learning_runtime.maintenance import run_once
+    original=content_bundle(6524)
+    activate_v2(case,original)
+    with case.database.scope():
+        for _ in range(100):
+            run_once()
+            if case.client.get('/api/queue/window').json()['cards']:
+                break
+        else:
+            raise AssertionError('Capacity publication did not issue ordinary work')
+    issued=head(case)
+    assert submit(case,issued,review_payload(issued)).status_code==200
+    history=[tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]
+    scheduled=[tuple(row) for row in case.query('SELECT id,state,due_date,fsrs_card_json,repetitions,interval_days FROM learning.cards ORDER BY id')]
+    # Learning-owned fixture models pre-publication copied legacy records.
+    case.query('UPDATE learning.cards SET publication_id=NULL,serving_active=0')
+    successor=deepcopy(original)
+    physical_ids={definition['card_id']:'adopted:'+definition['card_id'] for definition in original['publication']['definitions']}
+    successor['source_digest']='b'*64
+    successor['publication']['publication_id']='alias-capacity-publication'
+    for definition in successor['publication']['definitions']:
+        definition.update(card_id=physical_ids[definition['card_id']],publication_id='alias-capacity-publication')
+    for fact in successor['facts']:
+        fact['card_id']=physical_ids[fact['card_id']]
+    for route in successor['routes']:
+        for binding in route['bindings']:
+            binding['card_id']=physical_ids[binding['card_id']]
+    successor['legacy_aliases']={authored:physical for physical,authored in physical_ids.items()}
+    activation_request=request_for(successor)
+    started=time.perf_counter()
+    receipt=activate_v2(case,successor,request=activation_request)
+    elapsed=time.perf_counter()-started
+    assert receipt['status']=='activated'
+    assert case.query('SELECT count(*) FROM learning.content_card_aliases')[0][0]==6524
+    assert case.query('SELECT count(*) FROM learning.cards')[0][0]==6524
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]==history
+    assert [tuple(row) for row in case.query('SELECT id,state,due_date,fsrs_card_json,repetitions,interval_days FROM learning.cards ORDER BY id')]==scheduled
+    assert activate_v2(case,successor,request=activation_request)==receipt
+    destination=os.environ.get('TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE')
+    if destination:
+        Path(destination).mkdir(parents=True,exist_ok=True)
+        (Path(destination)/'alias-capacity-6524.json').write_text(json.dumps({
+            'synthetic':True,'aliases':6524,'distinct_card_edit_lock_keys':13048,
+            'activation_including_stage_seconds':elapsed,'preserved_reviews':len(history),
+            'preserved_schedules':len(scheduled),'receipt':receipt},indent=2))
+
+
 def test_A_identity_conflict_rolls_back_activation(case):
     payload=content_bundle()
     payload['legacy_aliases']={payload['facts'][0]['card_id']:'missing-history-card'}

@@ -42,6 +42,15 @@ never truncated. Internal checkpoints use bounded hash-verified compression.
 Public canonical contents and old inline storage remain readable. Learning's
 transaction timeout is unchanged; integrity membership lookup is now linear.
 
+Provision enough PostgreSQL shared lock capacity for physical and Content IDs
+together. The actual 6,524-alias rehearsal found `out of shared memory` at
+`max_locks_per_transaction=64` / `max_connections=48`; stage acceptance remained
+durable and activation stayed queued. The owned qualification profile uses
+startup setting `max_locks_per_transaction=512` and records the actual settings.
+This is a task-local database provisioning choice, not a runtime change or live
+migration. Keep the same durable intent when retrying after verified provisioning;
+do not remove card-edit locks or raise transaction timeouts to hide the failure.
+
 ## Selected games and analysis
 
 `python -m tempo_analysis_pilot.cohort --accounts ACCOUNTS --capture CAPTURE

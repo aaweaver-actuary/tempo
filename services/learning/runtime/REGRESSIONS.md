@@ -8,6 +8,13 @@ owns original physical identity/history preservation, an interior game miss,
 post-issuance evidence fencing, subsequent Study settlement and exact replay.
 It is a labeled constructed compatibility regression, not real-game acceptance.
 
+`test_C3_complete_historical_alias_activation_fits_documented_lock_capacity`
+uses 6,524 constructed existing physical cards and 6,524 distinct Content aliases
+through real v2 activation, preserving a genuine saved review and every schedule.
+It retains both card-edit lock namespaces and verifies receipt replay. The owned
+native PostgreSQL startup declares and records shared lock capacity; it does not
+change production settings or increase the transaction timeout.
+
 ## A authoritative bridge
 
 `test_content_bridge.py` owns measured complete 129/512/2,048-definition activation
