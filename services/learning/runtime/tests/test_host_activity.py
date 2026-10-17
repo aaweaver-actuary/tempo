@@ -135,3 +135,19 @@ def test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session(tmp
     snapshot = json.loads((tmp_path / (activity.producer + ".json")).read_text())
     assert int(snapshot["sessions"]["held"]) == 103_000_000_000
     activity.close()
+
+
+def test_host_activity_clock_retains_reader_domain_after_host_sleep(tmp_path, monkeypatch):
+    import json
+    import sys
+    from tempo_learning_runtime import host_activity
+    # macOS uptime excludes suspend; the reader's continuous clock includes it.
+    continuous_now = 90_000_000_000_000
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    monkeypatch.setattr(host_activity.time, 'CLOCK_MONOTONIC_RAW', 4, raising=False)
+    monkeypatch.setattr(host_activity.time, 'clock_gettime_ns', lambda clock: continuous_now)
+    reporter = host_activity.HostActivity(tmp_path, source='sleep-proof')
+    reporter.record('held')
+    snapshot = json.loads((tmp_path / (reporter.producer + '.json')).read_text())
+    assert int(snapshot['validUntilNs']) == continuous_now + host_activity.POLICY_NS
+    assert int(snapshot['sessions']['held']) == continuous_now + host_activity.ACTIVITY_NS
