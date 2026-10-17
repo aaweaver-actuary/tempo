@@ -149,6 +149,18 @@ async function withPriorityMaintenanceAllocation(proof) {
   });
 }
 
+async function runAllocatedNativeProof(scriptPath, proofName) {
+    const limit=resourceBudgets.priorityRehearsalServices.schema;
+    const proof=`import pathlib,runpy
+quota,period=map(int,pathlib.Path('/sys/fs/cgroup/cpu.max').read_text().split())
+assert quota/period==${limit.cpus}
+assert int(pathlib.Path('/sys/fs/cgroup/memory.max').read_text())==${limit.memoryMiB*1024*1024}
+print('PASS ${proofName}',flush=True)
+runpy.run_path('${scriptPath}',run_name='__main__')`;
+    await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
+      "run", "--rm", "--no-deps", "schema", "python", "-c", proof]));
+}
+
 async function verifyStudyPriorityMaintenance() {
   await withPriorityMaintenanceAllocation(async () => {
     await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
@@ -1024,8 +1036,8 @@ const actions = {
       "/source/scripts/check_postgres_background_budget.py"]);
   },
   operation_recovery: async () => {
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_operation_recovery.py"]);
+    await runAllocatedNativeProof('/source/scripts/check_postgres_operation_recovery.py',
+      'test_postgres_operation_recovery_uses_bounded_maintenance_allocation');
   },
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -1038,15 +1050,8 @@ const actions = {
       "/source/scripts/check_postgres_next_opponent.py"]);
   },
   priority_recovery: async () => {
-    const limit=resourceBudgets.priorityRehearsalServices.schema;
-    const proof=`import pathlib,runpy
-quota,period=map(int,pathlib.Path('/sys/fs/cgroup/cpu.max').read_text().split())
-assert quota/period==${limit.cpus}
-assert int(pathlib.Path('/sys/fs/cgroup/memory.max').read_text())==${limit.memoryMiB*1024*1024}
-print('PASS test_postgres_priority_recovery_uses_bounded_maintenance_allocation',flush=True)
-runpy.run_path('/source/scripts/check_postgres_priority_recovery.py',run_name='__main__')`;
-    await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
-      "run", "--rm", "--no-deps", "schema", "python", "-c", proof]));
+    await runAllocatedNativeProof('/source/scripts/check_postgres_priority_recovery.py',
+      'test_postgres_priority_recovery_uses_bounded_maintenance_allocation');
   },
   background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
