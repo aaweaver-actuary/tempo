@@ -5,6 +5,8 @@ foreign database access. Direct source writers share the approval scope lock.
 """
 from datetime import datetime, timezone
 import hashlib
+import base64
+import zlib
 import io
 import json
 from typing import Literal
@@ -56,7 +58,8 @@ class ImportManifest(SourceModel):
     repertoires: list[SourceRepertoire] = Field(default_factory=list)
     policies: list[SourcePolicy] = Field(default_factory=list)
     route_assignments: list[RouteAssignment] = Field(default_factory=list, max_length=10000)
-    legacy_aliases: dict[str, str] = Field(default_factory=dict, max_length=2048)
+    legacy_aliases: dict[str, str] = Field(default_factory=dict, max_length=8192)
+    historical_mapping_unknown: list[str] = Field(default_factory=list, max_length=8192)
     reentry: list[Reentry] = Field(default_factory=list, max_length=10000)
 
 
@@ -170,6 +173,8 @@ def map_import(raw, manifest):
         raise ContentError("source_identity_mismatch", "Manifest and structured source identities differ")
     if not set(manifest.legacy_aliases) <= {item.key for item in source.exercises}:
         raise ContentError("alias_target_missing", "Historical alias targets an unknown exercise")
+    if not set(manifest.historical_mapping_unknown) <= {item.key for item in source.exercises}:
+        raise ContentError('unknown_history_target_missing', 'Unknown history must identify an actual exercise')
     if any(not any((binding.route_key, binding.policy_key, binding.ply) == (entry.route_key, entry.policy_key, entry.ply)
                    for binding in source.bindings) for entry in manifest.reentry):
         raise ContentError("reentry_binding_missing", "Explicit re-entry requires an actual binding")
@@ -193,8 +198,8 @@ def validate_bridge_execution_scope(source, manifest):
     manifest = ImportManifest.model_validate(manifest)
     if not manifest.complete:
         raise ContentError('bridge_scope_unsupported', 'A requires a complete source')
-    if len(source.exercises) > 2048:
-        raise ContentError('bridge_scope_unsupported', 'A supports at most 2048 complete opening definitions')
+    if len(source.exercises) > 8192:
+        raise ContentError('bridge_scope_unsupported', 'A supports at most 8192 complete opening definitions')
     exercises = {exercise.key: exercise for exercise in source.exercises}
     if any(exercise.specification.type != 'move_line' or exercise.specification.grading_policy != 'reference'
            for exercise in exercises.values()):
@@ -215,6 +220,40 @@ def validate_bridge_execution_scope(source, manifest):
         raise ContentError('bridge_scope_unsupported', 'A historical aliases must identify distinct executable objects')
 
 
+def append_export_scope(inventory, scope, budget):
+    """Reject expansion before retaining another potentially large response scope."""
+    additional = len(canonical(scope).encode()) + bool(inventory['scopes'])
+    if budget['bytes'] + additional > budget['maximum']:
+        raise ContentError('bridge_export_limit', 'Complete bridge export exceeds 64 MiB; no Learning activation was attempted')
+    inventory['scopes'].append(scope)
+    budget['bytes'] += additional
+
+
+MAX_BRIDGE_DOCUMENT_BYTES = 64 * 1024 * 1024
+
+
+def pack_bridge_document(document):
+    raw=canonical(document).encode()
+    if len(raw)>MAX_BRIDGE_DOCUMENT_BYTES:
+        raise ContentError('bridge_document_limit','Bridge document exceeds 64 MiB')
+    return {'encoding':'zlib-base64-v1','sha256':hashlib.sha256(raw).hexdigest(),
+            'data':base64.b64encode(zlib.compress(raw)).decode('ascii')}
+
+
+def unpack_bridge_document(packed):
+    try:
+        if packed['encoding']!='zlib-base64-v1' or len(packed['data'])>2*MAX_BRIDGE_DOCUMENT_BYTES:
+            raise ValueError()
+        compressed=base64.b64decode(packed['data'],validate=True)
+        decoder=zlib.decompressobj()
+        raw=decoder.decompress(compressed,MAX_BRIDGE_DOCUMENT_BYTES+1)
+        if len(raw)>MAX_BRIDGE_DOCUMENT_BYTES or decoder.unconsumed_tail or not decoder.eof or decoder.unused_data or hashlib.sha256(raw).hexdigest()!=packed['sha256']:
+            raise ValueError()
+        return json.loads(raw)
+    except (ValueError,KeyError,TypeError,zlib.error):
+        raise ContentError('bridge_document_corrupt','Immutable bridge document is unavailable or corrupt') from None
+
+
 class Bridge:
     def __init__(self, service):
         self.service = service
@@ -224,8 +263,8 @@ class Bridge:
         manifest = ImportManifest.model_validate(manifest)
         if source.workspace_id != self.service.workspace_id or source.workspace_id != manifest.workspace_id or source.source_key != manifest.source_key:
             raise ContentError("workspace_mismatch", "Draft belongs to a different source/workspace")
-        if len(source.exercises)>2048:
-            raise ContentError('bridge_definition_limit','This bridge supports complete sources of at most 2048 definitions; no truncation is performed')
+        if len(source.exercises)>8192:
+            raise ContentError('bridge_definition_limit','This bridge supports complete sources of at most 8192 definitions; no truncation is performed')
         if type(expected_revision) is not int or expected_revision < 0:
             raise ContentError("invalid_source_revision", "Expected revision must be a nonnegative integer")
         # Freeze canonical ordering before identity; provenance byte digest remains explicit.
@@ -286,7 +325,13 @@ class Bridge:
         row = self.service._one("SELECT o.*,d.digest,d.source_key,d.expected_revision,d.document AS draft FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.id=%s", (identifier,))
         if not row:
             raise ContentError("operation_not_found", "No durable approved operation exists")
-        return {**row, 'publication_id': stable_id(self.service.workspace_id, row['source_key'], 'publication', 'source')}
+        document=dict(row['document'])
+        if 'export_packed' in document:
+            document['export']=unpack_bridge_document(document.pop('export_packed'))
+            document.pop('export_identity',None)
+        if 'snapshots_packed' in document:
+            document['snapshots']={**document.get('snapshots',{}),**{key:unpack_bridge_document(value) for key,value in document.pop('snapshots_packed').items()}}
+        return {**row, 'document':document, 'publication_id': stable_id(self.service.workspace_id, row['source_key'], 'publication', 'source')}
 
     def _fail_before_delivery(self, identifier, failure, *, approved=False):
         operation = self.operation(identifier)
@@ -322,12 +367,12 @@ class Bridge:
         try:
             return self._prepare(identifier,max_slices)
         except ContentError as error:
-            if error.code in ('inventory_failed','bridge_inventory_limit','bridge_export_limit'):
+            if error.code in ('inventory_failed','bridge_inventory_limit','bridge_export_limit','bridge_document_limit'):
                 operation=self.operation(identifier)
                 with self.service._transaction() as database:
                     lock_scope(database,operation['source_id'],identifier)
                     row=database.execute('SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE',(identifier,)).fetchone()
-                    if row['state']=='applying' and not row['document'].get('delivery') and not row['document'].get('export'):
+                    if row['state']=='applying' and not row['document'].get('delivery') and not row['document'].get('export') and not row['document'].get('export_packed'):
                         database.execute("UPDATE content.bridge_operations SET state='failed',document=document || %s,updated_at=now() WHERE id=%s",(Jsonb({'failure':{'code':error.code,'message':error.message}}),identifier))
             raise
 
@@ -363,7 +408,9 @@ class Bridge:
             prepared = {"retirement_required": True, **loaded}
         elif self.service.inventory_status(source.source_key)["state"] == "complete":
             publication = self.service.publication_build(source.source_key)
-            prepared = {"export": self.export(publication.publication_id, publication.publication_generation, draft["manifest"])}
+            export = self.export(publication.publication_id, publication.publication_generation, draft["manifest"])
+            prepared = {"export_packed": pack_bridge_document(export),
+                "export_identity": {key: export["publication"][key] for key in ("publication_id", "publication_generation")}}
         else:
             prepared = {"pending": True, **loaded}
         with self.service._transaction() as database:
@@ -436,19 +483,25 @@ class Bridge:
         if not values or not set(values) <= {"delivery", "snapshots"}:
             raise ContentError("invalid_checkpoint", "Only delivery identity and snapshot observations are supported")
         operation = self.operation(identifier)
+        packed_snapshots={key:pack_bridge_document(value) for key,value in values.get('snapshots',{}).items()}
+        legacy_hashes={key:digest(value) for key,value in operation['document'].get('snapshots',{}).items()}
+        values=dict(values)
         with self.service._transaction() as database:
             lock_scope(database, operation["source_id"], identifier)
             row = database.execute("SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
             if row["state"] not in ("applying", "completed"):
                 raise ContentError("application_not_authorized", "Checkpoint requires durable application authorization")
             document = row["document"]
+            if 'snapshots' in values:
+                previous=document.get('snapshots_packed',{})
+                for name,item in packed_snapshots.items():
+                    if (name in previous and previous[name]['sha256']!=item['sha256'] or
+                            name in document.get('snapshots',{}) and legacy_hashes.get(name)!=item['sha256']):
+                        raise ContentError('checkpoint_conflict','Snapshot observation identity is immutable')
+                values.pop('snapshots')
+                values['snapshots_packed']={**packed_snapshots,**previous}
             for key,value in values.items():
-                if key == "snapshots":
-                    previous = document.get(key,{})
-                    if any(name in previous and previous[name] != item for name,item in value.items()):
-                        raise ContentError("checkpoint_conflict", "Snapshot observation identity is immutable")
-                    values[key] = {**previous,**value}
-                elif key in document and document[key] != value:
+                if key != 'snapshots_packed' and key in document and document[key] != value:
                     raise ContentError("checkpoint_conflict", "Delivery identity is immutable")
             database.execute("UPDATE content.bridge_operations SET document=document || %s,updated_at=now() WHERE id=%s", (Jsonb(values),identifier))
         return self.operation(identifier)
@@ -456,15 +509,19 @@ class Bridge:
     def export(self, publication_id, generation, manifest=None):
         if manifest is None:
             prepared = self.service._one("SELECT document->'export' AS export FROM content.bridge_operations WHERE document->'export'->'publication'->>'publication_id'=%s AND document->'export'->'publication'->>'publication_generation'=%s", (publication_id,str(generation)))
-            if prepared:
+            if prepared and prepared.get('export'):
                 return prepared['export']
+            packed=self.service._one("SELECT document->'export_packed' AS packed FROM content.bridge_operations WHERE document->'export_identity'->>'publication_id'=%s AND document->'export_identity'->>'publication_generation'=%s",(publication_id,str(generation)))
+            if packed and packed.get('packed'):
+                return unpack_bridge_document(packed['packed'])
         row = self.service._one("SELECT * FROM content.publications WHERE publication_id=%s AND generation=%s", (publication_id, generation))
         if not row:
             raise ContentError("publication_not_found", "Immutable publication is unavailable")
         source = SourceSnapshot.model_validate(row["provenance"]["snapshot"])
         manifest = manifest or {"complete": False, "provenance": {"kind": "unavailable"}, "legacy_aliases": {}, "reentry": []}
         definitions = json.loads(row["payload"])
-        definition_by_key = {item.key: next(value for value in definitions["definitions"] if value["card_id"] == stable_id(source.workspace_id, source.source_key, "card", item.key)) for item in source.exercises}
+        by_card_id = {value["card_id"]: value for value in definitions["definitions"]}
+        definition_by_key = {item.key: by_card_id[stable_id(source.workspace_id, source.source_key, "card", item.key)] for item in source.exercises}
         repertoire_by_key = {item.key: item for item in source.repertoires}
         routes, legal_replies = [], {}
         authorized = {(item["route_key"], item["policy_key"], item["ply"]) for item in manifest["reentry"]}
@@ -478,7 +535,10 @@ class Bridge:
                 "route_id": stable_id(source.workspace_id, source.source_key, "route", membership.route_key),
                 "policy_id": stable_id(source.workspace_id, source.source_key, "policy", membership.policy_key),
                 "route_key": membership.route_key, "policy_key": membership.policy_key, "repertoire_key": membership.repertoire_key,
+                "repertoire_title": repertoire.title,
                 "learner_color": repertoire.learner_color, "starting_fen": authored.starting_fen, "moves": authored.moves, "bindings": bindings}
+            if authored.authority_start_ply != 0:
+                route["authority_start_ply"] = authored.authority_start_ply
             routes.append(route)
             board = chess.Board(authored.starting_fen)
             for ply in range(len(authored.moves) + 1):
@@ -488,7 +548,7 @@ class Bridge:
                         if len(legal_replies)>=32768:
                             raise ContentError('bridge_inventory_limit','Complete bridge export exceeds 32768 opponent positions; no Learning activation was attempted')
                         legal_replies[key] = {"position_key": key, "complete": True, "generation": generation,
-                            "inventory_version": 1, "moves": sorted(move.uci() for move in board.legal_moves)}
+                            "inventory_version": 1, "moves": sorted(move.uci() for move in board.legal_moves), "scopes": []}
                 if ply < len(authored.moves):
                     board.push_uci(authored.moves[ply])
         document = {"schema_version": 1, "kind": "content_bridge_export", "workspace_id": source.workspace_id,
@@ -496,9 +556,13 @@ class Bridge:
             "publication": definitions, "publication_digest": row["digest"], "complete": manifest["complete"],
             "provenance": manifest["provenance"], "routes": sorted(routes, key=lambda item: (item["route_id"], item["policy_id"])),
             "legacy_aliases": {stable_id(source.workspace_id, source.source_key, "card", key): value for key, value in manifest["legacy_aliases"].items()},
+            "historical_mapping_unknown": [stable_id(source.workspace_id, source.source_key, "card", key) for key in manifest.get("historical_mapping_unknown", [])],
             "legal_replies": sorted(legal_replies.values(), key=lambda item: item["position_key"])}
         # Coverage is conditioned on an established route prefix and policy, never
         # FEN coincidence. Enumerate the complete legal support, including absence.
+        budget = {'bytes': len(canonical(document).encode()), 'maximum': 64*1024*1024-83}
+        if budget['bytes'] > budget['maximum']:
+            raise ContentError('bridge_export_limit', 'Complete bridge export exceeds 64 MiB; no Learning activation was attempted')
         nodes = {}
         for route in routes:
             board = chess.Board(route['starting_fen'])
@@ -511,6 +575,11 @@ class Bridge:
         definitions_by_id = {item['card_id']:item for item in definitions['definitions']}
         for context,occurrences in nodes.items():
             board=chess.Board(occurrences[0][2])
+            # Authored continuation without an executable binding is missing
+            # identity authority, not evidence that the response is absent.
+            complete = manifest['complete'] and all(
+                route.get('authority_start_ply',0) is not None and ply >= route.get('authority_start_ply',0) and ply < len(route['moves']) and any(binding['ply'] == ply + 1 for binding in route['bindings'])
+                for route, ply, _ in occurrences)
             coverage=[]
             for move in sorted(board.legal_moves,key=lambda value:value.uci()):
                 accepted={}
@@ -523,14 +592,14 @@ class Bridge:
                 result=board.copy()
                 result.push(move)
                 coverage.append({'move_uci':move.uci(),'decision_fen':result.fen(en_passant='fen'),
-                    'status':'ambiguous' if len(decision_ids)>1 else 'covered' if accepted else 'uncovered' if manifest['complete'] and all(ply<len(route['moves']) for route,ply,_ in occurrences) else 'unknown',
+                    'status':'ambiguous' if len(decision_ids)>1 else 'covered' if accepted else 'uncovered' if complete else 'unknown',
                     'responses':list(accepted.values())})
             scope={'repertoire_id':context[0],'policy_id':context[1],'learner_color':context[2],
                 'starting_fen':context[3],'history':list(context[4]),'route_contexts':[{'route_id':route['route_id'],'route_key':route['route_key'],'policy_key':route['policy_key'],'repertoire_key':route['repertoire_key'],'ply':ply} for route,ply,_ in occurrences],
-                'complete':manifest['complete'] and all(ply<len(route['moves']) for route,ply,_ in occurrences),
+                'complete':complete,
                 'source_revision':definitions['source_revision'],'publication_generation':generation,'replies':coverage}
             scope['digest']=digest(scope)
-            legal_replies[canonical_position(board.fen())].setdefault('scopes',[]).append(scope)
+            append_export_scope(legal_replies[canonical_position(board.fen())], scope, budget)
         document["export_digest"] = digest(document)
         if len(canonical(document).encode())>64*1024*1024:
             raise ContentError('bridge_export_limit','Complete bridge export exceeds 64 MiB; no Learning activation was attempted')
@@ -572,7 +641,7 @@ class Bridge:
         for index, line in enumerate(proposal.accepted_lines):
             route_key = key + "-" + str(index)
             document["routes"].append({"key": route_key, "starting_fen": route.starting_fen,
-                "moves": route.moves[:proposal.anchor_ply] + [proposal.opponent_move] + line})
+                "moves": route.moves[:proposal.anchor_ply] + [proposal.opponent_move] + line, "authority_start_ply": route.authority_start_ply})
             document["memberships"].append({"route_key": route_key, "policy_key": proposal.policy_key, "repertoire_key": proposal.repertoire_key})
             document["bindings"].extend({**item, "route_key": route_key} for item in source.model_dump(mode="json")["bindings"]
                 if item["route_key"] == route.key and item["policy_key"] == proposal.policy_key and item["ply"] < proposal.anchor_ply)

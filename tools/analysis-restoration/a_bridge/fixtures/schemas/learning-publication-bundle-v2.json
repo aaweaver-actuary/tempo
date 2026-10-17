@@ -561,6 +561,20 @@
     "Route": {
       "additionalProperties": false,
       "properties": {
+        "authority_start_ply": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0,
+          "title": "Authority Start Ply"
+        },
         "bindings": {
           "items": {
             "$ref": "#/$defs/Binding"
@@ -663,7 +677,7 @@
       "items": {
         "$ref": "#/$defs/ExecutionFacts"
       },
-      "maxItems": 2048,
+      "maxItems": 8192,
       "minItems": 1,
       "title": "Facts",
       "type": "array"
@@ -685,7 +699,7 @@
       "additionalProperties": {
         "type": "string"
       },
-      "maxProperties": 2048,
+      "maxProperties": 8192,
       "title": "Legacy Aliases",
       "type": "object"
     },

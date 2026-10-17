@@ -3,7 +3,7 @@
 ## Content bridge v2
 
 `POST /internal/publications/v2/stage` accepts the service-local version-2 opening
-bundle (maximum 2,048 definitions / 8 MiB). `publication-schema` exports its schema.
+bundle (maximum 8,192 definitions / 12 MiB). `publication-schema` exports its schema.
 It retains shared Publication v1, real route occurrences, source digest, and
 optional one-to-one legacy aliases. Content IDs remain authored identifiers;
 validated aliases retain existing physical Learning/history identities. Adoption

@@ -60,3 +60,31 @@ def test_missing_delivery_stays_explicitly_unknown(tmp_path):
     manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'});(tmp_path/'manifest.json').write_text(json.dumps(manifest))
     _,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
     assert pages[0]['games'][0]['contexts'][0]['delivery']=={'status':'unknown','reason':'delivery_not_exported'}
+
+
+def test_C3_original_game_link_and_authored_title_are_translated(tmp_path):
+    export_fixture(tmp_path)
+    for kind in ['games','routes']:
+        path=tmp_path/(kind+'-000000.json');page=json.loads(path.read_text())
+        if kind=='games':page['items'][0]['headers']={'Site':'https://www.chess.com/game/live/123'}
+        else:page['items'][0]['repertoire_title']='Authored Italian'
+        path.write_text(json.dumps(page))
+        manifest=json.loads((tmp_path/'manifest.json').read_text());next(item for item in manifest['pages'] if item['kind']==kind)['digest']=fingerprint(page)
+        manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'});(tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    manifest,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    assert manifest['selections'][0]['repertoire_title']=='Authored Italian'
+    assert pages[0]['games'][0]['game_url']=='https://www.chess.com/game/live/123'
+
+
+def test_C3_transposed_coverage_disagreement_is_unknown_not_a_merged_gap():
+    from tempo_analysis_pilot.inputs import scoped_coverage
+    scope={'repertoire_id':'rep','policy_id':'policy','learner_color':'white','fen':chess.STARTING_FEN,
+        'complete':True,'revision':1,'covered_replies':['e2e4'],'legal_moves':['e2e4','d2d4'],'evidence_id':'route-one'}
+    other={**scope,'covered_replies':['d2d4'],'evidence_id':'route-two'}
+    combined=scoped_coverage([scope,other])
+    assert len(combined)==1 and combined[0]['complete'] is False
+    assert combined[0]['covered_replies']==[]
+    assert scoped_coverage([other,scope])==combined
+    same={**scope,'evidence_id':'equivalent-route'}
+    assert scoped_coverage([scope,same])[0]['complete'] is True
+    assert len(scoped_coverage([scope,{**other,'policy_id':'separate-policy'}]))==2

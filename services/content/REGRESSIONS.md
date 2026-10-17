@@ -134,3 +134,11 @@ workspace/family/request/publication/generation binding. The real installed
 `test_A_installed_completion_cannot_substitute_checkpointed_request` completes a
 different publication's retirement under the same remote ID and proves that both
 reconcile and abandon retain the original Content reservation and serving content.
+
+## C3 authored scope and historical uncertainty
+
+Regular `tests/test_bridge.py::test_C3_authored_reply_without_executable_binding_remains_unknown`
+reproduces an authored reply incorrectly exported as uncovered and requires an
+unknown, incomplete scope. Game Evidence independently reconstructs this rule.
+The import manifest can explicitly mark normalized exercises with unresolved
+historical mapping; these definitions cannot establish existing-card misses.

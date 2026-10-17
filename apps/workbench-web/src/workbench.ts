@@ -1,6 +1,7 @@
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import { Chess } from "chess.js";
+import { gameSourceUrl } from "./game-source.js";
 import { z } from "zod";
 import { IntelligenceClient, type Connection } from "./client.js";
 import { listSchema, reportSchema, detailSchema, type Finding, type Report } from "./contracts.js";
@@ -108,6 +109,11 @@ export function mountWorkbench(root:HTMLElement){
       const next=await client!.request(`/v1/analysis/runs/${encodeURIComponent(runId)}/report?${query}`,reportSchema);if(generation!==renderGeneration)return;if(next.run_id!==runId)throw new Error("Report identity mismatch");report=next;
       if(!after)target.replaceChildren();else target.querySelector(".more")?.remove();
       const state=node("p",`${String(record(next.source_provenance??{}).kind??"explicit source")} · ${next.status} · ${String(next.source_completeness??"inputs pending")} · ${String(next.unprocessed_count??"unknown")} engine decisions unprocessed · ${String(next.insufficient_quality_count??0)} searches need better evidence`);state.className="report-state";target.append(state);
+      const scope=record(next.scope??{});const selectedGames=Array.isArray(scope.game_ids)?scope.game_ids.length:"unknown";
+      target.append(node("p",`${selectedGames} selected games · ${String(next.unknown_coverage_count??"unknown")} comparison decisions unknown.`));
+      const selections=Array.isArray(scope.selections)?scope.selections:[];const titles=[...new Set(selections.map(value=>{const item=record(value);return String(item.repertoire_title??item.repertoire_id??"unknown");}))];if(titles.length)target.append(node("p",`Compared repertoires: ${titles.join(", ")}. Other policies remain outside this report.`));
+      const unknown=Array.isArray(next.unknown_coverage)?next.unknown_coverage:[];
+      if(unknown.length){const uncertainty=node("details");uncertainty.append(node("summary","Positions requiring mapping or coverage verification"));for(const value of unknown){const item=record(value);uncertainty.append(node("p",`Game ${String(item.game_id??"unknown")} · ply ${String(item.ply??"unknown")} · ${String(item.reason??"unknown").replaceAll("_"," ")}`));}target.append(uncertainty);}
       if(Array.isArray(next.reasons)&&next.reasons.includes("legacy_analysis_revision_required"))target.append(node("p","This older analysis needs a new revision before work can continue."));
       if(Array.isArray(next.reasons)&&next.reasons.includes("incompatible_engine_profile"))target.append(node("p","The engine changed during this comparison. Start a new analysis revision with the selected engine profile. Earlier results are preserved."));
       if(next.derivation_version!==2)target.append(node("p","Legacy report: engine repertoire associations are unverified. Create a new analysis revision to verify them."));
@@ -126,6 +132,12 @@ export function mountWorkbench(root:HTMLElement){
       let orientation=finding.representative.learner_color;const chess=new Chess(finding.representative.fen);const candidate=finding.expected_moves[0]??String(record(record(finding.engine??{}).best??{}).moves instanceof Array?(record(record(finding.engine??{}).best??{}).moves as string[])[0]:"");
       const boardActions=node("div");boardActions.className="board-actions";visual.append(boardActions);
       const info=node("div");info.append(node("small",labels[finding.category]),node("h2",`Game ${finding.representative.game_id??"population evidence"} · ply ${finding.representative.ply??"—"}`),node("p",`Played: ${finding.representative.actual_move??"unavailable"}`),node("p",`Accepted: ${finding.expected_moves.join(", ")||"no accepted response established"}`),node("p",`Evidence: ${finding.evidence_status} · ${finding.dismissal_state}`),node("p",`Supporting games: ${finding.supporting_games.join(", ")||"none; model/population evidence"}`),node("p",finding.reason_codes.map(reason=>reason.replaceAll("_"," ")).join(" · ")));
+      const sourceUrl=gameSourceUrl(finding.representative.provider,finding.representative.game_url);
+      if(sourceUrl){const sourceLink=node("a","Open original game");sourceLink.href=sourceUrl;sourceLink.target="_blank";sourceLink.rel="noopener noreferrer";info.append(sourceLink);}
+      info.append(node("p",`Repertoire: ${String(finding.repertoire_title??finding.repertoire_id??"unknown")} · Policy: ${String(finding.policy_id??"unknown")}`));
+      const encounterCount=finding.eligible_encounter_games;
+      info.append(node("p",typeof encounterCount==="number"?`Observed in ${finding.supporting_game_count} of ${encounterCount} eligible selected games.`:"Eligible encounter denominator: unknown."));
+      info.append(node("p",finding.category==="repertoire_miss"?`Review existing Content card ${String(finding.card_id??"unknown")}; a repertoire miss does not establish an engine mistake.`:finding.category==="practical_gap"?"Review a proposed continuation through Content before adding training content.":"Informational engine opportunity; repertoire relevance may be unknown."));
       if(Array.isArray(finding.related_findings)&&finding.related_findings.length){info.append(node("h3","Other evidence for this incident"));for(const related of finding.related_findings){const item=record(related);info.append(button(labels[String(item.category)]??"Related finding",()=>detail({...finding,finding_id:String(item.finding_id)})));}}
       info.append(button(finding.dismissal_state==="dismissed"?"Reopen":"Dismiss",async()=>{const action=finding.dismissal_state==="dismissed"?"reopen":"dismiss";const command={schema_version:1,command_id:crypto.randomUUID(),action,expected_revision:finding.finding_revision};status("Saving dismissal state…");try{await saveCommand(`/v1/analysis/findings/${encodeURIComponent(finding.finding_id)}/commands?${query}`,command);status("State confirmed. The updated report is pending publication.");await home();}catch(value){error(value);}}));
       info.append(button("Export informational context",async()=>{try{const result=await client!.request(`/v1/analysis/findings/${encodeURIComponent(finding.finding_id)}/export?${query}&kind=context`,z.object({workspace_id:z.string()}).passthrough());const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:"application/json"}));const link=node("a");link.href=url;link.download="tempo-gap-context.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(value){error(value);}}));

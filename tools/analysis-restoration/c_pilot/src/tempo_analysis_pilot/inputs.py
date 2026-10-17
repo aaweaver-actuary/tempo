@@ -22,6 +22,30 @@ def read_json(path,maximum):
     if len(raw)>maximum:raise ValueError('A_export_byte_bound')
     return json.loads(raw)
 
+def scoped_coverage(scopes):
+    """C has one canonical-position summary; route disagreements stay unknown.
+
+    Original A route-conditioned scopes remain in the immutable producer export.
+    This projection cannot establish a gap; actual encounter contexts do that.
+    """
+    groups=defaultdict(list)
+    for scope in scopes:
+        key=(scope['repertoire_id'],scope['policy_id'],scope['learner_color'],
+             ' '.join(chess.Board(scope['fen']).fen(en_passant='legal').split()[:4]))
+        groups[key].append(scope)
+    result=[]
+    for key,values in sorted(groups.items()):
+        values.sort(key=canonical_json)
+        first=values[0]
+        if len(values)==1:
+            result.append(first);continue
+        sets=[set(value['covered_replies']) for value in values]
+        compatible=all(value['complete'] and value['revision']==first['revision'] and value['legal_moves']==first['legal_moves'] and set(value['covered_replies'])==sets[0] for value in values)
+        result.append({**first,'complete':compatible,'covered_replies':sorted(set.intersection(*sets)),
+            'evidence_id':digest(sorted({value['evidence_id'] for value in values}))})
+    return result
+
+
 def normalize(directory,*,workspace,selected_game_ids):
     directory=Path(directory).resolve();original=read_json(directory/'manifest.json',1024*1024)
     if original.get('kind')!='tempo-analysis-inputs' or type(original.get('schema_version')) is not int or original['schema_version']!=1 or original['workspace_id']!=workspace:
@@ -53,8 +77,9 @@ def normalize(directory,*,workspace,selected_game_ids):
     routes={(r['route_id'],r['policy_id'],r['repertoire_id']):r for r in records['routes']}
     if len(routes)!=len(records['routes']):raise ValueError('duplicate_A_route_policy_identity')
     for route in records['routes']:
-        selection={'repertoire_id':route['repertoire_id'],'policy_id':route['policy_id'],'learner_color':route['learner_color'],'lineage':lineage}
+        selection={'repertoire_title':route.get('repertoire_title'),'repertoire_id':route['repertoire_id'],'policy_id':route['policy_id'],'learner_color':route['learner_color'],'lineage':lineage}
         selections[(route['repertoire_id'],route['policy_id'],route['learner_color'])]=selection
+    source_metadata = any('repertoire_title' in route for route in records['routes'])
     comparisons={r['game']['game_id']:r for r in records['comparisons']};observations=defaultdict(dict)
     for position in records['positions']:
         if position['ply'] in observations[position['game_id']]:raise ValueError('duplicate_A_position')
@@ -100,9 +125,24 @@ def normalize(directory,*,workspace,selected_game_ids):
                     context=route_contexts[0];route=routes[(context['route_id'],policy,repertoire)]
                     anchor={k:route[k] for k in ('repertoire_key','policy_key','route_key')};anchor.update(source_key=source['source_key'],anchor_ply=context['route_ply'])
                 contexts.append({'ply':deviation['decision_ply'],'repertoire_id':repertoire,'policy_id':policy,'coverage':'uncovered' if valid else 'unknown','route_established':valid,'scope_complete':valid,'scope_revision':deviation['response_inventory']['source_revision'],'opponent_ply':deviation['ply'],'opponent_move':deviation['opponent_move'],'route_ids':[c['route_id'] for c in route_contexts],'reentry_authorized':bool(deviation['reentry_evidence']),'reason':deviation['reason'],'evidence_id':digest(deviation),'proposal_anchor':anchor})
-        games.append({'game_id':game['game_id'],'learner_id':game.get('player'),'provider':game.get('provider'),'provider_game_id':game.get('provider_game_id'),'source_revision':game['revision'],'source_digest':game['source_digest'],'learner_color':game['observed_color'],'starting_fen':game['starting_fen'],'moves':game['moves'],'played_at':game['played_at'],'opponent_encounters_complete':bool(original['complete'] and current and all('opponent_decision' in position for position in observed.values())),'opponent_encounters':encounters,'contexts':contexts})
+        games.append({'game_url':game.get('headers',{}).get('Site') if source_metadata else None,'game_id':game['game_id'],'learner_id':game.get('player'),'provider':game.get('provider'),'provider_game_id':game.get('provider_game_id'),'source_revision':game['revision'],'source_digest':game['source_digest'],'learner_color':game['observed_color'],'starting_fen':game['starting_fen'],'moves':game['moves'],'played_at':game['played_at'],'opponent_encounters_complete':bool(original['complete'] and current and all('opponent_decision' in position for position in observed.values())),'opponent_encounters':encounters,'contexts':contexts})
+    # Verify every producer page above, then project coverage to the exact
+    # selected games. Unencountered repertoire positions are not C run inputs.
+    relevant_positions = {position['comparison_key'] for position in records['positions']
+                          if position.get('opponent_decision') is not None}
+    # Older A exports lack encounter facts. Legal history still limits this
+    # projection; it never establishes route or response authority.
+    if not relevant_positions:
+        for game in records['games']:
+            board = chess.Board(game['starting_fen'])
+            for move in game['moves']:
+                if board.turn != (game['observed_color'] == 'white'):
+                    relevant_positions.add(' '.join(board.fen(en_passant='legal').split()[:4]))
+                board.push_uci(move)
     scopes=[]
     for inventory in records['legal_replies']:
+        if source_metadata and inventory['position_key'] not in relevant_positions:
+            continue
         for scope in inventory.get('scopes',[]):
             board=chess.Board(scope['starting_fen'])
             for move in scope['history']:board.push_uci(move)
@@ -119,5 +159,5 @@ def normalize(directory,*,workspace,selected_game_ids):
         if batch and (len(batch)>=64 or len(canonical_json(batch+[game]).encode())>900000):flush()
         batch.append(game)
     flush()
-    manifest=Manifest.model_validate({'schema_version':1,'workspace_id':workspace,'input_id':original['input_id'],'revision':original['revision'],'producer':'a-analysis-export','producer_version':'tempo-analysis-inputs-v1','source_artifact_digest':'sha256:'+original['manifest_digest'],'completeness':'complete' if original['complete'] else 'partial','reasons':([] if current else ['current_activation_unknown'])+([] if original['complete'] else ['A_export_partial']),'game_ids':ids,'selections':list(selections.values()),'coverage_scopes':scopes,'producer_manifest':original,'pages':[{'page_id':p['page_id'],'digest':digest(p),'game_count':len(p['games'])} for p in pages]}).model_dump(mode='json')
+    manifest=Manifest.model_validate({'schema_version':1,'workspace_id':workspace,'input_id':original['input_id'],'revision':original['revision'],'producer':'a-analysis-export','producer_version':'tempo-analysis-inputs-v1','source_artifact_digest':'sha256:'+original['manifest_digest'],'completeness':'complete' if original['complete'] else 'partial','reasons':([] if current else ['current_activation_unknown'])+([] if original['complete'] else ['A_export_partial']),'game_ids':ids,'selections':list(selections.values()),'coverage_scopes':scoped_coverage(scopes) if source_metadata else scopes,'producer_manifest':original,'pages':[{'page_id':p['page_id'],'digest':digest(p),'game_count':len(p['games'])} for p in pages]}).model_dump(mode='json')
     return manifest,pages

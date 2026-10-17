@@ -11,7 +11,7 @@ from typing import Literal
 
 import chess
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
 from psycopg.types.json import Jsonb
 
 from .publications import PublicationBundle, ExecutionFacts, lock_opening_repertoires
@@ -19,8 +19,8 @@ from .gateway import request_digest
 from .durable_tasks import enqueue_task_in_transaction
 from .clock import date
 
-MAX_DEFINITIONS = 2048
-MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+MAX_DEFINITIONS = 8192
+MAX_BUNDLE_BYTES = 12 * 1024 * 1024
 prepared_activation = ContextVar('prepared_content_activation',default=None)
 
 
@@ -40,6 +40,15 @@ class Binding(BaseModel):
 
 
 class Route(BaseModel):
+    authority_start_ply: int | None = Field(default=0, ge=0, le=1000)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_routes(self, handler):
+        value=handler(self)
+        if self.authority_start_ply == 0:
+            value.pop('authority_start_ply',None)
+        return value
+
     model_config = ConfigDict(extra="forbid", strict=True)
     repertoire_id: str
     route_id: str
@@ -114,7 +123,7 @@ class PublicationBundleV2(PublicationBundle):
         if coverage != {(fact.card_id, membership) for fact in self.facts for membership in fact.memberships}:
             raise ValueError("Every accepted membership requires a real route binding")
         if len(self.model_dump_json().encode()) > MAX_BUNDLE_BYTES:
-            raise ValueError("Publication bundle exceeds 8 MiB")
+            raise ValueError("Publication bundle exceeds 12 MiB")
         return self
 
 

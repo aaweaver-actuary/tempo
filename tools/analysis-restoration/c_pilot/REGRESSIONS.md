@@ -25,3 +25,9 @@ orchestration, startup failure and strict job-bound validation before startup.
 The controlled dependencies are installed public packages. Existing installed
 adapter tests cover session/trailing-status/provenance failures; actual qualified
 B execution remains in the explicit native A/B lane.
+
+## C3 real snapshot cohort
+
+`tests/test_cohort.py` owns deterministic provider/color selection, duplicate and
+conflicting provider identities, legal local-PGN reconstruction, and explicit
+unknown opponent metadata. Local PGN hashes never claim original provider bytes.

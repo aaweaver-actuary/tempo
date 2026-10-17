@@ -234,3 +234,25 @@ workspace, command, original request, publication, generation and ID all match.
 
 Exact request comparisons preserve canonical JSON primitive types: integer,
 boolean and floating-point substitutions do not compare equal.
+
+## Captured legacy authority (C3)
+
+The offline `tempo-a-legacy-export` consumer translates an explicitly selected,
+complete route scope into the existing authored-import documents. It does not
+assign physical Learning identity to normalized opponent-prelude exercises.
+`historical_mapping_unknown` lists source exercise keys whose historical physical
+identity is unresolved; Game Evidence must return unknown at these learner
+bindings. This does not weaken Learning's exact alias validation.
+
+A source route may declare `authority_start_ply` (default 0, null means never
+established). This is an ordered-route policy-selection boundary, included in the
+source and activation route digests. Opponent-response completeness and learner
+comparisons cannot become authoritative before it. Default zero is omitted from
+serialization to preserve previous route identities. Re-entry still requires its
+existing explicit binding authority.
+
+Complete bridge scope now permits 8192 definitions; the Learning execution bundle
+is bounded at 12 MiB and the immutable export at 64 MiB. Authored CLI inputs
+are bounded at 16 MiB. Large immutable internal bridge checkpoints use bounded,
+hash-verified compression; public operation/export/snapshot documents retain their
+original canonical contents. Existing inline checkpoints remain readable.

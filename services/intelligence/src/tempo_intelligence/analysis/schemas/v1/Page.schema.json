@@ -218,6 +218,19 @@
           "title": "Game Id",
           "type": "string"
         },
+        "game_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Game Url"
+        },
         "learner_color": {
           "enum": [
             "white",

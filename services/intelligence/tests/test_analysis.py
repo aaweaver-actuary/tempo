@@ -198,3 +198,21 @@ def test_positive_opponent_encounters_supply_distinct_game_denominator():
     covered['opponent_encounters_complete']=False
     finding=next(item for item in source_findings(manifest,[gap,covered])[0] if item['category']=='practical_gap')
     assert finding['eligible_encounter_games'] is None and 'eligible_encounter_denominator_unavailable' in finding['uncertainty']
+
+
+def test_C3_original_game_url_and_repertoire_title_survive_findings():
+    manifest,games=corpus()
+    games[0]['game_url']='https://www.chess.com/game/live/123'
+    manifest['selections'][0]['repertoire_title']='Authored Italian'
+    finding=source_findings(manifest,[games[0]])[0][0]
+    assert finding['representative']['game_url']=='https://www.chess.com/game/live/123'
+    assert finding['repertoire_title']=='Authored Italian'
+
+
+def test_C3_absent_optional_metadata_preserves_original_input_page_digest():
+    from tempo_intelligence.analysis.models import Page
+    from tempo_intelligence.identity import digest
+    root=Path(__file__).parents[1]/'fixtures/analysis'
+    original=json.loads((root/'games-0.json').read_text())
+    assert Page.model_validate(original).model_dump(mode='json')==original
+    assert digest(Page.model_validate(original).model_dump(mode='json'))==digest(original)

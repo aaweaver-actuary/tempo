@@ -1,10 +1,12 @@
 """Explicit local snapshot adapter; this is not an extension of shared wire v1."""
 from typing import Literal
 import hashlib
+import base64
+import zlib
 import json
 
 import chess
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
 from tempo_chess_core import canonical_fen_key
 from tempo_content_publication_contracts.v1 import Publication, ActivationAcknowledgement
 
@@ -27,6 +29,15 @@ class Binding(StrictModel):
 
 
 class Route(StrictModel):
+    authority_start_ply: int | None = Field(default=0, ge=0, le=1000)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_routes(self, handler):
+        value=handler(self)
+        if self.authority_start_ply == 0:
+            value.pop('authority_start_ply',None)
+        return value
+
     repertoire_id: str = Field(min_length=1)
     route_id: str = Field(min_length=1)
     learner_color: Literal["white", "black"]
@@ -191,7 +202,9 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
                 seen.add(identity)
                 if scope.get('digest') != canonical_digest({key:value for key,value in scope.items() if key != 'digest'}):
                     raise ValueError('response_scope_digest_mismatch')
-                complete = self.complete and all(ply < len(route.moves) for route,ply,_ in occurrences)
+                complete = self.complete and all(
+                    route.authority_start_ply is not None and ply >= route.authority_start_ply and ply < len(route.moves) and any(binding.ply == ply + 1 for binding in route.bindings)
+                    for route, ply, _ in occurrences)
                 actual_nodes = [(item.get('route_id'),item.get('ply')) for item in scope.get('route_contexts', [])]
                 expected_nodes = [(route.route_id,ply) for route,ply,_ in occurrences]
                 board = occurrences[0][2]
@@ -222,7 +235,36 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
             raise ValueError('response_scope_inventory_incomplete')
 
 
+MAX_STORED_SNAPSHOT_BYTES = 64 * 1024 * 1024
+
+
+def snapshot_storage(document):
+    raw=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+    if len(raw)>MAX_STORED_SNAPSHOT_BYTES:
+        raise ValueError('snapshot_byte_bound')
+    if len(raw)<=1024*1024:
+        return document
+    return {'_tempo_snapshot_storage':1,'sha256':hashlib.sha256(raw).hexdigest(),
+            'data':base64.b64encode(zlib.compress(raw)).decode('ascii')}
+
+
+def snapshot_document(value):
+    if not isinstance(value,dict) or '_tempo_snapshot_storage' not in value:
+        return value
+    try:
+        if type(value['_tempo_snapshot_storage']) is not int or value['_tempo_snapshot_storage']!=1 or len(value['data'])>2*MAX_STORED_SNAPSHOT_BYTES:
+            raise ValueError()
+        decoder=zlib.decompressobj()
+        raw=decoder.decompress(base64.b64decode(value['data'],validate=True),MAX_STORED_SNAPSHOT_BYTES+1)
+        if len(raw)>MAX_STORED_SNAPSHOT_BYTES or decoder.unconsumed_tail or not decoder.eof or decoder.unused_data or hashlib.sha256(raw).hexdigest()!=value['sha256']:
+            raise ValueError()
+        return json.loads(raw)
+    except (KeyError,ValueError,TypeError,zlib.error):
+        raise ValueError('snapshot_storage_corrupt') from None
+
+
 def parse_snapshot(value):
+    value = snapshot_document(value)
     if not isinstance(value, dict):
         return value
     version = value.get("schema_version")

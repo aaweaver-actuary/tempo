@@ -101,3 +101,16 @@ installed CLI -> authenticated Learning HTTP -> independent databases.
 `integration/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.
 
 `test_A_post_retirement_snapshot_cannot_claim_current_serving` installs a genuine retired observation, recomputes comparison readiness and preserves the original snapshot and delivery records.
+
+## C3 mapping uncertainty
+
+`tests/test_bridge_snapshot.py::test_C3_unknown_historical_mapping_cannot_become_a_repertoire_miss`
+requires historical uncertainty to remain unknown even for an otherwise valid
+activated publication. Unbound authored replies also make response scope
+incomplete during the independent v2 snapshot reconstruction.
+
+C3 native rerun also executes the existing provider replay, cooldown, malformed
+source, custom FEN, authority, durable delivery and immutable export regressions.
+The private cohort is separate from these constructed edge cases. A reconstructed
+PGN digest identifies the supplied local source bytes, not unavailable original
+provider PGN bytes.

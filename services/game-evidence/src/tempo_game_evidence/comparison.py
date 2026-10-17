@@ -24,6 +24,8 @@ def compare_game(game, positions, snapshot):
             groups = {}
             for index, route_ply in candidates:
                 route, _, bindings = routes[index]
+                if route.authority_start_ply is None or route_ply < route.authority_start_ply:
+                    continue
                 binding = bindings.get(route_ply)
                 if binding is None:
                     continue
@@ -41,6 +43,8 @@ def compare_game(game, positions, snapshot):
                        "explanation": "missing_or_ambiguous_route_policy"}
             if not snapshot.serving_current():
                 finding["explanation"] = "publication_acceptance_unknown" if snapshot.activation is None else "publication_not_current"
+            elif selected and selected[2] in getattr(snapshot, "content_export", {}).get("historical_mapping_unknown", []):
+                finding["explanation"] = "historical_identity_unresolved"
             elif selected:
                 policy_id, decision_id, card_id, expected = selected
                 matched = position["move"] in expected

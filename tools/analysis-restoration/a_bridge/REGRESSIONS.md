@@ -42,3 +42,10 @@ receipt workspace/family/request/ID mismatches and JSON integer/boolean substitu
 before any POST. Every operation read, including recovery and fence reads, uses
 that validator. The installed conflicting-authority cases seed genuine complete
 and queued retirements for another publication and preserve both authorities.
+
+## C3 real repertoire translation
+
+`tests/test_legacy.py` owns deterministic read-only capture translation, exact
+physical executable mapping, policy/color/revision exclusions, stable identity
+through renames, and denial of FEN-only re-entry. The translator emits existing A
+input documents; it does not restore history, approve content or activate Learning.

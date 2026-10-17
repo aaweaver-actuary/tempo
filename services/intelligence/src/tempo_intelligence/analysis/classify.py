@@ -9,7 +9,7 @@ def positions(game):
     board = chess.Board(game["starting_fen"])
     for ply, move in enumerate(game["moves"]):
         if board.turn == (game["learner_color"] == "white"):
-            yield {"game_id": game["game_id"], "learner_id":game.get("learner_id"),"provider":game.get("provider"),"provider_game_id":game.get("provider_game_id"), "source_revision": game["source_revision"],
+            yield {**({"game_url":game["game_url"]} if game.get("game_url") else {}),"game_id": game["game_id"], "learner_id":game.get("learner_id"),"provider":game.get("provider"),"provider_game_id":game.get("provider_game_id"), "source_revision": game["source_revision"],
                    "source_digest": game["source_digest"], "ply": ply, "fen": board.fen(en_passant="fen"),
                    "actual_move": move, "learner_color": game["learner_color"],
                    "played_at":game.get("played_at"),"starting_fen": game["starting_fen"], "history": game["moves"][:ply]}
@@ -38,7 +38,7 @@ def base_finding(kind, selection, position, target, reason):
                 "color": position["learner_color"], "position": " ".join(chess.Board(position["fen"]).fen(en_passant="legal").split()[:4]), "target": target}
     return {"finding_id": digest(identity), "category": kind, "policy_version": POLICY,
             "workspace_id": selection["workspace_id"], "repertoire_id": selection["repertoire_id"],
-            "policy_id": selection["policy_id"], "learner_color": position["learner_color"],
+            "policy_id": selection["policy_id"], **({"repertoire_title":selection["repertoire_title"]} if selection.get("repertoire_title") else {}), "learner_color": position["learner_color"],
             "lineage": selection["lineage"], "representative": position,
             "incident_id": digest({"workspace":selection["workspace_id"],"game":position["game_id"],"ply":position["ply"],"policy":selection["policy_id"],"position":position["fen"]}),
             "supporting_games": [position["game_id"]], "supporting_game_count": 1,

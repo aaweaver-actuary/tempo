@@ -530,3 +530,17 @@ def test_A_selected_maintenance_cannot_resurrect_terminally_fenced_retirement(ca
     assert case.query('SELECT activation_revision FROM learning.serving_publications')[0][0] == 1
     with case.database.scope():
         assert gateway.read_operation(request['retirement_id'], publication=True) == receipt
+
+
+def test_C3_publication_bundle_capacity_is_bounded_after_default_expansion(monkeypatch):
+    from tempo_learning_runtime import publication_bridge as module
+    payload=content_bundle()
+    expanded=module.PublicationBundleV2.model_validate(payload)
+    assert module.MAX_DEFINITIONS == 8192
+    assert module.MAX_BUNDLE_BYTES == 12 * 1024 * 1024
+    size=len(expanded.model_dump_json().encode())
+    monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size)
+    assert module.PublicationBundleV2.model_validate(payload).publication == expanded.publication
+    monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size-1)
+    with pytest.raises(ValueError,match='bundle exceeds'):
+        module.PublicationBundleV2.model_validate(payload)

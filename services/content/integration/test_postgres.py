@@ -1702,3 +1702,17 @@ def test_A_proposal_insert_rollback_allows_legitimate_retry_after_restart(servic
         draft = Bridge(restarted).draft(original['document']['source'], original['document']['manifest'], 0, proposal)
         assert Bridge(restarted).draft(original['document']['source'], original['document']['manifest'], 0, proposal) == draft
     assert query(statement, (original['source_key'],))[0][0] == 1
+
+
+def test_C3_preparation_persists_packed_export_and_public_operation_rehydrates(service):
+    bridge=Bridge(service)
+    draft=bridge_draft(service)
+    approved=bridge.approve(draft['id'],draft['digest'])
+    prepared=bridge.prepare(approved['id'],100)
+    stored=query('SELECT document FROM content.bridge_operations WHERE id=%s',(approved['id'],))[0][0]
+    assert 'export' not in stored
+    assert stored['export_packed']['encoding']=='zlib-base64-v1'
+    publication=prepared['document']['export']['publication']
+    assert stored['export_identity']=={key:publication[key] for key in ('publication_id','publication_generation')}
+    assert bridge.prepare(approved['id'],100)['document']==prepared['document']
+    assert bridge.export(publication['publication_id'],publication['publication_generation'])==prepared['document']['export']

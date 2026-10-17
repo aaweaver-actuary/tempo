@@ -460,6 +460,20 @@
     "RouteV2": {
       "additionalProperties": false,
       "properties": {
+        "authority_start_ply": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0,
+          "title": "Authority Start Ply"
+        },
         "bindings": {
           "items": {
             "$ref": "#/$defs/Binding"

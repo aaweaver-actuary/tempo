@@ -8,7 +8,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .comparison import compare_game
-from .snapshot import ComparisonSnapshot, parse_snapshot
+from .snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage
 from .source import INDEX_VERSION, MAX_SOURCE_BYTES, identity, normalize_pgn, replay_positions, utc_now
 
 
@@ -114,7 +114,7 @@ class EvidenceStore:
                 if item:
                     affected.update(key for _, keys, _ in item.compiled_routes() for key in keys)
             database.execute("INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                             (digest,workspace,snapshot.snapshot_id,snapshot.revision,Jsonb(document)))
+                             (digest,workspace,snapshot.snapshot_id,snapshot.revision,Jsonb(snapshot_storage(document))))
             database.execute("UPDATE workspace_inputs SET epoch=epoch+1,snapshot_digest=%s,changed_positions=%s WHERE workspace_id=%s",
                              (digest,Jsonb(sorted(affected)),workspace))
             database.execute("""INSERT INTO jobs(job_key,workspace_id,kind) VALUES(%s,%s,'rescope')

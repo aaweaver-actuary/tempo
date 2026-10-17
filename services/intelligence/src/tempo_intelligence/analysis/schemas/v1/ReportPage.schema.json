@@ -359,6 +359,19 @@
           ],
           "title": "Repertoire Id"
         },
+        "repertoire_title": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repertoire Title"
+        },
         "representative": {
           "$ref": "#/$defs/Representative"
         },
@@ -618,6 +631,19 @@
             }
           ],
           "title": "Game Id"
+        },
+        "game_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Game Url"
         },
         "history": {
           "items": {

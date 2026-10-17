@@ -237,6 +237,19 @@
           "minLength": 1,
           "title": "Repertoire Id",
           "type": "string"
+        },
+        "repertoire_title": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repertoire Title"
         }
       },
       "required": [
