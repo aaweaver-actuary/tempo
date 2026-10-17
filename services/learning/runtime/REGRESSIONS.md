@@ -1,5 +1,13 @@
 # Learning runtime regression ownership
 
+`tests/test_decision_projection.py` owns explicit bound decision offsets, exact
+position/color and identity validation, unchanged full executables/aliases, and
+old binding byte compatibility. The installed three-service regression
+`test_C3_original_opponent_prelude_card_receives_interior_miss_and_settles_once`
+owns original physical identity/history preservation, an interior game miss,
+post-issuance evidence fencing, subsequent Study settlement and exact replay.
+It is a labeled constructed compatibility regression, not real-game acceptance.
+
 ## A authoritative bridge
 
 `test_content_bridge.py` owns measured complete 129/512/2,048-definition activation

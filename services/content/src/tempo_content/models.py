@@ -62,7 +62,21 @@ class RouteMembership(SourceModel):
     route_key: SourceKey
 
 
+class ExecutionPrelude(SourceModel):
+    starting_fen: Annotated[str, Field(min_length=1, max_length=120)]
+    moves: list[UciMove] = Field(min_length=1, max_length=1)
+
+
 class SourceExercise(SourceModel):
+    execution_prelude: ExecutionPrelude | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_exercises(self, handler):
+        value=handler(self)
+        if self.execution_prelude is None:
+            value.pop('execution_prelude',None)
+        return value
+
     key: SourceKey
     decision_key: SourceKey
     policy_key: SourceKey
@@ -79,6 +93,15 @@ class SourceExercise(SourceModel):
 
 
 class ExerciseBinding(SourceModel):
+    exercise_ply: int = Field(default=0,ge=0,le=39)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_bindings(self,handler):
+        value=handler(self)
+        if self.exercise_ply==0:
+            value.pop('exercise_ply',None)
+        return value
+
     route_key: SourceKey
     policy_key: SourceKey
     ply: Annotated[int, Field(ge=0, le=1000)]

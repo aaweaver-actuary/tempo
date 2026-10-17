@@ -10,7 +10,8 @@ from .factories import observed
 
 
 @pytest.mark.parametrize('same_policy',[True,False])
-def test_C3_existing_authored_position_does_not_become_a_new_content_gap(same_policy):
+@pytest.mark.parametrize('projected',[False,True])
+def test_C3_existing_authored_position_does_not_become_a_new_content_gap(same_policy,projected):
     game,positions=observed(['e2e4','c7c5','g1f3'])
     route=SimpleNamespace(repertoire_id='rep',policy_id='policy',route_id='authored',learner_color='white',moves=['e2e4','e7e5','g1f3'])
     board=chess.Board();keys=[canonical_fen_key(board.fen())]
@@ -22,8 +23,18 @@ def test_C3_existing_authored_position_does_not_become_a_new_content_gap(same_po
     # This executable belongs to another authored route. Position equality alone
     # is neither absence of content nor permission to re-enter that route.
     existing=SimpleNamespace(card_id='existing-content',decision_id='decision',policy_id='policy' if same_policy else 'other-policy',starting_fen=positions[2]['fen'])
+    compiled=[(route,keys,{})]
+    if projected:
+        from tempo_game_evidence.snapshot import Binding
+        existing.starting_fen=positions[1]['fen']
+        blueprint={key:getattr(existing,key) for key in ('card_id','decision_id','policy_id','starting_fen')}
+        blueprint['specification']={'type':'move_line','mode':'stepwise_line','grading_policy':'reference','accepted_lines':[['c7c5','g1f3']]}
+        existing.model_dump=lambda **kwargs:blueprint
+        other=SimpleNamespace(repertoire_id='rep',policy_id=existing.policy_id,route_id='other',learner_color='white',moves=['c7c5','g1f3'])
+        other_keys=[position['comparison_key'] for position in positions[1:]]
+        compiled.append((other,other_keys,{1:Binding(ply=1,card_id=existing.card_id,exercise_ply=1,decision_id=existing.decision_id)}))
     snapshot=SimpleNamespace(complete=True,serving_current=lambda:True,
-        compiled_routes=lambda:[(route,keys,{})],
+        compiled_routes=lambda:compiled,
         publication=SimpleNamespace(source_revision=1,publication_generation=1,definitions=[existing]),
         content_export={'export_digest':'export','legal_replies':[{'position_key':positions[1]['comparison_key'],'scopes':[scope]}]})
     finding=deviations(game,positions,snapshot)[0]

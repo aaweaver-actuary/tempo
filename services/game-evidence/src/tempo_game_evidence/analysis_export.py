@@ -8,7 +8,7 @@ import tempfile
 import chess
 from psycopg.types.json import Jsonb
 from tempo_chess_core import canonical_fen_key
-from .snapshot import parse_snapshot
+from .snapshot import parse_snapshot, projected_definition
 from .source import INDEX_VERSION
 from .delivery import inspect_delivery
 
@@ -66,8 +66,21 @@ def deviations(game, positions, snapshot, *, all_opponent_decisions=False):
                 if complete and is_deviation and not any(reply['responses'] for reply in selected):
                     policies={context['policy_id'] for context in contexts}
                     position_key=canonical_fen_key(board.fen(en_passant='legal'))
-                    existing_position_ids=sorted(definition.card_id for definition in snapshot.publication.definitions
-                        if definition.policy_id in policies and canonical_fen_key(chess.Board(definition.starting_fen).fen(en_passant='legal'))==position_key)
+                    existing_position_ids={definition.card_id for definition in snapshot.publication.definitions
+                        if definition.policy_id in policies and canonical_fen_key(chess.Board(definition.starting_fen).fen(en_passant='legal'))==position_key}
+                    definitions_by_id={definition.card_id:definition for definition in snapshot.publication.definitions}
+                    checked=set()
+                    for route,_,bindings in routes:
+                        if route.policy_id not in policies:continue
+                        for binding in bindings.values():
+                            if not binding.exercise_ply:continue
+                            identity=(binding.card_id,binding.exercise_ply,binding.decision_id)
+                            if identity in checked:continue
+                            checked.add(identity)
+                            projected=projected_definition(definitions_by_id[binding.card_id].model_dump(mode='json'),binding.model_dump(mode='json'))
+                            if canonical_fen_key(chess.Board(projected['starting_fen']).fen(en_passant='legal'))==position_key:
+                                existing_position_ids.add(binding.card_id)
+                    existing_position_ids=sorted(existing_position_ids)
                     if existing_position_ids:
                         complete=False
 

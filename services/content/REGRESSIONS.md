@@ -1,5 +1,11 @@
 # Content regression ownership
 
+`tests/test_execution_projection.py` owns original full-executable preservation
+with an explicit opponent prelude, invalid prelude rejection, exact interior
+decision reconstruction and absent-field byte compatibility. The installed
+cross-component owner is Learning's
+`test_C3_original_opponent_prelude_card_receives_interior_miss_and_settles_once`.
+
 ## A bridge
 
 `tests/test_bridge.py` owns source/rename/permutation mapping, explicit provenance

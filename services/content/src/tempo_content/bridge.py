@@ -16,7 +16,7 @@ import chess.pgn
 from pydantic import Field, model_validator
 from psycopg.types.json import Jsonb
 
-from .domain import ContentError, canonical_source, canonical_position, stable_id
+from .domain import ContentError, canonical_source, canonical_position, stable_id, decision_identity, project_move_line
 from .models import SourceModel, SourceSnapshot, SourceRepertoire, SourcePolicy
 
 
@@ -252,6 +252,14 @@ def unpack_bridge_document(packed):
         return json.loads(raw)
     except (ValueError,KeyError,TypeError,zlib.error):
         raise ContentError('bridge_document_corrupt','Immutable bridge document is unavailable or corrupt') from None
+
+
+def projected_definition(definition,binding):
+    offset=binding.get('exercise_ply',0)
+    if not offset:
+        return definition
+    fen,specification=project_move_line(definition['starting_fen'],definition['specification'],offset)
+    return {**definition,'starting_fen':fen,'specification':specification,'decision_id':binding['decision_id']}
 
 
 class Bridge:
@@ -523,14 +531,23 @@ class Bridge:
         by_card_id = {value["card_id"]: value for value in definitions["definitions"]}
         definition_by_key = {item.key: by_card_id[stable_id(source.workspace_id, source.source_key, "card", item.key)] for item in source.exercises}
         repertoire_by_key = {item.key: item for item in source.repertoires}
+        exercise_by_key = {item.key:item for item in source.exercises}
         routes, legal_replies = [], {}
         authorized = {(item["route_key"], item["policy_key"], item["ply"]) for item in manifest["reentry"]}
         for membership in source.memberships:
             authored = next(item for item in source.routes if item.key == membership.route_key)
             repertoire = repertoire_by_key[membership.repertoire_key]
-            bindings = [{"ply": binding.ply, "card_id": definition_by_key[binding.exercise_key]["card_id"],
-                "reentry": (binding.route_key, binding.policy_key, binding.ply) in authorized}
-                for binding in source.bindings if (binding.route_key, binding.policy_key) == (membership.route_key, membership.policy_key)]
+            bindings=[]
+            for binding in source.bindings:
+                if (binding.route_key,binding.policy_key)!=(membership.route_key,membership.policy_key):
+                    continue
+                exercise=exercise_by_key[binding.exercise_key]
+                offset=binding.exercise_ply+(len(exercise.execution_prelude.moves) if exercise.execution_prelude else 0)
+                published_binding={'ply':binding.ply,'card_id':definition_by_key[binding.exercise_key]['card_id'],
+                    'reentry':(binding.route_key,binding.policy_key,binding.ply) in authorized}
+                if offset:
+                    published_binding.update(exercise_ply=offset,decision_id=decision_identity(source.workspace_id,source.source_key,exercise,binding.exercise_ply))
+                bindings.append(published_binding)
             route = {"repertoire_id": stable_id(source.workspace_id, source.source_key, "repertoire", repertoire.key),
                 "route_id": stable_id(source.workspace_id, source.source_key, "route", membership.route_key),
                 "policy_id": stable_id(source.workspace_id, source.source_key, "policy", membership.policy_key),
@@ -587,7 +604,7 @@ class Bridge:
                     if ply<len(route['moves']) and route['moves'][ply]==move.uci():
                         for binding in route['bindings']:
                             if binding['ply']==ply+1:
-                                accepted[binding['card_id']]=definitions_by_id[binding['card_id']]
+                                accepted[binding['card_id']]=projected_definition(definitions_by_id[binding['card_id']],binding)
                 decision_ids={item['decision_id'] for item in accepted.values()}
                 result=board.copy()
                 result.push(move)

@@ -23,9 +23,45 @@ class StrictModel(BaseModel):
 
 
 class Binding(StrictModel):
+    exercise_ply: int = Field(default=0,ge=0,le=39)
+    decision_id: str | None = Field(default=None,min_length=1,max_length=200)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_binding_bytes(self,handler):
+        value=handler(self)
+        if self.exercise_ply==0:value.pop('exercise_ply',None)
+        if self.decision_id is None:value.pop('decision_id',None)
+        return value
+
+    @model_validator(mode='after')
+    def explicit_projection(self):
+        if self.exercise_ply and self.decision_id is None:
+            raise ValueError('projected_binding_requires_decision_identity')
+        return self
+
     ply: int = Field(ge=0, le=1000)
     card_id: str = Field(min_length=1)
     reentry: bool = False
+
+
+def projected_definition(definition,binding):
+    offset=binding.get('exercise_ply',0)
+    identity=binding.get('decision_id') or definition['decision_id']
+    if not offset:
+        if identity!=definition['decision_id']:raise ValueError('root_decision_relabelled')
+        return definition
+    if type(offset) is not int or not 0<offset<40 or not binding.get('decision_id') or definition['specification']['type']!='move_line':
+        raise ValueError('invalid_decision_projection')
+    positions=set();remaining=[]
+    for line in definition['specification']['accepted_lines']:
+        if offset>=len(line):raise ValueError('projection_outside_accepted_line')
+        board=chess.Board(definition['starting_fen'])
+        for move in line[:offset]:board.push_uci(move)
+        positions.add(board.fen(en_passant='fen'));remaining.append(line[offset:])
+    if len(positions)!=1:raise ValueError('ambiguous_decision_projection')
+    return {**definition,'decision_id':identity,'starting_fen':next(iter(positions)),
+        'specification':{**definition['specification'],'accepted_lines':remaining,
+            'mode':'single' if all(len(line)==1 for line in remaining) else 'stepwise_line'}}
 
 
 class Route(StrictModel):
@@ -72,6 +108,7 @@ class ComparisonSnapshot(StrictModel):
             raise ValueError("snapshot_activation_does_not_match_publication")
         definitions = {item.card_id: item for item in publication.definitions}
         seen_routes = set()
+        projections={}
         for route in self.routes:
             route_key = self.route_identity(route)
             if route_key in seen_routes:
@@ -85,17 +122,25 @@ class ComparisonSnapshot(StrictModel):
             bindings = {item.ply: item for item in route.bindings}
             for ply in range(len(route.moves) + 1):
                 if ply in bindings:
-                    definition = definitions.get(bindings[ply].card_id)
-                    if definition is None or canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition.starting_fen).fen()):
+                    binding=bindings[ply]
+                    original=definitions.get(binding.card_id)
+                    if original is None:raise ValueError('binding_missing_definition_or_wrong_position')
+                    definition=projected_definition(original.model_dump(mode='json'),binding.model_dump(mode='json'))
+                    key=(binding.card_id,definition['decision_id'])
+                    projected=(binding.exercise_ply,definition['starting_fen'],definition['specification'])
+                    if key in projections and projections[key]!=projected:
+                        raise ValueError('ambiguous_projected_decision_identity')
+                    projections[key]=projected
+                    if canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition['starting_fen']).fen()):
                         raise ValueError("binding_missing_definition_or_wrong_position")
                     if board.turn != (route.learner_color == "white"):
                         raise ValueError("binding_is_opponent_move")
-                    spec = definition.specification
-                    if spec.type == "move_line":
-                        if (spec.grading_policy == "reference" and ply<len(route.moves)
-                                and route.moves[ply] not in {line[0] for line in spec.accepted_lines}):
+                    spec = definition['specification']
+                    if spec['type'] == "move_line":
+                        if (spec['grading_policy'] == "reference" and ply<len(route.moves)
+                                and route.moves[ply] not in {line[0] for line in spec['accepted_lines']}):
                             raise ValueError("route_conflicts_with_accepted_policy")
-                        for line in spec.accepted_lines:
+                        for line in spec['accepted_lines']:
                             alternative_board = board.copy()
                             for uci in line:
                                 alternative_board.push_uci(uci)
@@ -219,7 +264,7 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
                     raise ValueError('response_scope_replies_incomplete')
                 for reply in replies:
                     move = reply['move_uci']
-                    accepted = {binding.card_id:definitions[binding.card_id]
+                    accepted = {binding.card_id:projected_definition(definitions[binding.card_id],binding.model_dump(mode='json'))
                                 for route,ply,_ in occurrences if ply < len(route.moves) and route.moves[ply] == move
                                 for binding in route.bindings if binding.ply == ply + 1}
                     decision_ids = {item['decision_id'] for item in accepted.values()}

@@ -1,5 +1,10 @@
 # Game Evidence regression ownership
 
+`tests/test_decision_projection.py` owns a learner miss inside an unchanged
+physical executable, exact expected move/position, conflicting projected identity
+and incorrect offset rejection. `tests/test_analysis_deviations.py` also requires
+existing projected content to remain unknown without proven re-entry authority.
+
 `tests/test_analysis_schema.py` owns offline immutable manifest/page integrity,
 replay, mixed input/workspace/version rejection, missing pages/counts, corruption
 and non-overwriting output. Learning's regular `test_authoritative_bridge.py`

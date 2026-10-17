@@ -33,6 +33,22 @@ def digest(value):
 
 
 class Binding(BaseModel):
+    exercise_ply: int = Field(default=0,ge=0,le=39)
+    decision_id: str | None = Field(default=None,min_length=1,max_length=200)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_binding_bytes(self,handler):
+        value=handler(self)
+        if self.exercise_ply==0:value.pop('exercise_ply',None)
+        if self.decision_id is None:value.pop('decision_id',None)
+        return value
+
+    @model_validator(mode='after')
+    def explicit_projected_identity(self):
+        if self.exercise_ply and self.decision_id is None:
+            raise ValueError('Projected binding requires an explicit decision identity')
+        return self
+
     model_config = ConfigDict(extra="forbid", strict=True)
     ply: int = Field(ge=0, le=1000)
     card_id: str
@@ -57,6 +73,21 @@ class Route(BaseModel):
     starting_fen: str
     moves: list[str] = Field(max_length=1000)
     bindings: list[Binding] = Field(max_length=1000)
+
+
+def project_decision(starting_fen,accepted_lines,exercise_ply):
+    """Validate the explicitly published offset without changing physical identity."""
+    if type(exercise_ply) is not int or not 0<=exercise_ply<40:
+        raise ValueError('Invalid decision projection offset')
+    positions=set();moves=set()
+    for line in accepted_lines:
+        if exercise_ply>=len(line):raise ValueError('Decision projection outside accepted line')
+        board=chess.Board(starting_fen)
+        for move in line[:exercise_ply]:board.push_uci(move)
+        positions.add(starting_fen if exercise_ply==0 else board.fen(en_passant='fen'))
+        moves.add(line[exercise_ply])
+    if len(positions)!=1:raise ValueError('Ambiguous decision projection position')
+    return next(iter(positions)),tuple(sorted(moves))
 
 
 class PublicationBundleV2(PublicationBundle):
@@ -93,7 +124,8 @@ class PublicationBundleV2(PublicationBundle):
         physical = [self.legacy_aliases.get(identifier, identifier) for identifier in definitions]
         if len(set(physical)) != len(physical):
             raise ValueError("Multiple Content objects cannot merge one learning object")
-        seen, coverage = set(), set()
+        seen, coverage, primary_coverage = set(), set(), set()
+        decision_projections={}
         for route in self.routes:
             key = (route.repertoire_id, route.route_id, route.policy_id)
             if key in seen or len({binding.ply for binding in route.bindings}) != len(route.bindings):
@@ -111,17 +143,30 @@ class PublicationBundleV2(PublicationBundle):
                     fact = facts[binding.card_id]
                     if route.policy_id != definition.policy_id or route.learner_color != fact.trained_color or route.repertoire_id not in fact.memberships:
                         raise ValueError("Route policy/color/membership mismatch")
-                    if board.turn != (route.learner_color == "white") or board.fen() != chess.Board(definition.starting_fen).fen():
+                    decision_id=binding.decision_id or definition.decision_id
+                    if not binding.exercise_ply and decision_id!=definition.decision_id:
+                        raise ValueError('Root binding cannot relabel a decision')
+                    projected_fen,accepted_moves=project_decision(definition.starting_fen,definition.specification.accepted_lines,binding.exercise_ply)
+                    identity=(binding.card_id,decision_id)
+                    projection=(binding.exercise_ply,projected_fen,accepted_moves)
+                    if identity in decision_projections and decision_projections[identity]!=projection:
+                        raise ValueError('Decision identity has ambiguous projections')
+                    decision_projections[identity]=projection
+                    if board.turn != (route.learner_color == "white") or board.fen() != chess.Board(projected_fen).fen():
                         raise ValueError("Binding position/color mismatch")
-                    if ply == len(route.moves) or route.moves[ply] not in {line[0] for line in definition.specification.accepted_lines}:
+                    if ply == len(route.moves) or route.moves[ply] not in accepted_moves:
                         raise ValueError("Route conflicts with accepted alternatives")
                     coverage.add((binding.card_id, route.repertoire_id))
+                    if decision_id==definition.decision_id:
+                        primary_coverage.add((binding.card_id,route.repertoire_id))
                 if ply < len(route.moves):
                     board.push_uci(route.moves[ply])
             if any(binding.ply > len(route.moves) for binding in route.bindings):
                 raise ValueError("Binding outside route")
         if coverage != {(fact.card_id, membership) for fact in self.facts for membership in fact.memberships}:
             raise ValueError("Every accepted membership requires a real route binding")
+        if primary_coverage!=coverage:
+            raise ValueError('Every accepted membership requires its primary physical exercise decision')
         if len(self.model_dump_json().encode()) > MAX_BUNDLE_BYTES:
             raise ValueError("Publication bundle exceeds 12 MiB")
         return self
@@ -311,12 +356,16 @@ def activate(database, payload):
         line_id = identity + ":" + route.route_id + ":" + route.policy_id
         line_rows.append({"id": line_id, "repertoire_id": route.repertoire_id, "trained_color": route.learner_color})
         parent = None
-        for decision_index, binding in enumerate(sorted(route.bindings, key=lambda item: item.ply)):
+        decision_index=0
+        for binding in sorted(route.bindings,key=lambda item:item.ply):
             definition = definitions[binding.card_id]
+            if (binding.decision_id or definition.decision_id)!=definition.decision_id:
+                continue
             graph_rows.append({"repertoire_id": route.repertoire_id, "generation": generation, "line_id": line_id,
                 "decision_index": decision_index, "card_id": identifiers[binding.card_id], "parent_card_id": parent,
                 "starting_fen": definition.starting_fen, "moves_json": json.dumps(definition.specification.accepted_lines[0]), "trained_color": route.learner_color})
             parent = identifiers[binding.card_id]
+            decision_index+=1
     database.execute_native("INSERT INTO repertoire_lines(id,repertoire_id,trained_color,created_at) SELECT id,repertoire_id,trained_color,%s FROM jsonb_to_recordset(%s) AS x(id text,repertoire_id text,trained_color text) ON CONFLICT DO NOTHING", (datetime.now(timezone.utc).isoformat(), Jsonb(line_rows)))
     database.execute_native("INSERT INTO opening_graph_publications SELECT value,%s,'ready' FROM unnest(%s::text[]) value ON CONFLICT(repertoire_id) DO UPDATE SET generation=excluded.generation,state='ready'", (generation, memberships))
     database.execute_native("INSERT INTO opening_graph_steps SELECT * FROM jsonb_to_recordset(%s) AS x(repertoire_id text,generation bigint,line_id text,decision_index bigint,card_id text,parent_card_id text,starting_fen text,moves_json text,trained_color text)", (Jsonb(graph_rows),))

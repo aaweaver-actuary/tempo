@@ -11,6 +11,16 @@ requires exact legacy FEN, primary line, revision, family and learner color;
 unknown historical alternative sets cannot be invented. No history importer is
 provided.
 
+V2 route bindings may explicitly provide `exercise_ply` and `decision_id` for a
+learner decision inside the unchanged full physical executable. Learning validates
+the legal prefix, exact route position/color, alternatives and unambiguous decision
+identity. Every membership still requires the primary exercise decision. Interior
+decisions create neither cards nor prerequisite graph nodes. Remediation resolves
+their projected position to the original physical card; settlement still requires
+a qualifying full Study review issued after the accepted evidence frontier.
+Absent/zero projection fields retain prior serialized bytes and strict historical
+alias compatibility remains unchanged.
+
 `POST /internal/publications/v2/activate` uses the existing durable command gateway
 with `{publication_id, publication_generation, expected_activation_revision,
 activation_id}`. Initial expected activation revision is zero. Successful v2

@@ -63,6 +63,16 @@ A binding needs a matching route/policy/repertoire membership. The exercise's
 policy must match that binding. Chess legality is separately validated by bounded
 work, because contract shape validation alone does not prove legal play.
 
+An opening exercise may explicitly retain one opponent `execution_prelude`
+(`starting_fen`, exactly one legal UCI move). Its logical `starting_fen` must be
+the exact resulting learner position. Publication retains the original full
+physical FEN and prepends that move to every accepted line; no historical alias
+is inferred. A binding's optional `exercise_ply` selects a learner decision within
+the logical exercise. Content verifies the exact authored route occurrence and
+publishes the full-executable offset with a stable decision identity. All accepted
+alternatives must reach the same projected position. These additive fields are
+omitted when absent/zero, preserving existing source and publication bytes.
+
 Stable public source, repertoire, policy, route, card, and decision IDs derive
 from explicit workspace/source/entity keys. Renaming, input permutation,
 publication rebuilding, or transposition does not create a new card. Policy and

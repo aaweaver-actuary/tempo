@@ -24,6 +24,19 @@ def test_A_snapshot_v2_retains_actual_activation_and_separate_serving_observatio
     assert parse_snapshot(historical).activation == snapshot.activation
 
 
+def test_C3_comparison_exposes_activated_physical_card_alias():
+    from tempo_game_evidence.comparison import compare_game
+    from .factories import observed
+    document=actual_snapshot()
+    card=next(binding['card_id'] for route in document['routes'] for binding in route['bindings'] if binding['ply']==0)
+    document['content_export']['legacy_aliases']={card:'original-physical'}
+    document['content_export']['export_digest']=digest({key:value for key,value in document['content_export'].items() if key!='export_digest'})
+    game,positions=observed(['c2c4'])
+    finding=compare_game(game,positions,parse_snapshot(document))[0]
+    assert finding['status']=='missed' and finding['card_id']==card
+    assert finding['learning_card_id']=='original-physical'
+
+
 @pytest.mark.parametrize('fault', ['source', 'route', 'binding', 'legal-generation', 'response-scope', 'missing-scope'])
 def test_A_snapshot_v2_rejects_mixed_generation_and_forged_response_scope(fault):
     document = actual_snapshot()

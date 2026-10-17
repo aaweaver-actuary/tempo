@@ -1,6 +1,7 @@
 """Policy-aware observations. A repertoire deviation is not an engine error."""
 from tempo_chess_core import canonical_fen_key
 from .source import identity
+from .snapshot import projected_definition
 
 
 def compare_game(game, positions, snapshot):
@@ -9,6 +10,8 @@ def compare_game(game, positions, snapshot):
     active = {(index, 0) for index, (_, keys, _) in enumerate(routes)
               if keys[0] == positions[0]["comparison_key"]}
     findings = []
+    projections={}
+    decision_positions={}
     for position in positions:
         if position["move"] is None:
             break
@@ -33,8 +36,13 @@ def compare_game(game, positions, snapshot):
                 spec = definition.specification
                 if spec.type != "move_line" or spec.grading_policy != "reference":
                     continue
-                expected = sorted({line[0] for line in spec.accepted_lines})
-                key = (definition.policy_id, definition.decision_id, definition.card_id, tuple(expected))
+                projection_key=(binding.card_id,binding.exercise_ply,binding.decision_id)
+                if projection_key not in projections:
+                    projections[projection_key]=projected_definition(definition.model_dump(mode='json'),binding.model_dump(mode='json'))
+                projected=projections[projection_key]
+                expected = sorted({line[0] for line in projected['specification']['accepted_lines']})
+                key = (definition.policy_id, projected['decision_id'], definition.card_id, tuple(expected))
+                decision_positions[key]=projected['starting_fen']
                 groups.setdefault(key, set()).add((route.repertoire_id,route.route_id))
             accepted = [key for key in groups if position["move"] in key[3]]
             selected = accepted[0] if len(accepted) == 1 else next(iter(groups)) if len(groups) == 1 else None
@@ -49,10 +57,12 @@ def compare_game(game, positions, snapshot):
                 policy_id, decision_id, card_id, expected = selected
                 matched = position["move"] in expected
                 finding.update(status="matched" if matched else "missed", expected_moves=list(expected),
-                               decision_position_key=canonical_fen_key(definitions[card_id].starting_fen),
+                               decision_position_key=canonical_fen_key(decision_positions[selected]),
                                memberships=[{"repertoire_id":repertoire_id,"route_id":route_id} for repertoire_id,route_id in sorted(groups[selected])],
                                card_id=card_id, decision_id=decision_id, policy_id=policy_id,
                                explanation="accepted_repertoire_move" if matched else "defined_repertoire_move_not_played")
+                if getattr(snapshot,'schema_version',1)==2:
+                    finding['learning_card_id']=snapshot.content_export.get('legacy_aliases',{}).get(card_id,card_id)
             finding["encounter_id"] = identity(game["workspace_id"], game["game_id"], game["player"],
                                                 position["ply"], finding["decision_id"])
             findings.append(finding)

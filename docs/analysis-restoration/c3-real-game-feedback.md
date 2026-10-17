@@ -20,6 +20,15 @@ unresolved identities. Ordered route anchors use the full captured repertoire
 catalogue to avoid merging learner policies. No FEN-only re-entry is authorized.
 This adapter does not complete legacy history adoption.
 
+For a compatible installed Content/Learning/Game Evidence assembly, the optional
+`--preserve-physical-execution` translation keeps an original opponent prelude
+inside the physical executable. Explicit logical learner roots and uniquely
+attributable interior offsets are validated by each authority. Full original
+FEN/line/revision/color alias checks are retained; ambiguous interior ownership
+remains unknown. This is an opt-in input shape, not a live history migration.
+Use fresh disposable rehearsal storage when replacing a provisional normalized
+source whose identities were already accepted. Never rewrite those old aliases.
+
 Use Content `import plan SOURCE --manifest MANIFEST --expected-revision REVISION`,
 inspect the exact durable draft, and explicitly approve for disposable rehearsal.
 Apply through the installed A bridge with authenticated Learning. Retain operation

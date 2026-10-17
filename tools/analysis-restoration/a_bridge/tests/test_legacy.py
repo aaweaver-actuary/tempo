@@ -77,3 +77,21 @@ def test_C3_policy_anchor_uses_full_capture_not_only_selected_repertoire():
     raw,_,report=run(tables)
     assert json.loads(raw)['routes'][0]['authority_start_ply']==5
     assert report['excluded_repertoires']==['ruy']
+
+
+def test_C3_explicit_physical_execution_mode_keeps_alias_and_interior_owner():
+    tables=captured();authority=graphs();moves=['e2e4','e7e5','g1f3','b8c6']
+    tables['repertoire_lines'][0].update(trained_color='black',moves_json=json.dumps(moves))
+    tables['cards'][0].update(trained_color='black',moves_json=json.dumps(moves))
+    authority[0].update(trained_color='black',moves_json=json.dumps(moves))
+    raw,manifest,report=translate(tables,authority,workspace='test',repertoire_ids=['italian'],source_key='captured',preserve_physical_execution=True)
+    source=json.loads(raw)
+    assert len(source['exercises'])==1
+    exercise=source['exercises'][0]
+    assert exercise['key']=='physical'
+    assert exercise['execution_prelude']=={'starting_fen':chess.STARTING_FEN,'moves':['e2e4']}
+    assert exercise['specification']['accepted_lines']==[['e7e5','g1f3','b8c6']]
+    assert manifest['legacy_aliases']=={'physical':'physical'} and manifest['historical_mapping_unknown']==[]
+    assert source['bindings']==[{'route_key':'line','policy_key':'italian','ply':1,'exercise_key':'physical'},
+        {'route_key':'line','policy_key':'italian','ply':3,'exercise_key':'physical','exercise_ply':2}]
+    assert report['historical_interior_binding_count']==1 and report['historical_prelude_count']==1

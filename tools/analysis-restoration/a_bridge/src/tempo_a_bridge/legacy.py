@@ -20,7 +20,7 @@ def fingerprint(document):
     return hashlib.sha256(canonical(document).encode()).hexdigest()
 
 
-def translate(tables, graphs, *, workspace, repertoire_ids, source_key):
+def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve_physical_execution=False):
     # Establish policy only after the actual ordered route distinguishes it
     # from every other same-color authored repertoire in this capture.
     catalog={}
@@ -102,16 +102,23 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key):
                         # Preserve the original card as history evidence. This
                         # normalized definition is a NEW disposable executable,
                         # never an alias claiming historical compatibility.
+                        prelude={'starting_fen':card['start_fen'],'moves':[accepted[0]]}
                         start.push_uci(accepted[0])
                         accepted = accepted[1:]
                         if not accepted:
                             diagnostics.append({'route_id':identifier,'card_id':card['id'],'reason':'opponent_prelude_without_learner_response'})
                             continue
-                        executable.update(id='normalized:'+card['id'],start_fen=start.fen(en_passant='fen'),moves_json=json.dumps(accepted))
-                        historical_unknown.add(executable['id'])
-                        normalized_cards[executable['id']] = card['id']
+                        executable.update(start_fen=start.fen(en_passant='fen'),moves_json=json.dumps(accepted))
+                        if preserve_physical_execution:
+                            executable['execution_prelude']=prelude
+                            reason='opponent_prelude_preserved_in_executable'
+                        else:
+                            executable['id']='normalized:'+card['id']
+                            historical_unknown.add(executable['id'])
+                            normalized_cards[executable['id']] = card['id']
+                            reason='opponent_prelude_historical_adoption_unsupported'
                         binding_ply += 1
-                        diagnostics.append({'route_id':identifier,'card_id':card['id'],'reason':'opponent_prelude_historical_adoption_unsupported','normalized_key':executable['id']})
+                        diagnostics.append({'route_id':identifier,'card_id':card['id'],'reason':reason,'normalized_key':executable['id']})
                     candidates[binding_ply].append(executable)
             if reason:
                 diagnostics.append({'route_id':identifier,'card_id':graph['card_id'],'reason':reason})
@@ -130,12 +137,19 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key):
                 'starting_fen':card['start_fen'],'prompt':'Play your authored repertoire continuation',
                 'specification':{'type':'move_line','mode':'single' if len(json.loads(card['moves_json'])) == 1 else 'stepwise_line',
                     'grading_policy':'reference','accepted_lines':[json.loads(card['moves_json'])]}}
+            if card.get('execution_prelude'):
+                exercises[key]['execution_prelude']=card['execution_prelude']
             bindings.append({'route_key':identifier,'policy_key':line['repertoire_id'],'ply':ply,'exercise_key':key})
     # Long legacy cards contain multiple authored learner decisions. Preserve
     # those routes completely without pretending each interior decision is an
     # independently adoptable historical card. Identity includes ordered prefix,
     # so transposed arrivals are never merged by FEN alone.
     bound={(binding['route_key'],binding['ply']) for binding in bindings}
+    roots_by_route=defaultdict(list)
+    if preserve_physical_execution:
+        for binding in bindings:
+            if binding['exercise_key'] not in historical_unknown:
+                roots_by_route[binding['route_key']].append(binding)
     unmapped_authored={}
     for membership in memberships:
         route=next(item for item in routes if item['key']==membership['route_key'])
@@ -144,6 +158,20 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key):
             fen=positions[route['key']][ply]
             if chess.Board(fen).turn!=(color=='white') or (route['key'],ply) in bound:
                 continue
+            if preserve_physical_execution:
+                possible={}
+                for root_binding in roots_by_route[route['key']]:
+                    offset=ply-root_binding['ply']
+                    exercise=exercises[root_binding['exercise_key']]
+                    line=exercise['specification']['accepted_lines'][0]
+                    if 0<offset<len(line) and line[:offset]==route['moves'][root_binding['ply']:ply] and line[offset]==move:
+                        possible[root_binding['exercise_key']]=offset
+                if len(possible)==1:
+                    exercise_key,offset=next(iter(possible.items()))
+                    bindings.append({'route_key':route['key'],'policy_key':policy,'ply':ply,'exercise_key':exercise_key,'exercise_ply':offset})
+                    continue
+                if len(possible)>1:
+                    diagnostics.append({'route_id':route['key'],'ply':ply,'reason':'ambiguous_historical_interior_binding','card_ids':sorted(possible)})
             key='authored:'+fingerprint([policy,route['starting_fen'],route['moves'][:ply]])
             exercise=exercises.setdefault(key,{'key':key,'decision_key':key,'policy_key':policy,'starting_fen':fen,
                 'prompt':'Play your authored repertoire move','specification':{'type':'move_line','mode':'single','grading_policy':'reference','accepted_lines':[]}})
@@ -169,6 +197,9 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key):
         'normalized_without_historical_adoption':normalized_cards,'unmapped_authored_decisions':unmapped_authored,'diagnostics':sorted(diagnostics,key=canonical),'source_sha256':hashlib.sha256(source_bytes).hexdigest(),
         'capture_digest':fingerprint(tables),'graph_digest':fingerprint(graphs),'policy_authority_anchors':{route['key']:route['authority_start_ply'] for route in routes},'reentry':'not_authorized','complete_scope':sorted(selected),
         'excluded_repertoires':sorted(row['id'] for row in tables['repertoires'] if row['id'] not in selected and not row['id'].startswith('__'))}
+    if preserve_physical_execution:
+        manifest['provenance']['description']='Complete selected authored scope with original physical executables and explicit learner-decision projections; unresolved identities remain unknown.'
+        report.update(physical_execution_preserved=True,historical_prelude_count=sum('execution_prelude' in exercise for exercise in exercises.values()),historical_interior_binding_count=sum(binding.get('exercise_ply',0)>0 for binding in bindings))
     return source_bytes, manifest, report
 
 
@@ -180,10 +211,11 @@ def main():
     parser.add_argument('--source-key',required=True)
     parser.add_argument('--repertoire-id',action='append',required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--preserve-physical-execution',action='store_true')
     args = parser.parse_args()
     capture = json.loads(args.capture.read_text())
     source, manifest, report = translate(capture['tables'],json.loads(args.graphs.read_text()),workspace=args.workspace,
-        repertoire_ids=args.repertoire_id,source_key=args.source_key)
+        repertoire_ids=args.repertoire_id,source_key=args.source_key,preserve_physical_execution=args.preserve_physical_execution)
     args.output.mkdir(parents=True,exist_ok=True)
     documents = {'source.json':source,'import-manifest.json':(canonical(manifest)+'\n').encode(),'identity-mapping.json':(canonical(report)+'\n').encode()}
     for name, raw in documents.items():
