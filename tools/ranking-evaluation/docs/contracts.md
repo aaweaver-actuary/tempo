@@ -1,7 +1,7 @@
 # Installed offline evaluation contracts
 
 This tool depends only on tempo-evidence-math 0.1.0's public, versioned API. Its
-producer is PR #300, commit 14492c866af00929850b92190025defcd1cc0a1b. The dependency
+producer is PR #300, commit 08ad6823f31ac2f36929f3a94f500e65aa0affc6. The dependency
 lock binds the exact locally qualified producer wheel. No private service or package
 implementation is consumed. Production has not adopted either artifact.
 
@@ -37,13 +37,21 @@ historical low/high annotations remain replay assumptions; annotations around an
 assigned value are not fed to the producer's unknown-allocation sensitivity API.
 Legal moves, complete legal distributions, mass, true prefix parents and all thirteen
 scenario dimensions validate before ranking, including unselected scenarios.
+Probability evidence must be nonempty and bind to actual authored candidate replies
+and declared cohorts. Supporting decisions must match legal presentation geometry
+under the selected policy; observations must identify one of that card's validated
+decisions and fall between introduction and the snapshot time. Tags and re-signed
+digests alone cannot establish these coverage claims.
 
 Limits: 4 MiB per input file; 16 MiB aggregate corpus; 1–32 scenarios; at most 16
 bundles and 16 distinct positive exact-integer K values. Before ranking, aggregate
-snapshot bytes*(bundles+1)*(K-count+4) cannot exceed 64 MiB. Serialized output including
-newline cannot exceed 64 MiB. compare applies the same projected bound. score uses
-a stricter pre-calculation multiplier (candidates+1)*(routes+readiness+1) to bound
-repeated calculation provenance. Oversized inputs fail honestly rather than execute
+projection includes row/provenance overhead and transformed concentration labels:
+card_mass and shares, production and alternative, every alternative/K, and the corpus
+summary copies of top_k. The original coarse input-size guard remains a lower bound.
+Projected and serialized output including newline cannot exceed 64 MiB. compare uses
+the same label bound. score reserves input bytes*3*(8*K-count+16) with the stricter
+pre-calculation multiplier (candidates+1)*(routes+readiness+1) to bound repeated
+calculation provenance. Oversized inputs fail honestly rather than execute
 with weakened limits. Resolved paths/symlinks must remain inside the corpus directory.
 
 Success exits 0. Without --output, stdout contains one canonical JSON report plus
@@ -70,6 +78,18 @@ required to extract this offline tool and are not claimed by its fixture suite.
 Qualify with one bounded process at a time. The local runner checks nonzero exact
 collection/execution/JUnit identities and local regression registration. Source-removed
 wheel and sdist-derived-wheel installs use only declared prebuilt dependency artifacts
-on CPython 3.12 and 3.14. Hash-seed/timezone cases retain 1/UTC, 22/Pacific-Honolulu,
-random/Asia-Tokyo and 77/UTC. Network/service imports and initialization are denied.
+on CPython 3.12 and 3.14. Dependencies install with --require-hashes from the complete
+lock before the separately installed --no-deps candidate. The lock includes exact
+prepared macOS pydantic-core wheels reconstructed from installed cache bytes verified
+against RECORD; those hashes differ from upstream ZIP artifacts. Qualification retains
+the exact wheel hashes and installer errors. Changed same-version producer or dependency
+bytes fail before candidate installation or suites.
+
+Hash-seed/timezone cases retain 1/UTC, 22/Pacific-Honolulu, random/Asia-Tokyo and 77/UTC.
+Seeded children use -s -P -B with path-affecting Python environment variables removed.
+They assert installed paths, disabled user site, ignore_environment=0, repeatable hashes
+for each fixed seed, and different hashes for seeds 1 and 22 before checking report bytes.
+Earlier -I runs did not honor these seeds; the correction strengthens the test proof
+without claiming an observed runtime nondeterminism defect.
+Network/service imports and initialization are denied.
 macOS hard memory enforcement remains unverified; wall/CPU limits are enforced.

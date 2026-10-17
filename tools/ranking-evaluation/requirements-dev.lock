@@ -32,7 +32,11 @@ pluggy==1.7.0 \
 pydantic==2.12.5 \
     --hash=sha256:046e5290736aea920740a844ac8eaf1afcc6ea659128a9f7c7064ae66b9599ab
     # via tempo-evidence-math
+# Prepared macOS CPython 3.12/3.14 wheels: installed-cache bytes verified against RECORD.
+# Upstream wheel hashes below remain valid; qualification records the exact selected bytes.
 pydantic-core==2.41.5 \
+    --hash=sha256:ac4001cf2aeed9dee7afd8d79cf458a8026d51e3a69d5560143ded23060763d8 \
+    --hash=sha256:4149bafebe759054d3a5a2331bd93b086dff5b6a4fc8e6690b962166966449a7 \
     --hash=sha256:0177272f88ab8312479336e1d777f6b124537d47f2123f89cb37e0accea97f90 \
     --hash=sha256:01a3d0ab748ee531f4ea6c3e48ad9dac84ddba4b0d82291f87248f2f9de8d740 \
     --hash=sha256:0384e2e1021894b1ff5a786dbf94771e2986ebe2869533874d7e43bc79c6f504 \
@@ -167,7 +171,7 @@ pytest==9.1.1 \
     --hash=sha256:7df7c387381d690b21a2d8f88350c5b4586806ef8a09dc1df4a4676f0dcad912
     # via -r tools/ranking-evaluation/requirements-dev.in
 tempo-evidence-math==0.1.0 \
-    --hash=sha256:c4889eaeb8e18a1a66cce9bcd46763a950ba721bc2089b1a28b55c7504c4cd03
+    --hash=sha256:df34f0a1acdab5cfef2055657555ae954b4b820c151f87d923207aa27b8794eb
     # via -r tools/ranking-evaluation/requirements-dev.in
 trove-classifiers==2026.9.21.13 \
     --hash=sha256:b8e5d173eba112b5334543197fff51c78f640b144563662700264c15932fb245
