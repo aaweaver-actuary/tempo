@@ -80,6 +80,20 @@
           "title": "Expected Moves",
           "type": "array"
         },
+        "learning_card_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Learning Card Id"
+        },
         "opponent_move": {
           "anyOf": [
             {

@@ -59,6 +59,13 @@ class CoverageScope(StrictModel):
         return self
 
 class Context(StrictModel):
+    @model_serializer(mode='wrap')
+    def preserve_prior_context_bytes(self,handler):
+        value=handler(self)
+        if self.learning_card_id is None:value.pop('learning_card_id',None)
+        return value
+
+    learning_card_id: Identifier | None = None
     ply: int = Field(ge=0, le=1000)
     repertoire_id: Identifier
     policy_id: Identifier

@@ -144,6 +144,8 @@ def normalize(directory,*,workspace,selected_game_ids):
             for selected in targets:
                 selection=selected if supported else None
                 contexts.append({'ply':finding['ply'],'repertoire_id':selected['repertoire_id'],'policy_id':selected['policy_id'],'status':finding['status'] if selection else 'unknown','reason':finding['explanation'],'card_id':finding['card_id'] if selection else None,'decision_id':finding['decision_id'] if selection else None,'expected_moves':finding['expected_moves'] if selection else [],'route_ids':[m['route_id'] for m in memberships],'coverage':'covered' if selection and finding['status'] in {'matched','missed'} else 'unknown','route_established':selection is not None,'evidence_id':finding['encounter_id'],'delivery_status':delivery['status'],'delivery':delivery})
+                if selection and finding.get('learning_card_id'):
+                    contexts[-1]['learning_card_id']=finding['learning_card_id']
         for deviation in (d for d in records['deviations'] if d['game_id']==game['game_id']):
             if deviation['decision_ply']>=len(game['moves']):continue
             if deviation['game_revision']!=game['revision'] or deviation['history']!=game['moves'][:deviation['decision_ply']] or deviation['decision_fen']!=observed[deviation['decision_ply']]['fen']:raise ValueError('A_deviation_identity_mismatch')

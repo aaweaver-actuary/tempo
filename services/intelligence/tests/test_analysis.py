@@ -209,6 +209,23 @@ def test_C3_original_game_url_and_repertoire_title_survive_findings():
     assert finding['repertoire_title']=='Authored Italian'
 
 
+def test_C3_original_physical_learning_card_is_distinct_from_content_identity():
+    from tempo_intelligence.analysis.read_models import Finding
+    manifest,games=corpus()
+    context=games[0]['contexts'][0]
+    context['learning_card_id']='original-physical-card'
+    finding=source_findings(manifest,[games[0]])[0][0]
+    assert finding['learning_card_id']=='original-physical-card'
+    assert finding['card_id']==context['card_id']
+    metadata={'finding_revision':1,'evidence_revision':'sha256:'+'a'*64,'input_id':'input','input_revision':1}
+    assert Finding.model_validate({**finding,**metadata}).learning_card_id=='original-physical-card'
+    # Absent metadata never changes accepted historical input/report bytes.
+    del context['learning_card_id']
+    historical=source_findings(manifest,[games[0]])[0][0]
+    assert 'learning_card_id' not in historical
+    assert 'learning_card_id' not in Finding.model_validate({**historical,**metadata}).model_dump(mode='json')
+
+
 def test_C3_absent_optional_metadata_preserves_original_input_page_digest():
     from tempo_intelligence.analysis.models import Page
     from tempo_intelligence.identity import digest

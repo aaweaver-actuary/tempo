@@ -62,6 +62,19 @@ def test_missing_delivery_stays_explicitly_unknown(tmp_path):
     assert pages[0]['games'][0]['contexts'][0]['delivery']=={'status':'unknown','reason':'delivery_not_exported'}
 
 
+def test_C3_physical_card_identity_survives_serialized_comparison(tmp_path):
+    export_fixture(tmp_path)
+    path=tmp_path/'comparisons-000000.json';document=json.loads(path.read_text())
+    document['items'][0]['findings'][0]['learning_card_id']='original-physical'
+    path.write_text(json.dumps(document))
+    manifest=json.loads((tmp_path/'manifest.json').read_text())
+    next(page for page in manifest['pages'] if page['kind']=='comparisons')['digest']=fingerprint(document)
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    _,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    assert pages[0]['games'][0]['contexts'][0]['learning_card_id']=='original-physical'
+
+
 def test_C3_original_game_link_and_authored_title_are_translated(tmp_path):
     export_fixture(tmp_path)
     for kind in ['games','routes']:

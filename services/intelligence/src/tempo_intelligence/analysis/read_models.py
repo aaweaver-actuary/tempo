@@ -39,8 +39,11 @@ class Finding(StrictModel):
         value=handler(self)
         if self.repertoire_title is None:
             value.pop('repertoire_title',None)
+        if self.learning_card_id is None:
+            value.pop('learning_card_id',None)
         return value
 
+    learning_card_id: Identifier | None = None
     repertoire_title: str | None = Field(default=None, max_length=2000)
     finding_id: Digest
     finding_revision: Revision

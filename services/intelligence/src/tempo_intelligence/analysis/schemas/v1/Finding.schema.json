@@ -535,6 +535,20 @@
       "title": "Learner Color",
       "type": "string"
     },
+    "learning_card_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Learning Card Id"
+    },
     "learning_settlement": {
       "const": "unknown",
       "title": "Learning Settlement",

@@ -111,6 +111,8 @@ def source_findings(manifest, games):
             if context["status"] == "missed" and position["actual_move"] not in context["expected_moves"] and context["expected_moves"] and context["card_id"] and context["decision_id"]:
                 item = base_finding("repertoire_miss",selection,position,context["decision_id"],"accepted_response_not_played")
                 item.update(expected_moves=sorted(set(context["expected_moves"])),card_id=context["card_id"],decision_id=context["decision_id"],delivery_status=context["delivery_status"],delivery=context.get("delivery"),evidence_ids=[context["evidence_id"]])
+                if context.get('learning_card_id'):
+                    item['learning_card_id']=context['learning_card_id']
                 incidents.append(item)
             supported_gap = (context["coverage"] == "uncovered" and context["route_established"] and context["scope_complete"] and context["scope_revision"] is not None and context["opponent_ply"] is not None and bool(context["route_ids"]) and not context["expected_moves"])
             if supported_gap and key not in diverged and (not context["after_divergence"] or context["reentry_authorized"]):
