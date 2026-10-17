@@ -12,6 +12,7 @@ async function hold(page, square) {
   await page.mouse.move(from.x, from.y); await page.mouse.down();
   await page.mouse.move(from.x + 12, from.y - 12, { steps: 3 });
   await page.locator("cg-board piece.dragging").waitFor({ state: "visible" });
+  await page.locator("piece.ghost").waitFor({ state: "visible" });
 }
 async function drop(page, square) {
   const to = await point(page, square); await page.mouse.move(to.x, to.y, { steps: 6 }); await page.mouse.up();
@@ -76,7 +77,20 @@ export const scenarios = [
     assert(await page.locator(".tempo-board").evaluate(element => document.activeElement === element));
     await page.keyboard.press("Tab");
     assert(!(await page.locator(".tempo-board").evaluate(element => document.activeElement === element)));
+    const from = await point(page, "e2"); const to = await point(page, "e4");
+    await page.evaluate(() => document.querySelector("cg-board").addEventListener("contextmenu", event => {
+      window.boardContextMenuPrevented = event.defaultPrevented;
+    }, { once: true }));
+    await page.mouse.move(from.x, from.y); await page.mouse.down({ button: "right" });
+    await page.mouse.move(to.x, to.y, { steps: 6 }); await page.mouse.up({ button: "right" });
+    await page.waitForFunction(() => document.querySelector(".cg-shapes g line"));
+    assert.equal(await page.evaluate(() => window.boardContextMenuPrevented), true);
+    await hold(page, "e2");
+    const heldBoard = await page.locator("cg-board").elementHandle();
     await action(page, "remount"); assert.equal(await page.locator("cg-board").count(), 0);
+    await page.mouse.up();
+    assert.equal(await heldBoard.evaluate(element => element.isConnected), false);
+    assert.equal((await moves(page)).length, 1);
     await action(page, "remount"); await hold(page, "e2"); await drop(page, "e4");
     await page.waitForFunction(() => JSON.parse(document.querySelector("#moves").textContent).length === 2);
   } },

@@ -26,7 +26,7 @@ remain in the explicit evidence destination for parent review.
 | BUI-N01 | Hold e2 pawn; twenty equivalent status/fresh-handler updates, theme/piece/annotation/last-move changes and heading translation; drop e4; one current event and actual piece bounds |
 | BUI-N02 | Real native drop before same-FEN identity replacement; hold Chessground's actual 1ms callbacks, replace, release callbacks; no stale event and authoritative e2 piece restored |
 | BUI-N03 | Held native input cancelled by identity/revision/lock/orientation/select-mode changes; no move event and source piece restored |
-| BUI-N04 | Free editing moves a black pawn; mode transition restores supplied position; focus, Escape/Tab seams, unmount/remount and current legal input |
+| BUI-N04 | Free editing moves a black pawn; mode transition restores supplied position; focus, Escape/Tab seams, native right-button drawing/context-menu suppression, unmount during held drag and remount/current legal input |
 | BUI-N05 | Responsive 390/768/1280 widths at device scale factor 1.25; integral CSS squares, surface/board fit and no horizontal overflow |
 
 Board gestures use Playwright native mouse/keyboard input. Status/annotation

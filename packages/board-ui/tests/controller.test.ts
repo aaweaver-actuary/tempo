@@ -119,12 +119,13 @@ it("BUI-06 nested shape inputs, outputs, defaults, and destination maps are deta
   expect(api.setShapes).not.toHaveBeenCalled(); expect(api.setAutoShapes).not.toHaveBeenCalled();
 });
 
-it("BUI-07 translation clears cached bounds without cancellation; editor transition refreshes layout", () => {
+it("BUI-07 translation clears cached bounds without cancellation; editor transition refreshes geometry without rebuilding DOM", () => {
   const { controller, api } = setup({ ...base, mode: "free" });
   controller.clearInputBounds();
   expect(api.state.dom.bounds.clear).toHaveBeenCalledOnce();
   expect(api.set).not.toHaveBeenCalled(); expect(api.cancelMove).not.toHaveBeenCalled(); expect(api.redrawAll).not.toHaveBeenCalled();
-  controller.update(base); expect(api.redrawAll).toHaveBeenCalledOnce();
+  controller.update(base); expect(api.redrawAll).not.toHaveBeenCalled();
+  expect(api.state.dom.bounds.clear).toHaveBeenCalledTimes(2);
 });
 
 it("BUI-08 responsive sizes have integral squares and respect bounds including zero-width containers", () => {

@@ -51,12 +51,12 @@ try {
   await run("producer-typecheck", "npm", ["run", "typecheck"], producer);
   await run("producer-tests", "npm", ["test", "--", "--reporter=json", "--outputFile=" + join(output, "unit-results.json")], producer);
   const unitResults = JSON.parse(await readFile(join(output, "unit-results.json"), "utf8"));
-  assert.equal(unitResults.numTotalTests, 27, "Execute the complete local regression inventory");
-  assert.equal(unitResults.numPassedTests, 27);
+  assert.equal(unitResults.numTotalTests, 44, "Execute the complete local regression inventory");
+  assert.equal(unitResults.numPassedTests, 44);
   assert.equal(unitResults.numFailedTests, 0);
   assert.equal(unitResults.numPendingTests, 0);
   assert.equal(unitResults.numTodoTests, 0);
-  assert.equal(unitResults.testResults.length, 4);
+  assert.equal(unitResults.testResults.length, 5);
   await run("producer-build", "npm", ["run", "build"], producer);
   const packResult = JSON.parse(await run("producer-pack", "npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", output], producer));
   const tarball = join(output, packResult[0].filename);

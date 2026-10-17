@@ -78,7 +78,12 @@ ignored, including after Strict Mode cleanup/remount.
 
 Shapes and nested label/modifier/piece values, last-move arrays, and destinations
 are detached before entering Chessground. Drawing event data is detached before
-delivery. A live drawing is explicitly cancelled on invalidation: Chessground
+delivery. Only declared shape fields cross the boundary; undeclared `customSvg`
+and nested extra properties are omitted. Labels are literal strings, escaped
+for the pinned renderer's markup sink and restored in drawing event snapshots.
+Canonical comparison snapshots keep the original text. Annotation updates
+invalidate only SVG annotation children, including fill-only label changes.
+A live drawing is explicitly cancelled on invalidation: Chessground
 10.1.1 `cancelMove()` alone only cancels piece input.
 
 ## Focus and geometry
@@ -96,8 +101,14 @@ device-pixel container rounding to keep its board and surface aligned at
 fractional zoom. Resize listeners and an optional `layoutAnchor` observer clear
 hit-test bounds. Captured mouse/touch starts and movements also clear bounds
 before Chessground reads them; translation does not redraw or cancel a drag.
-Editor mode changes explicitly refresh the layout. Effects disconnect owned
-observers/listeners and destroy their own renderer instance on cleanup.
+Mode changes clear cached geometry without rebuilding the board. A package-owned
+construction adapter uses Chessground's pinned rendering/input modules and owns
+one surface observer, board/document listeners, and cancelable redraw scheduling.
+Orientation changes reuse that observer. A hidden ghost and context-menu
+suppression exist from construction even when input starts disabled. Cleanup
+cancels piece/drawing input before teardown and fences queued resize/redraw work.
+The adapter changes no global browser APIs; wrapper effects also fence retained
+observer notifications after cleanup.
 
 ## Package-local checks
 
@@ -110,7 +121,7 @@ npm run build
 npm run qualify -- /absolute/task-owned/new-evidence-directory
 ```
 
-`npm test` discovers four local files serially (one worker, no file parallelism).
+`npm test` discovers five local files serially (one worker, no file parallelism).
 The [local inventory](REGRESSIONS.md) owns their named identities; no legacy
 regression or root registration is removed. `qualify` runs package tests,
 typecheck/build/pack in disposable package-only staging, installs the tarball

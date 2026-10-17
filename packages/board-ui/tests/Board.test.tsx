@@ -5,7 +5,7 @@ import { Board } from "../src/Board.js";
 import type { BoardHandle, BoardProps } from "../src/types.js";
 
 const factory = vi.hoisted(() => ({ instances: [] as any[] }));
-vi.mock("@lichess-org/chessground", () => ({ Chessground: vi.fn((_surface, config) => {
+vi.mock("../src/renderer.js", () => ({ createRenderer: vi.fn((_surface, config) => {
   const instance = { initial: config, state: { drawable: {}, dom: { bounds: { clear: vi.fn() }, redraw: vi.fn() } },
     set: vi.fn(), destroy: vi.fn(), cancelMove: vi.fn(), redrawAll: vi.fn(),
     setShapes: vi.fn(), setAutoShapes: vi.fn(), selectSquare: vi.fn() };

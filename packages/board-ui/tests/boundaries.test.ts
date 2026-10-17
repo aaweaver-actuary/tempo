@@ -10,7 +10,7 @@ it("BUI-13 renderer imports stay within its package, React peer, and pinned Ches
   const directory = resolve(root, "src");
   const files = (await readdir(directory)).filter(file => /\.tsx?$/.test(file));
   expect(files.length).toBeGreaterThan(0);
-  const allowedExternal = /^(react(?:\/jsx-runtime)?|@lichess-org\/chessground(?:\/(?:api|config|draw))?)$/;
+  const allowedExternal = /^(react(?:\/jsx-runtime)?|@lichess-org\/chessground(?:\/(?:api|config|draw|state|wrap|render|autoPieces|svg|events|drag|util|types))?)$/;
   for (const file of files) {
     const source = await readFile(resolve(directory, file), "utf8");
     const syntax = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Chessground } from "@lichess-org/chessground";
+import { createRenderer } from "./renderer.js";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { BoardController } from "./controller.js";
 import { fitBoardSize } from "./position.js";
@@ -23,7 +23,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
     const surface = surfaceRef.current;
     if (!surface) return;
     const controller = new BoardController();
-    controller.attach(Chessground(surface, controller.initialConfiguration()));
+    controller.attach(createRenderer(surface, controller.initialConfiguration()));
     controllerRef.current = controller;
     const refresh = () => controller.clearInputBounds();
     surface.addEventListener("mousedown", refresh, true);
@@ -47,7 +47,9 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    let disposed = false;
     const measure = () => {
+      if (disposed) return;
       setSize(fitBoardSize(host.getBoundingClientRect().width, props.maxSize));
       controllerRef.current?.clearInputBounds();
     };
@@ -57,6 +59,7 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
     window.visualViewport?.addEventListener("resize", measure);
     measure();
     return () => {
+      disposed = true;
       observer?.disconnect();
       window.removeEventListener("resize", measure);
       window.visualViewport?.removeEventListener("resize", measure);
@@ -65,11 +68,12 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
 
   useLayoutEffect(() => {
     if (!props.layoutAnchor || typeof ResizeObserver === "undefined") return;
-    const refresh = () => controllerRef.current?.clearInputBounds();
+    let disposed = false;
+    const refresh = () => { if (!disposed) controllerRef.current?.clearInputBounds(); };
     const observer = new ResizeObserver(refresh);
     observer.observe(props.layoutAnchor);
     refresh();
-    return () => observer.disconnect();
+    return () => { disposed = true; observer.disconnect(); };
   }, [props.layoutAnchor]);
 
   return <div ref={hostRef} role="group" aria-label={props.ariaLabel ?? "Interactive chessboard"}

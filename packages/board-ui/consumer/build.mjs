@@ -7,7 +7,9 @@ const result = await build({ entryPoints: ["main.tsx"], bundle: true, format: "e
   define: { "process.env.NODE_ENV": '"production"' }, minify: true, logLevel: "info" });
 const inputs = Object.keys(result.metafile.inputs);
 assert(inputs.some(path => path.includes("@tempo/board-ui/dist/Board.js")));
-assert(inputs.some(path => path.includes("@lichess-org/chessground/dist/chessground.js")));
+for (const module of ["api", "board", "render", "drag", "draw", "svg", "events"])
+  assert(inputs.some(path => path.includes(`@lichess-org/chessground/dist/${module}.js`)));
+assert(inputs.some(path => path.includes("@tempo/board-ui/dist/renderer.js")));
 assert(!inputs.some(path => /(?:^|\/)(app|apps|services|src)\//.test(path)));
 assert.equal(inputs.filter(path => path.endsWith("/react/index.js")).length, 1);
 assert.equal(Object.keys(result.metafile.outputs).filter(path => path.endsWith(".svg")).length, 12);

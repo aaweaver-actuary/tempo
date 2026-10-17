@@ -1,5 +1,66 @@
 # Board UI milestone evidence — 2026-10-17
 
+## Repair of the independent review findings
+
+Repair branch: `codex/board-ui-repair-198`, based directly on reviewed commit
+`45369257a258ddb127aed14ac24163085844bb13`. The author's branch and checkout
+remain unchanged and clean. All repair paths stay in `packages/board-ui`.
+
+The original six symptom reproductions were copied and executed before edits;
+all six confirmed the reported defects. Their source and log are retained in
+`/Users/andy/Documents/Codex/2026-10-17/task-10/evidence/` as
+`before-reproductions.test.tsx` and `before-reproductions.log`.
+
+The repair allowlists shape/nested fields, escapes label text only at the
+renderer boundary, keeps canonical snapshots and returns detached literal
+drawing data. Explicit shape updates invalidate annotation SVG children to
+cover fill-only changes and text-hash collisions without replacing pieces.
+A package-owned construction adapter retains Chessground's exact pinned
+rendering/gesture modules while owning surface observation, board bindings,
+document disposal, guarded redraw scheduling, and disabled-at-construction
+ghost/context-menu features. Mode changes only clear geometry. Teardown
+cancels held piece/drawing input, and wrapper observers fence old notifications.
+No global browser API is patched by the implementation.
+
+Final bounded serial qualification (macOS arm64, Node `v26.10.0`; dependency
+versions unchanged):
+
+```sh
+npm_config_cache=/Users/andy/Documents/Codex/2026-10-17/task-10/npm-cache \
+  node qualify.mjs \
+  /Users/andy/Documents/Codex/2026-10-17/task-10/evidence/qualification-final
+```
+
+All nine subprocesses passed: offline producer install (0.77 s), producer
+typecheck (0.73 s), **44/44 tests in five files, zero skipped/pending/todo**
+(2.76 s), build (0.53 s), pack (0.21 s), offline consumer install (0.50 s),
+source-removed consumer typecheck (0.68 s), public smoke (0.07 s), and production
+consumer bundle (0.34 s). The 27 existing cases remain; 17 added cases cover
+BUI-16 through BUI-24. Exact receipts and input hashes are in that evidence
+directory. Successful staging was removed. The tarball contains 38 files:
+
+```text
+SHA-256: 564d98ef0ab571fa72958329d60d9d597a34da80572d0776b10b71b077733736
+```
+
+The consumer retains one React entry, all twelve emitted piece assets and the
+real pinned rendering/input modules, with no app/service/package-source inputs.
+`node --check browser/scenarios.mjs`, `node --check browser/run.mjs`, and
+`git diff --check` also passed. This repair evidence section was added after
+qualification; a table-spacing correction in `REGRESSIONS.md` also followed.
+Both files are excluded from the npm payload. No executable,
+fixture, dependency, build input or shipped documentation changed afterward.
+
+All five native scenarios remain **NOT RUN**. The prepared scenarios now also
+assert ghost visibility, right-button drawing/context-menu suppression, and
+unmount while a piece is held. Parent independent re-review precedes the parent
+resource grant for native execution. No browser/server, service, Docker, model,
+root build/suite, publication, push, PR, merge, deployment or CI change ran.
+The isolated repair worktree/dependencies and evidence are retained for that
+re-review; they have no running task resource. Shared registration and active
+Study/C3 work remain with their owners. The earlier milestone evidence below
+records its original reviewed baseline, not a passing claim for these repairs.
+
 Base: `d0485d9fdfb85b4fb6c8de2c403f02d87021817d` (current main at ownership
 inspection). Branch: `codex/board-ui-package-198`. All tracked changes are
 restricted to `packages/board-ui/**`. No competing Board UI worktree, local or

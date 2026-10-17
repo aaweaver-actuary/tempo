@@ -5,6 +5,10 @@ under GPL-3.0-or-later. Its base CSS and embedded Cburnett CSS are copied from
 that exact installed release, with selectors prefixed by `.tempo-board`.
 Source: <https://github.com/lichess-org/chessground>. The full GPL v3 text is
 included in `GPL-3.0.txt` and the package `LICENSE`.
+The package-owned `src/renderer.ts` construction adapter is derived from that
+release's `src/chessground.ts` and board input routing in `src/events.ts`, under
+the same GPL-3.0-or-later license. Rendering and gesture algorithms remain in
+the pinned dependency; observer/listener/redraw disposal belongs to this package.
 
 Cburnett chess pieces are by Colin M. L. Burnett, GPL-2.0-or-later.
 Merida chess pieces are by Armando Hernandez Marroquin, GPL-2.0-or-later.

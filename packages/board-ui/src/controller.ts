@@ -3,7 +3,7 @@ import type { Config } from "@lichess-org/chessground/config";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { cancel as cancelDrawing } from "@lichess-org/chessground/draw";
 import type { BoardProps, BoardShape, Square } from "./types.js";
-import { copyDestinations, copyShapes, sameDestinations, sameShapes } from "./position.js";
+import { copyDestinations, copyShapes, drawingShapes, rendererShapes, sameDestinations, sameShapes } from "./position.js";
 
 const brushes = {
   green: { key: "g", color: "#4f8a59", opacity: 0.88, lineWidth: 10 },
@@ -49,7 +49,7 @@ export class BoardController {
       drawable: { onChange: (shapes: DrawShape[]) => {
         const props = current();
         if (props && props.drawingEnabled !== false) props.onDrawingChange?.({
-          shapes: copyShapes(shapes as BoardShape[]), positionIdentity: props.positionIdentity,
+          shapes: drawingShapes(shapes as BoardShape[]), positionIdentity: props.positionIdentity,
           positionRevision: props.positionRevision,
         });
       } },
@@ -68,7 +68,8 @@ export class BoardController {
       !sameDestinations(previous.destinations, next.destinations);
     // Snapshot all mutable input data. Future callback-only updates use the latest committed handlers.
     this.props = { ...next, destinations: copyDestinations(next.destinations),
-      lastMove: next.lastMove ? [...next.lastMove] : undefined };
+      lastMove: next.lastMove ? [...next.lastMove] : undefined,
+      shapes: copyShapes(next.shapes), drawnShapes: copyShapes(next.drawnShapes) };
     const config: Config = {};
     if (invalidated) {
       this.generation += 1;
@@ -94,22 +95,22 @@ export class BoardController {
       if (previous.showDestinations !== next.showDestinations)
         config.movable = { showDests: next.showDestinations !== false };
     }
-    if (modeChanged) this.api.redrawAll();
+    if (modeChanged) this.clearInputBounds();
     if (Object.keys(config).length) this.api.set(config);
     const autoShapes = next.shapes ?? [];
     const drawnShapes = next.drawnShapes ?? [];
     if (invalidated || !sameShapes(this.autoShapes, autoShapes)) {
       this.autoShapes = copyShapes(autoShapes);
-      this.api.setAutoShapes(copyShapes(autoShapes) as DrawShape[]);
+      this.api.setAutoShapes(rendererShapes(autoShapes) as DrawShape[]);
     }
     if (invalidated || !sameShapes(this.drawnShapes, drawnShapes)) {
       this.drawnShapes = copyShapes(drawnShapes);
-      this.api.setShapes(copyShapes(drawnShapes) as DrawShape[]);
+      this.api.setShapes(rendererShapes(drawnShapes) as DrawShape[]);
     }
   }
 
   initialConfiguration(): Config {
-    return { viewOnly: false, coordinates: true, coordinatesOnSquares: true,
+    return { viewOnly: false, disableContextMenu: true, coordinates: true, coordinatesOnSquares: true,
       animation: { enabled: !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches, duration: 180 },
       premovable: { enabled: false }, predroppable: { enabled: false }, autoCastle: true,
       drawable: { brushes, visible: true, enabled: false },
@@ -124,7 +125,10 @@ export class BoardController {
     if (!this.active) return;
     this.active = false;
     this.generation += 1;
-    if (this.api) cancelDrawing(this.api.state);
+    if (this.api) {
+      this.api.cancelMove();
+      cancelDrawing(this.api.state);
+    }
     this.api?.destroy();
     this.api = undefined;
     this.props = undefined;

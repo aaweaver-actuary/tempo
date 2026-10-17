@@ -1,11 +1,27 @@
 import type { BoardProps, BoardShape, Square } from "./types.js";
 
 export function copyShapes(shapes: readonly BoardShape[] = []): BoardShape[] {
-  return shapes.map(shape => ({ ...shape,
-    ...(shape.modifiers ? { modifiers: { ...shape.modifiers } } : {}),
-    ...(shape.piece ? { piece: { ...shape.piece } } : {}),
-    ...(shape.label ? { label: { ...shape.label } } : {}),
+  // TypeScript structural compatibility is not a runtime allowlist. In particular,
+  // Chessground also accepts customSvg, which is deliberately outside our contract.
+  return shapes.map(shape => ({ orig: shape.orig, dest: shape.dest, brush: shape.brush, below: shape.below,
+    ...(shape.modifiers ? { modifiers: { lineWidth: shape.modifiers.lineWidth, hilite: shape.modifiers.hilite } } : {}),
+    ...(shape.piece ? { piece: { role: shape.piece.role, color: shape.piece.color, scale: shape.piece.scale } } : {}),
+    ...(shape.label ? { label: { text: shape.label.text, fill: shape.label.fill } } : {}),
   }));
+}
+
+/** Chessground 10.1.1 uses innerHTML for label text. Encode only at its boundary. */
+export function rendererShapes(shapes: readonly BoardShape[]): BoardShape[] {
+  return copyShapes(shapes).map(shape => shape.label ? { ...shape,
+    label: { ...shape.label, text: shape.label.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") },
+  } : shape);
+}
+
+/** Inverse of our encoding for renderer-owned drawing snapshots, never HTML parsing. */
+export function drawingShapes(shapes: readonly BoardShape[]): BoardShape[] {
+  return copyShapes(shapes).map(shape => shape.label ? { ...shape,
+    label: { ...shape.label, text: shape.label.text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") },
+  } : shape);
 }
 
 export function sameShapes(left: readonly BoardShape[], right: readonly BoardShape[]): boolean {
