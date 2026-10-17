@@ -403,3 +403,31 @@ test('saturation qualification listing and invalid destinations remain lightweig
     await assert.rejects(readFile(calls),{code:'ENOENT'});
   }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('qualification cleanup reaps a recorded owned process and refuses a foreign replacement',async()=>{
+  const {reconcileRecordedHostProcesses}=await import('../../scripts/study-priority-qualification/process-lifecycle.mjs');
+  const {execFileSync}=await import('node:child_process');
+  const {randomUUID}=await import('node:crypto');
+  const directory=await mkdtemp(join(tmpdir(),'tempo-owned-process-proof-'));
+  const token=randomUUID();const children=[];
+  async function launch(owner,nonce){
+    const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});console.log('ready');setInterval(()=>{},1000);"],{
+      cwd:directory,env:{...process.env,TEMPO_SATURATION_DIRECTORY:directory,TEMPO_DEVELOPMENT_BUDGET_TOKEN:owner,TEMPO_QUALIFICATION_PROCESS_NONCE:nonce},stdio:['ignore','pipe','pipe']});
+    children.push(child);child.completion=new Promise(resolve=>child.once('exit',resolve));
+    await new Promise((resolve,reject)=>{child.once('error',reject);child.stdout.once('data',()=>resolve());});
+    return {child,record:{pid:child.pid,nonce,token,directory,start_time:execFileSync('ps',['-p',String(child.pid),'-o','lstart='],{encoding:'utf8',env:{...process.env,TZ:'UTC',LC_ALL:'C'}}).trim()}};
+  }
+  try{
+    const nonce=randomUUID().replaceAll('-','');
+    const owned=await launch(token,nonce);
+    const result=await reconcileRecordedHostProcesses([owned.record],{directory,token},{graceMilliseconds:75,killMilliseconds:1000});
+    assert.deepEqual(result[0].signals,['SIGTERM','SIGKILL']);assert.equal(result[0].absent,true);await owned.child.completion;
+    const foreign=await launch('another-owner',randomUUID().replaceAll('-',''));
+    await assert.rejects(reconcileRecordedHostProcesses([{...foreign.record,nonce}],{directory,token},{graceMilliseconds:75,killMilliseconds:1000}),/ownership changed/);
+    assert.doesNotThrow(()=>process.kill(foreign.child.pid,0),'A foreign process was signalled');
+    await assert.rejects(reconcileRecordedHostProcesses([{...owned.record,pid:null}],{directory,token}),/creation is unverified/);
+  }finally{
+    for(const child of children){if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await child.completion;}
+    await rm(directory,{recursive:true,force:true});
+  }
+});

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {reconcileRecordedHostProcesses} from './process-lifecycle.mjs';
 import {spawn,execFileSync} from 'node:child_process';
 import {readFile,writeFile,mkdir,rm,open} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
@@ -20,7 +21,7 @@ async function publish(path,value){const temp=path+'.partial';await writeFile(te
 async function waitFile(path,seconds=180){const deadline=Date.now()+seconds*1000;while(Date.now()<deadline){const value=await json(path);if(value)return value;await pause(10);}throw new Error('Timed out: '+path);}
 async function freePort(){return new Promise(resolve=>{const server=portServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});}
 async function ownedChild(command,args,environment,log){const output=await open(log,'w');const child=spawn(command,args,{cwd:root,env:{...process.env,...environment},stdio:['ignore',output.fd,output.fd]});await output.close();child.completion=new Promise(resolve=>{child.once('error',error=>resolve({error:String(error)}));child.once('exit',(code,signal)=>resolve({code,signal}));});return child;}
-async function stop(child){if(!child)return;child.kill('SIGCONT');child.kill('SIGTERM');const outcome=await Promise.race([child.completion,pause(30000).then(()=>undefined)]);if(!outcome){child.kill('SIGKILL');await child.completion;}}
+async function stop(child,graceMilliseconds=0){if(!child)return;if(graceMilliseconds&&await Promise.race([child.completion.then(()=>true),pause(graceMilliseconds).then(()=>false)]))return;child.kill('SIGCONT');child.kill('SIGTERM');const outcome=await Promise.race([child.completion,pause(30000).then(()=>undefined)]);if(!outcome){child.kill('SIGKILL');await child.completion;}}
 async function absent(kind,name){try{docker([kind,'inspect',name]);return false;}catch(error){if(/No such|no such/.test(String(error.stderr)))return true;throw error;}}
 await recordBudgetResource('saturation:'+owner,true);
 try{
@@ -138,8 +139,12 @@ try{
   }finally{
    clearInterval(timer);await publish(join(directory,'abort.json'),{aborted:!row.complete});
    if(page){try{if(!row.complete)await page.screenshot({path:join(directory,'failure.png')});await page.context().tracing.stop({path:join(directory,'browser-trace.zip')});}catch(error){report.host_cleanup_errors.push(String(error));}}
-   const cleanup=await Promise.allSettled([browser?.close(),host?.close(),stop(learning),stop(native),stop(publisher),stop(controlServer),...inferenceChildren.map(stop)]);
+   const cleanup=await Promise.allSettled([browser?.close(),host?.close(),stop(learning),stop(native,2000),stop(publisher),stop(controlServer),...inferenceChildren.map(stop)]);
    row.host_cleanup_errors=cleanup.filter(item=>item.status==='rejected').map(item=>String(item.reason));
+   try{
+    const journal=await json(join(directory,'native-host-processes.json'));
+    row.host_process_reconciliation=await reconcileRecordedHostProcesses(journal?.processes??[],{directory,token:process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN});
+   }catch(error){row.host_cleanup_errors.push('Native host process absence is unverified: '+String(error));}
    const nativeReceipt=await json(join(directory,'native.json'));
    if(nativeReceipt?.cleanup!==true)row.host_cleanup_errors.push('Native resource absence is unverified; retain its rehearsal journal');
    for(const resource of row.native_resources??[]){

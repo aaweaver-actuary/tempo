@@ -1,5 +1,5 @@
 """Coordinate genuine native transactions without substituting their results."""
-import json, os, pathlib, sys, threading, time, signal
+import json, os, pathlib, sys, threading, time, signal, subprocess, uuid
 ROOT = pathlib.Path.cwd()
 sys.path[:0] = [str(ROOT/'scripts'), str(ROOT/'backend')]
 import httpx, psycopg
@@ -32,9 +32,38 @@ def publish(name, value):
 def wait(name, seconds=180):
     deadline = time.monotonic()+seconds
     while not (DIRECTORY/(name+'.json')).exists():
-        if (DIRECTORY/'abort.json').exists(): raise RuntimeError('Overlap coordinator aborted')
+        if (DIRECTORY/'abort.json').exists():
+            stopping.set()
+            raise RuntimeError('Overlap coordinator aborted')
         if time.monotonic() >= deadline: raise TimeoutError(name)
         time.sleep(.02)
+
+host_processes = []
+original_popen = subprocess.Popen
+
+def owned_popen(command, *arguments, **options):
+    environment = options.get('env') or {}
+    owned = isinstance(command, (list, tuple)) and command and command[0] == sys.executable and environment.get('TEMPO_SATURATION_DIRECTORY') == str(DIRECTORY)
+    if not owned:
+        return original_popen(command, *arguments, **options)
+    record = {'pid': None, 'nonce': uuid.uuid4().hex, 'directory': str(DIRECTORY),
+              'token': environment['TEMPO_DEVELOPMENT_BUDGET_TOKEN'], 'command': list(command)}
+    host_processes.append(record)
+    publish('native-host-processes', {'processes': host_processes})
+    options['env'] = {**environment, 'TEMPO_QUALIFICATION_PROCESS_NONCE': record['nonce']}
+    child = original_popen(command, *arguments, **options)
+    record['pid'] = child.pid
+    try:
+        record['start_time'] = subprocess.check_output(['ps', '-p', str(child.pid), '-o', 'lstart='],
+            text=True, env={**os.environ, 'TZ': 'UTC', 'LC_ALL': 'C'}).strip()
+    except subprocess.CalledProcessError:
+        if child.poll() is not None: record['exited'] = True
+        else: raise
+    finally:
+        publish('native-host-processes', {'processes': host_processes})
+    return child
+
+subprocess.Popen = owned_popen
 
 def optional_sections():
     from app.database import background_connection
@@ -195,6 +224,8 @@ class CoordinatedClient(original_client):
         return super().__exit__(*arguments)
 
 def interrupted(signum, frame):
+    if stopping.is_set(): return
+    stopping.set()
     raise SystemExit('Owned saturation interrupted')
 signal.signal(signal.SIGTERM, interrupted)
 httpx.Client = CoordinatedClient
