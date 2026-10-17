@@ -67,6 +67,22 @@ def optional_sections():
             state['background_error'] = str(error)
             return
 
+def study_fingerprints(database):
+    from psycopg import sql
+    tables = ['cards', 'reviews', 'daily_queue', 'review_attempt_receipts', 'queue_attempt_origins',
+              'tactic_introductions', 'guided_review_attempts', 'study_attempts', 'defense_attempts', 'endgame_attempts',
+              'opening_evidence_attempts', 'opening_evidence_clean_days', 'opening_evidence_events',
+              'opening_evidence_observations', 'opening_evidence_presentations', 'opening_evidence_queue_contexts',
+              'opening_evidence_summaries', 'operation_receipts']
+    result = {}
+    for table in tables:
+        predicate = sql.SQL(" WHERE operation_id=ANY(%s)") if table == 'operation_receipts' else sql.SQL('')
+        statement = sql.SQL("SELECT count(*),md5(COALESCE(string_agg(encoded,',' ORDER BY encoded),'')) FROM (SELECT row_to_json(item)::text encoded FROM {} item{}) snapshot").format(sql.Identifier(table), predicate)
+        parameters = (state['reviews'],) if table == 'operation_receipts' else ()
+        count, digest = database.execute(statement, parameters).fetchone()
+        result[table] = {'rows': count, 'md5': digest}
+    return result
+
 original_read_text = pathlib.Path.read_text
 
 def stop_maintenance_before_rollback(path, *arguments, **options):
@@ -78,6 +94,7 @@ def stop_maintenance_before_rollback(path, *arguments, **options):
         state['maintenance_stopped_before_rollback'] = True
         state['maintenance_after_ui_quiet'] = state['extra_background_sections']
         with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as database:
+            state['study_fingerprints_before_rollback'] = study_fingerprints(database)
             state['checkpoint_before_rollback'] = database.execute("SELECT payload_json FROM background_tasks WHERE id='saturation-unlock-checkpoint'").fetchone()[0]
     return original_read_text(path, *arguments, **options)
 
@@ -156,6 +173,12 @@ class CoordinatedClient(original_client):
                 from psycopg import sql
                 for table in state['tables']:
                     state['durable_counts'][table] = database.execute(sql.SQL('SELECT count(*) FROM {}').format(sql.Identifier(table))).fetchone()[0]
+                state['study_fingerprints_after_rollback'] = study_fingerprints(database)
+                assert state['study_fingerprints_after_rollback'] == state['study_fingerprints_before_rollback']
+                state['queue_by_status'] = {row[0]: row[1] for row in database.execute("SELECT status,count(*) FROM daily_queue WHERE card_id LIKE 'review-%' GROUP BY status ORDER BY status")}
+                state['final_study_rows'] = {}
+                for table, predicate in [('cards', "id LIKE 'review-%'"), ('reviews', "card_id LIKE 'review-%'"), ('daily_queue', "card_id LIKE 'review-%'"), ('queue_attempt_origins', "card_id LIKE 'review-%'")]:
+                    state['final_study_rows'][table] = [row[0] for row in database.execute(sql.SQL('SELECT to_jsonb(item) FROM {} item WHERE {}').format(sql.Identifier(table), sql.SQL(predicate)))]
                 checkpoint = database.execute("SELECT payload_json FROM background_tasks WHERE id='saturation-unlock-checkpoint'").fetchone()[0]
                 assert checkpoint == state['checkpoint_before_rollback']
                 state['checkpoint_after_rollback'] = checkpoint
