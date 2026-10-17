@@ -1,6 +1,7 @@
 // Disposable PostgreSQL product and container-recreation gate.
 
 import assert from "node:assert/strict";
+import {allocatedNativeProofSource,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
 import { assertDevelopmentCapacity, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from './development-budget.mjs';
 import { randomBytes } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
@@ -142,21 +143,14 @@ async function withPriorityMaintenanceAllocation(proof) {
     restoreConsumers: async () => {
       run('docker',[...compose,'up','--no-build','-d']);
       await waitForReady();
-      const running=new Set(run('docker',[...compose,'ps','--format','json']).stdout.trim().split('\n')
-        .filter(Boolean).map(line=>JSON.parse(line)).filter(container=>container.State==='running').map(container=>container.Service));
-      for(const service of clients) assert(running.has(service), `${service} was not restored after the native maintenance proof`);
+      verifyRestoredPostgresConsumers(run,compose,clients);
     },
   });
 }
 
 async function runAllocatedNativeProof(scriptPath, proofName) {
     const limit=resourceBudgets.priorityRehearsalServices.schema;
-    const proof=`import pathlib,runpy
-quota,period=map(int,pathlib.Path('/sys/fs/cgroup/cpu.max').read_text().split())
-assert quota/period==${limit.cpus}
-assert int(pathlib.Path('/sys/fs/cgroup/memory.max').read_text())==${limit.memoryMiB*1024*1024}
-print('PASS ${proofName}',flush=True)
-runpy.run_path('${scriptPath}',run_name='__main__')`;
+    const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
     await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
       "run", "--rm", "--no-deps", "schema", "python", "-c", proof]));
 }

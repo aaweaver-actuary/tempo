@@ -1087,3 +1087,31 @@ test("redis_fixture_native_isolation_regressions_run_in_regular_durability", () 
   const runner = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
   assert(runner.includes('"/source/scripts/check_postgres_redis_fixture_isolation.py"'));
 });
+
+test('study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup_checks',async()=>{
+  const {allocatedNativeProofSource}=await import('../../scripts/postgres-maintenance-proof.mjs');
+  const directory=mkdtempSync(join(tmpdir(),'tempo-native-proof-import-'));
+  try{
+    writeFileSync(join(directory,'sibling.py'),'VALUE = 173\n');
+    const entry=join(directory,'entry.py');
+    writeFileSync(entry,"import sibling\nassert sibling.VALUE == 173\nprint('original native proof completed')\n");
+    const source=allocatedNativeProofSource(entry,'allocated_import_fixture',{cpus:1.5,memoryMiB:1536});
+    for(const cpu of ['150000 100000','20000 100000']){
+      const fixtures=`import pathlib\noriginal_read=pathlib.Path.read_text\ndef read(path,*a,**kw):\n if str(path)=='/sys/fs/cgroup/cpu.max': return ${JSON.stringify(cpu)}\n if str(path)=='/sys/fs/cgroup/memory.max': return '1610612736'\n return original_read(path,*a,**kw)\npathlib.Path.read_text=read\n`;
+      const result=spawnSync('python3',['-I','-c',fixtures+source],{cwd:tmpdir(),encoding:'utf8'});
+      if(cpu.startsWith('150000')){assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/original native proof completed/);}
+      else{assert.notEqual(result.status,0);assert.doesNotMatch(result.stdout,/original native proof completed/);}
+    }
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test('study_priority_restoration_captures_output_and_checks_every_owned_consumer',async()=>{
+  const {verifyRestoredPostgresConsumers}=await import('../../scripts/postgres-maintenance-proof.mjs');
+  const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
+  const execute=present=>(command,args,options)=>{
+    assert.equal(command,'docker');assert.deepEqual(args,['compose','-p','owned','ps','--format','json']);
+    return spawnSync(process.execPath,['-e',`for(const Service of ${JSON.stringify(present)})console.log(JSON.stringify({Service,State:'running'}));`],options);
+  };
+  verifyRestoredPostgresConsumers(execute(clients),['compose','-p','owned'],clients);
+  assert.throws(()=>verifyRestoredPostgresConsumers(execute(clients.slice(1)),['compose','-p','owned'],clients),/api was not restored/);
+});

@@ -327,6 +327,7 @@ test('managed Docker capability survives a sanitized worker environment and cann
     const wrapper=join(adapter,'managed-bin/docker');
     const result=spawnSync(wrapper,['run','--name','owned','image'],{env:sanitized,encoding:'utf8'});
     assert.equal(result.status,0,result.stderr);
+    assert.equal(result.stderr,'','Expected absence probes must not corrupt the worker diagnostic stream');
     const args=JSON.parse(result.stdout);assert(args.includes('tempo.resource-owner='+lease.token));assert(args.includes('--cpus'));assert(args.includes('--memory'));
     const before=await readFile(log,'utf8');await lease.release();lease=undefined;
     const stale=spawnSync(wrapper,['run','image'],{env:sanitized,encoding:'utf8'});

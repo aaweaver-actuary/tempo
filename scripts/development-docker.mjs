@@ -44,7 +44,9 @@ export async function runManagedDocker(args) {
   const token=process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
   if(!executable || !token) throw new Error('Managed Docker requires an explicit executable and budget owner');
   await validateDevelopmentBudgetOwner();
-  const inspect=argumentsList=>execFileSync(executable,argumentsList,{encoding:'utf8',maxBuffer:8*1024*1024});
+  // Expected absence is control evidence, not a worker diagnostic. Node's
+  // implicit synchronous stdio forwards failing probes to the protocol stream.
+  const inspect=argumentsList=>execFileSync(executable,argumentsList,{encoding:'utf8',stdio:'pipe',maxBuffer:8*1024*1024});
   if(args[0]==='build') {
     await managedBuild(builder=>execFileSync(executable,['buildx','build','--builder',builder,'--load',...args.slice(1)],{stdio:'inherit'}),{docker:async argumentsList=>inspect(argumentsList)});
     return 0;
