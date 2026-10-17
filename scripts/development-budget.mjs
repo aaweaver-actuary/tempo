@@ -32,6 +32,10 @@ async function requireBudgetOwner(directory, token) {
   return owner;
 }
 
+export async function validateDevelopmentBudgetOwner({ directory = budgetDirectory(), token = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN } = {}) {
+  return requireBudgetOwner(directory, token);
+}
+
 const defaultDocker = async args => (await execute('docker', args, { maxBuffer: 1024 * 1024 })).stdout;
 
 async function inspectBuilder(name, docker) {

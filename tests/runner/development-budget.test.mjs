@@ -307,3 +307,29 @@ test('expected independent control cannot be mistaken for absence before its fir
     assert.equal((await readHostStudyActivity({directory,now,expectedSources:'malformed'})).available,false);
   } finally {await rm(directory,{recursive:true,force:true});}
 });
+
+test('managed Docker capability survives a sanitized worker environment and cannot outlive its owner', async () => {
+  const {managedDockerEnvironment}=await import('../../scripts/development-docker.mjs');
+  const {spawnSync}=await import('node:child_process');
+  const {mkdir}=await import('node:fs/promises');
+  const directory=await mkdtemp(join(tmpdir(),'tempo-worker-capability-'));
+  const lock=join(directory,'lease');let lease;
+  try {
+    lease=await acquireDevelopmentBudget({directory:lock});
+    const executable=join(directory,'real-docker'),log=join(directory,'calls.jsonl');
+    await writeFile(executable,`#!${process.execPath}\nimport {appendFileSync}from'node:fs';const args=process.argv.slice(2);appendFileSync(${JSON.stringify(log)},JSON.stringify(args)+'\\n');if(args[0]==='run')console.log(JSON.stringify(args));\n`,{mode:0o700});
+    const adapter=join(directory,'adapter');await mkdir(adapter);
+    const environment=managedDockerEnvironment({...process.env,TEMPO_REAL_DOCKER:executable,
+      TEMPO_DEVELOPMENT_BUDGET_TOKEN:lease.token,TEMPO_DEVELOPMENT_BUDGET_DIRECTORY:lock,
+      TEMPO_STUDY_ACTIVITY_LEGACY:'absent',TEMPO_STUDY_ACTIVITY_DIRECTORY:join(directory,'activity'),TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES:'[]'},adapter);
+    // The installed Stockfish client intentionally forwards no domain or runner environment.
+    const sanitized={PATH:environment.PATH,HOME:process.env.HOME};
+    const wrapper=join(adapter,'managed-bin/docker');
+    const result=spawnSync(wrapper,['run','--name','owned','image'],{env:sanitized,encoding:'utf8'});
+    assert.equal(result.status,0,result.stderr);
+    const args=JSON.parse(result.stdout);assert(args.includes('tempo.resource-owner='+lease.token));assert(args.includes('--cpus'));assert(args.includes('--memory'));
+    const before=await readFile(log,'utf8');await lease.release();lease=undefined;
+    const stale=spawnSync(wrapper,['run','image'],{env:sanitized,encoding:'utf8'});
+    assert.notEqual(stale.status,0);assert.equal(await readFile(log,'utf8'),before,'A released capability invoked Docker');
+  }finally{await lease?.release();await rm(directory,{recursive:true,force:true});}
+});

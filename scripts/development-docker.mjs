@@ -4,7 +4,7 @@ import {execFileSync,spawnSync} from 'node:child_process';
 import {mkdirSync,writeFileSync,chmodSync,existsSync,realpathSync} from 'node:fs';
 import {join,delimiter} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet} from './development-budget.mjs';
+import {assertDevelopmentCapacity,managedBuild,waitForStudyQuiet,validateDevelopmentBudgetOwner} from './development-budget.mjs';
 
 export function managedDockerEnvironment(environment,directory) {
   const docker = environment.TEMPO_REAL_DOCKER ?? environment.PATH.split(delimiter)
@@ -12,7 +12,12 @@ export function managedDockerEnvironment(environment,directory) {
   if(!docker) throw new Error('Docker is required for a managed PostgreSQL suite');
   const bin=join(directory,'managed-bin');mkdirSync(bin);
   const wrapper=join(bin,'docker');
-  writeFileSync(wrapper,`#!${process.execPath}\nimport {runManagedDocker} from ${JSON.stringify(pathToFileURL(fileURLToPath(import.meta.url)).href)};\nprocess.exitCode=await runManagedDocker(process.argv.slice(2));\n`,{mode:0o700});chmodSync(wrapper,0o700);
+  const capabilityNames=['TEMPO_REAL_DOCKER','TEMPO_DEVELOPMENT_BUDGET_TOKEN','TEMPO_DEVELOPMENT_BUDGET_DIRECTORY',
+    'TEMPO_STUDY_ACTIVITY_URL','TEMPO_STUDY_ACTIVITY_DIRECTORY','TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES','TEMPO_STUDY_ACTIVITY_LEGACY',
+    'GITHUB_ACTIONS','RUNNER_ENVIRONMENT'];
+  const capability=Object.fromEntries(capabilityNames.map(name=>[name,environment[name]??null]));
+  capability.TEMPO_REAL_DOCKER=realpathSync(docker);
+  writeFileSync(wrapper,`#!${process.execPath}\nimport {runManagedDocker} from ${JSON.stringify(pathToFileURL(fileURLToPath(import.meta.url)).href)};\nfor(const [name,value]of Object.entries(${JSON.stringify(capability)})){if(value===null)delete process.env[name];else process.env[name]=value;}\nprocess.exitCode=await runManagedDocker(process.argv.slice(2));\n`,{mode:0o700});chmodSync(wrapper,0o700);
   return {...environment,PATH:bin+delimiter+environment.PATH,TEMPO_REAL_DOCKER:realpathSync(docker)};
 }
 function option(args,name) {
@@ -35,6 +40,7 @@ export async function runManagedDocker(args) {
   const executable=process.env.TEMPO_REAL_DOCKER;
   const token=process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
   if(!executable || !token) throw new Error('Managed Docker requires an explicit executable and budget owner');
+  await validateDevelopmentBudgetOwner();
   const inspect=argumentsList=>execFileSync(executable,argumentsList,{encoding:'utf8',maxBuffer:8*1024*1024});
   if(args[0]==='build') {
     await managedBuild(builder=>execFileSync(executable,['buildx','build','--builder',builder,'--load',...args.slice(1)],{stdio:'inherit'}),{docker:async argumentsList=>inspect(argumentsList)});
