@@ -119,7 +119,7 @@ function snapshotIndex(snapshot, label, diagnose, statistics) {
   const components = new Map(), suites = new Map(), entries = new Map(), rules = new Map(), boundaries = new Map();
   const aliases = new Map(), dependencies = new Map(), consumers = new Map(), boundaryPairs = new Map();
   const inputs = new PathIndex(), inventory = new PathIndex(), roots = new PathIndex(), production = new PathIndex(), tree = new PathIndex(), directories = new Set();
-  const rulesByOwner = new Map(), rulesByProof = new Map(), entryMatches = new Map();
+  const rulesByOwner = new Map(), rulesByProof = new Map(), ownerTriggersByProof = new Map(), entryMatches = new Map();
   const addIdentity = (map, value) => {
     requireInput(textValue(value?.id), "Missing stable declaration identity", { snapshot: label });
     requireInput(!map.has(value.id) || canonical(map.get(value.id)) === canonical(value), "Conflicting duplicate identity: " + value.id, { snapshot: label });
@@ -236,7 +236,13 @@ function snapshotIndex(snapshot, label, diagnose, statistics) {
     return entryMatches.get(key);
   };
   const reader = selector => matchingEntries(selector).length > 0;
-  for (const component of components.values()) for (const trigger of component.ownerProofs) for (const proofId of trigger.proofIds) if (!suites.has(proofId)) diagnose("MISSING_REQUIRED_PROOF", "Declare the referenced owning proof instead of a false implemented claim", { snapshot: label, candidates: [component.id], boundary: proofId });
+  for (const component of components.values()) for (const trigger of component.ownerProofs) for (const proofId of trigger.proofIds) {
+    if (!ownerTriggersByProof.has(proofId)) ownerTriggersByProof.set(proofId, new Map());
+    const owners = ownerTriggersByProof.get(proofId);
+    if (!owners.has(component.id)) owners.set(component.id, new Set());
+    for (const effect of trigger.on) owners.get(component.id).add(effect);
+    if (!suites.has(proofId)) diagnose("MISSING_REQUIRED_PROOF", "Declare the referenced owning proof instead of a false implemented claim", { snapshot: label, candidates: [component.id], boundary: proofId });
+  }
   for (const declaration of [...rules.values(), ...boundaries.values()]) for (const proofId of declaration.proofIds) if (!suites.has(proofId)) diagnose("MISSING_REQUIRED_PROOF", "Declare the referenced input/boundary proof", { snapshot: label, boundary: proofId });
   for (const [path] of entries) {
     statistics.indexedEntries++;
@@ -244,7 +250,7 @@ function snapshotIndex(snapshot, label, diagnose, statistics) {
     if (owners.length > 1) diagnose("OVERLAPPING_PRODUCTION", "Exclude the separately owned subtree or assign one production owner", { snapshot: label, path, candidates: owners });
     if (directories.has(path)) diagnose("INVALID_MANIFEST", "A committed file cannot also be a parent directory", { snapshot: label, path });
   }
-  return { label, identity: Object.fromEntries(["revision", "tree", "manifestDigest", "catalogDigest", "selectionSemantics"].map(key => [key, snapshot.identity[key]])), components, suites, entries, rules, boundaries, inputs, inventory, roots, aliases, dependencies, consumers, boundaryPairs, reader, matchingEntries, rulesByOwner, rulesByProof, directories };
+  return { label, identity: Object.fromEntries(["revision", "tree", "manifestDigest", "catalogDigest", "selectionSemantics"].map(key => [key, snapshot.identity[key]])), components, suites, entries, rules, boundaries, inputs, inventory, roots, aliases, dependencies, consumers, boundaryPairs, reader, matchingEntries, rulesByOwner, rulesByProof, ownerTriggersByProof, directories };
 }
 
 function normalizedChanges(changes) {
@@ -307,7 +313,7 @@ function graphCycles(index) {
  */
 export function planAffected(input) {
   const plan = { schemaVersion: 1, selectionSemantics: semantics, disposition: "blocked", qualification: "not-evaluated", comparison: null, snapshots: {}, changes: [], paths: [], unownedPaths: [], affected: [], selectedSuites: [], selectedBoundaries: [], prerequisites: [], requiredResources: [], reasons: [], diagnostics: [], evidenceRequirements: [], dependencyInputs: [], cycles: [], statistics: { indexedEntries: 0, changedPathLookups: 0, traversedEdges: 0, reasonNodes: 0 } };
-  const diagnostics = new Map(), reasons = new Map(), selected = new Map(), selectedBoundaries = new Map(), affected = new Map(), seeds = new Map();
+  const diagnostics = new Map(), reasons = new Map(), selected = new Map(), selectedBoundaries = new Map(), affected = new Map(), seeds = new Map(), metadataContracts = new Map();
   function diagnose(code, reason, context = {}) {
     const diagnostic = { code, severity: "error", snapshot: context.snapshot ?? null, path: context.path ?? null, candidates: unique(context.candidates ?? []), boundary: context.boundary ?? null, reason, fix: context.fix ?? reason };
     diagnostics.set(canonical(diagnostic), diagnostic);
@@ -329,6 +335,16 @@ export function planAffected(input) {
     if (!seeds.has(owner)) seeds.set(owner, { effects: new Set(), reasons: new Set() });
     for (const effect of additions) seeds.get(owner).effects.add(effect);
     seeds.get(owner).reasons.add(cause);
+  }
+  function requireOwnerEffects(index, owner, requiredEffects, cause) {
+    const component = index.components.get(owner);
+    if (!component) { diagnose("REMOVED_PROOF_UNREPLACED", "Map the removed component's obligations to a reviewed head owner", { snapshot: index.label, candidates: [owner] }); return; }
+    for (const effect of requiredEffects) {
+      const triggers = component.ownerProofs.filter(trigger => trigger.on.includes(effect));
+      if (!triggers.length) diagnose("MISSING_REQUIRED_PROOF", "Declare owning proof coverage for effect " + effect, { snapshot: index.label, candidates: [owner] });
+      for (const trigger of triggers) for (const proofId of trigger.proofIds) addProof(index, proofId, cause);
+      if (effect === "persistence" && !triggers.some(trigger => trigger.proofIds.some(proofId => index.suites.get(proofId)?.owner === owner && index.suites.get(proofId).kind === "postgres" && index.suites.get(proofId).resources.includes("postgres")))) diagnose("PROOF_SCOPE_GAP", "Persistence requires the owning real native PostgreSQL proof", { snapshot: index.label, candidates: [owner] });
+    }
   }
   try {
     const comparison = input?.comparison;
@@ -395,13 +411,26 @@ export function planAffected(input) {
             const changedEffects = declaration.ownerProofs.filter(trigger => !otherTriggers.has(canonical(trigger))).flatMap(trigger => trigger.on);
             seed(id, unique(["artifact", ...changedEffects]), cause);
           }
-          else if (field === "suites") addProof(index, id, cause);
+          else if (field === "suites") {
+            addProof(index, id, cause);
+            for (const [owner, triggerEffects] of index.ownerTriggersByProof.get(id) ?? []) {
+              if (!metadataContracts.has(owner)) metadataContracts.set(owner, new Map());
+              for (const effect of triggerEffects) {
+                if (!metadataContracts.get(owner).has(effect)) metadataContracts.get(owner).set(effect, new Set());
+                metadataContracts.get(owner).get(effect).add(cause);
+              }
+            }
+          }
           else {
             seed(declaration.owner ?? declaration.consumer, field === "rules" ? ruleEffects(declaration) : ["artifact"], cause);
             for (const proofId of declaration.proofIds) addProof(index, proofId, cause);
           }
         }
       }
+    }
+    // Proof edits retain endpoint contracts without seeding production cascades.
+    for (const [owner, contracts] of metadataContracts) for (const [effect, causes] of contracts) for (const index of indexes) {
+      requireOwnerEffects(index, owner, [effect], reason("RETAINED_OWNER_CONTRACT", { snapshot: index.label, to: owner, effect }, causes));
     }
     for (const index of indexes) {
       const boundariesByProducer = new Map();
@@ -449,12 +478,7 @@ export function planAffected(input) {
         for (const effect of state.effects) summary.effects.add(effect);
         summary.reasonIds.add(cause); affected.set(id, summary);
         if (component.status === "planned") diagnose("PLANNED_TARGET", "Implement this owner and map its real proofs before executable selection", { snapshot: index.label, path: component.root, candidates: [id] });
-        for (const effect of state.effects) {
-          const triggers = component.ownerProofs.filter(trigger => trigger.on.includes(effect));
-          if (!triggers.length) diagnose("MISSING_REQUIRED_PROOF", "Declare owning proof coverage for effect " + effect, { snapshot: index.label, candidates: [id] });
-          for (const trigger of triggers) for (const proofId of trigger.proofIds) addProof(index, proofId, cause);
-          if (effect === "persistence" && !triggers.some(trigger => trigger.proofIds.some(proofId => index.suites.get(proofId)?.owner === id && index.suites.get(proofId).kind === "postgres" && index.suites.get(proofId).resources.includes("postgres")))) diagnose("PROOF_SCOPE_GAP", "Persistence requires the owning real native PostgreSQL proof", { snapshot: index.label, candidates: [id] });
-        }
+        requireOwnerEffects(index, id, state.effects, cause);
       }
       for (const boundary of index.boundaries.values()) {
         const state = reached.get(boundary.producer);
@@ -516,11 +540,6 @@ export function planAffected(input) {
       }
     }
     plan.prerequisites = unique(prerequisites);
-    const ownerTriggersByProof = new Map();
-    for (const component of head.components.values()) for (const trigger of component.ownerProofs) for (const proofId of trigger.proofIds) {
-      if (!ownerTriggersByProof.has(proofId)) ownerTriggersByProof.set(proofId, new Set());
-      ownerTriggersByProof.get(proofId).add(component.id);
-    }
     const boundariesByProof = new Map();
     for (const boundary of head.boundaries.values()) for (const proofId of boundary.proofIds) {
       if (!boundariesByProof.has(proofId)) boundariesByProof.set(proofId, []);
@@ -529,7 +548,7 @@ export function planAffected(input) {
     const evidenceComponents = new Set(prerequisites);
     for (const suite of finalSuites.values()) {
       const directRules = head.rulesByProof.get(suite.id) ?? [];
-      const proofOwners = unique([suite.owner, ...(ownerTriggersByProof.get(suite.id) ?? []), ...directRules.map(rule => rule.owner).filter(Boolean)]);
+      const proofOwners = unique([suite.owner, ...(head.ownerTriggersByProof.get(suite.id)?.keys() ?? []), ...directRules.map(rule => rule.owner).filter(Boolean)]);
       const relevantRules = [...new Map([...directRules, ...proofOwners.flatMap(owner => head.rulesByOwner.get(owner) ?? []).filter(rule => ["production", "artifact", "interface", "toolchain", "runner"].includes(rule.role))].map(rule => [rule.id, rule])).values()];
       const selectors = [...suite.inputs, ...suite.expectedScope.inventoryInputs, ...relevantRules.map(rule => rule.selector)];
       const relevantEntries = ordered(new Map(selectors.flatMap(selector => head.matchingEntries(selector)).map(entry => [entry.path, entry])).values());
@@ -537,7 +556,7 @@ export function planAffected(input) {
       // References into one shared head dependency-input graph avoid a closure per suite.
       const dependencyComponents = unique([...suite.prerequisites, ...proofOwners.flatMap(owner => [...(head.dependencies.get(owner) ?? [])]), ...(boundariesByProof.get(suite.id) ?? []).flatMap(boundary => [boundary.producer, boundary.consumer]).filter(component => component !== suite.owner)]);
       for (const component of dependencyComponents) evidenceComponents.add(component);
-      plan.evidenceRequirements.push({ suiteId: suite.id, cwd: suite.cwd, command: suite.command, inputRules: unique(relevantRules.map(rule => rule.id)), sourceInputs: relevantEntries, dependencyComponents, dependencyClosure: "head", manifestInputs: { suite: head.suites.get(suite.id), component: head.components.get(suite.owner) ?? null, rules: ordered(relevantRules), boundaries: ordered(boundariesByProof.get(suite.id) ?? []) }, expectedScope: suite.expectedScope, resources: suite.resources, runtimeRequirements: suite.runtime, requiresRuntimeFingerprint: true, selectionSemantics: semantics, requiresNonzeroPassingCases: true, observedResult: null, reuse: "not-evaluated" });
+      plan.evidenceRequirements.push({ suiteId: suite.id, cwd: suite.cwd, command: suite.command, inputRules: unique(relevantRules.map(rule => rule.id)), sourceInputs: relevantEntries, dependencyComponents, dependencyClosure: "head", manifestInputs: { suite: head.suites.get(suite.id), component: head.components.get(suite.owner) ?? null, components: ordered(proofOwners.map(owner => head.components.get(owner)).filter(Boolean)), rules: ordered(relevantRules), boundaries: ordered(boundariesByProof.get(suite.id) ?? []) }, expectedScope: suite.expectedScope, resources: suite.resources, runtimeRequirements: suite.runtime, requiresRuntimeFingerprint: true, selectionSemantics: semantics, requiresNonzeroPassingCases: true, observedResult: null, reuse: "not-evaluated" });
     }
     const pendingEvidence = [...evidenceComponents];
     for (let position = 0; position < pendingEvidence.length; position++) for (const dependency of head.dependencies.get(pendingEvidence[position]) ?? []) if (!evidenceComponents.has(dependency)) {

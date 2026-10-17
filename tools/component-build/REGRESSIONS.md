@@ -88,6 +88,20 @@ wrapper. No additional legacy file registration is needed.
   `A202-shared-owner-proof-dependency` retain associated owners' source/dependency
   closure, changed object IDs, multiple-owner determinism and unsupported-input
   checks without adding execution prerequisites or unrelated component evidence.
+- Independent re-review adds 14 regular cases (108 A202 cases total).
+  `A202-retained-native-suite-metadata` covers same-ID kind, resource, owner and
+  combined downgrades. `A202-native-suite-metadata`, `A202-unit-suite-metadata`
+  and `A202-suite-metadata-contract` retain base/head trigger obligations and
+  grouped companion proofs while preserving valid command/runtime/scope edits
+  and avoiding production cascades or unrelated native work. The shared pure
+  fixture declares non-persistence effects; the native fixture explicitly adds
+  persistence instead of advertising PostgreSQL coverage through a Node proof.
+- `A202-shared-owner-declaration` covers external npm/Python dependencies and
+  root/artifact metadata. `A202-shared-owner-declarations` covers normalized
+  multiple owners, deterministic output and unrelated metadata exclusion.
+  `A202-explicit-rule-owner-declaration` retains declarations associated through
+  rules as well as owning triggers. Evidence keeps associated component
+  declarations separate from execution prerequisites and dependency graph roots.
 
 This is an injected-snapshot algorithm increment, not production manifest
 coverage, a Git/CLI adapter, evidence cache or runner integration. C3 retains the

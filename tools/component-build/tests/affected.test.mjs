@@ -9,7 +9,7 @@ const directory = path => ({ path, kind: "directory" });
 const component = (id, dependencies = []) => ({ id, status: "implemented", root: "packages/" + id,
   artifacts: [{ ecosystem: "npm", name: "@fixture/" + id }],
   dependencies: dependencies.map(name => ({ kind: "internal", ecosystem: "component", name })),
-  ownerProofs: [{ on: ["artifact", "interface", "persistence", "security", "runtime"], proofIds: ["component/" + id + "/unit"] }] });
+  ownerProofs: [{ on: ["artifact", "interface", "security", "runtime"], proofIds: ["component/" + id + "/unit"] }] });
 const suite = id => ({ id: "component/" + id + "/unit", owner: id, kind: "node", cwd: "packages/" + id,
   command: "node --test tests/unit.test.mjs", inputs: [directory("packages/" + id + "/tests")],
   prerequisites: [], resources: ["node"], expectedScope: { mode: "whole-suite", selector: null, inventoryInputs: [file("packages/" + id + "/tests/unit.test.mjs")] } });
@@ -45,7 +45,7 @@ function blocked(input, code, path) {
 function both(input, change) { change(input.base); change(input.head); }
 function native(input) {
   both(input, snapshot => {
-    const store = component("store"); store.ownerProofs[0].proofIds = ["component/store/native"];
+    const store = component("store"); store.ownerProofs[0].on.push("persistence"); store.ownerProofs[0].proofIds = ["component/store/native"];
     const proof = suite("store"); proof.id = "component/store/native"; proof.kind = "postgres"; proof.resources = ["python", "docker", "postgres"];
     snapshot.components.push(store); snapshot.suites.push(proof);
     snapshot.rules.push(rule("store-source", "store", directory("packages/store/src"), "production", ["artifact", "persistence"]));
@@ -500,9 +500,11 @@ test("A202-changed-interface-trigger retains effect-specific consumer boundary",
   assert.deepEqual(plan.affected.find(item => item.id === "logic").effects, ["artifact", "interface"]);
 });
 test("A202-unchanged-effect-triggers do not turn unrelated component metadata into persistence changes", () => {
-  const input = fixture(); input.head.components[0].root = "packages/logic-v2";
+  const input = fixture(); splitNativeProofs(input);
+  input.head.components.find(item => item.id === "store").root = "packages/store-v2";
   const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
   assert.ok(plan.affected.every(item => JSON.stringify(item.effects) === '["artifact"]'));
+  assert.deepEqual(proofs(plan), ["component/store/unit"]); assert.deepEqual(plan.requiredResources, ["node"]);
 });
 
 test("A202-inventory-only-edit selects the collection owner outside suite sensitivity", () => {
@@ -646,4 +648,105 @@ test("A202-shared-owner-proof-evidence excludes unrelated components", () => {
   both(changed, snapshot => { snapshot.entries.find(item => item.path === "packages/shell/src/value.mjs").objectId = "unrelated-shell"; });
   const plan = planAffected(changed); assert.equal(plan.disposition, "executable");
   assert.deepEqual(plan.evidenceRequirements, original.evidenceRequirements); assert.deepEqual(plan.dependencyInputs, original.dependencyInputs);
+});
+
+for (const variant of ["kind", "resources", "owner", "kind-and-resources"]) test("A202-retained-native-suite-metadata rejects in-place " + variant + " downgrades", () => {
+  const input = fixture(); native(input);
+  const proof = input.head.suites.find(item => item.id === "component/store/native");
+  if (variant.includes("kind")) proof.kind = "node";
+  if (variant.includes("resources")) proof.resources = ["node"];
+  if (variant === "owner") proof.owner = "tooling";
+  const plan = blocked(input, "PROOF_SCOPE_GAP");
+  assert.ok(plan.diagnostics.some(item => item.code === "PROOF_SCOPE_GAP" && item.snapshot === "head" && item.candidates.includes("store")));
+  assert.deepEqual(proofs(plan), ["component/store/native"]);
+  assert.deepEqual(plan.selectedSuites[0].baseObligations, ["component/store/native"]);
+  assert.deepEqual(owners(plan), []);
+});
+test("A202-native-suite-metadata retains valid contracts without production cascades", () => {
+  for (const variant of ["command", "runtime", "scope"]) {
+    const input = fixture(); native(input);
+    const proof = input.head.suites.find(item => item.id === "component/store/native");
+    if (variant === "command") proof.command += " --updated";
+    if (variant === "runtime") proof.runtime = { postgres: "18" };
+    if (variant === "scope") proof.expectedScope = { ...proof.expectedScope, mode: "subset", selector: "transactions" };
+    const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+    assert.deepEqual(proofs(plan), ["component/store/native"]); assert.deepEqual(owners(plan), []);
+    assert.deepEqual(plan.selectedBoundaries, []); assert.deepEqual(plan.prerequisites, []);
+    assert.ok(plan.reasons.some(item => item.code === "RETAINED_OWNER_CONTRACT" && item.effect === "persistence" && item.to === "store"));
+  }
+});
+test("A202-unit-suite-metadata does not activate separate persistence triggers", () => {
+  const input = fixture(); splitNativeProofs(input);
+  input.head.suites.find(item => item.id === "component/store/unit").command += " --updated";
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.deepEqual(proofs(plan), ["component/store/unit"]); assert.deepEqual(plan.requiredResources, ["node"]);
+  assert.deepEqual(owners(plan), []);
+});
+test("A202-suite-metadata-contract retains grouped companion native proofs", () => {
+  const input = fixture(); splitNativeProofs(input);
+  both(input, snapshot => { snapshot.components.find(item => item.id === "store").ownerProofs[1].proofIds.push("component/store/unit"); });
+  input.head.suites.find(item => item.id === "component/store/unit").command += " --updated";
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.deepEqual(proofs(plan), ["component/store/native", "component/store/unit"]);
+  assert.deepEqual(plan.selectedSuites.find(item => item.id === "component/store/native").baseObligations, ["component/store/native"]);
+  assert.deepEqual(owners(plan), []);
+});
+
+for (const ecosystem of ["npm", "python"]) test("A202-shared-owner-declaration retains external " + ecosystem + " dependency metadata", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  both(input, snapshot => { snapshot.components[1].dependencies.push({ kind: "external", ecosystem, name: "zod" }); });
+  const initial = planAffected(input); assert.equal(initial.disposition, "executable");
+  const changed = structuredClone(input);
+  both(changed, snapshot => { snapshot.components[1].dependencies.find(item => item.kind === "external").name = "lodash"; });
+  const updated = planAffected(changed); assert.equal(updated.disposition, "executable");
+  assert.notDeepEqual(updated.evidenceRequirements, initial.evidenceRequirements);
+  const declarations = updated.evidenceRequirements[0].manifestInputs.components;
+  assert.deepEqual(declarations.map(item => item.id), ["view"]);
+  assert.ok(declarations[0].dependencies.some(item => item.kind === "external" && item.ecosystem === ecosystem && item.name === "lodash"));
+  assert.deepEqual(updated.prerequisites, []); assert.deepEqual(updated.evidenceRequirements[0].dependencyComponents, ["logic"]);
+});
+for (const field of ["root", "artifacts"]) test("A202-shared-owner-declaration retains associated " + field + " metadata", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  const initial = planAffected(input), changed = structuredClone(input);
+  both(changed, snapshot => {
+    if (field === "root") snapshot.components[1].root = "packages";
+    else snapshot.components[1].artifacts[0].name = "@fixture/renamed-view";
+  });
+  const updated = planAffected(changed); assert.equal(updated.disposition, "executable");
+  assert.notDeepEqual(updated.evidenceRequirements, initial.evidenceRequirements);
+  assert.deepEqual(updated.evidenceRequirements[0].manifestInputs.components[0][field], changed.head.components[1][field]);
+  assert.deepEqual(updated.prerequisites, []);
+});
+test("A202-shared-owner-declarations retain multiple normalized owners deterministically", () => {
+  const input = fixture(); sharedOwnerProof(input, "shell");
+  both(input, snapshot => {
+    snapshot.components[1].ownerProofs[0].proofIds.push("component/shell/unit");
+    snapshot.components[1].dependencies.push({ kind: "external", ecosystem: "npm", name: "zod" });
+    snapshot.components[2].dependencies.push({ kind: "external", ecosystem: "python", name: "schema-lib" });
+  });
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(plan.evidenceRequirements[0].manifestInputs.components.map(item => item.id).sort(), ["shell", "view"]);
+  assert.deepEqual(plan.prerequisites, []);
+  const shuffled = structuredClone(input);
+  both(shuffled, snapshot => { snapshot.components.reverse(); snapshot.components.forEach(item => { item.dependencies.reverse(); item.ownerProofs.forEach(trigger => trigger.on.reverse()); }); });
+  assert.deepEqual(planAffected(shuffled), plan);
+});
+test("A202-explicit-rule-owner-declaration retains dependency metadata outside owner triggers", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  both(input, snapshot => {
+    snapshot.components[1].ownerProofs[0].proofIds = ["component/logic/unit"];
+    snapshot.components[1].dependencies.push({ kind: "external", ecosystem: "npm", name: "zod" });
+    snapshot.rules.find(item => item.id === "view-source").proofIds = ["component/view/unit"];
+  });
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(plan.evidenceRequirements[0].manifestInputs.components.map(item => item.id), ["view"]);
+  assert.ok(plan.evidenceRequirements[0].manifestInputs.components[0].dependencies.some(item => item.name === "zod"));
+  assert.deepEqual(plan.prerequisites, []);
+});
+test("A202-shared-owner-declarations exclude unrelated component metadata", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  const initial = planAffected(input), changed = structuredClone(input);
+  both(changed, snapshot => { snapshot.components[2].dependencies.push({ kind: "external", ecosystem: "npm", name: "unrelated" }); });
+  const updated = planAffected(changed); assert.equal(updated.disposition, "executable");
+  assert.deepEqual(updated.evidenceRequirements, initial.evidenceRequirements); assert.deepEqual(updated.dependencyInputs, initial.dependencyInputs);
 });
