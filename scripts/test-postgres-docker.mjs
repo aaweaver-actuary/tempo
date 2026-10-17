@@ -134,10 +134,23 @@ async function verifyStudyOpeningAdmission() {
     "--restart-stage", "verify", "--restart-database", restartDatabaseName]);
 }
 
-async function verifyStudyPriorityMaintenance() {
+async function withPriorityMaintenanceAllocation(proof) {
   const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
-  run('docker',[...compose,'stop',...clients]);
-  try {
+  await executeIsolatedBackgroundWorkload({
+    stopConsumers: () => run('docker',[...compose,'stop',...clients]),
+    measureWorkload: proof,
+    restoreConsumers: async () => {
+      run('docker',[...compose,'up','--no-build','-d']);
+      await waitForReady();
+      const running=new Set(run('docker',[...compose,'ps','--format','json']).stdout.trim().split('\n')
+        .filter(Boolean).map(line=>JSON.parse(line)).filter(container=>container.State==='running').map(container=>container.Service));
+      for(const service of clients) assert(running.has(service), `${service} was not restored after the native maintenance proof`);
+    },
+  });
+}
+
+async function verifyStudyPriorityMaintenance() {
+  await withPriorityMaintenanceAllocation(async () => {
     await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
       const evidenceParent = join(process.env.TEMPO_TEST_TIMING_DIR ?? 'test-results/performance', 'study-priority');
       mkdirSync(evidenceParent, {recursive: true});
@@ -152,10 +165,7 @@ async function verifyStudyPriorityMaintenance() {
       atomicJson(join(evidenceDirectory, 'assembly.json'), {revision: candidateRevision, project,
         source_mount: 'read-only', evidence_mount: '/evidence', complete: true});
     });
-  } finally {
-    run('docker',[...compose,'up','--no-build','-d']);
-    await waitForReady();
-  }
+  });
 }
 
 function verifyProjectIsUnused() {
@@ -1028,8 +1038,15 @@ const actions = {
       "/source/scripts/check_postgres_next_opponent.py"]);
   },
   priority_recovery: async () => {
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_priority_recovery.py"]);
+    const limit=resourceBudgets.priorityRehearsalServices.schema;
+    const proof=`import pathlib,runpy
+quota,period=map(int,pathlib.Path('/sys/fs/cgroup/cpu.max').read_text().split())
+assert quota/period==${limit.cpus}
+assert int(pathlib.Path('/sys/fs/cgroup/memory.max').read_text())==${limit.memoryMiB*1024*1024}
+print('PASS test_postgres_priority_recovery_uses_bounded_maintenance_allocation',flush=True)
+runpy.run_path('/source/scripts/check_postgres_priority_recovery.py',run_name='__main__')`;
+    await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
+      "run", "--rm", "--no-deps", "schema", "python", "-c", proof]));
   },
   background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
