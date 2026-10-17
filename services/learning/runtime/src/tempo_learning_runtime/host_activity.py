@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 import tempfile
+import sys
 import threading
 import time
 import uuid
@@ -18,8 +19,17 @@ def default_directory():
     return Path(os.environ.get("TEMPO_STUDY_ACTIVITY_DIRECTORY", str(Path(tempfile.gettempdir()) / "tempo-study-activity-v1")))
 
 
+def host_activity_clock_ns():
+    """Match the native host reader's clock, including macOS suspend time."""
+    if sys.platform == "darwin":
+        # libuv's hrtime uses the continuous raw clock. Python's default
+        # mach_absolute_time clock excludes suspend and diverges after sleep.
+        return time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+    return time.monotonic_ns()
+
+
 class HostActivity:
-    def __init__(self, directory, *, source=None, clock=time.monotonic_ns):
+    def __init__(self, directory, *, source=None, clock=host_activity_clock_ns):
         self.directory = Path(directory) if directory is not None else None
         self.producer = str(uuid.uuid4())
         self.source = source or self.producer
