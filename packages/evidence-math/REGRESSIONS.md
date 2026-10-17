@@ -4,6 +4,13 @@ Authoritative local owner; qualification rejects missing/zero/skipped required c
 Legacy source assertions originate at d0485d9f; donor harness assertions at c3bccdf9.
 Estimator-only tests remain explicitly adapter-owned.
 
+- `test_canonical_object_rejects_storage_deletion` — tests/test_boundaries.py
+- `test_opening_probability_public_schema_describes_recursive_json_objects` — tests/test_move_probability.py
+- `test_opening_probability_opaque_json_validation_remains_strict` — tests/test_move_probability.py
+- `test_opening_probability_opaque_json_roundtrip_preserves_detached_frozen_values` — tests/test_move_probability.py
+- `test_opening_probability_frozen_public_fields_reject_storage_deletion` — tests/test_move_probability.py
+- `test_opening_probability_frozen_public_fields_reject_reinitialization` — tests/test_move_probability.py
+
 - `test_probability_priority_hand_calculated_route_preparedness_and_marginal_gain` — tests/test_arithmetic.py
 - `test_probability_priority_frequent_deeper_decision_outranks_rare_shallow_decision` — tests/test_arithmetic.py
 - `test_probability_priority_increasing_reach_cannot_reduce_marginal_value` — tests/test_arithmetic.py

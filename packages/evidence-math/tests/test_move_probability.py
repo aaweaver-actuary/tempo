@@ -6,13 +6,103 @@ from pathlib import Path
 import pytest
 
 from tempo_evidence_math import (
-    CountEvidence, EvidenceFreshness, FusedMoveDistribution, FusionRequest,
+    CanonicalObject, CountEvidence, EvidenceFreshness, EvidenceQuality, FusedMoveDistribution, FusionRequest,
     MethodDescriptor, MoveWeight, OpeningMoveEvidence, OpeningMoveEvidenceBundle,
     PositionMoveUniverse, ScoreEvidence, coverage_mass_summary, empirical_frequencies,
     fuse_move_evidence, move_universe, normalize_evidence_weights, serialize_contract,
 )
 
 EXAMPLES = json.loads((Path(__file__).parent / "fixtures/probability-examples.json").read_text())
+
+
+@pytest.mark.parametrize("mode", ["validation", "serialization"])
+@pytest.mark.parametrize("model,field_path", [
+    (MethodDescriptor, ("parameters",)),
+    (EvidenceQuality, ("uncertainty",)),
+    (OpeningMoveEvidence, ("cohort",)),
+    (OpeningMoveEvidenceBundle, ("target_context",)),
+    (FusionRequest, ("policy", "parameters")),
+    (FusedMoveDistribution, ("target_context",)),
+])
+def test_opening_probability_public_schema_describes_recursive_json_objects(model, field_path, mode):
+    schema = model.model_json_schema(mode=mode)
+
+    def resolve(node):
+        while "$ref" in node:
+            node = schema["$defs"][node["$ref"].removeprefix("#/$defs/")]
+        return node
+
+    node = schema
+    for field in field_path:
+        node = resolve(node)["properties"][field]
+    if "anyOf" in node:  # Uncertainty may also be null.
+        assert {option.get("type") for option in node["anyOf"]} == {"object", "null"}
+        node = next(option for option in node["anyOf"] if option.get("type") == "object")
+    assert node["type"] == "object"
+    value_reference = node["additionalProperties"]
+    variants = {option["type"]: option for option in resolve(value_reference)["anyOf"]}
+    assert set(variants) == {"object", "array", "string", "integer", "number", "boolean", "null"}
+    assert variants["array"]["items"] == value_reference
+    assert variants["object"]["additionalProperties"] == value_reference
+
+
+@pytest.mark.parametrize("parameters", [
+    [], None, "{}", {1: "nonstring key"}, {"nested": [{1: "nonstring key"}]},
+    {"nested": [float("nan")]}, {"nested": [float("inf")]},
+    {"nested": [2**53]}, {"nested": [float(2**53)]},
+    {"nested": [b"bytes"]}, {"nested": [{1, 2}]},
+])
+def test_opening_probability_opaque_json_validation_remains_strict(parameters):
+    with pytest.raises(ValueError):
+        MethodDescriptor(id="method", version="1", parameters=parameters)
+
+
+def test_opening_probability_opaque_json_roundtrip_preserves_detached_frozen_values():
+    from types import MappingProxyType
+
+    payload = {"nested": [{"values": [None, True, False, "opaque", 3, -2, .25]}, {}]}
+    method = MethodDescriptor(id="method", version="1", parameters=MappingProxyType(payload))
+    before = serialize_contract(method)
+    payload["nested"][0]["values"].clear()
+    assert method.parameters["nested"][0]["values"] == (None, True, False, "opaque", 3, -2, .25)
+    for parameters in (method.parameters, method.parameters.to_dict(),
+                       {"nested": tuple(method.parameters["nested"])}):
+        assert serialize_contract(MethodDescriptor(id="method", version="1", parameters=parameters)) == before
+    detached = method.model_dump()
+    detached["parameters"]["nested"].clear()
+    assert serialize_contract(method) == before
+    assert MethodDescriptor.model_validate_json(before) == method
+    assert deepcopy(method).parameters is method.parameters
+
+
+def test_opening_probability_frozen_public_fields_reject_storage_deletion():
+    payload = deepcopy(EXAMPLES["fusion_request"])
+    metadata = {"nested": {"ordered": [2, 1]}}
+    payload["policy"]["parameters"] = deepcopy(metadata)
+    payload["evidence"]["target_context"] = deepcopy(metadata)
+    payload["evidence"]["sources"][0]["cohort"] = deepcopy(metadata)
+    payload["evidence"]["sources"][0]["quality"]["uncertainty"] = deepcopy(metadata)
+    request = FusionRequest.model_validate(payload)
+    before = serialize_contract(request)
+    source = request.evidence.sources[0]
+    for value in (request.policy.parameters, request.evidence.target_context,
+                  source.cohort, source.quality.uncertainty, request.policy.parameters["nested"]):
+        original_hash = hash(value)
+        with pytest.raises(TypeError, match="immutable"):
+            del value.json_text
+        assert hash(value) == original_hash
+    assert serialize_contract(request) == before
+    assert FusionRequest.model_validate_json(before) == request
+
+
+def test_opening_probability_frozen_public_fields_reject_reinitialization():
+    method = MethodDescriptor(id="method", version="1", parameters={"fixed": [2, 1]})
+    before, original_hash = serialize_contract(method), hash(method.parameters)
+    with pytest.raises(TypeError, match="immutable"):
+        method.parameters.__init__({"replacement": True})
+    assert serialize_contract(method) == before
+    assert hash(method.parameters) == original_hash
+    assert CanonicalObject(method.parameters) == method.parameters
 
 
 @pytest.mark.parametrize("name", ["explorer", "explorer_other_cohort", "maia_dense", "maia_sparse"])
