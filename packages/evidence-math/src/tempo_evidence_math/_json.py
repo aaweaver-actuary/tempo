@@ -65,6 +65,8 @@ class CanonicalObject(Mapping):
     __slots__ = ('json_text',)
 
     def __init__(self, value):
+        if hasattr(self, 'json_text'):
+            raise TypeError('CanonicalObject is immutable')
         if isinstance(value, CanonicalObject):
             object.__setattr__(self, 'json_text', value.json_text)
             return
@@ -75,6 +77,9 @@ class CanonicalObject(Mapping):
         object.__setattr__(self, 'json_text', json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False))
 
     def __setattr__(self, name, value):
+        raise TypeError('CanonicalObject is immutable')
+
+    def __delattr__(self, name):
         raise TypeError('CanonicalObject is immutable')
 
     def __getitem__(self, key):
@@ -104,8 +109,13 @@ class CanonicalObject(Mapping):
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type, handler):
         from pydantic_core import core_schema
+        type JsonData = dict[str, JsonData] | list[JsonData] | str | int | float | bool | None
+        # Describe both wire directions without replacing our strict validator.
+        json_object_schema = handler.generate_schema(dict[str, JsonData])
         return core_schema.no_info_plain_validator_function(cls,
-            serialization=core_schema.plain_serializer_function_ser_schema(lambda value: value.to_dict()))
+            json_schema_input_schema=json_object_schema,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda value: value.to_dict(), return_schema=json_object_schema))
 
 
 def freeze(value):

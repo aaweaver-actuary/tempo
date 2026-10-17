@@ -43,6 +43,17 @@ def test_all_nested_inputs_are_detached():
     assert frozen['nested']['ordered']==(2,1)
 
 
+def test_canonical_object_rejects_storage_deletion():
+    frozen = CanonicalObject({'nested': {'ordered': [2, 1]}})
+    before, original_hash = frozen.to_dict(), hash(frozen)
+    with pytest.raises(TypeError, match='immutable'):
+        del frozen.json_text
+    with pytest.raises(TypeError, match='immutable'):
+        del frozen['nested'].json_text
+    assert frozen.to_dict() == before
+    assert hash(frozen) == original_hash
+
+
 def test_projection_unavailable_differs_from_observed_failure_zero():
     binding=fixture().readiness[0];current=binding.snapshot
     assert decision_readiness(current,AS_OF,decision_index=0).readiness_score==0
