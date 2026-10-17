@@ -82,7 +82,11 @@ export function createCancellableMaia({ launch = () => fork(fileURLToPath(new UR
           if (quarantine === owned) quarantine = undefined;
           finish(request.stopped ? stoppedResult() : new Error('Maia inference process exited'));
         };
-        const failed = error => { failure = error; stop(); };
+        const failed = error => {
+          if (request.stopped || settled) return;
+          failure = error;
+          stop();
+        };
         const message = async reply => {
           if (reply.id !== id || request.stopped || settled || reply.started) return;
           const admitted = await controlAllowed(allowed);
