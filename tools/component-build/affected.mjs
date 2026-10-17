@@ -26,6 +26,7 @@ const canonical = value => JSON.stringify(value, (_key, item) => item && typeof 
 const sorted = values => [...values].sort((left, right) => compare(canonical(left), canonical(right)));
 const ordered = values => [...new Map([...values].map(value => [canonical(value), value])).values()].sort((left, right) => compare(canonical(left), canonical(right)));
 const unique = values => [...new Set(values)].sort(compare);
+const ruleEffects = rule => unique([...rule.effects, ...(["production", "interface"].includes(rule.role) ? ["artifact"] : []), ...(rule.role === "interface" ? ["interface"] : [])]);
 const digest = value => createHash("sha256").update(canonical(value)).digest("hex");
 const pythonName = name => name.toLowerCase().replace(/[-_.]+/g, "-");
 const beneath = (directory, path) => path === directory || path.startsWith(directory + "/");
@@ -350,26 +351,27 @@ export function planAffected(input) {
     for (const path of unique([...base.entries.keys(), ...head.entries.keys()])) if (canonical(base.entries.get(path)) !== canonical(head.entries.get(path)) && !(describedOld.has(path) || describedNew.has(path))) diagnose("UNCOVERED_REQUIRED_INPUT", "Include this changed committed entry in the normalized change records", { path, snapshot: head.entries.has(path) ? "head" : "base" });
     const classify = (index, path, provenanceOnly = false) => {
       plan.statistics.changedPathLookups++;
-      const entry = index.entries.get(path), declarations = index.inputs.lookup(path);
+      const entry = index.entries.get(path), declarations = index.inputs.lookup(path), inventoryProofs = unique(index.inventory.lookup(path));
       if (!entry) diagnose("INVALID_CHANGE", "Changed path is absent from its declared committed snapshot", { snapshot: index.label, path });
       else if (entry.kind !== "file") diagnose("UNSUPPORTED_INPUT_KIND", "Map symlink/gitlink inputs explicitly; the planner never follows them", { snapshot: index.label, path });
       const matchedRules = declarations.filter(match => match.type === "rule").map(match => index.rules.get(match.id));
       const owners = unique(matchedRules.filter(rule => ["production", "interface"].includes(rule.role)).map(rule => rule.owner));
       const candidates = unique(index.roots.lookup(path));
-      plan.paths.push({ path, snapshot: index.label, provenanceOnly, owners, candidateOwners: owners.length ? [] : candidates, roles: unique([...matchedRules.map(rule => rule.role), ...(index.inventory.lookup(path).length ? ["test"] : [])]), ruleIds: unique(matchedRules.map(rule => rule.id)) });
+      plan.paths.push({ path, snapshot: index.label, provenanceOnly, owners, candidateOwners: owners.length ? [] : candidates, roles: unique([...matchedRules.map(rule => rule.role), ...(inventoryProofs.length ? ["test"] : [])]), ruleIds: unique(matchedRules.map(rule => rule.id)) });
       if (provenanceOnly) return;
       if (owners.length > 1) diagnose("OVERLAPPING_PRODUCTION", "Assign one production owner or exclude the nested component subtree", { snapshot: index.label, path, candidates: owners });
-      if (!matchedRules.length && !index.inventory.lookup(path).length) { plan.unownedPaths.push(path); diagnose("UNKNOWN_OWNER", "Declare production ownership or the actual test/build/documentation readers", { snapshot: index.label, path, candidates }); }
+      if (!matchedRules.length && !inventoryProofs.length) { plan.unownedPaths.push(path); diagnose("UNKNOWN_OWNER", "Declare production ownership or the actual test/build/documentation readers", { snapshot: index.label, path, candidates }); }
       const runtimeRules = matchedRules.filter(rule => rule.role !== "documentation");
       for (const rule of matchedRules) {
-        if (rule.role === "documentation" && (runtimeRules.length || declarations.some(match => match.type === "suite"))) continue;
+        if (rule.role === "documentation" && (runtimeRules.length || inventoryProofs.length || declarations.some(match => match.type === "suite"))) continue;
         const cause = reason(rule.role === "documentation" ? "DOCUMENTATION_ONLY" : rule.role === "production" ? "OWNED_PRODUCTION" : "DECLARED_INPUT", { snapshot: index.label, path, ruleId: rule.id, to: rule.owner });
-        const additions = unique([...rule.effects, ...(["production", "interface"].includes(rule.role) ? ["artifact"] : []), ...(rule.role === "interface" ? ["interface"] : [])]);
+        const additions = ruleEffects(rule);
         seed(rule.owner, additions, cause);
         for (const id of rule.proofIds) addProof(index, id, cause);
-        if (rule.role !== "documentation" && !additions.length && !rule.proofIds.length && !declarations.some(match => match.type === "suite")) diagnose("UNCOVERED_REQUIRED_INPUT", "Map this selected build/test/runner input to a required proof", { snapshot: index.label, path, candidates: rule.owner ? [rule.owner] : [] });
+        if (rule.role !== "documentation" && !additions.length && !rule.proofIds.length && !inventoryProofs.length && !declarations.some(match => match.type === "suite")) diagnose("UNCOVERED_REQUIRED_INPUT", "Map this selected build/test/runner input to a required proof", { snapshot: index.label, path, candidates: rule.owner ? [rule.owner] : [] });
       }
       for (const declaration of declarations.filter(match => match.type === "suite")) addProof(index, declaration.id, reason("SUITE_INPUT", { snapshot: index.label, path, to: declaration.id }));
+      for (const id of inventoryProofs) addProof(index, id, reason("INVENTORY_INPUT", { snapshot: index.label, path, to: id }));
     };
     for (const change of plan.changes) {
       if (change.oldPath) classify(base, change.oldPath, change.status === "C");
@@ -386,10 +388,16 @@ export function planAffected(input) {
           const declaration = index[field].get(id);
           if (!declaration) continue;
           const cause = reason("DECLARATION_CHANGED", { snapshot: index.label, declaration: field, to: id });
-          if (field === "components") seed(id, ["artifact"], cause);
+          if (field === "components") {
+            // Retain endpoint trigger effects without activating unchanged contracts.
+            const other = index === base ? newDeclaration : oldDeclaration;
+            const otherTriggers = new Set((other?.ownerProofs ?? []).map(canonical));
+            const changedEffects = declaration.ownerProofs.filter(trigger => !otherTriggers.has(canonical(trigger))).flatMap(trigger => trigger.on);
+            seed(id, unique(["artifact", ...changedEffects]), cause);
+          }
           else if (field === "suites") addProof(index, id, cause);
           else {
-            seed(declaration.owner ?? declaration.consumer, declaration.effects ?? ["artifact"], cause);
+            seed(declaration.owner ?? declaration.consumer, field === "rules" ? ruleEffects(declaration) : ["artifact"], cause);
             for (const proofId of declaration.proofIds) addProof(index, proofId, cause);
           }
         }
@@ -520,12 +528,14 @@ export function planAffected(input) {
     }
     const evidenceComponents = new Set(prerequisites);
     for (const suite of finalSuites.values()) {
-      const relevantRules = [...new Map([...(head.rulesByProof.get(suite.id) ?? []), ...[...new Set([suite.owner, ...(ownerTriggersByProof.get(suite.id) ?? [])])].flatMap(owner => head.rulesByOwner.get(owner) ?? []).filter(rule => ["production", "artifact", "interface", "toolchain", "runner"].includes(rule.role))].map(rule => [rule.id, rule])).values()];
+      const directRules = head.rulesByProof.get(suite.id) ?? [];
+      const proofOwners = unique([suite.owner, ...(ownerTriggersByProof.get(suite.id) ?? []), ...directRules.map(rule => rule.owner).filter(Boolean)]);
+      const relevantRules = [...new Map([...directRules, ...proofOwners.flatMap(owner => head.rulesByOwner.get(owner) ?? []).filter(rule => ["production", "artifact", "interface", "toolchain", "runner"].includes(rule.role))].map(rule => [rule.id, rule])).values()];
       const selectors = [...suite.inputs, ...suite.expectedScope.inventoryInputs, ...relevantRules.map(rule => rule.selector)];
       const relevantEntries = ordered(new Map(selectors.flatMap(selector => head.matchingEntries(selector)).map(entry => [entry.path, entry])).values());
       if (relevantEntries.some(entry => entry.kind !== "file")) diagnose("UNSUPPORTED_INPUT_KIND", "Required proof inputs cannot traverse symlinks or gitlinks", { snapshot: "head", boundary: suite.id });
       // References into one shared head dependency-input graph avoid a closure per suite.
-      const dependencyComponents = unique([...suite.prerequisites, ...(head.dependencies.get(suite.owner) ?? []), ...(boundariesByProof.get(suite.id) ?? []).flatMap(boundary => [boundary.producer, boundary.consumer]).filter(component => component !== suite.owner)]);
+      const dependencyComponents = unique([...suite.prerequisites, ...proofOwners.flatMap(owner => [...(head.dependencies.get(owner) ?? [])]), ...(boundariesByProof.get(suite.id) ?? []).flatMap(boundary => [boundary.producer, boundary.consumer]).filter(component => component !== suite.owner)]);
       for (const component of dependencyComponents) evidenceComponents.add(component);
       plan.evidenceRequirements.push({ suiteId: suite.id, cwd: suite.cwd, command: suite.command, inputRules: unique(relevantRules.map(rule => rule.id)), sourceInputs: relevantEntries, dependencyComponents, dependencyClosure: "head", manifestInputs: { suite: head.suites.get(suite.id), component: head.components.get(suite.owner) ?? null, rules: ordered(relevantRules), boundaries: ordered(boundariesByProof.get(suite.id) ?? []) }, expectedScope: suite.expectedScope, resources: suite.resources, runtimeRequirements: suite.runtime, requiresRuntimeFingerprint: true, selectionSemantics: semantics, requiresNonzeroPassingCases: true, observedResult: null, reuse: "not-evaluated" });
     }

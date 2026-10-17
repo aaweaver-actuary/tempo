@@ -69,6 +69,25 @@ wrapper. No additional legacy file registration is needed.
   failed/missing/cancelled/zero-case rejection.
 - `A202-no-environment` preserves a Node-builtins-only module with no filesystem,
   subprocess, product, service or environment initialization.
+- PR301 review repairs add 20 regular cases (94 A202 cases total):
+  `A202-removed-effect-trigger`, `A202-effect-trigger-replacement`,
+  `A202-changed-interface-trigger`, and `A202-unchanged-effect-triggers` preserve
+  changed/removed effect-specific base obligations, require head coverage and real
+  native replacements, and avoid activating unchanged triggers for other metadata.
+- `A202-inventory-only-edit`, `A202-deleted-inventory-only-test`,
+  `A202-renamed-inventory-only-test`, `A202-shared-inventory`,
+  `A202-inventory-exclusions`, and `A202-inventory-copy-source` select collection
+  readers outside suite sensitivity, check missing head inputs, and preserve
+  exclusions, deduplication and copy-source provenance without production cascades.
+- `A202-implicit-production-metadata` (reassignment/removal),
+  `A202-implicit-interface-metadata`, `A202-explicit-rule-metadata`, and
+  `A202-documentation-metadata` share path/metadata role effects, including implicit
+  artifact/interface impact, explicit security and interface-only boundaries.
+- `A202-shared-owner-proof-evidence` (dependency and unrelated-source cases),
+  `A202-shared-owner-proof-closure`, `A202-explicit-rule-proof-evidence`, and
+  `A202-shared-owner-proof-dependency` retain associated owners' source/dependency
+  closure, changed object IDs, multiple-owner determinism and unsupported-input
+  checks without adding execution prerequisites or unrelated component evidence.
 
 This is an injected-snapshot algorithm increment, not production manifest
 coverage, a Git/CLI adapter, evidence cache or runner integration. C3 retains the

@@ -242,7 +242,10 @@ test("A202-metadata-only command change selects proof and evidence material", ()
   assert.equal(plan.evidenceRequirements[0].command, input.head.suites[1].command); assert.equal(plan.evidenceRequirements[0].reuse, "not-evaluated");
 });
 test("A202-removed-proof requires a unique reviewed durable replacement", () => {
-  const input = fixture(); input.head.suites[0].id = "component/logic/replacement"; input.head.components[0].ownerProofs[0].proofIds = ["component/logic/replacement"];
+  const input = fixture();
+  // This pure proof replacement covers artifacts; native persistence is tested separately.
+  both(input, snapshot => { snapshot.components[0].ownerProofs[0].on = ["artifact"]; });
+  input.head.suites[0].id = "component/logic/replacement"; input.head.components[0].ownerProofs[0].proofIds = ["component/logic/replacement"];
   input.head.rules.find(item => item.id === "shared-fixture").proofIds[0] = "component/logic/replacement";
   blocked(input, "REMOVED_PROOF_UNREPLACED"); input.head.suites[0].replaces = ["component/logic/unit"];
   assert.equal(planAffected(input).disposition, "executable");
@@ -452,4 +455,195 @@ test("A202-runtime-input changes remain explicit and require fresh scope evidenc
   assert.notDeepEqual(result.evidenceRequirements, original.evidenceRequirements);
   assert.equal(result.evidenceRequirements[0].runtimeRequirements.node, "next-runtime");
   assert.equal(result.evidenceRequirements[0].requiresRuntimeFingerprint, true); assert.equal(result.evidenceRequirements[0].observedResult, null);
+});
+
+function splitNativeProofs(input) {
+  native(input);
+  both(input, snapshot => {
+    const unit = { ...suite("store"), id: "component/store/unit" };
+    snapshot.suites.push(unit);
+    snapshot.components.find(item => item.id === "store").ownerProofs = [
+      { on: ["artifact"], proofIds: [unit.id] },
+      { on: ["persistence"], proofIds: ["component/store/native"] },
+    ];
+  });
+}
+test("A202-removed-effect-trigger retains native base obligation and blocks incomplete head coverage", () => {
+  const input = fixture(); splitNativeProofs(input);
+  input.head.components.find(item => item.id === "store").ownerProofs.pop();
+  const plan = blocked(input, "PROOF_SCOPE_GAP");
+  assert.ok(plan.diagnostics.some(item => item.code === "MISSING_REQUIRED_PROOF" && item.snapshot === "head" && item.reason.includes("persistence")));
+  assert.deepEqual(proofs(plan), ["component/store/native", "component/store/unit"]);
+  assert.deepEqual(plan.selectedSuites.find(item => item.id === "component/store/native").baseObligations, ["component/store/native"]);
+  assert.deepEqual(plan.affected.find(item => item.id === "store").effects, ["artifact", "persistence"]);
+});
+test("A202-effect-trigger-replacement retains base proof and accepts explicit native head replacement", () => {
+  const input = fixture(); splitNativeProofs(input);
+  const proof = input.head.suites.find(item => item.id === "component/store/native");
+  proof.id = "component/store/native-v2"; proof.replaces = ["component/store/native"];
+  input.head.components.find(item => item.id === "store").ownerProofs[1].proofIds = [proof.id];
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.deepEqual(plan.selectedSuites.find(item => item.id === proof.id).baseObligations, ["component/store/native"]);
+  assert.deepEqual(plan.affected.find(item => item.id === "store").effects, ["artifact", "persistence"]);
+  proof.kind = "node"; proof.resources = ["node"]; blocked(input, "PROOF_SCOPE_GAP");
+});
+test("A202-changed-interface-trigger retains effect-specific consumer boundary", () => {
+  const input = fixture(); native(input);
+  both(input, snapshot => {
+    snapshot.components[0].ownerProofs = [{ on: ["artifact"], proofIds: ["component/logic/unit"] }, { on: ["interface"], proofIds: ["component/logic/unit"] }];
+    snapshot.boundaries.push({ ...boundary("logic", "store", ["interface"]), proofIds: ["component/store/native"] });
+  });
+  input.head.components[0].ownerProofs[1].proofIds = ["component/view/unit"];
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.ok(proofs(plan).includes("component/store/native"));
+  assert.ok(plan.selectedBoundaries.some(item => item.id === "boundary/logic-store"));
+  assert.deepEqual(plan.affected.find(item => item.id === "logic").effects, ["artifact", "interface"]);
+});
+test("A202-unchanged-effect-triggers do not turn unrelated component metadata into persistence changes", () => {
+  const input = fixture(); input.head.components[0].root = "packages/logic-v2";
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.ok(plan.affected.every(item => JSON.stringify(item.effects) === '["artifact"]'));
+});
+
+test("A202-inventory-only-edit selects the collection owner outside suite sensitivity", () => {
+  const input = fixture(), path = "inventories/logic.json";
+  both(input, snapshot => {
+    snapshot.suites[0].expectedScope.inventoryInputs = [file(path)];
+    snapshot.entries.push({ path, kind: "file", objectId: "inventory" });
+  });
+  input.head.entries.find(item => item.path === path).objectId = "inventory-v2"; input.changes = [edit(path)];
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(proofs(plan), ["component/logic/unit"]); assert.deepEqual(owners(plan), []);
+  assert.deepEqual(plan.reasons.filter(item => item.code === "INVENTORY_INPUT").map(item => item.snapshot).sort(), ["base", "head"]);
+  assert.ok(plan.evidenceRequirements[0].sourceInputs.some(item => item.path === path && item.objectId === "inventory-v2"));
+});
+test("A202-deleted-inventory-only-test reaches head required-input validation", () => {
+  const input = fixture(), path = "packages/logic/tests/unit.test.mjs";
+  both(input, snapshot => { snapshot.suites[0].inputs = [file("packages/logic/src/value.mjs")]; });
+  input.head.entries = input.head.entries.filter(item => item.path !== path); input.changes = [{ status: "D", oldPath: path }];
+  const plan = blocked(input, "MISSING_REQUIRED_PROOF", path);
+  assert.deepEqual(proofs(plan), ["component/logic/unit"]);
+  assert.deepEqual(plan.selectedSuites[0].baseObligations, ["component/logic/unit"]);
+});
+test("A202-renamed-inventory-only-test accepts explicit current collection input", () => {
+  const input = fixture(), path = "packages/logic/tests/unit.test.mjs", replacement = "inventories/logic.test.mjs";
+  both(input, snapshot => { snapshot.suites[0].inputs = [file("packages/logic/src/value.mjs")]; });
+  input.head.entries.find(item => item.path === path).path = replacement;
+  input.head.suites[0].expectedScope.inventoryInputs = [file(replacement)];
+  input.changes = [{ status: "R", oldPath: path, newPath: replacement }];
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(proofs(plan), ["component/logic/unit"]);
+  assert.ok(plan.reasons.some(item => item.code === "INVENTORY_INPUT" && item.snapshot === "base" && item.path === path));
+});
+test("A202-shared-inventory selects all readers even under a test rule without proof IDs", () => {
+  const input = fixture(), path = "inventories/shared.json";
+  both(input, snapshot => {
+    for (const proof of snapshot.suites.slice(0, 2)) proof.expectedScope.inventoryInputs = [file(path)];
+    snapshot.rules.push(rule("inventory-test", null, file(path), "test"));
+    snapshot.entries.push({ path, kind: "file", objectId: "inventory" });
+  }); input.changes = [edit(path)];
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.deepEqual(proofs(plan), ["component/logic/unit", "component/view/unit"]); assert.deepEqual(owners(plan), []);
+});
+test("A202-inventory-exclusions do not select collection owners for documented siblings", () => {
+  const input = fixture(), path = "inventories/notes.md";
+  both(input, snapshot => {
+    snapshot.suites[0].expectedScope.inventoryInputs = [{ ...directory("inventories"), exclude: [file(path)] }];
+    snapshot.rules.push(rule("inventory-notes", null, file(path), "documentation"));
+    snapshot.entries.push({ path, kind: "file", objectId: "notes" }, { path: "inventories/logic.json", kind: "file", objectId: "inventory" });
+  }); input.changes = [edit(path)];
+  const plan = planAffected(input); assert.equal(plan.disposition, "no-runtime"); assert.deepEqual(proofs(plan), []);
+});
+test("A202-inventory-copy-source remains provenance without selecting the unchanged collection", () => {
+  const input = fixture(), path = "packages/logic/tests/unit.test.mjs";
+  both(input, snapshot => {
+    snapshot.suites[0].inputs = [file("packages/logic/src/value.mjs")];
+    snapshot.rules.push(rule("copied-notes", null, file("docs/copy.md"), "documentation"));
+  });
+  input.head.entries.push({ path: "docs/copy.md", kind: "file", objectId: "logic-tests" });
+  input.changes = [{ status: "C", oldPath: path, newPath: "docs/copy.md" }];
+  const plan = planAffected(input); assert.equal(plan.disposition, "no-runtime"); assert.deepEqual(proofs(plan), []);
+  assert.ok(plan.paths.some(item => item.path === path && item.provenanceOnly));
+});
+
+for (const operation of ["reassignment", "removal"]) test("A202-implicit-production-metadata " + operation + " retains both endpoint owner and consumer obligations", () => {
+  const input = fixture(); both(input, snapshot => { snapshot.rules[0].effects = []; });
+  if (operation === "reassignment") input.head.rules[0].owner = "view";
+  else input.head.rules.shift();
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.deepEqual(owners(plan), ["logic", "shell", "view"]);
+  assert.deepEqual(proofs(plan), ["component/logic/unit", "component/shell/unit", "component/view/unit"]);
+  assert.ok(plan.affected.every(item => item.effects.includes("artifact")));
+});
+test("A202-implicit-interface-metadata retains interface-only boundaries", () => {
+  const input = fixture(); native(input);
+  both(input, snapshot => {
+    snapshot.rules[0].role = "interface"; snapshot.rules[0].effects = [];
+    snapshot.boundaries.push({ ...boundary("logic", "store", ["interface"]), proofIds: ["component/store/native"] });
+  }); input.head.rules[0].owner = "view";
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable", JSON.stringify(plan.diagnostics));
+  assert.ok(proofs(plan).includes("component/store/native"));
+  for (const id of ["logic", "view"]) assert.deepEqual(plan.affected.find(item => item.id === id).effects, ["artifact", "interface"]);
+});
+test("A202-explicit-rule-metadata retains security alongside implicit production effects", () => {
+  const input = fixture(); both(input, snapshot => { snapshot.rules[0].effects = ["security"]; });
+  input.head.rules[0].owner = "view";
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  for (const id of ["logic", "view"]) assert.deepEqual(plan.affected.find(item => item.id === id).effects, ["artifact", "security"]);
+});
+test("A202-documentation-metadata does not acquire implicit production effects", () => {
+  const input = fixture(); input.head.rules.find(item => item.id === "docs").owner = "view";
+  const plan = planAffected(input); assert.equal(plan.disposition, "no-runtime"); assert.deepEqual(owners(plan), []);
+});
+
+function sharedOwnerProof(input, owner = "view") {
+  both(input, snapshot => {
+    const proof = snapshot.suites.find(item => item.id === "component/" + owner + "/unit");
+    proof.owner = "tooling"; proof.prerequisites = [];
+    for (const edge of snapshot.boundaries.filter(item => item.consumer === owner)) edge.proofIds = ["component/" + edge.producer + "/unit"];
+  });
+  input.changes = [edit("packages/" + owner + "/tests/unit.test.mjs")];
+}
+test("A202-shared-owner-proof-evidence retains trigger dependencies without execution prerequisites", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(plan.evidenceRequirements[0].dependencyComponents, ["logic"]);
+  assert.deepEqual(plan.prerequisites, []); assert.deepEqual(plan.selectedSuites[0].prerequisites, []);
+  assert.deepEqual(proofs(plan), ["component/view/unit"]); assert.deepEqual(owners(plan), []);
+  const changed = structuredClone(input);
+  both(changed, snapshot => { snapshot.entries.find(item => item.path === "packages/logic/src/value.mjs").objectId = "other-logic"; });
+  const changedPlan = planAffected(changed); assert.equal(changedPlan.disposition, "executable");
+  assert.notDeepEqual(changedPlan.dependencyInputs, plan.dependencyInputs);
+  assert.equal(changedPlan.dependencyInputs.find(item => item.component === "logic").sourceInputs[0].objectId, "other-logic");
+});
+test("A202-shared-owner-proof-closure retains transitive dependencies and deduplicates multiple owners", () => {
+  const input = fixture(); sharedOwnerProof(input, "shell");
+  both(input, snapshot => { snapshot.components[1].ownerProofs[0].proofIds.push("component/shell/unit"); });
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(plan.evidenceRequirements[0].dependencyComponents, ["logic", "view"]);
+  assert.deepEqual(plan.dependencyInputs.map(item => item.component).sort(), ["logic", "view"]);
+  assert.deepEqual(plan.prerequisites, []);
+  const shuffled = structuredClone(input); both(shuffled, snapshot => { snapshot.components.reverse(); snapshot.components.forEach(item => item.ownerProofs.reverse()); });
+  assert.deepEqual(planAffected(shuffled), plan);
+});
+test("A202-explicit-rule-proof-evidence retains the associated component dependency roots", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  both(input, snapshot => {
+    snapshot.components[1].ownerProofs[0].proofIds = ["component/logic/unit"];
+    snapshot.rules.find(item => item.id === "view-source").proofIds = ["component/view/unit"];
+  });
+  const plan = planAffected(input); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(plan.evidenceRequirements[0].dependencyComponents, ["logic"]); assert.deepEqual(plan.prerequisites, []);
+});
+test("A202-shared-owner-proof-dependency symlinks cannot evade required evidence validation", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  both(input, snapshot => { snapshot.entries.find(item => item.path === "packages/logic/src/value.mjs").kind = "symlink"; });
+  blocked(input, "UNSUPPORTED_INPUT_KIND", "packages/logic/src/value.mjs");
+});
+test("A202-shared-owner-proof-evidence excludes unrelated components", () => {
+  const input = fixture(); sharedOwnerProof(input);
+  const original = planAffected(input), changed = structuredClone(input);
+  both(changed, snapshot => { snapshot.entries.find(item => item.path === "packages/shell/src/value.mjs").objectId = "unrelated-shell"; });
+  const plan = planAffected(changed); assert.equal(plan.disposition, "executable");
+  assert.deepEqual(plan.evidenceRequirements, original.evidenceRequirements); assert.deepEqual(plan.dependencyInputs, original.dependencyInputs);
 });
