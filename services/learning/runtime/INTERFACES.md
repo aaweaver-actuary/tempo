@@ -212,3 +212,6 @@ Gateway execution and maintenance re-read terminal state under the same locks,
 including workers selected before fencing. Staging alone never grants serving
 authority. Fencing neither deletes immutable staged bundles nor retires old serving
 content; corrected sources use the ordinary new generation/revision workflow.
+
+
+Host activity deadlines use the reader's shared host clock domain. On macOS the producer uses the standard-library `CLOCK_MONOTONIC_RAW` continuous clock, matching native Node/libuv across system sleep; Python's default uptime clock cannot be mixed with it. Linux uses the ordinary monotonic clock. VM/remote producers require a colocated reader. This optional signal changes neither Study authority nor its database transaction boundary.
