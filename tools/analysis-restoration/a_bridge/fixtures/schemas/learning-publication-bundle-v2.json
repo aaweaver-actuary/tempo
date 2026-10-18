@@ -7,6 +7,27 @@
           "title": "Card Id",
           "type": "string"
         },
+        "decision_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Id"
+        },
+        "exercise_ply": {
+          "default": 0,
+          "maximum": 39,
+          "minimum": 0,
+          "title": "Exercise Ply",
+          "type": "integer"
+        },
         "ply": {
           "maximum": 1000,
           "minimum": 0,

@@ -20,6 +20,12 @@ def fingerprint(document):
     return hashlib.sha256(canonical(document).encode()).hexdigest()
 
 
+def policy_root_key(starting_fen):
+    # Same legal-position identity used by the downstream comparison owner:
+    # clocks cannot distinguish policy, while turn/castling/legal EP can.
+    return ' '.join(chess.Board(starting_fen).fen(en_passant='legal').split()[:4])
+
+
 def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve_physical_execution=False):
     # Establish policy only after the actual ordered route distinguishes it
     # from every other same-color authored repertoire in this capture.
@@ -27,7 +33,7 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
     for line in tables['repertoire_lines']:
         if line['trained_color'] not in ('white','black'):
             continue
-        node=catalog.setdefault((line['trained_color'],line['start_fen']),{'policies':set(),'moves':{}})
+        node=catalog.setdefault((line['trained_color'],policy_root_key(line['start_fen'])),{'policies':set(),'moves':{}})
         node['policies'].add(line['repertoire_id'])
         for move in json.loads(line['moves_json']):
             node=node['moves'].setdefault(move,{'policies':set(),'moves':{}})
@@ -65,7 +71,7 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
             fens.append(board.fen(en_passant='fen'))
             board.push_uci(move)
         positions[identifier] = fens
-        node=catalog[(color,line['start_fen'])]
+        node=catalog[(color,policy_root_key(line['start_fen']))]
         authority=0 if node['policies']=={line['repertoire_id']} else None
         for ply,move in enumerate(moves,1):
             node=node['moves'][move]

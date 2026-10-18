@@ -95,3 +95,51 @@ def test_C3_explicit_physical_execution_mode_keeps_alias_and_interior_owner():
     assert source['bindings']==[{'route_key':'line','policy_key':'italian','ply':1,'exercise_key':'physical'},
         {'route_key':'line','policy_key':'italian','ply':3,'exercise_key':'physical','exercise_ply':2}]
     assert report['historical_interior_binding_count']==1 and report['historical_prelude_count']==1
+
+
+@pytest.mark.parametrize('equivalent_start', [
+    chess.STARTING_FEN.rsplit(' ', 2)[0] + ' 9 23',
+    'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+])
+def test_C3_policy_authority_uses_canonical_start_position(equivalent_start):
+    tables=captured()
+    base=chess.Board(equivalent_start)
+    if base.turn == chess.WHITE:
+        first=['e2e4','e7e5','g1f3','b8c6','f1c4']
+        second=first[:-1]+['f1b5']
+        original=chess.STARTING_FEN
+    else:
+        first=['e7e5','g1f3','b8c6','f1c4']
+        second=first[:-1]+['f1b5']
+        original=base.fen(en_passant='legal')
+    tables['repertoire_lines'][0].update(start_fen=original,moves_json=json.dumps(first))
+    tables['repertoires'].append({'id':'ruy','name':'Ruy Lopez'})
+    tables['repertoire_lines'].append({'id':'ruy-route','repertoire_id':'ruy','trained_color':'white',
+        'start_fen':equivalent_start,'moves_json':json.dumps(second)})
+    raw,_,_=run(tables)
+    route=json.loads(raw)['routes'][0]
+    assert route['authority_start_ply']==len(first)
+    assert route['starting_fen']==original
+    assert route['moves']==first
+
+
+def test_C3_canonical_policy_root_retains_turn_castling_and_legal_en_passant():
+    from tempo_a_bridge.legacy import policy_root_key
+    assert policy_root_key(chess.STARTING_FEN)!=policy_root_key(chess.STARTING_FEN.replace(' w ', ' b '))
+    assert policy_root_key(chess.STARTING_FEN)!=policy_root_key(chess.STARTING_FEN.replace(' KQkq ', ' - '))
+    board=chess.Board()
+    for move in ['e2e4','a7a6','e4e5','d7d5']:
+        board.push_uci(move)
+    assert board.has_legal_en_passant()
+    with_ep=board.fen(en_passant='legal')
+    assert policy_root_key(with_ep)!=policy_root_key(with_ep.replace(' d6 ', ' - '))
+
+
+def test_C3_identical_canonical_routes_do_not_choose_an_arbitrary_policy():
+    tables=captured()
+    tables['repertoires'].append({'id':'alternative','name':'Alternative policy'})
+    other={**tables['repertoire_lines'][0], 'id':'other-route','repertoire_id':'alternative',
+        'start_fen':chess.STARTING_FEN.rsplit(' ',2)[0]+' 4 20'}
+    tables['repertoire_lines'].append(other)
+    raw,_,_=run(tables)
+    assert json.loads(raw)['routes'][0]['authority_start_ply'] is None
