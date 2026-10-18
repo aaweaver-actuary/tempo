@@ -1,6 +1,8 @@
 """One invocation-owned PostgreSQL cluster; never accepts a database URL."""
 from pathlib import Path
 import json
+import hashlib
+import math
 import os
 import secrets
 import shutil
@@ -75,6 +77,7 @@ def provision_owned_cluster(identity, password):
 
 
 def run_required_tests(environment, run_directory, external_junit, report):
+    environment={**environment,'TEMPO224_RUN_EVIDENCE':str(run_directory.resolve())}
     junit = external_junit or run_directory/'native.xml'
     junit.parent.mkdir(parents=True, exist_ok=True)
     arguments = ['-c',str(HERE.parent/'pyproject.toml'),'-o','addopts=',
@@ -98,7 +101,42 @@ def run_required_tests(environment, run_directory, external_junit, report):
             raise RuntimeError(f'Native {stage} failed with exit {result.returncode}; see invocation logs')
         receipts[stage] = json.loads(receipt.read_text())
     identities = validate_inventory(receipts['collected'], receipts['executed'], junit)
+    budget=validate_budget_evidence(run_directory,identities)
+    if budget:
+        report['retry_budget_evidence']=str(budget)
+        report['retry_budget_sha256']=hashlib.sha256(budget.read_bytes()).hexdigest()
     report.update(identities=identities, passed=len(identities))
+
+
+def validate_budget_evidence(run_directory,identities):
+    target='::test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget'
+    if not any(identity.endswith(target) for identity in identities):
+        return None
+    path=run_directory/'retry-35000-budget.json'
+    try:
+        value=json.loads(path.read_text())
+        def number(item):
+            return type(item) in (int,float) and math.isfinite(item) and item>=0
+        valid=value.get('rows')==35000 and value.get('bulk_updates')==1
+        valid=valid and type(value.get('selector_sql_count')) is int and 1<=value['selector_sql_count']<=60
+        valid=valid and number(value.get('selector_wall_ms')) and value['selector_wall_ms']<2500
+        transactions=value.get('transactions',[])
+        valid=valid and {'review','selector'}<={item.get('stage') for item in transactions}
+        for item in transactions:
+            caps=item.get('caps_ms',{})
+            valid=valid and item.get('complete') is True and number(item.get('wall_ms'))
+            for name,maximum in [('statement_timeout',1500),('transaction_timeout',2500),('lock_timeout',250)]:
+                valid=valid and type(caps.get(name)) is int and 0<caps[name]<=maximum
+            valid=valid and item['wall_ms']<caps['transaction_timeout']
+        plans=value.get('plans',[])
+        valid=valid and bool(plans) and any('SELECT id,card_id FROM daily_queue' in item.get('statement','') for item in plans)
+        for item in plans:
+            plan=item.get('plan',[])
+            valid=valid and bool(plan) and isinstance(plan[0].get('Plan'),dict) and bool(plan[0]['Plan'].get('Node Type')) and number(plan[0].get('Execution Time'))
+        if not valid: raise ValueError('missing or invalid budget/plan fields')
+    except (OSError,ValueError,TypeError,KeyError,AttributeError,IndexError) as error:
+        raise RuntimeError('Required retained 35000-card budget evidence is missing or invalid') from error
+    return path
 
 
 def publish_reports(directory, report):

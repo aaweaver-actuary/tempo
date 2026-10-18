@@ -246,7 +246,9 @@ class NativeHarness:
     def pytest(self, arguments, **options):
         from types import SimpleNamespace
         self.test_calls.append(arguments)
-        collection = {'collected':['integration/test_postgres.py::test_required'],
+        name=('test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget'
+              if self.mode.startswith('budget_') else 'test_required')
+        collection = {'collected':['integration/test_postgres.py::'+name],
                       'deselected':[], 'collection_errors':[], 'reports':[], 'exit_code':0}
         collecting = '--collect-only' in arguments
         if collecting and self.mode == 'collection_failure':
@@ -256,8 +258,11 @@ class NativeHarness:
                 'outcome':'skipped' if self.mode == 'skip' and phase == 'call' else 'passed'}
                 for phase in ('setup','call','teardown')]
             junit = Path(next(arg.split('=',1)[1] for arg in arguments if arg.startswith('--junitxml=')))
-            junit.write_text('<testsuite><testcase classname="integration.test_postgres" name="test_required">'
+            junit.write_text('<testsuite><testcase classname="integration.test_postgres" name="'+name+'">'
                              + ('<skipped/>' if self.mode == 'skip' else '')+'</testcase></testsuite>')
+            artifact=Path(arguments[2]).parent/'retry-35000-budget.json'
+            if self.mode=='budget_invalid': artifact.write_text('{bad json')
+            if self.mode=='budget_valid': artifact.write_text(json.dumps(budget_fixture()))
         Path(arguments[2]).write_text(json.dumps(collection))
         return SimpleNamespace(stdout='fixture pytest\n', stderr='', returncode=collection['exit_code'])
 
@@ -385,3 +390,44 @@ def test_native_cap_mismatch_stops_before_tests_and_cleans_owned_fixture(monkeyp
     assert not report['complete'] and not harness.test_calls
     assert report['resource']['observed_caps']!={'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
     assert report['resource']['cleanup_verified'] and report['resource']['container_absent']
+
+
+def budget_fixture():
+    """Artifact-shape unit fixture only; never represents an actual budget pass."""
+    caps={'statement_timeout':1500,'transaction_timeout':2500,'lock_timeout':250}
+    return {'rows':35000,'bulk_updates':1,'selector_sql_count':30,'selector_wall_ms':150,
+        'transactions':[{'stage':stage,'complete':True,'wall_ms':150,'caps_ms':caps}
+            for stage in ['review','selector']],
+        'plans':[{'statement':'SELECT id,card_id FROM daily_queue','plan':[
+            {'Plan':{'Node Type':'Seq Scan'},'Execution Time':100}]}]}
+
+
+@pytest.mark.parametrize('mode',['budget_missing','budget_invalid','budget_valid'])
+def test_passing_native_budget_inventory_requires_owned_retained_artifact(monkeypatch,tmp_path,mode):
+    runner,harness=native_harness(monkeypatch,tmp_path)
+    harness.mode=mode
+    result=runner.main([str(harness.directory)])
+    report=json.loads((harness.directory/'native.json').read_text())
+    assert (result==0) is (mode=='budget_valid')
+    assert report['complete'] is (mode=='budget_valid')
+    assert report['resource']['cleanup_verified'] and report['resource']['container_absent']
+    if mode=='budget_valid':
+        artifact=Path(report['retry_budget_evidence'])
+        assert artifact.parent==Path(report['run_directory']) and artifact.is_file()
+        assert report['retry_budget_sha256']
+    else:
+        assert 'retained 35000-card budget evidence' in report['error']
+
+
+@pytest.mark.parametrize('defect',['plans','transactions','limits','rows','nonfinite'])
+def test_retained_native_budget_requires_exact_timing_limits_and_query_plans(monkeypatch,tmp_path,defect):
+    runner=load_runner(monkeypatch,'integration/run_postgres.py')
+    value=budget_fixture()
+    if defect=='plans': value['plans']=[]
+    elif defect=='transactions': value['transactions']=[]
+    elif defect=='limits': value['transactions'][0]['caps_ms']['transaction_timeout']=5000
+    elif defect=='rows': value['rows']=1024
+    else: value['selector_wall_ms']=float('nan')
+    (tmp_path/'retry-35000-budget.json').write_text(json.dumps(value))
+    with pytest.raises(RuntimeError,match='retained 35000-card budget evidence'):
+        runner.validate_budget_evidence(tmp_path,['integration/test_postgres.py::test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget'])

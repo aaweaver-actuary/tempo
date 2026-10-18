@@ -131,6 +131,9 @@ production wire-v1 adoption are not delivered by this library.
 Native execution stops on its first failed case. The full collected inventory
 is still required for success; stopped, failed or missing execution never passes.
 Caller-inherited selectors and exit flags remain rejected.
+When the35000-card budget case is selected, success also requires its detailed
+timings, active limits and EXPLAIN plans in the owned invocation directory; the
+native summary records the artifact path and hash after validation.
 
 The native runner marks the current summary incomplete before image inspection or
 provisioning. A rejected invocation also invalidates any existing current success

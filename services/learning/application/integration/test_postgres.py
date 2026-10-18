@@ -510,7 +510,7 @@ def test_native_split_then_refresh_retains_verified_after_four_placement(case):
         assert [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before
 
 
-def test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget(case,local_host_admission,monkeypatch,tmp_path):
+def test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget(case,local_host_admission,monkeypatch):
     """Measure actual review/selector/provenance work, not just the bulk UPDATE."""
     from contextlib import contextmanager
     from app.services.retry_queue import select_queue_head
@@ -609,5 +609,7 @@ def test_native_retry_review_and_selection_keep_35000_cards_within_foreground_bu
     assert any('SELECT id,card_id FROM daily_queue' in item['statement'] for item in plans)
     report={'rows':35000,'selector_wall_ms':round(selector_ms,2),'selector_sql_count':len(selector_statements),
         'bulk_updates':len(bulk),'transactions':transactions,'plans':plans}
-    (tmp_path/'retry-35000-budget.json').write_text(json.dumps(report,indent=2))
+    evidence=Path(os.environ['TEMPO224_RUN_EVIDENCE']).resolve()
+    assert evidence.name==os.environ['TEMPO224_FIXTURE']
+    (evidence/'retry-35000-budget.json').write_text(json.dumps(report,indent=2)+'\n')
     print('RETRY_35000_BUDGET '+json.dumps(report))

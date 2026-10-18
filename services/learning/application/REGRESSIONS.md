@@ -75,6 +75,13 @@ record existing role limits and cap them at1500ms statement/2500ms transaction/
 250ms lock without relaxing stricter limits. Timings survive failure; successful
 evidence retains actual SELECT plans/buffers and constant statement/bulk counts.
 AST/SQLite evidence does not establish this native budget result.
+The detailed JSON is written to the invocation-owned run directory supplied by
+the runner, never only to pytest temporary data or captured successful stdout.
+`test_passing_native_budget_inventory_requires_owned_retained_artifact` reproduces
+the former false pass for missing/invalid evidence; passing inventory now also
+requires valid retained timings/caps/plans and its hash in `native.json`.
+`test_retained_native_budget_requires_exact_timing_limits_and_query_plans` rejects
+missing stages/plans, loose limits, a small substitute dataset and nonfinite time.
 
 - `test_full_qualification_rejects_inherited_partial_selection`: selectors,
   ignore options, early exits and plugin injection cannot become qualification.
