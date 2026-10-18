@@ -417,7 +417,9 @@ export function planAffected(input) {
             const other = index === base ? newDeclaration : oldDeclaration;
             const otherTriggers = new Set((other?.ownerProofs ?? []).map(canonical));
             const changedEffects = declaration.ownerProofs.filter(trigger => !otherTriggers.has(canonical(trigger))).flatMap(trigger => trigger.on);
-            retainEffects(seeds, index, id, unique(["artifact", ...changedEffects]), cause);
+            // Planned metadata has no implicit artifact; explicit input/trigger obligations still apply.
+            const artifactEffects = declaration.status === "implemented" ? ["artifact"] : [];
+            retainEffects(seeds, index, id, unique([...artifactEffects, ...changedEffects]), cause);
           }
           else if (field === "suites") {
             addProof(index, id, cause);

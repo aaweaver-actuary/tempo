@@ -865,3 +865,110 @@ for (const effect of ["security", "persistence"]) test("A202-lifecycle-added-own
   input.head.rules = input.head.rules.filter(item => item.id !== "lifecycle-source");
   blocked(input, "UNKNOWN_OWNER", lifecycleSource);
 });
+
+function componentStateFixture(before, after, effect) {
+  const input = lifecycleFixture(effect === "artifact" ? "security" : effect);
+  if (effect === "artifact") both(input, snapshot => removeLifecycleEffect(snapshot, "security", true));
+  for (const [snapshot, state] of [[input.base, before], [input.head, after]]) if (state !== "implemented") {
+    removeLifecycleOwner(snapshot);
+    if (state === "planned") snapshot.components.push({ id: "lifecycle", status: "planned", root: "packages/lifecycle", artifacts: [], dependencies: [], ownerProofs: [] });
+  }
+  if (before === after && after === "planned") {
+    const owner = lifecycleOwner(input.head); owner.root += "-future";
+    owner.artifacts = [{ ecosystem: "npm", name: "@fixture/future-lifecycle" }];
+    owner.dependencies = [{ kind: "internal", ecosystem: "component", name: "logic" }];
+  }
+  if (before === after && after === "implemented") lifecycleOwner(input.head).dependencies.push({ kind: "external", ecosystem: "npm", name: "updated-tool" });
+  for (const path of [lifecycleSource, lifecycleTest]) {
+    const oldEntry = input.base.entries.find(item => item.path === path), newEntry = input.head.entries.find(item => item.path === path);
+    if (!oldEntry && newEntry) input.changes.push({ status: "A", newPath: path });
+    if (oldEntry && !newEntry) input.changes.push({ status: "D", oldPath: path });
+  }
+  return input;
+}
+const componentStateCases = [
+  ["absent", "absent", "no-runtime"], ["absent", "planned", "no-runtime"], ["absent", "implemented", "executable"],
+  ["planned", "absent", "no-runtime"], ["planned", "planned", "no-runtime"], ["planned", "implemented", "executable"],
+  ["implemented", "absent", "blocked"], ["implemented", "planned", "blocked"], ["implemented", "implemented", "executable"],
+];
+for (const [before, after, expected] of componentStateCases) for (const effect of [before, after].includes("implemented") ? ["artifact", "persistence"] : ["artifact"]) test("A202-component-state-" + before + "-to-" + after + " " + effect + " separates metadata from executable obligations", () => {
+  const input = componentStateFixture(before, after, effect), plan = planAffected(input);
+  assert.equal(plan.disposition, expected, JSON.stringify(plan.diagnostics));
+  if (expected === "no-runtime") {
+    assert.deepEqual(plan.selectedSuites, []); assert.deepEqual(plan.affected, []); assert.deepEqual(plan.requiredResources, []);
+  } else if (expected === "blocked") {
+    assert.ok(plan.diagnostics.some(item => item.code === "REMOVED_PROOF_UNREPLACED"));
+    if (after === "planned") assert.ok(plan.diagnostics.some(item => item.code === "PLANNED_TARGET" && item.snapshot === "head"));
+    if (after === "planned" && effect === "persistence") assert.ok(plan.diagnostics.some(item => item.code === "PROOF_SCOPE_GAP" && item.snapshot === "head"));
+  } else if (before !== "implemented") {
+    assert.ok(plan.selectedSuites.every(item => item.baseObligations.length === 0));
+    assert.ok(!plan.reasons.some(item => ["AFFECTED_COMPONENT", "CHANGED_OWNER", "RETAINED_OWNER_CONTRACT"].includes(item.code) && item.snapshot === "base" && item.to === "lifecycle"));
+    if (effect === "persistence") assert.ok(proofs(plan).includes(lifecycleProofId(effect)));
+    if (before === "planned") {
+      const absent = structuredClone(input); removeLifecycleOwner(absent.base);
+      const absentPlan = planAffected(absent); assert.equal(absentPlan.disposition, "executable");
+      assert.deepEqual(plan.evidenceRequirements, absentPlan.evidenceRequirements); assert.deepEqual(plan.selectedSuites, absentPlan.selectedSuites);
+    }
+  } else {
+    assert.deepEqual(proofs(plan), ["component/lifecycle/unit"]); assert.deepEqual(plan.requiredResources, ["node"]);
+    assert.deepEqual(plan.selectedSuites[0].baseObligations, ["component/lifecycle/unit"]);
+  }
+  assert.equal(plan.qualification, "not-evaluated");
+});
+for (const effect of ["artifact", "persistence"]) test("A202-planned-promotion-base-source " + effect + " retains genuine changed ownership obligations", () => {
+  const input = componentStateFixture("planned", "implemented", effect);
+  input.base.entries.push({ path: lifecycleSource, kind: "file", objectId: "prior-source" });
+  input.base.rules.push(structuredClone(input.head.rules.find(item => item.id === "lifecycle-source")));
+  input.changes = [edit(lifecycleSource), { status: "A", newPath: lifecycleTest }];
+  const plan = blocked(input, "PLANNED_TARGET");
+  assert.ok(plan.diagnostics.some(item => item.code === "PLANNED_TARGET" && item.snapshot === "base"));
+  assert.ok(plan.diagnostics.some(item => item.code === "MISSING_REQUIRED_PROOF" && item.snapshot === "base"));
+});
+for (const effect of ["artifact", "persistence"]) test("A202-planned-removal-base-source " + effect + " cannot erase genuine deleted inputs", () => {
+  const input = componentStateFixture("planned", "absent", effect);
+  input.base.entries.push({ path: lifecycleSource, kind: "file", objectId: "prior-source" });
+  input.base.rules.push(rule("lifecycle-source", "lifecycle", directory("packages/lifecycle/src"), "production", effect === "artifact" ? ["artifact"] : ["artifact", effect]));
+  input.changes = [{ status: "D", oldPath: lifecycleSource }];
+  const plan = blocked(input, "PLANNED_TARGET");
+  assert.ok(plan.diagnostics.some(item => item.code === "PLANNED_TARGET" && item.snapshot === "base"));
+  assert.ok(plan.diagnostics.some(item => item.code === "REMOVED_PROOF_UNREPLACED"));
+});
+for (const effect of ["artifact", "persistence"]) test("A202-planned-promotion-base-unknown " + effect + " cannot adopt unowned historical inputs", () => {
+  const input = componentStateFixture("planned", "implemented", effect);
+  input.base.entries.push({ path: lifecycleSource, kind: "file", objectId: "prior-source" });
+  input.changes = [edit(lifecycleSource), { status: "A", newPath: lifecycleTest }];
+  const plan = blocked(input, "UNKNOWN_OWNER", lifecycleSource);
+  assert.ok(plan.diagnostics.some(item => item.code === "UNKNOWN_OWNER" && item.snapshot === "base"));
+});
+for (const effect of ["artifact", "persistence"]) test("A202-planned-promotion-base-proof " + effect + " cannot conceal explicit executable contracts", () => {
+  const input = lifecycleFixture(effect === "artifact" ? "security" : effect);
+  if (effect === "artifact") both(input, snapshot => removeLifecycleEffect(snapshot, "security", true));
+  lifecycleOwner(input.base).status = "planned"; lifecycleOwner(input.base).artifacts = [];
+  input.changes = [edit(lifecycleTest)];
+  const plan = blocked(input, "PLANNED_TARGET"), id = effect === "artifact" ? "component/lifecycle/unit" : lifecycleProofId(effect);
+  assert.ok(plan.diagnostics.some(item => item.code === "PLANNED_TARGET" && item.snapshot === "base"));
+  assert.ok(plan.selectedSuites.find(item => item.id === id).baseObligations.includes(id));
+});
+for (const variant of ["kind", "resources", "owner"]) test("A202-planned-native-promotion rejects head " + variant + " gaps", () => {
+  const input = componentStateFixture("planned", "implemented", "persistence"), proof = input.head.suites.find(item => item.id === lifecycleProofId("persistence"));
+  if (variant === "kind") proof.kind = "node";
+  if (variant === "resources") proof.resources = ["node"];
+  if (variant === "owner") proof.owner = "tooling";
+  const plan = blocked(input, "PROOF_SCOPE_GAP");
+  assert.ok(plan.diagnostics.every(item => item.snapshot !== "base"));
+  assert.ok(plan.diagnostics.some(item => item.code === "PROOF_SCOPE_GAP" && item.snapshot === "head"));
+});
+for (const effect of ["artifact", "persistence"]) test("A202-planned-promotion-head-unknown " + effect + " still rejects missing ownership", () => {
+  const input = componentStateFixture("planned", "implemented", effect);
+  input.head.rules = input.head.rules.filter(item => item.id !== "lifecycle-source");
+  const plan = blocked(input, "UNKNOWN_OWNER", lifecycleSource);
+  assert.ok(plan.diagnostics.every(item => item.snapshot !== "base"));
+});
+for (const effect of ["artifact", "persistence"]) test("A202-planned-head-source " + effect + " remains non-executable when actual inputs are selected", () => {
+  const input = componentStateFixture("absent", "planned", effect);
+  input.head.entries.push({ path: lifecycleSource, kind: "file", objectId: "new-source" });
+  input.head.rules.push(rule("lifecycle-source", "lifecycle", directory("packages/lifecycle/src"), "production", effect === "artifact" ? ["artifact"] : ["artifact", effect]));
+  input.changes = [{ status: "A", newPath: lifecycleSource }];
+  const plan = blocked(input, "PLANNED_TARGET");
+  assert.ok(plan.diagnostics.some(item => item.code === "PLANNED_TARGET" && item.snapshot === "head"));
+});

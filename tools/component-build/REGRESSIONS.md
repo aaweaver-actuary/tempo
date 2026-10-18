@@ -116,6 +116,18 @@ wrapper. No additional legacy file registration is needed.
   `A202-lifecycle-added-owner` preserves unknown-source rejection for both.
   Source seeds, component/rule/boundary deltas and suite metadata contracts all
   use the same directional endpoint-retention rule.
+- Component-state transitions add 29 regular cases (177 A202 cases total).
+  `A202-component-state-{absent,planned,implemented}-to-{absent,planned,implemented}`
+  covers the complete 3×3 state table, with artifact and persistence variants
+  wherever an implemented endpoint is present (14 cases). Planned metadata alone
+  does not originate artifact execution; promotions validate the implemented head,
+  while actual implemented demotions/removals remain blocked.
+- `A202-planned-promotion-{base-source,base-unknown,base-proof,head-unknown}`,
+  `A202-planned-removal-base-source`, `A202-planned-native-promotion` and
+  `A202-planned-head-source` supply 15 controls. They preserve genuine changed or
+  deleted source inputs, explicit base proof identities, unknown-mapping rejection,
+  native head kind/resource/owner requirements and planned-target rejection for
+  actual selected inputs. All earlier assertions are retained unchanged.
 
 This is an injected-snapshot algorithm increment, not production manifest
 coverage, a Git/CLI adapter, evidence cache or runner integration. C3 retains the
