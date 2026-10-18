@@ -57,3 +57,11 @@ mismatch does not establish historical repertoire availability or prior study.
 This display notice adds no historical authority or inferred timestamps. Exact
 completion/introduction/capture timestamps are not supplied by the current finding
 contract; the private chronology audit and acceptance limitation remain required.
+
+`C3_mobile_game_board_stays_inside_viewport` in the owning Chromium scenario
+reproduced the selected-game view overflowing at390px immediately after desktop
+resize. Saved HTML retained Chessground's480px inner plane while its responsive
+wrapper shrank. Board painting is now bounded and coordinates stay inside the
+board; the original immediate document-width assertion remains unchanged. An
+additional assertion requires all32pieces inside the resized board, so clipping
+cannot pass by leaving an incomplete board. No timeout budget was increased.

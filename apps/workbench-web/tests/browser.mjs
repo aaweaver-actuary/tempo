@@ -82,7 +82,13 @@ try{
   await page.getByRole('button',{name:'Next position',exact:true}).click();
   assert.equal(await page.getByLabel('Game position',{exact:true}).inputValue(),String(unknownContext.ply+1));
   await page.screenshot({path:resolve(evidence,'game-desktop.png'),fullPage:true});
+  // C3_mobile_game_board_stays_inside_viewport: retain the immediate overflow guard.
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  // Clipping the old pixel plane must not substitute for a complete resized board.
+  await expect.poll(()=>page.getByLabel('Game chessboard').evaluate(element=>{
+    const board=element.getBoundingClientRect(),pieces=[...element.querySelectorAll('piece')];
+    return pieces.length===32&&pieces.every(piece=>{const bounds=piece.getBoundingClientRect();return bounds.left>=board.left-1&&bounds.right<=board.right+1&&bounds.top>=board.top-1&&bounds.bottom<=board.bottom+1;});
+  })).toBe(true);
   await page.screenshot({path:resolve(evidence,'game-phone.png'),fullPage:true});
   assert.equal(traffic.filter(item=>item.method==='POST').length,writesBeforeGames,'Game browsing caused a mutation');
   await page.getByRole('button',{name:'Back to selected games',exact:true}).click();
