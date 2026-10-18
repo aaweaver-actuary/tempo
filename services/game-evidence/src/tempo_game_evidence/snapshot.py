@@ -118,6 +118,12 @@ class ComparisonSnapshot(StrictModel):
     def finding_context(self, game):
         return {}
 
+    def finding_route_context(self, route_contexts):
+        return {}
+
+    def physical_comparison_reason(self, selected, observed_move, route_context):
+        return None
+
     @model_validator(mode="after")
     def verified_routes(self):
         publication = self.publication

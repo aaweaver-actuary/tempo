@@ -150,6 +150,24 @@ class LegacyComparisonSnapshot(StrictModel):
                 "applicability": "current_at_capture" if self.applicability_reason() is None else "unknown_or_stale",
                 "captured_at": self.captured_at}
 
+    def finding_route_context(self, route_contexts):
+        # Authored authority includes routes with no eligible physical binding.
+        # Filtering those routes before comparison would invent repertoire misses.
+        applicable = [(route, ply) for route, ply in route_contexts
+            if route.authority_start_ply is not None and ply >= route.authority_start_ply
+            and ply < len(route.moves)]
+        return {"authored_expected_moves": sorted({route.moves[ply] for route, ply in applicable}),
+                "physical_binding_complete": bool(applicable) and all(
+                    any(binding.ply == ply for binding in route.bindings) for route, ply in applicable)}
+
+    def physical_comparison_reason(self, selected, observed_move, route_context):
+        physical_moves = set(selected[3])
+        if observed_move not in physical_moves and (
+                not route_context["physical_binding_complete"]
+                or set(route_context["authored_expected_moves"]) != physical_moves):
+            return "legacy_authored_authority_exceeds_physical_binding"
+        return None
+
     @model_validator(mode="after")
     def coherent_physical_authority(self):
         captured_at = datetime.fromisoformat(self.captured_at.replace("Z", "+00:00"))

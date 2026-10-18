@@ -52,9 +52,14 @@ def compare_game(game, positions, snapshot):
             finding = {**position, "status": "unknown", "expected_moves": [], "memberships": [],
                        "card_id": None, "decision_id": None, "policy_id": None,
                        "explanation": "missing_or_ambiguous_route_policy", **context}
+            route_context = snapshot.finding_route_context(tuple(
+                (routes[index][0], ply) for index, ply in sorted(candidates)))
+            finding.update(route_context)
             if reason := snapshot.applicability_reason():
                 finding["explanation"] = reason
             elif selected and (reason := snapshot.definition_unavailable_reason(selected[2])):
+                finding["explanation"] = reason
+            elif selected and (reason := snapshot.physical_comparison_reason(selected, position["move"], route_context)):
                 finding["explanation"] = reason
             elif selected:
                 policy_id, decision_id, card_id, expected = selected

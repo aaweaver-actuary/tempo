@@ -8,9 +8,74 @@
     "kind": "legacy_graph",
     "repertoire_id": "ruy",
     "scope_source_revision": 2,
-    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "source_digest": "ac9044a925f52dbfe940ebfc67d2989af23a9f1b2ea945bbefc50e9463dcf745",
     "target_id": "synthetic-target",
     "workspace_id": "fixture"
+  },
+  "authority_source": {
+    "cards": [
+      {
+        "archived": 0,
+        "id": "physical-black",
+        "introduced": true,
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "a7a6"
+        ],
+        "pending_validation": 0,
+        "revision": 1,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "black"
+      }
+    ],
+    "repertoire_cards": [
+      {
+        "card_id": "physical-black",
+        "repertoire_id": "ruy"
+      }
+    ],
+    "repertoire_lines": [
+      {
+        "id": "italian-route",
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1c4",
+          "f8c5"
+        ],
+        "repertoire_id": "italian",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "black"
+      },
+      {
+        "id": "ruy-route",
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "a7a6"
+        ],
+        "repertoire_id": "ruy",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "black"
+      }
+    ],
+    "repertoires": [
+      {
+        "id": "italian"
+      },
+      {
+        "id": "ruy"
+      }
+    ]
   },
   "captured_at": "2026-10-18T18:13:07Z",
   "graphs": [
@@ -33,7 +98,7 @@
     "kind": "legacy_graph",
     "repertoire_id": "ruy",
     "scope_source_revision": 2,
-    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "source_digest": "ac9044a925f52dbfe940ebfc67d2989af23a9f1b2ea945bbefc50e9463dcf745",
     "target_id": "synthetic-target",
     "workspace_id": "fixture"
   },

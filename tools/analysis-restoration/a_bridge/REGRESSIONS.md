@@ -71,3 +71,10 @@ dev-only dependency. Regenerate full schemas using the owning public commands in
 the separate legacy comparison input, unchanged physical execution and interior
 binding, input nonmutation, and source/graph/generation/catalogue token rejection.
 It reuses the existing translator and creates no publication or activation.
+
+`test_unmapped_same_policy_alternative_stays_in_complete_authored_inventory`
+covers both absent physical mapping and unsupported revision-2 mapping, retaining
+the authored alternative without creating a card. Source-identity controls keep
+ordinary reviews/scheduling, timestamps, names and harmless JSON recapture out
+of authority keys, while revision/executable/color/availability/introduction
+changes still fence stale authority. Raw capture provenance remains separate.

@@ -61,7 +61,7 @@ def test_legacy_fixture_is_bound_to_synthetic_capture_and_exact_mapping_report()
     mapping = json.loads((FIXTURES / "legacy-authority-mapping.json").read_text())
     snapshot, _ = findings()
     assert inputs["provenance"].startswith("synthetic;")
-    assert snapshot.authority.source_digest == authority_digest(inputs["tables"])
+    assert snapshot.authority.source_digest == authority_digest(inputs["authority_source"])
     assert snapshot.authority.graph_digest == authority_digest(inputs["graphs"])
     assert mapping["mapped_identities"] == ["physical-black"]
     assert mapping["historical_prelude_count"] == 1
@@ -118,3 +118,26 @@ def test_legacy_capture_hash_and_workspace_are_independently_checked():
     game["workspace_id"] = "other"
     with pytest.raises(ValueError, match="workspace_mismatch"):
         compare_game(game, positions, snapshot)
+
+
+@pytest.mark.parametrize("move,status", [("g8f6", "unknown"), ("d7d5", "unknown"), ("a7a6", "matched")])
+def test_legacy_unmapped_authored_alternative_cannot_become_a_physical_card_miss(move, status):
+    value = document()
+    route = deepcopy(value["routes"][0])
+    route.update(route_id="unmapped-valid-alternative", bindings=[])
+    route["moves"][-1] = "g8f6"
+    value["routes"].append(route)
+    catalogue = {key: item for key, item in route.items() if key not in {"bindings", "authority_start_ply"}}
+    value["catalogue"].append(catalogue)
+    catalogue_digest = authority_digest(value["catalogue"])
+    for token in ("authority", "observed_after"):
+        value[token]["catalogue_digest"] = catalogue_digest
+    snapshot, result = findings(seal(value), moves=[*route["moves"][:-1], move])
+    actual = result[-1]
+    assert actual["status"] == status
+    assert actual["authored_expected_moves"] == ["a7a6", "g8f6"]
+    assert actual["physical_binding_complete"] is False
+    assert snapshot.cards[0].moves[-1] == "a7a6"
+    if status == "unknown":
+        assert actual["explanation"] == "legacy_authored_authority_exceeds_physical_binding"
+        assert actual["card_id"] is None and "learning_card_id" not in actual

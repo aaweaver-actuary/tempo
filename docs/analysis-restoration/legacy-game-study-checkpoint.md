@@ -143,3 +143,22 @@ remains low confidence, plus resource/reviewer waits; most work remains in share
 wire, backend transaction integration, coexistence and focused native/UI proof.
 Re-estimate if storage, authentication ownership or source-edit fencing changes
 that design. This is not a deployment estimate.
+
+## Review repair before receiver integration
+
+Independent review identified a false miss when a same-policy authored
+alternative had no compatible physical binding. The archived `88a1fdf` source
+reproduces `...Nf6` as missed against `...a6`. Comparison now retains complete
+decision-local authored moves and physical-coverage status separately. An
+unbound or unsupported valid branch vetoes a physical-card miss; no replacement
+training card is created. Exact physical executable checks remain unchanged.
+Regular owner regressions cover absent mapping and unsupported revision-2
+mapping, unknown/no-miss and original-card match. The retained red/green evidence
+is in task-3/evidence.
+
+Before freezing a storage key, capture hashing now uses a fixed source-field
+projection. Card scheduling state, FSRS values, review/queue rows, display names,
+and capture/review timestamps are excluded. Introduction is a boolean marker,
+not its date. Source revisions, executable/revision/color, memberships and
+availability remain included. Ordinary Study or harmless recapture therefore
+does not change source identity; true authority edits still invalidate it.

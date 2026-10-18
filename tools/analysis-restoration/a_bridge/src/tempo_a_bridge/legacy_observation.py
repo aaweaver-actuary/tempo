@@ -6,15 +6,48 @@ The existing translator remains the exact physical/ordered-prefix mapping owner.
 """
 import json
 
-from .legacy import fingerprint, translate
+from .legacy import canonical, fingerprint, translate
+
+
+def authority_source_projection(tables):
+    """Only source/executable authority, never mutable schedules or reviews."""
+    return {
+        "repertoires": sorted(({key: row[key] for key in (
+            "id", "is_main", "canonical_prefix_revision", "canonical_prefix_moves_json",
+            "canonical_prefix_preview_id", "scope_source_revision") if key in row}
+            for row in tables["repertoires"]), key=canonical),
+        "repertoire_lines": sorted(({"id": row["id"], "repertoire_id": row["repertoire_id"],
+            "trained_color": row["trained_color"], "start_fen": row["start_fen"],
+            "moves": json.loads(row["moves_json"])} for row in tables["repertoire_lines"]), key=canonical),
+        "cards": sorted(({**{key: row[key] for key in (
+            "id", "revision", "start_fen", "trained_color", "content_type", "archived",
+            "pending_validation", "superseded_by", "repertoire_id", "canonical_route_source") if key in row},
+            "moves": json.loads(row["moves_json"]), "introduced": row.get("introduced_at") is not None}
+            for row in tables["cards"]), key=canonical),
+        "repertoire_cards": sorted(({key: row[key] for key in (
+            "repertoire_id", "card_id", "canonical_route_source") if key in row}
+            for row in tables["repertoire_cards"]), key=canonical),
+    }
+
+
+def authority_source_digest(tables):
+    return fingerprint(authority_source_projection(tables))
+
+
+def authority_graph_digest(graphs):
+    return fingerprint(sorted(({key: row[key] for key in (
+        "repertoire_id", "generation", "line_id", "decision_index", "card_id", "parent_card_id",
+        "decision_fen_key", "starting_fen", "moves_json", "trained_color", "segment_kind",
+        "first_decision_index", "last_decision_index", "decision_fen_keys_json") if key in row}
+        for row in graphs), key=canonical))
 
 
 def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_at):
     repertoire_id = authority["repertoire_id"]
     workspace_id = authority["workspace_id"]
     selected_graphs = [row for row in graphs if row["repertoire_id"] == repertoire_id]
-    if (fingerprint(tables) != authority["source_digest"]
-            or fingerprint(selected_graphs) != authority["graph_digest"]
+    if (authority_source_digest(tables) != authority["source_digest"]
+            or authority_graph_digest(selected_graphs) != authority["graph_digest"]
             or any(row["generation"] != authority["graph_generation"] for row in selected_graphs)):
         raise ValueError("legacy_capture_source_or_graph_token_mismatch")
     source_bytes, manifest, report = translate(tables, graphs, workspace=workspace_id,

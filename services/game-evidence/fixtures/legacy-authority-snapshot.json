@@ -8,11 +8,11 @@
     "kind": "legacy_graph",
     "repertoire_id": "ruy",
     "scope_source_revision": 2,
-    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "source_digest": "ac9044a925f52dbfe940ebfc67d2989af23a9f1b2ea945bbefc50e9463dcf745",
     "target_id": "synthetic-target",
     "workspace_id": "fixture"
   },
-  "capture_digest": "8fdb2374d0240826df0518a57c02f20921549d5958e70fd9e1f6fb226fe9df9b",
+  "capture_digest": "04d601966a5eb1d90cddc227bfd109db480aa473e88dde77556a9d4f2e3d565c",
   "captured_at": "2026-10-18T18:13:07Z",
   "cards": [
     {
@@ -79,7 +79,7 @@
     "kind": "legacy_graph",
     "repertoire_id": "ruy",
     "scope_source_revision": 2,
-    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "source_digest": "ac9044a925f52dbfe940ebfc67d2989af23a9f1b2ea945bbefc50e9463dcf745",
     "target_id": "synthetic-target",
     "workspace_id": "fixture"
   },

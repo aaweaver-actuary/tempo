@@ -161,3 +161,10 @@ re-entry, mixed offsets/color/executable/target, shared/duplicate cards, missing
 routes, digest/workspace mismatch and no-miss/unknown games. The publication
 loader must reject this separate comparison input; there is no delivery or
 activation assertion. Existing v1/v2 comparison/fixture tests retain their owner.
+
+`test_legacy_unmapped_authored_alternative_cannot_become_a_physical_card_miss`
+owns the P1 shared-policy alternative regression: a valid unbound `...Nf6`
+branch must veto a physical `...a6` miss. A different played move also stays
+unknown when physical coverage is incomplete; the exact `...a6` match remains
+mapped. Authored move authority is retained separately from card eligibility.
+The regression fails with `missed == unknown` against checkpoint `88a1fdf`.
