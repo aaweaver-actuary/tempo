@@ -19,6 +19,15 @@ capabilities; HTTP, clock/randomness sources, SQL and connection ownership remai
 in the adapters. Scheduler due dates and presentation/admission membership are
 separate from within-session retry readiness.
 
+Completeness includes each composition's essential admission work, not only its
+daily projection. Adapters must reuse that predicate in the atomic early-release
+guard. A required composition issuance effect (runtime remediation frontier)
+runs once before the first issued stamp in the same transaction. A missing issued
+origin is found independently of replaceable queue rows: the adapter may restore
+that same proven identity at its saved first-issued position, returning `changed`,
+or return actionable `conflict` if content, lifecycle, slot or ID cannot be proven.
+It never creates another issued attempt or loops silently on missing authority.
+
 The application owns replay/validation/recovery decisions, review sequencing,
 required evidence binding and prepared-successor orchestration. Immutable records
 carry the original durable payload, effective review time, local queue day,

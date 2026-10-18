@@ -28,7 +28,7 @@ def random_retry_draws() -> tuple[int, str]:
 
 
 def persist_failed_retry(database, request: FailedRetryRequest, *, create_entry,
-                         draws=None) -> int:
+                         draws=None, priority_for_retry=None) -> int:
     """Persist once, after history append and within its original transaction."""
     source = request.source_attempt
     reviewed = database.execute(
@@ -51,11 +51,15 @@ def persist_failed_retry(database, request: FailedRetryRequest, *, create_entry,
     delay_seconds, order_token = (draws or random_retry_draws)()
     plan = plan_failed_retry(request, delay_seconds=delay_seconds, order_token=order_token)
     entry_id = create_entry()
-    priority = database.execute("SELECT gameplay_priority_reason FROM daily_queue WHERE id=?",
-                                (source.id,)).fetchone()
-    if priority and priority[0]:
+    if priority_for_retry:
+        priority_reason = priority_for_retry(database,source.card_id)
+    else:
+        priority = database.execute("SELECT gameplay_priority_reason FROM daily_queue WHERE id=?",
+                                    (source.id,)).fetchone()
+        priority_reason = priority[0] if priority else None
+    if priority_reason:
         database.execute("UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",
-                         (priority[0], entry_id))
+                         (priority_reason, entry_id))
     database.execute(
         """INSERT INTO queue_retry_policies(review_id,source_queue_entry_id,retry_queue_entry_id,
                card_id,revision,policy_version,delay_seconds,ready_at,order_token)
@@ -85,16 +89,17 @@ def _prepare_instant_query(database) -> None:
 _ISSUED = """EXISTS(SELECT 1 FROM queue_attempt_origins issued
     WHERE issued.queue_entry_id=q.id AND issued.card_id=c.id
       AND issued.revision=c.revision AND issued.issued_as_head=1)"""
+_LATEST_VALID_REVIEW = """NOT EXISTS(SELECT 1 FROM reviews later
+        WHERE later.card_id=retry.card_id AND later.invalidated_at IS NULL
+          AND (real_game_instant(later.reviewed_at)>real_game_instant(failed.reviewed_at)
+            OR (real_game_instant(later.reviewed_at)=real_game_instant(failed.reviewed_at)
+                AND later.id>failed.id)))"""
 _CURRENT_POLICY = """retry.card_id=c.id AND retry.revision=c.revision
     AND (retry.released_at IS NULL OR retry.retry_queue_entry_id!=q.id)
     AND failed.invalidated_at IS NULL
     AND failed.rating='again'
     AND COALESCE(q.admission_kind,'')!='explicit'
-    AND NOT EXISTS(SELECT 1 FROM reviews later
-        WHERE later.card_id=retry.card_id AND later.invalidated_at IS NULL
-          AND (real_game_instant(later.reviewed_at)>real_game_instant(failed.reviewed_at)
-            OR (real_game_instant(later.reviewed_at)=real_game_instant(failed.reviewed_at)
-                AND later.id>failed.id)))"""
+    AND """ + _LATEST_VALID_REVIEW
 _DUE_WORK = """(c.due_date<=q.queue_date OR q.admission_kind='explicit'
     OR (q.gameplay_priority_reason IS NOT NULL
         AND (q.cycle=0 OR q.attempt_state='gameplay')))"""
@@ -104,6 +109,21 @@ _DETACHED_ISSUED = """(retry.retry_queue_entry_id!=q.id AND EXISTS(
       AND retained.card_id=retry.card_id AND retained.revision=retry.revision
       AND retained.queue_date=q.queue_date
       AND retained.issued_as_head=1 AND retained.last_status='queued'))"""
+
+
+def missing_issued_sql(columns='retained.queue_entry_id'):
+    """Retained authority is independent of a surviving daily_queue row."""
+    return 'SELECT ' + columns + """ FROM queue_retry_policies retry
+        JOIN reviews failed ON failed.id=retry.review_id
+        JOIN queue_attempt_origins retained ON retained.queue_entry_id=retry.retry_queue_entry_id
+          AND retained.card_id=retry.card_id AND retained.revision=retry.revision
+        WHERE retained.queue_date=? AND retained.issued_as_head=1
+          AND retained.last_status='queued' AND retained.review_result_json IS NULL
+          AND failed.invalidated_at IS NULL AND failed.rating='again'
+          AND NOT EXISTS(SELECT 1 FROM daily_queue existing
+              WHERE existing.id=retained.queue_entry_id AND existing.card_id=retained.card_id
+                AND existing.queue_date=retained.queue_date AND existing.status='queued')
+          AND """ + _LATEST_VALID_REVIEW
 
 
 def ready_attempt_sql(database, base_statement: str) -> str:
@@ -143,6 +163,11 @@ def queue_ready_facts(database, day: str, observed_at: datetime, *, base_stateme
     head = _identity(dict(row), day) if row else None
     if head and head.issued:
         return QueueReadyFacts(head, None, None, complete)
+    missing = database.execute(missing_issued_sql(
+        'retained.queue_entry_id id,retained.card_id,retained.revision,retained.cycle,1 issued')+
+        ' ORDER BY retry.order_token,retained.queue_entry_id LIMIT 1',(day,)).fetchone()
+    if missing:
+        return QueueReadyFacts(head,None,None,False,'issued_retry_origin_missing',_identity(dict(missing),day))
     candidates = pending_retry_sql(base_statement, fields + ",retry.ready_at,retry.order_token,retry.released_at,q.gameplay_priority_reason")
     detached = database.execute(candidates + ' AND ' + _DETACHED_ISSUED + ' LIMIT 1',
                                 (day,)).fetchone()

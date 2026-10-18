@@ -20,13 +20,17 @@ from .review_service import capture_daily_queue_order, preserve_daily_queue_orde
 _QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL
 
 
-def _lock_attempt_card(database, entry_id: int) -> None:
+def _lock_attempt_card(database, entry_id: int, *, retained_identity=None) -> None:
     """Follow review's card-before-queue lock order for retained commands."""
     if not isinstance(database, PostgresConnection):
         return
     entry = database.execute(
         "SELECT card_id FROM daily_queue WHERE id=?", (entry_id,)
     ).fetchone()
+    if retained_identity is not None:
+        entry = database.execute('SELECT card_id FROM queue_attempt_origins '
+            'WHERE queue_entry_id=? AND card_id=? AND revision=? AND issued_as_head=1',
+            (entry_id,retained_identity.card_id,retained_identity.revision)).fetchone()
     if entry:
         database.execute_native(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",

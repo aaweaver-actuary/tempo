@@ -365,8 +365,10 @@ class LearningReviewAdapter:
 
     def requeue_failed(self, request):
         from .retry_store import persist_failed_retry
+        from .real_game_feedback import MISS_REASON, has_outstanding_real_game_miss
         source = request.source_attempt
         return persist_failed_retry(self.database, request, draws=self.retry_draws,
+            priority_for_retry=lambda database,card_id: MISS_REASON if has_outstanding_real_game_miss(database,card_id) else None,
             create_entry=lambda: queue_application.requeue(
                 self.database, source.queue_date, source.card_id, None, "guided"))
 

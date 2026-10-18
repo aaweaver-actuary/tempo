@@ -63,11 +63,12 @@ class QueueReadyFacts:
     cooling_retry: RetryCandidate | None
     complete: bool
     pending_reason: Literal["essential_queue_pending", "issued_retry_origin_missing"] | None = None
+    missing_issued: QueueIdentity | None = None
 
 
 @dataclass(frozen=True)
 class QueueAction:
-    kind: Literal["issue", "activate", "early_retry", "pending", "exhausted"]
+    kind: Literal["issue", "activate", "early_retry", "recover", "pending", "exhausted"]
     identity: QueueIdentity | None = None
     reason: Literal["deadline", "no_ready_work", "essential_queue_pending", "issued_retry_origin_missing"] | None = None
 
@@ -81,7 +82,7 @@ class QueueContext:
 
 @dataclass(frozen=True)
 class QueueSelection:
-    status: Literal["issued", "changed", "pending", "exhausted"]
+    status: Literal["issued", "changed", "pending", "conflict", "exhausted"]
     identity: QueueIdentity | None = None
     reason: str | None = None
 
@@ -124,6 +125,8 @@ def choose_queue_action(facts: QueueReadyFacts, *, observed_at: datetime) -> Que
     now = _utc(observed_at)
     if facts.ready_head and facts.ready_head.issued:
         return QueueAction("issue", facts.ready_head)
+    if facts.missing_issued:
+        return QueueAction('recover',facts.missing_issued,'issued_retry_origin_missing')
     candidate = facts.due_retry
     if candidate:
         if candidate.released_at is None and _utc(candidate.ready_at) > now:

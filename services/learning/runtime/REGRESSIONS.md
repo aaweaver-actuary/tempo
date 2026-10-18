@@ -1,5 +1,22 @@
 # Learning runtime regression ownership
 
+## Soft failed-retry composition contracts
+
+`test_failed_retry.py::test_runtime_pending_remediation_admission_blocks_all_cooling_fallback`
+and `test_runtime_atomic_release_rechecks_remediation_arrival_after_last_read`
+own completeness from the existing remediation task in both facts and guarded
+release; daily projection readiness alone is insufficient. All unfinished task
+states, including failed work, remain incomplete until their owner resolves them.
+`test_runtime_recovered_again_retains_current_canonical_miss_priority` covers an
+existing baseline omission now required by B: a recorded failure after its source
+projection disappears must consult the canonical post-scheduling miss owner.
+It is not characterized as a new regression introduced by retry persistence.
+`test_runtime_required_selector_binding_failure_rolls_back_frontier_and_origin`
+and `test_remediation.py::test_shared_queue_selector_preserves_runtime_issuance_binding_and_settlement`
+retain the canonical first-issuance frontier and actual successful settlement,
+without a new settlement policy. These native specifications require the regular
+owned PostgreSQL runner; source/SQLite passes do not establish their qualification.
+
 ## Balanced daily presentation
 
 `test_queue_ordering.py` owns pure policy-v3 proportions across skewed, empty,

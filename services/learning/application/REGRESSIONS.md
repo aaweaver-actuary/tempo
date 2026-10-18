@@ -9,6 +9,13 @@ in `test_application.py` own the review-port binding and required-effect boundar
 The regular package selection includes these cases; source checks do not replace
 installed-package or native qualification.
 
+`test_missing_issued_origin_requires_same_identity_recovery_before_empty_completion`
+owns the pure recovery decision. Backend `test_failed_retry.py` supplies real
+SQLite proof for required first-issuance effects, rollback, essential work before
+and after the final facts read, missing projection without a replacement, same
+identity/position recovery, protected replacement and ID/content/revision/lifecycle
+conflicts. Retained timestamp/decision fields stay immutable through recovery.
+
 The regular owning package command is `python -m pytest tests` against the installed
 artifact. All parametrized identities in `tests/test_application.py` and
 `tests/test_boundary.py` must collect and pass, including original receipt replay,

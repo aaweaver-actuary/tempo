@@ -11,6 +11,8 @@ CREATE TABLE queue_retry_policies (
     released_at TEXT,
     release_reason TEXT CHECK(release_reason IN ('deadline','no_ready_work')),
     issued_at TEXT,
+    issued_position BIGINT,
+    CHECK((issued_at IS NULL)=(issued_position IS NULL)),
     CHECK((released_at IS NULL AND release_reason IS NULL AND issued_at IS NULL)
        OR (released_at IS NOT NULL AND release_reason IS NOT NULL))
 );

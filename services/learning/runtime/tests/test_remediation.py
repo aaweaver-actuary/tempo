@@ -379,6 +379,34 @@ def test_successful_review_settles_bound_frontier_atomically_and_replays(case):
     )
 
 
+def test_shared_queue_selector_preserves_runtime_issuance_binding_and_settlement(case):
+    """The runtime composition must retain its existing required issuance hook."""
+    from tempo_learning_runtime.retry_queue import selection_store
+    import tempo_learning_review as learning
+    definition = activate(case)['publication']['definitions'][0]
+    accepted(case,evidence(definition))
+    drain(case)
+    day = case.query("SELECT queue_date FROM learning.daily_queue WHERE status='queued' ORDER BY position,id LIMIT 1")[0][0]
+    assert case.query('SELECT COUNT(*) FROM learning.remediation_attempts')[0][0]==0
+    with case.database.scope(), connection() as database:
+        selected = learning.select_queue_head(selection_store(database),
+            learning.QueueContext(datetime.now(timezone.utc),day))
+        assert selected.status=='issued'
+    binding = tuple(case.query('SELECT attempt_id,issued_at,frontier_sequence FROM learning.remediation_attempts')[0])
+    assert binding[2]==1
+    # Repeated transport fetches cannot move or recreate the bound frontier.
+    card = head(case)
+    assert card['queue_entry_id']==selected.identity.entry_id
+    assert tuple(case.query('SELECT attempt_id,issued_at,frontier_sequence FROM learning.remediation_attempts')[0])==binding
+    payload = review_payload(card)
+    saved = submit(case,card,payload)
+    assert saved.status_code==200,saved.text
+    assert submit(case,card,payload).json()==saved.json()
+    assert case.query('SELECT COUNT(*) FROM learning.remediation_settlements')[0][0]==1
+    assert case.query('SELECT settled FROM learning.remediation_review_receipts')[0][0] is True
+    assert case.query("SELECT COUNT(*) FROM learning.daily_queue WHERE gameplay_priority_reason IS NOT NULL")[0][0]==0
+
+
 @pytest.mark.parametrize(
     "known_time", [False, True], ids=["unknown-time", "late-historical-time"]
 )

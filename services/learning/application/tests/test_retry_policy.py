@@ -74,6 +74,14 @@ def test_an_issued_head_remains_authoritative_when_another_retry_expires():
     assert action.kind == "issue" and action.identity == head
 
 
+def test_missing_issued_origin_requires_same_identity_recovery_before_empty_completion():
+    retained = identity(77,issued=True)
+    facts = QueueReadyFacts(None,None,None,False,'issued_retry_origin_missing',retained)
+    action = choose_queue_action(facts,observed_at=NOW)
+    assert action.kind=='recover' and action.identity==retained
+    assert action.reason=='issued_retry_origin_missing'
+
+
 def test_natural_expiry_applies_saved_placement_before_issuing_a_different_head():
     candidate = retry(seconds=0)
     action = choose_queue_action(QueueReadyFacts(identity(99), candidate, None, True), observed_at=NOW)

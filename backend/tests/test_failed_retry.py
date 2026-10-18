@@ -403,7 +403,7 @@ def test_released_projection_rebind_preserves_first_release_and_placement_on_rel
         selected = _select(connection,now=observed+timedelta(seconds=1))
         assert selected.status=='issued' and selected.identity.entry_id==replacement
         after = dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())
-        assert after=={**before,'retry_queue_entry_id':replacement,'issued_at':(observed+timedelta(seconds=1)).isoformat()}
+        assert after=={**before,'retry_queue_entry_id':replacement,'issued_at':(observed+timedelta(seconds=1)).isoformat(),'issued_position':10}
 
 
 def test_missing_issued_retry_origin_never_authorizes_a_second_projection_attempt(queued_attempts):
@@ -412,12 +412,17 @@ def test_missing_issued_retry_origin_never_authorizes_a_second_projection_attemp
         connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
         _complete_projection(connection)
         assert _select(connection).status=='issued'
+        before = dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())
         connection.execute('DELETE FROM daily_queue WHERE id=?',(first['requeue_entry_id'],))
         replacement = connection.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,attempt_state) VALUES('2026-10-18','active-a',1,10,'review','guided') RETURNING id").fetchone()[0]
         selected = _select(connection,now=FIXED_TIME+timedelta(seconds=1))
-        assert selected.status=='pending' and selected.identity is None
+        assert selected.status=='changed' and selected.reason=='issued_origin_restored'
+        assert selected.identity.entry_id==first['requeue_entry_id']
         assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?',(replacement,)).fetchone()[0]==0
+        assert connection.execute('SELECT last_status FROM queue_attempt_origins WHERE queue_entry_id=?',(replacement,)).fetchone()[0]=='buried'
         assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?',(first['requeue_entry_id'],)).fetchone()[0]==1
+        assert dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())==before
+        assert _select(connection).identity.entry_id==first['requeue_entry_id']
 
 
 def test_two_sqlite_issuers_observe_one_released_retry_and_the_same_issued_head(queued_attempts):
@@ -439,22 +444,26 @@ def test_two_sqlite_issuers_observe_one_released_retry_and_the_same_issued_head(
         assert connection.execute("SELECT COUNT(*) FROM queue_attempt_origins WHERE issued_as_head=1 AND last_status='queued'").fetchone()[0]==1
 
 
-def test_actual_retry_readiness_and_release_sql_parse_for_both_postgres_compositions(queued_attempts):
+@pytest.mark.parametrize('recover',[False,True])
+def test_actual_retry_readiness_and_release_sql_parse_for_both_postgres_compositions(queued_attempts,recover):
     from app.postgres_store import postgres_sql as legacy_sql
     from tempo_learning_runtime.postgres_store import postgres_sql as runtime_sql
     from app.services.retry_queue import selection_store
     statements = set()
     with database.connection() as connection:
-        _failed_review(connection,queued_attempts)
+        failed = _failed_review(connection,queued_attempts)
         connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
         _complete_projection(connection)
         class Capture:
             def __getattr__(self,name): return getattr(connection,name)
             def execute(self,statement,arguments=()):
-                if 'queue_retry_policies' in statement:
+                if 'queue_retry_policies' in statement or statement.startswith('INSERT INTO daily_queue(id'):
                     statements.add(statement)
                 return connection.execute(statement,arguments)
         assert learning.select_queue_head(selection_store(Capture()),learning.QueueContext(FIXED_TIME,'2026-10-18')).status=='issued'
+        if recover:
+            connection.execute('DELETE FROM daily_queue WHERE id=?',(failed['requeue_entry_id'],))
+            assert learning.select_queue_head(selection_store(Capture()),learning.QueueContext(FIXED_TIME,'2026-10-18')).status=='changed'
     assert statements
     for statement in statements:
         assert legacy_sql(statement) and runtime_sql(statement)
@@ -489,3 +498,152 @@ def test_natural_retry_placement_preserves_peers_and_uses_one_bulk_write(queued_
         assert [entry_id for entry_id,_ in after[1:]]==peer_ids
         assert sorted(position for _,position in after)==sorted(position for _,position in before)
         assert len(writes)==1
+
+
+def test_composition_issuance_effect_runs_once_before_the_origin_stamp(queued_attempts):
+    from app.services.retry_queue import selection_store
+    with database.connection() as connection:
+        _complete_projection(connection)
+        connection.execute('UPDATE queue_attempt_origins SET issued_as_head=0 WHERE queue_entry_id=?',(queued_attempts['active-a'],))
+        effects = []
+        def required_effect(database,identity,context):
+            assert database.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?',(identity.entry_id,)).fetchone()[0]==0
+            effects.append((identity.entry_id,context.observed_at))
+        store = selection_store(connection)
+        store.first_issuance_effect = required_effect
+        context = learning.QueueContext(FIXED_TIME,'2026-10-18')
+        assert learning.select_queue_head(store,context).status=='issued'
+        assert learning.select_queue_head(store,context).status=='issued'
+        assert effects==[(queued_attempts['active-a'],FIXED_TIME)]
+
+
+def test_required_issuance_effect_failure_rolls_back_retry_release_and_stamp(queued_attempts):
+    from app.services.retry_queue import selection_store
+    with database.connection() as connection:
+        _failed_review(connection,queued_attempts)
+        connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
+        _complete_projection(connection)
+    with pytest.raises(RuntimeError,match='required issuance effect'):
+        with database.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            store = selection_store(connection)
+            def fail(*_): raise RuntimeError('required issuance effect')
+            store.first_issuance_effect = fail
+            learning.select_queue_head(store,learning.QueueContext(FIXED_TIME,'2026-10-18'))
+    with database.read_connection() as connection:
+        policy = connection.execute('SELECT * FROM queue_retry_policies').fetchone()
+        assert policy['released_at'] is None and policy['issued_at'] is None
+        assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?',(policy['retry_queue_entry_id'],)).fetchone()[0]==0
+
+
+@pytest.mark.parametrize('arrival_after_read',[False,True])
+def test_pending_composition_admission_blocks_early_retry_in_facts_and_atomic_guard(queued_attempts,arrival_after_read):
+    from app.services.retry_queue import selection_store
+    with database.connection() as connection:
+        _failed_review(connection,queued_attempts)
+        connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
+        _complete_projection(connection)
+        def arrival():
+            from app.services.durable_tasks import enqueue_task_in_transaction
+            enqueue_task_in_transaction(connection,'remediation','current',{})
+        if not arrival_after_read: arrival()
+        class AdmissionArrival:
+            inserted = False
+            def __getattr__(self,name): return getattr(connection,name)
+            def execute(self,statement,arguments=()):
+                if arrival_after_read and not self.inserted and statement.startswith('UPDATE queue_retry_policies SET retry_queue_entry_id='):
+                    self.inserted=True
+                    arrival()
+                return connection.execute(statement,arguments)
+        store = selection_store(AdmissionArrival())
+        store.essential_ready = lambda _day: ("NOT EXISTS(SELECT 1 FROM background_tasks WHERE kind='remediation' AND state IN ('queued','leased','retrying'))",())
+        result = learning.select_queue_head(store,learning.QueueContext(FIXED_TIME,'2026-10-18'))
+        assert result.status=='pending'
+        assert connection.execute('SELECT released_at FROM queue_retry_policies').fetchone()[0] is None
+
+
+def test_deleted_issued_retry_without_replacement_cannot_report_daily_completion(queued_attempts):
+    with database.connection() as connection:
+        first = _failed_review(connection,queued_attempts)
+        connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
+        _complete_projection(connection)
+        assert _select(connection).status=='issued'
+        before = dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())
+        connection.execute('DELETE FROM daily_queue WHERE id=?',(first['requeue_entry_id'],))
+        selected = _select(connection)
+        assert selected.status=='changed' and selected.reason=='issued_origin_restored'
+        assert _select(connection).identity.entry_id==first['requeue_entry_id']
+        assert connection.execute('SELECT position FROM daily_queue WHERE id=?',(first['requeue_entry_id'],)).fetchone()[0]==before['issued_position']
+        assert dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())==before
+
+
+@pytest.mark.parametrize('obstruction',['occupied_id','changed_content','revised_card','archived_card','protected_replacement','unknown_slot'])
+def test_unprovable_issued_retry_recovery_is_bounded_actionable_and_nonmutating(queued_attempts,obstruction):
+    with database.connection() as connection:
+        first = _failed_review(connection,queued_attempts)
+        connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
+        _complete_projection(connection)
+        assert _select(connection).status=='issued'
+        connection.execute('DELETE FROM daily_queue WHERE id=?',(first['requeue_entry_id'],))
+        if obstruction=='occupied_id':
+            connection.execute("INSERT INTO daily_queue(id,queue_date,card_id,cycle,position,status) VALUES(?,'2026-10-18','later-b',1,30,'buried')",(first['requeue_entry_id'],))
+        elif obstruction=='changed_content':
+            connection.execute("UPDATE cards SET moves_json='[\"d2d4\"]' WHERE id='active-a'")
+        elif obstruction=='revised_card':
+            connection.execute("UPDATE cards SET revision=2 WHERE id='active-a'")
+        elif obstruction=='archived_card':
+            connection.execute("UPDATE cards SET archived=1 WHERE id='active-a'")
+        elif obstruction=='protected_replacement':
+            connection.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind) VALUES('2026-10-18','active-a',1,30,'explicit')")
+        else:
+            connection.execute('UPDATE queue_retry_policies SET issued_at=NULL,issued_position=NULL')
+        before = {table:[tuple(row) for row in connection.execute('SELECT * FROM '+table+' ORDER BY 1')]
+            for table in ('daily_queue','queue_attempt_origins','queue_retry_policies','daily_queue_days')}
+        for _ in range(2):
+            selected = _select(connection)
+            assert selected.status=='conflict' and selected.reason=='issued_retry_recovery_required'
+        after = {table:[tuple(row) for row in connection.execute('SELECT * FROM '+table+' ORDER BY 1')]
+            for table in before}
+        assert after==before
+
+
+def test_recovered_failure_uses_post_scheduling_priority_owner_without_source_row(queued_attempts,monkeypatch):
+    from app.services import real_game_feedback
+    observed = []
+    def canonical_priority(database,card_id):
+        # This is a composition capability proof; the runtime native test uses
+        # actual accepted game-miss evidence and canonical settlement state.
+        observed.append(database.execute("SELECT rating FROM reviews WHERE card_id=?",(card_id,)).fetchone()[0])
+        return True
+    monkeypatch.setattr(real_game_feedback,'has_outstanding_real_game_miss',canonical_priority)
+    with database.connection() as connection:
+        connection.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?',(queued_attempts['active-a'],))
+        connection.execute('DELETE FROM daily_queue WHERE id=?',(queued_attempts['active-a'],))
+        result = _failed_review(connection,queued_attempts)
+        assert observed and all(outcome=='again' for outcome in observed)
+        row = connection.execute('SELECT gameplay_priority_reason FROM daily_queue WHERE id=?',(result['requeue_entry_id'],)).fetchone()
+        assert row[0]==real_game_feedback.MISS_REASON
+
+
+def test_atomic_fallback_checks_retained_issued_origin_even_without_a_queue_row(queued_attempts):
+    from app.services.retry_queue import selection_store
+    with database.connection() as connection:
+        first = _failed_review(connection,queued_attempts,token='0'*32)
+        other = _failed_review(connection,queued_attempts,card_id='later-b',token='f'*32)
+        _complete_projection(connection)
+        class DetachedArrival:
+            observed = False
+            def __getattr__(self,name): return getattr(connection,name)
+            def execute(self,statement,arguments=()):
+                if not self.observed and statement.startswith('UPDATE queue_retry_policies SET retry_queue_entry_id='):
+                    self.observed=True
+                    timestamp=FIXED_TIME.isoformat()
+                    connection.execute("UPDATE queue_retry_policies SET released_at=?,release_reason='no_ready_work',issued_at=?,issued_position=5 WHERE review_id=?",
+                        (timestamp,timestamp,other['review_id']))
+                    connection.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?',(other['requeue_entry_id'],))
+                    connection.execute('DELETE FROM daily_queue WHERE id=?',(other['requeue_entry_id'],))
+                return connection.execute(statement,arguments)
+        arrival=DetachedArrival()
+        selected=learning.select_queue_head(selection_store(arrival),learning.QueueContext(FIXED_TIME,'2026-10-18'))
+        assert arrival.observed and selected.status=='pending'
+        assert connection.execute('SELECT released_at FROM queue_retry_policies WHERE review_id=?',(first['review_id'],)).fetchone()[0] is None

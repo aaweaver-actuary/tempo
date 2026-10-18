@@ -30,11 +30,17 @@ def warm_queue_refresh_sql() -> None:
     postgres_sql(_QUEUE_REFRESH_PROJECTION_SQL)
 
 
-def _lock_attempt_card(database, entry_id: int) -> None:
+def _lock_attempt_card(database, entry_id: int, *, retained_identity=None) -> None:
     """Follow review's card-before-queue lock order for retained commands."""
     if not isinstance(database, PostgresConnection):
         return
     entry = database.execute("SELECT card_id FROM daily_queue WHERE id=?", (entry_id,)).fetchone()
+    if retained_identity is not None:
+        # Recovery locks the proven original card, never an unrelated row that
+        # may now occupy the replaceable projection's former numeric ID.
+        entry = database.execute('SELECT card_id FROM queue_attempt_origins '
+            'WHERE queue_entry_id=? AND card_id=? AND revision=? AND issued_as_head=1',
+            (entry_id,retained_identity.card_id,retained_identity.revision)).fetchone()
     if entry:
         database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                                 (f"tempo:card-edit:{entry['card_id']}",))
