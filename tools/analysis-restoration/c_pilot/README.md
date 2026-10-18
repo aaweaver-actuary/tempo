@@ -48,3 +48,9 @@ path remains. Startup/execution failures retain a sanitized failure record and
 exit unsuccessfully; accepted progress stays durable. Permanent engine-profile
 incompatibility requires an explicit new run revision as documented in the
 Intelligence interfaces; ordinary retry does not erase or replace accepted roots.
+
+Normalized manifest/page files use canonical UTF-8 JSON with one trailing newline,
+within Intelligence's existing 1 MiB document limit. Final disk serialization is
+checked before invoking the consumer; pretty-printing must not expand a packed
+page beyond that limit. Oversized individual documents fail explicitly without
+truncating games or changing their immutable input identity.

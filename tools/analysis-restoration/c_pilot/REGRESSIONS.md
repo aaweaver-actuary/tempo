@@ -39,3 +39,12 @@ actual ordered history, root, opponent turn and exact next learner FEN. A mismat
 context retains an unavailable draft; Content still owns inspection and approval.
 The extension is gated to the new source metadata; older export normalization
 retains its previous bytes. Context order cannot change the selected anchor.
+
+C3 real-cohort serialization incident: normalization fit the consumer's canonical
+byte budget, but the pilot wrote indented pages over Intelligence's unchanged
+1 MiB CLI read limit. `test_C3_normalized_documents_fit_actual_consumer_file_limit`
+reproduces that failure through the final file/consumer boundary.
+`test_C3_oversized_normalized_document_rejects_before_consumer_start` and
+`test_C3_consumer_document_bound_counts_utf8_and_newline` retain explicit rejection,
+UTF-8 byte identity and the persisted newline. These are pure transport regressions;
+the private 80-game installed-artifact retry supplies real acceptance evidence.
