@@ -11,8 +11,12 @@ def admitted_call(operation, *arguments):
         try:
             return operation(*arguments)
         except BackgroundAdmissionDeferred as error:
+            # A control outage uses the same public exception type. Preserve
+            # that failure and its cause instead of disguising it as contention.
+            if error.__cause__ is not None or str(error) == 'Foreground admission is unavailable':
+                raise
             # The denied context has unwound before yielding. Do not reclaim,
             # change durable state, or extend any database/operation deadline.
             if time.monotonic() >= deadline:
-                raise AssertionError('Canonical rehearsal never obtained admission within 10 seconds') from error
+                raise AssertionError('Native rehearsal never obtained admission within 10 seconds') from error
             time.sleep(0.01)

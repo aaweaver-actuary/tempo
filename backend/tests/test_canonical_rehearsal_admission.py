@@ -110,3 +110,20 @@ def test_canonical_task_driver_preserves_original_120_slice_exhaustion(canonical
     with pytest.raises(AssertionError, match='failed to finish its bounded fixture'):
         proof.run_bounded_task_slices('comparison', 'original-game', operation)
     assert claim.call_count == operation.call_count == 120
+
+
+@pytest.mark.parametrize('with_cause', [False, True])
+def test_native_rehearsal_propagates_unavailable_control_without_retry(canonical_proof, monkeypatch, with_cause):
+    import postgres_rehearsal_admission
+    failure = redis_admission_gate.BackgroundAdmissionDeferred(
+        'Waiting for foreground activity' if with_cause else 'Foreground admission is unavailable')
+    if with_cause:
+        failure.__cause__ = ConnectionError('Control connection failed')
+    operation = Mock(side_effect=failure)
+    sleep = Mock(side_effect=AssertionError('Unavailable control was retried'))
+    monkeypatch.setattr(postgres_rehearsal_admission.time, 'sleep', sleep)
+    with pytest.raises(redis_admission_gate.BackgroundAdmissionDeferred) as raised:
+        postgres_rehearsal_admission.admitted_call(operation)
+    assert raised.value is failure
+    operation.assert_called_once_with()
+    sleep.assert_not_called()
