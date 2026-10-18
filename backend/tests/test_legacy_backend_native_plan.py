@@ -3,7 +3,9 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
+import zipfile
 
 import pytest
 
@@ -20,7 +22,7 @@ def test_prepared_native_plan_has_three_exact_cases_under_existing_budget():
         extra_swap_mib=0, owned_internal_networks=1, published_ports=0)
     budget = json.loads((ROOT / 'config/resource-budgets.json').read_text())['development']
     assert value['total']['cpus'] <= budget['cpus'] and value['total']['memory_mib'] <= budget['memoryMiB']
-    assert value['candidate_images']['redis'] is None
+    assert value['candidate_images']['redis'] == 'sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499'
 
 
 @pytest.mark.parametrize('value', ['redis:7-alpine', 'latest', 'sha256:wrong'])
@@ -40,6 +42,122 @@ def test_native_caps_have_no_extra_swap_host_ports_or_live_mounts():
         assert arguments[arguments.index('--memory') + 1] == arguments[arguments.index('--memory-swap') + 1]
         assert '--publish' not in arguments and '--env-file' not in arguments and '--mount' not in arguments
         assert arguments[arguments.index('--network') + 1] == 'owned-internal'
+
+
+def test_redis_declared_data_volume_is_replaced_by_bounded_tmpfs():
+    arguments = plan.docker_arguments('redis', 'owned-redis', 'sha256:' + 'a' * 64, 'owned-internal')
+    tmpfs = [arguments[index + 1] for index, item in enumerate(arguments) if item == '--tmpfs']
+    assert '/data:rw,size=32m' in tmpfs
+
+
+@pytest.mark.parametrize('mounts', [[], [dict(Type='tmpfs', Destination='/data', RW=True)]])
+def test_image_and_container_inventories_establish_no_redis_persistent_mount(mounts):
+    assert plan.verify_image_volumes('redis', dict(Config=dict(Volumes={'/data': {}}))) == ['/data']
+    container = dict(HostConfig=dict(Tmpfs={'/tmp': 'rw,size=32m', '/data': 'rw,size=33554432'}), Mounts=mounts)
+    plan.verify_container_mounts('redis', container)
+    assert plan.mounted_volume_names(container) == set()
+
+
+@pytest.mark.parametrize('kind', ['helper', 'postgres', 'redis'])
+def test_uncovered_image_volume_is_refused_before_allocation(kind):
+    with pytest.raises(ValueError, match='uncovered persistent volume'):
+        plan.verify_image_volumes(kind, dict(Config=dict(Volumes={'/unexpected': {}})))
+
+
+@pytest.mark.parametrize('fault', ['missing_data', 'wrong_size', 'readonly_data', 'extra_tmpfs', 'anonymous', 'named', 'declared_extra'])
+def test_redis_mount_inventory_rejects_leaks_or_unbounded_storage(fault):
+    tmpfs, mounts = {'/tmp': 'rw,size=32m', '/data': 'rw,size=32m'}, []
+    if fault == 'missing_data': tmpfs.pop('/data')
+    if fault == 'wrong_size': tmpfs['/data'] = 'rw,size=64m'
+    if fault == 'readonly_data': tmpfs['/data'] = 'ro,size=32m'
+    if fault == 'extra_tmpfs': tmpfs['/unexpected'] = 'rw,size=32m'
+    if fault in ('anonymous', 'named'):
+        mounts.append(dict(Type='volume', Name='a' * 64 if fault == 'anonymous' else 'unrelated-named', Destination='/data', RW=True))
+        assert plan.mounted_volume_names(dict(Mounts=mounts)) == {mounts[0]['Name']}
+    config = dict(Volumes={'/unexpected': {}}) if fault == 'declared_extra' else {}
+    with pytest.raises(ValueError): plan.verify_container_mounts('redis', dict(Config=config, HostConfig=dict(Tmpfs=tmpfs), Mounts=mounts))
+
+
+def test_recorded_volume_absence_checks_only_exact_observed_identities():
+    calls = []
+    def capture(command, **options):
+        calls.append((command, options))
+        return subprocess.CompletedProcess(command, 1, '', 'Error response from daemon: no such volume: ' + command[-1])
+    names = {'a' * 64, 'b' * 64}
+    assert plan.verify_volume_absence(SimpleNamespace(capture=capture), names) == sorted(names)
+    assert [item[0] for item in calls] == [['docker', 'volume', 'inspect', name] for name in sorted(names)]
+
+
+@pytest.mark.parametrize('code,error', [(0, ''), (1, 'daemon unavailable'), (1, 'no such volume: another-volume')])
+def test_surviving_or_unverified_recorded_volume_blocks_cleanup(code, error):
+    def capture(command, **options): return subprocess.CompletedProcess(command, code, '[]', error)
+    with pytest.raises(RuntimeError, match='volume remains/absence unknown'):
+        plan.verify_volume_absence(SimpleNamespace(capture=capture), {'a' * 64})
+
+
+def test_exact_native_node_inventory_accepts_required_parameterized_identity():
+    plan.verify_case_inventory(dict(collected=list(plan.CASES)))
+    assert plan.CASES[1].endswith('[prior]') and all('test_native.py::' in node for node in plan.CASES)
+
+
+@pytest.mark.parametrize('fault', ['other_same_count', 'missing_prior', 'duplicate'])
+def test_exact_native_node_inventory_rejects_same_count_substitution(fault):
+    nodes = list(plan.CASES)
+    if fault == 'other_same_count': nodes[0] = nodes[0] + '_unrelated'
+    if fault == 'missing_prior': nodes[1] = nodes[1].removesuffix('[prior]')
+    if fault == 'duplicate': nodes[1] = nodes[0]
+    with pytest.raises(RuntimeError, match='Exact native node IDs changed'): plan.verify_case_inventory(dict(collected=nodes))
+
+
+def wheel_fixture(tmp_path):
+    site, wheel = tmp_path / 'installed', tmp_path / 'owned-0.1.0-py3-none-any.whl'
+    expected = {'owned/__init__.py': b'VALUE="verified-source"\n', 'owned/data.json': b'{"owned": true}',
+        'owned-0.1.0.dist-info/METADATA': b'Name: owned\nVersion: 0.1.0\n', 'owned-0.1.0.dist-info/RECORD': b'installer rewrites this'}
+    with zipfile.ZipFile(wheel, 'w') as archive:
+        for name, content in expected.items():
+            archive.writestr(name, content)
+            path = site / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
+    return wheel, site
+
+
+def test_installed_owned_package_content_is_compared_to_verified_wheel(tmp_path):
+    wheel, site = wheel_fixture(tmp_path)
+    (site / 'owned-0.1.0.dist-info/RECORD').write_text('genuine installer-specific metadata')
+    result = plan.verify_installed_wheel(wheel, site)
+    assert result['verified_files'] == 3 and result['owned_package_files'] == 2
+
+
+@pytest.mark.parametrize('fault', ['changed_code', 'changed_data', 'changed_metadata', 'missing_code', 'extra_code'])
+def test_retained_installed_artifact_drift_is_refused_without_reinstallation(tmp_path, fault):
+    wheel, site = wheel_fixture(tmp_path)
+    if fault == 'changed_code': (site / 'owned/__init__.py').write_text('VALUE="changed"')
+    if fault == 'changed_data': (site / 'owned/data.json').write_text('{}')
+    if fault == 'changed_metadata': (site / 'owned-0.1.0.dist-info/METADATA').write_text('Version: other')
+    if fault == 'missing_code': (site / 'owned/__init__.py').unlink()
+    if fault == 'extra_code': (site / 'owned/extra.py').write_text('VALUE="unexpected"')
+    with pytest.raises(ValueError, match='Installed artifact'): plan.verify_installed_wheel(wheel, site)
+
+
+def test_fresh_native_bytecode_prefix_ignores_retained_unverified_cache(tmp_path):
+    import os
+    import py_compile
+    import sys
+    wheel, site = wheel_fixture(tmp_path)
+    source = site / 'owned/__init__.py'
+    good, bad = b'VALUE="verified-source"\n', b'VALUE="unverified-code"\n'
+    assert len(good) == len(bad)
+    source.write_bytes(bad); os.utime(source, (1700000000, 1700000000))
+    py_compile.compile(str(source), doraise=True, invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP)
+    source.write_bytes(good); os.utime(source, (1700000000, 1700000000))
+    plan.verify_installed_wheel(wheel, site)
+    control = 'import sys;sys.path.insert(0,' + repr(str(site)) + ');import owned;print(owned.VALUE)'
+    cached = subprocess.run([sys.executable, '-I', '-B', '-c', control], capture_output=True, text=True, timeout=5)
+    assert cached.returncode == 0 and cached.stdout.strip() == 'unverified-code'
+    prefix = tmp_path / 'fresh-native-cache'
+    bootstrap = 'import sys;sys.pycache_prefix=' + repr(str(prefix)) + ';sys.path.insert(0,' + repr(str(site)) + ');import owned;print(owned.VALUE)'
+    run = subprocess.run([sys.executable, '-I', '-B', '-c', bootstrap], capture_output=True, text=True, timeout=5)
+    assert run.returncode == 0 and run.stdout.strip() == 'verified-source'
+    assert not prefix.exists()
 
 
 @pytest.mark.parametrize('fault', ['unqualified', 'head', 'image', 'inventory', 'bytes'])

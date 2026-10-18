@@ -33,6 +33,7 @@ def owned_manifest():
             or os.environ.get('TEMPO_BRIDGE_NATIVE_OWNED') != value['identity']
             or value['postgres_host'] != 'bridge-postgres' or value['redis_host'] != 'bridge-redis'
             or value['pgpass'] != '/evidence/private/pgpass'
+            or value['bytecode_prefix'] != '/tmp/' + value['identity'] + '-verified-bytecode'
             or conninfo_to_dict(value['admin_dsn']) != dict(user='postgres', dbname='postgres',
                 host='bridge-postgres', port='5432')):
         raise RuntimeError('Explicit disposable backend manifest required; ambient targets refused')
@@ -73,7 +74,8 @@ class NativeBackend:
         return result
 
     def bootstrap(self, source):
-        return [sys.executable, '-I', '-c', 'import sys;sys.path[:0]=' + repr(self.paths) + ';' + source]
+        return [sys.executable, '-I', '-B', '-c', 'import sys;sys.pycache_prefix=' +
+                repr(self.manifest['bytecode_prefix']) + ';sys.path[:0]=' + repr(self.paths) + ';' + source]
 
     def connection(self, *, role='postgres'):
         return psycopg.connect(make_conninfo(self.admin_dsn, user=role),

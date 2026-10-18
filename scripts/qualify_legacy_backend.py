@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('bridge_qualification', ROOT / 'scripts/qualify_legacy_bridge.py')
@@ -26,22 +27,23 @@ shared = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shared)
 WORK_SECONDS, CLEANUP_SECONDS = 900, 300
 CASES = (
-    'test_native_generated_accept_replay_restart_and_normal_study',
-    'test_native_prior_issued_attempt_cannot_settle_later_acceptance',
-    'test_native_module_effect_and_complete_operation_receipt_roll_back_together',
+    'integration/legacy_bridge/test_native.py::test_native_generated_accept_replay_restart_and_normal_study',
+    'integration/legacy_bridge/test_native.py::test_native_prior_issued_attempt_cannot_settle_later_acceptance[prior]',
+    'integration/legacy_bridge/test_native.py::test_native_module_effect_and_complete_operation_receipt_roll_back_together',
 )
 IMAGES = dict(helper='sha256:a095f09e905ecb00635b80387e17d195560a5752df83d970f94f1ada902ba3e2',
-              postgres=shared.POSTGRES_IMAGE_ID, redis=None)
+              postgres=shared.POSTGRES_IMAGE_ID,
+              redis='sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499')
 CAPS = dict(helper=dict(cpus=1, memory_mib=768, pids=128, tmpfs_mib=256),
             postgres=dict(cpus=.75, memory_mib=384, pids=128, tmpfs_mib=384),
-            redis=dict(cpus=.1, memory_mib=64, pids=32, tmpfs_mib=32))
+            redis=dict(cpus=.1, memory_mib=64, pids=32, tmpfs_mib=32, data_tmpfs_mib=32))
 
 
 def describe():
     return dict(prepared_only=True, work_seconds=WORK_SECONDS, cleanup_seconds=CLEANUP_SECONDS,
         cases=list(CASES), caps=CAPS, total=dict(containers=3, cpus=1.85, memory_mib=1216, pids=288,
             extra_swap_mib=0, owned_internal_networks=1, published_ports=0),
-        candidate_images=IMAGES, missing=['Redis immutable local image ID/provenance',
+        candidate_images=IMAGES, missing=['Redis candidate image/mount provenance verified during a later authorized preflight',
             'successful same-head284-case artifact receipt and retained qualified environment',
             'helper-start diagnostic result, independent review and separate native resource grant'],
         no_build_pull_install_or_live_target=True)
@@ -72,11 +74,99 @@ def docker_arguments(kind, name, image, network):
     arguments = ['run', '--name', name, '--label', 'tempo.legacy-bridge-owner=' + name,
         '--label', 'tempo.disposable=true', '--cpus', str(cap['cpus']), '--memory', str(cap['memory_mib']) + 'm',
         '--memory-swap', str(cap['memory_mib']) + 'm', '--pids-limit', str(cap['pids']), '--network', network]
-    if kind == 'postgres':
-        arguments += ['--tmpfs', '/var/lib/postgresql:rw,size=384m']
-    else:
-        arguments += ['--tmpfs', '/tmp:rw,size=' + str(cap['tmpfs_mib']) + 'm']
+    for destination, size in tmpfs_mounts(kind).items():
+        arguments += ['--tmpfs', destination + ':rw,size=' + str(size) + 'm']
     return arguments
+
+
+def tmpfs_mounts(kind):
+    result = {'/var/lib/postgresql' if kind == 'postgres' else '/tmp': CAPS[kind]['tmpfs_mib']}
+    if kind == 'redis': result['/data'] = CAPS[kind]['data_tmpfs_mib']
+    return result
+
+
+def verify_image_volumes(kind, image):
+    declared = set((image.get('Config') or {}).get('Volumes') or {})
+    allowed = set(tmpfs_mounts(kind)) | ({'/source', '/qualified', '/evidence'} if kind == 'helper' else set())
+    if not declared <= allowed: raise ValueError('Image declares an uncovered persistent volume: ' + kind)
+    return sorted(declared)
+
+
+def verify_container_mounts(kind, container, binds=None):
+    """HostConfig owns tmpfs configuration; Mounts owns actual persistent mounts.
+
+    Docker versions need not repeat tmpfs in Mounts. Both inventories must agree
+    with our explicit tmpfs/bind plan, and no volume mount is ever permitted.
+    """
+    verify_image_volumes(kind, container)
+    expected, binds = tmpfs_mounts(kind), binds or {}
+    actual = container['HostConfig'].get('Tmpfs') or {}
+    if set(actual) != set(expected): raise ValueError('Native tmpfs destinations changed: ' + kind)
+    for destination, options in actual.items():
+        parts = options.split(','); sizes = [item[5:] for item in parts if item.startswith('size=')]
+        match = re.fullmatch(r'(\d+)([kmg]?)', sizes[0], re.IGNORECASE) if len(sizes) == 1 else None
+        size = int(match[1]) * {'': 1, 'k': 1024, 'm': 1024**2, 'g': 1024**3}[match[2].lower()] if match else None
+        if 'ro' in parts or size != expected[destination] * 1024**2:
+            raise ValueError('Native tmpfs is unbounded/different: ' + destination)
+    seen, observed_binds = set(), {}
+    for mount in container['Mounts']:
+        destination, kind_name = mount['Destination'], mount['Type']
+        if destination in seen: raise ValueError('Duplicate actual mount destination')
+        seen.add(destination)
+        if kind_name == 'bind': observed_binds[destination] = (mount['Source'], mount['RW'])
+        elif kind_name != 'tmpfs' or destination not in expected or mount.get('RW') is not True:
+            raise ValueError('Unexpected persistent/unknown native mount: ' + destination)
+    if observed_binds != binds: raise ValueError('Native bind inventory changed: ' + kind)
+    return dict(tmpfs=actual, mounts=container['Mounts'])
+
+
+def mounted_volume_names(container):
+    names = {item['Name'] for item in container['Mounts'] if item['Type'] == 'volume'}
+    if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,255}', name) for name in names):
+        raise ValueError('Unexpected volume identity; cleanup cannot be verified')
+    return names
+
+
+def verify_volume_absence(timer, names):
+    for name in sorted(names):
+        result = timer.capture(['docker', 'volume', 'inspect', name], check=False)
+        if not shared.verified_absence(result, name): raise RuntimeError('Recorded native volume remains/absence unknown: ' + name)
+    return sorted(names)
+
+
+def verify_case_inventory(receipt):
+    if sorted(receipt['collected']) != sorted(CASES):
+        raise RuntimeError('Exact native node IDs changed; stop and rescope')
+
+
+def verify_installed_wheel(wheel, site):
+    """Compare only these six installed distributions with their verified wheels.
+
+    Installer-rewritten RECORD is excluded; generated __pycache__ is ignored
+    only because every native process uses a fresh cache prefix and -B.
+    """
+    site = site.resolve()
+    with zipfile.ZipFile(wheel) as archive:
+        expected, roots = {}, set()
+        for entry in archive.infolist():
+            if entry.is_dir(): continue
+            path = Path(entry.filename)
+            if path.is_absolute() or '..' in path.parts or '.data' in path.parts[0]:
+                raise ValueError('Unsupported/unsafe native wheel layout')
+            if path.name == 'RECORD' and path.parts[0].endswith('.dist-info'): continue
+            expected[path.as_posix()] = hashlib.sha256(archive.read(entry)).hexdigest()
+            if not path.parts[0].endswith('.dist-info'): roots.add(path.parts[0])
+        if not roots: raise ValueError('Wheel has no owned package files')
+        for name, digest in expected.items():
+            installed = site / name
+            if (not installed.is_file() or not installed.resolve().is_relative_to(site)
+                    or hashlib.sha256(installed.read_bytes()).hexdigest() != digest):
+                raise ValueError('Installed artifact differs from verified wheel: ' + name)
+        actual = {path.relative_to(site).as_posix() for root in roots for path in (site / root).rglob('*')
+                  if path.is_file() and '__pycache__' not in path.parts}
+        owned = {name for name in expected if name.split('/')[0] in roots}
+        if actual != owned: raise ValueError('Installed artifact file inventory differs from verified wheel')
+    return dict(wheel=wheel.name, verified_files=len(expected), owned_package_files=len(owned))
 
 
 def inside():
@@ -85,6 +175,9 @@ def inside():
     manifest = json.loads((root / 'native-manifest.json').read_text())
     if os.environ.get('TEMPO_BRIDGE_NATIVE_OWNED') != manifest['identity']:
         raise RuntimeError('Explicit owned native helper required')
+    # Ignore retained bytecode caches while importing wheel-verified source.
+    sys.dont_write_bytecode = True
+    sys.pycache_prefix = '/tmp/' + manifest['identity'] + '-verified-bytecode'
     sites = list((qualified / 'work/environment/lib').glob(f'python{sys.version_info.major}.{sys.version_info.minor}/site-packages'))
     if len(sites) != 1: raise RuntimeError('Qualified artifact Python ABI/environment missing')
     paths = [str(sites[0]), str(ROOT / 'backend'), str(ROOT / 'scripts')]
@@ -103,14 +196,21 @@ def inside():
         distribution = metadata.distribution(package)
         origin = Path(distribution.locate_file('')).resolve()
         if not origin.is_relative_to(sites[0]): raise RuntimeError('Native helper did not import qualified artifact: ' + package)
-        origins[package] = dict(version=distribution.version, origin=str(origin))
+        wheels = list((qualified / 'wheels').glob(package.replace('-', '_') + '-*.whl'))
+        if len(wheels) != 1: raise RuntimeError('Exactly one qualified wheel required: ' + package)
+        wheel = wheels[0]
+        if hashlib.sha256(wheel.read_bytes()).hexdigest() != manifest['artifact_hashes'].get(wheel.name):
+            raise RuntimeError('Native qualified wheel bytes changed: ' + package)
+        origins[package] = dict(version=distribution.version, origin=str(origin),
+                               content=verify_installed_wheel(wheel, sites[0]))
     manifest['import_paths'] = paths
+    manifest['bytecode_prefix'] = sys.pycache_prefix
     shared.write(root / 'native-manifest.json', manifest)
     report = dict(complete=False, cases=list(CASES), artifact_origins=origins, dependencies=expected, commands=[])
     shared.write(root / 'inside.json', report)
     timer = shared.Deadline(840, report)  # Service startup and host work share the900s outer deadline.
     checker = ROOT / 'services/learning/application/qualification.py'
-    bootstrap = ('import sys,runpy;sys.path[:0]=' + repr(paths) + ';'
+    bootstrap = ('import sys,runpy;sys.pycache_prefix=' + repr(sys.pycache_prefix) + ';sys.path[:0]=' + repr(paths) + ';'
         'sys.argv=[' + repr(str(checker)) + ',*sys.argv[1:]];runpy.run_path(' + repr(str(checker)) + ",run_name='__main__')")
     common = ['-c', str(ROOT / 'backend/pyproject.toml'), '-o', 'addopts=', '--import-mode=importlib',
               '-p', 'no:cacheprovider', '--maxfail=1', str(ROOT / 'backend/integration/legacy_bridge/test_native.py')]
@@ -118,10 +218,10 @@ def inside():
     for stage, tail in [('collection', ['--collect-only', '-q']),
                         ('execution', ['-q', '--junitxml=' + str(root / 'native.xml'), '--basetemp=' + str(root / 'pytest')])]:
         receipt = root / ('native-' + stage + '.json')
-        timer.run([sys.executable, '-I', '-c', bootstrap, str(receipt), *common, *tail],
+        timer.run([sys.executable, '-I', '-B', '-c', bootstrap, str(receipt), *common, *tail],
                   cwd=root, log=root / ('native-' + stage + '.log'))
         receipts[stage] = json.loads(receipt.read_text())
-        if len(receipts[stage]['collected']) != len(CASES): raise RuntimeError('Native fixed inventory changed')
+        verify_case_inventory(receipts[stage])
     inventory = shared.load('backend_native_inventory', checker)
     report['validated_cases'] = inventory.validate_inventory(receipts['collection'], receipts['execution'], root / 'native.xml')
     report['complete'] = True
@@ -145,20 +245,42 @@ def host(options):
     network, names = identity + '-network', {kind: identity + '-' + kind for kind in CAPS}
     report = dict(complete=False, cleanup_verified=False, identity=identity, source_head=head, plan=describe(),
         images=dict(helper=options.helper_image_id, postgres=options.postgres_image_id, redis=options.redis_image_id),
-        artifact_hashes=artifacts, started_utc=datetime.now(timezone.utc).isoformat(), commands=[], names=names, network=network)
+        artifact_hashes=artifacts, started_utc=datetime.now(timezone.utc).isoformat(), commands=[], names=names, network=network,
+        mount_inventory=dict(images={}, containers={}, cleanup={}), container_ids={})
+    observed_volumes = set()
+    def observe_container(kind, container, phase):
+        name = names[kind]
+        if container['Config']['Labels'].get('tempo.legacy-bridge-owner') != name:
+            raise RuntimeError('Owned container label mismatch')
+        if kind in report['container_ids'] and report['container_ids'][kind] != container['Id']:
+            raise RuntimeError('Owned container identity changed')
+        report['container_ids'][kind] = container['Id']
+        report['mount_inventory'][phase][kind] = dict(image=container['Image'],
+            declared_volumes=container['Config'].get('Volumes') or {},
+            tmpfs=container['HostConfig'].get('Tmpfs'), mounts=container['Mounts'])
+        observed_volumes.update(mounted_volume_names(container))
+        report['observed_volume_names'] = sorted(observed_volumes)
+        shared.write(directory / 'host.json', report)
     timer = shared.Deadline(WORK_SECONDS - (time.monotonic() - started), report)
     private = directory / 'private'; private.mkdir(mode=0o700)
     password = secrets.token_urlsafe(24)
     (private / 'postgres.env').write_text('POSTGRES_PASSWORD=' + password + '\n')
     (private / 'pgpass').write_text('bridge-postgres:5432:*:postgres:' + password + '\n')
     for path in private.iterdir(): path.chmod(0o600)
-    manifest = dict(identity=identity, source_head=head, postgres_host='bridge-postgres', redis_host='bridge-redis',
+    manifest = dict(identity=identity, source_head=head, artifact_hashes=artifacts,
+        postgres_host='bridge-postgres', redis_host='bridge-redis',
         admin_dsn='postgresql://postgres@bridge-postgres:5432/postgres', pgpass='/evidence/private/pgpass')
     shared.write(directory / 'native-manifest.json', manifest)
     shared.write(directory / 'host.json', report)
     try:
         for kind, image in report['images'].items():
-            timer.run(['docker', 'image', 'inspect', image], log=directory / (kind + '-image.json'), maximum=15)
+            images = json.loads(timer.capture(['docker', 'image', 'inspect', image]).stdout)
+            shared.write(directory / (kind + '-image.json'), images)
+            if len(images) != 1 or images[0]['Id'] != image: raise RuntimeError('Native image identity changed')
+            declared = verify_image_volumes(kind, images[0])
+            report['mount_inventory']['images'][kind] = dict(image=image, architecture=images[0]['Architecture'],
+                os=images[0]['Os'], declared_volumes=declared)
+            shared.write(directory / 'host.json', report)
         timer.run(['docker', 'network', 'create', '--internal', '--label', 'tempo.legacy-bridge-owner=' + identity, network], maximum=15)
         for kind in ('postgres', 'redis'):
             arguments = docker_arguments(kind, names[kind], report['images'][kind], network)
@@ -168,7 +290,11 @@ def host(options):
             arguments += (['postgres', '-c', 'max_connections=32', '-c', 'shared_buffers=32MB'] if kind == 'postgres'
                 else ['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory', '32mb', '--maxmemory-policy', 'noeviction'])
             timer.run(['docker', *arguments], log=directory / (kind + '-start.log'), maximum=45)
-            config = json.loads(timer.capture(['docker', 'inspect', names[kind], '--format', '{{json .HostConfig}}']).stdout)
+            container = json.loads(timer.capture(['docker', 'inspect', names[kind]]).stdout)[0]
+            observe_container(kind, container, 'containers')
+            if container['Image'] != report['images'][kind]: raise RuntimeError('Native service image changed')
+            verify_container_mounts(kind, container)
+            config = container['HostConfig']
             cap = CAPS[kind]
             if (config['NanoCpus'], config['Memory'], config['MemorySwap'], config['PidsLimit']) != (
                     int(cap['cpus'] * 1_000_000_000), cap['memory_mib'] * 1024**2, cap['memory_mib'] * 1024**2, cap['pids']):
@@ -182,6 +308,11 @@ def host(options):
             '--env', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD=1', '--entrypoint', 'python', options.helper_image_id,
             '/source/scripts/qualify_legacy_backend.py', '--inside']
         timer.run(['docker', *arguments], log=directory / 'helper.log')
+        container = json.loads(timer.capture(['docker', 'inspect', names['helper']]).stdout)[0]
+        observe_container('helper', container, 'containers')
+        if container['Image'] != options.helper_image_id: raise RuntimeError('Native helper image changed')
+        verify_container_mounts('helper', container, {'/source': (str(ROOT), False),
+            '/qualified': (str(options.artifact_run.resolve()), False), '/evidence': (str(directory), True)})
         if not json.loads((directory / 'inside.json').read_text())['complete']: raise RuntimeError('Incomplete native proof')
         report['complete'] = True
     except BaseException as error:
@@ -190,17 +321,19 @@ def host(options):
         cleanup = shared.Deadline(CLEANUP_SECONDS, report)
         signal.setitimer(signal.ITIMER_REAL, CLEANUP_SECONDS)
         try:
-            for name in (names['helper'], names['redis'], names['postgres']):
-                probe = cleanup.capture(['docker', 'inspect', name, '--format', '{{json .Config.Labels}}'], check=False)
+            for kind in ('helper', 'redis', 'postgres'):
+                name = names[kind]
+                probe = cleanup.capture(['docker', 'inspect', name], check=False)
                 if probe.returncode == 0:
-                    if json.loads(probe.stdout).get('tempo.legacy-bridge-owner') != name: raise RuntimeError('Owned container label mismatch')
+                    observe_container(kind, json.loads(probe.stdout)[0], 'cleanup')
                     cleanup.run(['docker', 'stop', '--time', '5', name], check=False, maximum=15)
-                    cleanup.run(['docker', 'rm', '--force', name], maximum=15)
+                    cleanup.run(['docker', 'rm', '--force', '--volumes', name], maximum=15)
                 elif shared.verified_absence(probe, name):
-                    cleanup.run(['docker', 'rm', '--force', name], check=False, maximum=15)
+                    cleanup.run(['docker', 'rm', '--force', '--volumes', name], check=False, maximum=15)
                 else: raise RuntimeError('Owned container absence unverified')
                 absent = cleanup.capture(['docker', 'inspect', name], check=False)
                 if not shared.verified_absence(absent, name): raise RuntimeError('Owned container remains/absence unknown')
+            report['verified_volume_absence'] = verify_volume_absence(cleanup, observed_volumes)
             probe = cleanup.capture(['docker', 'network', 'inspect', network], check=False)
             if probe.returncode == 0:
                 if json.loads(probe.stdout)[0]['Labels'].get('tempo.legacy-bridge-owner') != identity: raise RuntimeError('Owned network label mismatch')

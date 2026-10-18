@@ -4881,6 +4881,17 @@ They are not executed by regular unit discovery and have not run yet. The pure
 immutable-image and qualified-artifact refusal checks; those checks do not prove
 native startup, cleanup or application behavior.
 
+`test_redis_declared_data_volume_is_replaced_by_bounded_tmpfs` in the native-plan
+owner reproduces the missing `/data` tmpfs at `a342bdd1`. Image/container mount
+inventory controls reject uncovered declarations, anonymous/named mounts and
+unbounded tmpfs; exact recorded-volume absence is required for cleanup. Exact
+full node-ID controls reject same-count substitutions and a missing `[prior]`.
+Installed-file/wheel controls reject changed/missing/extra retained package
+content, and the fresh-bytecode-prefix control prevents cached unverified code
+from bypassing source verification. Native rollback additionally requires the
+persisted unique injected marker after in-transaction acceptance/frontier checks;
+an unrelated timeout cannot establish that unexecuted native proof.
+
 `test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline`
 uses a synthetic wheel and mocked version command. Qualification-plan tests
 cover hash refusal, no native download fallback and first pytest failure with

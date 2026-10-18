@@ -82,6 +82,9 @@ def test_failed_wrapper_reaps_its_orphan_process_group_before_cleanup(monkeypatc
     ("No such container: another-helper", "owned-helper", False),
     ("No such container: another-owned-helper", "owned-helper", False),
     ("connection refused for owned-helper", "owned-helper", False),
+    ("Error response from daemon: no such volume: owned-volume", "owned-volume", True),
+    ("no such volume: other-volume", "owned-volume", False),
+    ("volume inspect unavailable for owned-volume", "owned-volume", False),
 ])
 def test_absence_requires_the_exact_identity_but_not_diagnostic_case(diagnostic, identity, expected):
     assert qualification.verified_absence(SimpleNamespace(returncode=1, stderr=diagnostic), identity) is expected

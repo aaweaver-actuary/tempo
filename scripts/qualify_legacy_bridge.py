@@ -191,7 +191,7 @@ def verified_absence(result, identity):
     """Only an identity-specific daemon absence diagnostic is proof."""
     return (result.returncode != 0 and re.search(r"(?<![A-Za-z0-9_.-])" + re.escape(identity) +
                 r"(?![A-Za-z0-9_.-])", result.stderr) is not None
-            and re.search(r"\bno such (?:object|container|network)\b", result.stderr, re.IGNORECASE) is not None)
+            and re.search(r"\bno such (?:object|container|network|volume)\b", result.stderr, re.IGNORECASE) is not None)
 
 
 def verify_helper_caps():

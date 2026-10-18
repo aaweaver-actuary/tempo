@@ -117,15 +117,48 @@ def test_native_module_effect_and_complete_operation_receipt_roll_back_together(
     preview = native.preview(); operator = LegacyStudyOperator(native.endpoint, native.request)
     delivery = v3.EvidenceDelivery.model_validate(preview['delivery'])
     operation = operator.accept_operation(delivery)
+    assert len(delivery.obligations) == 1
+    # Compare every receipt field; the module-owned Learning revision must
+    # equal its real workspace/evidence rows below, not a scripted initial value.
+    expected = dict(contract_version=3, workspace_id='legacy', delivery_id=delivery.delivery_id,
+        evidence_id=delivery.evidence_id, evidence_revision=delivery.evidence_revision, status='completed', reason=None,
+        accepted_obligation_ids=[delivery.obligations[0].obligation_id])
+    marker = 'bridge-native-complete-fault:' + native.case_id
     with native.connection() as raw:
         raw.execute("""CREATE FUNCTION bridge_native_fail_complete() RETURNS trigger LANGUAGE plpgsql AS $$
+            DECLARE ack jsonb; contribution_count bigint; observed_frontier bigint; accepted_revision bigint;
             BEGIN IF NEW.operation_id=TG_ARGV[0] AND NEW.state='complete' THEN
-              RAISE EXCEPTION 'synthetic outer receipt publication failure' USING ERRCODE='40001';
+              ack := NEW.response_json::jsonb;
+              IF (ack - 'learning_revision') IS DISTINCT FROM TG_ARGV[1]::jsonb
+                 OR jsonb_typeof(ack->'learning_revision') IS DISTINCT FROM 'number' THEN
+                RAISE EXCEPTION 'native fault prerequisite: expected completed acceptance response';
+              END IF;
+              SELECT COUNT(*) INTO contribution_count FROM remediation_contributions
+                WHERE workspace_id='legacy' AND card_id=TG_ARGV[2] AND obligation_id=TG_ARGV[3]
+                  AND evidence_id=ack->>'evidence_id';
+              SELECT sequence INTO observed_frontier FROM remediation_cards
+                WHERE workspace_id='legacy' AND card_id=TG_ARGV[2];
+              SELECT revision INTO accepted_revision FROM remediation_workspaces WHERE workspace_id='legacy';
+              IF contribution_count IS DISTINCT FROM 1 OR observed_frontier IS DISTINCT FROM 1
+                 OR accepted_revision IS NULL OR accepted_revision<1
+                 OR (ack->>'learning_revision')::bigint IS DISTINCT FROM accepted_revision
+                 OR NOT EXISTS(SELECT 1 FROM remediation_evidence WHERE workspace_id='legacy'
+                     AND evidence_id=ack->>'evidence_id' AND evidence_revision=(ack->>'evidence_revision')::bigint
+                     AND learning_revision=accepted_revision)
+                 OR NOT EXISTS(SELECT 1 FROM remediation_deliveries WHERE workspace_id='legacy'
+                     AND delivery_id=ack->>'delivery_id' AND response_json=ack) THEN
+                RAISE EXCEPTION 'native fault prerequisite: accepted module contribution/frontier/receipt missing';
+              END IF;
+              RAISE EXCEPTION '%', TG_ARGV[4] USING ERRCODE='40001';
             END IF; RETURN NEW; END $$""")
-        raw.execute(sql.SQL("CREATE TRIGGER bridge_native_fail_complete BEFORE UPDATE ON operation_receipts FOR EACH ROW EXECUTE FUNCTION bridge_native_fail_complete({})").format(sql.Literal(operation)))
+        arguments = sql.SQL(',').join(map(sql.Literal, [operation, json.dumps(expected),
+            delivery.obligations[0].card_id, delivery.obligations[0].obligation_id, marker]))
+        raw.execute(sql.SQL("CREATE TRIGGER bridge_native_fail_complete BEFORE UPDATE ON operation_receipts FOR EACH ROW EXECUTE FUNCTION bridge_native_fail_complete({})").format(arguments))
     first = operator.accept(preview)
     assert not first['accepted']
     retry = native.wait(lambda: (receipt if (receipt := native.operation(operation))['state'] == 'retrying' else None))
+    assert retry['last_error']['class'] == 'SerializationFailure'
+    assert retry['last_error']['message'].splitlines()[0] == marker
     assert retry.get('response') is None
     assert all(count == 0 for count in native.counts().values())
     with native.connection() as raw:
@@ -142,5 +175,6 @@ def test_native_module_effect_and_complete_operation_receipt_roll_back_together(
     counts = native.counts()
     assert counts['frontier'] == counts['remediation_contributions'] == counts['remediation_deliveries'] == counts['remediation_evidence'] == 1
     with native.connection() as raw:
-        assert raw.execute('SELECT state,attempt_count FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()[0] == 'complete'
-    write_trace(native, acknowledgement=receipt, retained_retry=retry, rollback_before_retry=True)
+        state, attempts = raw.execute('SELECT state,attempt_count FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()
+        assert state == 'complete' and attempts >= 2
+    write_trace(native, acknowledgement=receipt, retained_retry=retry, injected_fault_marker=marker, rollback_before_retry=True)
