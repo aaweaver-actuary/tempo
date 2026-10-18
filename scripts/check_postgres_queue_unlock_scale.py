@@ -22,12 +22,12 @@ def proof_graph_scale(database_url: str, *, compare_baseline: bool = False):
         raw.execute('CREATE TEMP TABLE reviews(card_id TEXT,source_kind TEXT,invalidated_at TEXT)')
         raw.execute('CREATE INDEX ON reviews(card_id)')
         raw.execute('CREATE TEMP TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,archived INTEGER)')
-        raw.execute('CREATE TEMP TABLE opening_graph_publications(repertoire_id TEXT PRIMARY KEY,generation BIGINT)')
+        raw.execute("CREATE TEMP TABLE opening_graph_publications(repertoire_id TEXT PRIMARY KEY,generation BIGINT,state TEXT NOT NULL CHECK(state IN ('ready','building')))")
         raw.execute('CREATE TEMP TABLE opening_graph_steps(repertoire_id TEXT,generation BIGINT,card_id TEXT,parent_card_id TEXT)')
         raw.execute("INSERT INTO cards SELECT 'locked-'||lpad(n::text,6,'0'),'opening','locked',0 FROM generate_series(0,99999) n")
         raw.execute("INSERT INTO cards VALUES('learning-parent','opening','learning',0),('practiced-parent','opening','learning',0),('mature-parent','opening','mature',0)")
         raw.execute("INSERT INTO reviews VALUES('practiced-parent','study',NULL)")
-        raw.execute("INSERT INTO opening_graph_publications VALUES('current',2)")
+        raw.execute("INSERT INTO opening_graph_publications VALUES('current',2,'ready')")
         raw.execute("INSERT INTO opening_graph_steps SELECT 'current',2,'locked-'||lpad((n%100000)::text,6,'0'),'learning-parent' FROM generate_series(0,799999) n")
         raw.execute("INSERT INTO opening_graph_steps SELECT 'current',1,'locked-'||lpad(n::text,6,'0'),NULL FROM generate_series(0,99999) n")
         raw.execute("INSERT INTO opening_graph_steps SELECT 'current',2,'locked-'||lpad(n::text,6,'0'),NULL FROM generate_series(99979,99998) n")
@@ -62,7 +62,10 @@ def proof_graph_scale(database_url: str, *, compare_baseline: bool = False):
             durations.append(time.perf_counter()-started)
         unlocked = [row[0] for row in raw.execute("SELECT id FROM cards WHERE state='new' ORDER BY id")]
         assert unlocked == [f'locked-{number:06}' for number in range(99979,100000)]
-        assert len(durations) == 3, durations
+        # The bounded selector examines sixteen locked cards per page and writes
+        # eight at most. The final sixteen eligible cards need one extra page;
+        # unlike the retired sparse selector, ineligible pages are progress.
+        assert len(durations) == 6251, len(durations)
         measurements.update(fixture_cards=100000,fixture_graph_steps=900021,
                             slice_count=len(durations),maximum_slice_seconds=max(durations))
         print('PASS test_postgres_daily_queue_large_graph_unlock_meets_transaction_budget '+json.dumps(measurements))

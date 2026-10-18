@@ -8,6 +8,8 @@ import uuid
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from postgres_rehearsal_admission import admitted_call
 import chess
 from fastapi import HTTPException
 from app import postgres_store, coverage_maia_commands
@@ -43,7 +45,7 @@ def claim_owned(kind, deduplication_key):
         stored = database.execute('SELECT state FROM background_tasks WHERE kind=? AND deduplication_key=?', (kind, deduplication_key)).fetchone()
     if stored is None or stored[0] in {'complete','failed','superseded'}:
         return None
-    task = claim_task(kind)
+    task = admitted_call(claim_task, kind)
     assert task and task['deduplication_key'] == deduplication_key, (kind, deduplication_key, task)
     return task
 
@@ -55,7 +57,7 @@ def run_bounded_task_slices(kind, repertoire_id, handler):
         if task is None:
             return phases
         phases.add(task['phase'])
-        handler(task)
+        admitted_call(handler, task)
         # Closing every pool simulates a fresh process between durable slices.
         postgres_store.close_pools()
     raise AssertionError(f'{kind} failed to finish its bounded fixture')
@@ -302,11 +304,11 @@ def prove_generated_split_boundary(card_source=0):
             assert claimed is not None
             if claimed['phase'] == 'cleanup':
                 break
-            execute_postgres_opening_graph_slice(claimed)
+            admitted_call(execute_postgres_opening_graph_slice, claimed)
             postgres_store.close_pools()
         else:
             raise AssertionError('Graph fixture never reached its cleanup slice')
-        candidates = prepare_obsolete_graph_cards(identifier, claimed['generation'], probe_id[:-1])
+        candidates = admitted_call(prepare_obsolete_graph_cards, identifier, claimed['generation'], probe_id[:-1])
         assert probe_id in candidates.obsolete_card_ids, candidates
         with postgres_store.connection() as database:
             database.execute('UPDATE repertoire_cards SET canonical_route_source=1 WHERE repertoire_id=? AND card_id=?', (identifier, probe_id))
@@ -1084,7 +1086,7 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
         # A node without gaps can be visited first; walk until the calculation changes the version.
         before_race = prefix_metadata(repertoire_id)['source_revision']
         for _ in range(8):
-            opportunities.execute_opportunity_slice(task)
+            admitted_call(opportunities.execute_opportunity_slice, task)
             if prefix_metadata(repertoire_id)['source_revision'] != before_race:
                 break
             task = claim_owned('repertoire_opportunity',repertoire_id)
@@ -1098,7 +1100,7 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
         for _ in range(30):
             task = claim_owned('repertoire_opportunity',repertoire_id)
             assert task is not None
-            opportunities.execute_opportunity_slice(task)
+            admitted_call(opportunities.execute_opportunity_slice, task)
             with postgres_store.connection(read_only=True) as database:
                 if opportunities.list_opportunities(database,repertoire_id): break
         else: raise AssertionError('Current opportunity never published after recertification')

@@ -3,6 +3,8 @@ import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, stud
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
 import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../lib/study-intent-storage";
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
+import { useStudyPriority } from "../hooks/use-study-priority";
+import { studyInteractionActive } from "../lib/study-priority";
 import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
 import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
 import { PendingOperationError } from "../lib/operation-status";
@@ -30,7 +32,6 @@ import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from
 import {
   invalidateWorkspaceData,
   preloadView,
-  readWorkspaceData,
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
@@ -48,7 +49,6 @@ import {
   View,
   BuilderSession,
   LocalRepertoire,
-  AnalysisLine,
   CardId,
   asRepertoireId,
   asFenString,
@@ -132,24 +132,6 @@ export default function Home() { return <Suspense fallback={<p role="status">Loa
 function StudyComposition() {
   const studyOnlyMode = useStudyOnlyMode();
   useEffect(() => prepareMoveSounds(), []);
-  useEffect(() => {
-    if (!usesLocalApi() || independentStudy) return;
-    let lastSentAt = 0;
-    const markActivity = () => {
-      if (Date.now() - lastSentAt < 1_000) return;
-      lastSentAt = Date.now();
-      void fetch(`${API_URL}/api/system/browser-activity`, {
-        method: "POST",
-        headers: { "X-Tempo-Work-Class": "background" },
-      }).catch(() => undefined);
-    };
-    window.addEventListener("pointerdown", markActivity, true);
-    window.addEventListener("keydown", markActivity, true);
-    return () => {
-      window.removeEventListener("pointerdown", markActivity, true);
-      window.removeEventListener("keydown", markActivity, true);
-    };
-  }, []);
   const [currentView, setCurrentView] = useState<View>("train");
   const [comparisonLaunch, setComparisonLaunch] = useState<ComparisonLaunch>();
   const [comparisonOpenError, setComparisonOpenError] = useState("");
@@ -206,6 +188,7 @@ function StudyComposition() {
     | "refreshingQueue"
     | "queueFailed"
   >("idle");
+  useStudyPriority(currentView === "train", studyOnlyMode, ["saving","pendingConfirmation","refreshingQueue"].includes(reviewPersistenceState));
   const [reviewPersistenceIdentity, setReviewPersistenceIdentity] = useState<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId">>();
   const [queueReconciliationError, setQueueReconciliationError] = useState("");
   const reviewSaveDiagnosticIdentity = useRef<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId"> | undefined>(undefined);
@@ -373,7 +356,7 @@ function StudyComposition() {
   );
   const activeQueueEntry = useRef<number | undefined>(undefined);
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
-  const openingJournal = useCommittedCallback(() => beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
+  const openingJournal = useCommittedCallback(() => card.kind !== "opening" ? undefined : beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
     { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone }));
   const observeAssistance = useCommittedCallback((moveOffset: number, kind: AssistanceKind) => {
     openingJournal()?.assistance(moveOffset, kind);
@@ -480,6 +463,7 @@ function StudyComposition() {
     const notice = progressionNotification.current;
     const controller = progressionController.current;
     if (!expectedAttempt) return;
+    const finishReconciliation = measureTempoOperation("queue-reconciliation");
     const stillPrepared = () => preparedProgressionAttempt.current === expectedAttempt &&
       progressionController.current === controller && !controller?.signal.aborted &&
       useTrainingStore.getState().attempt.attemptId === expectedAttempt.attemptId &&
@@ -499,6 +483,8 @@ function StudyComposition() {
           reconciliationAttemptId: expectedAttempt.attemptId ?? "unknown", phase: "prepared reconciliation requires recovery", error: String(error) },
         message: "Result saved. The prepared card is ready; retry loading the queue to reconcile upcoming cards." });
       setQueueReconciliationError("Queue reconciliation is waiting. You can finish the prepared card.");
+    } finally {
+      finishReconciliation();
     }
   });
   const progressConfirmedReview = useCommittedCallback(async (completedCard: PracticeCard, attemptId: string,
@@ -705,19 +691,16 @@ function StudyComposition() {
       const isCurrent = () => active && generation === repertoirePositionGeneration.current;
       repertoireAlternativeSnapshot.current = null;
       invalidateWorkspaceData(`${API_URL}/api/repertoire/lines`);
-      void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
-        .then(async (body) => {
-          if (!isCurrent()) return;
-          const lines = await runStudyTask<AnalysisLine[]>({
-            kind: "transportLines",
-            payload: body,
-          }, controller.signal);
+      void fetch(`${API_URL}/api/repertoire/lines`, {
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+        headers: { "X-Tempo-Work-Class": "background" },
+      }).then(async response => {
+          if (!response.ok) throw new Error(`Could not load repertoire lines (HTTP ${response.status}).`);
+          const payload = await response.text();
           if (!isCurrent()) return;
           const indexedPositions = await runStudyTask<RepertoireAlternativeSnapshot>({
-            kind: "repertoireAlternatives",
-            generation,
-            lines,
-          }, controller.signal);
+            kind: "repertoirePreparation", generation, payload,
+          }, controller.signal, isCurrent);
           if (isCurrent()) {
             if (indexedPositions.generation !== generation)
               throw new Error("Repertoire lines have an obsolete generation. Retry loading lines.");
@@ -1070,11 +1053,12 @@ function StudyComposition() {
       return;
     }
     if (move.san !== card.moves[step]) {
-      let indexedAlternative = usesLocalApi()
+      let indexedAlternative = card.kind !== "opening" ? false : usesLocalApi()
         ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
             card.repertoireId, currentFenString, responseUci)
         : undefined;
-      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && (independentStudy || studyOnlyMode === true) && card.repertoireId) {
+      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined &&
+          (independentStudy || studyOnlyMode === true || studyInteractionActive()) && card.repertoireId && card.kind === "opening") {
         const verification = new AbortController();
         pendingMoveVerification.current = verification;
         const capturedAttempt = useTrainingStore.getState().attempt;

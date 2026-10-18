@@ -9,7 +9,7 @@ import { verifyPilotSource, verifyPilotResults, pilotLedger } from "../../../scr
 import type { BrowserContext, Route } from "@playwright/test";
 import { chromium } from "@playwright/test";
 import { ControlledApi, finishControlledContext } from "../strict-api";
-import { matchesContract, validateReview, receiptResponse } from "../contracts";
+import { browserActivityQuery, matchesContract, validateReview, receiptResponse } from "../contracts";
 import { tacticalCatalogSchema } from "../../../app/lib/tactical-catalog";
 import { backgroundDiagnosticsSchema } from "../../../app/domain/schemas/background-diagnostics";
 import { queueEnvelopeSchema, queueCardSchema, settingsResponseSchema, repertoiresResponseSchema,
@@ -163,4 +163,16 @@ it("controlled_browser_context_teardown_fences_native_polling_before_releasing_i
   };
   await finishControlledContext(context, api);
   expect(host.apiEscapes).toEqual([]);
+});
+
+it("study_priority_controlled_activity_contract_accepts_one_valid_session_and_rejects_unknown_or_duplicate_fields",()=>{
+  const contract={method:"POST",path:"/api/system/browser-activity",query:browserActivityQuery};
+  const request={method:"POST",url:"http://127.0.0.1:1234/api/system/browser-activity?session_id=tab-one&expires_in_ms=3000",headers:{},body:null};
+  expect(matchesContract(contract,request,"http://127.0.0.1:1234")).toBe(true);
+  for (const duration of ["1", "500", "2999"])
+    expect(matchesContract(contract,{...request,url:request.url.replace("expires_in_ms=3000","expires_in_ms="+duration)},"http://127.0.0.1:1234")).toBe(true);
+  for (const duration of ["0", "3001", "01", "NaN", "1.5"])
+    expect(matchesContract(contract,{...request,url:request.url.replace("expires_in_ms=3000","expires_in_ms="+duration)},"http://127.0.0.1:1234")).toBe(false);
+  for(const suffix of ["&extra=1","&session_id=tab-two","&expires_in_ms=1","%20bad"])
+    expect(matchesContract(contract,{...request,url:request.url+suffix},"http://127.0.0.1:1234")).toBe(false);
 });

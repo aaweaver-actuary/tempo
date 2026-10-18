@@ -12,6 +12,8 @@ from threading import Barrier, Event
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from postgres_rehearsal_admission import admitted_call
 import chess
 from app import database as application_database, postgres_store
 from app.canonical_prefix_api import save_prefix
@@ -88,6 +90,7 @@ class RetentionMeasurements:
         self.service_module = service_module
         self.on_scope_lock = on_scope_lock
         self.slices = []
+        self.admission_deferrals = []
 
     @contextmanager
     def capture(self):
@@ -148,20 +151,28 @@ class RetentionMeasurements:
             with patch.object(self.service_module, 'connection', measured_connection):
                 yield measurement
             measurement['outcome'] = 'committed'
+        except redis_admission_gate.BackgroundAdmissionDeferred:
+            measurement['outcome'] = 'admission_deferred'
+            raise
         except Exception:
             measurement['outcome'] = 'rolled_back'
             raise
         finally:
-            self.slices.append(measurement)
+            # Keep every denied attempt as raw evidence without counting it as
+            # an admitted cleanup slice or charging retry waits to SQL timing.
+            destination = self.admission_deferrals if measurement.get('outcome') == 'admission_deferred' else self.slices
+            destination.append(measurement)
 
 
 def run_retention_fixture(fixture, *, maximum_slices=500, measurements=None, restart=False):
     measurements = measurements or RetentionMeasurements(fixture['owner_task_id'])
     for _ in range(maximum_slices):
-        task = claim_task('canonical_prefix_preview')
+        task = admitted_call(claim_task, 'canonical_prefix_preview')
         assert task and task['id'] == fixture['owner_task_id'], task
-        with measurements.capture():
-            assert previews.execute_prefix_preview_slice(task)
+        def measured_slice():
+            with measurements.capture():
+                assert previews.execute_prefix_preview_slice(task)
+        admitted_call(measured_slice)
         with application_database.read_connection() as database:
             state = database.execute('SELECT state FROM background_tasks WHERE id=?', (task['id'],)).fetchone()[0]
         if state == 'complete':
@@ -207,7 +218,7 @@ def _prove_foreground_overlap(fixture, service_module):
     announced_pid = Queue()
     futures = []
     latency = []
-    owner = claim_task('canonical_prefix_preview')
+    owner = admitted_call(claim_task, 'canonical_prefix_preview')
 
     def request_in_foreground():
         with redis_admission_gate.foreground_lease(), application_database.connection() as database:
@@ -232,18 +243,21 @@ def _prove_foreground_overlap(fixture, service_module):
 
     measurements = RetentionMeasurements(owner['id'], service_module=service_module, on_scope_lock=on_scope_lock)
     try:
-        with measurements.capture():
-            assert previews.execute_prefix_preview_slice(owner)
+        def measured_slice():
+            with measurements.capture():
+                assert previews.execute_prefix_preview_slice(owner)
+        admitted_call(measured_slice)
         assert futures[0].result(timeout=2)['preview_id']
         assert latency[0] < 0.25, latency
-        return {'foreground_preview_seconds': latency[0], 'retention': measurements.slices[0]}
+        return {'foreground_preview_seconds': latency[0], 'retention': measurements.slices[0],
+                'admission_deferrals': measurements.admission_deferrals}
     finally:
         executor.shutdown(wait=True)
 
 
 def _prove_postgres_contention_restart_replay(fixture):
     from psycopg.errors import LockNotAvailable
-    task = claim_task('canonical_prefix_preview')
+    task = admitted_call(claim_task, 'canonical_prefix_preview')
     with application_database.read_connection() as database:
         original_positions = database.execute('SELECT COUNT(*) FROM canonical_prefix_positions').fetchone()[0]
     with redis_admission_gate.foreground_lease():
@@ -255,7 +269,7 @@ def _prove_postgres_contention_restart_replay(fixture):
             raise AssertionError('Retention ignored foreground admission')
     with postgres_store.connection() as foreground, ThreadPoolExecutor(max_workers=1) as executor:
         read_prefix(foreground, fixture['repertoire_id'], lock=True)
-        future = executor.submit(previews.execute_prefix_preview_slice, task)
+        future = executor.submit(admitted_call, previews.execute_prefix_preview_slice, task)
         try:
             future.result(timeout=2)
         except LockNotAvailable:
@@ -279,22 +293,22 @@ def _prove_postgres_contention_restart_replay(fixture):
 
     with patch.object(previews, 'advance_task_slice_in_transaction', fail_checkpoint):
         try:
-            previews.execute_prefix_preview_slice(task)
+            admitted_call(previews.execute_prefix_preview_slice, task)
         except RuntimeError as error:
             assert 'checkpoint interruption' in str(error), error
         else:
             raise AssertionError('Controlled checkpoint interruption did not run')
     assert cleanup_state() == before_checkpoint
-    assert previews.execute_prefix_preview_slice(task)
+    assert admitted_call(previews.execute_prefix_preview_slice, task)
     with application_database.read_connection() as database:
         after_batch_positions = database.execute('SELECT COUNT(*) FROM canonical_prefix_positions').fetchone()[0]
-    assert not previews.execute_prefix_preview_slice(task)
-    interrupted = claim_task('canonical_prefix_preview')
+    assert not admitted_call(previews.execute_prefix_preview_slice, task)
+    interrupted = admitted_call(claim_task, 'canonical_prefix_preview')
     with application_database.connection() as database:
         database.execute("UPDATE background_tasks SET lease_expires_at='2000-01-01' WHERE id=?", (interrupted['id'],))
     postgres_store.close_pools()
     requeue_interrupted_tasks()
-    assert not previews.execute_prefix_preview_slice(interrupted)
+    assert not admitted_call(previews.execute_prefix_preview_slice, interrupted)
     with application_database.read_connection() as database:
         assert database.execute('SELECT COUNT(*) FROM canonical_prefix_positions').fetchone()[0] == after_batch_positions
     run_retention_fixture(fixture, maximum_slices=2, restart=True)
@@ -302,7 +316,7 @@ def _prove_postgres_contention_restart_replay(fixture):
 
 
 def _prove_postgres_activation_race(fixture):
-    task = claim_task('canonical_prefix_preview')
+    task = admitted_call(claim_task, 'canonical_prefix_preview')
     activated_id = fixture['obsolete_ids'][0]
     original_read = previews.background_read_connection
 
@@ -315,7 +329,7 @@ def _prove_postgres_activation_race(fixture):
             save_prefix(database, {'repertoire_id': fixture['repertoire_id'], 'request': {
                 'preview_id': activated_id, 'expected_revision': 1}})
     with patch.object(previews, 'background_read_connection', activate_after_preparation):
-        assert previews.execute_prefix_preview_slice(task)
+        assert admitted_call(previews.execute_prefix_preview_slice, task)
     run_retention_fixture(fixture, maximum_slices=3, restart=True)
     expected_ids = fixture['retained_ids'] - {fixture['active_id']} | {activated_id}
     _assert_postgres_survivors(fixture, expected_ids)
@@ -323,10 +337,10 @@ def _prove_postgres_activation_race(fixture):
 
 def _prove_postgres_concurrent_retention(fixture):
     from psycopg.errors import LockNotAvailable
-    first = claim_task('canonical_prefix_preview')
+    first = admitted_call(claim_task, 'canonical_prefix_preview')
     with application_database.connection() as database:
         database.execute('UPDATE background_tasks SET priority=-2000 WHERE id=?', (fixture['task_ids'][-2],))
-    second = claim_task('canonical_prefix_preview')
+    second = admitted_call(claim_task, 'canonical_prefix_preview')
     assert second['id'] == fixture['task_ids'][-2]
     prepared = Barrier(2)
     first_prepared = Event()
@@ -360,14 +374,14 @@ def _prove_postgres_concurrent_retention(fixture):
                                      (fixture['repertoire_id'],)).fetchone()[0]
         if count == 9:
             break
-        task = claim_task('canonical_prefix_preview')
+        task = admitted_call(claim_task, 'canonical_prefix_preview')
         assert task
-        assert previews.execute_prefix_preview_slice(task)
+        assert admitted_call(previews.execute_prefix_preview_slice, task)
     else:
         raise AssertionError('Concurrent retention did not converge')
     _assert_postgres_survivors(fixture)
-    assert not previews.execute_prefix_preview_slice(first)
-    assert not previews.execute_prefix_preview_slice(second)
+    assert not admitted_call(previews.execute_prefix_preview_slice, first)
+    assert not admitted_call(previews.execute_prefix_preview_slice, second)
 
 
 def prove_canonical_retention(*, mode='candidate', service_module=previews):
@@ -382,6 +396,7 @@ def prove_canonical_retention(*, mode='candidate', service_module=previews):
         run_retention_fixture(fixture, measurements=measurements)
         report['direct_convergence_seconds'] = perf_counter() - started_at
         report['slices'] = measurements.slices
+        report['admission_deferrals'] = measurements.admission_deferrals
         report['slice_count'] = len(measurements.slices)
         report['cleanup_rows'] = sum(item['cleanup_rows'] for item in measurements.slices)
         _assert_postgres_survivors(fixture)

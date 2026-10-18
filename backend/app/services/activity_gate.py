@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from contextlib import nullcontext, ExitStack
 from contextvars import ContextVar
 import threading
@@ -36,12 +36,30 @@ class ApplicationActivityGate:
         self._background_work: tuple[str, str] | None = None
         self._browser_active_until = 0.0
 
-    def record_browser_activity(self, seconds: float = 3.0) -> None:
+    def record_browser_activity(self, seconds: float = 3.0, *, session_id: str = 'legacy') -> None:
         if redis_admission_gate.configured():
-            redis_admission_gate.record_browser_activity(seconds)
+            redis_admission_gate.record_browser_activity(seconds, session_id=session_id)
         with self._condition:
             self._browser_active_until = max(self._browser_active_until, time.monotonic() + seconds)
             self._condition.notify_all()
+
+    @asynccontextmanager
+    async def async_foreground(self):
+        token = _work_class.set('foreground')
+        with self._condition:
+            self._foreground_requests += 1
+            self._condition.notify_all()
+        try:
+            if redis_admission_gate.configured():
+                async with redis_admission_gate.async_foreground_lease():
+                    yield
+            else:
+                yield
+        finally:
+            with self._condition:
+                self._foreground_requests -= 1
+                self._condition.notify_all()
+            _work_class.reset(token)
 
     @contextmanager
     def foreground(self):

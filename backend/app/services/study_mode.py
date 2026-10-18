@@ -21,6 +21,13 @@ STUDY_BACKGROUND_COMMANDS = frozenset({
 
 def study_only_enabled(database=None) -> bool:
     if database is None:
+        from . import redis_admission_gate
+        if activity_gate.in_background and redis_admission_gate.configured():
+            from .study_priority import control_snapshot
+            policy = control_snapshot()
+            # Missing control pauses optional admissions. The existing essential
+            # daily-queue and durable callback allowlists remain authoritative.
+            return policy['available'] is not True or policy['study_only_mode'] is not False
         reader = background_read_connection if activity_gate.in_background else read_connection
         with (activity_gate.background_control() if activity_gate.in_background else nullcontext()), reader() as settings_database:
             return study_only_enabled(settings_database)

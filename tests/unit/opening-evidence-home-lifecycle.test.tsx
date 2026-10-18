@@ -7,6 +7,7 @@ import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import * as journal from "../../app/lib/opening-evidence-journal";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
+import { waitForStudyIdle } from "../../app/lib/study-priority";
 import manifest from "../fixtures/opening-evidence-manifest.json";
 
 vi.mock("../../app/views/fetchAndInitializeQueue", async importOriginal => ({
@@ -46,6 +47,7 @@ it("AS-15 opening evidence recovery waits for foreground startup readiness", asy
     useTrainingStore.setState({ queueReadiness: "ready" }); finishQueue();
   });
   expect(recover).not.toHaveBeenCalled();
+  await act(async () => { await waitForStudyIdle(); });
   expect(idleCallbacks.size).toBe(1);
   await act(async () => { [...idleCallbacks.values()][0]({ didTimeout: false, timeRemaining: () => 50 }); });
   expect(recover).toHaveBeenCalledOnce();
@@ -70,6 +72,7 @@ it("AS-15 recovery cancels idle work during foreground transitions and after unm
   act(() => { window.dispatchEvent(new Event("online")); window.dispatchEvent(new Event("online")); });
   expect(idleCallbacks.size).toBe(0);
   act(() => useTrainingStore.getState().setAttemptPhase("playerTurn"));
+  await act(async () => { await waitForStudyIdle(); });
   expect(idleCallbacks.size).toBe(1);
   mounted.unmount();
   expect(idleCallbacks.size).toBe(0);

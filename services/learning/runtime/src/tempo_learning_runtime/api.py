@@ -40,6 +40,7 @@ from .endgames import generate_position, category_for_player
 from .receivers import receive
 from .receivers import EvidenceDelivery
 from . import study_bootstrap, teaching_commands
+from .host_activity import HostActivity
 from . import publication_bridge
 
 
@@ -127,10 +128,12 @@ def register_handlers():
 def create_app(configuration: Configuration):
     register_handlers()
     database = Database(configuration)
+    activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
     @asynccontextmanager
     async def lifespan(app):
         stopping = asyncio.Event()
+        await asyncio.to_thread(activity.start)
 
         async def maintain():
             while not stopping.is_set():
@@ -148,10 +151,26 @@ def create_app(configuration: Configuration):
             stopping.set()
             if task:
                 await task
-            database.close()
+            try:
+                await asyncio.to_thread(activity.close)
+            finally:
+                database.close()
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
     app.state.database = database
+    app.state.host_activity = activity
+
+    @asynccontextmanager
+    async def request_activity():
+        context = activity.request()
+        entering = asyncio.create_task(asyncio.to_thread(context.__enter__))
+        try:
+            await asyncio.shield(entering)
+            yield
+        finally:
+            # Cancellation cannot abandon a file/lock operation still entering in a thread.
+            await entering
+            await asyncio.shield(asyncio.to_thread(context.__exit__, None, None, None))
 
     @app.middleware("http")
     async def authority(request: Request, call_next):
@@ -196,7 +215,13 @@ def create_app(configuration: Configuration):
                     if len(body)>publication_bridge.MAX_BUNDLE_BYTES:
                         return JSONResponse(status_code=413,content={'detail':'Publication bundle exceeds 12 MiB'})
                 request._body=bytes(body)
+        # Optional host reporting stays outside the durable transaction owner.
+        # A pending essential request remains protected even if its browser is suspended.
+        essential = request.url.path.startswith("/api/") and request.url.path != "/api/study/activity" and request.method != "OPTIONS"
         with database.scope():
+            if essential:
+                async with request_activity():
+                    return await call_next(request)
             return await call_next(request)
 
     # Host validation covers preflight too; CORS must wrap authority failures so
@@ -245,6 +270,15 @@ def create_app(configuration: Configuration):
     @app.get("/health/live")
     def live():
         return {"status": "alive"}
+
+    @app.post("/api/study/activity")
+    async def study_activity(session_id: str = Query(pattern=r"^[A-Za-z0-9_-]{1,80}$"),
+                             expires_in_ms: int = Query(default=3000, ge=1, le=3000)):
+        try:
+            await asyncio.to_thread(activity.record, session_id, expires_in_ms)
+        except (OSError, RuntimeError):
+            return JSONResponse(status_code=503, content={"available": False})
+        return {"available": True, "expires_in_ms": expires_in_ms}
 
     @app.get("/health/ready")
     def ready():

@@ -35,6 +35,10 @@ These preserve frontend/integration build ordering and runner independence witho
 browser dependencies, reject missing/empty/duplicate/stale registrations, and prove
 lazy browser dispatch completes or exits nonzero on import/execution failure.
 
+`registered Stockfish container qualification acquires Docker admission while listing remains lightweight` owns explicit `requiresDocker` suite admission. The registered Stockfish suite retains its Node reporter and receives the shared managed Docker adapter and cleanup verification.
+
+`standalone Learning suite retains its native owner without the legacy dependency graph` proves the registered `learning` suite is exactly the component’s native owner. This permits its broker-free installed runtime to execute independently of legacy backend assembly tests; the owning command and inputs may not drift.
+
 ## Affected-input selector core (#202)
 
 `tests/affected.test.mjs` owns the `A202-*` regressions. It is discovered recursively

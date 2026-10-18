@@ -16,7 +16,7 @@ import os
 import socket
 import time
 
-# Opt-in spans extend the existing diagnostics; they never write application data.
+# Bounded spans extend existing diagnostics; disable explicitly for paired probes.
 _training_timing: ContextVar[dict | None] = ContextVar("training_timing", default=None)
 
 
@@ -32,13 +32,13 @@ def _training_latency_logger():
 
 @contextmanager
 def measure_training_timing(label: str, identity: str = ""):
-    if os.getenv("TEMPO_TRAINING_TIMINGS") != "1":
+    if os.getenv("TEMPO_TRAINING_TIMINGS", '1') != "1":
         yield None
         return
     started = time.perf_counter()
     measurement = {"label": label, "trace": hashlib.sha256(identity.encode()).hexdigest()[:16],
                    "started_epoch_ms": time.time() * 1000, "stages_ms": {}, "connections": [],
-                   "sql_count": 0, "sql_ms": 0.0}
+                   "sql_count": 0, "sql_ms": 0.0, 'slow_sql': []}
     token = _training_timing.set(measurement)
     try:
         yield measurement
@@ -240,3 +240,31 @@ def reserved_database_telemetry():
         yield
     finally:
         _reserved_database_depth.reset(token)
+
+
+class StudyResponseTiming:
+    """Measure response-body delivery independently of the handler/SQL spans."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get('path', '')
+        if (scope['type'] != 'http' or os.getenv('TEMPO_TRAINING_TIMINGS', '1') != '1'
+                or not (path.startswith('/api/queue/') or path.endswith('/review'))):
+            return await self.app(scope, receive, send)
+        started = time.perf_counter()
+        headers_started = None
+        identity = next((value for name,value in scope.get('headers', []) if name.lower() == b'idempotency-key'), b'')
+        async def measured_send(message):
+            nonlocal headers_started
+            if message['type'] == 'http.response.start':
+                headers_started = time.perf_counter()
+            await send(message)
+            if message['type'] == 'http.response.body' and not message.get('more_body', False):
+                ended = time.perf_counter()
+                _training_latency_logger().info('study_response_timing %s', json.dumps({
+                    'trace': hashlib.sha256(identity).hexdigest()[:16],
+                    'request_through_delivery_ms': (ended-started)*1000,
+                    'response_delivery_ms': (ended-(headers_started or started))*1000,
+                }))
+        await self.app(scope, receive, measured_send)

@@ -16,7 +16,7 @@ export type NotificationRecord = {
 };
 
 export type NotificationInput = Pick<NotificationRecord, "severity" | "source" | "message"> &
-  Partial<Pick<NotificationRecord, "key" | "active" | "details">>;
+  Partial<Pick<NotificationRecord, "key" | "active" | "details">> & { coalesceResolved?: boolean };
 
 export type NotificationGroup = { key: string; record: NotificationRecord; occurrenceCount: number };
 export type NotificationToast = { id: string; groupKey: string };
@@ -199,10 +199,18 @@ export function publishNotification(input: NotificationInput): string {
   hydrateNotifications();
   const message = sanitizeNotificationText(input.message);
   const key = safeKey(input.key);
-  const existing = key && history.find((record) => record.key === key && !record.resolvedAt);
+  let existing = key && history.find((record) => record.key === key &&
+    (!record.resolvedAt || input.coalesceResolved && input.severity === "info"));
+  const reopened = Boolean(existing && existing.resolvedAt);
+  if (existing && existing.resolvedAt) {
+    existing = { ...existing, resolvedAt: null, clearedAt: null, occurrenceCount: (existing.occurrenceCount ?? 1) + 1,
+      details: { ...existing.details, lastResolvedAt: existing.resolvedAt } };
+    const reopenedRecord = existing;
+    history = history.map(record => record.id === reopenedRecord.id ? reopenedRecord : record);
+  }
   if (existing && existing.message === message && existing.severity === input.severity) {
     const previousHistory = history;
-    const observed = { ...existing, occurrenceCount: (existing.occurrenceCount ?? 1) + 1,
+    const observed = { ...existing, occurrenceCount: (existing.occurrenceCount ?? 1) + (reopened ? 0 : 1),
       source: sanitizeNotificationText(input.source),
       updatedAt: new Date().toISOString(), details: safeDetails(input.details) ?? existing.details };
     if (notificationContentChanged(existing, observed)) observed.clearedAt = null;
@@ -242,9 +250,11 @@ function changeNotification(id: string, changes: Partial<NotificationInput>, res
   if (!existing) return;
   const now = new Date().toISOString();
   const previousHistory = history;
+  const recordChanges = { ...changes };
+  delete recordChanges.coalesceResolved;
   const updated: NotificationRecord = {
     ...existing,
-    ...changes,
+    ...recordChanges,
     key: changes.key === undefined ? existing.key : safeKey(changes.key),
     message: changes.message === undefined ? existing.message : sanitizeNotificationText(changes.message),
     source: changes.source === undefined ? existing.source : sanitizeNotificationText(changes.source),
@@ -311,6 +321,9 @@ export function buildNotificationExport(threshold: "info" | "warning" | "error")
     severityThreshold: threshold,
     retainedRecordCount: history.length,
     notificationCount: selected.length,
+    unresolvedFailureCount: selected.filter(record => !record.resolvedAt &&
+      (record.severity === 'warning' || record.severity === 'error')).length,
+    resolvedRecordCount: selected.filter(record => Boolean(record.resolvedAt)).length,
     notifications: selected,
   }, null, 2);
 }

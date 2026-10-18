@@ -15,7 +15,7 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
     if (!job) {
       const available = await request("/api/system/foreground-active");
       if (available.study_only_mode) { engineWaitingStage("engine", "study_only_mode"); await sleep(5_000); return; }
-      if (available.active) { engineWaitingStage("engine", "foreground_admission"); await sleep(2_000); return; }
+      if (available.available === false || available.active !== false) { engineWaitingStage("engine", "foreground_admission"); await sleep(2_000); return; }
       if (!defenseClaimUnresolved) {
         try {
           const selection = await request("/api/defensive-threats/analysis/claim", { method: "POST" });

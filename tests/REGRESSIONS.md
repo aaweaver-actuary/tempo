@@ -1,3 +1,59 @@
+## Study Priority v1 diagnostic native allocation
+
+- `tests/runner/postgres-test-speedups.test.mjs` owns `study_priority_diagnostic_native_allocation_retains_essential_clients_and_original_read_deadline`: the original segmentation replay and 50 ms read assertions remain unchanged. A 0.95 CPU / 1,024 MiB helper plus PostgreSQL, Redis, API, foreground writer and web totals exactly 2 CPU / 1,888 MiB. Actual generated Python checks CPU and memory limits before running the unchanged proof; an extra allocation or active Maia must fail admission.
+- `study_priority_background_isolation_stops_maia_and_restores_it_after_api_readiness` retains all four optional consumers, keeps API/writer/web available, and restores both inference workers only after API readiness. The existing scheduler-isolation proof now checks the exact four-consumer set.
+- `study_priority_profile_selection_cannot_understate_diagnostic_native_caps` binds each Docker profile to its actual requested allocation and rejects conflicting profiles. The existing sibling-import/cgroup regression checks both native profiles and rejects wrong CPU or memory limits before entry.
+
+## Study Priority v1 development resource repairs
+
+- `tests/runner/development-budget.test.mjs`: A1–A11 cover journal-before-create,
+  ambiguous creation/removal, verified absence, retained cleanup ownership,
+  independent owners, ownership mismatch, interrupted owners, preparation errors
+  and exclusive builder lanes under inherited ownership.
+- B cases in the same regular suite cover independent host sessions, stale or
+  malformed expected control, pending requests, explicit service absence and
+  refused legacy control. A local CI flag cannot bypass protected activity.
+- The actual rootless RUN cgroup proof and a real post-create disconnection
+  rehearsal retain kernel limits, exact identities and verified resource absence.
+
+## Study Priority v1 browser and inference repairs
+
+- `tests/runner/inference-priority.test.mjs`: C1–C15 cover normal completion,
+  delayed/missing exit, failed termination, quarantine, late results, control
+  failure, active/idle child failure, admission/probe races and immutable release retries.
+  C15 preserves the original preemption or process failure when an IPC error
+  arrives during verified termination.
+  Existing real inference cases retain requested depth/full legal output.
+- `tests/unit/study-interaction-priority.test.ts`: B remaining-quiet-time pulses
+  prevent renewal from extending the server pause beyond three seconds.
+- `tests/unit/study-learning-connection-regressions.test.ts`: B optional reporting
+  preserves authentication/authority boundaries; delayed success, rejection and
+  synchronous transport errors retain and release essential request holds.
+- `tests/unit/maia-coverage-client-regressions.test.ts`: C uncertain delivery
+  remains pending under its original operation identity, never a model failure.
+  `C interrupted successful response body retains the immutable operation instead of reporting model failure` uses an actual failed response stream after HTTP 200; body consumption stays inside pending-delivery classification, preserving the accepted command identity.
+
+## Study Priority v1 bounded sparse-unlock proof
+
+- `backend/tests/test_study_priority_maintenance.py::test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding_rejected_pages` owns the PostgreSQL proof's replacement for the retired three-total-page assumption. With the unchanged 15,000 locked / 21 eligible fixture, the actual selector advances through 939 pages, including 936 rejected pages, examines at most sixteen candidates per page, and preserves exactly three write batches of eight, eight, and five cards in order. The native proof additionally verifies actual row counts and exact persisted eligibility; background transactions retain the existing 250 ms deadline. SQLite's three-page sparse-selector regression remains unchanged.
+
+## Study Priority v1 host activity producer
+
+- `backend/tests/test_study_priority_maintenance.py::test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounded_write_client` owns native direct Redis fixture setup after window6 timed out on the 50 ms production poll client. Setup and isolated key edits use the existing one-second write client; both actual factory deadlines are asserted unchanged. The original Lua renewal, member expiry, key TTL and native timing assertions remain unchanged.
+- `backend/tests/test_study_priority_control.py::test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_teardown` owns a delayed private refresh whose generation matches its parent's. Teardown deletes the private generation and restores parent keys before the read resumes; publication must retain the originally reserved key identity, leave parent Study-only policy unchanged, and reject the late result. The deterministic probe fails before key capture and passes afterward.
+- `backend/tests/test_study_priority_maintenance.py` owns
+  `test_owned_fixture_database_renews_private_policy_without_touching_parent_control`:
+  private native helper databases renew their own policy and generation keys
+  after parent clients stop. The real publisher retains generation/expiry checks,
+  cleans only the private keys, and leaves the parent policy unchanged. The
+  operation-recovery proof retains its exact attempt and exhaustion assertions.
+- `backend/tests/test_study_priority_control.py` owns
+  `test_study_activity_final_pulse_preserves_remaining_quiet_time`: legacy
+  control retains the remaining quiet lease instead of restarting three seconds.
+- Independent Learning's local `REGRESSIONS.md` owns `test_host_activity.py`:
+  authenticated broker-free host reporting, independent expiry, pending essential
+  operations, optional failures and owned producer cleanup.
+
 ## Independent Study connection (F2)
 
 Post-merge P3: `study-learning-connection-regressions.test.ts` owns P3-U1–U15:
@@ -4613,3 +4669,120 @@ Learning behavior, or full-system qualification.
 - `study-cached-startup-regressions.test.tsx` owns browser-online and browser-offline transport startup, HTTP/auth rejection, invalid cache identity/schema/timezone, unavailable storage and first-connect blocking.
 - `study-authoring-capability-regressions.test.tsx` owns read-only pack selection and command-level capture/deletion rejection before pending-data access, mutation or network. Existing catalog, capture, deletion, endgame, intent, attempt and offline regressions retain their legacy/Workbench assertions.
 - The regular `learning-full-study` native suite owns the browser-online Learning outage, same-context/two-origin recovery (including lost sessionStorage), real settings receipt reconciliation and Study authoring request inventory. Two forwarding origins share one installed Learning database; this is not a multi-database proof.
+
+## Study priority v1 — deployed legacy assembly (#218, #190)
+
+Core owners: `backend/tests/test_study_priority_control.py`,
+`backend/tests/test_study_priority_maintenance.py`, and
+`scripts/check_postgres_study_priority.py`. The native script is invoked by the
+regular PostgreSQL study and schema-migration scenarios; `--list` enumerates its
+six required identities. It proves published-graph candidate bounds and rejected
+cursor progress, a fresh process resuming a persisted fenced checkpoint, due-state
+recovery among 415,000 historical receipts, real review/identical receipt replay,
+prepared succession, database-independent control, multiple device expiry,
+stale-policy denial, and an index-only 49 → 48 → 49 rollback retaining reviews.
+The unit cases also cover setup/closed-connection backoff, generation fencing,
+control polls without database reads and current publication rechecks.
+
+The native unlock path replaces parent-wide discovery with pages of at most 16
+locked cards and at most eight writes per ordinary queue slice. Its update repeats
+ready-publication and practiced-parent eligibility. SQLite's useful sparse
+algorithm and the existing review/evidence/history/receipt transaction owners are
+retained. Original literal SQL fixtures remain a transitional compatibility owner;
+they do not select the retired native parent-wide query.
+
+Browser/inference owners: `tests/unit/study-interaction-priority.test.ts`,
+`study-bulk-priority-regressions.test.ts`, `study-owned-index-priority.test.ts`,
+`maia-interaction-priority.test.ts`, the existing defensive cancellation suite,
+and `tests/runner/inference-priority.test.mjs`. Named cases prove held pointers
+and touch, elapsed-time quiet windows, overlapping operations and independent
+remote leases; termination of confirmed running computation, stale reply fencing,
+retained confirmed indexes after replacement cancellation, filtered comparison
+ownership, serial optional index execution, and real Stockfish/Maia preemption
+followed by unchanged depth/full legal distributions. The Home regression
+`study_priority_non_opening_wrong_move_does_not_request_opening_membership_or_fabricate_evidence`
+keeps tactic grading independent of opening evidence. The notification regression
+`study_priority_routine_recovery_reopens_one_status_record_and_preserves_real_timeout_attention`
+retains genuine failures while coalescing ordinary recovery status.
+`study_priority_opening_membership_remains_essential_while_optional_index_is_paused`
+keeps authoritative alternative-move verification available during interaction.
+
+Real browser owner: `tests/controlled-browser/priority.spec.ts`, registered in the
+controlled inventory. It covers running workers, held dragging, repeated actual
+cancellation, essential queue capacity, useful quiet progress, paired native UI
+input and prepared-next presentation proxies. Existing native phone/recovery
+cases remain registered and unchanged. Dynamic activity sessions have a strict
+owning contract regression in `tests/controlled-browser/unit/controlled-browser-regressions.test.ts`.
+
+Resource owner: `tests/runner/development-budget.test.mjs` and existing runner
+suites. Named regressions cover independent process serialization, cancellation
+without stealing ownership, unavailable/active control deferral, aggregate
+service budgets, rootless build confinement and bounded/labelled component Docker
+invocations. The policy is `config/resource-budgets.json`; ordinary lightweight
+checks and listing do not acquire a heavy-work lease.
+
+`scripts/check-inference-priority-images.mjs` additionally runs actual engine and
+Maia images at their optional-service kernel limits. Stockfish may require the
+hard-stop fallback at its CPU ceiling; the proof retains the 250 ms yield target,
+restarts its owned engine and requires the original requested depth afterward.
+Maia must resume its complete legal distribution with the unchanged model.
+
+Study Priority v1: `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` retains serialized bulk ownership and probes a saved late handler. Invalidated bulk failures stay diagnostic without publishing notifications; current diagnostics and workspace publication remain authoritative. Home lifecycle regressions await the existing three-second quiet period before idle recovery.
+
+`test_frozen_legacy_confirmation_uses_fixture_day` in the complete `scripts/test-frozen-postgres.py` native owner pins the API calendar to the multi-day fixture queue. Confirmed legacy-attempt visibility keeps its original assertion independently of the day qualification runs.
+
+`study_priority_bootstrap_body_resolve_retains_operation_hold_until_authority_settlement`, its `reject` variant, and `study_priority_queue_body_remains_essential_until_queue_installation_settles` keep optional work paused after headers while essential bodies and authority/queue settlement remain pending. Existing #296 classification, timeout, cached recovery and supersession assertions remain unchanged.
+The existing native `test_postgres_priority_unlock_rejected_pages_and_restart` case now forces a real 250 ms PostgreSQL transaction cutoff, verifies the durable checkpoint did not move, and retries a finite number of fresh slices without extending deadlines or changing page/write bounds. Natural deadline aborts remain visible in `checkpoint-retries.jsonl`; exhaustion fails the proof.
+
+`study_priority_read_only_source_evidence` is a named scenario in the regular disposable PostgreSQL durability/full schema stage. It executes all six priority cases with the source mount read-only, writes to an invocation-owned evidence bind mount, then verifies the complete host receipt and records the assembly revision. No source writability or assertion is relaxed.
+The complete native frozen-order proof reads the authoritative schema version and pins legacy confirmation to its fixture queue date (`test_frozen_legacy_confirmation_uses_fixture_day`). The 361-card capture, 260 attempt origins, unchanged queue membership, stale proposal fences, and all fourteen native proof groups remain asserted. This compatibility fixture belongs to the schema/control producer in #297.
+
+`test_postgres_priority_monotonic_activity_renewal` is executed inside the regular native priority control proof: stale short pulses cannot shorten a renewed member or expire the shared Redis key ahead of another pending foreground lease. Learning's `test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session` preserves the same host-adapter invariant. Individual lease expiry and the three-second quiet period remain unchanged.
+
+`managed Docker capability survives a sanitized worker environment and cannot outlive its owner` runs the actual generated adapter with the installed Stockfish client's restricted environment. It verifies capped admission without forwarding domain credentials, then proves a released adapter invokes no Docker command. The adapter restores only its captured runner capability and revalidates that owner before every Docker call.
+
+`test_postgres_priority_recovery_uses_bounded_maintenance_allocation` runs in the regular full/durability priority-recovery stage. It inspects the real helper cgroup before executing the original recovery script under the existing 1.5-CPU/1,536-MiB maintenance allocation, with only invocation-owned application clients quiesced and verified restored afterward. PostgreSQL plus Redis plus the helper remain within 2 CPUs/2 GiB. No transaction deadline, recovery assertion, or selected scenario is changed.
+
+`test_postgres_operation_recovery_uses_bounded_maintenance_allocation` applies the same inspected maintenance profile to the direct operation-recovery proof. Its original exact retry/cycle counts, response retention, and exhaustion checks remain unchanged; application clients are restored and checked before the next full-gate stage.
+
+
+### Nested Docker admission and builder exclusion
+
+`A12 an inherited managed container cannot consume the active builder allocation` and `A13 separate inherited Docker processes serialize admission until the allocation is visible` are owned by `tests/runner/development-budget.test.mjs`. The pre-repair runner admits a child beside the full-budget builder and two concurrent 1.5-CPU children. The shared admission lane now excludes builder overlap and holds the capacity decision until a new run is visible or verified finished. Container identities are journaled before invocation; removal clears only verified absent owned identities. Uncertain startup retains admission and the resource journal.
+
+`study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup_checks` executes an original-style Python entry with a sibling fixture import and rejects a mismatched cgroup allocation. `study_priority_restoration_captures_output_and_checks_every_owned_consumer` uses a real subprocess to ensure restoration captures Compose output and rejects a missing consumer. Both belong to `tests/runner/postgres-test-speedups.test.mjs`; full durability also executes the actual native scripts and restoration boundary. The allocation wrapper preserves normal script-directory imports instead of changing the original proof.
+
+The sanitized-worker capability regression also asserts that successful admission emits no plain-text diagnostic lines. Expected Docker absence probes must remain private control evidence so the installed worker's structured diagnostic stream remains valid.
+
+`saturation qualification listing and invalid destinations remain lightweight during another owner` covers the published `scripts/study-priority-qualification/index.mjs` entry point. Its seven-scenario listing and invalid destination rejection must finish without Docker or a heavy-work lease. Real qualification acquires the shared owner, freezes and hashes helper inputs, checks installed-runtime identity, retains raw samples, and verifies only its own resources absent.
+
+
+`test_postgres_daily_dispatch_uses_bounded_maintenance_allocation` executes the original daily-dispatch native script (including its 1,000-producer broker proof and full 100,000-card graph) under the inspected 1.5-CPU maintenance helper allocation. It runs before the remaining application-dependent workload proofs; all seven invocation-owned clients are quiesced and verified restored. The 2-CPU/2-GiB aggregate limit, broker deadlines, transaction limits, original assertions, and all selected proofs remain unchanged. The pre-allocation full-gate failure is retained as `postgres-durability-native-environment-final.log`.
+
+`qualification cleanup reaps a recorded owned process and refuses a foreign replacement` owns failed-cohort host-process reconciliation. The coordinator records a unique child nonce and lease before Python process creation, then captures its PID and start identity. Cleanup verifies that identity and the private directory/lease/nonce in the actual process before signalling it; ambiguous creation or ownership retains the budget. A real host Celery orphan from an interrupted failed cohort exposed the missing proof. The regression exercises forced termination, refusal to signal another owner, and uncertain creation. No user or unrelated process is reclaimed because its PID disappeared.
+- `test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_registration` (`backend/tests/test_admission_proof_ownership.py`): checkpoint HTTP/restart proofs retain a finite unrelated foreground barrier throughout setup/replay, permit concurrent foreground registration with a valid Redis integer TTL, preserve the exact barrier score, and remove only their own activity on success or failure. Owning native proof: `scripts/check_postgres_opening_evidence.py`; the real PostgreSQL durability mode must also pass.
+
+`test_canonical_task_driver_waits_for_real_local_policy_section_without_reclaiming_lease` reproduces the full canonical proof's real local policy-read admission conflict. `test_canonical_admission_exhaustion_retains_original_task_and_cause`, `test_canonical_task_driver_preserves_nonadmission_failure`, and `test_canonical_task_driver_preserves_original_120_slice_exhaustion` own bounded retry, original lease identity, immediate real-error propagation, and the unchanged 120-slice limit in `backend/tests/test_canonical_rehearsal_admission.py`.
+`test_canonical_retention_keeps_admission_deferral_evidence_without_spending_three_admitted_slices` in `backend/tests/test_canonical_prefix_retention.py` proves the analogous direct driver retains the same claim, all raw denied-attempt evidence, the original three-admitted-slice/64-row bounds, 120 exact cleanup rows and exact survivors. The real native foreground-denial, lock failure, concurrent deferral, checkpoint interruption and stale-replay assertions remain selected and unchanged. `scripts/postgres_rehearsal_admission.py` is their qualification-only retry owner; production admission and SQL deadlines are unchanged.
+
+`study_priority_large_transition_planning_uses_bounded_diagnostic_allocation_without_retrying_read_failures` in the regular PostgreSQL runner suite keeps the complete 128/512-line transition planning proof inside the existing 0.95 CPU/1024 MiB diagnostic allocation. All four optional consumers must be stopped; PostgreSQL, Redis, API, foreground worker and web remain within the unchanged aggregate 2 CPU/2 GiB budget. The original native fixture, transaction deadlines, row cardinalities, constant SQL-count assertions and visible read-service errors remain unchanged. Retained lifecycle fixtures keep their existing three-source-line/two-selected-line inputs and allocation.
+
+`test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease` in `backend/tests/test_graph_rehearsal_admission.py` exercises the real local policy-read admission race through both native graph preparation and cleanup. Direct graph/retention calls yield through the shared bounded rehearsal adapter without another claim or lease identity; original 64,000-row fixtures, SQL deadlines, checkpoints, page bounds and all native assertions remain.
+`test_native_rehearsal_propagates_unavailable_control_without_retry` in `backend/tests/test_canonical_rehearsal_admission.py` keeps explicit unavailable-control and caused admission errors visible on the first attempt. Only ordinary admission contention yields; SQL, source, deadline and outage failures remain failures.
+
+`test_native_graph_direct_entry_calls_use_shared_admission_protocol` checks both policy-publisher rehearsal drivers for ordinary graph/retention calls that bypass bounded admission, including the CF-8 cleanup preparation in canonical freshness. Real-gate preparation and cleanup consumer races remain covered by `test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease`; all native assertions and bounds remain unchanged.
+
+`test_native_wait_helpers_preserve_unavailable_control_without_retry` in `backend/tests/test_native_rehearsal_control_errors.py` compiles the actual segmentation, checkpoint and prefix-transition wait helper bodies with isolated transport/clock behavior. Explicit unavailable-control and caused admission errors propagate unchanged on the first attempt; original foreground-contention behavior, ten-second admission bounds, SQL deadlines, large fixtures and native assertions are retained.
+
+`test_legacy_study_contracts_share_learning_grader_model_identity` and `test_checked_in_stalemate_corpus_validates_with_legacy_learning_contract_boundary` in `backend/tests/test_study_contract_identity.py` keep executable exercise/answer models shared with the Learning-owned grader while legacy endpoint envelopes retain their owner and fields. The real checked-in 300-exercise v1 corpus remains valid without a schema/content rewrite; import/reimport and nonempty review-history preservation keep their original PostgreSQL owning proof in `scripts/check_postgres_stalemate_swindles.py`.
+
+`test_stalemate_history_protection_fixture_seeds_authored_and_standard_review_owners` in `backend/tests/test_studies.py` exercises the PostgreSQL proof's shared standard-review seed against a private SQLite database alongside a real authored Study attempt. Genuine owning review handlers populate receipts and schedule snapshots; all five history collections remain nonempty and byte-equivalent through portable reimport. `test_postgres_stalemate_import_reimport_preserves_existing_review_history` retains the native full-corpus proof and its original nonempty/exact-preservation assertions.
+
+
+`C18 maia verified preemption acknowledges a delayed input marker while contact remains held`, `C18 stockfish verified preemption acknowledges a delayed input marker while contact remains held`, and `C19 yield receipt rejects pre-input cancellation, stale generation and unverified running false during unavailable control` in `tests/runner/inference-priority.test.mjs` own the combined qualification handshake. Actual killed-child/protocol-stop preemption precedes a delayed host marker; both fixture paths retain that verified generation and acknowledge during held-input quiet-wait without another optional launch. The receipt carries actual verified stop time; acknowledgment delivery time remains separately observed. Pre-input/control-unavailable deferrals, generation identity, termination evidence and the unchanged250ms actual yield threshold remain required.
+
+
+The four `study_priority_test-postgres-docker_mjs_reserved_builder_cannot_overcommit`, `study_priority_test-postgres-docker_mjs_native_inventory_to_start_race_cannot_overcommit`, `study_priority_test-docker_mjs_reserved_builder_cannot_overcommit`, and `study_priority_test-docker_mjs_native_inventory_to_start_race_cannot_overcommit` cases in `tests/runner/postgres-test-speedups.test.mjs` execute the owning runners' actual Docker command functions with a private lease and injected Docker inventory/start barrier. A reserved full-budget builder and a same-owner sibling starting after an empty snapshot must defer or remain serialized before any new allocation starts. These cases reproduced four failures on published `3f012816`; the focused native-admission repair makes all four pass through the actual shared lease/admission helper.
+
+
+The `native_startup_*`, `sqlite_actual_cleanup_*`, and `native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation` cases in `tests/runner/postgres-test-speedups.test.mjs` own synchronous inventory-to-start admission, additive one-off allocation, journal-before-mutation, partial/uncertain starts, preserved return/stdout/stderr, wrong/missing claim identities, and verified cleanup. Native and SQLite cleanup can stop their own resources without reacquiring retained admission. The standalone maintenance help container has an exact name plus owner/project labels; cleanup verifies both name and ID absent. Historical scanner baseline failures remain selected and reported.

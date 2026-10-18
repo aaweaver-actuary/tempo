@@ -2,6 +2,15 @@ import { randomUUID } from "node:crypto";
 
 const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+export function createMaiaRelease(request, job) {
+  const operationId = randomUUID();
+  const body = JSON.stringify({node_id: job.node_id, lease_id: job.lease_id});
+  const release = () => request('/api/repertoire-coverage/maia/release', {
+    method: 'POST', operationId, body, signal: AbortSignal.timeout(120_000),
+  });
+  return Object.assign(release, {operationId});
+}
+
 export class PendingMaiaCommandError extends Error {
   constructor(path, operationId, reason = "remains pending after 120 seconds") {
     super(`${path}: database command ${operationId} ${reason}`);
@@ -13,7 +22,7 @@ export class PendingMaiaCommandError extends Error {
 export async function requestMaiaApi(apiUrl, path, options = {}, transport = {}) {
   const fetchImpl = transport.fetchImpl ?? fetch;
   const wait = transport.pause ?? pause;
-  const { operationId: suppliedOperationId, pollAttempts = 480, ...requestOptions } = options;
+  const { operationId: suppliedOperationId, pollAttempts = 480, requestAttempts = 3, ...requestOptions } = options;
   const operationId = options.method === "POST" ? (suppliedOperationId ?? randomUUID()) : undefined;
   const headers = {
     "X-Tempo-Work-Class": "background",
@@ -21,29 +30,40 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
     ...requestOptions.headers,
     ...(operationId ? { "Idempotency-Key": operationId } : {}),
   };
+  const attempts = Number.isInteger(requestAttempts) ? Math.max(1, Math.min(3,requestAttempts)) : 3;
+  const deadline = AbortSignal.timeout(120_000);
+  const fetchBounded = (url, delivery) => {
+    const signal = AbortSignal.any([deadline, AbortSignal.timeout(5_000), ...(requestOptions.signal ? [requestOptions.signal] : [])]);
+    signal.throwIfAborted();
+    return fetchImpl(url, {...delivery, signal});
+  };
+  let receiptId;
+  try {
   let response;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      response = await fetchImpl(`${apiUrl}${path}`, { ...requestOptions, headers });
+      response = await fetchBounded(`${apiUrl}${path}`, { ...requestOptions, headers });
       if (response.status !== 503) break;
     } catch (error) {
-      if (attempt === 2) throw error;
+      if (requestOptions.signal?.aborted || attempt === attempts-1) throw error;
     }
-    if (attempt < 2) await wait(250 * (attempt + 1));
+    requestOptions.signal?.throwIfAborted();
+    if (attempt < attempts-1) await wait(250 * (attempt + 1));
   }
   if (!response.ok) {
     const error = new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
     error.terminal = response.status < 500 && response.status !== 408 && response.status !== 429;
     throw error;
   }
-  if (response.status !== 202) return response.json();
+  // Body interruption after successful headers is still unconfirmed delivery.
+  if (response.status !== 202) return await response.json();
 
   const pending = await response.json();
-  const receiptId = pending.operation_id;
+  receiptId = pending.operation_id;
   if (!receiptId) throw new Error(`${path}: pending command did not return an operation ID`);
   for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
     await wait(250);
-    const receiptResponse = await fetchImpl(
+    const receiptResponse = await fetchBounded(
       `${apiUrl}/api/operations/${encodeURIComponent(receiptId)}`,
       { headers: { "X-Tempo-Work-Class": "background" } },
     );
@@ -64,4 +84,9 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
   }
   throw new PendingMaiaCommandError(path, receiptId,
     `remains pending after ${(pollAttempts * 250) / 1000} seconds`);
+  } catch (error) {
+    if (operationId && !error?.terminal && !(error instanceof PendingMaiaCommandError))
+      throw new PendingMaiaCommandError(path, receiptId ?? operationId, `has an unconfirmed delivery: ${String(error)}`);
+    throw error;
+  }
 }

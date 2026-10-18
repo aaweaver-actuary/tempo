@@ -13,6 +13,7 @@ from psycopg.conninfo import make_conninfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app import main, postgres_store, tasks
+from app.schema_version import POSTGRES_SCHEMA_VERSION
 from app.command_gateway import execute_command, claim_recoverable_operation, read_operation
 from app.services import durable_tasks, study_mode
 from apply_postgres_migrations import MIGRATIONS, apply_migrations
@@ -39,7 +40,7 @@ def proof():
         apply_migrations(owned_url)
         with psycopg.connect(owned_url) as upgraded:
             assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0)
-            assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (47, 47)
+            assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (POSTGRES_SCHEMA_VERSION, POSTGRES_SCHEMA_VERSION)
         print('PASS additive_migration_47_preserves_schema46_settings_and_replays')
         postgres_store.close_pools()
         # This exclusive database executes synchronously; its wake must not be

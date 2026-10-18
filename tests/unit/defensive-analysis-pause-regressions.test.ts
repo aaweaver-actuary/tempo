@@ -151,7 +151,7 @@ it("a paused engine that cannot drain releases its lease without recording failu
   engine.drain = false;
   const searches = createEngineSearch(engine, vi.fn().mockResolvedValue({ foreground_active: false, search_allowed: false }));
   const result = searches.evaluate(job).catch((error: Error) => error);
-  await vi.advanceTimersByTimeAsync(5_750);
+  await vi.advanceTimersByTimeAsync(150);
   const cancellation = await result;
   expect(cancellation).toMatchObject({ message: "Stockfish did not drain after cancellation" });
   expect(engineSearchWasPreempted(cancellation)).toBe(true);
@@ -170,10 +170,10 @@ it.each([true, false])("pause near depth deadline preserves preemption through d
   const outcome = searches.evaluate(job).catch((error: Error) => error);
   await vi.advanceTimersByTimeAsync(53_250);
   paused = true;
-  await vi.advanceTimersByTimeAsync(750);
+  await vi.advanceTimersByTimeAsync(75);
   expect(engine.commands.filter(command => command === "stop")).toHaveLength(1);
   if (drains) {
-    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(30);
     engine.finish();
   } else {
     await vi.advanceTimersByTimeAsync(5_000);
@@ -202,7 +202,7 @@ it("depth deadline first remains timeout when a later outstanding control report
   deferControl = true;
   await vi.advanceTimersByTimeAsync(1_000);
   resolveLateControl({ foreground_active: false, search_allowed: false });
-  await vi.advanceTimersByTimeAsync(500);
+  await vi.advanceTimersByTimeAsync(30);
   engine.finish();
   const timeout = await result;
   expect(timeout).toMatchObject({ message: "Engine timed out before requested depth", diagnostics: { outcome: "timeout" } });
@@ -282,14 +282,14 @@ it.each(['pause drains', 'pause fatal', 'deadline first', 'engine fault'])(
       } else if (scenario.startsWith('pause')) {
         await vi.advanceTimersByTimeAsync(53_250);
         harness.controls.paused = true;
-        await vi.advanceTimersByTimeAsync(750);
+        await vi.advanceTimersByTimeAsync(75);
       } else {
         await vi.advanceTimersByTimeAsync(55_000);
       }
       if (scenario === 'pause fatal') {
         await vi.advanceTimersByTimeAsync(5_000);
       } else if (scenario !== 'engine fault') {
-        await vi.advanceTimersByTimeAsync(1_500);
+        await vi.advanceTimersByTimeAsync(30);
         harness.engine.finish();
       }
       await cycle;
@@ -328,7 +328,7 @@ it('fatal cancellation bounds delivery and recovers the unchanged release before
     const firstCycle = runEngineWorkerCycle(harness.dependencies);
     await harness.started;
     harness.controls.paused = true;
-    await vi.advanceTimersByTimeAsync(5_750);
+    await vi.advanceTimersByTimeAsync(150);
     // Wait for the real durable envelope write to finish before advancing its delivery deadline.
     await vi.waitFor(() => expect(callbacks).toHaveBeenCalledTimes(1));
     const saved = await harness.dependencies.durableRequest.pending();

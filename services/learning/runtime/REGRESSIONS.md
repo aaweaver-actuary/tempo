@@ -44,6 +44,7 @@ The complete native inventory is discovered by `integration/run_postgres.py` fro
 
 | Regular file | Proof |
 | --- | --- |
+| `test_host_activity.py` | Independent session expiry and remaining quiet time; pending essential request holds; own-producer cleanup; authenticated/origin-scoped activity without PostgreSQL; optional filesystem failure retains evidence and no broker dependency |
 | `test_runtime.py` | Load/issue/review, immutable logical and transport replay, scope/origin/role denial, authoritative concurrent first enqueue |
 | `test_transactions.py` | Opening evidence atomicity; handler and handled-reconciliation rollback; competing payloads; bounded current-card contention; nonblocking optional successor; stale/deleted/retired definitions; retained quota; finite-contention maintenance; local-day boundary |
 | `test_families.py` | All five typed specifications, practice/review/self-assessment/feedback; tactical discovery and binding; defense recognition, covered grading and uncovered durable intent |
@@ -187,6 +188,7 @@ blocked. The forwarding origins share one installed Learning database, so this
 proves origin/storage isolation and actual receipts, not separate-database isolation.
 Existing F1, restart, storage, exercise-family and offline-shell cases remain selected.
 
+The authenticated activity endpoint regression verifies its stable workspace source identity; managed admission separately requires configured expected identities even before their first successful publication.
 ## PR #294 repair regressions
 
 - `tests/test_content_bridge.py::test_A_historical_alias_move_membership_accepts_new_alternative`: genuine prior review, retained physical ID/schedule/history, accepted original and new alternative, legal unaccepted move and obsolete executable revision. Existing activation compatibility/retirement regressions remain selected.
@@ -244,3 +246,10 @@ completed variant independently exercises Content's authenticated record CLI.
 Concurrent installed operator parameters cover both activation and retirement:
 two actual apply processes share one retirement outcome; two abandon processes
 fence a genuinely queued retirement without changing the active predecessor.
+
+`test_host_activity_reporting_thread_failure_does_not_prevent_service_startup` proves an unavailable optional renewal thread leaves authenticated Study service startup and essential request protection usable. `test_host_activity_shutdown_reporting_failure_is_diagnostic_and_retains_owned_snapshot` proves cleanup reporting cannot escape shutdown or erase uncertain ownership. Both use injected standard-library failures and remain in the regular native Learning suite.
+
+`test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session` keeps a renewed same-session deadline monotonic when an older short pulse arrives late. The legacy native priority proof's `test_postgres_priority_monotonic_activity_renewal` executes the actual Redis Lua and checks both per-member deadlines and the shared key lifetime against a longer pending foreground lease.
+
+
+`test_host_activity_clock_retains_reader_domain_after_host_sleep` protects the shared-host clock contract. macOS Python uptime excludes sleep while the native Node reader includes it; the producer uses `CLOCK_MONOTONIC_RAW` on macOS and the ordinary monotonic clock elsewhere. The regression simulates a suspend offset without requiring Node, a broker, or a database for Learning progress. Real Python 3.12/3.14 and Node clock brackets are retained in the task's qualification evidence.
