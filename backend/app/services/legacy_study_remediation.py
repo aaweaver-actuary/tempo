@@ -231,9 +231,12 @@ def admit_prelocked(database, card_id, day):
     else:
         from .queue_application import presentation_rows
         from . import frozen_opening_order
-        planned = frozen_opening_order.annotate(database, [{"card_id": card_id,
-            "repertoire_id": current.authority.repertoire_id}])[0]
-        frozen_valid = frozen_opening_order.proposal_valid(database, planned)
+        # This port only admits already-introduced current review cards. Frozen
+        # ranks/legacy-origin uncertainty select new introductions, not whether
+        # an existing card can be reviewed. Keep the activation epoch fence and
+        # protected-slot presenter, without applying introduction-only validity.
+        frozen_token = frozen_opening_order.activation(database)
+        frozen_valid = frozen_token == frozen_opening_order.activation(database, lock=True)
         rows = presentation_rows(database, day)
         target = [row for row in rows if row["card_id"] == card_id]
         from .queue_ordering import _protected_queue_ids

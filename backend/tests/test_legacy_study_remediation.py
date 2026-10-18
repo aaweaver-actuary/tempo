@@ -266,6 +266,47 @@ def test_target_burial_and_preexisting_issued_attempt_are_deferred_by_shared_adm
     assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='physical-black'").fetchone()[0] == 1
 
 
+@pytest.mark.parametrize("issued_today", [False, True])
+def test_frozen_introduction_legacy_fence_does_not_retire_introduced_review_card(vertical, issued_today):
+    db, _value, _accepted, _module = vertical
+    from app.services import frozen_opening_order as frozen
+    db.execute("UPDATE cards SET state='mature' WHERE id='physical-black'")
+    old = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(?,'physical-black',0,'complete') RETURNING id",
+        ((date.today()-timedelta(days=1)).isoformat(),)).fetchone()[0]
+    db.execute("UPDATE queue_attempt_origins SET legacy=1 WHERE queue_entry_id=?", (old,))
+    old_origin = tuple(db.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (old,)).fetchone())
+    db.execute("INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,created_at,reader_version) VALUES('frozen','frozen','{}','today','test')")
+    db.execute("UPDATE frozen_opening_activation SET run_id='frozen',epoch=1 WHERE id=1")
+    planned = frozen.annotate(db, [{"card_id": "physical-black", "repertoire_id": "ruy"}])[0]
+    assert planned['frozen_legacy_protected'] and not planned['frozen_valid']
+    assert not frozen.proposal_valid(db, planned)  # The new-introduction guard stays intact.
+    if issued_today:
+        entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'physical-black',2) RETURNING id",
+                           (date.today().isoformat(),)).fetchone()[0]
+        db.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?", (entry,))
+    result = bridge.admit_card(db, {"card_id": "physical-black"})
+    if issued_today:
+        assert result == dict(status="deferred", reason="issued_head_preserved", queue_entry_id=None)
+    else:
+        assert result['status'] == 'applied'
+        assert [row[0] for row in db.execute("SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position,id",
+                                          (date.today().isoformat(),))] == ['protected', 'physical-black', 'ordinary']
+    assert tuple(db.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (old,)).fetchone()) == old_origin
+
+
+def test_review_admission_still_rechecks_frozen_activation_before_module_lock(vertical, monkeypatch):
+    db, _value, _accepted, _module = vertical
+    from app.services import frozen_opening_order as frozen
+    calls = []
+    def activation(_database, *, lock=False):
+        calls.append(lock)
+        return ('replacement' if lock else 'original', 1)
+    monkeypatch.setattr(frozen, 'activation', activation)
+    result = bridge.admit_card(db, {'card_id': 'physical-black'})
+    assert result == dict(status='deferred', reason='frozen_order_changed', queue_entry_id=None)
+    assert calls[:2] == [False, True]
+
+
 def test_reconciled_persisted_review_consumes_the_same_existing_binding(vertical):
     db, _value, _accepted, module = vertical
     entry = bridge.admit_card(db, {"card_id": "physical-black"})["queue_entry_id"]
