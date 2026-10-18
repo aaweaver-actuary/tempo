@@ -12,7 +12,7 @@
 .tempo-board .tempo-theme-green { --tempo-light: #e5e3ce; --tempo-dark: #6e8268; }
 .tempo-board cg-board {
   background-color: var(--tempo-light);
-  background-image: conic-gradient(from 90deg, var(--tempo-dark) 25%, var(--tempo-light) 0 50%, var(--tempo-dark) 0 75%, var(--tempo-light) 0);
+  background-image: conic-gradient(from 0deg, var(--tempo-dark) 25%, var(--tempo-light) 0 50%, var(--tempo-dark) 0 75%, var(--tempo-light) 0);
   background-size: 25% 25%;
   touch-action: none;
 }

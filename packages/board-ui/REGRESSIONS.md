@@ -31,8 +31,9 @@ the existing application suites or shared runner inventories.
 | BUI-22 | tests/repairs.test.tsx | Real Strict Mode observer lifecycle, repeated mode/orientation changes, and retained notifications after cleanup |
 | BUI-23 | tests/repairs.test.tsx | Real drawing completion emits detached literal labels; controlled snapshot round-trip does not double encode |
 | BUI-24 | tests/repairs.test.tsx | Obsolete orientation DOM generation cannot schedule redraw or receive piece/drawing input |
+| BUI-25 (6 cases) | tests/boundaries.test.ts | Brown/blue/green, white/black orientations: stylesheet-derived color at all 64 square interiors has dark a1/h8 and light h1/a8 |
 
-24 identities expand to 44 test cases. The real Chessground cases use jsdom and
+25 identities expand to 50 test cases. The real Chessground cases use jsdom and
 do not establish native browser behavior. `consumer/public-types.ts` and
 `consumer/smoke.mjs` additionally check every public type, real built export,
 React render, CSS/assets/notices, and private export rejection after source
