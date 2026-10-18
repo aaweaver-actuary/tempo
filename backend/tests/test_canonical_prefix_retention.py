@@ -212,3 +212,31 @@ def test_canonical_prefix_retention_limits_victims_even_when_children_are_empty(
     assert previews.execute_prefix_preview_slice(task)
     with database.read_connection() as connection:
         assert connection.execute('SELECT COUNT(*) FROM canonical_prefix_previews').fetchone()[0] == 22 - 4
+
+
+def test_canonical_retention_keeps_admission_deferral_evidence_without_spending_three_admitted_slices(retention_fixture, monkeypatch):
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
+    import postgres_rehearsal_admission
+    original = previews.execute_prefix_preview_slice
+    denied, claimed = [], []
+
+    def first_read_contends(task):
+        claimed.append((task['id'], task['generation'], task['lease_token']))
+        if not denied:
+            denied.append(True)
+            raise BackgroundAdmissionDeferred('Waiting for a database section')
+        return original(task)
+
+    monkeypatch.setattr(previews, 'execute_prefix_preview_slice', first_read_contends)
+    monkeypatch.setattr(postgres_rehearsal_admission.time, 'sleep', lambda _seconds: None)
+    measurements = run_retention_fixture(retention_fixture, maximum_slices=3)
+    assert claimed[0] == claimed[1], 'Admission denial replaced the original durable lease'
+    assert len(measurements.slices) <= 3
+    assert sum(item['cleanup_rows'] for item in measurements.slices) == 120
+    assert max(item['cleanup_rows'] for item in measurements.slices) <= 64
+    assert len(measurements.admission_deferrals) == 1
+    assert measurements.admission_deferrals[0]['outcome'] == 'admission_deferred'
+    assert measurements.admission_deferrals[0]['cleanup_rows'] == 0
+    with database.read_connection() as connection:
+        assert {row[0] for row in connection.execute('SELECT id FROM canonical_prefix_previews')} == retention_fixture['retained_ids']
