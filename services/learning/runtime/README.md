@@ -48,6 +48,33 @@ A command first durably accepts its immutable intent, then executes its handler 
 
 Essential queue work and cursors live in PostgreSQL. Maintenance commits one admission/cursor slice at a time and yields between sections. Its pool maximum is 1. Foreground acquisition/lock/statement/transaction budgets are 250/250/1500/2500 ms; maintenance uses 100/25/200/250 ms. Evidence intake uses the same background pool and 25 ms lock budget with a 1,000 ms transaction bound for an atomic maximum-128-item wire delivery; ordinary maintenance keeps its 250 ms bound. Intake transaction expiry returns 503/Retry-After with all acceptance effects rolled back. Transient failures retain the original intent for retry; a contended command backs off so queue maintenance can progress. Tablebase calls run outside database transactions, use a 3-second provider timeout, and endgame preparation checks a 5-second total budget between the retained maximum of 80 deterministic candidates.
 
+## Daily presentation
+
+The shared Learning `queue_ordering` owner presents only admitted rows. Policy
+`queue-presentation-v3` retains the persisted daily seed and policy fingerprint,
+spreads new/review cohorts proportionately and spreads content families within
+each cohort. Frozen selection and new-opening relative rank remain authoritative;
+opening slots can move across other categories. This policy also runs in legacy
+Study-only refresh, without enabling optional analysis or admission providers.
+
+Issued attempts, teaching/presentation checkpoints, unavailable rows, explicit
+entries and positioned repeats keep their physical positions. Mandatory real-game
+misses retain priority among the remaining movable slots. Existing failed
+remediation repeats and first-success reinforcement retain their positioned
+behavior; a fresh urgent admission after an earlier completed cycle can still
+move into priority. A receipt carries across a controlled completion, burial or
+positioned insertion only if the pre-mutation membership and frozen activation
+matched that receipt. Unmixed admissions and replacement ranks remain dirty.
+Reloads and refreshes reuse the saved order; legacy prepared publication
+rejects changed membership, issuance, revision, eligibility or positions before
+writing. No scheduler formula, due date, quota, admission rule or offline protocol
+changes here. Soft failed-retry cooldowns require a separate policy adoption.
+
+Legacy background preparation pages at most 16 queue entries per read section,
+looks up review history separately, and evaluates eligibility only for that page.
+The owning native large-queue regression runs with a 50 ms transaction limit;
+this is a bounded fixture proof, not a host latency guarantee.
+
 ## Accepted definitions and integration
 
 See [INTERFACES.md](INTERFACES.md) and [fixtures/legacy-protocol.json](fixtures/legacy-protocol.json). These are legacy API fixtures, not a claim that the example Learning wire-v1 contracts have been adopted.

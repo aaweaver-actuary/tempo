@@ -1,6 +1,7 @@
 """Learning-owned frozen preference. Never computes eligibility or calls Maia.
 
-Future ordering implementations must honor active snapshots until explicit retirement.
+Active snapshots own selection and relative opening rank until explicit retirement.
+The daily presentation owner may move unissued opening slots across categories.
 """
 from __future__ import annotations
 import json
@@ -243,8 +244,8 @@ SQLITE_GUARDS = [
 
 
 def queue_hash(membership_hash, token):
-    from .opening_segmentation import stable_key
-    return membership_hash if list(token) == [None, 0] else stable_key(membership_hash, list(token))
+    from .queue_ordering import _queue_order_fingerprint
+    return _queue_order_fingerprint(membership_hash, token)
 
 
 def queue_state(database, day):

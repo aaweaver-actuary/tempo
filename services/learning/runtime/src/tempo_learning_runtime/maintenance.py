@@ -7,9 +7,8 @@ from tempo_learning_remediation import RemediationError
 from psycopg_pool import PoolTimeout
 from .database import connection
 from .durable_tasks import claim
-from .admission import admit, next_candidates, protected_queue_ids
-from . import frozen_opening_order, queue_ordering
-from .review_service import preserve_daily_queue_order
+from .admission import admit, next_candidates
+from . import frozen_opening_order, queue_ordering, queue_application
 
 logger = logging.getLogger(__name__)
 
@@ -120,29 +119,26 @@ def apply_task(task):
         else:
             from .queue_position_lock import lock_queue_date_for_position
 
+            token = frozen_opening_order.activation(database, lock=True)
             lock_queue_date_for_position(database, day)
-            # Frozen readers only move unexposed introductions within their existing slots.
-            rows = [
-                dict(row)
-                for row in database.execute(
-                    "SELECT q.id,q.card_id,q.position,q.admission_kind,q.gameplay_priority_reason,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=? AND q.status='queued' ORDER BY q.position,q.id",
-                    (day,),
-                ).fetchall()
-            ]
-            ordered = frozen_opening_order.order_queue_slots(
-                database,
-                rows,
-                preserve_through_entry_id=payload.get("preserve_through_entry_id"),
-            )
-            protected = protected_queue_ids(database, day)
-            movable = iter(row for row in ordered if row["id"] not in protected)
-            ordered = [row if row["id"] in protected else next(movable) for row in rows]
-            for slot, row in zip(rows, ordered):
-                database.execute(
-                    "UPDATE daily_queue SET position=? WHERE id=?",
-                    (slot["position"], row["id"]),
+            rows = queue_application.presentation_rows(database, day)
+            membership_hash = frozen_opening_order.queue_hash(queue_ordering._queue_membership_hash(rows), token)
+            saved = database.execute("SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)).fetchone()
+            if not saved or saved["membership_hash"] != membership_hash:
+                annotated = frozen_opening_order.annotate(database, rows) if token[0] is not None else rows
+                seed, _, ordered = queue_ordering._plan_daily_queue_order(
+                    annotated, day, saved,
+                    preserve_through_entry_id=payload.get("preserve_through_entry_id"),
                 )
-            preserve_daily_queue_order(database, day)
+                for slot, row in zip(sorted(rows, key=lambda row: (row['position'], row['id'])), ordered):
+                    if slot['position'] != row['position']:
+                        database.execute("UPDATE daily_queue SET position=? WHERE id=?", (slot['position'], row['id']))
+                database.execute(
+                    """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
+                       VALUES(?,?,?,?) ON CONFLICT(queue_date) DO UPDATE SET
+                       membership_hash=excluded.membership_hash,generated_at=excluded.generated_at""",
+                    (day, seed, membership_hash, datetime.now(timezone.utc).isoformat()),
+                )
             # Match foreground task-before-projection order after card/queue
             # locks, preventing ensure_current's projection lock from inverting it.
             finish_slice(database, task, payload, False)

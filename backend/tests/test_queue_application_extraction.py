@@ -71,7 +71,7 @@ def test_queue_application_import_does_not_load_http_or_worker_root():
 
 
 @pytest.mark.parametrize('fixture', json.loads((FIXTURES / 'queue-extraction-220.json').read_text())['ordering'])
-def test_queue_ordering_matches_pinned_pre_extraction_fixture(fixture):
+def test_queue_presentation_matches_versioned_fixtures(fixture):
     seed, membership_hash, ordered = queue_ordering._plan_daily_queue_order(
         fixture['rows'], fixture['day'], fixture['saved'],
         preserve_through_entry_id=fixture['preserve_through_entry_id'],
@@ -91,6 +91,33 @@ def test_queue_application_sql_matches_pinned_pre_extraction_literals():
                            if isinstance(literal, ast.Constant) and isinstance(literal.value, str)
                            and any(keyword in literal.value.upper() for keyword in ('SELECT ', 'INSERT ', 'UPDATE ', 'DELETE '))]
     assert found == frozen_sql
+
+
+@pytest.mark.parametrize('unmixed_append', [False, True])
+def test_burial_carries_only_a_verified_pre_mutation_presentation_receipt(queued_attempts, unmixed_append):
+    from fastapi.testclient import TestClient
+    from app import main
+    day = date.today().isoformat()
+    with database.connection() as connection:
+        queue_application.randomize_daily_queue(connection, day)
+        saved = dict(connection.execute('SELECT seed,membership_hash FROM daily_queue_days').fetchone())
+    client = TestClient(main.app)
+    head = client.get('/api/queue/today').json()['cards'][0]
+    with database.connection() as connection:
+        if unmixed_append:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) SELECT 'unmixed-append',repertoire_id,kind,start_fen,moves_json,state,due_date,content_type FROM cards LIMIT 1")
+            connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'unmixed-append',99)", (day,))
+        before = [tuple(row) for row in connection.execute('SELECT id,position FROM daily_queue WHERE status=\'queued\' AND id!=? ORDER BY position,id', (head['queue_entry_id'],))]
+    response = client.post(f"/api/queue/entries/{head['queue_entry_id']}/bury", json={'card_id':head['id'],'expected_revision':head['revision']})
+    assert response.status_code == 200, response.text
+    with database.connection() as connection:
+        current = connection.execute('SELECT seed,membership_hash FROM daily_queue_days').fetchone()
+        assert current['seed'] == saved['seed']
+        assert current['membership_hash'].startswith('unmixed:') is unmixed_append
+        queue_application.randomize_daily_queue(connection, day)
+        assert connection.execute('SELECT membership_hash FROM daily_queue_days').fetchone()[0].startswith(queue_ordering.PRESENTATION_VERSION+':')
+        if not unmixed_append:
+            assert [tuple(row) for row in connection.execute("SELECT id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before
 
 
 @pytest.mark.parametrize('after,expected_cards', [(None, ['later-b', 'active-a', 'active-a']),
@@ -117,8 +144,8 @@ def test_queue_application_requeue_preserves_origin_cycle_and_issuance(queued_at
 
 @pytest.mark.parametrize('legacy_phase,next_phase', [('prioritized_openings', 'admit_study'),
                                                     ('prioritized_opening_item', 'admit_study'),
-                                                    ('real_game_misses', 'publish_projection'),
-                                                    ('randomize_queue', 'publish_projection')])
+                                                    ('real_game_misses', 'quarantine'),
+                                                    ('randomize_queue', 'quarantine')])
 def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, legacy_phase, next_phase):
     captured = {}
     opening_page_reads = []
@@ -140,14 +167,17 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
     monkeypatch.setattr(study_mode, 'study_only_enabled', lambda: True)
     monkeypatch.setattr(postgres_queue_refresh, '_prepare_study_admission', lambda day: None)
     monkeypatch.setattr(postgres_queue_refresh, '_prepare_opening_quarantine', lambda *args: {'invalid': None, 'has_more': False, 'after_entry_id': 17})
-    for optional in ('_prepare_prioritized_openings', '_admit_one_prioritized_opening', '_prepare_real_game_obligation', '_prepare_queue_randomization'):
+    for optional in ('_prepare_prioritized_openings', '_admit_one_prioritized_opening', '_prepare_real_game_obligation'):
         monkeypatch.setattr(postgres_queue_refresh, optional, lambda *args, **kwargs: pytest.fail('Optional phase executed'))
+    presentations = []
+    monkeypatch.setattr(postgres_queue_refresh, '_prepare_queue_randomization', lambda *args, **kwargs: presentations.append(args) or {})
+    monkeypatch.setattr(postgres_queue_refresh, '_publish_queue_randomization', lambda *args: True)
     def advance(database, task, **kwargs):
         captured.update(kwargs)
         return True
     monkeypatch.setattr(postgres_queue_refresh, 'advance_task_slice_in_transaction', advance)
     payload = {'queue_date': '2026-10-12', '_queue_phase': legacy_phase,
-               'preserve_through_entry_id': 42, 'quarantine_started': True,
+               'preserve_through_entry_id': 42, 'quarantine_started': True, 'after_entry_id': 9,
                'opening_plan': [{'card_id': 'old-card', 'repertoire_id': 'rep', 'reason': None,
                                  'capacity_route': {'parent_card_id': 'parent'}}], 'opening_index': 0}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice({'payload': payload}) is True
@@ -155,6 +185,7 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
     assert captured['next_payload']['preserve_through_entry_id'] == 42
     assert captured['next_payload']['queue_date'] == payload['queue_date']
     assert len(opening_page_reads) == int(legacy_phase.startswith('prioritized_opening'))
+    assert len(presentations) == int(legacy_phase in ('real_game_misses', 'randomize_queue'))
     if opening_page_reads:
         assert captured['next_payload']['study_opening_counts']['stop_reason'] == 'daily_allowances_exhausted'
         assert captured['next_payload']['study_opening_cursor'] == []
@@ -162,7 +193,7 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
         assert 'opening_plan' not in captured['next_payload']
     else:
         assert captured['next_payload']['quarantine_started'] is True
-        assert captured['next_payload']['after_entry_id'] == 17
+        assert captured['next_payload']['after_entry_id'] == 9  # Presentation has not advanced quarantine.
 
 
 def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypatch):

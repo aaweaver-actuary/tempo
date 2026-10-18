@@ -9,7 +9,7 @@ from ..database import connection
 from ..postgres_store import PostgresConnection
 from ..queue_position_lock import lock_queue_date_for_position
 from .activity_gate import activity_gate
-from .review_service import ensure_card_queued_after, preserve_daily_queue_order
+from .review_service import ensure_card_queued_after
 
 
 MISS_REASON = "Priority review · missed in a recent game"
@@ -69,18 +69,12 @@ def has_outstanding_real_game_miss(database, card_id: str) -> bool:
 
 def prioritize_queued_misses(database, queue_date: str) -> None:
     """Apply a stable priority overlay while preserving ordinary queue order."""
-    entries = database.execute(
-        "SELECT id,card_id,gameplay_priority_reason FROM daily_queue "
-        "WHERE queue_date=? AND status='queued' ORDER BY position,id", (queue_date,),
-    ).fetchall()
-    priority_entries = sorted((entry for entry in entries if entry["gameplay_priority_reason"] == MISS_REASON),
-                              key=lambda entry: (entry["card_id"], entry["id"]))
-    ordinary_entries = [entry for entry in entries if entry["gameplay_priority_reason"] != MISS_REASON]
-    ordered = priority_entries + ordinary_entries
-    if [entry["id"] for entry in ordered] != [entry["id"] for entry in entries]:
-        for position, entry in enumerate(ordered):
-            database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry["id"]))
-    preserve_daily_queue_order(database, queue_date)
+    from .queue_application import presentation_rows
+    from .queue_ordering import _priority_queue_order
+    entries = sorted(presentation_rows(database, queue_date), key=lambda row: (row['position'], row['id']))
+    for slot, entry in zip(entries, _priority_queue_order(entries)):
+        if slot['position'] != entry['position']:
+            database.execute("UPDATE daily_queue SET position=? WHERE id=?", (slot['position'], entry['id']))
 
 
 def promote_real_game_card(database, card_id: str, queue_date: str) -> bool:
@@ -105,7 +99,8 @@ def promote_real_game_card(database, card_id: str, queue_date: str) -> bool:
         return False
     if isinstance(database, PostgresConnection):
         lock_queue_date_for_position(database, queue_date)
-    ensure_card_queued_after(database, card_id, 0, priority_reason=MISS_REASON, queue_date=queue_date)
+    ensure_card_queued_after(database, card_id, 0, priority_reason=MISS_REASON, queue_date=queue_date,
+                             protect_presented=True, preserve_order=False)
     prioritize_queued_misses(database, queue_date)
     return True
 

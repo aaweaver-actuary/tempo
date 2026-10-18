@@ -95,7 +95,7 @@ from .services.activity_gate import activity_gate
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
-from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
+from .services.review_service import apply_scheduling_review, capture_daily_queue_order, ensure_card_queued_after, preserve_daily_queue_order
 from .services.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .services.real_game_feedback import (
@@ -2367,6 +2367,7 @@ def bury_queue_entry(entry_id: int,
         from .queue_commands import validate_available_attempt
         validate_available_attempt(db, entry_id, request.card_id if request else None,
                                    request.expected_revision if request else None)
+        previous_order = capture_daily_queue_order(db, day)
         # Retained rows prevent same-day refreshes from readmitting the card.
         db.execute(
             """UPDATE daily_queue SET status='buried'
@@ -2374,7 +2375,7 @@ def bury_queue_entry(entry_id: int,
                  AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
             (day, entry_id),
         )
-        preserve_daily_queue_order(db, day)
+        preserve_daily_queue_order(db, day, previous=previous_order)
     return {"buried": True, "queue_entry_id": entry_id}
 
 

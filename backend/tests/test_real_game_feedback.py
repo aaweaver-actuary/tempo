@@ -83,6 +83,31 @@ def test_real_game_miss_promotes_existing_entry_ahead_of_ordinary_work_and_repla
         assert db.execute("SELECT card_id FROM daily_queue WHERE status='queued' ORDER BY position,id LIMIT 1").fetchone()[0] == "card"
 
 
+def test_fresh_game_miss_after_completed_cycle_keeps_priority_behind_issued_head(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    now = datetime.now(timezone.utc)
+    day = date.today().isoformat()
+    with database.connection() as db:
+        _seed_repertoire(db, studied_at=(now - timedelta(hours=1)).isoformat())
+        db.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(?,'card',-1,'complete')", (day,))
+        active = _ordinary_queue_card(db, 'active', 0)
+        _ordinary_queue_card(db, 'ordinary-a', 1)
+        _ordinary_queue_card(db, 'ordinary-b', 2)
+        _seed_game(db, 'fresh-same-day-miss', ['d2d4'], now.isoformat())
+        before = dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone())
+    assert TestClient(app).get('/api/queue/today').json()['cards'][0]['queue_entry_id'] == active
+    compare_games(['fresh-same-day-miss'])
+    apply_real_game_misses('fresh-same-day-miss')
+    with database.connection() as db:
+        assert [row[0] for row in db.execute("SELECT card_id FROM daily_queue WHERE status='queued' ORDER BY position,id")] == ['active','card','ordinary-a','ordinary-b']
+        assert db.execute("SELECT cycle FROM daily_queue WHERE card_id='card' AND status='queued'").fetchone()[0] == 1
+        assert db.execute("SELECT position FROM daily_queue WHERE id=?", (active,)).fetchone()[0] == 0
+        assert dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone()) == before
+        randomize_daily_queue(db, day)
+        assert [row[0] for row in db.execute("SELECT card_id FROM daily_queue WHERE status='queued' ORDER BY position,id LIMIT 2")] == ['active','card']
+
+
 def test_real_game_miss_obligation_survives_next_day_without_fsrs_mutation(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
@@ -613,7 +638,12 @@ def test_real_game_priority_retains_identified_active_attempt_and_burial_defers_
     compare_games(['active-miss'])
     apply_real_game_misses('active-miss')
     with TestClient(app) as client:
-        assert client.post(f'/api/queue/entries/{active_id}/fail').status_code == 409
+        with database.read_connection() as db:
+            miss_id = db.execute("SELECT id FROM daily_queue WHERE card_id='card' AND status='queued'").fetchone()[0]
+            assert db.execute("SELECT position FROM daily_queue WHERE id=?",(active_id,)).fetchone()[0] == 0
+        # Priority follows the issued head; it does not authorize a prefetched miss.
+        assert client.post(f'/api/queue/entries/{miss_id}/fail').status_code == 409
+        assert client.post(f'/api/queue/entries/{active_id}/fail').status_code == 200
         identity = {'card_id': 'active', 'expected_revision': 1}
         assert client.post(f'/api/queue/entries/{active_id}/fail', json=identity).status_code == 200
         assert client.post(f'/api/queue/entries/{active_id}/bury', json={**identity, 'expected_revision': 2}).status_code == 409

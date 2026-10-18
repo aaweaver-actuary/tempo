@@ -3083,6 +3083,10 @@ def test_postgres_queue_randomization_replans_changed_membership_and_rejects_sta
     monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground",
                         wait_for_foreground)
     monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", lambda: section(background=True))
+    monkeypatch.setattr(postgres_queue_refresh.frozen_opening_order, "activation", lambda *args, **kwargs: (None,0))
+    from app.services import study_mode
+    monkeypatch.setattr(study_mode, 'study_only_enabled', lambda: False)
     monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
                         lambda database, task: task["lease_token"] == current_lease)
     monkeypatch.setattr(postgres_queue_refresh, "_prepare_queue_randomization", prepare)
@@ -3100,17 +3104,25 @@ def test_postgres_queue_randomization_replans_changed_membership_and_rejects_sta
     assert observed.count("publish") == 2
 
 
-def test_postgres_queue_randomization_hash_preserves_membership_order():
+def test_postgres_queue_presentation_hash_preserves_membership_independently_of_input_order():
     from app import main
 
     rows = [{"id": 2, "card_id": "second"}, {"id": 4, "card_id": "fourth"}]
-    assert main._queue_membership_hash(rows) != main._queue_membership_hash(rows[::-1])
+    # Presentation input order is no longer membership identity. Card/entry
+    # changes still invalidate the receipt; positions have their own state fence.
+    assert main._queue_membership_hash(rows) == main._queue_membership_hash(rows[::-1])
     assert main._queue_membership_hash(rows) == main._queue_membership_hash(list(rows))
+    assert main._queue_membership_hash(rows) != main._queue_membership_hash(rows[:1])
+    assert main._queue_membership_hash(rows) != main._queue_membership_hash([rows[0], {**rows[1], 'card_id':'replacement'}])
 
 
-def test_postgres_queue_randomization_noop_rechecks_foreground_membership():
+def test_postgres_queue_randomization_noop_rechecks_foreground_membership(monkeypatch):
     from app import main
     from app.services import postgres_queue_refresh
+    monkeypatch.setattr(postgres_queue_refresh.frozen_opening_order, 'activation', lambda *args, **kwargs: (None,0))
+    # Keep the captured-state fence equal to isolate the independent final raw
+    # membership recheck, including the no-op plan branch.
+    monkeypatch.setattr(postgres_queue_refresh.queue_application, 'presentation_rows', lambda *args: [])
 
     class ChangedQueue:
         def execute_native(self, statement, parameters):
@@ -3124,6 +3136,7 @@ def test_postgres_queue_randomization_noop_rechecks_foreground_membership():
     for entries in (None, [{"id": 1, "position": 0,
                             "bucket": "opening", "kind": "new"}]):
         stale_plan = {"membership_hash": main._queue_membership_hash([]),
+                      "presentation_state": postgres_queue_refresh.queue_ordering._queue_presentation_state([]),
                       "entries": entries}
         assert not postgres_queue_refresh._publish_queue_randomization(
             ChangedQueue(), "2026-09-27", stale_plan,
@@ -3131,37 +3144,59 @@ def test_postgres_queue_randomization_noop_rechecks_foreground_membership():
 
 
 def test_postgres_queue_randomization_splits_review_lookup_into_bounded_reads(monkeypatch):
+    from contextlib import contextmanager
     from app.services import postgres_queue_refresh
 
     observed_queries = []
     queue_rows = [
-        {"id": 1, "card_id": "explicit", "content_type": "opening",
+        {"id": 1, "position":0, "card_id": "explicit", "content_type": "opening",
          "admission_kind": "explicit", "gameplay_priority_reason": None},
-        {"id": 2, "card_id": "reviewed", "content_type": "study_exercise",
+        {"id": 2, "position":1, "card_id": "reviewed", "content_type": "study_exercise",
          "admission_kind": None, "gameplay_priority_reason": None},
-        {"id": 3, "card_id": "new", "content_type": "opening",
+        {"id": 3, "position":2, "card_id": "new", "content_type": "opening",
          "admission_kind": None, "gameplay_priority_reason": None},
     ]
+    queue_rows.extend({**queue_rows[-1], 'id':identifier, 'position':identifier-1,
+                       'card_id':str(identifier)} for identifier in range(4,41))
+    active_connections = 0
+
+    class EmptySaved:
+        def execute(self, statement, parameters):
+            assert 'FROM daily_queue_days' in statement
+            return self
+        def fetchone(self): return None
+
+    @contextmanager
+    def reader():
+        nonlocal active_connections
+        active_connections += 1
+        try: yield EmptySaved()
+        finally: active_connections -= 1
 
     def bounded_read(statement, parameters=(), *, native=False):
+        assert active_connections == 0
         observed_queries.append((statement, native))
-        if "FROM daily_queue q JOIN cards" in statement:
-            return queue_rows
+        if statement.startswith("SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind"):
+            assert parameters[2] == 16 and 'LIMIT ?' in statement
+            assert 'FROM reviews' not in statement
+            return [row for row in queue_rows if row['id']>parameters[1]][:16]
         if "SELECT DISTINCT card_id FROM reviews" in statement:
-            assert parameters == (["explicit", "reviewed", "new"],)
-            return [("explicit",), ("reviewed",)]
-        if "FROM daily_queue_days" in statement:
-            return []
+            assert 0<len(parameters)<=16
+            return [(card,) for card in parameters if card in ('explicit','reviewed')]
+        if statement.startswith('SELECT q.id FROM'):
+            assert 0<len(parameters[1:])<=16
+            return [(identifier,) for identifier in parameters[1:]]
         raise AssertionError(statement)
 
     monkeypatch.setattr(postgres_queue_refresh, "_bounded_read", bounded_read)
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", reader)
+    monkeypatch.setattr(postgres_queue_refresh.frozen_opening_order, "activation", lambda *args: (None,0))
     plan = postgres_queue_refresh._prepare_queue_randomization("2026-09-27")
     assert plan is not None
-    assert {entry["id"]: entry["kind"] for entry in plan["entries"]} == {
+    assert {entry["id"]: entry["kind"] for entry in plan["entries"] if entry['id']<=3} == {
         1: "explicit", 2: "review", 3: "new",
     }
-    assert len(observed_queries) == 3
-    assert all("EXISTS(SELECT 1 FROM reviews" not in query for query, _ in observed_queries)
+    assert len(plan['entries']) == 40 and len(observed_queries) == 9
 
 
 def test_postgres_opening_quarantine_validates_outside_database_and_replays_once(monkeypatch, tmp_path):
