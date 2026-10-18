@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import {allocatedNativeProofSource,postgresProofAllocations,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
-import { assertDevelopmentCapacity, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from './development-budget.mjs';
+import { withDevelopmentStartup, reconcileDevelopmentStartup, assertDevelopmentProjectOwned, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from './development-budget.mjs';
 import { randomBytes } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
@@ -58,6 +58,7 @@ const testPort = await new Promise((resolve, reject) => {
 });
 const project = `tempo-pg-regressions-${process.pid}-${randomBytes(4).toString("hex")}`;
 const maintenanceImage = `${project}-maintenance`;
+const maintenanceHelpContainer = `${project}-maintenance-help`;
 const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
 const resourceLimits = join(secretsDirectory, 'resource-limits.json');
 writeFileSync(resourceLimits, JSON.stringify(composeResourceLimits(['postgres', 'redis', 'api',
@@ -205,21 +206,47 @@ function isMissingMaintenanceImage(result) {
       result.stderr?.trim() === `Error response from daemon: No such image: ${tag}`);
 }
 
+function removeOwnedMaintenanceHelpContainer() {
+  const inspect = identity => {
+    const result = spawnSync('docker',['container','inspect',identity],{encoding:'utf8',env:environment,timeout:5000});
+    if(!result.error && result.status===1 && result.stderr?.trim()===`Error response from daemon: No such container: ${identity}`)return undefined;
+    assert.equal(result.status,0,'Maintenance help container inspection is uncertain');
+    const values=JSON.parse(result.stdout);assert.equal(values.length,1);return values[0];
+  };
+  const container=inspect(maintenanceHelpContainer);if(!container)return;
+  assert.equal(container.Name,'/'+maintenanceHelpContainer);
+  assert.equal(container.Config.Labels['tempo.resource-owner'],process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,'Maintenance help ownership mismatch');
+  assert.equal(container.Config.Labels['com.docker.compose.project'],project,'Maintenance help project mismatch');
+  const removed=spawnSync('docker',['rm','--force','--volumes',container.Id],{encoding:'utf8',env:environment,timeout:5000});
+  assert(!removed.error&&removed.status===0,'Maintenance help container removal failed');
+  assert.equal(inspect(maintenanceHelpContainer),undefined,'Maintenance help name still exists after removal');
+  assert.equal(inspect(container.Id),undefined,'Maintenance help identity still exists after removal');
+}
+
 function run(command, argumentsList, options = {}) {
-  if (command === 'docker' && ['up', 'start', 'run'].some(operation => argumentsList.includes(operation))) {
-    const names = ['postgres', 'redis', 'api', 'foreground-worker', 'background-worker',
-      'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'];
-    const requested = names.filter(name => argumentsList.includes(name));
-    assertDevelopmentCapacity(requested.length ? requested : names.filter(name => name !== 'schema'), project,undefined,
-      postgresProofAllocations(argumentsList,{priority:priorityResourceLimits,diagnostic:diagnosticResourceLimits},resourceBudgets));
-  }
   const { label, category } = postgresCommandTiming(argumentsList);
-  return measureScenario.syncDetail(label, category, () => {
+  const execute = () => measureScenario.syncDetail(label, category, () => {
     const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
     measureScenario.processResult(result);
     if (result.error || result.status !== 0) throw new Error(`${command} ${argumentsList.join(" ")} failed`);
     return result;
   });
+  if(command==='docker'&&argumentsList[0]==='run') {
+    for(const value of [maintenanceHelpContainer,`tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`,
+      `com.docker.compose.project=${project}`,'com.docker.compose.service=maintenance-help'])assert(argumentsList.includes(value),'Untracked standalone maintenance startup');
+    assert.equal(argumentsList[argumentsList.indexOf('--cpus')+1],'0.2');
+    assert.equal(argumentsList[argumentsList.indexOf('--memory')+1],'256m');
+    return withDevelopmentStartup(['maintenance-help'],project,execute,{oneOff:true,allocations:{'maintenance-help':{cpus:0.2,memoryMiB:256}}});
+  }
+  if (command === 'docker' && ['up', 'start', 'run'].some(operation => argumentsList.includes(operation))) {
+    const names = ['postgres', 'redis', 'api', 'foreground-worker', 'background-worker',
+      'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'];
+    const requested = names.filter(name => argumentsList.includes(name));
+    return withDevelopmentStartup(requested.length ? requested : names.filter(name => name !== 'schema'),project,execute,
+      {oneOff:argumentsList.includes('run'),allocations:postgresProofAllocations(argumentsList,
+        {priority:priorityResourceLimits,diagnostic:diagnosticResourceLimits},resourceBudgets)});
+  }
+  return execute();
 }
 
 const workloadConsumers = backgroundWorkloadConsumers;
@@ -1017,7 +1044,7 @@ const actions = {
     maintenanceImageCleanupRequired = true;
     await managedBuild(builder => run("docker", ['buildx', "build", '--builder', builder, '--load', "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]));
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
-      run("docker", ["run", "--rm", "--cpus", "0.2", "--memory", "256m", "--label", "tempo.resource-class=development", maintenanceImage, `scripts/${script}`, "--help"]);
+      run("docker", ["run", "--rm", "--name", maintenanceHelpContainer, "--cpus", "0.2", "--memory", "256m", "--label", "tempo.resource-class=development", "--label", `tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`, "--label", `com.docker.compose.project=${project}`, "--label", "com.docker.compose.service=maintenance-help", maintenanceImage, `scripts/${script}`, "--help"]);
     }
     console.log("PASS PostgreSQL maintenance image starts migration and import commands");
   },
@@ -1342,7 +1369,9 @@ const actions = {
   }, async () => {
     const cleanupErrors = [];
     try {
+      if(resourcesCreated||maintenanceImageCleanupRequired)removeOwnedMaintenanceHelpContainer();
       if (resourcesCreated) {
+        assertDevelopmentProjectOwned(project);
         const stopped = spawnSync("docker", [...compose, "down", "--rmi", "local", "-v"],
           { stdio: "inherit", env: environment });
         if (stopped.error || stopped.status !== 0) cleanupErrors.push(new Error("Disposable PostgreSQL stack cleanup failed"));
@@ -1363,6 +1392,7 @@ const actions = {
       rmSync(secretsDirectory, { recursive: true, force: true });
     }
     if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "PostgreSQL resource cleanup failed");
+    reconcileDevelopmentStartup(project);
     await recordBudgetResource(`compose:${project}`, false);
   }),
 };

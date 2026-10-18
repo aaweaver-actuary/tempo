@@ -1,6 +1,6 @@
 // One host-wide owner for newly managed heavy work. Never stop another task's resources.
 import { mkdir, mkdtemp, readFile, writeFile, rm, readdir } from 'node:fs/promises';
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir, setPriority } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -120,6 +120,77 @@ export function assertDevelopmentCapacity(requestedServices, project, docker = a
   }
   if (cpus > resourceBudgets.development.cpus + 1e-9 || memory > resourceBudgets.development.memoryMiB)
     throw new Error('New development work would exceed the aggregate study-protection budget; existing resources were left untouched');
+}
+
+const synchronousDocker = args => execFileSync('docker', args, {encoding:'utf8',timeout:5000});
+function requireSynchronousBudgetOwner(directory, token) {
+  const owner=JSON.parse(readFileSync(join(directory,'owner.json'),'utf8'));
+  if(!token||owner.token!==token)throw new Error('Development resource ownership changed; retaining its lock');
+}
+function startupPaths(project,directory) {
+  if(!/^[a-z0-9][a-z0-9_-]*$/.test(project))throw new Error('Invalid owned Compose project');
+  return {key:'startup:'+project,journal:join(directory,'resources',encodeURIComponent('startup:'+project)),lane:join(directory,'admission-lane')};
+}
+export function assertDevelopmentProjectOwned(project,{directory=budgetDirectory(),token=process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,docker=synchronousDocker}={}) {
+  requireSynchronousBudgetOwner(directory,token);
+  const ids=docker(['ps','-aq','--filter','label=com.docker.compose.project='+project]).trim().split(/\s+/).filter(Boolean);
+  const containers=ids.length?JSON.parse(docker(['inspect',...ids])):[];
+  if(containers.length!==ids.length)throw new Error('Owned Compose resource inspection is incomplete');
+  for(const container of containers)if(container.Config?.Labels?.['tempo.resource-owner']!==token||container.Config?.Labels?.['com.docker.compose.project']!==project)
+    throw new Error('Compose cleanup ownership mismatch; retain its journal');
+  return containers;
+}
+function requireStartupClaim(record,project,token) {
+  if(record.token!==token||record.project!==project||record.pid!==process.pid)
+    throw new Error('Compose startup ownership mismatch; retain admission and journal');
+}
+/** Same short admission lane as builders/managed containers; callers stay synchronous. */
+export function withDevelopmentStartup(services,project,start,{directory=budgetDirectory(),token=process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,docker=synchronousDocker,allocations=resourceBudgets.developmentServices,oneOff=false}={}) {
+  requireSynchronousBudgetOwner(directory,token);
+  const paths=startupPaths(project,directory);let ownsLane=false,mutationPossible=false,journalUncertain=false;
+  try {
+    try{mkdirSync(paths.lane,{mode:0o700});ownsLane=true;}catch(error){if(error.code==='EEXIST')throw new Error('Development startup admission is occupied; finish or reconcile its owner');throw error;}
+    writeFileSync(join(paths.lane,'startup-owner.json'),JSON.stringify({token,project,pid:process.pid}),{mode:0o600,flag:'wx'});
+    requireSynchronousBudgetOwner(directory,token);
+    if(existsSync(join(directory,'builder-lane')))throw new Error('The owned builder execution lane is occupied; no Compose startup may share its allocation');
+    assertDevelopmentProjectOwned(project,{directory,token,docker});
+    // Compose run creates another allocation even when that service already exists.
+    assertDevelopmentCapacity(services,oneOff?'__oneoff:'+randomUUID():project,docker,allocations);
+    if(existsSync(paths.journal))requireStartupClaim(JSON.parse(readFileSync(paths.journal,'utf8')),project,token);
+    else{journalUncertain=true;writeFileSync(paths.journal,JSON.stringify({key:paths.key,token,project,pid:process.pid}),{mode:0o600,flag:'wx'});journalUncertain=false;}
+    mutationPossible=true;const result=start();
+    if(result?.error)throw result.error;
+    if(result?.status!==0)throw new Error('Owned Compose startup failed; retain admission until verified cleanup');
+    const visible=assertDevelopmentProjectOwned(project,{directory,token,docker});
+    assertDevelopmentCapacity([],project,docker,allocations);
+    requireSynchronousBudgetOwner(directory,token);
+    requireStartupClaim(JSON.parse(readFileSync(join(paths.lane,'startup-owner.json'),'utf8')),project,token);
+    requireStartupClaim(JSON.parse(readFileSync(paths.journal,'utf8')),project,token);
+    if(!visible.length)rmSync(paths.journal);
+    rmSync(paths.lane,{recursive:true});ownsLane=false;
+    return result;
+  }catch(error){
+    // Pre-mutation denial can yield. Any possibly issued start remains blocked.
+    if(ownsLane&&!mutationPossible&&!journalUncertain){requireSynchronousBudgetOwner(directory,token);const ownerPath=join(paths.lane,'startup-owner.json');if(existsSync(ownerPath))requireStartupClaim(JSON.parse(readFileSync(ownerPath,'utf8')),project,token);rmSync(paths.lane,{recursive:true});}
+    throw error;
+  }
+}
+/** Cleanup bypasses admission; only verified absence can release a retained claim. */
+export function reconcileDevelopmentStartup(project,{directory=budgetDirectory(),token=process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,docker=synchronousDocker}={}) {
+  const containers=assertDevelopmentProjectOwned(project,{directory,token,docker});
+  if(containers.length)throw new Error('Compose resources remain; retain startup ownership');
+  const paths=startupPaths(project,directory),journaled=existsSync(paths.journal);
+  if(journaled)requireStartupClaim(JSON.parse(readFileSync(paths.journal,'utf8')),project,token);
+  if(existsSync(paths.lane)){
+    const ownerPath=join(paths.lane,'startup-owner.json');
+    if(!existsSync(ownerPath)){if(journaled)throw new Error('Startup admission ownership is unverified; retain its journal');}
+    else{
+      const owner=JSON.parse(readFileSync(ownerPath,'utf8'));
+      if(owner.token!==token)throw new Error('Startup admission ownership mismatch; retain its journal');
+      if(owner.project===project){requireStartupClaim(owner,project,token);requireSynchronousBudgetOwner(directory,token);rmSync(paths.lane,{recursive:true});}
+    }
+  }
+  if(journaled){requireSynchronousBudgetOwner(directory,token);rmSync(paths.journal);}
 }
 
 export async function managedBuild(build, { docker = defaultDocker, quiet = waitForStudyQuiet,

@@ -1,4 +1,4 @@
-import { runWithDevelopmentBudget, managedComposeBuild, composeResourceLimits, resourceBudgets, assertDevelopmentCapacity, recordBudgetResource, waitForStudyQuiet } from './development-budget.mjs';
+import { withDevelopmentStartup, reconcileDevelopmentStartup, assertDevelopmentProjectOwned, runWithDevelopmentBudget, managedComposeBuild, composeResourceLimits, resourceBudgets, recordBudgetResource, waitForStudyQuiet } from './development-budget.mjs';
 import { spawnSync, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -74,10 +74,19 @@ composeArgs.push('-f',resourceFile);
 let resourcesCreated = false;
 let cleanupVerified = false;
 function run(command, args, extra = {}) {
-  if(command === 'docker' && args.includes('up')) assertDevelopmentCapacity(Object.keys(resourceBudgets.legacyDevelopmentServices),project,undefined,resourceBudgets.legacyDevelopmentServices);
-  const result = spawnSync(command, args, { stdio: "inherit", env: { ...env, ...extra } });
-  if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
+  const execute = () => {
+    const result = spawnSync(command, args, { stdio: "inherit", env: { ...env, ...extra } });
+    if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
+    return result;
+  };
+  if(command === 'docker' && ['up','start','run'].some(operation=>args.includes(operation))) {
+    withDevelopmentStartup(Object.keys(resourceBudgets.legacyDevelopmentServices),project,execute,
+      {allocations:resourceBudgets.legacyDevelopmentServices,oneOff:args.includes('run')});
+    return;
+  }
+  execute();
 }
+
 function verifyTempoDataVolumeIsExternal() {
   const result = spawnSync("docker", ["compose", "-f", "docker-compose.sqlite.yml", "config", "--format", "json"], {
     encoding: "utf8", env,
@@ -245,12 +254,15 @@ try {
 finally {
   if (resourcesCreated) {
     await timeStage("container_stop", async () => {
+      assertDevelopmentProjectOwned(project);
       const result = spawnSync("docker", [...composeArgs, "down", "--rmi", "local"], { stdio: "inherit", env });
       if (result.error || result.status !== 0) throw new Error("Docker test containers could not stop");
+      reconcileDevelopmentStartup(project);
       cleanupVerified = true;
     }).catch((error) => { console.error(error.message); exitCode = 1; });
   }
   if (!resourcesCreated || cleanupVerified) {
+    reconcileDevelopmentStartup(project);
     await recordBudgetResource(`compose:${project}`, false);
     rmSync(directory, { recursive: true });
   }

@@ -388,7 +388,7 @@ test("maintenance image cleanup is armed before build timing publication can fai
 test("maintenance cleanup accepts only an absent owned image and preserves other removal failures", async () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const helperStart = source.indexOf("function isMissingMaintenanceImage(result) {");
-  const helperEnd = source.indexOf("\nfunction run(", helperStart);
+  const helperEnd = source.indexOf("\n}\n", helperStart) + 2;
   const isMissingMaintenanceImage = runInNewContext(`(${source.slice(helperStart, helperEnd)})`, { maintenanceImage: "owned-maintenance" });
   const start = source.indexOf("  cleanup: async () =>");
   const end = source.indexOf("\n};", start);
@@ -401,7 +401,7 @@ test("maintenance cleanup accepts only an absent owned image and preserves other
     [{ error: new Error("Docker unavailable"), status: null }, false],
   ]) {
     const calls = [];
-    const context = { recordBudgetResource:async()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
+    const context = { recordBudgetResource:async()=>{},reconcileDevelopmentStartup:()=>{},removeOwnedMaintenanceHelpContainer:()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
       maintenanceImage: "owned-maintenance", environment: {}, secretsDirectory: "owned-secrets", process: { env: {} },
       spawnSync: (command, args) => { calls.push([command, Array.from(args)]); return removal; },
       rmSync: path => calls.push(["secrets", path]) };
@@ -1182,3 +1182,192 @@ test('study_priority_large_transition_planning_uses_bounded_diagnostic_allocatio
   assert.doesNotMatch(idleCall,/temporarily unavailable|OperationalError|transaction_timeout/,
     'A terminated read must remain a visible proof failure');
 });
+
+
+for (const [runnerName, functionEnd] of [
+  ['test-postgres-docker.mjs', '\nconst workloadConsumers'],
+  ['test-docker.mjs', '\nfunction verifyTempoDataVolumeIsExternal'],
+]) {
+  for (const contention of ['reserved_builder', 'native_inventory_to_start_race']) {
+    test(`study_priority_${runnerName.replaceAll('.', '_')}_${contention}_cannot_overcommit`, async () => {
+      const { acquireDevelopmentBudget, assertDevelopmentCapacity, resourceBudgets, withDevelopmentStartup } =
+        await import('../../scripts/development-budget.mjs');
+      const { existsSync } = await import('node:fs');
+      const parent = mkdtempSync(join(tmpdir(), 'tempo-native-admission-regression-'));
+      const directory = join(parent, 'lease');
+      const lease = await acquireDevelopmentBudget({ directory });
+      const admissionLane = join(directory, 'admission-lane');
+      const builderLane = join(directory, 'builder-lane');
+      const source = readFileSync(join(root, 'scripts', runnerName), 'utf8');
+      const start = source.indexOf('function run(command,');
+      const end = source.indexOf(functionEnd, start);
+      assert(start >= 0 && end > start, 'Execute the actual owning runner command path');
+      let competingAllocation = contention === 'reserved_builder';
+      if (competingAllocation) mkdirSync(builderLane);
+      const events = [];
+      const inventory = args => {
+        assert.equal(args[0], 'ps');
+        events.push('inventory-empty');
+        // A same-owner sibling reaches its startup barrier after this snapshot.
+        // Respect shared admission if the runner has already acquired it.
+        if (contention === 'native_inventory_to_start_race' && !existsSync(admissionLane)) {
+          competingAllocation = true;
+          events.push('sibling-reserved-full-development-allocation');
+        }
+        return '';
+      };
+      const context = {
+        project: 'owned-native', environment: {}, env: {}, resourceBudgets,
+        priorityResourceLimits: 'priority.json', diagnosticResourceLimits: 'diagnostic.json',
+        postgresProofAllocations: () => resourceBudgets.developmentServices,
+        assertDevelopmentCapacity: (services, project, _docker, allocations) =>
+          assertDevelopmentCapacity(services, project, inventory, allocations),
+        withDevelopmentStartup: (services, project, start, options) => withDevelopmentStartup(services,project,start,{...options,directory,token:lease.token,docker:inventory}),
+        postgresCommandTiming: () => ({ label: 'start', category: 'test' }),
+        measureScenario: { syncDetail: (_label, _category, operation) => operation(), processResult: () => {} },
+        spawnSync: (command, args) => {
+          assert.equal(command, 'docker');assert(args.includes('up'));
+          events.push('docker-start');
+          assert.equal(competingAllocation, false,
+            `${runnerName} launched Docker while a sibling owns the full 2 CPU/2048 MiB allocation; ${events.join(' -> ')}`);
+          return { status: 0 };
+        },
+      };
+      try {
+        const run = runInNewContext(`(${source.slice(start, end)})`, context);
+        try { await run('docker', ['compose', 'up', '--wait', 'postgres']); }
+        catch (error) {
+          if (/occupied|admission|exceed the aggregate/.test(String(error))) return;
+          throw error;
+        }
+        assert(events.includes('docker-start'), 'The actual start path must execute or explicitly defer');
+      } finally {
+        rmSync(builderLane, { recursive: true, force: true });
+        await lease.release();
+        rmSync(parent, { recursive: true, force: true });
+      }
+    });
+  }
+}
+
+async function nativeStartupFixture(action) {
+  const budget=await import('../../scripts/development-budget.mjs');
+  const {existsSync}=await import('node:fs');
+  const parent=mkdtempSync(join(tmpdir(),'tempo-native-startup-owner-'));
+  const directory=join(parent,'lease'),lease=await budget.acquireDevelopmentBudget({directory});
+  const project='owned-startup',state={containers:[],inspectionFails:false};
+  const container=(service='postgres',cpus=.4,memoryMiB=352)=>({Id:'owned-container',State:{Running:true},
+    HostConfig:{NanoCpus:cpus*1e9,Memory:memoryMiB*1024**2},Config:{Labels:{'tempo.resource-owner':lease.token,
+      'tempo.resource-class':'development','com.docker.compose.project':project,'com.docker.compose.service':service}}});
+  const docker=args=>{
+    if(state.inspectionFails)throw new Error('Injected Docker inspection uncertainty');
+    if(args[0]==='ps')return state.containers.filter(value=>args.includes('-aq')||value.State.Running).map(value=>value.Id).join('\n');
+    if(args[0]==='inspect')return JSON.stringify(state.containers);
+    throw new Error('Unexpected injected Docker command '+args.join(' '));
+  };
+  const options={directory,token:lease.token,docker},paths={lane:join(directory,'admission-lane'),journal:join(directory,'resources',encodeURIComponent('startup:'+project))};
+  try{return await action({budget,lease,state,container,options,paths,project,existsSync});}
+  finally{ // All Docker state is injected; only this test's private mock lease is removed.
+    rmSync(parent,{recursive:true,force:true});
+  }
+}
+
+test('native_startup_exception_retains_atomic_admission_until_exact_absence_reconciliation',()=>nativeStartupFixture(async({budget,lease,options,paths,project,existsSync})=>{
+  assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{assert(existsSync(paths.journal));throw new Error('Ambiguous startup');},options),/Ambiguous startup/);
+  assert(existsSync(paths.lane));assert(existsSync(paths.journal));await assert.rejects(lease.release());
+  budget.reconcileDevelopmentStartup(project,options);assert(!existsSync(paths.lane));assert(!existsSync(paths.journal));await lease.release();
+}));
+
+test('native_startup_partial_failure_and_post_start_inspection_uncertainty_retain_the_reservation',()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
+  assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{state.containers=[container()];return{status:1};},options),/startup failed/);
+  assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/resources remain/);assert(existsSync(paths.lane));assert(existsSync(paths.journal));
+  state.containers=[];budget.reconcileDevelopmentStartup(project,options);
+  assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{state.inspectionFails=true;return{status:0};},options),/inspection uncertainty/);
+  assert(existsSync(paths.lane));assert(existsSync(paths.journal));state.inspectionFails=false;budget.reconcileDevelopmentStartup(project,options);
+}));
+
+test('native_startup_visible_success_preserves_result_and_ownership_until_project_cleanup',()=>nativeStartupFixture(async({budget,lease,state,container,options,paths,project,existsSync})=>{
+  const expected={status:0,stdout:'unchanged stdout',stderr:'unchanged stderr'};
+  const actual=budget.withDevelopmentStartup(['postgres'],project,()=>{assert(existsSync(paths.lane));state.containers=[container()];return expected;},options);
+  assert.equal(actual,expected);assert(!existsSync(paths.lane));assert(existsSync(paths.journal));await assert.rejects(lease.release());
+  state.containers=[];budget.reconcileDevelopmentStartup(project,options);await lease.release();
+}));
+
+test('native_startup_one_off_compose_run_adds_allocation_even_with_same_service_already_running',()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
+  state.containers=[container('schema',1,1024)];let starts=0;
+  assert.throws(()=>budget.withDevelopmentStartup(['schema'],project,()=>{starts++;return{status:0};},
+    {...options,oneOff:true,allocations:{schema:{cpus:1.5,memoryMiB:1536}}}),/exceed the aggregate/);
+  assert.equal(starts,0);assert(!existsSync(paths.lane));assert(!existsSync(paths.journal));
+}));
+
+test('native_startup_reconciliation_never_reclaims_changed_owner_or_missing_pid_claims',()=>nativeStartupFixture(async({budget,options,paths,project,existsSync})=>{
+  assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{throw new Error('ambiguous');},options),/ambiguous/);
+  const original=JSON.parse(readFileSync(paths.journal,'utf8'));
+  writeFileSync(paths.journal,JSON.stringify({...original,pid:2147483647}));
+  assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/ownership mismatch/);assert(existsSync(paths.lane));assert(existsSync(paths.journal));
+  assert.throws(()=>budget.reconcileDevelopmentStartup(project,{...options,claimPid:2147483647}),/ownership mismatch/,'Caller cannot override the actual cleanup process identity');
+  writeFileSync(paths.journal,JSON.stringify(original));const ownerPath=join(paths.lane,'startup-owner.json');const owner=JSON.parse(readFileSync(ownerPath,'utf8'));
+  writeFileSync(ownerPath,JSON.stringify({...owner,token:'foreign'}));assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/ownership mismatch/);assert(existsSync(paths.journal));
+  writeFileSync(ownerPath,JSON.stringify(owner));budget.reconcileDevelopmentStartup(project,options);
+}));
+
+for(const foreign of [false,true]){
+  test(`sqlite_actual_cleanup_${foreign?'foreign_owner':'false_success'}_cannot_clear_uncertain_startup`,()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
+    assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{state.containers=[container()];return{status:1};},options),/startup failed/);
+    const source=readFileSync(join(root,'scripts/test-docker.mjs'),'utf8'),begin=source.indexOf('async () => {',source.indexOf('await timeStage("container_stop"')),
+      end=source.indexOf('}).catch',begin)+1;assert(begin>=0&&end>begin);
+    let downCalls=0,remove=false;
+    const context={project,env:{},composeArgs:['compose','-p',project],cleanupVerified:false,
+      assertDevelopmentProjectOwned:()=>budget.assertDevelopmentProjectOwned(project,options),
+      reconcileDevelopmentStartup:()=>budget.reconcileDevelopmentStartup(project,options),
+      spawnSync:(_command,args)=>{assert(args.includes('down'));downCalls++;if(remove)state.containers=[];return{status:0};}};
+    const cleanup=runInNewContext(`(${source.slice(begin,end)})`,context);
+    if(foreign)state.containers[0].Config.Labels['tempo.resource-owner']='foreign';
+    await assert.rejects(cleanup(),foreign?/ownership mismatch/:/resources remain/);assert.equal(context.cleanupVerified,false);
+    assert(existsSync(paths.journal));assert(existsSync(paths.lane));assert.equal(downCalls,foreign?0:1);
+    state.containers[0].Config.Labels['tempo.resource-owner']=options.token;remove=true;await cleanup();assert.equal(context.cleanupVerified,true);assert(!existsSync(paths.journal));assert(!existsSync(paths.lane));
+  }));
+}
+
+test('native_startup_missing_lane_identity_and_changed_success_owner_keep_uncertainty_blocked',()=>nativeStartupFixture(async({budget,options,paths,project,existsSync})=>{
+  assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{throw new Error('ambiguous');},options),/ambiguous/);
+  const ownerPath=join(paths.lane,'startup-owner.json'),original=readFileSync(ownerPath,'utf8');rmSync(ownerPath);
+  assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/unverified/);assert(existsSync(paths.journal));
+  writeFileSync(ownerPath,original);budget.reconcileDevelopmentStartup(project,options);
+  assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{const owner=JSON.parse(readFileSync(ownerPath,'utf8'));writeFileSync(ownerPath,JSON.stringify({...owner,token:'foreign'}));return{status:0};},options),/ownership mismatch/);
+  assert(existsSync(paths.lane));assert(existsSync(paths.journal));writeFileSync(ownerPath,original);budget.reconcileDevelopmentStartup(project,options);
+}));
+
+test('native_startup_rejects_inherited_lease_mismatch_before_any_external_effect',()=>nativeStartupFixture(async({budget,options,paths,project,existsSync})=>{
+  let starts=0;assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{starts++;return{status:0};},{...options,token:'foreign'}),/ownership changed/);
+  assert.equal(starts,0);assert(!existsSync(paths.lane));assert(!existsSync(paths.journal));
+}));
+
+test('native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation',()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
+  const source=readFileSync(join(root,'scripts/test-postgres-docker.mjs'),'utf8'),name=project+'-maintenance-help',commands=[];
+  const begin=source.indexOf('  maintenance_cli: async () => {'),end=source.indexOf('  startup: async () => {',begin);
+  const action=runInNewContext(`({${source.slice(begin,end)}})`,{maintenanceImageCleanupRequired:false,maintenanceImage:'owned-maintenance',maintenanceHelpContainer:name,project,
+    candidateRevision:'test-revision',process:{env:{TEMPO_DEVELOPMENT_BUDGET_TOKEN:options.token}},console:{log(){}},managedBuild:async build=>build('owned-builder'),run:(_command,args)=>commands.push(Array.from(args))});
+  await action.maintenance_cli();const args=commands.find(args=>args[0]==='run');assert(args,'Exercise actual standalone maintenance start arguments');
+  assert.equal(args[args.indexOf('--name')+1],name);
+  const context={project,maintenanceHelpContainer:name,environment:{},assert,process:{env:{TEMPO_DEVELOPMENT_BUDGET_TOKEN:options.token}},
+    postgresCommandTiming:()=>({label:'start',category:'test'}),measureScenario:{syncDetail:(_label,_category,call)=>call(),processResult(){}},
+    withDevelopmentStartup:(services,p,start,opts)=>{assert.equal(opts.oneOff,true);assert.equal(opts.allocations['maintenance-help'].memoryMiB,256);return budget.withDevelopmentStartup(services,p,start,{...options,...opts});},
+    spawnSync:(_command,actualArgs)=>{assert.equal(actualArgs[0],'run');const labels=Object.fromEntries(actualArgs.flatMap((value,index)=>value==='--label'?[actualArgs[index+1].split(/=(.*)/s).slice(0,2)]:[]));
+      const raw=container('maintenance-help',.2,256);raw.Name='/'+name;raw.Config.Labels=labels;state.containers=[raw];return{error:new Error('response lost after Docker creation'),status:null};}};
+  const start=source.indexOf('function run(command,'),finish=source.indexOf('\nconst workloadConsumers',start),run=runInNewContext(`(${source.slice(start,finish)})`,context);
+  assert.throws(()=>run('docker',args),/failed/);assert(existsSync(paths.lane));assert(existsSync(paths.journal));
+  assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/resources remain/);
+  let removalWorks=false,removals=0;
+  context.spawnSync=(_command,call)=>{
+    if(call[0]==='container'){
+      const value=state.containers.find(value=>call[2]===name||call[2]===value.Id);
+      return value?{status:0,stdout:JSON.stringify([value])}:{status:1,stderr:'Error response from daemon: No such container: '+call[2]};
+    }
+    assert.equal(call[0],'rm');assert.equal(call.at(-1),'owned-container');removals++;if(removalWorks)state.containers=[];return{status:0};
+  };
+  const cleanupStart=source.indexOf('function removeOwnedMaintenanceHelpContainer()'),cleanupEnd=source.indexOf('\nfunction run(',cleanupStart),cleanup=runInNewContext(`(${source.slice(cleanupStart,cleanupEnd)})`,context);
+  state.containers[0].Config.Labels['tempo.resource-owner']='foreign';assert.throws(cleanup,/ownership mismatch/);assert.equal(removals,0);
+  state.containers[0].Config.Labels['tempo.resource-owner']=options.token;assert.throws(cleanup,/still exists/);assert(existsSync(paths.journal));assert(existsSync(paths.lane));
+  removalWorks=true;cleanup();budget.reconcileDevelopmentStartup(project,options);assert(!existsSync(paths.journal));assert(!existsSync(paths.lane));assert.equal(removals,2);
+}));
