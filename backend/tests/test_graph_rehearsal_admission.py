@@ -1,4 +1,5 @@
 """Direct graph rehearsals yield without replacing their durable claim."""
+import ast
 import importlib.util
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -83,3 +84,20 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
         fixture.claim.assert_not_called()
     fixture.task.assert_called_once_with('opening_graph_rebuild')
     assert task == {'id': 'original-task', 'generation': 7, 'lease_token': 'original-lease', 'phase': 'cleanup'}
+
+
+@pytest.mark.parametrize('filename', ['check_postgres_graph_retention.py', 'check_postgres_canonical_freshness.py'])
+def test_native_graph_direct_entry_calls_use_shared_admission_protocol(filename):
+    path = Path(__file__).resolve().parents[2] / 'scripts' / filename
+    tree = ast.parse(path.read_text())
+    targets = {'prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice', 'execute_priority_retention_slice'}
+
+    def operation_name(operation):
+        return operation.attr if isinstance(operation, ast.Attribute) else operation.id if isinstance(operation, ast.Name) else None
+
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    unguarded = [node.lineno for node in calls if operation_name(node.func) in targets]
+    guarded = [node for node in calls if operation_name(node.func) == 'admitted_call'
+               and node.args and operation_name(node.args[0]) in targets]
+    assert guarded, 'The selected native driver must exercise real graph admission'
+    assert not unguarded, f'{filename} bypasses ordinary admission at lines {unguarded}'
