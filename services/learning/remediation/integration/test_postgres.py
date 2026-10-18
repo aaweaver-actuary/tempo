@@ -673,16 +673,21 @@ def test_native_owner_projection_keeps_replay_prior_attempt_fence_and_invalidati
 def test_native_legacy_variant_reuses_receipt_frontier_settlement_and_outer_transaction(workspace):
     """Synthetic module outcomes; not a normal Study or backend HTTP proof."""
     from tempo_game_evidence_contracts import v3
+    from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
     from tempo_learning_remediation import (LegacyAcceptedDecision, ReceiveContext, CurrentMissProjection,
                                             current_miss_sql, accepted_storage_identity)
 
-    value = json.loads((Path(__file__).parents[1] / "tests/legacy-delivery.json").read_text())
+    source = json.loads((Path(__file__).parents[1] / "tests/legacy-scoped-acceptance.json").read_text())
+    value = source["delivery"]
     value["workspace_id"] = value["authority"]["workspace_id"] = workspace
     value = v3.EvidenceDelivery.model_validate(value)
+    proof = LegacyScopedCatalogueProof.model_validate(source["proof"]).model_copy(update={
+        "authority_id": value.authority.storage_identity()[0]})
     comparison = value.comparisons[0]
     current = LegacyAcceptedDecision(comparison.card_id, comparison.card_revision, comparison.decision_id,
         value.authority, value.encounters[0].position_key, ("a7a6",), workspace, comparison.route_id,
-        comparison.route_ply, comparison.exercise_ply, comparison.executable_digest, ("a7a6",), True, True, True)
+        comparison.route_ply, comparison.exercise_ply, comparison.executable_digest, ("a7a6",), True, True, True,
+        scope_proof=proof)
     local_time = NOW + timedelta(days=4)
 
     class Authority:
@@ -712,6 +717,8 @@ def test_native_legacy_variant_reuses_receipt_frontier_settlement_and_outer_tran
         assert repository.receive(value, context) == receipt
         assert repository.receipt(value.delivery_id) == receipt
         assert count(connection, "remediation_contributions", workspace) == 1
+        assert json.loads(connection.execute("SELECT payload_json FROM remediation_contributions WHERE workspace_id=%s",
+            (workspace,)).fetchone()[0])["decision_scope_proof"] == proof.model_dump(mode="json")
         assert repository.bind_attempt(prior, current) == 0
 
         def outstanding():

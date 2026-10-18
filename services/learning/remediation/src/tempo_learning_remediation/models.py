@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
 from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken
+from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class LegacyAcceptedDecision:
     introduced_before_game: bool = False
     active: bool = True
     aliases: tuple[str, ...] = ()
+    scope_proof: LegacyScopedCatalogueProof | None = None
 
 
 def accepted_storage_identity(accepted: AcceptedDecision | LegacyAcceptedDecision) -> tuple[str, int]:

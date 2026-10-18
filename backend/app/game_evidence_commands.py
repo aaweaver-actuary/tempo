@@ -87,7 +87,12 @@ def _lock_and_recheck(database, prepared):
     database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
         ("tempo:imported-game:" + delivery.game_source.provider + ":" + delivery.game_source.provider_game_id,))
     database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
-    affected = {item.card_id for item in delivery.obligations}
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))",
+        ("tempo:opening-graph:" + delivery.authority.repertoire_id,))
+    obligation_cards = {item.card_id for item in delivery.obligations}
+    authority_cards = ({row["card_id"] for row in captured.graphs}
+        if isinstance(captured, authority_owner.Capture) else set())
+    affected = obligation_cards | authority_cards
     for withdrawal in delivery.withdrawals:
         row = database.execute_native("""SELECT contribution.card_id,contribution.payload_json,
                 contribution.evidence_id,contribution.game_id,contribution.obligation_revision
@@ -130,22 +135,35 @@ def _lock_and_recheck(database, prepared):
                 expected["graph_generation"], expected["graph_state"], expected["integrity_status"],
                 expected["scan_status"], expected["scan_generation"])):
         return RemediationError("stale_revision", "legacy_authority_changed_before_acceptance")
+    from .services.postgres_integrity import current_integrity_certificate
+    certificate = current_integrity_certificate(database, delivery.authority.repertoire_id, expected["graph_generation"])
+    if certificate is None or certificate != expected.get("integrity_certificate"):
+        return RemediationError("stale_revision", "legacy_integrity_certificate_changed_before_acceptance")
     game = database.execute_native("SELECT " + authority_owner._GAME_COLUMNS + " FROM imported_games WHERE id=%s FOR SHARE",
         (delivery.game_id,)).fetchone()
     if not game or dict(game) != captured.game:
         return RemediationError("stale_revision", "legacy_game_changed_before_acceptance")
     captured_cards = {row["id"]: row for row in captured.tables["cards"]}
-    for card_id in affected:
+    for card_id in obligation_cards | authority_cards:
         row = database.execute_native("SELECT " + authority_owner._CARD_COLUMNS + " FROM cards WHERE id=%s", (card_id,)).fetchone()
         before = captured_cards.get(card_id)
+        memberships = database.execute_native("SELECT repertoire_id,canonical_route_source FROM repertoire_cards "
+            "WHERE card_id=%s ORDER BY repertoire_id LIMIT 101 FOR SHARE", (card_id,)).fetchall()
+        expected_memberships = sorted((item["repertoire_id"], item.get("canonical_route_source"))
+            for item in captured.tables["repertoire_cards"] if item["card_id"] == card_id)
+        deleted = bool(database.execute_native("SELECT 1 FROM deleted_cards WHERE card_id=%s", (card_id,)).fetchone())
+        blocked = bool(database.execute_native("SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=%s", (card_id,)).fetchone())
+        if before is None and card_id not in obligation_cards:
+            if row is None or row["content_type"] != "opening" or deleted:
+                continue  # Still unavailable; a newly eligible owner must be recaptured.
+            return RemediationError("stale_revision", "legacy_physical_candidate_changed_before_acceptance")
         if (row is None or before is None or any(row[key] != before[key] for key in
                 authority_owner._CARD_COLUMNS.split(",") if key != "introduced_at")
-                or (row["introduced_at"] is None) != (before["introduced_at"] is None)
-                or not authority_owner.introduced_before_game(row["introduced_at"],
-                    datetime.fromisoformat(delivery.occurred_at.replace("Z", "+00:00")))
-                or database.execute_native("SELECT 1 FROM deleted_cards WHERE card_id=%s", (card_id,)).fetchone()
-                or database.execute_native("SELECT 1 FROM repertoire_integrity_card_blocks WHERE repertoire_id=%s AND card_id=%s",
-                    (delivery.authority.repertoire_id, card_id)).fetchone()):
+                or sorted(tuple(item) for item in memberships) != expected_memberships
+                or deleted != bool(before.get("deleted")) or blocked != bool(before.get("integrity_blocked"))
+                or (card_id in obligation_cards and ((row["introduced_at"] is None) != (before["introduced_at"] is None)
+                    or not authority_owner.introduced_before_game(row["introduced_at"],
+                        datetime.fromisoformat(delivery.occurred_at.replace("Z", "+00:00"))) or deleted or blocked))):
             return RemediationError("stale_revision", "legacy_physical_card_changed_before_acceptance")
     return None
 

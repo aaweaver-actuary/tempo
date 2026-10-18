@@ -7,6 +7,12 @@ that declared dependency only; its new artifact combination is unqualified.
 with missing/revision-2 bindings, unchanged identity across ordinary Study and
 introduction/recapture, and explicit nonempty-prefix refusal.
 
+The same suite owns scoped capture conversion: complete EOF proof separated from
+bounded retained candidates, inherited prefix authority rather than recomputing
+from selected-only routes, identical full physical/interior projection, rejecting
+partial/mixed proof, and refusing an owner-blocked full card. No source capture,
+acceptance, queue issuance or review is performed by this translator.
+
 `tests/test_operator.py` owns installed independence, private operator credential
 and origin validation, and serialized Content-to-Learning identity/alternative
 mapping. The normal component suite rejects zero selection.

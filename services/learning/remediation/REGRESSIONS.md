@@ -10,6 +10,10 @@ The normal module suite discovers it. The native owning case
 adds outer rollback, response replay, a pre-acceptance attempt fence, shared
 qualifying module settlement and invalidation using v3. It is collected but
 unexecuted at this checkpoint and does not prove actual normal Study adoption.
+That case now also retains the owner scoped proof through actual module storage
+when run. `test_owner_scoped_proof_is_retained_without_changing_shared_incident_or_authority_identity`
+and `test_scoped_proof_for_another_game_cannot_be_retained_as_this_accepted_incident`
+own proof provenance and linkage without new admission/settlement policy.
 
 The installed package suite owns semantic linkage, validity, explicit gameplay
 priority, cap/progression exceptions, alias deduplication, protected heads and

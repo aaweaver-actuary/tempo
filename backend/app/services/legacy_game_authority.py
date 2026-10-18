@@ -13,12 +13,11 @@ from tempo_chess_core import canonical_fen_key
 from tempo_game_evidence_contracts.legacy import (LegacyAuthorityToken, fingerprint,
     authority_source_digest, authority_graph_digest, decision_identity)
 from tempo_learning_remediation import LegacyAcceptedDecision, RemediationError
+from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
 from ..database import background_read_connection
 from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
 
-PAGE_SIZE = 64
-MAX_SOURCE_ROWS = 4096
 MAX_DECISION_ROUTES = 64
 _REPERTOIRE_COLUMNS = "id,name,is_main,scope_source_revision,canonical_prefix_revision,canonical_prefix_moves_json,canonical_prefix_preview_id"
 _CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
@@ -33,6 +32,8 @@ class Capture:
     tables: dict
     graphs: list
     game: dict
+    catalogue_proof: LegacyScopedCatalogueProof | None = None
+    digests: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -89,19 +90,6 @@ def read_rows(statement, parameters=()):
         return [dict(row) for row in database.execute_native(statement, parameters).fetchall()]
 
 
-def paged_rows(statement, parameters=(), *, composite=False):
-    rows, cursor = [], ("", -1) if composite else ""
-    while True:
-        values = (*parameters, *cursor) if composite else (*parameters, cursor)
-        page = read_rows(statement, values)
-        rows.extend(page)
-        if len(rows) > MAX_SOURCE_ROWS:
-            raise RemediationError("stale_revision", "legacy_capture_scope_exceeds_bound")
-        if len(page) < PAGE_SIZE:
-            return rows
-        cursor = (page[-1]["line_id"], page[-1]["decision_index"]) if composite else page[-1]["id"]
-
-
 def metadata(repertoire_id):
     rows = read_rows("""SELECT repertoire.scope_source_revision,repertoire.canonical_prefix_revision,
         scope.generation catalogue_generation,graph.generation graph_generation,graph.state graph_state,
@@ -112,51 +100,15 @@ def metadata(repertoire_id):
         WHERE repertoire.id=%s AND scope.id=1""", (repertoire_id,))
     if len(rows) != 1:
         raise RemediationError("stale_revision", "legacy_repertoire_authority_missing")
-    return rows[0]
+    from .postgres_integrity import current_integrity_certificate
+    with background_read_connection() as database:
+        certificate = current_integrity_certificate(database, repertoire_id, rows[0]["graph_generation"])
+    return {**rows[0], "integrity_current": certificate is not None, "integrity_certificate": certificate}
 
 
 def capture(delivery):
-    repertoire_id = delivery.authority.repertoire_id
-    before = metadata(repertoire_id)
-    if (before["graph_state"] != "ready" or before["integrity_status"] != "clean"
-            or before["scan_status"] != "idle"):
-        raise RemediationError("stale_revision", "legacy_graph_or_integrity_not_ready")
-    identity = read_rows("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1")
-    if len(identity) != 1 or identity[0]["workspace_id"] != LEGACY_WORKSPACE_ID:
-        raise RemediationError("stale_revision", "legacy_backend_identity_missing")
-    target_id = identity[0]["target_id"]
-    repertoires = paged_rows("SELECT " + _REPERTOIRE_COLUMNS +
-        " FROM repertoires WHERE left(id,2)<>'__' AND id>%s ORDER BY id LIMIT 64")
-    lines = paged_rows("""SELECT id,repertoire_id,trained_color,start_fen,moves_json
-        FROM repertoire_lines WHERE left(repertoire_id,2)<>'__' AND id>%s ORDER BY id LIMIT 64""")
-    cards = paged_rows("SELECT " + ",".join("card." + column for column in _CARD_COLUMNS.split(",")) +
-        " FROM cards card WHERE EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id"
-        " AND link.repertoire_id=%s) AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id)"
-        " AND card.content_type='opening' AND card.id>%s ORDER BY card.id LIMIT 64",
-        (repertoire_id,))
-    links, link_cursor = [], ("", "")
-    while True:
-        page = read_rows("""SELECT link.repertoire_id,link.card_id,link.canonical_route_source
-            FROM repertoire_cards link WHERE EXISTS(SELECT 1 FROM repertoire_cards selected
-            WHERE selected.card_id=link.card_id AND selected.repertoire_id=%s)
-            AND (link.repertoire_id,link.card_id)>(%s,%s)
-            ORDER BY link.repertoire_id,link.card_id LIMIT 64""", (repertoire_id, *link_cursor))
-        links.extend(page)
-        if len(links) > MAX_SOURCE_ROWS:
-            raise RemediationError("stale_revision", "legacy_capture_scope_exceeds_bound")
-        if len(page) < PAGE_SIZE: break
-        link_cursor = (page[-1]["repertoire_id"], page[-1]["card_id"])
-    graphs = paged_rows("""SELECT * FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s
-        AND (line_id,decision_index)>(%s,%s) ORDER BY line_id,decision_index LIMIT 64""",
-        (repertoire_id, before["graph_generation"]), composite=True)
-    games = read_rows("SELECT " + _GAME_COLUMNS + " FROM imported_games WHERE id=%s", (delivery.game_id,))
-    if len(games) != 1:
-        raise RemediationError("stale_revision", "legacy_game_source_missing")
-    after = metadata(repertoire_id)
-    if before != after:
-        raise RemediationError("stale_revision", "legacy_source_changed_during_capture")
-    return Capture(target_id, before, dict(repertoires=repertoires, repertoire_lines=lines,
-                   cards=cards, repertoire_cards=links), graphs, games[0])
+    from .legacy_game_capture import capture_scope
+    return capture_scope(delivery, read_rows, metadata)
 
 
 def current_token(captured, repertoire_id):
@@ -169,11 +121,12 @@ def current_token(captured, repertoire_id):
         canonical_prefix_revision=captured.metadata["canonical_prefix_revision"],
         catalogue_generation=captured.metadata["catalogue_generation"],
         graph_generation=captured.metadata["graph_generation"], graph_state=captured.metadata["graph_state"],
-        source_digest=authority_source_digest(captured.tables), graph_digest=authority_graph_digest(captured.graphs),
-        catalogue_digest=fingerprint([dict(repertoire_id=row["repertoire_id"], route_id=row["id"],
+        source_digest=(captured.digests["source_digest"] if captured.digests else authority_source_digest(captured.tables)),
+        graph_digest=(captured.digests["graph_digest"] if captured.digests else authority_graph_digest(captured.graphs)),
+        catalogue_digest=(captured.digests["catalogue_digest"] if captured.digests else fingerprint([dict(repertoire_id=row["repertoire_id"], route_id=row["id"],
             policy_id=row["repertoire_id"], learner_color=row["trained_color"], starting_fen=row["start_fen"],
             moves=json.loads(row["moves_json"])) for row in sorted(
-                captured.tables["repertoire_lines"], key=lambda row: row["id"])]))
+                captured.tables["repertoire_lines"], key=lambda row: row["id"])])))
 
 
 def positions(starting_fen, moves):
@@ -196,8 +149,7 @@ def introduced_before_game(value, game_time):
         return False
     try:
         if len(value) == 10:
-            # A date-only marker has unknown intraday time. The end of that day
-            # is a conservative bound; same-day games remain unsupported.
+            # Unknown intraday time: only a later UTC day is established.
             latest = datetime.fromisoformat(value).replace(tzinfo=timezone.utc) + timedelta(days=1)
             return latest <= game_time
         known = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -206,24 +158,48 @@ def introduced_before_game(value, game_time):
         return False
 
 
+def completed_game_time(game):
+    if game["result"] not in {"win", "loss", "draw", "1-0", "0-1", "1/2-1/2"}:
+        raise RemediationError("terminal_failure", "legacy_completed_game_required")
+    try:
+        actual = datetime.fromisoformat(game["played_at"].replace("Z", "+00:00"))
+        if actual.tzinfo is None or actual.utcoffset() is None:
+            raise ValueError("unknown game time")
+        return actual
+    except (ValueError, TypeError, AttributeError) as error:
+        raise RemediationError("stale_revision", "legacy_game_time_unknown_or_changed") from error
+
+
 def prepare_decisions(delivery, captured):
     """Verify full current source bindings; never choose among game findings."""
     token = current_token(captured, delivery.authority.repertoire_id)
+    if not captured.metadata.get("integrity_current"):
+        raise RemediationError("stale_revision", "legacy_completed_current_integrity_required")
     game = captured.game
     source = delivery.game_source
     if (game["provider"], game["provider_game_id"], game["content_hash"]) != (
             source.provider, source.provider_game_id, source.content_hash) or game["adaptive_excluded"]:
         raise RemediationError("stale_revision", "legacy_game_source_changed")
-    if game["result"] not in {"win", "loss", "draw", "1-0", "0-1", "1/2-1/2"}:
-        raise RemediationError("terminal_failure", "legacy_completed_game_required")
-    actual_time = datetime.fromisoformat(game["played_at"].replace("Z", "+00:00"))
+    actual_time = completed_game_time(game)
     expected_time = datetime.fromisoformat(delivery.occurred_at.replace("Z", "+00:00"))
-    if actual_time.tzinfo is None or actual_time != expected_time:
+    if actual_time != expected_time:
         raise RemediationError("stale_revision", "legacy_game_time_unknown_or_changed")
     selected = next((row for row in captured.tables["repertoires"] if row["id"] == token.repertoire_id), None)
     if selected is None or json.loads(selected.get("canonical_prefix_moves_json", "[]")):
         raise RemediationError("stale_revision", "legacy_canonical_prefix_adapter_unsupported")
     game_moves = json.loads(game["moves_json"])
+    if captured.catalogue_proof is not None:
+        proof = captured.catalogue_proof
+        if (proof.authority_id != token.storage_identity()[0]
+                or proof.source_identity_digests() != captured.digests
+                or proof.catalogue_generation != token.catalogue_generation
+                or datetime.fromisoformat(proof.scope.occurred_at.replace("Z", "+00:00")) != actual_time
+                or (proof.scope.game_id, proof.scope.content_hash, proof.scope.learner_color,
+                    proof.scope.moves, proof.scope.decision_plies) != (
+                    delivery.game_id, source.content_hash, game["color"], game_moves,
+                    sorted({item.ply for item in delivery.encounters}))
+                or set(proof.candidate_route_ids) != {row["id"] for row in captured.tables["repertoire_lines"]}):
+            raise RemediationError("stale_revision", "legacy_scoped_capture_mismatch")
     game_boards = positions(game["start_fen"], game_moves)
     cards = {row["id"]: row for row in captured.tables["cards"]}
     lines = captured.tables["repertoire_lines"]
@@ -259,7 +235,8 @@ def prepare_decisions(delivery, captured):
                 card = cards.get(graph["card_id"])
                 if (card is None or card["revision"] != 1 or card["trained_color"] != game["color"]
                         or card.get("content_type", "opening") != "opening"
-                        or card["archived"] or card["pending_validation"] or card.get("superseded_by")
+                        or card["archived"] or card["pending_validation"] or card.get("deleted")
+                        or card.get("integrity_blocked") or card.get("superseded_by")
                         or card["start_fen"] != graph["starting_fen"]
                         or json.loads(card["moves_json"]) != json.loads(graph["moves_json"])):
                     continue
@@ -292,5 +269,6 @@ def prepare_decisions(delivery, captured):
             row["id"], ply, offset, fingerprint(dict(starting_fen=card["start_fen"], moves=physical_moves,
                 trained_color=card["trained_color"])), tuple(sorted({moves[ply] for _, moves in matching})),
             all_mapped and len(mapped_decisions) == 1, card.get("introduced_at") is not None,
-            introduced_before_game(card.get("introduced_at"), actual_time))
+            introduced_before_game(card.get("introduced_at"), actual_time),
+            scope_proof=captured.catalogue_proof)
     return token, decisions

@@ -87,6 +87,13 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery | v3.E
             if (not accepted.physical_binding_complete or
                     set(accepted.authored_moves) != set(accepted.accepted_moves)):
                 raise RemediationError("terminal_failure", "unknown_is_not_permission")
+            if accepted.scope_proof is not None:
+                proof = accepted.scope_proof
+                if (proof.authority_id != accepted.authority.storage_identity()[0]
+                        or proof.scope.game_id != delivery.game_id
+                        or proof.scope.content_hash != delivery.game_source.content_hash
+                        or encounter.ply not in proof.scope.decision_plies):
+                    raise RemediationError("stale_revision", "legacy_decision_scope_changed")
         if accepted is None or not accepted.active:
             raise RemediationError("stale_revision", "legacy_authority_not_current" if legacy else "publication_not_active")
         if accepted.workspace_id != context.workspace_id:
@@ -130,7 +137,9 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery | v3.E
                 **({"authority": delivery.authority.model_dump(mode="json"),
                     "capture_digest": delivery.capture_digest,
                     "captured_at": delivery.captured_at,
-                    "game_source": delivery.game_source.model_dump(mode="json")} if legacy else {}),
+                    "game_source": delivery.game_source.model_dump(mode="json"),
+                    **({"decision_scope_proof": accepted.scope_proof.model_dump(mode="json")}
+                       if accepted.scope_proof is not None else {})} if legacy else {}),
             })))
     return tuple(contributions)
 

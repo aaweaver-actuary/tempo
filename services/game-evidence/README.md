@@ -36,6 +36,13 @@ It shares comparison/projection logic and rejects incoherent authority. The
 publication loader, store and v1/v2 delivery wire do not accept it. See the
 [checkpoint and pending backend seams](../../docs/analysis-restoration/legacy-game-study-checkpoint.md).
 
+`LegacyScopedComparisonSnapshot` is explicit legacy-local schema2. Its bounded
+candidate list is backed by complete owner traversal manifests and prefix policy
+context, not a globally complete selected-only catalogue. It shares the existing
+comparison/physical projection and accepts only the named game/time/decisions;
+introduction chronology remains an applicability guard. Activated-publication
+v1/v2 remain unchanged. See the [scoped checkpoint](../../docs/analysis-restoration/legacy-game-study-scoped-checkpoint.md).
+
 Independently installed repertoire review, source/index storage, read API and durable
 Learning delivery intent. A repertoire miss is an authored move not played; it is
 not an engine judgment. This increment supports completed standard/from-position

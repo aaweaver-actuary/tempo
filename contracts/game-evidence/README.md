@@ -15,6 +15,13 @@ miss obligations or revision-targeted withdrawals. The shared observation linkag
 validator retains v2 behavior. See [the receiver checkpoint](../../docs/analysis-restoration/legacy-game-study-receiver-checkpoint.md)
 for authority, coexistence and unqualified installation/native gates.
 
+`legacy_scope` supplies explicit legacy-local stream/scan/decision proof types
+and a versioned row digest. It changes no v1/v2/v3 wire schema. The backend owns
+exhaustion/current integrity and independently reconstructs the proof. A producer
+cannot authorize acceptance by reporting its own EOF. Reusable repertoire/graph
+identity excludes the game-specific proof and card eligibility; physical ID,
+revision/full executable and eligibility remain separate accepted facts.
+
 From the checkout root, install only the contract test environment:
 
 ```sh

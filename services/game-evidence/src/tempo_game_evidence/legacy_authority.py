@@ -155,6 +155,9 @@ class LegacyComparisonSnapshot(StrictModel):
             return "legacy_authored_authority_exceeds_physical_binding"
         return None
 
+    def comparison_scope_reason(self, game, position):
+        return None
+
     @model_validator(mode="after")
     def coherent_physical_authority(self):
         captured_at = datetime.fromisoformat(self.captured_at.replace("Z", "+00:00"))
@@ -168,44 +171,47 @@ class LegacyComparisonSnapshot(StrictModel):
             raise ValueError("legacy_catalogue_digest_mismatch")
         if authority_digest(self.model_dump(mode="json", exclude={"capture_digest"})) != self.capture_digest:
             raise ValueError("legacy_capture_digest_mismatch")
-        catalogue = {route_identity(route): route for route in self.catalogue}
-        if len(catalogue) != len(self.catalogue):
-            raise ValueError("duplicate_catalogue_route")
-        cards = {card.card_id: card for card in self.cards}
-        if len(cards) != len(self.cards):
-            raise ValueError("duplicate_physical_card")
-        for card in self.cards:
-            if card.repertoire_ids != [before.repertoire_id]:
-                raise ValueError("legacy_shared_physical_card_unsupported")
-            board = chess.Board(card.starting_fen)
-            if not board.is_valid():
-                raise ValueError("invalid_physical_card_board")
-            for move in card.moves:
-                board.push_uci(move)
-        anchors = policy_anchors(self.catalogue)
-        selected = {identity for identity in catalogue if identity[0] == before.repertoire_id}
-        if {route_identity(route) for route in self.routes} != selected:
-            raise ValueError("legacy_selected_route_inventory_incomplete")
-        for route in self.routes:
-            identity = route_identity(route)
-            source = catalogue[identity]
-            if (route.learner_color, route.starting_fen, route.moves) != (
-                    source.learner_color, source.starting_fen, source.moves):
-                raise ValueError("legacy_route_source_mismatch")
-            if route.authority_start_ply != anchors[identity]:
-                raise ValueError("legacy_policy_anchor_mismatch")
-            board = chess.Board(route.starting_fen)
-            fens = [board.fen(en_passant="fen")]
-            for move in route.moves:
-                board.push_uci(move)
-                fens.append(board.fen(en_passant="fen"))
-            for binding in route.bindings:
-                card = cards.get(binding.card_id)
-                root = binding.ply - binding.exercise_ply
-                if (card is None or binding.reentry or root < 0 or root >= len(fens)
-                        or card.policy_id != route.policy_id or card.trained_color != route.learner_color
-                        or fens[root] != card.starting_fen
-                        or route.moves[root:root + len(card.moves)] != card.moves):
-                    raise ValueError("legacy_exact_physical_route_binding_required")
-        verify_route_definitions(self.routes, self.comparison_definitions(), route_identity)
-        return self
+        return verify_legacy_physical_routes(self, policy_anchors(self.catalogue))
+
+
+def verify_legacy_physical_routes(snapshot, anchors):
+    catalogue = {route_identity(route): route for route in snapshot.catalogue}
+    if len(catalogue) != len(snapshot.catalogue):
+        raise ValueError("duplicate_catalogue_route")
+    cards = {card.card_id: card for card in snapshot.cards}
+    if len(cards) != len(snapshot.cards):
+        raise ValueError("duplicate_physical_card")
+    for card in snapshot.cards:
+        if card.repertoire_ids != [snapshot.authority.repertoire_id]:
+            raise ValueError("legacy_shared_physical_card_unsupported")
+        board = chess.Board(card.starting_fen)
+        if not board.is_valid():
+            raise ValueError("invalid_physical_card_board")
+        for move in card.moves:
+            board.push_uci(move)
+    selected = {identity for identity in catalogue if identity[0] == snapshot.authority.repertoire_id}
+    if {route_identity(route) for route in snapshot.routes} != selected:
+        raise ValueError("legacy_selected_route_inventory_incomplete")
+    for route in snapshot.routes:
+        identity = route_identity(route)
+        source = catalogue[identity]
+        if (route.learner_color, route.starting_fen, route.moves) != (
+                source.learner_color, source.starting_fen, source.moves):
+            raise ValueError("legacy_route_source_mismatch")
+        if route.authority_start_ply != anchors[identity]:
+            raise ValueError("legacy_policy_anchor_mismatch")
+        board = chess.Board(route.starting_fen)
+        fens = [board.fen(en_passant="fen")]
+        for move in route.moves:
+            board.push_uci(move)
+            fens.append(board.fen(en_passant="fen"))
+        for binding in route.bindings:
+            card = cards.get(binding.card_id)
+            root = binding.ply - binding.exercise_ply
+            if (card is None or binding.reentry or root < 0 or root >= len(fens)
+                    or card.policy_id != route.policy_id or card.trained_color != route.learner_color
+                    or fens[root] != card.starting_fen
+                    or route.moves[root:root + len(card.moves)] != card.moves):
+                raise ValueError("legacy_exact_physical_route_binding_required")
+    verify_route_definitions(snapshot.routes, snapshot.comparison_definitions(), route_identity)
+    return snapshot

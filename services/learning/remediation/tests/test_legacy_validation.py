@@ -95,3 +95,26 @@ def test_legacy_capture_utc_overflow_is_a_terminal_failure():
     value = delivery().model_copy(update={"captured_at": "0001-01-01T00:00:00+00:01"})
     with pytest.raises(RemediationError, match="legacy_capture_out_of_range"):
         validate_delivery(value, context(value))
+
+
+def scoped_facts():
+    from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
+    source = json.loads((Path(__file__).parent / "legacy-scoped-acceptance.json").read_text())
+    value = v3.EvidenceDelivery.model_validate(source["delivery"])
+    return value, LegacyScopedCatalogueProof.model_validate(source["proof"])
+
+
+def test_owner_scoped_proof_is_retained_without_changing_shared_incident_or_authority_identity():
+    value, proof = scoped_facts()
+    full = validate_delivery(value, context(value))[0]
+    scoped = validate_delivery(value, context(value, replace(decision(value), scope_proof=proof)))[0]
+    assert (full.incident_id, full.card_id, full.card_revision, full.publication_id) == (
+        scoped.incident_id, scoped.card_id, scoped.card_revision, scoped.publication_id)
+    assert json.loads(scoped.payload_json)["decision_scope_proof"] == proof.model_dump(mode="json")
+
+
+def test_scoped_proof_for_another_game_cannot_be_retained_as_this_accepted_incident():
+    value, proof = scoped_facts()
+    wrong = proof.model_copy(update={"scope": proof.scope.model_copy(update={"game_id": "other-game"})})
+    with pytest.raises(RemediationError, match="legacy_decision_scope_changed"):
+        validate_delivery(value, context(value, replace(decision(value), scope_proof=wrong)))

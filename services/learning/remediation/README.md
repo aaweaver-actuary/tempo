@@ -19,6 +19,13 @@ Contribution/frontier/admission/settlement policy remains shared. See the
 [receiver checkpoint](../../../docs/analysis-restoration/legacy-game-study-receiver-checkpoint.md)
 for the unexposed backend adapter and pending installed/native/Study adoption.
 
+Legacy accepted facts may retain a typed owner `scope_proof`. It must identify
+the same current authority, canonical game/content and encounter scope. It is
+stored as contribution provenance, outside reusable authority and logical work
+identity; shared frontier and qualifying-review policy are unchanged. Producer
+v3 payloads do not gain a self-authorizing proof field. See the
+[scoped checkpoint](../../../docs/analysis-restoration/legacy-game-study-scoped-checkpoint.md).
+
 ## A / C / F handoff
 
 C produces `tempo_game_evidence_contracts.v2` using the committed fixtures.

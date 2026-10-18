@@ -1,11 +1,43 @@
 from copy import deepcopy
 import json
+from pathlib import Path
 
 import pytest
 
 from tempo_a_bridge.legacy import fingerprint
 from tempo_a_bridge.legacy_observation import comparison_snapshot, authority_source_digest, authority_graph_digest
 from test_legacy import captured, graphs
+
+
+def test_scoped_owner_capture_reuses_physical_projection_and_keeps_global_eof_separate_from_candidates():
+    root = Path(__file__).resolve().parents[4] / "services/game-evidence/fixtures"
+    value = json.loads((root / "legacy-scoped-input.json").read_text())
+    options = {key: item for key, item in value.items() if key != "provenance"}
+    document, report = comparison_snapshot(**options)
+    assert document == json.loads((root / "legacy-scoped-snapshot.json").read_text())
+    assert document["schema_version"] == 2 and "catalogue_complete" not in document
+    assert document["catalogue_scope"]["streams"][1]["visited_rows"] == 4102
+    assert report["policy_authority_anchors"] == {"ruy-route": 5}
+    assert document["cards"][0]["card_id"] == "physical-black"
+
+
+@pytest.mark.parametrize("fault", ["eof", "authority", "candidates"])
+def test_scoped_owner_capture_cannot_claim_partial_global_authority(fault):
+    root = Path(__file__).resolve().parents[4] / "services/game-evidence/fixtures"
+    value = json.loads((root / "legacy-scoped-input.json").read_text())
+    if fault == "eof": value["catalogue_scope"]["streams"][1]["visited_rows"] -= 1
+    if fault == "authority": value["catalogue_scope"]["authority_id"] = "legacy-graph:" + "0" * 64
+    if fault == "candidates": value["catalogue_scope"]["candidate_route_ids"] = []
+    with pytest.raises(ValueError): comparison_snapshot(**{key: item for key, item in value.items() if key != "provenance"})
+
+
+def test_scoped_owner_full_card_block_cannot_be_reported_as_an_applicable_physical_miss():
+    root = Path(__file__).resolve().parents[4] / "services/game-evidence/fixtures"
+    value = json.loads((root / "legacy-scoped-input.json").read_text())
+    value["tables"]["cards"][0]["integrity_blocked"] = True
+    document, report = comparison_snapshot(**{key: item for key, item in value.items() if key != "provenance"})
+    assert document["cards"] == [] and all(route["bindings"] == [] for route in document["routes"])
+    assert report["mapped_identities"] == []
 
 
 def inputs():

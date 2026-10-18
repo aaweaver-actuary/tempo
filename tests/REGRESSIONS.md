@@ -1,5 +1,22 @@
 ## Legacy game evidence receiver checkpoint
 
+`backend/tests/test_legacy_scoped_capture.py` owns complete global exhaustion
+past4,096 with bounded retention, late foreign/unbound/revision2 vetoes, unchanged
+authority across two games or unrelated card eligibility, no FEN reentry, explicit
+preflight/page/row/byte/deadline/EOF refusal, malformed/unknown-color uncertainty,
+completed current needs_repair per-card qualification and unchecked/newer queued
+generation refusal. It executes actual owner prepare/acceptance fences with
+synthetic SQL rows, including full-card blocks, membership changes and an inactive
+physical competitor becoming eligible. The read-only capture/certificate ports
+perform no readiness/obligation/queue/review operation. The historical bounded-page
+regression now exercises the same new Traversal rather than the retired4,096-row
+accumulation helper; partial capture remains rejected.
+
+`backend/tests/test_legacy_bridge_qualification_plan.py` owns the finite fixed
+artifact/native inventories, hard helper caps/no socket mount, immutable-image
+refusal, approved managed-window guard and process-group timeout behavior. It
+does not start Docker, build packages, install dependencies or run native tests.
+
 `backend/tests/test_remediation_migration_registration.py` owns migration 050's
 exact installed 12-table schema/checksum registration, backend target identity,
 failure before database connection for changed inputs, and partial-apply guard.

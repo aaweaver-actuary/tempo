@@ -17,6 +17,14 @@ from app.services.legacy_game_evidence_scope import LEGACY_WORKSPACE_ID, BRIDGE_
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def integrity_row(status="clean", graph_generation=7):
+    return dict(integrity_status=status, scan_status="idle", scan_generation="synthetic-scan:1",
+        checked_at="2026-10-16T12:00:00Z", scan_completed_sources=3, scan_total_sources=3, scan_error=None,
+        graph_task_generation=graph_generation, graph_task_state="complete", scan_task_id="synthetic-scan",
+        scan_task_generation=1, scan_task_state="complete", payload_json=json.dumps(
+            dict(repertoire_id="ruy", graph_generation=graph_generation)))
+
+
 def fixture():
     source = json.loads((ROOT / "services/game-evidence/fixtures/legacy-authority-input.json").read_text())
     tables = deepcopy(source["tables"])
@@ -32,7 +40,9 @@ def fixture():
         start_fen=tables["cards"][0]["start_fen"],
         moves_json='["e2e4","e7e5","g1f3","b8c6","f1b5","g8f6"]', adaptive_excluded=0)
     metadata = dict(scope_source_revision=2, canonical_prefix_revision=0, catalogue_generation=3,
-        graph_generation=7, graph_state="ready", integrity_status="clean", scan_status="idle", scan_generation="synthetic-scan")
+        graph_generation=7, graph_state="ready", integrity_status="clean", scan_status="idle", scan_generation="synthetic-scan:1")
+    from app.services.postgres_integrity import integrity_certificate_from_row
+    metadata.update(integrity_current=True, integrity_certificate=integrity_certificate_from_row(integrity_row(), "ruy", 7))
     captured = owner.Capture("synthetic-target", metadata, tables, deepcopy(source["graphs"]), game)
     return refresh(data, captured), captured
 
@@ -177,12 +187,19 @@ class Writer:
     def execute_native(self, statement, parameters=()):
         self.events.append(statement)
         assert not any(term in statement.lower() for term in ("insert into daily_queue", "update cards", "insert into reviews"))
+        if "FROM repertoire_cards " in statement:
+            rows = [TempoRow(("repertoire_id", "canonical_route_source"),
+                (row["repertoire_id"], row.get("canonical_route_source")))
+                for row in self.captured.tables["repertoire_cards"] if row["card_id"] == parameters[0]]
+            return SimpleNamespace(fetchall=lambda: rows)
         data = None
         meta = self.captured.metadata
         if "FROM legacy_learning_identity" in statement: data = dict(target_id=self.captured.target_id, workspace_id=LEGACY_WORKSPACE_ID)
         elif "FROM repertoire_game_scope" in statement: data = {"generation": self.generation}
         elif "FROM repertoires WHERE" in statement: data = {key: meta[key] for key in ("scope_source_revision", "canonical_prefix_revision")}
         elif "FROM opening_graph_publications" in statement: data = dict(generation=meta["graph_generation"], state=meta["graph_state"])
+        elif "JOIN background_tasks graph" in statement:
+            data = {**meta["integrity_certificate"], "payload_json": json.dumps(dict(repertoire_id="ruy", graph_generation=meta["graph_generation"]))}
         elif "FROM repertoire_integrity_state" in statement: data = dict(status=meta["integrity_status"], scan_status=meta["scan_status"], scan_generation=meta["scan_generation"])
         elif "FROM imported_games" in statement: data = self.captured.game
         elif statement.startswith("SELECT id FROM cards"): data = {"id": parameters[0]}
@@ -271,33 +288,26 @@ def test_legacy_scope_ownership_and_priority_reason_are_disjoint_from_weaker_pat
 
 
 def test_source_pages_advance_with_a_finite_capture_bound(monkeypatch):
-    rows = [dict(id=f"{index:03}") for index in range(130)]
-    cursors = []
-    def read(statement, parameters):
-        cursor = parameters[-1]
-        cursors.append(cursor)
-        return [row for row in rows if row["id"] > cursor][:64]
-    monkeypatch.setattr(owner, "read_rows", read)
-    assert owner.paged_rows("synthetic read") == rows
-    assert cursors == ["", "063", "127"]
-    monkeypatch.setattr(owner, "MAX_SOURCE_ROWS", 128)
-    with pytest.raises(RemediationError, match="legacy_capture_scope_exceeds_bound"):
-        owner.paged_rows("synthetic read")
+    from dataclasses import replace
+    from test_legacy_scoped_capture import source_fixture
+    from app.services.legacy_game_capture import Traversal, Stream, DEFAULT_BUDGET
+    _, source = source_fixture()
+    rows = source.rows["repertoires"] = [dict(id=f"{index:03}") for index in range(130)]
+    stream = Stream("repertoires", "id", "repertoires WHERE TRUE", ("id",))
+    traversal = Traversal(source.read, [stream], DEFAULT_BUDGET)
+    assert list(traversal.walk(stream, lambda row: row)) == rows
+    assert [parameters[0] for sql, parameters in source.calls if ":page*/" in sql] == ["", "063", "127"]
+    with pytest.raises(RemediationError, match="preflight_exceeds_budget"):
+        Traversal(source.read, [stream], replace(DEFAULT_BUDGET, max_rows=128))
 
 
 def test_source_capture_rejects_a_revision_change_between_closed_read_pages(monkeypatch):
-    value, captured = fixture()
-    readings = iter([captured.metadata, {**captured.metadata, "catalogue_generation": 4}])
-    monkeypatch.setattr(owner, "metadata", lambda scope: next(readings))
-    monkeypatch.setattr(owner, "paged_rows", lambda *args, **kwargs: [])
-    def read(statement, parameters=()):
-        if "legacy_learning_identity" in statement:
-            return [dict(target_id=captured.target_id, workspace_id=LEGACY_WORKSPACE_ID)]
-        if "imported_games" in statement: return [captured.game]
-        return []
-    monkeypatch.setattr(owner, "read_rows", read)
+    from test_legacy_scoped_capture import source_fixture
+    from app.services.legacy_game_capture import capture_scope
+    value, source = source_fixture()
+    readings = iter([source.captured.metadata, {**source.captured.metadata, "catalogue_generation": 4}])
     with pytest.raises(RemediationError, match="legacy_source_changed_during_capture"):
-        owner.capture(value)
+        capture_scope(value, source.read, lambda scope: next(readings))
 
 
 def test_unknown_catalogue_color_cannot_supply_miss_authority():

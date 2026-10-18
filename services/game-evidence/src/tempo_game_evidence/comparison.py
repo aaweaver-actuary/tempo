@@ -57,6 +57,8 @@ def compare_game(game, positions, snapshot):
             finding.update(route_context)
             if reason := snapshot.applicability_reason():
                 finding["explanation"] = reason
+            elif reason := snapshot.comparison_scope_reason(game, position):
+                finding["explanation"] = reason
             elif selected and (reason := snapshot.definition_unavailable_reason(selected[2])):
                 finding["explanation"] = reason
             elif selected and (reason := snapshot.physical_comparison_reason(selected, position["move"], route_context)):

@@ -1,5 +1,9 @@
 # Legacy game → Study: receiver checkpoint
 
+The later [scoped capture checkpoint](legacy-game-study-scoped-checkpoint.md)
+supersedes this checkpoint's global4,096-row capture and clean-only readiness
+limitations; actual main readiness remains a separate unexecuted prerequisite.
+
 Continuation began 2026-10-18 18:29:23 UTC, with a 19:29:23 UTC checkpoint bound.
 This follows the [initial checkpoint](legacy-game-study-checkpoint.md) and the
 independent ambiguity review of draft PR #311. All inputs are synthetic. No

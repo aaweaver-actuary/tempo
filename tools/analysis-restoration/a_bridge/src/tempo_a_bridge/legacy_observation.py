@@ -9,17 +9,27 @@ import json
 from .legacy import fingerprint, translate
 from tempo_game_evidence_contracts.legacy import (
     authority_source_projection, authority_source_digest, authority_graph_digest, decision_identity)
+from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
 
-def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_at):
+def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_at, catalogue_scope=None):
     repertoire_id = authority["repertoire_id"]
     workspace_id = authority["workspace_id"]
     selected = next((row for row in tables["repertoires"] if row["id"] == repertoire_id), None)
     if selected is None or json.loads(selected.get("canonical_prefix_moves_json", "[]")):
         raise ValueError("legacy_canonical_prefix_adapter_unsupported")
     selected_graphs = [row for row in graphs if row["repertoire_id"] == repertoire_id]
-    if (authority_source_digest(tables) != authority["source_digest"]
-            or authority_graph_digest(selected_graphs) != authority["graph_digest"]
+    proof = LegacyScopedCatalogueProof.model_validate(catalogue_scope) if catalogue_scope is not None else None
+    if proof is not None:
+        from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken
+        token = LegacyAuthorityToken.model_validate(authority)
+        if (proof.authority_id != token.storage_identity()[0]
+                or proof.catalogue_generation != token.catalogue_generation
+                or proof.integrity_certificate.graph_task_generation != token.graph_generation
+                or any(authority[key] != value for key, value in proof.source_identity_digests().items())):
+            raise ValueError("legacy_scoped_authority_digest_mismatch")
+    if ((proof is None and (authority_source_digest(tables) != authority["source_digest"]
+            or authority_graph_digest(selected_graphs) != authority["graph_digest"]))
             or any(row["generation"] != authority["graph_generation"] for row in selected_graphs)):
         raise ValueError("legacy_capture_source_or_graph_token_mismatch")
     source_bytes, manifest, report = translate(tables, graphs, workspace=workspace_id,
@@ -30,8 +40,10 @@ def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_a
         "policy_id": row["repertoire_id"], "learner_color": row["trained_color"],
         "starting_fen": row["start_fen"], "moves": json.loads(row["moves_json"])}
         for row in sorted(tables["repertoire_lines"], key=lambda row: row["id"])]
-    if fingerprint(catalogue) != authority["catalogue_digest"]:
+    if proof is None and fingerprint(catalogue) != authority["catalogue_digest"]:
         raise ValueError("legacy_capture_catalogue_token_mismatch")
+    if proof is not None and set(proof.candidate_route_ids) != {row["route_id"] for row in catalogue}:
+        raise ValueError("legacy_scoped_candidate_inventory")
     mapped = set(report["mapped_identities"])
     raw_cards = {row["id"]: row for row in tables["cards"]}
     cards = []
@@ -43,11 +55,14 @@ def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_a
             "moves": json.loads(card["moves_json"]),
             "repertoire_ids": sorted(row["repertoire_id"] for row in tables["repertoire_cards"]
                                      if row["card_id"] == card_id),
-            "introduced": card.get("introduced_at") is not None})
+            "introduced": card.get("introduced_at") is not None,
+            **({"introduced_before_game": card["introduced_before_game"]} if proof is not None else {})})
     physical = {card["card_id"]: card for card in cards}
     exercises = {exercise["key"]: exercise for exercise in source["exercises"]}
     routes = []
     for route in source["routes"]:
+        if proof is not None:
+            route["authority_start_ply"] = proof.authority_anchor(repertoire_id)
         bindings = []
         for binding in source["bindings"]:
             card_id = binding["exercise_key"]
@@ -67,8 +82,11 @@ def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_a
         if route["authority_start_ply"] != 0:
             result["authority_start_ply"] = route["authority_start_ply"]
         routes.append(result)
-    document = {"kind": "legacy_authority_snapshot", "schema_version": 1,
+    document = {"kind": "legacy_authority_snapshot", "schema_version": 2 if proof is not None else 1,
         "captured_at": captured_at, "authority": authority, "observed_after": observed_after,
-        "catalogue_complete": True, "catalogue": catalogue, "cards": cards, "routes": routes}
+        **({"catalogue_complete": True} if proof is None else {"catalogue_scope": proof.model_dump(mode="json")}),
+        "catalogue": catalogue, "cards": cards, "routes": routes}
+    if proof is not None:
+        report["policy_authority_anchors"] = {route["route_id"]: route.get("authority_start_ply", 0) for route in routes}
     document["capture_digest"] = fingerprint(document)
     return document, report

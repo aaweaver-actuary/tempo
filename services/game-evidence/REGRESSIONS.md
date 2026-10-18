@@ -1,5 +1,12 @@
 # Game Evidence regression ownership
 
+`tests/test_legacy_scoped_authority.py` owns the schema2 legacy-local proof:
+complete 4,102-row traversal with one retained candidate and preserved prior
+policy anchor; foreign/unbound competitors after4,096; incomplete/mixed authority
+rejection; no global-complete label; exact game/time/decision scope; unchanged
+physical execution and uncertain introduction chronology. It normalizes through
+the same comparison/projection as existing activated-publication v1/v2.
+
 `tests/test_decision_projection.py` owns a learner miss inside an unchanged
 physical executable, exact expected move/position, conflicting projected identity
 and incorrect offset rejection. `tests/test_analysis_deviations.py` also requires
