@@ -68,7 +68,8 @@ def _promote_real_game_miss():
     with database.read_connection() as connection:
         assert [row[0] for row in connection.execute(
             "SELECT card_id FROM daily_queue WHERE status='queued' ORDER BY position,id"
-        )] == ['card', 'active-a', 'later-b']
+        )] == ['active-a', 'card', 'later-b']
+        assert connection.execute("SELECT position FROM daily_queue WHERE card_id='active-a'").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize('action', ['fail', 'bury'])
@@ -132,6 +133,9 @@ def test_issued_marker_cannot_transfer_to_replacement_identity(queued_attempts, 
     assert client.get('/api/queue/today').status_code == 200
     _promote_real_game_miss()
     with database.connection() as connection:
+        # Exercise a retained historical non-head issuance directly. Priority
+        # presentation now pins the issued head instead of creating this state.
+        connection.execute("UPDATE daily_queue SET position=-1 WHERE card_id='card'")
         if replacement == 'revision':
             connection.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id='active-a'")
             identity = {'card_id': 'active-a', 'expected_revision': 2}

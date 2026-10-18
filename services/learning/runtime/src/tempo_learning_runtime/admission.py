@@ -145,6 +145,7 @@ def admit_prelocked(database, card_id, queue_day, reason=None, *, proposal=None)
             priority_reason=reason,
             queue_date=queue_day,
             protected_ids=protected,
+            preserve_order=False,
         )
         database.execute(
             "UPDATE daily_queue SET admission_repertoire_id=COALESCE(admission_repertoire_id,?) WHERE card_id=? AND queue_date=? AND status='queued'",

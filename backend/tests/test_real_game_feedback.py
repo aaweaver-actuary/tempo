@@ -613,7 +613,12 @@ def test_real_game_priority_retains_identified_active_attempt_and_burial_defers_
     compare_games(['active-miss'])
     apply_real_game_misses('active-miss')
     with TestClient(app) as client:
-        assert client.post(f'/api/queue/entries/{active_id}/fail').status_code == 409
+        with database.read_connection() as db:
+            miss_id = db.execute("SELECT id FROM daily_queue WHERE card_id='card' AND status='queued'").fetchone()[0]
+            assert db.execute("SELECT position FROM daily_queue WHERE id=?",(active_id,)).fetchone()[0] == 0
+        # Priority follows the issued head; it does not authorize a prefetched miss.
+        assert client.post(f'/api/queue/entries/{miss_id}/fail').status_code == 409
+        assert client.post(f'/api/queue/entries/{active_id}/fail').status_code == 200
         identity = {'card_id': 'active', 'expected_revision': 1}
         assert client.post(f'/api/queue/entries/{active_id}/fail', json=identity).status_code == 200
         assert client.post(f'/api/queue/entries/{active_id}/bury', json={**identity, 'expected_revision': 2}).status_code == 409

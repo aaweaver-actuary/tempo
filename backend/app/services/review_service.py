@@ -73,11 +73,10 @@ def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) ->
            WHERE queue_date=? AND status='queued' ORDER BY id""",
         (queue_date,),
     ).fetchall()
-    membership_hash = hashlib.sha256(
-        ("queue-mix-v2\0" + "\0".join(
-            f"{entry['id']}:{entry['card_id']}" for entry in entries
-        )).encode()
-    ).hexdigest()
+    from .queue_ordering import _preserved_queue_fingerprint
+    from .frozen_opening_order import activation
+    saved = database.execute("SELECT membership_hash FROM daily_queue_days WHERE queue_date=?", (queue_date,)).fetchone()
+    membership_hash = _preserved_queue_fingerprint(entries, saved, activation(database))
     seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
     database.execute(
         """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
@@ -123,7 +122,8 @@ def ensure_card_queued_after(
     after_cards: int = 4,
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
-    *, queue_date: str | None = None,
+    *, queue_date: str | None = None, protect_presented: bool = False,
+    preserve_order: bool = True,
 ) -> None:
     day = queue_date or date.today().isoformat()
     entry = database.execute(
@@ -137,20 +137,30 @@ def ensure_card_queued_after(
         ).fetchone()[0]
         entry = database.execute(
             "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?) RETURNING id",
-            (day, card_id, cycle, 2_000_000_000, attempt_state, priority_reason),
+            (day, card_id, cycle,
+             database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
+             if protect_presented else 2_000_000_000, attempt_state, priority_reason),
         ).fetchone()
     elif priority_reason:
         database.execute(
             "UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",
             (priority_reason, entry["id"]),
         )
-    ordered_ids = [row[0] for row in database.execute(
-        "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
-        (day, entry["id"]),
-    )]
-    ordered_ids.insert(min(after_cards, len(ordered_ids)), entry["id"])
-    for position, entry_id in enumerate(ordered_ids):
-        database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
+    if protect_presented:
+        from .queue_application import presentation_rows
+        from .queue_ordering import _priority_queue_order
+        rows = presentation_rows(database, day)
+        for slot, row in zip(sorted(rows, key=lambda row: (row['position'], row['id'])), _priority_queue_order(rows)):
+            if slot['position'] != row['position']:
+                database.execute("UPDATE daily_queue SET position=? WHERE id=?", (slot['position'], row['id']))
+    else:
+        ordered_ids = [row[0] for row in database.execute(
+            "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
+            (day, entry["id"]),
+        )]
+        ordered_ids.insert(min(after_cards, len(ordered_ids)), entry["id"])
+        for position, entry_id in enumerate(ordered_ids):
+            database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
@@ -161,4 +171,5 @@ def ensure_card_queued_after(
            WHERE id=?""",
         (entry["id"],),
     )
-    preserve_daily_queue_order(database, day)
+    if preserve_order:
+        preserve_daily_queue_order(database, day)

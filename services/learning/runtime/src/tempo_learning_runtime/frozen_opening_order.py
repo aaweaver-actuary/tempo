@@ -174,13 +174,8 @@ def has_legacy_origin(database, card_id: str) -> bool:
 
 
 def queue_hash(membership_hash, token):
-    from .opening_segmentation import stable_key
-
-    return (
-        membership_hash
-        if list(token) == [None, 0]
-        else stable_key(membership_hash, list(token))
-    )
+    from .queue_ordering import _queue_order_fingerprint
+    return _queue_order_fingerprint(membership_hash, token)
 
 
 def queue_state(database, day):

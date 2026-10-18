@@ -71,7 +71,7 @@ def test_queue_application_import_does_not_load_http_or_worker_root():
 
 
 @pytest.mark.parametrize('fixture', json.loads((FIXTURES / 'queue-extraction-220.json').read_text())['ordering'])
-def test_queue_ordering_matches_pinned_pre_extraction_fixture(fixture):
+def test_queue_presentation_matches_versioned_fixtures(fixture):
     seed, membership_hash, ordered = queue_ordering._plan_daily_queue_order(
         fixture['rows'], fixture['day'], fixture['saved'],
         preserve_through_entry_id=fixture['preserve_through_entry_id'],
@@ -117,8 +117,8 @@ def test_queue_application_requeue_preserves_origin_cycle_and_issuance(queued_at
 
 @pytest.mark.parametrize('legacy_phase,next_phase', [('prioritized_openings', 'admit_study'),
                                                     ('prioritized_opening_item', 'admit_study'),
-                                                    ('real_game_misses', 'publish_projection'),
-                                                    ('randomize_queue', 'publish_projection')])
+                                                    ('real_game_misses', 'quarantine'),
+                                                    ('randomize_queue', 'quarantine')])
 def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, legacy_phase, next_phase):
     captured = {}
     opening_page_reads = []
@@ -140,14 +140,17 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
     monkeypatch.setattr(study_mode, 'study_only_enabled', lambda: True)
     monkeypatch.setattr(postgres_queue_refresh, '_prepare_study_admission', lambda day: None)
     monkeypatch.setattr(postgres_queue_refresh, '_prepare_opening_quarantine', lambda *args: {'invalid': None, 'has_more': False, 'after_entry_id': 17})
-    for optional in ('_prepare_prioritized_openings', '_admit_one_prioritized_opening', '_prepare_real_game_obligation', '_prepare_queue_randomization'):
+    for optional in ('_prepare_prioritized_openings', '_admit_one_prioritized_opening', '_prepare_real_game_obligation'):
         monkeypatch.setattr(postgres_queue_refresh, optional, lambda *args, **kwargs: pytest.fail('Optional phase executed'))
+    presentations = []
+    monkeypatch.setattr(postgres_queue_refresh, '_prepare_queue_randomization', lambda *args, **kwargs: presentations.append(args) or {})
+    monkeypatch.setattr(postgres_queue_refresh, '_publish_queue_randomization', lambda *args: True)
     def advance(database, task, **kwargs):
         captured.update(kwargs)
         return True
     monkeypatch.setattr(postgres_queue_refresh, 'advance_task_slice_in_transaction', advance)
     payload = {'queue_date': '2026-10-12', '_queue_phase': legacy_phase,
-               'preserve_through_entry_id': 42, 'quarantine_started': True,
+               'preserve_through_entry_id': 42, 'quarantine_started': True, 'after_entry_id': 9,
                'opening_plan': [{'card_id': 'old-card', 'repertoire_id': 'rep', 'reason': None,
                                  'capacity_route': {'parent_card_id': 'parent'}}], 'opening_index': 0}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice({'payload': payload}) is True
@@ -155,6 +158,7 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
     assert captured['next_payload']['preserve_through_entry_id'] == 42
     assert captured['next_payload']['queue_date'] == payload['queue_date']
     assert len(opening_page_reads) == int(legacy_phase.startswith('prioritized_opening'))
+    assert len(presentations) == int(legacy_phase in ('real_game_misses', 'randomize_queue'))
     if opening_page_reads:
         assert captured['next_payload']['study_opening_counts']['stop_reason'] == 'daily_allowances_exhausted'
         assert captured['next_payload']['study_opening_cursor'] == []
@@ -162,7 +166,7 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
         assert 'opening_plan' not in captured['next_payload']
     else:
         assert captured['next_payload']['quarantine_started'] is True
-        assert captured['next_payload']['after_entry_id'] == 17
+        assert captured['next_payload']['after_entry_id'] == 9  # Presentation has not advanced quarantine.
 
 
 def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypatch):

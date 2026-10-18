@@ -1,5 +1,18 @@
 # Learning runtime regression ownership
 
+## Balanced daily presentation
+
+`test_queue_ordering.py` owns pure policy-v3 proportions across skewed, empty,
+single and multiple categories; identical membership under different seeds;
+stable replay; frozen opening relative rank across category slots; protected
+positions; stable urgent priority; versioned fingerprints and preparation fences.
+`test_queue_presentation.py::test_runtime_balances_admitted_work_and_replays_without_moving_issued_head`
+owns actual admission/refresh/reload through the independent runtime and restricted
+PostgreSQL. Existing `test_eligibility.py`, `test_families.py` and
+`test_remediation.py` remain the owners of competing issuance, quota/prerequisite
+gates, typed reviews, retry/reinforcement, remediation authority and exactly-once
+effects. This slice changes presentation only; it does not adopt soft cooldowns.
+
 `tests/test_decision_projection.py` owns explicit bound decision offsets, exact
 position/color and identity validation, unchanged full executables/aliases, and
 old binding byte compatibility. The installed three-service regression

@@ -812,75 +812,35 @@ def _prepare_real_game_obligation(queue_date: str, after_card_id: str) -> str | 
 
 
 def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
-    """Plan a stable queue order without retaining a database transaction."""
-
-
-    with background_read_connection() as frozen_database:
-        initial_token = list(frozen_opening_order.activation(frozen_database))
-        initial_state = frozen_opening_order.queue_state(frozen_database, queue_date) if initial_token[0] is not None else None
-    queue_rows = _bounded_read(
-        """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,q.gameplay_priority_reason
-           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.id""",
-        (queue_date,), native=True,
-    )
-    if not queue_rows:
-        with background_read_connection() as frozen_database:
-            token = list(frozen_opening_order.activation(frozen_database))
-        return {"membership_hash": frozen_opening_order.queue_hash(queue_ordering._queue_membership_hash([]),token), "raw_membership_hash": queue_ordering._queue_membership_hash([]), "frozen_token": token, "entries": None}
-    reviewed_card_ids = {row[0] for row in _bounded_read(
-        """SELECT DISTINCT card_id FROM reviews
-           WHERE card_id=ANY(%s::text[]) AND invalidated_at IS NULL""",
-        ([row["card_id"] for row in queue_rows],), native=True,
-    )}
-    rows = [
-        {**dict(row), "admission_kind": (
-            "explicit" if row["admission_kind"] == "explicit"
-            else "review" if row["card_id"] in reviewed_card_ids else "new"
-        )}
-        for row in queue_rows
-    ]
-    saved_rows = _bounded_read(
-        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?",
-        (queue_date,),
-    )
-    saved = saved_rows[0] if saved_rows else None
-    membership_hash = queue_ordering._queue_membership_hash(rows)
-    with background_read_connection() as frozen_database:
-        frozen_token = list(frozen_opening_order.activation(frozen_database))
-    raw_membership_hash = membership_hash
-    membership_hash = frozen_opening_order.queue_hash(membership_hash, frozen_token)
-    if saved and saved["membership_hash"] == membership_hash and frozen_token[0] is None:
-        return {"membership_hash": membership_hash, "raw_membership_hash": raw_membership_hash, "frozen_token": frozen_token, "entries": None}
+    """Capture attempt authority, then compute presentation with connections closed."""
+    with background_read_connection() as database:
+        frozen_token = list(frozen_opening_order.activation(database))
+        rows = queue_application.presentation_rows(database, queue_date)
+        saved = database.execute(
+            "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (queue_date,),
+        ).fetchone()
+    raw_membership_hash = queue_ordering._queue_membership_hash(rows)
+    membership_hash = frozen_opening_order.queue_hash(raw_membership_hash, frozen_token)
+    captured = {
+        "presentation_state": queue_ordering._queue_presentation_state(rows),
+        "frozen_token": frozen_token,
+        "raw_membership_hash": raw_membership_hash,
+        "membership_hash": membership_hash,
+    }
+    if not rows or (saved and saved["membership_hash"] == membership_hash):
+        return {**captured, "entries": None}
+    if frozen_token[0] is not None:
+        rows = _annotate_frozen_pages(rows)
     seed, _, ordered = queue_ordering._plan_daily_queue_order(
         rows, queue_date, saved, preserve_through_entry_id=preserve_through_entry_id,
     )
-    if frozen_token[0] is not None:
-        current_order = sorted(rows,key=lambda row:(row['position'],row['id']))
-        annotated = _annotate_frozen_pages(current_order)
-        exposed_ids = set()
-        for row in annotated:
-            if row['content_type']=='opening' and row['admission_kind']=='new':
-                with background_read_connection() as frozen_database:
-                    if frozen_opening_order.card_exposed(frozen_database,row['card_id']):
-                        exposed_ids.add(row['card_id'])
-        ordered = frozen_opening_order.order_queue_slots(None, current_order, preserve_through_entry_id=preserve_through_entry_id,
-            annotated=annotated, exposed_ids=exposed_ids)
     positions = sorted(row["position"] for row in rows)
-    with background_read_connection() as frozen_database:
-        frozen_queue_state = frozen_opening_order.queue_state(frozen_database, queue_date) if frozen_token[0] is not None else None
-    if initial_token != frozen_token or (initial_state is not None and initial_state != frozen_queue_state):
-        return {"retry": True}
     return {
-        "frozen_queue_state": frozen_queue_state,
-        "frozen_token": frozen_token,
-        "raw_membership_hash": raw_membership_hash,
-        "seed": seed,
-        "membership_hash": membership_hash,
+        **captured, "seed": seed,
         "entries": [
-            {"id": row["id"], "position": positions[position] if frozen_token[0] else position,
+            {"id": row["id"], "position": positions[index],
              "bucket": row["content_type"] or "opening", "kind": row["admission_kind"]}
-            for position, row in enumerate(ordered)
+            for index, row in enumerate(ordered)
         ],
     }
 
@@ -894,7 +854,8 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     if plan.get("frozen_token", [None, 0]) != list(frozen_opening_order.activation(database, lock=True)):
         return False
     lock_queue_date_for_position(database, queue_date)
-    if plan.get("frozen_queue_state") is not None and plan["frozen_queue_state"] != frozen_opening_order.queue_state(database, queue_date):
+    if plan.get("presentation_state") != queue_ordering._queue_presentation_state(
+            queue_application.presentation_rows(database, queue_date)):
         return False
     current_membership = database.execute_native(
         "SELECT id,card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY id",
@@ -909,7 +870,7 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
         "SELECT membership_hash FROM daily_queue_days WHERE queue_date=%s FOR UPDATE",
         (queue_date,),
     ).fetchone()
-    if saved and saved[0] == plan["membership_hash"] and plan.get("frozen_token", [None])[0] is None:
+    if saved and saved[0] == plan["membership_hash"]:
         prioritize_queued_misses(database, queue_date)
         return True
     entries = plan["entries"]
@@ -1067,10 +1028,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     # Resume existing checkpoints without traversing optional admission/ranking.
     skipped_phases = {"prioritized_openings": "study_opening_page",
                       "prioritized_opening_item": "study_opening_page",
-                      "real_game_misses": "quarantine", "randomize_queue": "quarantine"}
-    if frozen_token[0] is not None:
-        skipped_phases["real_game_misses"] = "randomize_queue"
-        skipped_phases.pop("randomize_queue")
+                      "real_game_misses": "randomize_queue"}
     if minimal_study and phase in skipped_phases:
         phase = skipped_phases[phase]
     study_opening_page = None
@@ -1266,6 +1224,9 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             )
             next_phase = "quarantine" if published else phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+            for checkpoint in ("quarantine_started", "after_entry_id"):
+                if checkpoint in payload:
+                    next_payload[checkpoint] = payload[checkpoint]
         elif phase == "quarantine":
             if not payload.get("quarantine_started"):
                 database.execute_native(

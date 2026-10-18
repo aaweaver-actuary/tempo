@@ -51,8 +51,10 @@ def main():
     started=time.monotonic()
     (ROOT/'test-results').mkdir(parents=True,exist_ok=True)
     try:
-        command(['docker','volume','create','--label','tempo.owner=frozen-maia-order',volume])
-        command(['docker','run','-d','--name',container,'--label','tempo.owner=frozen-maia-order','-e','POSTGRES_PASSWORD='+password,'-p','127.0.0.1::5432','-v',volume+':/var/lib/postgresql','postgres:18.6-trixie'])
+        command(['docker','volume','create','--label','tempo.owner='+container,'--label','tempo.disposable=true',volume])
+        command(['docker','run','-d','--name',container,'--label','tempo.owner='+container,'--label','tempo.disposable=true',
+                 '--cpus','1','--memory','384m','--pids-limit','256','-e','POSTGRES_PASSWORD='+password,
+                 '-p','127.0.0.1::5432','-v',volume+':/var/lib/postgresql','postgres:18.6-trixie'])
         port=command(['docker','inspect',container,'--format','{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}'])
         url=f'postgresql://postgres:{password}@127.0.0.1:{port}/postgres'
         for attempt in range(100):
@@ -161,6 +163,12 @@ def main():
             database=PostgresConnection(raw)
             restored=order.restore_queue_changes(database,run_id)
             assert len(restored['restored_queue_entries'])==2 and not restored['queue_conflicts']
+        # A saved v3 presentation is replayed, including this explicit restoration.
+        # Deliberately invalidate only this fixture's policy receipt to exercise a
+        # fresh rank application below; ordinary fetch/refresh must not reshuffle.
+        assert refresh._prepare_queue_randomization(day)['entries'] is None
+        with psycopg.connect(url) as raw:
+            raw.execute("UPDATE daily_queue_days SET membership_hash='fixture-unmixed' WHERE queue_date=%s",(day,))
         prepared=refresh._prepare_queue_randomization(day)
         with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
             assert refresh._publish_queue_randomization(PostgresConnection(raw),day,prepared)
@@ -390,8 +398,18 @@ def main():
             (ROOT/'test-results/frozen-postgres-container.log').write_text((diagnostic.stdout+diagnostic.stderr).replace(password,'<redacted>'))
         finally:
             close_pools()
-            subprocess.run(['docker','rm','-f',container],check=False,stdout=subprocess.DEVNULL)
-            subprocess.run(['docker','volume','rm',volume],check=False,stdout=subprocess.DEVNULL)
+            for kind,identity in [('container',container),('volume',volume)]:
+                matches=command(['docker',kind,'ls',*(['--all'] if kind=='container' else []),
+                                 '--filter','name=^'+('/' if kind=='container' else '')+identity+'$',
+                                 '--format','{{.ID}}' if kind=='container' else '{{.Name}}']).split()
+                for match in matches:
+                    labels=json.loads(command(['docker',kind,'inspect',match,'--format',
+                                               '{{json .Config.Labels}}' if kind=='container' else '{{json .Labels}}']))
+                    assert labels.get('tempo.owner')==container and labels.get('tempo.disposable')=='true', 'Cleanup ownership mismatch'
+                    command(['docker',kind,'rm',*(['--force'] if kind=='container' else []),match])
+                assert not command(['docker',kind,'ls',*(['--all'] if kind=='container' else []),
+                                    '--filter','name=^'+('/' if kind=='container' else '')+identity+'$',
+                                    '--format','{{.ID}}' if kind=='container' else '{{.Name}}']), 'Owned resource survived cleanup'
             shutil.rmtree(credential_directory,ignore_errors=True)
         print('Task-owned disposable database removed',flush=True)
 

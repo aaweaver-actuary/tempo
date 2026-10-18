@@ -7,7 +7,7 @@
       "saved": null,
       "preserve_through_entry_id": null,
       "seed": 21418127140895520,
-      "membership_hash": "f85ae08dbaec463236415bafea2bd6a37586142105cf3255039af9d7bc257542",
+      "membership_hash": "queue-presentation-v3:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "ordered_ids": []
     },
     {
@@ -113,18 +113,18 @@
       "saved": null,
       "preserve_through_entry_id": null,
       "seed": 21418127140895520,
-      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "membership_hash": "queue-presentation-v3:f5d8bfe61dc4a4db69d149d138d8b902785f34dac7781f61c3536f5dac76b044",
       "ordered_ids": [
-        4,
-        9,
-        3,
-        6,
         12,
-        5,
-        1,
+        4,
         8,
+        9,
+        1,
         2,
+        6,
         10,
+        5,
+        3,
         11,
         7
       ]
@@ -232,20 +232,20 @@
       "saved": null,
       "preserve_through_entry_id": null,
       "seed": 169887415448744407,
-      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "membership_hash": "queue-presentation-v3:f5d8bfe61dc4a4db69d149d138d8b902785f34dac7781f61c3536f5dac76b044",
       "ordered_ids": [
-        4,
-        9,
-        3,
-        6,
         12,
-        10,
-        2,
-        7,
-        11,
+        4,
         8,
+        9,
+        10,
+        5,
+        6,
         1,
-        5
+        2,
+        3,
+        11,
+        7
       ]
     },
     {
@@ -354,19 +354,19 @@
       },
       "preserve_through_entry_id": null,
       "seed": 73,
-      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "membership_hash": "queue-presentation-v3:f5d8bfe61dc4a4db69d149d138d8b902785f34dac7781f61c3536f5dac76b044",
       "ordered_ids": [
-        4,
-        9,
-        3,
-        6,
         12,
-        10,
-        2,
-        7,
+        4,
         11,
-        8,
+        9,
         1,
+        8,
+        6,
+        7,
+        2,
+        3,
+        10,
         5
       ]
     },
@@ -473,20 +473,20 @@
       "saved": null,
       "preserve_through_entry_id": 7,
       "seed": 21418127140895520,
-      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "membership_hash": "queue-presentation-v3:f5d8bfe61dc4a4db69d149d138d8b902785f34dac7781f61c3536f5dac76b044",
       "ordered_ids": [
+        12,
+        8,
+        10,
+        9,
+        11,
         7,
         6,
         5,
         4,
         3,
         2,
-        1,
-        9,
-        12,
-        8,
-        10,
-        11
+        1
       ]
     },
     {
@@ -600,7 +600,7 @@
       "saved": null,
       "preserve_through_entry_id": 12,
       "seed": 21418127140895520,
-      "membership_hash": "fdc03bd523111790e29dfadc5e367d5d90486bad09d3125f469f63a58aa5bd26",
+      "membership_hash": "queue-presentation-v3:451cfa7e46092db7f8fb010d5c6080d6fe3c55a3b16607dcecbe1ed4e702c34c",
       "ordered_ids": [
         12,
         11,
@@ -617,5 +617,7 @@
         99
       ]
     }
-  ]
+  ],
+  "presentation_policy": "queue-presentation-v3",
+  "presentation_change": "Versioned presentation replaces v2 round robin and fixed other slots; original admitted input fixtures are retained."
 }

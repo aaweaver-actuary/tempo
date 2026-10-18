@@ -5,6 +5,26 @@ from .review_service import preserve_daily_queue_order
 from typing import Any
 
 
+def presentation_rows(database, day):
+    """Runtime adapter supplies the same explicit facts to the pure mixer."""
+    statement = """SELECT q.id,q.card_id,q.position,c.content_type,
+                  CASE WHEN q.admission_kind='explicit' THEN 'explicit'
+                       WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
+                       ELSE 'new' END admission_kind,
+                  q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
+                  (q.review_result_json IS NOT NULL) review_completed,c.revision,
+                  EXISTS(SELECT 1 FROM queue_attempt_origins origin
+                    WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
+                      AND origin.revision=c.revision AND origin.issued_as_head=1) issued,
+                  EXISTS(SELECT 1 FROM opening_evidence_attempts attempt
+                    WHERE attempt.queue_entry_id=q.id) presented,
+                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught,
+                  q.id IN (""" + available_attempt_sql() + """) eligible
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=? AND q.status='queued' ORDER BY q.id"""
+    return [dict(row) for row in database.execute(statement, (day, day)).fetchall()]
+
+
 def requeue(db, day, cid, after, attempt):
     cycle = db.execute(
         "SELECT COALESCE(MAX(cycle),-1)+1 FROM ("

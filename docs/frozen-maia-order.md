@@ -187,9 +187,14 @@ Mandatory real-game remediation remains separate and higher priority. Ordinary
 boosts, generated/legacy scores, breadth, depth and import order cannot displace
 eligible frozen cards. Existing quotas and shared-card single admission remain.
 Optional capacity expansion keeps its existing parent gates. Already admitted
-membership is retained; only movable unstarted opening slots are reordered,
-with uncaptured ordinary openings afterward. Reviews and issued attempts stay
-protected. Content changes hold the affected unstarted card and require explicit
+membership, quotas and frozen opening selection are retained. The versioned
+daily presentation policy spreads eligible, unissued new and review work across
+the movable slots. Selected new openings retain their frozen relative rank,
+with uncaptured ordinary openings afterward; their slots may move across other
+categories. This replaces the earlier fixed-other-slots presentation promise.
+Issued attempts, teaching/presentation checkpoints, explicit entries and
+positioned repeats retain their positions. Content changes hold the affected
+unstarted card and require explicit
 rescoring/replacement or retirement. Re-enabling analysis services, refreshing a
 generated score, or rebuilding priorities does not automatically retire an
 active frozen order. It remains authoritative until an explicit, verified
@@ -244,8 +249,11 @@ fallback. Runtime annotation, candidate selection, final writer admission, queue
 serving, and rollback restoration consult current `queue_attempt_origins`
 evidence. Valid post-snapshot cards without legacy origins can still use the
 ordinary fallback. Deferred cards remain after scored ranks, and existing
-issued attempts, reviews, explicit/manual admissions, and verified mandatory
-real-game remediation retain their established behavior.
+issued attempts, explicit/manual admissions and positioned repeats retain their
+positions. Unissued reviews participate in daily presentation. Verified mandatory
+real-game remediation keeps priority in the remaining movable slots; a failed
+remediation repeat keeps its existing positioned retry behavior. This presentation
+change does not introduce a retry cooldown or change scheduling intervals.
 
 The plan checksum binds `required_reader_version: frozen-maia-v2`. Model and
 inference-cache identity remain `frozen-maia-v1`; a reader capability change

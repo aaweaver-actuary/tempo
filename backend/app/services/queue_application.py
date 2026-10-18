@@ -546,33 +546,51 @@ _QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,q.position,c.content_ty
            ORDER BY q.id"""
 
 
+def presentation_rows(database, day):
+    """Capture eligibility and attempt protection without changing membership."""
+    # Shadow evidence is PostgreSQL-only; SQLite remains the recovery adapter.
+    presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
+                 if postgres_store.configured() else "0")
+    statement = _QUEUE_RANDOMIZATION_ROWS_SQL.replace(
+        "q.gameplay_priority_reason\n", """q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
+                  (q.review_result_json IS NOT NULL) review_completed,c.revision,
+                  EXISTS(SELECT 1 FROM queue_attempt_origins origin
+                    WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
+                      AND origin.revision=c.revision AND origin.issued_as_head=1) issued,
+                  """ + presented + """ presented,
+                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught,
+                  q.id IN (""" + available_attempt_sql() + ") eligible\n",
+    )
+    return [dict(row) for row in database.execute(statement, (day, day)).fetchall()]
+
+
 def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None = None) -> None:
     """Create a stable mixed queue whenever that day's membership changes."""
-    rows = db.execute(_QUEUE_RANDOMIZATION_ROWS_SQL, (day,)).fetchall()
+    rows = presentation_rows(db, day)
     if not rows:
         return
     saved = db.execute(
         "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
     ).fetchone()
-    membership_hash = frozen_opening_order.queue_hash(_queue_membership_hash(rows), frozen_opening_order.activation(db))
-    if saved and saved["membership_hash"] == membership_hash and frozen_opening_order.activation(db)[0] is None:
+    token = frozen_opening_order.activation(db)
+    membership_hash = frozen_opening_order.queue_hash(_queue_membership_hash(rows), token)
+    if saved and saved["membership_hash"] == membership_hash:
         prioritize_queued_misses(db, day)
         return
+    if token[0] is not None:
+        rows = frozen_opening_order.annotate(db, rows)
     seed, _, ordered = _plan_daily_queue_order(
         rows, day, saved, preserve_through_entry_id=preserve_through_entry_id,
     )
-    if frozen_opening_order.activation(db)[0] is not None:
-        ordered = sorted(rows, key=lambda row: (row["position"], row["id"]))
-    frozen_active = frozen_opening_order.activation(db)[0] is not None
+    frozen_active = token[0] is not None
     positions = sorted(row["position"] for row in rows)
-    ordered = frozen_opening_order.order_queue_slots(db, ordered, preserve_through_entry_id=preserve_through_entry_id)
     if frozen_active:
         frozen_opening_order.record_queue_changes(db,day,[{'id':row['id'],'position':positions[index]} for index,row in enumerate(ordered)])
     for position, row in enumerate(ordered):
         db.execute(
             """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",
             (
-                positions[position] if frozen_active else position,
+                positions[position],
                 row["content_type"] or "opening",
                 row["admission_kind"],
                 row["id"],

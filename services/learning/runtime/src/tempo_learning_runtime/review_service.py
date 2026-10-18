@@ -90,12 +90,10 @@ def preserve_daily_queue_order(database: PostgresConnection, queue_date: str) ->
            WHERE queue_date=? AND status='queued' ORDER BY id""",
         (queue_date,),
     ).fetchall()
-    membership_hash = hashlib.sha256(
-        (
-            "queue-mix-v2\0"
-            + "\0".join(f"{entry['id']}:{entry['card_id']}" for entry in entries)
-        ).encode()
-    ).hexdigest()
+    from .queue_ordering import _preserved_queue_fingerprint
+    from .frozen_opening_order import activation
+    saved = database.execute("SELECT membership_hash FROM daily_queue_days WHERE queue_date=?", (queue_date,)).fetchone()
+    membership_hash = _preserved_queue_fingerprint(entries, saved, activation(database))
     seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
     database.execute(
         """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
@@ -167,6 +165,7 @@ def ensure_card_queued_after(
     *,
     queue_date: str | None = None,
     protected_ids: set[int] | None = None,
+    preserve_order: bool = True,
 ) -> None:
     day = queue_date or date.today().isoformat()
     entry = database.execute(
@@ -273,7 +272,8 @@ def ensure_card_queued_after(
            WHERE id=?""",
         (entry["id"],),
     )
-    preserve_daily_queue_order(database, day)
+    if preserve_order:
+        preserve_daily_queue_order(database, day)
 
 
 def _position_requeued_card(database, day, entry_id, after_cards):
