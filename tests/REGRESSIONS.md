@@ -20,6 +20,7 @@
 
 ## Study Priority v1 host activity producer
 
+- `backend/tests/test_study_priority_control.py::test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_teardown` owns a delayed private refresh whose generation matches its parent's. Teardown deletes the private generation and restores parent keys before the read resumes; publication must retain the originally reserved key identity, leave parent Study-only policy unchanged, and reject the late result. The deterministic probe fails before key capture and passes afterward.
 - `backend/tests/test_study_priority_maintenance.py` owns
   `test_owned_fixture_database_renews_private_policy_without_touching_parent_control`:
   private native helper databases renew their own policy and generation keys
