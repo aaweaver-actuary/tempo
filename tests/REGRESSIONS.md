@@ -21,6 +21,7 @@
 
 ## Study Priority v1 host activity producer
 
+- `backend/tests/test_study_priority_maintenance.py::test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounded_write_client` owns native direct Redis fixture setup after window6 timed out on the 50 ms production poll client. Setup and isolated key edits use the existing one-second write client; both actual factory deadlines are asserted unchanged. The original Lua renewal, member expiry, key TTL and native timing assertions remain unchanged.
 - `backend/tests/test_study_priority_control.py::test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_teardown` owns a delayed private refresh whose generation matches its parent's. Teardown deletes the private generation and restores parent keys before the read resumes; publication must retain the originally reserved key identity, leave parent Study-only policy unchanged, and reject the late result. The deterministic probe fails before key capture and passes afterward.
 - `backend/tests/test_study_priority_maintenance.py` owns
   `test_owned_fixture_database_renews_private_policy_without_touching_parent_control`:
