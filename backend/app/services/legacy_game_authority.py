@@ -23,6 +23,7 @@ MAX_DECISION_ROUTES = 64
 _REPERTOIRE_COLUMNS = "id,name,is_main,scope_source_revision,canonical_prefix_revision,canonical_prefix_moves_json,canonical_prefix_preview_id"
 _CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
 _GAME_COLUMNS = "id,provider,provider_game_id,content_hash,played_at,color,result,start_fen,moves_json,adaptive_excluded"
+_GAME_HEADER_COLUMNS = "id,provider,provider_game_id,content_hash"
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,55 @@ class Capture:
     tables: dict
     graphs: list
     game: dict
+
+
+@dataclass(frozen=True)
+class WithdrawalCapture:
+    target_id: str
+    game: dict | None
+
+
+def capture_withdrawal_header(delivery):
+    """No graph/card authority is needed to retract an exact retained incident."""
+    identity = read_rows("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1")
+    if (len(identity) != 1 or identity[0]["workspace_id"] != LEGACY_WORKSPACE_ID
+            or identity[0]["target_id"] != delivery.authority.target_id):
+        raise RemediationError("terminal_failure", "legacy_withdrawal_target_mismatch")
+    games = read_rows("SELECT " + _GAME_HEADER_COLUMNS + " FROM imported_games WHERE id=%s", (delivery.game_id,))
+    game = {key: games[0][key] for key in _GAME_HEADER_COLUMNS.split(",")} if games else None
+    if game is not None and (game["provider"], game["provider_game_id"]) != (
+            delivery.game_source.provider, delivery.game_source.provider_game_id):
+        raise RemediationError("terminal_failure", "legacy_withdrawal_canonical_game_mismatch")
+    return WithdrawalCapture(identity[0]["target_id"], game)
+
+
+def validate_withdrawal_lineage(delivery, withdrawal, retained):
+    """The exact accepted contribution owns source lineage even after deletion.
+
+    Withdrawal envelopes identify that accepted source header. A corrected live
+    content hash may differ; correction across hashes needs a separate explicit
+    withdrawal envelope before new miss acceptance, not a mixed-source batch.
+    """
+    if retained is None:
+        raise RemediationError("conflict", "legacy_withdrawal_lineage_missing")
+    if retained["obligation_revision"] != withdrawal.expected_obligation_revision:
+        raise RemediationError("stale_revision", "legacy_withdrawal_revision_superseded")
+    try:
+        payload = json.loads(retained["payload_json"])
+        original = payload.get("authority", {})
+        source = payload.get("game_source", {})
+        if ((retained["evidence_id"], retained["game_id"], payload.get("game_id"),
+                payload.get("obligation", {}).get("source_evidence_id")) != (
+                delivery.evidence_id, delivery.game_id, delivery.game_id, delivery.evidence_id)
+                or (original.get("kind"), original.get("target_id"), original.get("workspace_id"),
+                    original.get("repertoire_id")) != ("legacy_graph", delivery.authority.target_id,
+                    LEGACY_WORKSPACE_ID, delivery.authority.repertoire_id)
+                or (source.get("provider"), source.get("provider_game_id"), source.get("content_hash")) != (
+                    delivery.game_source.provider, delivery.game_source.provider_game_id,
+                    delivery.game_source.content_hash)):
+            raise RemediationError("terminal_failure", "legacy_withdrawal_lineage_mismatch")
+    except (ValueError, TypeError, AttributeError) as error:
+        raise RemediationError("terminal_failure", "legacy_withdrawal_lineage_invalid") from error
 
 
 def read_rows(statement, parameters=()):

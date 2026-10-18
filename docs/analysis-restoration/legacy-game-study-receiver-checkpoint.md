@@ -138,3 +138,31 @@ The original 8–12 working-hour total is now 10–14 working hours plus resourc
 and reviewer waits, with low confidence until native acceptance/coexistence and
 the selected repertoire's prefix applicability are resolved. This estimate is
 conditional implementation/qualification work, not a deployment promise.
+
+## Independent review: packaging and withdrawal repairs
+
+The production backend image already installs the remediation/contract artifacts.
+The maintenance image previously installed only backend requirements, so migration
+discovery failed even against a fully applied/no-op history. It now installs just
+the module and contract artifacts through their own packaging routes; its schema
+resource remains version/checksum checked before any database access. No runtime
+core is added to maintenance and no image build has qualified this change yet.
+
+Withdrawal-only preparation now captures a small backend target/canonical-game
+header. Acceptance rechecks that header and exact retained contribution lineage:
+workspace/target/repertoire, game/evidence IDs, provider, provider_game_id,
+content_hash and expected obligation revision. A deleted graph/card/game does
+not prevent withdrawal of a proved retained incident. Where the imported game
+still exists, its provider identity must agree and any change between preparation
+and acceptance is stale. An explicit withdrawal names the retained accepted
+content hash even after live content correction. Cross-hash correction therefore
+uses a separate withdrawal envelope; a mixed envelope cannot claim two source
+headers. The common module still owns source/revision/withdrawal effects.
+
+The two defects were reproduced with nine failing source cases against d7f1fb5a.
+Backend path tests exercise these guards with synthetic SQL rows, not merely a
+mocked module source callback. Native database/receipt durability and actual
+image build qualification remain unexecuted. The coordinator's later aggregate
+applicability evidence identifies global catalogue-size and integrity-completion
+blockers; this repair does not change capture limits, integrity policy or live
+state. A bounded capture/integrity design is pending review before integration.

@@ -60,3 +60,44 @@ def test_undeclared_module_inclusion_and_direct_partial_registration_fail_closed
     for table in ("remediation_deliveries", "remediation_attempts", "remediation_settlements"):
         assert table in source
     assert source.index("RAISE EXCEPTION") < source.index("INSERT INTO tempo_schema_migrations")
+
+
+def test_supported_images_install_registered_module_and_contract_from_their_own_artifacts():
+    for name in ("Dockerfile.postgres-maintenance", "backend/Dockerfile"):
+        source = (ROOT / name).read_text()
+        assert "COPY services/learning/remediation /services/learning/remediation" in source
+        assert "COPY contracts/game-evidence /contracts/game-evidence" in source
+        install = next(line for line in source.splitlines() if line.startswith("RUN pip install"))
+        assert "/services/learning/remediation" in install and "/contracts/game-evidence" in install
+    maintenance = (ROOT / "Dockerfile.postgres-maintenance").read_text()
+    assert "/services/learning/runtime" not in maintenance
+    assert '"migrations" = "tempo_learning_remediation/migrations"' in (
+        ROOT / "services/learning/remediation/pyproject.toml").read_text()
+
+
+def test_noop_migration_still_verifies_installed_module_before_database_access(monkeypatch):
+    events = []
+    def installed(name):
+        events.append("artifact verified")
+        assert name == "tempo-learning-remediation"
+        return distribution()
+    class Database:
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def commit(self): events.append("read committed")
+        def execute(self, statement):
+            assert statement.lstrip().startswith("SELECT")
+            rows = [(True,)] if "to_regclass" in statement else [(i,) for i in range(1, 51)]
+            return SimpleNamespace(fetchone=lambda: rows[0], fetchall=lambda: rows)
+    def connect(*args):
+        events.append("database opened")
+        return Database()
+    monkeypatch.setattr(migration.metadata, "distribution", installed)
+    monkeypatch.setattr(migration.psycopg, "connect", connect)
+    migration.apply_migrations("synthetic-noop")
+    assert events == ["artifact verified", "database opened", "read committed"]
+    monkeypatch.setattr(migration.metadata, "distribution", lambda name: (_ for _ in ()).throw(
+        migration.metadata.PackageNotFoundError(name)))
+    monkeypatch.setattr(migration.psycopg, "connect", lambda *_args: pytest.fail("database opened without artifact"))
+    with pytest.raises(migration.metadata.PackageNotFoundError):
+        migration.apply_migrations("synthetic-noop")

@@ -5,7 +5,6 @@ queue issuance/settlement adoption remain separate integration gates.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 
 from fastapi import HTTPException
 from psycopg.rows import tuple_row
@@ -22,7 +21,7 @@ from .services.redis_admission_gate import BackgroundAdmissionDeferred
 @dataclass(frozen=True)
 class PreparedDelivery:
     delivery: v3.EvidenceDelivery
-    captured: authority_owner.Capture | None
+    captured: authority_owner.Capture | authority_owner.WithdrawalCapture | None
     decisions: dict
     error: RemediationError | None = None
     replay: bool = False
@@ -69,9 +68,9 @@ def prepare_legacy_delivery(payload):
         error = None if prior[0]["payload_hash"] == digest(delivery.model_dump(mode="json")) else RemediationError(
             "conflict", "delivery_id_reused")
         return PreparedDelivery(delivery, None, {}, error, replay=True)
-    if not delivery.obligations:
-        return PreparedDelivery(delivery, None, {})
     try:
+        if not delivery.obligations:
+            return PreparedDelivery(delivery, authority_owner.capture_withdrawal_header(delivery), {})
         captured = authority_owner.capture(delivery)
         _, decisions = authority_owner.prepare_decisions(delivery, captured)
         return PreparedDelivery(delivery, captured, decisions)
@@ -83,30 +82,40 @@ def prepare_legacy_delivery(payload):
 
 def _lock_and_recheck(database, prepared):
     delivery, captured = prepared.delivery, prepared.captured
+    if prepared.error:
+        return prepared.error
     database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
         ("tempo:imported-game:" + delivery.game_source.provider + ":" + delivery.game_source.provider_game_id,))
     database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
     affected = {item.card_id for item in delivery.obligations}
     for withdrawal in delivery.withdrawals:
-        row = database.execute_native("""SELECT contribution.card_id,contribution.payload_json
+        row = database.execute_native("""SELECT contribution.card_id,contribution.payload_json,
+                contribution.evidence_id,contribution.game_id,contribution.obligation_revision
             FROM remediation_obligation_heads head JOIN remediation_contributions contribution
             USING(workspace_id,obligation_id,obligation_revision)
             WHERE head.workspace_id=%s AND head.obligation_id=%s""",
             (LEGACY_WORKSPACE_ID, withdrawal.obligation_id)).fetchone()
-        if row:
-            original = json.loads(row["payload_json"]).get("authority", {})
-            if (original.get("kind"), original.get("target_id"), original.get("repertoire_id")) != (
-                    "legacy_graph", delivery.authority.target_id, delivery.authority.repertoire_id):
-                return RemediationError("terminal_failure", "legacy_withdrawal_scope_mismatch")
-            affected.add(row["card_id"])
+        try:
+            authority_owner.validate_withdrawal_lineage(delivery, withdrawal, row)
+        except RemediationError as error:
+            return error
+        affected.add(row["card_id"])
     for card_id in sorted(affected):
         database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:card-edit:" + card_id,))
         database.execute_native("SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,))
     if captured is None:
-        return prepared.error
+        return RemediationError("terminal_failure", "legacy_capture_required")
     identity = database.execute_native("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1 FOR SHARE").fetchone()
-    if not identity or tuple(identity) != (captured.target_id, LEGACY_WORKSPACE_ID):
+    if (not identity or tuple(identity) != (captured.target_id, LEGACY_WORKSPACE_ID)
+            or identity["target_id"] != delivery.authority.target_id):
         return RemediationError("stale_revision", "legacy_backend_identity_changed")
+    if isinstance(captured, authority_owner.WithdrawalCapture):
+        game = database.execute_native("SELECT " + authority_owner._GAME_HEADER_COLUMNS +
+            " FROM imported_games WHERE id=%s FOR SHARE", (delivery.game_id,)).fetchone()
+        current = {key: game[key] for key in authority_owner._GAME_HEADER_COLUMNS.split(",")} if game else None
+        if current != captured.game:
+            return RemediationError("stale_revision", "legacy_withdrawal_game_changed_before_acceptance")
+        return None
     repertoire = database.execute_native("SELECT scope_source_revision,canonical_prefix_revision FROM repertoires WHERE id=%s FOR SHARE",
         (delivery.authority.repertoire_id,)).fetchone()
     scope = database.execute_native("SELECT generation FROM repertoire_game_scope WHERE id=1 FOR SHARE").fetchone()

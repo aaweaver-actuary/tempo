@@ -3,6 +3,10 @@
 `backend/tests/test_remediation_migration_registration.py` owns migration 050's
 exact installed 12-table schema/checksum registration, backend target identity,
 failure before database connection for changed inputs, and partial-apply guard.
+Its supported-image artifact-route and no-op-history regressions require the
+maintenance image to install the module/contract artifacts before migration
+discovery, even when no SQL migration remains. The backend image route is a
+control and remains unchanged; image build/install qualification is separate.
 `backend/tests/test_legacy_game_evidence_commands.py` owns exact physical-card
 source projection, complete alternative coverage, stable identity across Study,
 known introduction chronology, source/route/prefix refusal, bounded read pages,
@@ -10,6 +14,10 @@ capture revision coherence, worker preparation/replay, card-before-module lock
 order, acceptance rechecks, foreground deferral, immutable read guards and
 disjoint legacy scope ownership. These are source/fake-writer checks, not native
 migration, operation durability, actual queue issuance or normal review proof.
+Withdrawal-specific cases execute the backend prepare/recheck/receiver path
+against synthetic SQL rows: retained canonical game/evidence/provider/content
+lineage, target identity and exact obligation revision are mandatory; removal
+of the graph/card/game remains allowed, and changes after preparation are fenced.
 
 ## Study Priority v1 diagnostic native allocation
 

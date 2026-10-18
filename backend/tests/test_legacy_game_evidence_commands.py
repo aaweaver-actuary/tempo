@@ -305,3 +305,122 @@ def test_unknown_catalogue_color_cannot_supply_miss_authority():
     captured.tables["repertoire_lines"][1]["trained_color"] = None
     with pytest.raises(RemediationError, match="legacy_catalogue_color_unknown"):
         prepared(value, captured)
+
+
+def withdrawal_fixture(monkeypatch, *, source_removed=False):
+    original, captured = fixture()
+    contribution = semantic_check(prepared(original, captured))[0]
+    value = original.model_dump(mode="json")
+    value.update(delivery_id="legacy-withdrawal", evidence_revision=2,
+        encounters=[], comparisons=[], misses=[], obligations=[], withdrawals=[dict(
+            obligation_id="legacy-obligation", expected_obligation_revision=1, reason="source_deleted")])
+    class WithdrawalWriter(Writer):
+        def __init__(self):
+            super().__init__(captured)
+            self.retained = dict(card_id=contribution.card_id, evidence_id=original.evidence_id,
+                game_id=original.game_id, obligation_revision=1, payload_json=contribution.payload_json)
+            self.source_removed = source_removed
+        def execute_native(self, statement, parameters=()):
+            if "remediation_contributions" in statement:
+                self.events.append(statement)
+                row = self.retained
+                return SimpleNamespace(fetchone=lambda: TempoRow(tuple(row), tuple(row.values())) if row else None)
+            if self.source_removed and ("FROM imported_games" in statement or "FROM cards" in statement):
+                self.events.append(statement)
+                return SimpleNamespace(fetchone=lambda: None)
+            if any(table in statement for table in ("opening_graph", "FROM repertoires", "repertoire_integrity")):
+                pytest.fail("withdrawal required a removed graph/card source")
+            return super().execute_native(statement, parameters)
+    writer = WithdrawalWriter()
+    def read(statement, parameters=()):
+        if "remediation_deliveries" in statement: return []
+        if "legacy_learning_identity" in statement:
+            return [dict(target_id=writer.captured.target_id, workspace_id=LEGACY_WORKSPACE_ID)]
+        if "imported_games" in statement:
+            return [] if writer.source_removed else [dict(writer.captured.game)]
+        pytest.fail("unexpected withdrawal preparation read: " + statement)
+    monkeypatch.setattr(owner, "read_rows", read)
+    monkeypatch.setattr(owner, "capture", lambda *_args: pytest.fail("withdrawal did full graph capture"))
+    return value, writer
+
+
+@pytest.mark.parametrize("fault", ["provider", "provider_game_id", "content_hash", "game_id", "evidence_id",
+                                    "retained_missing", "backend_target_changed", "live_provider_changed"])
+def test_backend_withdrawal_rejects_foreign_or_unproven_canonical_source_header(monkeypatch, fault):
+    value, writer = withdrawal_fixture(monkeypatch)
+    if fault in {"provider", "provider_game_id"}: value["game_source"][fault] = "foreign"
+    if fault == "content_hash": value["game_source"][fault] = "d" * 64
+    if fault in {"game_id", "evidence_id"}: value[fault] = "foreign"
+    if fault == "retained_missing": writer.retained = None
+    if fault == "backend_target_changed": writer.captured = owner.Capture(
+        "different-backend", writer.captured.metadata, writer.captured.tables, writer.captured.graphs, writer.captured.game)
+    if fault == "live_provider_changed": writer.captured.game["provider_game_id"] = "different-live-source"
+    fake_repository(monkeypatch, writer)
+    result = commands.receive_legacy_delivery(writer, commands.prepare_legacy_delivery({"delivery": value}))
+    assert result["status"] in {"terminal_failure", "stale_revision", "conflict"}
+    assert result["reason"] == {
+        "provider": "legacy_withdrawal_canonical_game_mismatch",
+        "provider_game_id": "legacy_withdrawal_canonical_game_mismatch",
+        "content_hash": "legacy_withdrawal_lineage_mismatch",
+        "game_id": "legacy_withdrawal_lineage_mismatch",
+        "evidence_id": "legacy_withdrawal_lineage_mismatch",
+        "retained_missing": "legacy_withdrawal_lineage_missing",
+        "backend_target_changed": "legacy_withdrawal_target_mismatch",
+        "live_provider_changed": "legacy_withdrawal_canonical_game_mismatch",
+    }[fault]
+    assert result["accepted_obligation_ids"] == []
+
+
+@pytest.mark.parametrize("source_removed", [False, True])
+def test_backend_withdrawal_uses_retained_source_after_graph_card_or_game_removal(monkeypatch, source_removed):
+    value, writer = withdrawal_fixture(monkeypatch, source_removed=source_removed)
+    fake_repository(monkeypatch, writer)
+    prepared_value = commands.prepare_legacy_delivery({"delivery": value})
+    result = commands.receive_legacy_delivery(writer, prepared_value)
+    assert result["status"] == "completed"
+    assert not any("daily_queue" in event or "INSERT INTO reviews" in event for event in writer.events)
+
+
+@pytest.mark.parametrize("field", ["provider_game_id", "content_hash"])
+def test_backend_withdrawal_after_game_removal_still_rejects_foreign_retained_source(monkeypatch, field):
+    value, writer = withdrawal_fixture(monkeypatch, source_removed=True)
+    value["game_source"][field] = "e" * 64 if field == "content_hash" else "foreign"
+    fake_repository(monkeypatch, writer)
+    result = commands.receive_legacy_delivery(writer, commands.prepare_legacy_delivery({"delivery": value}))
+    assert result["status"] == "terminal_failure"
+    assert result["reason"] == "legacy_withdrawal_lineage_mismatch"
+
+
+@pytest.mark.parametrize("fault", ["target", "game_hash", "game_removed"])
+def test_backend_withdrawal_rechecks_header_after_preparation_and_before_acceptance(monkeypatch, fault):
+    value, writer = withdrawal_fixture(monkeypatch)
+    prepared_value = commands.prepare_legacy_delivery({"delivery": value})
+    assert isinstance(prepared_value.captured, owner.WithdrawalCapture)
+    if fault == "target": writer.captured = owner.Capture(
+        "changed-target", writer.captured.metadata, writer.captured.tables, writer.captured.graphs, writer.captured.game)
+    if fault == "game_hash": writer.captured.game["content_hash"] = "e" * 64
+    if fault == "game_removed": writer.source_removed = True
+    fake_repository(monkeypatch, writer)
+    result = commands.receive_legacy_delivery(writer, prepared_value)
+    assert result["status"] == "stale_revision" and result["accepted_obligation_ids"] == []
+
+
+def test_backend_explicit_old_source_withdrawal_remains_possible_after_live_game_correction(monkeypatch):
+    value, writer = withdrawal_fixture(monkeypatch)
+    writer.captured.game["content_hash"] = "e" * 64
+    fake_repository(monkeypatch, writer)
+    result = commands.receive_legacy_delivery(writer, commands.prepare_legacy_delivery({"delivery": value}))
+    assert result["status"] == "completed"  # Incoming header targets the retained accepted content.
+    value["game_source"]["content_hash"] = "e" * 64
+    result = commands.receive_legacy_delivery(writer, commands.prepare_legacy_delivery({"delivery": value}))
+    assert result["status"] == "terminal_failure"
+    assert result["reason"] == "legacy_withdrawal_lineage_mismatch"
+
+
+def test_backend_withdrawal_requires_the_exact_retained_current_obligation_revision(monkeypatch):
+    value, writer = withdrawal_fixture(monkeypatch)
+    writer.retained["obligation_revision"] = 2
+    fake_repository(monkeypatch, writer)
+    result = commands.receive_legacy_delivery(writer, commands.prepare_legacy_delivery({"delivery": value}))
+    assert result["status"] == "stale_revision"
+    assert result["reason"] == "legacy_withdrawal_revision_superseded"
