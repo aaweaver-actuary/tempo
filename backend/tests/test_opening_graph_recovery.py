@@ -335,3 +335,21 @@ def test_selected_cli_defaults_to_dry_run_and_resume_cannot_change_pins(selected
     with pytest.raises(ValueError, match='differs from command'):
         cli.selected_rebuild_main(args)
     execute.assert_not_called()
+
+
+def test_selected_evidence_pages_every_issued_revision_across_a_shared_queue_entry_boundary(monkeypatch):
+    from app.services import opening_graph_recovery as recovery
+    origins = [{'queue_entry_id': 1, 'card_id': 'card', 'revision': revision} for revision in range(1, 130)]
+    pages = []
+    def read(statement, parameters=()):
+        if 'frozen_opening_activation' in statement:
+            return [{'run_id': 'ranks'}]
+        if 'queue_attempt_origins' in statement:
+            pages.append(parameters)
+            return origins[:128] if len(pages) == 1 else origins[128:]
+        return []
+    monkeypatch.setattr(recovery, 'read_rows', read)
+    monkeypatch.setattr(recovery, 'target_identity', lambda: {'database': 'fixture'})
+    evidence = recovery.capture_evidence('caro', recovery.local_study_day(), selected_rebuild=True)
+    assert evidence['issued_origins'] == origins
+    assert pages == [(0, '', 0), (1, 'card', 128)]

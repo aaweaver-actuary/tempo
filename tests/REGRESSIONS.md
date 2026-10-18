@@ -4,6 +4,7 @@
 - Registered native owner `scripts/check_postgres_opening_graph_recovery.py` adds `test_selected_queued_rebuild_restart_matches_scan_segmentation_and_preserves_protected_data`, `test_selected_rebuild_rejects_replacement_generation_source_day_and_unrelated_claim`, and `test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint`. These are executable through its existing regular durability registration. Source presence does not imply a native pass; focused execution requires an approved finite resource window.
 
 - `test_selected_scope_publication_follows_the_owner_checkpoint_and_keeps_policy_locks` checks all nine graph checkpoints against their correct visible generation and retained policy/source locks.
+- `test_selected_evidence_pages_every_issued_revision_across_a_shared_queue_entry_boundary` retains all composite issued-attempt identities when a 128-row evidence page ends within one queue entry's revisions.
 
 ## Study Priority v1 diagnostic native allocation
 

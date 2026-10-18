@@ -408,14 +408,19 @@ def recover(prepared, *, day, progress=lambda value: None, max_slices=20000):
 def capture_evidence(repertoire_id, day, *, selected_rebuild=False):
     """Private maintenance evidence, paged without a long snapshot transaction."""
     def paged(table, key, predicate='TRUE', parameters=()):
-        rows, cursor = [], 0 if key in {'id_numeric', 'queue_entry_id'} else ''
-        column = 'id' if key == 'id_numeric' else key
+        keys = key if isinstance(key, tuple) else (key,)
+        columns = tuple('id' if field == 'id_numeric' else field for field in keys)
+        cursor = tuple(0 if field in {'id_numeric', 'queue_entry_id', 'revision'} else '' for field in keys)
+        order = ','.join(columns)
+        placeholders = ','.join('%s' for _ in columns)
+        rows = []
         while True:
-            page = read_rows(f'SELECT * FROM {table} WHERE ({predicate}) AND {column}>%s ORDER BY {column} LIMIT 128', (*parameters, cursor))
+            page = read_rows(f'SELECT * FROM {table} WHERE ({predicate}) AND ({order})>({placeholders}) ORDER BY {order} LIMIT 128',
+                             (*parameters, *cursor))
             rows.extend(page)
             if len(page) < 128:
                 return rows
-            cursor = page[-1][column]
+            cursor = tuple(page[-1][column] for column in columns)
     activation = read_rows('SELECT * FROM frozen_opening_activation WHERE id=1')[0]
     evidence = {
         'recorded_at': datetime.now(timezone.utc).isoformat(), 'target': target_identity(),
@@ -426,7 +431,7 @@ def capture_evidence(repertoire_id, day, *, selected_rebuild=False):
         'memberships': read_rows('SELECT * FROM repertoire_cards WHERE repertoire_id=%s ORDER BY card_id', (repertoire_id,)),
         'cards': paged('cards', 'id', 'repertoire_id=%s', (repertoire_id,)),
         'reviews': paged('reviews', 'id_numeric'),
-        'issued_origins': paged('queue_attempt_origins', 'queue_entry_id', 'issued_as_head=1'),
+        'issued_origins': paged('queue_attempt_origins', ('queue_entry_id', 'card_id', 'revision'), 'issued_as_head=1'),
         'activation': activation,
         'frozen_ranks': paged('frozen_opening_ranks', 'card_id', 'run_id=%s', (activation['run_id'],)),
         'queue': read_rows('SELECT q.*,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=%s ORDER BY q.position,q.id', (day,)),
