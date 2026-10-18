@@ -30,6 +30,7 @@ from psycopg.rows import dict_row
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import postgres_store
 from app.services import postgres_opening_graph as graph, priority_retention, redis_admission_gate
+from postgres_rehearsal_admission import admitted_call
 
 
 DATABASE_URL = "postgresql://postgres@postgres:5432/tempo"
@@ -247,9 +248,9 @@ class IncidentFixture:
                              (task_id,))
         try:
             with patch.object(durable_tasks, "_now", return_value=due_at - timedelta(microseconds=1)):
-                assert durable_tasks.claim_task(kind=checkpoint["kind"]) is None, "Retry claimed before its deadline"
+                assert admitted_call(lambda: durable_tasks.claim_task(kind=checkpoint["kind"])) is None, "Retry claimed before its deadline"
             with patch.object(durable_tasks, "_now", return_value=due_at + timedelta(microseconds=1)):
-                claimed = durable_tasks.claim_task(kind=checkpoint["kind"])
+                claimed = admitted_call(lambda: durable_tasks.claim_task(kind=checkpoint["kind"]))
             assert claimed is not None and claimed["id"] == task_id, claimed
             assert claimed["payload"] == checkpoint["payload"]
             return claimed
@@ -343,7 +344,7 @@ class IncidentFixture:
                                ("graph_raw_exhausted", FIXTURE_SIZE - 1)):
             with self.capture(label):
                 try:
-                    graph.prepare_obsolete_graph_cards(self.repertoire_id, GRAPH_GENERATION,
+                    admitted_call(graph.prepare_obsolete_graph_cards, self.repertoire_id, GRAPH_GENERATION,
                                                        self.card_id(ordinal))
                 except TransactionTimeout:
                     # A baseline timeout is evidence, not a rehearsal failure.
@@ -395,7 +396,7 @@ class IncidentFixture:
     def test_postgres_graph_cleanup_current_pages_restart_and_shared_tail(self) -> None:
         history_before = self.history()
         task = self.task("opening_graph_rebuild")
-        prepared = graph.prepare_obsolete_graph_cards(self.repertoire_id, GRAPH_GENERATION, "")
+        prepared = admitted_call(graph.prepare_obsolete_graph_cards, self.repertoire_id, GRAPH_GENERATION, "")
         assert prepared.obsolete_card_ids == (self.card_id(0), self.card_id(1)), prepared
         assert prepared.checkpoint_card_id == self.card_id(1), prepared
         with self.capture("graph_cleanup_full_drain"):
@@ -407,12 +408,12 @@ class IncidentFixture:
             postgres_store.close_pools()
             # Restart from durable state, not the caller's prepared page.
             task = self.claim(task["id"])
-            assert graph.execute_graph_cleanup_slice(task)
+            assert admitted_call(graph.execute_graph_cleanup_slice, task)
             checkpoint = self.state(task["id"])
             assert not self.link_state(self.card_id(2))["links"]
             assert checkpoint["payload"]["after_card_id"] == self.card_id(257)
             task = self.claim(task["id"])
-            assert graph.execute_graph_cleanup_slice(task)
+            assert admitted_call(graph.execute_graph_cleanup_slice, task)
             checkpoint = self.state(task["id"])
             assert checkpoint["payload"]["after_card_id"] == self.card_id(513)
             assert checkpoint["phase"] == "cleanup", "Current-only page falsely finalized"
@@ -420,7 +421,7 @@ class IncidentFixture:
                 if checkpoint["phase"] == "finalize":
                     break
                 task = self.claim(task["id"])
-                assert graph.execute_graph_cleanup_slice(task)
+                assert admitted_call(graph.execute_graph_cleanup_slice, task)
                 checkpoint = self.state(task["id"])
             else:
                 raise AssertionError("Graph cleanup failed to drain bounded pages")
@@ -601,7 +602,7 @@ class IncidentFixture:
         with ThreadPoolExecutor(max_workers=1) as executor:
             with patch.object(postgres_store.PostgresConnection, "execute", observe_generation_lock), \
                     self.capture("retention_concurrent_generation_transition"):
-                assert priority_retention.execute_priority_retention_slice(task)
+                assert admitted_call(priority_retention.execute_priority_retention_slice, task)
             assert update_future is not None
             update_future.result(timeout=2)
         assert self.prepared_counts().get(20) == 20, "Replacement active preparation lost rows"
@@ -609,7 +610,7 @@ class IncidentFixture:
         # keeps generation 20 while generation 10 becomes legitimately stale.
         task = self.claim(task["id"])
         with self.capture("retention_transition_committed_before_slice"):
-            assert priority_retention.execute_priority_retention_slice(task)
+            assert admitted_call(priority_retention.execute_priority_retention_slice, task)
         assert self.prepared_counts().get(20) == 20
         with psycopg.connect(DATABASE_URL) as database:
             database.execute("UPDATE repertoire_priority_jobs SET generation=%s WHERE repertoire_id=%s",
@@ -669,7 +670,7 @@ class IncidentFixture:
     def test_postgres_graph_cleanup_generation_replacement_rejects_stale_page(self) -> None:
         self.restore_obsolete_head()
         task = self.task("opening_graph_rebuild")
-        prepared = graph.prepare_obsolete_graph_cards(self.repertoire_id, GRAPH_GENERATION, "")
+        prepared = admitted_call(graph.prepare_obsolete_graph_cards, self.repertoire_id, GRAPH_GENERATION, "")
         assert prepared.obsolete_card_ids == (self.card_id(0),)
         before = self.link_state(self.card_id(0))
         with psycopg.connect(DATABASE_URL) as database:
@@ -770,7 +771,7 @@ class IncidentFixture:
         for ordinal, label in ((2, "graph_mostly_current"), (63_485, "graph_nonmatching_tail"),
                                (FIXTURE_SIZE - 1, "graph_raw_exhausted")):
             with self.capture(label):
-                prepared = graph.prepare_obsolete_graph_cards(self.repertoire_id, GRAPH_GENERATION,
+                prepared = admitted_call(graph.prepare_obsolete_graph_cards, self.repertoire_id, GRAPH_GENERATION,
                                                                self.card_id(ordinal))
             if ordinal == 63_485:
                 assert prepared.obsolete_card_ids == () and prepared.checkpoint_card_id is not None
