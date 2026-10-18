@@ -130,6 +130,17 @@ def assert_monotonic_activity_renewal(server, namespace, *, script=None):
         server.delete(key)
 
 
+def prepare_priority_control_fixture(namespace):
+    """Use the existing bounded write client for direct invariant setup/edits.
+
+    Production control polling keeps its separate 50 ms deadline. Fixture setup
+    must not consume that deadline under a capped Redis scheduling period.
+    """
+    from app.services import redis_admission_gate
+    shared = redis_admission_gate.client()
+    return shared, assert_monotonic_activity_renewal(shared, namespace)
+
+
 def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
     from apply_postgres_migrations import apply_migrations
     with private_database(parent_url) as owned_url:
@@ -329,8 +340,8 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                     finally:
                         if postgres_container: docker('unpause',postgres_container)
                 results[CASES[3]] = {'database_paused':bool(postgres_container),'settings_locked':True,'control_ms':control_times}
-                shared = study_priority.control_client()
-                results[CASES[3]]['monotonic_renewal'] = assert_monotonic_activity_renewal(shared, configuration['TEMPO_ADMISSION_NAMESPACE'])
+                shared, renewal = prepare_priority_control_fixture(configuration['TEMPO_ADMISSION_NAMESPACE'])
+                results[CASES[3]]['monotonic_renewal'] = renewal
                 foreground_key = redis_admission_gate._FOREGROUND_KEY
                 for session in ('device_a','device_b'):
                     assert client.post('/api/system/browser-activity?session_id='+session,headers={'X-Tempo-Work-Class':'background'}).status_code == 200
