@@ -1,5 +1,11 @@
 ## Study Priority v1 host activity producer
 
+- `backend/tests/test_study_priority_maintenance.py` owns
+  `test_owned_fixture_database_renews_private_policy_without_touching_parent_control`:
+  private native helper databases renew their own policy and generation keys
+  after parent clients stop. The real publisher retains generation/expiry checks,
+  cleans only the private keys, and leaves the parent policy unchanged. The
+  operation-recovery proof retains its exact attempt and exhaustion assertions.
 - `backend/tests/test_study_priority_control.py` owns
   `test_study_activity_final_pulse_preserves_remaining_quiet_time`: legacy
   control retains the remaining quiet lease instead of restarting three seconds.
