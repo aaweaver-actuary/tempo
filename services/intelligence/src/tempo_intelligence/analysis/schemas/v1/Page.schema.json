@@ -80,6 +80,20 @@
           "title": "Expected Moves",
           "type": "array"
         },
+        "learning_card_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Learning Card Id"
+        },
         "opponent_move": {
           "anyOf": [
             {
@@ -158,7 +172,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 256,
+          "maxItems": 10000,
           "title": "Route Ids",
           "type": "array"
         },
@@ -217,6 +231,19 @@
           "minLength": 1,
           "title": "Game Id",
           "type": "string"
+        },
+        "game_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Game Url"
         },
         "learner_color": {
           "enum": [
@@ -371,7 +398,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 256,
+          "maxItems": 10000,
           "minItems": 1,
           "title": "Route Ids",
           "type": "array"

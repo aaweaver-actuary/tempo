@@ -190,6 +190,106 @@ def save_review(client,card):
     return response
 
 
+def test_C3_original_opponent_prelude_card_receives_interior_miss_and_settles_once(case,producer,authored,tmp_path):
+    """Constructed compatibility proof; real-cohort acceptance is separate.
+
+    All three installed services run with their actual restricted databases. The
+    alias must preserve the entire old executable, not adopt a normalized suffix.
+    """
+    from test_runtime import bundle,activate
+    content_cli,bridge_cli,environment=authored
+    moves=['e2e4','e7e5','g1f3','b8c6']
+    legacy=bundle([('opening',{'type':'move_line','mode':'stepwise_line',
+        'grading_policy':'reference','accepted_lines':[moves]})])
+    legacy['facts'][0]['trained_color']='black'
+    activate(case,legacy)
+    original=head(case)
+    physical_id=original['id']
+    assert submit(case,original,review_payload(original)).status_code==200
+    history=inspect_rows(case,'SELECT * FROM learning.reviews ORDER BY id')
+    schedule=inspect_rows(case,'SELECT state,due_date,fsrs_card_json,repetitions,interval_days FROM learning.cards WHERE id=%s',(physical_id,))
+    # Learning-owned fixture simulates a copied pre-publication legacy card;
+    # Content/Game Evidence never write the Learning database.
+    case.query('UPDATE learning.cards SET publication_id=NULL,serving_active=0 WHERE id=%s',(physical_id,))
+    board=chess.Board();board.push_uci(moves[0])
+    source={'schema_version':1,'workspace_id':'workspace-a','source_key':'c3-original-physical',
+        'title':'Constructed historical compatibility regression',
+        'repertoires':[{'key':'black','title':'Black','learner_color':'black'}],
+        'policies':[{'key':'black','repertoire_key':'black'}],
+        'routes':[{'key':'line','starting_fen':chess.STARTING_FEN,'moves':moves}],
+        'memberships':[{'repertoire_key':'black','policy_key':'black','route_key':'line'}],
+        'exercises':[{'key':'historical','decision_key':'historical','policy_key':'black',
+            'starting_fen':board.fen(en_passant='fen'),'prompt':'Play the continuation',
+            'execution_prelude':{'starting_fen':chess.STARTING_FEN,'moves':['e2e4']},
+            'specification':{'type':'move_line','mode':'stepwise_line','grading_policy':'reference','accepted_lines':[moves[1:]]}}],
+        'bindings':[{'route_key':'line','policy_key':'black','ply':1,'exercise_key':'historical'},
+            {'route_key':'line','policy_key':'black','ply':3,'exercise_key':'historical','exercise_ply':2}]}
+    source_path=tmp_path/'original-executable.json';source_path.write_text(json.dumps(source))
+    manifest=manifest_for(source,source_path);manifest['legacy_aliases']={'historical':physical_id}
+    manifest_path=tmp_path/'original-executable.manifest.json';manifest_path.write_text(json.dumps(manifest))
+    draft=run_cli(content_cli,['import','plan',source_path,'--manifest',manifest_path,'--expected-revision','0'],environment,tmp_path)
+    approved=run_cli(content_cli,['draft','approve',draft['id'],'--digest',draft['digest']],environment,tmp_path)
+    assert inspect_rows(case,'SELECT * FROM learning.reviews ORDER BY id')==history
+    token=tmp_path/'original-executable.token';token.write_text(case.configuration.operator_token);token.chmod(0o600)
+    with server(case,tmp_path) as (client,_):
+        arguments=['--content-cli',content_cli,'--learning-origin',str(client.base_url).rstrip('/'),'--operator-token-file',token]
+        completed=run_cli(bridge_cli,[*arguments,'apply',approved['id']],environment,tmp_path)
+        assert completed['state']=='completed'
+        assert inspect_rows(case,'SELECT count(*) FROM learning.cards')[0][0]==1
+        assert inspect_rows(case,'SELECT * FROM learning.reviews ORDER BY id')==history
+        assert inspect_rows(case,'SELECT state,due_date,fsrs_card_json,repetitions,interval_days FROM learning.cards WHERE id=%s',(physical_id,))==schedule
+        snapshot_path=tmp_path/'original-executable.snapshot.json'
+        snapshot=run_cli(bridge_cli,[*arguments,'snapshot',approved['id'],'--output',snapshot_path],environment,tmp_path)
+        definition=snapshot['publication']['definitions'][0]
+        assert definition['starting_fen']==chess.STARTING_FEN
+        assert definition['specification']['accepted_lines']==[moves]
+        assert snapshot['content_export']['legacy_aliases']=={definition['card_id']:physical_id}
+        producer.run('load-snapshot',snapshot_path)
+        issued=served_head(client)
+        assert issued['id']==physical_id
+        game=tmp_path/'interior-miss.pgn'
+        game.write_text('[Event "C3 constructed interior decision"]\n[White "Opponent"]\n[Black "Learner"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 d6 1-0\n')
+        game_id=producer.run('import-pgn',game,'--workspace','workspace-a','--player','Learner','--source-id','c3-interior')['game_id']
+        endpoint=str(client.base_url).rstrip('/')+'/internal/evidence'
+        producer.run('work','--max-jobs','100','--learning-endpoint',endpoint)
+        report=producer.run('report',game_id,'--workspace','workspace-a')
+        assert [finding['status'] for finding in report['findings']]==['matched','missed']
+        missed=report['findings'][1]
+        assert missed['expected_moves']==['b8c6'] and missed['move']=='d7d6'
+        assert missed['decision_id']!=definition['decision_id']
+        assert missed['learning_card_id']==physical_id
+        assert report['delivery']['status']=='completed' and outstanding(case,physical_id)
+        # Evidence arrival cannot replace or retroactively extend the issued attempt.
+        same=served_head(client)
+        assert (same['id'],same['queue_entry_id'],same['revision'])==(issued['id'],issued['queue_entry_id'],issued['revision'])
+        assert inspect_rows(case,'SELECT * FROM learning.reviews ORDER BY id')==history
+        save_review(client,issued)
+        assert outstanding(case,physical_id)
+        subsequent=served_head(client)
+        assert subsequent['id']==physical_id
+        assert subsequent['gameplay_priority_reason']
+        assert (subsequent['queue_entry_id'],subsequent['revision'])!=(issued['queue_entry_id'],issued['revision'])
+        operation_id=uuid.uuid4().hex;payload=review_payload(subsequent)
+        saved=client.post('/api/cards/'+physical_id+'/review',json=payload,headers={'Idempotency-Key':operation_id})
+        assert saved.status_code==200,saved.text
+        assert not outstanding(case,physical_id)
+        assert client.post('/api/cards/'+physical_id+'/review',json=payload,headers={'Idempotency-Key':operation_id}).json()==saved.json()
+        assert client.get('/api/operations/'+operation_id).json()['response']==saved.json()
+        assert producer.run('import-pgn',game,'--workspace','workspace-a','--player','Learner','--source-id','c3-interior')['game_id']==game_id
+        producer.run('work','--max-jobs','100','--learning-endpoint',endpoint)
+        assert not outstanding(case,physical_id)
+        assert inspect_rows(case,'SELECT count(*) FROM learning.remediation_obligation_heads')[0][0]==1
+        assert inspect_rows(case,'SELECT count(*) FROM learning.remediation_review_receipts WHERE settled')[0][0]==1
+        assert inspect_rows(case,'SELECT count(*) FROM learning.reviews')[0][0]==len(history)+2
+        destination=Path(os.environ['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'])/'projected-physical'
+        destination.mkdir(parents=True,exist_ok=True)
+        for path in (source_path,manifest_path,snapshot_path):shutil.copy2(path,destination/path.name)
+        (destination/'proof.json').write_text(json.dumps({'synthetic':True,'game_id':game_id,
+            'physical_card_id':physical_id,'interior_comparison':missed,'activation':snapshot['activation'],
+            'preserved_reviews':len(history),'additional_genuine_study_reviews':2,
+            'settled_once':True,'replay_preserved':True},indent=2))
+
+
 def test_A_actual_evidence_delivery_export_proposal_and_optional_off_study(case,producer,authored,tmp_path):
     content_cli,bridge_cli,environment=authored
     source=source_document()

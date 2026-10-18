@@ -1179,3 +1179,68 @@ def test_A_post_retirement_snapshot_cannot_claim_current_serving(state):
         assert database.execute('SELECT count(*) AS count FROM snapshots').fetchone()['count'] == 2
         assert database.execute('SELECT count(*) AS count FROM accepted_heads WHERE active').fetchone()['count'] > 0
         assert database.execute('SELECT delivery_id,status,acknowledgement FROM outbox ORDER BY delivery_id').fetchall() == deliveries
+
+
+def test_C3_export_derivation_upgrade_preserves_reserved_original_bytes(state,tmp_path,monkeypatch):
+    from tempo_game_evidence import analysis_export
+    from tempo_game_evidence.analysis_schema import verify_directory
+    store,_,_=state
+    snapshot=json.loads((FIXTURES/'bridge-snapshot-v2.json').read_text())
+    workspace=snapshot['publication']['workspace_id']
+    store.load_snapshot(snapshot)
+    game=store.import_pgn(workspace,'pgn','derivation-upgrade','Learner',
+        b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 c5 2. Nf3 1-0')
+    drain(store)
+    with monkeypatch.context() as previous:
+        previous.setattr(analysis_export,'EXPORT_DERIVATION_VERSION',1)
+        original=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'original')
+    original_bytes={path.name:path.read_bytes() for path in (tmp_path/'original').iterdir()}
+    current=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'current')
+    assert current['input_id']!=original['input_id']
+    resumed=analysis_export.create_directory_export(store,workspace,[game],tmp_path/'original')
+    assert resumed==original
+    assert {path.name:path.read_bytes() for path in (tmp_path/'original').iterdir()}==original_bytes
+    assert verify_directory(tmp_path/'original')['status']=='verified'
+
+
+def test_C3_dense_80_game_export_keeps_scope_and_closes_source_transaction(state, tmp_path, monkeypatch):
+    """Byte packing preserves all selected observations and complete encountered scopes."""
+    from tempo_game_evidence import analysis_export
+    from tempo_game_evidence.analysis_schema import verify_directory
+    from tempo_game_evidence.snapshot import parse_snapshot
+    store, _, _ = state
+    snapshot = json.loads((FIXTURES / 'bridge-snapshot-v2.json').read_text())
+    workspace = snapshot['publication']['workspace_id']
+    store.load_snapshot(snapshot)
+    pgn = b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0'
+    games = [store.import_pgn(workspace, 'pgn', f'dense-{index}', 'Learner', pgn)
+             for index in range(80)]
+    drain(store)
+    original = analysis_export.deviations
+    traversal_calls = []
+    def checked_traversal(*arguments, **keywords):
+        with store.connect() as database:
+            assert database.execute("SELECT count(*) AS n FROM pg_stat_activity WHERE usename=current_user AND pid<>pg_backend_pid() AND state='idle in transaction'").fetchone()['n'] == 0
+        traversal_calls.append(arguments[0]['game_id'])
+        return original(*arguments, **keywords)
+    monkeypatch.setattr(analysis_export, 'deviations', checked_traversal)
+    monkeypatch.setattr(analysis_export, 'MAX_PAGE_BYTES', 8192)
+    output = tmp_path / 'dense-complete'
+    manifest = analysis_export.create_directory_export(store, workspace, games, output)
+    assert verify_directory(output)['status'] == 'verified'
+    assert sorted(traversal_calls) == sorted(games)
+    pages = [json.loads((output / reference['filename']).read_text()) for reference in manifest['pages']]
+    assert all((output / reference['filename']).stat().st_size <= 8192 for reference in manifest['pages'])
+    exported = {kind: [item for page in pages if page['kind'] == kind for item in page['items']]
+                for kind in analysis_export.KINDS}
+    assert sorted(item['game_id'] for item in exported['games']) == sorted(games)
+    assert len(exported['comparisons']) == 80
+    assert len(exported['positions']) == 80 * 4
+    assert len([page for page in pages if page['kind'] == 'comparisons']) > 2
+    encountered = {item['comparison_key'] for item in exported['positions']
+                   if item['move'] is not None and item['turn'] == 'black'}
+    expected = [item for item in parse_snapshot(snapshot).content_export['legal_replies']
+                if item['position_key'] in encountered]
+    assert exported['legal_replies'] == expected
+    assert len(expected) == 1 < len(snapshot['content_export']['legal_replies'])
+    assert exported['routes'] == snapshot['content_export']['routes']

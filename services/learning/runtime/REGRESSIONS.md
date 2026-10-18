@@ -1,5 +1,28 @@
 # Learning runtime regression ownership
 
+`tests/test_decision_projection.py` owns explicit bound decision offsets, exact
+position/color and identity validation, unchanged full executables/aliases, and
+old binding byte compatibility. The installed three-service regression
+`test_C3_original_opponent_prelude_card_receives_interior_miss_and_settles_once`
+owns original physical identity/history preservation, an interior game miss,
+post-issuance evidence fencing, subsequent Study settlement and exact replay.
+It is a labeled constructed compatibility regression, not real-game acceptance.
+
+`test_C3_complete_historical_alias_activation_fits_documented_lock_capacity`
+uses 6,524 constructed existing physical cards and 6,524 distinct Content aliases
+through real v2 activation, preserving a genuine saved review and every schedule.
+It retains both card-edit lock namespaces and verifies receipt replay. The owned
+native PostgreSQL startup declares and records shared lock capacity; it does not
+change production settings or increase the transaction timeout.
+
+`test_C3_copied_review_identity_advances_without_reusing_or_reordering_history`
+reproduces an actual sequence collision after explicit copied review IDs, repairs
+it through the Learning-owned rehearsal helper, preserves the original review,
+and saves the next ordinary Study review with a new ID. Its second case requires
+an already advanced sequence to remain ahead. Empty-rehearsal restoration now
+finishes review identity allocation; explicit repair refuses changed copied
+history and remains restricted to verified disposable C3 storage.
+
 ## A authoritative bridge
 
 `test_content_bridge.py` owns measured complete 129/512/2,048-definition activation

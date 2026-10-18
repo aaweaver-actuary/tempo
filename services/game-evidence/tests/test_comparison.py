@@ -148,3 +148,31 @@ def test_card_replacement_does_not_rebind_an_existing_obligation_identity():
     _,payload=make_deliveries(game,findings,2,current.publication,prior)[0]
     assert payload["obligations"][0]["obligation_id"]!=old_payload["obligations"][0]["obligation_id"]
     assert payload["withdrawals"][0]["obligation_id"]==old_payload["obligations"][0]["obligation_id"]
+
+
+def test_C3_shared_policy_prefix_is_unknown_before_authoritative_anchor():
+    from .factories import snapshot, observed
+    from tempo_game_evidence.snapshot import parse_snapshot
+    from tempo_game_evidence.comparison import compare_game
+    document=snapshot()
+    document['routes'][0]['authority_start_ply']=3
+    game,positions=observed(['d2d4'])
+    findings=compare_game(game,positions,parse_snapshot(document))
+    assert findings[0]['status']=='unknown'
+    assert findings[0]['card_id'] is None
+
+
+def test_C3_worker_reuses_only_byte_identical_validated_snapshot(monkeypatch):
+    from tempo_game_evidence import store as module
+    parsed=[]
+    def parse(document):
+        value=object();parsed.append((document,value));return value
+    monkeypatch.setattr(module,'parse_snapshot',parse)
+    worker=module.EvidenceStore('explicit-test-only')
+    first=worker.comparison_snapshot('one',{'revision':1})
+    assert worker.comparison_snapshot('one',{'revision':1}) is first
+    assert len(parsed)==1
+    assert worker.comparison_snapshot('one',{'revision':2}) is not first
+    worker.comparison_snapshot('two',{'revision':2})
+    assert len(parsed)==3
+    assert worker._validated_snapshot[0][0]=='two'
