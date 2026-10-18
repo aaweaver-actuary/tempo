@@ -1,3 +1,7 @@
+## Study Priority v1 bounded sparse-unlock proof
+
+- `backend/tests/test_study_priority_maintenance.py::test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding_rejected_pages` owns the PostgreSQL proof's replacement for the retired three-total-page assumption. With the unchanged 15,000 locked / 21 eligible fixture, the actual selector advances through 939 pages, including 936 rejected pages, examines at most sixteen candidates per page, and preserves exactly three write batches of eight, eight, and five cards in order. The native proof additionally verifies actual row counts and exact persisted eligibility; background transactions retain the existing 250 ms deadline. SQLite's three-page sparse-selector regression remains unchanged.
+
 ## Study Priority v1 host activity producer
 
 - `backend/tests/test_study_priority_maintenance.py` owns

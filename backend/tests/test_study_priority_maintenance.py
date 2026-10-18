@@ -162,3 +162,53 @@ def test_owned_fixture_database_renews_private_policy_without_touching_parent_co
         assert study_priority.control_snapshot()['policy_generation'] == generation
     assert (study_priority.POLICY_KEY, study_priority.GENERATION_KEY) == parent_keys
     assert control.values == {parent_keys[0]: parent_policy, parent_keys[1]: '41'}
+
+
+def test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding_rejected_pages(monkeypatch):
+    import bisect
+    from contextlib import nullcontext
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
+    proof = importlib.import_module('check_postgres_daily_study_dispatch')
+    identifier = 'bounded-sparse-regression'
+    locked = [f'{identifier}-locked-{index:05}' for index in range(15000)]
+    eligible = set(locked[-21:])
+    unlocked = []
+
+    class Result:
+        def __init__(self, rows, rowcount=0):
+            self.rows, self.rowcount = rows, rowcount
+        def fetchall(self): return self.rows
+        def fetchone(self): return self.rows[0]
+        def __iter__(self): return iter(self.rows)
+
+    class Database:
+        def execute_native(self, statement, parameters):
+            if statement.startswith('SELECT id FROM cards'):
+                after, limit = parameters
+                first = bisect.bisect_right(locked, after)
+                return Result([(card_id,) for card_id in locked[first:first + limit]])
+            assert 'bounded_cards AS MATERIALIZED' in statement
+            candidates, limit = parameters
+            return Result([(card_id,) for card_id in candidates if card_id in eligible][:limit])
+        def execute(self, statement, parameters):
+            if statement.startswith('UPDATE cards'):
+                for card_id in parameters:
+                    assert card_id in eligible and card_id not in unlocked
+                    unlocked.append(card_id)
+                    locked.remove(card_id)
+                return Result([], len(parameters))
+            assert "state='new'" in statement
+            return Result([(card_id,) for card_id in sorted(unlocked)])
+
+    database = Database()
+    monkeypatch.setattr(proof.postgres_store, 'connection', lambda **_: nullcontext(database))
+    monkeypatch.setattr(proof.psycopg, 'connect', lambda *_args, **_kwargs: nullcontext(database))
+    observed = proof.proof_sparse_unlock(identifier)
+    assert observed['slice_count'] == 939
+    assert observed['write_batches'] == [8, 8, 5]
+    assert observed['rejected_pages'] == 936
+    assert observed['maximum_examined_candidates'] == 16
+    assert unlocked == sorted(eligible)
