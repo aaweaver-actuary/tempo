@@ -90,10 +90,40 @@ start import/engine work. Inspect the board, actual/expected moves, provider lin
 policy, supporting games, denominator or explicit unknown, provenance and current
 disposition. Existing durable browser command recovery remains authoritative.
 
+The current publication establishes a retrospective comparison. A game that
+predates the captured card's introduction is not evidence that the player forgot
+a previously learned move. Keep game time, source capture, publication generation
+and original introduction precision in the private audit; a date-only legacy
+introduction must not become an invented UTC instant. The Workbench shows this
+qualification alongside findings and game comparisons. A completed input import
+also does not mean analysis is complete: remaining positions and engine failures
+stay visible separately from source-backed findings.
+
 Context exports are informational. Proposals require Content inspection, a draft,
 exact approval and genuine Learning activation. Rehearsal approval is not user
 approval of a live edit. Verify retained histories and immutable older reports,
 then compare against a new activated snapshot. Learning alone admits new content.
+
+Check existing row identities when proving preservation. Accepting one approved
+definition can append its executable presentation catalog version; that catalog
+is distinct from an issued Study attempt. Require every prior presentation row
+unchanged and attribute each new row to the exact approved definition. Existing
+reviews, schedules, attempts, quota, frozen order and remediation must retain
+their original values. A newly accepted card remains unintroduced until Learning
+admits it normally.
+
+Use bounded bridge slices that fit the operator's remaining wall budget. A caller
+timeout can occur after Learning accepts activation. Inspect/recover the original
+durable operation and receipt rather than creating another approval. Keep separate
+logs for each attempt. Reserve runtime shutdown before final evidence collection;
+do not let a large verification pass consume the cleanup margin.
+
+For an isolated prospective comparison, a separately owned disposable Game
+Evidence database can consume the new A snapshot under the same workspace
+authority and import only the affected, already-selected game. This preserves
+the original producer database and immutable report. Record that it is another
+projection of the same game, not an additional cohort member. Do not rewrite
+workspace or publication identity to make a snapshot fit.
 
 ## Acceptance
 
