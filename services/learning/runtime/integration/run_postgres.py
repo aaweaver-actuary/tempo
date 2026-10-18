@@ -176,6 +176,9 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
             "--env",
             "POSTGRES_PASSWORD=" + password,
             image,
+            "postgres",
+            "-c",
+            "max_locks_per_transaction=512",
         )
         port = docker(
             "inspect",
@@ -209,6 +212,10 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
                     raise RuntimeError("Owned PostgreSQL did not become ready; see postgres-startup.log") from None
                 time.sleep(0.1)
         report['postgres_readiness_seconds']=time.monotonic()-readiness_started
+        with psycopg.connect(admin) as database:
+            report['postgres_lock_capacity'] = dict(database.execute(
+                "SELECT name,setting FROM pg_settings WHERE name IN ('max_locks_per_transaction','max_connections')"
+            ).fetchall())
         environment = {
             key: value
             for key, value in controlled_environment().items()

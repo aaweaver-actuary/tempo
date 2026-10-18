@@ -62,6 +62,59 @@ def canonical_position(fen: str) -> str:
     return canonical_fen_key(board.fen(en_passant="legal"))
 
 
+def decision_identity(workspace_id: str,source_key: str,exercise: SourceExercise,exercise_ply: int=0) -> str:
+    identity=[exercise.policy_key,exercise.decision_key]
+    if exercise_ply:
+        identity.append(exercise_ply)
+    return stable_id(workspace_id,source_key,'decision',_canonical_json(identity))
+
+
+def physical_execution(exercise: SourceExercise) -> tuple[str, dict]:
+    """Preserve a full executable while its logical decision starts after a prelude."""
+    specification=exercise.specification.model_dump(mode='json')
+    prelude=exercise.execution_prelude
+    if prelude is None:
+        return exercise.starting_fen,specification
+    if specification['type']!='move_line' or specification['grading_policy']!='reference':
+        raise ContentError('invalid_execution_prelude','Execution prelude requires a reference opening line')
+    board=_valid_board(prelude.starting_fen)
+    try:
+        for move in prelude.moves:board.push_uci(move)
+    except ValueError:
+        raise ContentError('invalid_execution_prelude','Execution prelude is not legal') from None
+    if board.fen(en_passant='fen')!=_valid_board(exercise.starting_fen).fen(en_passant='fen'):
+        raise ContentError('invalid_execution_prelude','Execution prelude does not reach the logical learner position')
+    lines=[prelude.moves+line for line in specification['accepted_lines']]
+    if any(len(line)>40 for line in lines):
+        raise ContentError('invalid_execution_prelude','Execution prelude exceeds the bounded physical line')
+    return prelude.starting_fen,{**specification,'accepted_lines':lines,
+        'mode':'single' if all(len(line)==1 for line in lines) else 'stepwise_line'}
+
+
+def project_move_line(starting_fen: str,specification: dict,exercise_ply: int) -> tuple[str,dict]:
+    """Verify an explicit decision offset; position overlap never creates a binding."""
+    if type(exercise_ply) is not int or not 0<=exercise_ply<40:
+        raise ContentError('invalid_decision_projection','Decision projection requires a bounded integer offset')
+    if exercise_ply==0:
+        return starting_fen,specification
+    if specification['type']!='move_line':
+        raise ContentError('invalid_decision_projection','Decision projection requires a bounded move-line offset')
+    positions=[];remaining=[]
+    for line in specification['accepted_lines']:
+        if exercise_ply>=len(line):
+            raise ContentError('invalid_decision_projection','Decision projection lies outside an accepted line')
+        board=_valid_board(starting_fen)
+        try:
+            for move in line[:exercise_ply]:board.push_uci(move)
+        except ValueError:
+            raise ContentError('invalid_decision_projection','Decision projection has an illegal prefix') from None
+        positions.append(board.fen(en_passant='fen'));remaining.append(line[exercise_ply:])
+    if len(set(positions))!=1:
+        raise ContentError('ambiguous_decision_projection','Accepted alternatives do not share one projected decision')
+    return positions[0],{**specification,'accepted_lines':remaining,
+        'mode':'single' if all(len(line)==1 for line in remaining) else 'stepwise_line'}
+
+
 def inventory_segment(start_fen: str, moves: list[str], learner_color: str,
                       first_ply: int = 0, terminal: bool = True) -> tuple[list[dict], str]:
     """Traverse an authored slice and enumerate complete legal opponent support.
@@ -114,6 +167,7 @@ def validate_exercise_step(exercise: SourceExercise, state: dict | None = None) 
     valid: their supported answer can be that no route exists.
     """
     starting_board = _valid_board(exercise.starting_fen)
+    physical_execution(exercise)
     specification = exercise.specification
     if specification.type != "move_line":
         if state is not None:
@@ -180,15 +234,15 @@ def build_publication(snapshot: SourceSnapshot, source_revision: int, generation
     publication_id = stable_id(snapshot.workspace_id, snapshot.source_key, "publication", "source")
     definitions = []
     for exercise in sorted(snapshot.exercises, key=lambda item: item.key):
+        physical_fen,physical_specification=physical_execution(exercise)
         definitions.append(ExecutableExercise(
             card_id=stable_id(snapshot.workspace_id, snapshot.source_key, "card", exercise.key),
-            decision_id=stable_id(snapshot.workspace_id, snapshot.source_key, "decision",
-                                  _canonical_json([exercise.policy_key, exercise.decision_key])),
+            decision_id=decision_identity(snapshot.workspace_id,snapshot.source_key,exercise),
             policy_id=stable_id(snapshot.workspace_id, snapshot.source_key, "policy", exercise.policy_key),
             source_revision=source_revision, publication_id=publication_id,
             publication_generation=generation, exercise_revision=exercise_revisions[exercise.key],
-            starting_fen=exercise.starting_fen, prompt=exercise.prompt,
-            specification=exercise.specification,
+            starting_fen=physical_fen, prompt=exercise.prompt,
+            specification=physical_specification,
         ))
     return Publication(contract_version=1, workspace_id=snapshot.workspace_id,
                        publication_id=publication_id, source_revision=source_revision,

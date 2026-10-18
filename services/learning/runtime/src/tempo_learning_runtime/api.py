@@ -194,7 +194,7 @@ def create_app(configuration: Configuration):
                 async for chunk in request.stream():
                     body.extend(chunk)
                     if len(body)>publication_bridge.MAX_BUNDLE_BYTES:
-                        return JSONResponse(status_code=413,content={'detail':'Publication bundle exceeds 8 MiB'})
+                        return JSONResponse(status_code=413,content={'detail':'Publication bundle exceeds 12 MiB'})
                 request._body=bytes(body)
         with database.scope():
             return await call_next(request)

@@ -60,3 +60,114 @@ def test_missing_delivery_stays_explicitly_unknown(tmp_path):
     manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'});(tmp_path/'manifest.json').write_text(json.dumps(manifest))
     _,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
     assert pages[0]['games'][0]['contexts'][0]['delivery']=={'status':'unknown','reason':'delivery_not_exported'}
+
+
+def test_C3_physical_card_identity_survives_serialized_comparison(tmp_path):
+    export_fixture(tmp_path)
+    path=tmp_path/'comparisons-000000.json';document=json.loads(path.read_text())
+    document['items'][0]['findings'][0]['learning_card_id']='original-physical'
+    path.write_text(json.dumps(document))
+    manifest=json.loads((tmp_path/'manifest.json').read_text())
+    next(page for page in manifest['pages'] if page['kind']=='comparisons')['digest']=fingerprint(document)
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    _,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    assert pages[0]['games'][0]['contexts'][0]['learning_card_id']=='original-physical'
+
+
+def test_C3_original_game_link_and_authored_title_are_translated(tmp_path):
+    export_fixture(tmp_path)
+    for kind in ['games','routes']:
+        path=tmp_path/(kind+'-000000.json');page=json.loads(path.read_text())
+        if kind=='games':page['items'][0]['headers']={'Site':'https://www.chess.com/game/live/123'}
+        else:page['items'][0]['repertoire_title']='Authored Italian'
+        path.write_text(json.dumps(page))
+        manifest=json.loads((tmp_path/'manifest.json').read_text());next(item for item in manifest['pages'] if item['kind']==kind)['digest']=fingerprint(page)
+        manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'});(tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    manifest,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    assert manifest['selections'][0]['repertoire_title']=='Authored Italian'
+    assert pages[0]['games'][0]['game_url']=='https://www.chess.com/game/live/123'
+
+
+def test_C3_transposed_coverage_disagreement_is_unknown_not_a_merged_gap():
+    from tempo_analysis_pilot.inputs import scoped_coverage
+    scope={'repertoire_id':'rep','policy_id':'policy','learner_color':'white','fen':chess.STARTING_FEN,
+        'complete':True,'revision':1,'covered_replies':['e2e4'],'legal_moves':['e2e4','d2d4'],'evidence_id':'route-one'}
+    other={**scope,'covered_replies':['d2d4'],'evidence_id':'route-two'}
+    combined=scoped_coverage([scope,other])
+    assert len(combined)==1 and combined[0]['complete'] is False
+    assert combined[0]['covered_replies']==[]
+    assert scoped_coverage([other,scope])==combined
+    same={**scope,'evidence_id':'equivalent-route'}
+    assert scoped_coverage([scope,same])[0]['complete'] is True
+    assert len(scoped_coverage([scope,{**other,'policy_id':'separate-policy'}]))==2
+
+
+@pytest.mark.parametrize('compatible',[True,False])
+@pytest.mark.parametrize('source_metadata',[True,False])
+def test_C3_shared_prefix_can_anchor_a_draft_only_with_exact_route_history(tmp_path,compatible,source_metadata):
+    export_fixture(tmp_path)
+    route_page=json.loads((tmp_path/'routes-000000.json').read_text())
+    if source_metadata:route_page['items'][0]['repertoire_title']='Authored white policy'
+    duplicate=deepcopy(route_page['items'][0]);duplicate.update(route_id='route-two',route_key='second-route')
+    route_page['items'].append(duplicate)
+    deviation_page=json.loads((tmp_path/'deviations-000000.json').read_text())
+    deviation=deviation_page['items'][0]
+    deviation['route_contexts'].append({**deviation['route_contexts'][0],'route_id':'route-two','route_ply':1 if compatible else 2})
+    manifest=json.loads((tmp_path/'manifest.json').read_text())
+    for kind,page in [('routes',route_page),('deviations',deviation_page)]:
+        (tmp_path/(kind+'-000000.json')).write_text(json.dumps(page))
+        reference=next(item for item in manifest['pages'] if item['kind']==kind)
+        reference.update(digest=fingerprint(page),count=len(page['items']))
+        manifest['counts'][kind]=len(page['items'])
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    _,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    anchor=pages[0]['games'][0]['contexts'][-1]['proposal_anchor']
+    if compatible and source_metadata:
+        assert anchor=={'source_key':'source','repertoire_key':'white','policy_key':'main','route_key':'e4-e5','anchor_ply':1}
+    else:
+        assert anchor is None
+    deviation['route_contexts'].reverse()
+    (tmp_path/'deviations-000000.json').write_text(json.dumps(deviation_page))
+    next(item for item in manifest['pages'] if item['kind']=='deviations')['digest']=fingerprint(deviation_page)
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    _,repeated=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    assert repeated[0]['games'][0]['contexts'][-1]['proposal_anchor']==anchor
+
+
+def test_C3_full_authored_shared_prefix_retains_every_route_context(tmp_path):
+    """A real selected policy has 1,032 routes; these game bytes are synthetic."""
+    export_fixture(tmp_path)
+    manifest=json.loads((tmp_path/'manifest.json').read_text())
+    records={}
+    for reference in manifest['pages']:
+        page=json.loads((tmp_path/reference['filename']).read_text())
+        records.setdefault(reference['kind'],[]).extend(page['items'])
+    original=records['routes'][0]
+    records['routes']=[{**original,'route_id':f'route-{index:04d}','route_key':f'branch-{index:04d}',
+        'repertoire_title':'Synthetic complete branch scope'} for index in range(1032)]
+    contexts=[{'repertoire_id':'rep','policy_id':'policy','route_id':route['route_id'],'route_ply':1} for route in records['routes']]
+    records['deviations'][0]['route_contexts']=contexts
+    records['comparisons'][0]['findings'][0]['memberships']=[{'repertoire_id':'rep','route_id':route['route_id']} for route in records['routes']]
+    records['positions'][1]['opponent_decision']={'game_id':'game','game_revision':1,'ply':1,'decision_ply':2,
+        'fen':records['positions'][1]['fen'],'history':['e2e4','a7a6'],'route_contexts':contexts,
+        'response_inventory':{'complete':True,'source_revision':1},'status':'established_opponent_deviation'}
+    records['positions'][1]['comparison_key']=' '.join(chess.Board(records['positions'][1]['fen']).fen(en_passant='legal').split()[:4])
+    manifest['pages']=[];manifest['counts']={kind:len(items) for kind,items in records.items()}
+    for kind,items in records.items():
+        for offset in range(0,len(items),64):
+            index=offset//64;filename=f'{kind}-{index:06d}.json'
+            page={'schema_version':1,'input_id':manifest['input_id'],'workspace_id':'fixture','revision':1,'kind':kind,'page_index':index,'items':items[offset:offset+64]}
+            (tmp_path/filename).write_text(json.dumps(page))
+            manifest['pages'].append({'kind':kind,'page_index':index,'filename':filename,'count':len(page['items']),'digest':fingerprint(page)})
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    accepted,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    game=pages[0]['games'][0]
+    assert len(game['opponent_encounters'][0]['route_ids'])==1032
+    assert len(game['contexts'][0]['route_ids'])==1032
+    assert len(game['contexts'][-1]['route_ids'])==1032
+    assert game['contexts'][-1]['proposal_anchor']['route_key']=='branch-0000'
+    assert accepted['producer_manifest']['counts']['routes']==1032

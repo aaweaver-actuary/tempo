@@ -58,7 +58,7 @@ def _state(database, game_id, status, reason=None):
                      (status,reason,game_id))
 
 
-def finalize(database, game_id):
+def finalize(database, game_id, *, snapshot_loader=None):
     # Caller holds the game lock; no network operation occurs in this transaction.
     game = database.execute('SELECT * FROM games WHERE game_id=%s FOR UPDATE',(game_id,)).fetchone()
     if not game['heads_initialized']:
@@ -88,7 +88,7 @@ def finalize(database, game_id):
         _state(database,game_id,'pending','current_comparison_required')
         return
     snapshot_row = database.execute('SELECT document FROM snapshots WHERE digest=%s',(inputs['snapshot_digest'],)).fetchone()
-    snapshot = parse_snapshot(snapshot_row['document']) if snapshot_row else None
+    snapshot = ((snapshot_loader(inputs['snapshot_digest'], snapshot_row['document']) if snapshot_loader else parse_snapshot(snapshot_row['document'])) if snapshot_row else None)
     heads = database.execute('SELECT * FROM accepted_heads WHERE game_id=%s AND active ORDER BY bucket,obligation_id',(game_id,)).fetchall()
     prior = {}
     for head in heads:
@@ -151,5 +151,5 @@ def resume_reconciliation(store, job):
                                   (json.dumps([history[-1]['evidence_revision'],history[-1]['bucket']]),job['job_key']))
                 return
             database.execute('UPDATE games SET heads_initialized=true WHERE game_id=%s',(game['game_id'],))
-        finalize(database,game['game_id'])
+        finalize(database,game['game_id'],snapshot_loader=store.comparison_snapshot)
         database.execute('UPDATE jobs SET published=requested,lease_token=NULL,leased_until=NULL,error=NULL WHERE job_key=%s',(job['job_key'],))

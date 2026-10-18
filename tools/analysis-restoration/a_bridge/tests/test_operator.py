@@ -10,7 +10,7 @@ from tempo_a_bridge.cli import Operator,execution_bundle
 
 def test_installed_operator_is_independent_of_all_domain_services():
     assert 'site-packages' in Path(tempo_a_bridge.__file__).parts
-    assert not metadata.requires('tempo-a-bridge')
+    assert metadata.requires('tempo-a-bridge') == ['chess==1.11.2']
     for path in Path(tempo_a_bridge.__file__).parent.glob('*.py'):
         tree=ast.parse(path.read_text())
         imports=[node.module for node in ast.walk(tree) if isinstance(node,ast.ImportFrom) and node.level==0]

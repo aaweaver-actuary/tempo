@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 import chess
+import psycopg
 import pytest
 from test_runtime import bundle, activate, head, review_payload, submit
 
@@ -64,7 +65,7 @@ def activate_v2(case,payload,expected=0,request=None):
     return response.json()
 
 
-@pytest.mark.parametrize('count',[129,512,2048])
+@pytest.mark.parametrize('count',[129,512,2048,7258])
 def test_A_complete_large_publication_measured_without_truncation(case,count,tmp_path):
     payload=content_bundle(count)
     started=time.perf_counter()
@@ -179,7 +180,7 @@ def test_A_activation_response_loss_replays_original_operator_receipt(case):
     assert case.client.post('/api/operations/'+request['activation_id']+'/retry').status_code==403
     assert case.client.get('/internal/publications/publication-a/status').status_code==401
     assert case.client.get('/internal/publications/publication-a/status',headers={'Authorization':'Bearer '+case.configuration.evidence_token}).status_code==401
-    assert case.client.post('/internal/publications/v2/stage',content=b' '* (8*1024*1024+1),headers={**operator,'Content-Type':'application/json'}).status_code==413
+    assert case.client.post('/internal/publications/v2/stage',content=b' '* (12*1024*1024+1),headers={**operator,'Content-Type':'application/json'}).status_code==413
     assert case.query('SELECT count(*) FROM learning.cards')[0][0]==1
 
 
@@ -235,6 +236,96 @@ def test_A_identity_rename_replay_preserves_genuine_review_and_alias(case):
         from tempo_learning_runtime.remediation_adapter import AcceptedDefinitions
         accepted=AcceptedDefinitions(database).decision(definition['card_id'],definition['decision_id'],'content-publication',3)
         assert accepted.card_id==card['id'] and definition['card_id'] in accepted.aliases
+
+
+def test_C3_complete_historical_alias_activation_fits_documented_lock_capacity(case):
+    """A full alias cutover needs both physical and Content card edit locks.
+
+    This constructed capacity cohort is separate from the real-game rehearsal.
+    Do not reduce its count: the small-alias bridge regression cannot expose the
+    shared lock-table failure found with the actual 6,524-card captured source.
+    """
+    from tempo_learning_runtime.maintenance import run_once
+    original=content_bundle(6524)
+    activate_v2(case,original)
+    with case.database.scope():
+        for _ in range(100):
+            run_once()
+            if case.client.get('/api/queue/window').json()['cards']:
+                break
+        else:
+            raise AssertionError('Capacity publication did not issue ordinary work')
+    issued=head(case)
+    assert submit(case,issued,review_payload(issued)).status_code==200
+    history=[tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]
+    scheduled=[tuple(row) for row in case.query('SELECT id,state,due_date,fsrs_card_json,repetitions,interval_days FROM learning.cards ORDER BY id')]
+    # Learning-owned fixture models pre-publication copied legacy records.
+    case.query('UPDATE learning.cards SET publication_id=NULL,serving_active=0')
+    successor=deepcopy(original)
+    physical_ids={definition['card_id']:'adopted:'+definition['card_id'] for definition in original['publication']['definitions']}
+    successor['source_digest']='b'*64
+    successor['publication']['publication_id']='alias-capacity-publication'
+    for definition in successor['publication']['definitions']:
+        definition.update(card_id=physical_ids[definition['card_id']],publication_id='alias-capacity-publication')
+    for fact in successor['facts']:
+        fact['card_id']=physical_ids[fact['card_id']]
+    for route in successor['routes']:
+        for binding in route['bindings']:
+            binding['card_id']=physical_ids[binding['card_id']]
+    successor['legacy_aliases']={authored:physical for physical,authored in physical_ids.items()}
+    activation_request=request_for(successor)
+    started=time.perf_counter()
+    receipt=activate_v2(case,successor,request=activation_request)
+    elapsed=time.perf_counter()-started
+    assert receipt['status']=='activated'
+    assert case.query('SELECT count(*) FROM learning.content_card_aliases')[0][0]==6524
+    assert case.query('SELECT count(*) FROM learning.cards')[0][0]==6524
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]==history
+    assert [tuple(row) for row in case.query('SELECT id,state,due_date,fsrs_card_json,repetitions,interval_days FROM learning.cards ORDER BY id')]==scheduled
+    assert activate_v2(case,successor,request=activation_request)==receipt
+    destination=os.environ.get('TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE')
+    if destination:
+        Path(destination).mkdir(parents=True,exist_ok=True)
+        (Path(destination)/'alias-capacity-6524.json').write_text(json.dumps({
+            'synthetic':True,'aliases':6524,'distinct_card_edit_lock_keys':13048,
+            'activation_including_stage_seconds':elapsed,'preserved_reviews':len(history),
+            'preserved_schedules':len(scheduled),'receipt':receipt},indent=2))
+
+
+@pytest.mark.parametrize('sequence_already_ahead',[False,True])
+def test_C3_copied_review_identity_advances_without_reusing_or_reordering_history(case,sequence_already_ahead):
+    import importlib.util
+    helper_path=Path(__file__).parents[1]/'integration/restore_rehearsal.py'
+    specification=importlib.util.spec_from_file_location('learning_owned_rehearsal_restore',helper_path)
+    helper=importlib.util.module_from_spec(specification);specification.loader.exec_module(helper)
+    activate(case)
+    first=head(case)
+    saved=submit(case,first,review_payload(first))
+    assert saved.status_code==200,saved.text
+    history=[tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]
+    assert len(history)==1 and saved.json()['review_id']==1
+    with psycopg.connect(case.admin,options='-c search_path=learning,pg_catalog') as database:
+        database.execute("SELECT setval('learning.reviews_id_seq',1,false)")
+        # The pre-repair restore shape really rejects the next ordinary INSERT;
+        # a rolled-back collision is not fabricated accepted review history.
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            with database.transaction():
+                database.execute('INSERT INTO learning.reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,%s,%s,0,0)',
+                    (first['id'],'correct',datetime.now(timezone.utc).isoformat()))
+        database.execute("SELECT setval('learning.reviews_id_seq',1,false)")
+        repaired=helper.advance_review_identity(database)
+        assert repaired['changed'] and repaired['next_generated_id']==2
+        assert not helper.advance_review_identity(database)['changed']
+        if sequence_already_ahead:
+            database.execute("SELECT setval('learning.reviews_id_seq',10000,true)")
+            retained=helper.advance_review_identity(database)
+            assert not retained['changed'] and retained['next_generated_id']==10001
+    assert [tuple(row) for row in case.query('SELECT * FROM learning.reviews ORDER BY id')]==history
+    subsequent=head(case)
+    response=submit(case,subsequent,review_payload(subsequent))
+    assert response.status_code==200,response.text
+    assert response.json()['review_id']==(10001 if sequence_already_ahead else 2)
+    assert tuple(case.query('SELECT * FROM learning.reviews WHERE id=1')[0])==history[0]
 
 
 def test_A_identity_conflict_rolls_back_activation(case):
@@ -530,3 +621,17 @@ def test_A_selected_maintenance_cannot_resurrect_terminally_fenced_retirement(ca
     assert case.query('SELECT activation_revision FROM learning.serving_publications')[0][0] == 1
     with case.database.scope():
         assert gateway.read_operation(request['retirement_id'], publication=True) == receipt
+
+
+def test_C3_publication_bundle_capacity_is_bounded_after_default_expansion(monkeypatch):
+    from tempo_learning_runtime import publication_bridge as module
+    payload=content_bundle()
+    expanded=module.PublicationBundleV2.model_validate(payload)
+    assert module.MAX_DEFINITIONS == 8192
+    assert module.MAX_BUNDLE_BYTES == 12 * 1024 * 1024
+    size=len(expanded.model_dump_json().encode())
+    monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size)
+    assert module.PublicationBundleV2.model_validate(payload).publication == expanded.publication
+    monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size-1)
+    with pytest.raises(ValueError,match='bundle exceeds'):
+        module.PublicationBundleV2.model_validate(payload)

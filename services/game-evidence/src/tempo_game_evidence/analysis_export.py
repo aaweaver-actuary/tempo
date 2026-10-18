@@ -8,11 +8,14 @@ import tempfile
 import chess
 from psycopg.types.json import Jsonb
 from tempo_chess_core import canonical_fen_key
-from .snapshot import parse_snapshot
+from .snapshot import parse_snapshot, projected_definition
 from .source import INDEX_VERSION
 from .delivery import inspect_delivery
 
 PAGE_SIZE = 64
+MAX_PAGE_BYTES = 8 * 1024 * 1024
+MAX_EXPORT_BYTES = 64 * 1024 * 1024
+EXPORT_DERIVATION_VERSION = 3
 KINDS = ("definitions", "routes", "legal_replies", "games", "positions", "comparisons", "deviations")
 
 
@@ -24,8 +27,39 @@ def digest(value):
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
-def deviations(game, positions, snapshot, *, all_opponent_decisions=False):
-    routes = [item for item in snapshot.compiled_routes() if item[0].learner_color == game["observed_color"]]
+def pack_pages(records,workspace,input_id):
+    """Keep every item, bounded by both bytes and the existing 64-item ceiling."""
+    pages=[]
+    for kind in KINDS:
+        page_index=0;batch=[];item_bytes=0
+        def document(items):
+            return {'schema_version':1,'input_id':input_id,'workspace_id':workspace,
+                'revision':1,'kind':kind,'page_index':page_index,'items':items}
+        def append_batch():
+            value=document(batch)
+            pages.append((kind,page_index,digest(value),value))
+        for item in records[kind]:
+            size=len(canonical(item).encode())
+            required=1+len(canonical(document([])).encode())+item_bytes+size+len(batch)
+            if batch and (len(batch)==PAGE_SIZE or required>MAX_PAGE_BYTES):
+                append_batch();page_index+=1;batch=[];item_bytes=0
+                required=1+len(canonical(document([])).encode())+size
+            if required>MAX_PAGE_BYTES:
+                raise ValueError('analysis_page_byte_bound')
+            batch.append(item);item_bytes+=size
+        if batch:append_batch()
+    if sum(1+len(canonical(page[3]).encode()) for page in pages)>MAX_EXPORT_BYTES:
+        raise ValueError('analysis_export_byte_bound')
+    return pages
+
+
+def applicable_inventories(inventories,position_keys):
+    """Retain all scopes/replies for every encountered opponent position."""
+    return [inventory for inventory in inventories if inventory['position_key'] in position_keys]
+
+
+def deviations(game, positions, snapshot, *, all_opponent_decisions=False,compiled_routes=None):
+    routes = [item for item in (snapshot.compiled_routes() if compiled_routes is None else compiled_routes) if item[0].learner_color == game["observed_color"]]
     active = {(index, 0) for index, (_, keys, _) in enumerate(routes) if positions and keys[0] == positions[0]["comparison_key"]}
     entry_evidence={item:[] for item in active}
     inventories = {item["position_key"]: item for item in snapshot.content_export["legal_replies"]}
@@ -58,16 +92,41 @@ def deviations(game, positions, snapshot, *, all_opponent_decisions=False):
                 scopes=[scope for scope in (inventory or {}).get('scopes',[]) if any(scope['policy_id']==context['policy_id'] and scope['repertoire_id']==context['repertoire_id'] and any(node['route_id']==context['route_id'] and node['ply']==context['route_ply'] for node in scope['route_contexts']) for context in contexts)]
                 selected=[reply for scope in scopes for reply in scope['replies'] if reply['move_uci']==position['move']]
                 complete=bool(complete and scopes and all(scope['complete'] for scope in scopes) and all(reply['status']!='ambiguous' for reply in selected))
+                # An uncovered ordered route can arrive at content already
+                # authored under this policy. FEN equality cannot authorize
+                # re-entry, and it cannot establish that new content is needed.
+                existing_position_ids=[]
+                if complete and is_deviation and not any(reply['responses'] for reply in selected):
+                    policies={context['policy_id'] for context in contexts}
+                    position_key=canonical_fen_key(board.fen(en_passant='legal'))
+                    existing_position_ids={definition.card_id for definition in snapshot.publication.definitions
+                        if definition.policy_id in policies and canonical_fen_key(chess.Board(definition.starting_fen).fen(en_passant='legal'))==position_key}
+                    definitions_by_id={definition.card_id:definition for definition in snapshot.publication.definitions}
+                    checked=set()
+                    for route,_,bindings in routes:
+                        if route.policy_id not in policies:continue
+                        for binding in bindings.values():
+                            if not binding.exercise_ply:continue
+                            identity=(binding.card_id,binding.exercise_ply,binding.decision_id)
+                            if identity in checked:continue
+                            checked.add(identity)
+                            projected=projected_definition(definitions_by_id[binding.card_id].model_dump(mode='json'),binding.model_dump(mode='json'))
+                            if canonical_fen_key(chess.Board(projected['starting_fen']).fen(en_passant='legal'))==position_key:
+                                existing_position_ids.add(binding.card_id)
+                    existing_position_ids=sorted(existing_position_ids)
+                    if existing_position_ids:
+                        complete=False
+
                 result.append({"game_id": game["game_id"], "game_revision": game["revision"], "ply": position["ply"],
                     "fen": position["fen"], "opponent_move": position["move"], "route_contexts": contexts,
                     "decision_ply": position["ply"] + 1, "decision_fen": board.fen(en_passant="fen"),
                     "history": game["moves"][:position["ply"] + 1], "authored_opponent_moves": sorted(authored),
                     "is_deviation":is_deviation,
-                    "status": ("established_opponent_deviation" if is_deviation else 'covered_opponent_reply') if complete else "unknown", "reason": "complete_route_scope" if complete else "incomplete_or_unavailable_scope",
+                    "status": ("established_opponent_deviation" if is_deviation else 'covered_opponent_reply') if complete else "unknown", "reason": "existing_authored_position_reentry_unverified" if existing_position_ids else "complete_route_scope" if complete else "incomplete_or_unavailable_scope",
                     "response_inventory": {"complete": complete, "source_revision": snapshot.publication.source_revision,
                         "publication_generation": snapshot.publication.publication_generation,
                         "digest": snapshot.content_export["export_digest"], "accepted_responses": [response for reply in selected for response in reply['responses']],
-                        "scope_digests":[scope['digest'] for scope in scopes],"selected_reply_states":[reply['status'] for reply in selected]},
+                        "scope_digests":[scope['digest'] for scope in scopes],"selected_reply_states":[reply['status'] for reply in selected],**({'existing_position_content_ids':existing_position_ids} if existing_position_ids else {})},
                     "legal_reply_inventory": inventory, "reentry_evidence": [evidence for item in contexts for evidence in item['reentry_evidence']]})
         successors={(index,ply+1):entry_evidence.get((index,ply),[]) for index,ply in candidates if ply<len(routes[index][0].moves) and routes[index][0].moves[ply]==position['move']}
         active=set(successors)
@@ -84,45 +143,43 @@ def create_export(store, workspace, game_ids=None):
         snapshot_row = database.execute("SELECT document FROM snapshots WHERE digest=%s", (row["snapshot_digest"],)).fetchone() if row else None
         if not snapshot_row:
             raise ValueError("analysis_snapshot_unavailable")
-        snapshot = parse_snapshot(snapshot_row["document"])
-        if snapshot.schema_version != 2:
-            raise ValueError("analysis_export_requires_content_snapshot_v2")
         rows = database.execute("SELECT game.*,comparison.report,comparison.input_token FROM games game LEFT JOIN comparisons comparison ON comparison.game_id=game.game_id AND comparison.revision=game.report_revision WHERE game.workspace_id=%s AND (%s::text[] IS NULL OR game.game_id=ANY(%s::text[])) ORDER BY game.game_id LIMIT 101", (workspace, game_ids, game_ids)).fetchall()
         if not rows or len(rows) > 100 or (game_ids is not None and len(rows) != len(game_ids)):
             raise ValueError("analysis_export_requires_1_to_100_exact_games")
-        records = {kind: [] for kind in KINDS}
-        records["definitions"] = [item.model_dump(mode="json") for item in snapshot.publication.definitions]
-        records["routes"] = snapshot.content_export["routes"]
-        records["legal_replies"] = snapshot.content_export["legal_replies"]
-        revisions = []
+        deliveries={}
         for game in rows:
-            report = game["report"]
-            if report is None or report["game"]["revision"] != game["revision"] or report.get("snapshot", {}).get("digest") != row["snapshot_digest"]:
-                raise ValueError("analysis_comparison_pending_or_stale")
-            positions = game["positions"]
-            if game["index_receipt"] != {"input_digest": game["input_digest"], "version": INDEX_VERSION,
-                    "position_count": len(game["document"].get("moves", [])) + 1, "complete": True} or positions is None:
-                raise ValueError("analysis_position_inventory_unavailable")
-            delivery = inspect_delivery(database,game['game_id'],game['report_revision'],game['reconciliation_status'],game['reconciliation_reason'])
-            report = {**report,'delivery':{'inspection_source':'game_evidence_outbox','observed_comparison_revision':game['report_revision'],**delivery}}
-            revisions.append([game["game_id"], game["revision"], game["report_revision"], game["input_digest"], game["input_token"],digest(delivery)])
-            records["games"].append({**game["document"], "input_digest": game["input_digest"], "source_digest": game["source_digest"], "comparison_revision": game["report_revision"]})
-            opponent_decisions=deviations(game['document'],positions,snapshot,all_opponent_decisions=True)
-            by_ply={item['ply']:item for item in opponent_decisions}
-            records["positions"].extend({**position, "game_id": game["game_id"], "game_revision": game["revision"], "comparison_revision": game["report_revision"],'opponent_decision':by_ply.get(position['ply'])} for position in positions)
-            records["comparisons"].append(report)
-            records["deviations"].extend(item for item in opponent_decisions if item['is_deviation'])
-    input_id = digest([workspace, row["snapshot_digest"], revisions, 1])
-    pages = []
-    for kind in KINDS:
-        for offset in range(0, len(records[kind]), PAGE_SIZE):
-            document = {"schema_version": 1, "input_id": input_id, "workspace_id": workspace, "revision": 1,
-                "kind": kind, "page_index": offset // PAGE_SIZE, "items": records[kind][offset:offset + PAGE_SIZE]}
-            if len(canonical(document).encode()) > 8 * 1024 * 1024:
-                raise ValueError("analysis_page_byte_bound")
-            pages.append((kind, offset // PAGE_SIZE, digest(document), document))
-    if sum(len(canonical(page[3]).encode()) for page in pages) > 64 * 1024 * 1024:
-        raise ValueError("analysis_export_byte_bound")
+            report=game['report']
+            if report is None or report['game']['revision']!=game['revision'] or report.get('snapshot',{}).get('digest')!=row['snapshot_digest']:
+                raise ValueError('analysis_comparison_pending_or_stale')
+            if game['index_receipt']!={'input_digest':game['input_digest'],'version':INDEX_VERSION,
+                    'position_count':len(game['document'].get('moves',[]))+1,'complete':True} or game['positions'] is None:
+                raise ValueError('analysis_position_inventory_unavailable')
+            deliveries[game['game_id']]=inspect_delivery(database,game['game_id'],game['report_revision'],game['reconciliation_status'],game['reconciliation_reason'])
+    # The consistent source cut is now copied. Chess traversal, validation and
+    # serialization must not hold the producer's read transaction open.
+    snapshot=parse_snapshot(snapshot_row['document'])
+    if snapshot.schema_version!=2:
+        raise ValueError('analysis_export_requires_content_snapshot_v2')
+    records={kind:[] for kind in KINDS}
+    records['definitions']=[item.model_dump(mode='json') for item in snapshot.publication.definitions]
+    records['routes']=snapshot.content_export['routes']
+    revisions=[];opponent_positions=set();compiled_routes=snapshot.compiled_routes()
+    for game in rows:
+        positions=game['positions'];delivery=deliveries[game['game_id']]
+        report={**game['report'],'delivery':{'inspection_source':'game_evidence_outbox','observed_comparison_revision':game['report_revision'],**delivery}}
+        revisions.append([game['game_id'],game['revision'],game['report_revision'],game['input_digest'],game['input_token'],digest(delivery)])
+        records['games'].append({**game['document'],'input_digest':game['input_digest'],'source_digest':game['source_digest'],'comparison_revision':game['report_revision']})
+        opponent_positions.update(position['comparison_key'] for position in positions
+            if position['move'] is not None and position['turn']!=game['document']['observed_color'])
+        opponent_decisions=deviations(game['document'],positions,snapshot,all_opponent_decisions=True,compiled_routes=compiled_routes)
+        by_ply={item['ply']:item for item in opponent_decisions}
+        records['positions'].extend({**position,'game_id':game['game_id'],'game_revision':game['revision'],
+            'comparison_revision':game['report_revision'],'opponent_decision':by_ply.get(position['ply'])} for position in positions)
+        records['comparisons'].append(report)
+        records['deviations'].extend(item for item in opponent_decisions if item['is_deviation'])
+    records['legal_replies']=applicable_inventories(snapshot.content_export['legal_replies'],opponent_positions)
+    input_id=digest([workspace,row['snapshot_digest'],revisions,EXPORT_DERIVATION_VERSION])
+    pages=pack_pages(records,workspace,input_id)
     manifest = {"schema_version": 1, "kind": "tempo-analysis-inputs", "input_id": input_id, "revision": 1,
         "workspace_id": workspace, "source": snapshot.content_export["source"],
         "publication": {key: getattr(snapshot.publication,key) for key in ("publication_id", "publication_generation", "source_revision")},

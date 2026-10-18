@@ -3,13 +3,23 @@
 ## Content bridge v2
 
 `POST /internal/publications/v2/stage` accepts the service-local version-2 opening
-bundle (maximum 2,048 definitions / 8 MiB). `publication-schema` exports its schema.
+bundle (maximum 8,192 definitions / 12 MiB). `publication-schema` exports its schema.
 It retains shared Publication v1, real route occurrences, source digest, and
 optional one-to-one legacy aliases. Content IDs remain authored identifiers;
 validated aliases retain existing physical Learning/history identities. Adoption
 requires exact legacy FEN, primary line, revision, family and learner color;
 unknown historical alternative sets cannot be invented. No history importer is
 provided.
+
+V2 route bindings may explicitly provide `exercise_ply` and `decision_id` for a
+learner decision inside the unchanged full physical executable. Learning validates
+the legal prefix, exact route position/color, alternatives and unambiguous decision
+identity. Every membership still requires the primary exercise decision. Interior
+decisions create neither cards nor prerequisite graph nodes. Remediation resolves
+their projected position to the original physical card; settlement still requires
+a qualifying full Study review issued after the accepted evidence frontier.
+Absent/zero projection fields retain prior serialized bytes and strict historical
+alias compatibility remains unchanged.
 
 `POST /internal/publications/v2/activate` uses the existing durable command gateway
 with `{publication_id, publication_generation, expected_activation_revision,
@@ -188,3 +198,12 @@ Gateway execution and maintenance re-read terminal state under the same locks,
 including workers selected before fencing. Staging alone never grants serving
 authority. Fencing neither deletes immutable staged bundles nor retires old serving
 content; corrected sources use the ordinary new generation/revision workflow.
+
+C3 retains the existing 2.5-second foreground transaction limit. Activation now
+indexes integrity by physical card before filtering memberships, replacing a
+quadratic scan. The complete-publication native regression includes 7,258
+definitions, with replacement/replay/history assertions across three generations.
+The expanded validated bundle and HTTP body both retain a hard 12 MiB bound;
+rejection does not permit an operator to reuse a terminal failed command.
+Replacement revision checks likewise index physical-card revisions, rather than
+searching the full replacement list once per accepted historical card.
