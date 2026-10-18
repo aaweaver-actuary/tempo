@@ -24,6 +24,20 @@ describe("Maia background command receipts", () => {
       expect(options.signal).toBeInstanceOf(AbortSignal);
     }
   });
+  it('C interrupted successful response body retains the immutable operation instead of reporting model failure', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"status":'));
+        queueMicrotask(() => controller.error(new TypeError('Accepted response body interrupted')));
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
+    await expect(requestMaiaApi('http://tempo', '/api/repertoire-coverage/maia/submit',
+      { method: 'POST', operationId: 'accepted-submit' }, { fetchImpl, pause: async () => {} }))
+      .rejects.toMatchObject({ name: 'PendingMaiaCommandError', operationId: 'accepted-submit' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][1].headers['Idempotency-Key']).toBe('accepted-submit');
+  });
   it("Docker engine callback waits for its PostgreSQL receipt with the worker header", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(202, { operation_id: "position-save", state: "pending" }))
