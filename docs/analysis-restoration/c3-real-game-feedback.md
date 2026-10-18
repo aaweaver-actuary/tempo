@@ -107,10 +107,17 @@ not establish real-game feedback.
 An uncovered route that reaches existing same-policy authored content remains
 unknown until route/re-entry authority is verified. Existing Content definition
 IDs are retained in the source observation; a new training card is not inferred.
-The corrected export uses derivation2 for new input identities while retaining
+The corrected export uses derivation3 for new input identities while retaining
 `tempo-analysis-inputs` schema v1. Reusing an existing reserved output directory
 still returns its original frozen bytes. Choose a new directory to obtain the
-corrected derivation; do not overwrite historical evidence.
+corrected derivation; do not overwrite historical evidence. Pages contain at most
+64 items and 8 MiB including the persisted newline; the full page set remains
+bounded at 64 MiB. Dense observations split across additional pages without
+truncation. Legal inventories are limited to opponent positions encountered in
+the exact selected games, preserving every scope and reply at each retained
+position. Complete definitions/routes and all selected game observations remain
+in the export. The repeatable-read source cut closes before chess traversal and
+serialization; source delivery receipts remain part of immutable input identity.
 
 The Workbench's selected-game browser uses the advertised `selected-games-v1`
 capability and pages through Intelligence's accepted input, including games with
