@@ -1,0 +1,1914 @@
+{
+  "actual_admission_plan": [],
+  "actual_admission_plan_basis": "not_simulated_fixture_has_no_admission_plan",
+  "as_of": "2026-10-10T12:00:00+00:00",
+  "candidates": [
+    {
+      "card_id": "italian-a",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1c4",
+            "move_uci": "f1c4",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:c2c3",
+            "move_uci": "c2c3",
+            "ply": 7,
+            "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1c4",
+              "f8c5"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "main"
+            ],
+            "frontier_ply": 7,
+            "priority_generation": 1,
+            "priority_score": 0.9,
+            "repertoire_id": "italian"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1c4",
+          "f8c5",
+          "c2c3"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 3,
+            "generation": 1,
+            "line_id": "main",
+            "parent_card_id": "italian-support-failed",
+            "repertoire_id": "italian"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "italian",
+      "production_rank": 1
+    },
+    {
+      "card_id": "italian-c",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1c4",
+            "move_uci": "f1c4",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:d2d3",
+            "move_uci": "d2d3",
+            "ply": 7,
+            "position_key": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1c4",
+              "g8f6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-c"
+            ],
+            "frontier_ply": 7,
+            "priority_generation": 1,
+            "priority_score": 0.8,
+            "repertoire_id": "italian"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1c4",
+          "g8f6",
+          "d2d3"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 3,
+            "generation": 1,
+            "line_id": "branch-c",
+            "parent_card_id": "italian-support-failed",
+            "repertoire_id": "italian"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "italian",
+      "production_rank": 2
+    },
+    {
+      "card_id": "shared-sicilian",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "c7c5"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-d"
+            ],
+            "frontier_ply": 3,
+            "priority_generation": 1,
+            "priority_score": 0.6,
+            "repertoire_id": "italian"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "c7c5",
+          "g1f3"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 1,
+            "generation": 1,
+            "line_id": "branch-d",
+            "parent_card_id": "shared-e4",
+            "repertoire_id": "italian"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "italian",
+      "production_rank": 3
+    },
+    {
+      "card_id": "italian-e",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:rnbqkbnr/ppp2ppp/3p4/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:d2d4",
+            "move_uci": "d2d4",
+            "ply": 5,
+            "position_key": "rnbqkbnr/ppp2ppp/3p4/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "d7d6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-e"
+            ],
+            "frontier_ply": 5,
+            "priority_generation": 1,
+            "priority_score": 0.5,
+            "repertoire_id": "italian"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "d7d6",
+          "d2d4"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 2,
+            "generation": 1,
+            "line_id": "branch-e",
+            "parent_card_id": "shared-e4-e5-nf3",
+            "repertoire_id": "italian"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "italian",
+      "production_rank": 4
+    },
+    {
+      "card_id": "italian-f",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/p1pppppp/1p6/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:d2d4",
+            "move_uci": "d2d4",
+            "ply": 3,
+            "position_key": "rnbqkbnr/p1pppppp/1p6/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "b7b6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-f"
+            ],
+            "frontier_ply": 3,
+            "priority_generation": 1,
+            "priority_score": 0.4,
+            "repertoire_id": "italian"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "b7b6",
+          "d2d4"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "unknown",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 1,
+            "generation": 1,
+            "line_id": "branch-f",
+            "parent_card_id": "shared-e4",
+            "repertoire_id": "italian"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "italian",
+      "production_rank": 5
+    },
+    {
+      "card_id": "italian-b",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1c4",
+            "move_uci": "f1c4",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:c2c3",
+            "move_uci": "c2c3",
+            "ply": 7,
+            "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1c4",
+              "f8c5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq -:d2d4",
+            "move_uci": "d2d4",
+            "ply": 9,
+            "position_key": "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1c4",
+              "f8c5",
+              "c2c3",
+              "g8f6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "main"
+            ],
+            "frontier_ply": 9,
+            "priority_generation": 1,
+            "priority_score": 0.7,
+            "repertoire_id": "italian"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1c4",
+          "f8c5",
+          "c2c3",
+          "g8f6",
+          "d2d4"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "bounded",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 4,
+            "generation": 1,
+            "line_id": "main",
+            "parent_card_id": "italian-support-failed",
+            "repertoire_id": "italian"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "italian",
+      "production_rank": 6
+    }
+  ],
+  "evaluation_scope": "selected_policy",
+  "historical_counterfactual_supported": false,
+  "limitations": [
+    "Exact replay covers captured ranking inputs only, not learning gains or actual queue delivery.",
+    "Historical eligibility, introduction state, quota consumption and deleted routes cannot be reconstructed from current rows.",
+    "Retained priority generations alone do not establish historical counterfactual accuracy.",
+    "Historical probability/profile evidence is not captured by this infrastructure."
+  ],
+  "policy_id": "italian",
+  "production_order_basis": "production_planner_capacity_neutral_sorted_repertoire_then_card",
+  "schema_version": 2,
+  "scorer_configuration": {
+    "baseline_bundle": "precomputed-base@1",
+    "precomputed_score_bundles": [
+      {
+        "assumption": "explicit baseline score assumptions",
+        "axis": "baseline",
+        "cohort_id": "rapid-1200-1400",
+        "name": "precomputed-base",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "italian-a": {
+            "score": 0.1
+          },
+          "italian-b": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "italian-c": {
+            "score": 0.2
+          },
+          "italian-e": {
+            "score": 0.03
+          },
+          "italian-f": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "shared-sicilian": {
+            "score": 0.04
+          }
+        },
+        "version": "1"
+      },
+      {
+        "assumption": "equal supplied scores preserve production tie ordering",
+        "axis": "ties",
+        "cohort_id": "rapid-1200-1400",
+        "name": "precomputed-ties",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "italian-a": {
+            "score": 0.1
+          },
+          "italian-b": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "italian-c": {
+            "score": 0.1
+          },
+          "italian-e": {
+            "score": 0.1
+          },
+          "italian-f": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "shared-sicilian": {
+            "score": 0.1
+          }
+        },
+        "version": "1"
+      },
+      {
+        "assumption": "pessimistic explicit endpoint assumptions, not scalarization of unknown evidence",
+        "axis": "probability_bounds",
+        "cohort_id": "rapid-1200-1400",
+        "name": "precomputed-bound-low",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "italian-a": {
+            "score": 0.1
+          },
+          "italian-b": {
+            "score": 0.02
+          },
+          "italian-c": {
+            "score": 0.2
+          },
+          "italian-e": {
+            "score": 0.03
+          },
+          "italian-f": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "shared-sicilian": {
+            "score": 0.04
+          }
+        },
+        "version": "1"
+      },
+      {
+        "assumption": "optimistic explicit endpoint assumptions; unassigned mass remains unknown",
+        "axis": "probability_bounds",
+        "cohort_id": "rapid-1200-1400",
+        "name": "precomputed-bound-high",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "italian-a": {
+            "score": 0.1
+          },
+          "italian-b": {
+            "score": 0.35
+          },
+          "italian-c": {
+            "score": 0.2
+          },
+          "italian-e": {
+            "score": 0.03
+          },
+          "italian-f": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "shared-sicilian": {
+            "score": 0.04
+          }
+        },
+        "version": "1"
+      },
+      {
+        "assumption": "separately supplied classical-cohort scores; incomplete evidence stays unscorable",
+        "axis": "opponent_cohort",
+        "cohort_id": "classical-1800-2000",
+        "name": "precomputed-cohort",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "italian-a": {
+            "score": 0.1
+          },
+          "italian-b": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "italian-c": {
+            "score": 0.2
+          },
+          "italian-e": {
+            "score": 0.03
+          },
+          "italian-f": {
+            "reason": "required_probability_incomplete",
+            "score": null
+          },
+          "shared-sicilian": {
+            "score": 0.4
+          }
+        },
+        "version": "1"
+      }
+    ]
+  },
+  "snapshot_id": "e5e3ed1da6c8949e93995d26e3a92a60a0846581ddc7483fe217f19edbc3d76b",
+  "source_versions": {
+    "cohorts": {
+      "classical-1800-2000": {
+        "ratings": [
+          1800,
+          2000
+        ],
+        "speeds": [
+          "classical"
+        ]
+      },
+      "rapid-1200-1400": {
+        "ratings": [
+          1200,
+          1400
+        ],
+        "speeds": [
+          "rapid"
+        ]
+      }
+    },
+    "fixture_version": 1,
+    "opponent_evidence": [
+      {
+        "authored_replies": [
+          "g8f6"
+        ],
+        "bounds": [
+          {
+            "lower": 0.1,
+            "move_uci": "g8f6",
+            "upper": 0.2
+          }
+        ],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-0",
+        "fen": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq - 0 4",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.75
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "c5a3",
+            "probability": null
+          },
+          {
+            "move_uci": "c5b4",
+            "probability": null
+          },
+          {
+            "move_uci": "c5b6",
+            "probability": null
+          },
+          {
+            "move_uci": "c5d4",
+            "probability": null
+          },
+          {
+            "move_uci": "c5d6",
+            "probability": null
+          },
+          {
+            "move_uci": "c5e3",
+            "probability": null
+          },
+          {
+            "move_uci": "c5e7",
+            "probability": null
+          },
+          {
+            "move_uci": "c5f2",
+            "probability": null
+          },
+          {
+            "move_uci": "c5f8",
+            "probability": null
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": null
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": null
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": null
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "e8f8",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
+        "unknown_mass": 0.1
+      },
+      {
+        "authored_replies": [
+          "f8c5",
+          "g8f6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-1",
+        "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.6
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": null
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": null
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": null
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": null
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": null
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
+        "unknown_mass": 0.1
+      },
+      {
+        "authored_replies": [
+          "b8c6",
+          "d7d6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-2",
+        "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.6
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8c6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "c7c5",
+            "probability": null
+          },
+          {
+            "move_uci": "c7c6",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": null
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": null
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": null
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": null
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": null
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
+        "unknown_mass": 0.1
+      },
+      {
+        "authored_replies": [
+          "b7b6",
+          "c7c5",
+          "e7e5"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-3",
+        "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.0
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8c6",
+            "probability": null
+          },
+          {
+            "move_uci": "c7c5",
+            "probability": 0.25
+          },
+          {
+            "move_uci": "c7c6",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": null
+          },
+          {
+            "move_uci": "e7e5",
+            "probability": 0.6
+          },
+          {
+            "move_uci": "e7e6",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [
+          "b7b6"
+        ],
+        "unknown_mass": 0.15
+      },
+      {
+        "authored_replies": [
+          "g8f6"
+        ],
+        "bounds": [
+          {
+            "lower": 0.15,
+            "move_uci": "g8f6",
+            "upper": 0.25
+          }
+        ],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "classical-1800-2000",
+        "evidence_id": "synthetic-opponent-classical-1800-2000-0",
+        "fen": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq - 0 4",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.7
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "c5a3",
+            "probability": null
+          },
+          {
+            "move_uci": "c5b4",
+            "probability": null
+          },
+          {
+            "move_uci": "c5b6",
+            "probability": null
+          },
+          {
+            "move_uci": "c5d4",
+            "probability": null
+          },
+          {
+            "move_uci": "c5d6",
+            "probability": null
+          },
+          {
+            "move_uci": "c5e3",
+            "probability": null
+          },
+          {
+            "move_uci": "c5e7",
+            "probability": null
+          },
+          {
+            "move_uci": "c5f2",
+            "probability": null
+          },
+          {
+            "move_uci": "c5f8",
+            "probability": null
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": null
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": null
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": null
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "e8f8",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0.2
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
+        "unknown_mass": 0.1
+      },
+      {
+        "authored_replies": [
+          "f8c5",
+          "g8f6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "classical-1800-2000",
+        "evidence_id": "synthetic-opponent-classical-1800-2000-1",
+        "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.5
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": null
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": null
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": null
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": null
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": null
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": null
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": 0.2
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0.2
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
+        "unknown_mass": 0.1
+      },
+      {
+        "authored_replies": [
+          "b8c6",
+          "d7d6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "classical-1800-2000",
+        "evidence_id": "synthetic-opponent-classical-1800-2000-2",
+        "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.5
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8c6",
+            "probability": 0.2
+          },
+          {
+            "move_uci": "c7c5",
+            "probability": null
+          },
+          {
+            "move_uci": "c7c6",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0.2
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": null
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": null
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": null
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": null
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": null
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": null
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
+        "unknown_mass": 0.1
+      },
+      {
+        "authored_replies": [
+          "b7b6",
+          "c7c5",
+          "e7e5"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "classical-1800-2000",
+        "evidence_id": "synthetic-opponent-classical-1800-2000-3",
+        "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.02
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": null
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8a6",
+            "probability": null
+          },
+          {
+            "move_uci": "b8c6",
+            "probability": null
+          },
+          {
+            "move_uci": "c7c5",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "c7c6",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": null
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": null
+          },
+          {
+            "move_uci": "e7e5",
+            "probability": 0.7
+          },
+          {
+            "move_uci": "e7e6",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": null
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": null
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": null
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": null
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": null
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unassigned_authored_replies": [
+          "b7b6"
+        ],
+        "unknown_mass": 0.13
+      }
+    ],
+    "policy_version": "synthetic-1",
+    "production_planner_inputs": [
+      {
+        "completed_line_ids_json": "[\"main\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "italian-a",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1c4\", \"f8c5\", \"c2c3\"]",
+        "priority_date": null,
+        "priority_score": 0.9,
+        "repertoire_id": "italian"
+      },
+      {
+        "completed_line_ids_json": "[\"main\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "italian-b",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1c4\", \"f8c5\", \"c2c3\", \"g8f6\", \"d2d4\"]",
+        "priority_date": null,
+        "priority_score": 0.7,
+        "repertoire_id": "italian"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-c\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "italian-c",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1c4\", \"g8f6\", \"d2d3\"]",
+        "priority_date": null,
+        "priority_score": 0.8,
+        "repertoire_id": "italian"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-e\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "italian-e",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"d7d6\", \"d2d4\"]",
+        "priority_date": null,
+        "priority_score": 0.5,
+        "repertoire_id": "italian"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-f\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "italian-f",
+        "moves_json": "[\"e2e4\", \"b7b6\", \"d2d4\"]",
+        "priority_date": null,
+        "priority_score": 0.4,
+        "repertoire_id": "italian"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-d\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "shared-sicilian",
+        "moves_json": "[\"e2e4\", \"c7c5\", \"g1f3\"]",
+        "priority_date": null,
+        "priority_score": 0.6,
+        "repertoire_id": "italian"
+      }
+    ],
+    "provenance": "synthetic legal opening routes, histories and explicit score assumptions",
+    "reference_main": "4dc17a96dd23da51047284d1bfb7434efee20d56",
+    "scenario_id": "cohorts-uncertainty",
+    "supporting_cards": [
+      {
+        "card_id": "shared-e4",
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          }
+        ],
+        "introduced_at": "2026-10-10T09:00:00Z",
+        "moves": [
+          "e2e4"
+        ],
+        "policy_id": "italian",
+        "recall_assumption": 0.25,
+        "state": "learning"
+      },
+      {
+        "card_id": "shared-e4-e5-nf3",
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          }
+        ],
+        "introduced_at": "2026-09-01T09:00:00Z",
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3"
+        ],
+        "policy_id": "italian",
+        "recall_assumption": 0.9,
+        "state": "mature"
+      },
+      {
+        "card_id": "italian-support-failed",
+        "decisions": [
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1c4",
+            "move_uci": "f1c4",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          }
+        ],
+        "introduced_at": "2026-10-09T09:00:00Z",
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1c4"
+        ],
+        "observation": {
+          "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1c4",
+          "observed_at": "2026-10-10T10:00:00Z",
+          "outcome": "incorrect"
+        },
+        "policy_id": "italian",
+        "recall_assumption": 0.2,
+        "state": "learning"
+      }
+    ]
+  },
+  "study_day": "2026-10-10"
+}
