@@ -25,6 +25,7 @@
   synchronous transport errors retain and release essential request holds.
 - `tests/unit/maia-coverage-client-regressions.test.ts`: C uncertain delivery
   remains pending under its original operation identity, never a model failure.
+  `C interrupted successful response body retains the immutable operation instead of reporting model failure` uses an actual failed response stream after HTTP 200; body consumption stays inside pending-delivery classification, preserving the accepted command identity.
 
 ## Study Priority v1 bounded sparse-unlock proof
 

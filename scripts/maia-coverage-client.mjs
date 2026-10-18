@@ -55,7 +55,8 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
     error.terminal = response.status < 500 && response.status !== 408 && response.status !== 429;
     throw error;
   }
-  if (response.status !== 202) return response.json();
+  // Body interruption after successful headers is still unconfirmed delivery.
+  if (response.status !== 202) return await response.json();
 
   const pending = await response.json();
   receiptId = pending.operation_id;
