@@ -80,7 +80,11 @@ engine execution, repertoire persistence, queue admission and scheduling remain
 with their existing owners. Follow the remaining adoption criteria in
 [#198](https://github.com/aaweaver-actuary/tempo/issues/198) and its
 [M03 parent #252](https://github.com/aaweaver-actuary/tempo/issues/252), including
-the backend-free consumer/browser boundary. This is a discovery map, not a new
+the backend-free consumer/browser boundary. The focused Workbench criteria are
+in [#4](https://github.com/aaweaver-actuary/tempo/issues/4); assembled reuse proof
+belongs to [#266](https://github.com/aaweaver-actuary/tempo/issues/266). Keep the
+detailed acceptance criteria with those owners rather than duplicating them here.
+This is a discovery map, not a new
 requirement to migrate every screen in one change.
 
 ## Related historical evidence
