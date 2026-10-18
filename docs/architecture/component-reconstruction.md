@@ -38,6 +38,51 @@ Follow the twelve phases and dependencies in #192. The initial package/build and
 
 Do not make global budgets, learning weights, probability-driven curriculum, or recurring-pattern features prerequisites for core reconstruction. Those remain later scoped work in the relevant #192 phases.
 
+## Discover before building
+
+Before implementing shared behavior, inspect [the component registry](../../components.json),
+the relevant package README and public exports, existing consumers/adapters, and the
+current phase in [#192](https://github.com/aaweaver-actuary/tempo/issues/192).
+Search the source tree too: registry status describes tooling registration and may
+lag merged package delivery. A planned executable target must not be run, but its
+label is not evidence that no reusable implementation exists.
+
+Distinguish three facts in the implementation plan and handoff:
+
+- **Planned:** a target boundary or registration, without an executable claim.
+- **Implemented:** code and a public API exist; cite the owning qualification and
+  its limits rather than inferring production use.
+- **Adopted:** a named consumer uses that API, with evidence for its integration.
+  Adoption by one consumer does not establish adoption everywhere.
+
+Inventory reusable APIs and wrappers before creating a replacement. State the
+specific missing capability, choose the smallest owning extension or adapter, and
+preserve existing regression invariants. Consume public package APIs without
+pulling unrelated application stores, service implementations or runtime setup
+across the boundary. Coordinate shared contract changes with their owner.
+
+### Board discovery example
+
+The merged [Board UI package](../../packages/board-ui/README.md) is implemented;
+its planned registry entry reflects deferred shared registration. It supplies
+presentation, geometry, supplied shapes, focus and typed input-event seams. It
+does not install application keyboard policy or compute engine/repertoire data.
+The [legacy board wrappers](../../app/components/README.md) still own interaction
+composition for existing app consumers. Workbench still constructs Chessground
+directly in its [game browser](../../apps/workbench-web/src/game-browser.ts) and
+[finding view](../../apps/workbench-web/src/workbench.ts); package delivery alone
+does not complete their adoption.
+
+For adoption, reuse the renderer's public API and identify a reusable interaction
+adapter for navigation, focus, flip, shortcut help and overlay presentation.
+Screens supply position-scoped replay, legal moves and available evidence;
+engine execution, repertoire persistence, queue admission and scheduling remain
+with their existing owners. Follow the remaining adoption criteria in
+[#198](https://github.com/aaweaver-actuary/tempo/issues/198) and its
+[M03 parent #252](https://github.com/aaweaver-actuary/tempo/issues/252), including
+the backend-free consumer/browser boundary. This is a discovery map, not a new
+requirement to migrate every screen in one change.
+
 ## Related historical evidence
 
 The [code organization audit](../CODE-ORGANIZATION-AUDIT.md), [CI isolation audit](ci-isolation/audit-report.md), [CI issue specifications](ci-isolation/issue-specs.md), [parallel implementation notes](ci-isolation/parallel-impl.md), and [CI classification audit](ci-classification-audit/report.md) preserve observations from earlier revisions. They are not current architecture or qualification policy where they conflict with this guide, #192, or [docs/testing.md](../testing.md).
