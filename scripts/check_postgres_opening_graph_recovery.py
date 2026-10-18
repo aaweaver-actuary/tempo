@@ -205,7 +205,9 @@ def quiesced_baseline_fixture(prepared):
         original = recovery.capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
         (output / 'before.json').write_text(json.dumps(original))
         with postgres_store.connection() as database:
-            card = database.execute_native('SELECT id FROM cards WHERE repertoire_id=%s AND introduced_at IS NOT NULL ORDER BY id LIMIT 1',
+            card = database.execute_native('SELECT card.id FROM cards card WHERE card.introduced_at IS NOT NULL '
+                                           'AND EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.repertoire_id=%s AND link.card_id=card.id) '
+                                           'ORDER BY card.id LIMIT 1',
                                            (prepared['repertoire_id'],)).fetchone()[0]
             database.execute_native('UPDATE cards SET repetitions=repetitions+1,interval_days=interval_days+1 WHERE id=%s', (card,))
             database.execute_native("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'correct',%s,1,2,'study')",
