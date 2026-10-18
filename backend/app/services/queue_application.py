@@ -301,6 +301,37 @@ _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL = f"""WITH root_candidates AS (
 ORDER BY id NULLS FIRST LIMIT %s"""
 
 
+def _unlock_postgres_opening_page(db, *, after_card_id: str, batch_size: int) -> str | None:
+    """Examine a finite indexed card page; preserve at most batch_size writes.
+
+    The former parent-first lateral query revisited all practiced parents for
+    every eight unlocks. A page can now make durable progress even when none of
+    its cards has an eligible current route. SQLite retains its sparse selector.
+    """
+    read_limit = max(batch_size, 16)
+    raw_candidates = db.execute_native(
+        "SELECT id FROM cards WHERE content_type='opening' AND state='locked' "
+        "AND archived=0 AND id>%s ORDER BY id LIMIT %s",
+        (after_card_id, read_limit + 1),
+    ).fetchall()
+    candidate_ids = [row[0] for row in raw_candidates[:read_limit]]
+    if not candidate_ids:
+        return None
+    eligibility_sql = _OPENING_UNLOCK_ELIGIBILITY_SQL.replace(
+        'WHERE step.card_id=cards.id', "WHERE publication.state='ready' AND step.card_id=cards.id")
+    eligible = db.execute_native(
+        "WITH bounded_cards AS MATERIALIZED (SELECT * FROM cards WHERE id=ANY(%s)) "
+        "SELECT id FROM bounded_cards cards WHERE " + eligibility_sql +
+        " ORDER BY id LIMIT %s", (candidate_ids, batch_size),
+    ).fetchall()
+    selected_ids = [row[0] for row in eligible]
+    if selected_ids:
+        db.execute("UPDATE cards SET state='new' WHERE " + eligibility_sql +
+                   " AND cards.id IN (" + ",".join("?" for _ in selected_ids) + ")", selected_ids)
+    cursor = selected_ids[-1] if len(selected_ids) == batch_size else candidate_ids[-1]
+    return cursor if cursor < candidate_ids[-1] or len(raw_candidates) > read_limit else None
+
+
 def _unlock_eligible_opening_cards(
     db, day, *, after_card_id: str | None = None, batch_size: int | None = None,
 ) -> str | None:
@@ -309,6 +340,8 @@ def _unlock_eligible_opening_cards(
     if batch_size is not None:
         if batch_size < 1:
             raise ValueError("Queue unlock batch size must be positive")
+        if hasattr(db, 'execute_native'):
+            return _unlock_postgres_opening_page(db, after_card_id=after_card_id or "", batch_size=batch_size)
         selector = (db.execute_native if hasattr(db, 'execute_native') else db.execute)
         candidates = selector(
             _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL if hasattr(db, 'execute_native') else _OPENING_UNLOCK_CANDIDATES_SQL,

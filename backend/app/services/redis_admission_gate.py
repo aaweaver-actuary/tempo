@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager, suppress
+import asyncio
 from functools import lru_cache
 import logging
 import os
@@ -24,8 +25,11 @@ class BackgroundAdmissionDeferred(RuntimeError):
 _REGISTER_FOREGROUND = """
 local now = tonumber(ARGV[1])
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
-redis.call('ZADD', KEYS[1], now + tonumber(ARGV[3]), ARGV[2])
-redis.call('EXPIRE', KEYS[1], math.ceil(tonumber(ARGV[3]) / 1000) + 1)
+local existing = tonumber(redis.call('ZSCORE', KEYS[1], ARGV[2]) or '0')
+local expires = math.max(existing, now + tonumber(ARGV[3]))
+redis.call('ZADD', KEYS[1], expires, ARGV[2])
+local latest = redis.call('ZREVRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+redis.call('PEXPIRE', KEYS[1], math.max(1, tonumber(latest[2]) - now + 1000))
 return 1
 """
 
@@ -39,8 +43,9 @@ redis.call('EXPIRE', KEYS[2], math.ceil(tonumber(ARGV[3]) / 1000) + 1)
 return 1
 """
 
-_FOREGROUND_KEY = "tempo:admission:foreground"
-_BACKGROUND_KEY = "tempo:admission:background"
+_ADMISSION_NAMESPACE = os.getenv('TEMPO_ADMISSION_NAMESPACE', 'tempo:admission')
+_FOREGROUND_KEY = _ADMISSION_NAMESPACE + ':foreground'
+_BACKGROUND_KEY = _ADMISSION_NAMESPACE + ':background'
 _FOREGROUND_LEASE_MS = 30_000
 _BACKGROUND_LEASE_MS = 5_000
 
@@ -64,14 +69,42 @@ def foreground_present() -> bool:
     return bool(pipeline.execute()[1])
 
 
-def record_browser_activity(seconds: float) -> None:
+def record_browser_activity(seconds: float, *, session_id: str = 'legacy') -> None:
     """Keep the active workspace ahead of new background database slices."""
 
     lease_milliseconds = max(1, int(seconds * 1000))
     client().eval(
         _REGISTER_FOREGROUND, 1, _FOREGROUND_KEY,
-        int(time.time() * 1000), "browser-activity", lease_milliseconds,
+        int(time.time() * 1000), f"browser-activity:{session_id}", lease_milliseconds,
     )
+
+
+@asynccontextmanager
+async def async_foreground_lease():
+    """HTTP admission never blocks the event loop on synchronous Redis I/O."""
+    token = uuid.uuid4().hex
+    async def register():
+        await asyncio.to_thread(client().eval, _REGISTER_FOREGROUND, 1, _FOREGROUND_KEY,
+                                int(time.time() * 1000), token, _FOREGROUND_LEASE_MS)
+    await register()
+    async def renew():
+        while True:
+            await asyncio.sleep(_FOREGROUND_LEASE_MS / 3000)
+            try:
+                await register()
+            except redis.RedisError:
+                _LOGGER.exception('Could not renew foreground admission lease')
+    renewal = asyncio.create_task(renew())
+    try:
+        yield
+    finally:
+        renewal.cancel()
+        with suppress(asyncio.CancelledError):
+            await renewal
+        try:
+            await asyncio.to_thread(client().zrem, _FOREGROUND_KEY, token)
+        except redis.RedisError:
+            _LOGGER.exception('Could not release foreground admission lease')
 
 
 @contextmanager

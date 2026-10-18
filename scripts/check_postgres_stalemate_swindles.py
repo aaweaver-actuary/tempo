@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from contextlib import contextmanager
+from datetime import date
 import io
 import json
 import os
@@ -132,6 +133,40 @@ def test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_c
         print(f"test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content passed: {corpus_path.name}")
 
 
+def seed_standard_review_history(connection, execute):
+    """Use the ordinary review owner for its receipt and schedule snapshot."""
+    from app import queue_commands, review_commands  # Register real owning commands.
+
+    day = date.today().isoformat()
+    repertoire_id = f"stalemate-history-{uuid.uuid4()}"
+    card_id = f"stalemate-history-{uuid.uuid4()}"
+    with connection() as database:
+        database.execute(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)",
+            (repertoire_id, "Stalemate history protection", "disposable proof", day),
+        )
+        database.execute(
+            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
+               VALUES(?,?,'prefix',?,'["e2e4"]','learning',?,'opening')""",
+            (card_id, repertoire_id, chess.STARTING_FEN, day),
+        )
+        position = database.execute(
+            "SELECT COALESCE(MIN(position),0)-1 FROM daily_queue WHERE queue_date=?", (day,),
+        ).fetchone()[0]
+        entry_id = database.execute(
+            "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?) RETURNING id",
+            (day, card_id, position),
+        ).fetchone()[0]
+    assert execute(str(uuid.uuid4()), "queue.issue_head", {
+        "entry_id": entry_id, "queue_date": day, "card_id": card_id, "expected_revision": 1,
+    })["issued"]
+    result = execute(str(uuid.uuid4()), "cards.review", {"card_id": card_id, "review": {
+        "outcome": "correct", "queue_entry_id": entry_id, "expected_revision": 1,
+        "attempt_id": str(uuid.uuid4()),
+    }})
+    assert result["persisted"] and result["review_id"]
+
+
 def test_postgres_stalemate_import_reimport_preserves_existing_review_history():
     from app import study_commands, study_attempt_commands  # Register the real foreground handlers.
     from app.command_gateway import execute_command
@@ -154,8 +189,12 @@ def test_postgres_stalemate_import_reimport_preserves_existing_review_history():
             "answer": {"type": "move_line", "moves": reference["accepted_lines"][0]},
         }})
         assert result["persisted"] and result["rating"] == "correct" and result["review"]["review_id"]
+        seed_standard_review_history(postgres_store.connection, execute_command)
         with postgres_store.connection() as database:
             preserved = review_history_snapshot(database)
+            print("stalemate protected history counts: " + json.dumps({
+                table: len(rows) for table, rows in preserved.items()
+            }, sort_keys=True), flush=True)
             assert all(preserved.values()), "History protection must use nonempty real reviewed fixtures"
         corpus_directory = Path(__file__).resolve().parents[1] / "public/data/studies"
         for corpus_path in sorted(corpus_directory.glob("stalemate-swindles-*.tempo-study.json")):

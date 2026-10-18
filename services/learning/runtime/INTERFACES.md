@@ -1,5 +1,28 @@
 # Learning runtime integration surface
 
+`POST /api/study/activity?session_id=<session>&expires_in_ms=<1..3000>` uses the
+existing Study authentication and Origin policy. It reports an optional host
+activity lease without opening PostgreSQL or creating a durable operation.
+Missing configuration or unavailable storage returns 503 without changing Study
+authority. Pending authenticated essential requests retain independent host holds
+until their handlers settle, including when browser timers are suspended.
+
+The CLI registers its native host signal in `TEMPO_STUDY_ACTIVITY_DIRECTORY`
+(default: the current user's temporary directory plus `tempo-study-activity-v1`).
+The managed development runner reads this same private directory. Version-one
+snapshots carry monotonic nanosecond deadlines, separate sessions, pending-request
+holds and a 15-second producer lease renewed every five seconds. The directory
+must be shared by colocated processes using the same kernel clock; a VM with a
+different clock is unavailable control and must use its own colocated admission
+reader. Clean service shutdown removes only its producer record. An interrupted
+producer retains stale evidence, blocking admission until its exact ownership
+and service absence are reconciled. Its recorded PID assists that inspection;
+missing PID alone is never permission to remove a source record. Essential
+Learning needs no Node or broker.
+
+Programmatic `Configuration.host_activity_directory=None` disables this optional
+adapter; applications embedding Learning must configure the shared directory to
+claim host-level development protection. Browser-local priority remains separate.
 ## Content bridge v2
 
 `POST /internal/publications/v2/stage` accepts the service-local version-2 opening
@@ -167,6 +190,7 @@ work-class headers. Browser Origin is browser generated. Credentials stay in
 session storage, outside command envelopes, bundles and evidence. The existing
 Host/Origin/CORS allowlists and restricted database roles remain authoritative.
 
+Before starting an expected independent Learning runtime on the protected host, register its workspace identity in the managed runners’ `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` JSON array, for example `["workspace-a"]`. Learning snapshots include that stable `source` alongside the unique process producer. Missing first publication, total reporting failure, and clean shutdown remain unavailable until an operator explicitly changes the expected-source configuration. Essential Learning progress remains independent of reporting success.
 ## Publication receipt request binding
 
 The operator-only `GET /internal/publications/operations/{operation_id}` adds `workspace_id`, `command_name` and the original persisted `request` for known publication operations. These let Content independently verify terminal failure against its immutable delivery checkpoint. Unknown operations remain `unknown`; Study/evidence credentials cannot read or retry publication operations. Generic Study receipt responses and shared publication wire contracts are unchanged.
@@ -199,6 +223,8 @@ including workers selected before fencing. Staging alone never grants serving
 authority. Fencing neither deletes immutable staged bundles nor retires old serving
 content; corrected sources use the ordinary new generation/revision workflow.
 
+
+Host activity deadlines use the reader's shared host clock domain. On macOS the producer uses the standard-library `CLOCK_MONOTONIC_RAW` continuous clock, matching native Node/libuv across system sleep; Python's default uptime clock cannot be mixed with it. Linux uses the ordinary monotonic clock. VM/remote producers require a colocated reader. This optional signal changes neither Study authority nor its database transaction boundary.
 C3 retains the existing 2.5-second foreground transaction limit. Activation now
 indexes integrity by physical card before filtering memberships, replacing a
 quadratic scan. The complete-publication native regression includes 7,258

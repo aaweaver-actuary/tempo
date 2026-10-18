@@ -1,3 +1,24 @@
+## Study Priority v1 bounded sparse-unlock proof
+
+- `backend/tests/test_study_priority_maintenance.py::test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding_rejected_pages` owns the PostgreSQL proof's replacement for the retired three-total-page assumption. With the unchanged 15,000 locked / 21 eligible fixture, the actual selector advances through 939 pages, including 936 rejected pages, examines at most sixteen candidates per page, and preserves exactly three write batches of eight, eight, and five cards in order. The native proof additionally verifies actual row counts and exact persisted eligibility; background transactions retain the existing 250 ms deadline. SQLite's three-page sparse-selector regression remains unchanged.
+
+## Study Priority v1 host activity producer
+
+- `backend/tests/test_study_priority_maintenance.py::test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounded_write_client` owns native direct Redis fixture setup after window6 timed out on the 50 ms production poll client. Setup and isolated key edits use the existing one-second write client; both actual factory deadlines are asserted unchanged. The original Lua renewal, member expiry, key TTL and native timing assertions remain unchanged.
+- `backend/tests/test_study_priority_control.py::test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_teardown` owns a delayed private refresh whose generation matches its parent's. Teardown deletes the private generation and restores parent keys before the read resumes; publication must retain the originally reserved key identity, leave parent Study-only policy unchanged, and reject the late result. The deterministic probe fails before key capture and passes afterward.
+- `backend/tests/test_study_priority_maintenance.py` owns
+  `test_owned_fixture_database_renews_private_policy_without_touching_parent_control`:
+  private native helper databases renew their own policy and generation keys
+  after parent clients stop. The real publisher retains generation/expiry checks,
+  cleans only the private keys, and leaves the parent policy unchanged. The
+  operation-recovery proof retains its exact attempt and exhaustion assertions.
+- `backend/tests/test_study_priority_control.py` owns
+  `test_study_activity_final_pulse_preserves_remaining_quiet_time`: legacy
+  control retains the remaining quiet lease instead of restarting three seconds.
+- Independent Learning's local `REGRESSIONS.md` owns `test_host_activity.py`:
+  authenticated broker-free host reporting, independent expiry, pending essential
+  operations, optional failures and owned producer cleanup.
+
 ## Independent Study connection (F2)
 
 Post-merge P3: `study-learning-connection-regressions.test.ts` owns P3-U1–U15:
@@ -4613,3 +4634,46 @@ Learning behavior, or full-system qualification.
 - `study-cached-startup-regressions.test.tsx` owns browser-online and browser-offline transport startup, HTTP/auth rejection, invalid cache identity/schema/timezone, unavailable storage and first-connect blocking.
 - `study-authoring-capability-regressions.test.tsx` owns read-only pack selection and command-level capture/deletion rejection before pending-data access, mutation or network. Existing catalog, capture, deletion, endgame, intent, attempt and offline regressions retain their legacy/Workbench assertions.
 - The regular `learning-full-study` native suite owns the browser-online Learning outage, same-context/two-origin recovery (including lost sessionStorage), real settings receipt reconciliation and Study authoring request inventory. Two forwarding origins share one installed Learning database; this is not a multi-database proof.
+
+## Study priority v1 — deployed legacy assembly (#218, #190)
+
+Core owners: `backend/tests/test_study_priority_control.py`,
+`backend/tests/test_study_priority_maintenance.py`, and
+`scripts/check_postgres_study_priority.py`. The native script is invoked by the
+regular PostgreSQL study and schema-migration scenarios; `--list` enumerates its
+six required identities. It proves published-graph candidate bounds and rejected
+cursor progress, a fresh process resuming a persisted fenced checkpoint, due-state
+recovery among 415,000 historical receipts, real review/identical receipt replay,
+prepared succession, database-independent control, multiple device expiry,
+stale-policy denial, and an index-only 49 → 48 → 49 rollback retaining reviews.
+The unit cases also cover setup/closed-connection backoff, generation fencing,
+control polls without database reads and current publication rechecks.
+
+The native unlock path replaces parent-wide discovery with pages of at most 16
+locked cards and at most eight writes per ordinary queue slice. Its update repeats
+ready-publication and practiced-parent eligibility. SQLite's useful sparse
+algorithm and the existing review/evidence/history/receipt transaction owners are
+retained. Original literal SQL fixtures remain a transitional compatibility owner;
+they do not select the retired native parent-wide query.
+
+The existing native `test_postgres_priority_unlock_rejected_pages_and_restart` case now forces a real 250 ms PostgreSQL transaction cutoff, verifies the durable checkpoint did not move, and retries a finite number of fresh slices without extending deadlines or changing page/write bounds. Natural deadline aborts remain visible in `checkpoint-retries.jsonl`; exhaustion fails the proof.
+
+The complete native frozen-order proof reads the authoritative schema version and pins legacy confirmation to its fixture queue date (`test_frozen_legacy_confirmation_uses_fixture_day`). The 361-card capture, 260 attempt origins, unchanged queue membership, stale proposal fences, and all fourteen native proof groups remain asserted. This compatibility fixture belongs to the schema/control producer in #297.
+
+`test_postgres_priority_monotonic_activity_renewal` is executed inside the regular native priority control proof: stale short pulses cannot shorten a renewed member or expire the shared Redis key ahead of another pending foreground lease. Learning's `test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session` preserves the same host-adapter invariant. Individual lease expiry and the three-second quiet period remain unchanged.
+
+- `test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_registration` (`backend/tests/test_admission_proof_ownership.py`): checkpoint HTTP/restart proofs retain a finite unrelated foreground barrier throughout setup/replay, permit concurrent foreground registration with a valid Redis integer TTL, preserve the exact barrier score, and remove only their own activity on success or failure. Owning native proof: `scripts/check_postgres_opening_evidence.py`; the real PostgreSQL durability mode must also pass.
+
+`test_canonical_task_driver_waits_for_real_local_policy_section_without_reclaiming_lease` reproduces the full canonical proof's real local policy-read admission conflict. `test_canonical_admission_exhaustion_retains_original_task_and_cause`, `test_canonical_task_driver_preserves_nonadmission_failure`, and `test_canonical_task_driver_preserves_original_120_slice_exhaustion` own bounded retry, original lease identity, immediate real-error propagation, and the unchanged 120-slice limit in `backend/tests/test_canonical_rehearsal_admission.py`.
+`test_canonical_retention_keeps_admission_deferral_evidence_without_spending_three_admitted_slices` in `backend/tests/test_canonical_prefix_retention.py` proves the analogous direct driver retains the same claim, all raw denied-attempt evidence, the original three-admitted-slice/64-row bounds, 120 exact cleanup rows and exact survivors. The real native foreground-denial, lock failure, concurrent deferral, checkpoint interruption and stale-replay assertions remain selected and unchanged. `scripts/postgres_rehearsal_admission.py` is their qualification-only retry owner; production admission and SQL deadlines are unchanged.
+
+`test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease` in `backend/tests/test_graph_rehearsal_admission.py` exercises the real local policy-read admission race through both native graph preparation and cleanup. Direct graph/retention calls yield through the shared bounded rehearsal adapter without another claim or lease identity; original 64,000-row fixtures, SQL deadlines, checkpoints, page bounds and all native assertions remain.
+`test_native_rehearsal_propagates_unavailable_control_without_retry` in `backend/tests/test_canonical_rehearsal_admission.py` keeps explicit unavailable-control and caused admission errors visible on the first attempt. Only ordinary admission contention yields; SQL, source, deadline and outage failures remain failures.
+
+`test_native_graph_direct_entry_calls_use_shared_admission_protocol` checks both policy-publisher rehearsal drivers for ordinary graph/retention calls that bypass bounded admission, including the CF-8 cleanup preparation in canonical freshness. Real-gate preparation and cleanup consumer races remain covered by `test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease`; all native assertions and bounds remain unchanged.
+
+`test_native_wait_helpers_preserve_unavailable_control_without_retry` in `backend/tests/test_native_rehearsal_control_errors.py` compiles the actual segmentation, checkpoint and prefix-transition wait helper bodies with isolated transport/clock behavior. Explicit unavailable-control and caused admission errors propagate unchanged on the first attempt; original foreground-contention behavior, ten-second admission bounds, SQL deadlines, large fixtures and native assertions are retained.
+
+`test_legacy_study_contracts_share_learning_grader_model_identity` and `test_checked_in_stalemate_corpus_validates_with_legacy_learning_contract_boundary` in `backend/tests/test_study_contract_identity.py` keep executable exercise/answer models shared with the Learning-owned grader while legacy endpoint envelopes retain their owner and fields. The real checked-in 300-exercise v1 corpus remains valid without a schema/content rewrite; import/reimport and nonempty review-history preservation keep their original PostgreSQL owning proof in `scripts/check_postgres_stalemate_swindles.py`.
+
+`test_stalemate_history_protection_fixture_seeds_authored_and_standard_review_owners` in `backend/tests/test_studies.py` exercises the PostgreSQL proof's shared standard-review seed against a private SQLite database alongside a real authored Study attempt. Genuine owning review handlers populate receipts and schedule snapshots; all five history collections remain nonempty and byte-equivalent through portable reimport. `test_postgres_stalemate_import_reimport_preserves_existing_review_history` retains the native full-corpus proof and its original nonempty/exact-preservation assertions.

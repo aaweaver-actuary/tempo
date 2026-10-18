@@ -211,7 +211,9 @@ async def lifespan(_: FastAPI):
                 "Today's PostgreSQL queue refresh is pending: %s",
                 startup_queue_request.headers.get("Location"),
             )
-        yield
+        from .services.study_priority import policy_publisher
+        with policy_publisher():
+            yield
         return
     configured_workers = max(
         int(os.getenv("WEB_CONCURRENCY", "1")),
@@ -239,7 +241,9 @@ async def lifespan(_: FastAPI):
         )
         await coordinator.start()
     try:
-        yield
+        from .services.study_priority import policy_publisher
+        with policy_publisher():
+            yield
     finally:
         if os.getenv("TEMPO_COORDINATOR_MODE", "embedded") == "embedded":
             await coordinator.stop()
@@ -247,6 +251,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
+from .services.background_runtime import StudyResponseTiming
+app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
 
 @app.exception_handler(ReviewConflict)
@@ -758,9 +764,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
         if is_background:
             with activity_gate.background_request():
                 return await call_next(request)
-        with ExitStack() as foreground_scope:
+        from contextlib import AsyncExitStack
+        async with AsyncExitStack() as foreground_scope:
             try:
-                foreground_scope.enter_context(activity_gate.foreground())
+                await foreground_scope.enter_async_context(activity_gate.async_foreground())
             except RedisError:
                 # No command has been dispatched. Keep this catch confined to
                 # admission: downstream failures may have an unknown outcome.
@@ -876,11 +883,9 @@ def health():
 
 @app.get("/api/system/foreground-active")
 def foreground_active():
-    """Allow the isolated engine worker to yield without acquiring SQLite."""
-    if activity_gate.foreground_waiting:
-        return {"active": True}
-    from .services.study_mode import study_only_enabled
-    return {"active": activity_gate.foreground_waiting, "study_only_mode": study_only_enabled()}
+    """An expiring control snapshot never acquires a study database connection."""
+    from .services.study_priority import control_snapshot
+    return control_snapshot()
 
 
 @app.get("/api/system/foreground-requests-active")
@@ -890,9 +895,10 @@ def foreground_requests_active():
 
 
 @app.post("/api/system/browser-activity")
-def record_browser_activity():
-    activity_gate.record_browser_activity()
-    return {"active": True}
+def record_browser_activity(session_id: str = Query(default='legacy', pattern=r'^[A-Za-z0-9_-]{1,80}$'),
+                            expires_in_ms: int = Query(default=3000, ge=1, le=3000)):
+    activity_gate.record_browser_activity(expires_in_ms / 1000, session_id=session_id)
+    return {"active": True, "session_id": session_id, "expires_in_ms": expires_in_ms}
 
 
 @app.get("/api/system/tasks")
@@ -1120,6 +1126,8 @@ def put_settings(s: Settings,
         enqueue_opportunity_refresh(repertoire_id, background=False)
     if enqueued_coverage or discovery_repertoire_ids:
         coordinator.wake()
+    from .services.study_priority import refresh_policy
+    refresh_policy()
     return get_settings()
 
 
@@ -1448,9 +1456,12 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                 "ON choice.card_id=c.id AND choice.rank=1 "
                 "LEFT JOIN repertoires r ON r.id=COALESCE(choice.repertoire_id,c.repertoire_id) "
             )
+            from .queue_commands import available_attempt_sql
+            candidate_window = available_attempt_sql().replace("SELECT q.id FROM", "SELECT q.* FROM", 1)
+            candidate_window += " ORDER BY q.position,q.id" + (" LIMIT ?" if limit is not None else "")
             queue_sql = (
                 "WITH active_queue AS MATERIALIZED "
-                "(SELECT * FROM daily_queue WHERE queue_date=? AND status='queued'), "
+                "(" + candidate_window + "), "
                 "candidate_repertoires AS MATERIALIZED ("
                 "SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
                 "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
@@ -1473,6 +1484,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
             )
         rows = db.execute(
             queue_sql + (" LIMIT ?" if limit is not None else ""),
+            (day, limit, limit) if limit is not None and postgres_store.configured() else
             (day, limit) if limit is not None else (day,),
         ).fetchall()
         cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
@@ -4769,6 +4781,11 @@ def defensive_engine_control(request_id: str, lease_id: str):
     # Foreground demand must stop the engine without waiting for background DB admission.
     if activity_gate.foreground_waiting:
         return {"foreground_active": True, "search_allowed": False}
+    if os.getenv('TEMPO_REDIS_URL'):
+        from .services.study_priority import control_snapshot
+        policy = control_snapshot()
+        if policy['active'] or policy['study_only_mode'] is not False:
+            return {"foreground_active": True, "search_allowed": False}
     # The API reader connects to the authoritative primary without writer credentials.
     with background_read_connection() as database:
         row = database.execute(

@@ -223,7 +223,9 @@ def _wait_for_checkpoint_admission(operation):
     while True:
         try:
             return operation()
-        except BackgroundAdmissionDeferred:
+        except BackgroundAdmissionDeferred as error:
+            if error.__cause__ is not None or str(error) == 'Foreground admission is unavailable':
+                raise
             assert time.monotonic() < admission_deadline, 'Recovery never obtained foreground-idle admission within 10 seconds'
             time.sleep(0.01)
 
@@ -443,12 +445,14 @@ def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
     parent_activity_token = uuid.uuid4().hex
     admission_namespace = 'checkpoint-restart-' + uuid.uuid4().hex
     # Restart/identity is the invariant; unrelated API health/study activity
-    # remains present without determining fixture setup or exact replay.
-    server.zadd(parent_foreground_key, {parent_activity_token: float('inf')})
+    # remains present without determining fixture setup or exact replay. A
+    # finite score keeps concurrent registrations' Redis PEXPIRE valid.
+    parent_activity_expiry = int(time.time() * 1000) + 3_600_000
+    server.zadd(parent_foreground_key, {parent_activity_token: parent_activity_expiry})
     try:
         with owned_admission_scope(admission_namespace):
             _prove_opening_checkpoint_restart_recomputes_original_receipt(admission_namespace)
-            assert server.zscore(parent_foreground_key, parent_activity_token) == float('inf')
+            assert server.zscore(parent_foreground_key, parent_activity_token) == parent_activity_expiry
     finally:
         server.zrem(parent_foreground_key, parent_activity_token)
 
@@ -515,13 +519,15 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
     server = redis_admission_gate.client()
     parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
     parent_activity_token = uuid.uuid4().hex
-    # Persistent unrelated activity makes accidental parent admission fail at
-    # setup or recovery, independent of health-probe/lease-expiry timing.
-    server.zadd(parent_foreground_key, {parent_activity_token: float('inf')})
+    # Unrelated activity outlives this bounded proof and makes accidental parent
+    # admission fail at setup or recovery, independent of health-probe timing.
+    # Infinity would poison concurrent foreground registrations' Redis PEXPIRE.
+    parent_activity_expiry = int(time.time() * 1000) + 3_600_000
+    server.zadd(parent_foreground_key, {parent_activity_token: parent_activity_expiry})
     try:
         with owned_admission_scope('checkpoint-http-' + uuid.uuid4().hex):
             _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay()
-            assert server.zscore(parent_foreground_key, parent_activity_token) == float('inf')
+            assert server.zscore(parent_foreground_key, parent_activity_token) == parent_activity_expiry
     finally:
         server.zrem(parent_foreground_key, parent_activity_token)
 

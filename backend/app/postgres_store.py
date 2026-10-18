@@ -17,6 +17,7 @@ import re
 import threading
 import logging
 import time
+import hashlib
 from typing import Any
 
 import psycopg
@@ -36,8 +37,14 @@ class _TimingCursor(psycopg.Cursor):
         try:
             return super().execute(*args, **kwargs)
         finally:
+            elapsed = (time.perf_counter() - started) * 1000
             measurement["sql_count"] += 1
-            measurement["sql_ms"] += (time.perf_counter() - started) * 1000
+            measurement["sql_ms"] += elapsed
+            samples = measurement.setdefault('slow_sql', [])
+            if elapsed >= 5 and len(samples) < 16:
+                statement = str(args[0]) if args else str(kwargs.get('query', ''))
+                samples.append({'statement': hashlib.sha256(statement.encode()).hexdigest()[:16],
+                                'duration_ms': elapsed})
 
 
 class _TimingConnection(psycopg.Connection):
@@ -202,7 +209,7 @@ class PostgresConnection:
 
 
 _pool_lock = threading.Lock()
-_pools: dict[tuple[int, str], ConnectionPool] = {}
+_pools: dict[tuple[int, str, bool], ConnectionPool] = {}
 _logger = logging.getLogger("tempo.background.postgres")
 
 
@@ -228,12 +235,12 @@ def configured() -> bool:
     return bool(os.getenv("TEMPO_DATABASE_WRITE_URL") or os.getenv("TEMPO_DATABASE_READ_URL"))
 
 
-def _pool(read_only: bool) -> ConnectionPool:
+def _pool(read_only: bool, *, background: bool = False) -> ConnectionPool:
     environment_name = "TEMPO_DATABASE_READ_URL" if read_only else "TEMPO_DATABASE_WRITE_URL"
     database_url = os.getenv(environment_name)
     if not database_url:
         raise RuntimeError(f"{environment_name} is missing")
-    pool_key = (os.getpid(), database_url)
+    pool_key = (os.getpid(), database_url, background)
     with _pool_lock:
         pool = _pools.get(pool_key)
         if pool is None:
@@ -241,7 +248,8 @@ def _pool(read_only: bool) -> ConnectionPool:
                 connection_class=_TimingConnection,
                 conninfo=database_url,
                 min_size=1,
-                max_size=int(os.getenv("TEMPO_POSTGRES_POOL_SIZE", "8")),
+                max_size=int(os.getenv('TEMPO_POSTGRES_BACKGROUND_POOL_SIZE', '1') if background
+                             else os.getenv("TEMPO_POSTGRES_POOL_SIZE", "8")),
                 kwargs={"row_factory": tempo_row_factory, "cursor_factory": _TimingCursor},
                 open=True,
             )
@@ -256,8 +264,10 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
     acquired_at = configured_at = handled_at = None
     committed = False
     try:
-        pool_options = {} if pool_timeout_seconds is None else {"timeout": pool_timeout_seconds}
-        with _pool(read_only and not authoritative).connection(**pool_options) as database:
+        pool_options = ({'timeout': 0.1} if background else {}) if pool_timeout_seconds is None else {"timeout": pool_timeout_seconds}
+        pool = (_pool(read_only and not authoritative, background=True) if background
+                else _pool(read_only and not authoritative))
+        with pool.connection(**pool_options) as database:
             acquired_at = time.perf_counter()
             if current_training_timing() is not None:
                 database.training_commit = {}
@@ -275,10 +285,11 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                     "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS", 25,
                     minimum=1, maximum=1000,
                 )
-                database.execute("SELECT set_config('transaction_timeout', %s, true)",
-                                 (f"{transaction_limit}ms",))
-                database.execute("SELECT set_config('lock_timeout', %s, true)",
-                                 (f"{lock_limit}ms",))
+                # One round trip: the short transaction must not spend its
+                # budget waiting for a second setup query under host load.
+                database.execute("SELECT set_config('transaction_timeout', %s, true), "
+                                 "set_config('lock_timeout', %s, true)",
+                                 (f"{transaction_limit}ms", f"{lock_limit}ms"))
             configured_at = time.perf_counter()
             try:
                 connection = PostgresConnection(database, read_only=read_only)
@@ -294,6 +305,7 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
             measurement["connections"].append({
                 "read_only": read_only, "background": background, "committed": committed,
                 "acquisition_ms": (acquired_at - started_at) * 1000,
+                "setup_ms": ((configured_at or finished_at) - acquired_at) * 1000,
                 "execution_ms": ((handled_at or finished_at) - acquired_at) * 1000,
                 "commit_cleanup_ms": (finished_at - (handled_at or finished_at)) * 1000,
                 "commit_observed_epoch_ms": time.time() * 1000 if committed else None,

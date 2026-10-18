@@ -161,12 +161,15 @@ def read_connection() -> Iterator[sqlite3.Connection]:
 
 
 @contextmanager
-def background_read_connection(*, authoritative: bool = False) -> Iterator[sqlite3.Connection]:
+def background_read_connection(*, authoritative: bool = False,
+                               pool_timeout_seconds: float | None = None) -> Iterator[sqlite3.Connection]:
     """Admit a bounded background read only while foreground work is idle."""
 
     if postgres_store.configured():
         with _measured_background_database_section():
             options = {"authoritative": True} if authoritative else {}
+            if pool_timeout_seconds is not None:
+                options['pool_timeout_seconds'] = pool_timeout_seconds
             with postgres_store.connection(read_only=True, background=True, **options) as database:
                 yield database
         return

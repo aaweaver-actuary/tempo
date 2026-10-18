@@ -148,7 +148,7 @@ def test_issue77_endpoints_use_actual_reader_pool_without_writer_credentials(mon
     class DatabasePoolIO:
         def __init__(self, conninfo, **_options): pool_urls.append(conninfo)
         @contextmanager
-        def connection(self):
+        def connection(self, **options):
             nonlocal active_reads
             active_reads += 1
             try: yield DatabaseIO()
@@ -318,9 +318,12 @@ def test_issue77_repeatable_reader_and_worker_connections_set_isolation_before_b
     raw = Raw()
     class Pool:
         @contextmanager
-        def connection(self): yield raw
+        def connection(self, **options):
+            assert options == {"timeout": 0.1}
+            yield raw
     selected_pools = []
-    def select_pool(read_only):
+    def select_pool(read_only, *, background=False):
+        assert background
         selected_pools.append(read_only)
         return Pool()
     monkeypatch.setattr(api.postgres_store, '_pool', select_pool)
