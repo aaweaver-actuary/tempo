@@ -131,7 +131,12 @@ try{
   const openedStudy=context.waitForEvent('page');await studyLink.click();const studyPage=await openedStudy;
   await expect(studyPage.getByRole('heading',{name:'General Study target fixture',exact:true})).toBeVisible();
   assert.equal(studyPage.url(),navigationFixture.TEMPO_STUDY_URL);assert.equal(studyRequests,1);assert.equal(traffic.length,apiBeforeStudy);
-  assert.equal(await studyPage.opener(),null);await studyPage.close();navigationCases.push('C_connected_general_study');
+  // Playwright's debugging parent is not the page's JavaScript opener authority.
+  const automationParentPresent=Boolean(await studyPage.opener());
+  const domOpenerIsNull=await studyPage.evaluate(()=>window.opener===null);
+  await writeFile(resolve(evidence,'study-opener-boundary.json'),JSON.stringify({automationParentPresent,domOpenerIsNull},null,2)+'\n');
+  assert.equal(domOpenerIsNull,true,'Study target must not expose a JavaScript opener');
+  await studyPage.close();navigationCases.push('C_connected_general_study');
   // C_connected_session_scope: preserve existing per-tab connection, never copy it to another tab.
   const freshTab=await context.newPage();const apiBeforeFreshTab=traffic.length;
   await freshTab.goto(origin+'/?run=run');await expect(freshTab.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toBeVisible();
