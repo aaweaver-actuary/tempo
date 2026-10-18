@@ -5,6 +5,8 @@ import { z } from "zod";
 import { IntelligenceClient } from "./client.js";
 import { gameSourceUrl } from "./game-source.js";
 
+export const comparisonChronologyNotice="Repertoire comparisons use the exported snapshot. Repertoire availability and prior study at game time are unverified.";
+
 const contextSchema=z.object({ply:z.number().int().nonnegative(),repertoire_id:z.string(),policy_id:z.string(),status:z.enum(["matched","missed","unknown"]),reason:z.string(),coverage:z.string(),expected_moves:z.array(z.string())}).passthrough();
 const gameSchema=z.object({game_id:z.string(),provider:z.string().nullable().optional(),provider_game_id:z.string().nullable().optional(),game_url:z.string().nullable().optional(),played_at:z.string().nullable(),learner_color:z.enum(["white","black"]),starting_fen:z.string(),moves:z.array(z.string()).max(1000),contexts:z.array(contextSchema).max(2000)}).passthrough();
 const pageSchema=z.object({schema_version:z.literal(1),workspace_id:z.string(),run_id:z.string(),revision:z.number().int().positive(),input_id:z.string(),input_revision:z.number().int().positive(),game_count:z.number().int().nonnegative(),selections:z.array(z.object({repertoire_id:z.string(),policy_id:z.string(),repertoire_title:z.string().nullish()}).passthrough()).max(32),items:z.array(gameSchema).max(10),next_after:z.string().nullable()});
@@ -37,7 +39,7 @@ export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,ru
       const information=node("div");information.append(node("h2",`${game.provider??"Source"} game ${game.provider_game_id??game.game_id}`),node("p",`${game.played_at??"Time unknown"} · ${game.learner_color}`));
       const source=gameSourceUrl(game.provider,game.game_url);if(source){const link=node("a","Open original game");link.href=source;link.target="_blank";link.rel="noopener noreferrer";information.append(link);}
       const label=node("label","Game position");const position=node("select");position.setAttribute("aria-label","Game position");frames.forEach((frame,ply)=>{const option=node("option",`${ply}: ${frame.label}`);option.value=String(ply);position.append(option);});label.append(position);information.append(label);
-      const observation=node("div");observation.setAttribute("aria-label","Accepted comparison");information.append(observation,node("p","These are frozen input observations. Unknown authority is not a repertoire miss or permission to create a card."));
+      const observation=node("div");observation.setAttribute("aria-label","Accepted comparison");information.append(node("p",comparisonChronologyNotice),observation,node("p","These are frozen input observations. Unknown authority is not a repertoire miss or permission to create a card."));
       let selectedPly=0;
       function show(ply:number){
         selectedPly=Math.max(0,Math.min(ply,frames.length-1));position.value=String(selectedPly);board!.set({fen:frames[selectedPly].fen});

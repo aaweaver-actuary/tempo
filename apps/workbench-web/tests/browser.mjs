@@ -57,6 +57,9 @@ try{
   page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>unexpected.push('pageerror '+error.message));page.on('websocket',socket=>unexpected.push('WebSocket '+socket.url()));
   await page.goto(origin+'/?run=run');await page.getByLabel('Intelligence origin').fill(origin);await page.getByLabel('Workspace',{exact:true}).fill('fixture');await page.getByLabel('Caller credential').fill('synthetic-caller');await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByRole('heading',{name:'Analysis runs'}).waitFor();await page.getByRole('button',{name:'Inspect finding'}).first().waitFor();
+  // C3_retrospective_repertoire_scope_visible: source mismatch is not historical knowledge.
+  const chronologyNotice='Repertoire comparisons use the exported snapshot. Repertoire availability and prior study at game time are unverified.';
+  await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Continue · next 250 decisions',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Retry',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Resume',exact:true})).toHaveCount(1);
@@ -71,7 +74,7 @@ try{
   const unknownGame=fixtures.games.items.find(game=>game.contexts.some(context=>context.status==='unknown'&&context.after_divergence===true));
   assert.ok(unknownGame,'Native selected game with an unknown comparison required');
   await page.getByRole('button',{name:'Inspect game '+(unknownGame.provider_game_id??unknownGame.game_id),exact:true}).click();
-  await page.getByLabel('Game chessboard').waitFor();
+  await page.getByLabel('Game chessboard').waitFor();await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();
   const unknownContext=unknownGame.contexts.find(context=>context.status==='unknown'&&context.after_divergence===true);
   await page.getByLabel('Game position',{exact:true}).selectOption(String(unknownContext.ply));
   await expect(page.getByLabel('Accepted comparison')).toContainText('unknown');
@@ -86,7 +89,7 @@ try{
   await page.getByRole('button',{name:'Back to findings',exact:true}).click();
   await page.setViewportSize({width:1280,height:960});await page.getByLabel('Category',{exact:true}).waitFor();
   await page.getByLabel('Category',{exact:true}).selectOption('practical_gap');await expect(page.getByRole('button',{name:'Inspect finding'})).toHaveCount(1);
-  await page.getByRole('button',{name:'Inspect finding'}).click();await page.getByLabel('Finding chessboard').waitFor();await expect(page.locator('piece')).toHaveCount(32);
+  await page.getByRole('button',{name:'Inspect finding'}).click();await page.getByLabel('Finding chessboard').waitFor();await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();await expect(page.locator('piece')).toHaveCount(32);
   await page.getByRole('button',{name:'Flip board'}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Show played move'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','f3']);await page.getByRole('button',{name:'Decision position'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','g1']);
   await page.getByText('Response proposal unavailable:',{exact:false}).waitFor();await page.screenshot({path:resolve(evidence,'detail-desktop.png'),fullPage:true});
   await page.getByRole('button',{name:'Dismiss',exact:true}).click();await expect(page.getByRole('status')).toHaveText('Saving dismissal state…');

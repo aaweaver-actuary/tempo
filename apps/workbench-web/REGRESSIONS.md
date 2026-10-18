@@ -49,3 +49,11 @@ games response, rejects a wrong input identity before board rendering, inspects
 an unknown comparison through its actual move order, checks desktop/phone bounds
 and asserts zero mutations from game browsing. Source-only checks do not establish
 this browser proof; the actual native producer fixture must be regenerated.
+
+`C3_retrospective_repertoire_scope_visible`, asserted in the owning Chromium
+scenario `C_native_workbench`, requires the chronology qualification on the report,
+selected-game comparison, and individual finding. An immutable current-source
+mismatch does not establish historical repertoire availability or prior study.
+This display notice adds no historical authority or inferred timestamps. Exact
+completion/introduction/capture timestamps are not supplied by the current finding
+contract; the private chronology audit and acceptance limitation remain required.
