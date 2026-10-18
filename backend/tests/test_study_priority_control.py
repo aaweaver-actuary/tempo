@@ -111,3 +111,63 @@ def test_study_priority_background_policy_poll_never_opens_database_and_unknown_
         assert study_mode.study_only_enabled()
         policy.update(available=True,study_only_mode=False)
         assert not study_mode.study_only_enabled()
+
+
+def test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_teardown(monkeypatch):
+    import threading
+    from app import database
+
+    parent_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY
+    private_keys = ('tempo:test:retained-owner:policy', 'tempo:test:retained-owner:generation')
+    parent_policy = json.dumps(dict(generation=1, study_only_mode=True, expires_at_ms=10**16))
+    values = {parent_keys[0]: parent_policy, parent_keys[1]: '1'}
+    reading = threading.Event()
+    resume = threading.Event()
+    results, errors = [], []
+
+    class Server:
+        def incr(self, key):
+            values[key] = str(int(values.get(key, 0)) + 1)
+            return int(values[key])
+        def eval(self, script, count, *arguments):
+            assert script == study_priority._PUBLISH
+            keys, parameters = arguments[:count], arguments[count:]
+            if values.get(keys[1]) != str(parameters[0]):
+                return 0
+            values[keys[0]] = parameters[1]
+            return 1
+
+    @contextmanager
+    def private_reader(**options):
+        assert options == {'pool_timeout_seconds': 0.1}
+        reading.set()
+        assert resume.wait(2), 'Controlled private read was not resumed'
+        yield SimpleNamespace(execute=lambda *_: SimpleNamespace(fetchone=lambda: (False,)))
+
+    def refresh_private_owner():
+        try:
+            results.append(study_priority.refresh_policy())
+        except BaseException as error:
+            errors.append(error)
+
+    monkeypatch.setattr(study_priority, 'control_client', lambda: Server())
+    monkeypatch.setattr(redis_admission_gate, 'configured', lambda: True)
+    monkeypatch.setattr(database, 'background_read_connection', private_reader)
+    worker = threading.Thread(target=refresh_private_owner)
+    try:
+        with monkeypatch.context() as private_owner:
+            private_owner.setattr(study_priority, 'POLICY_KEY', private_keys[0])
+            private_owner.setattr(study_priority, 'GENERATION_KEY', private_keys[1])
+            worker.start()
+            assert reading.wait(1)
+            assert values[private_keys[1]] == '1'
+            # A publisher can finish an in-flight read after its bounded join.
+            # Private cleanup removes its generation; parent generation may match.
+            for key in private_keys:
+                values.pop(key, None)
+    finally:
+        resume.set()
+        worker.join(2)
+    assert not worker.is_alive() and not errors, errors
+    assert values == {parent_keys[0]: parent_policy, parent_keys[1]: '1'}
+    assert results == [False], 'Deleted private generation must fence late publication'
