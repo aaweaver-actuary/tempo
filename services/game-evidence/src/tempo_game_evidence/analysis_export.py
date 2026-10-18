@@ -40,15 +40,15 @@ def pack_pages(records,workspace,input_id):
             pages.append((kind,page_index,digest(value),value))
         for item in records[kind]:
             size=len(canonical(item).encode())
-            required=len(canonical(document([])).encode())+item_bytes+size+len(batch)
+            required=1+len(canonical(document([])).encode())+item_bytes+size+len(batch)
             if batch and (len(batch)==PAGE_SIZE or required>MAX_PAGE_BYTES):
                 append_batch();page_index+=1;batch=[];item_bytes=0
-                required=len(canonical(document([])).encode())+size
+                required=1+len(canonical(document([])).encode())+size
             if required>MAX_PAGE_BYTES:
                 raise ValueError('analysis_page_byte_bound')
             batch.append(item);item_bytes+=size
         if batch:append_batch()
-    if sum(len(canonical(page[3]).encode()) for page in pages)>MAX_EXPORT_BYTES:
+    if sum(1+len(canonical(page[3]).encode()) for page in pages)>MAX_EXPORT_BYTES:
         raise ValueError('analysis_export_byte_bound')
     return pages
 

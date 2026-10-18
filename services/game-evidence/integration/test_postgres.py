@@ -1230,7 +1230,7 @@ def test_C3_dense_80_game_export_keeps_scope_and_closes_source_transaction(state
     assert verify_directory(output)['status'] == 'verified'
     assert sorted(traversal_calls) == sorted(games)
     pages = [json.loads((output / reference['filename']).read_text()) for reference in manifest['pages']]
-    assert all(len(analysis_export.canonical(page).encode()) <= 8192 for page in pages)
+    assert all((output / reference['filename']).stat().st_size <= 8192 for reference in manifest['pages'])
     exported = {kind: [item for page in pages if page['kind'] == kind for item in page['items']]
                 for kind in analysis_export.KINDS}
     assert sorted(item['game_id'] for item in exported['games']) == sorted(games)

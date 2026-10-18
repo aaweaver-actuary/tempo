@@ -53,3 +53,13 @@ def test_C3_encounter_scoping_retains_every_scope_reply_and_unknown_flag():
     original = owner.canonical(inventories)
     assert owner.applicable_inventories(inventories, {'encountered'}) == [selected]
     assert owner.canonical(inventories) == original
+
+
+def test_C3_page_limit_includes_persisted_newline(monkeypatch):
+    item = {'value': 'boundary'}
+    page = {'schema_version': 1, 'input_id': 'a' * 64,
+            'workspace_id': 'workspace', 'revision': 1,
+            'kind': 'positions', 'page_index': 0, 'items': [item]}
+    monkeypatch.setattr(owner, 'MAX_PAGE_BYTES', len(owner.canonical(page).encode()))
+    with pytest.raises(ValueError, match='analysis_page_byte_bound'):
+        owner.pack_pages(records('positions', [item]), 'workspace', 'a' * 64)
