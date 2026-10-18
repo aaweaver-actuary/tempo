@@ -1,3 +1,9 @@
+## Study Priority v1 diagnostic native allocation
+
+- `tests/runner/postgres-test-speedups.test.mjs` owns `study_priority_diagnostic_native_allocation_retains_essential_clients_and_original_read_deadline`: the original segmentation replay and 50 ms read assertions remain unchanged. A 0.95 CPU / 1,024 MiB helper plus PostgreSQL, Redis, API, foreground writer and web totals exactly 2 CPU / 1,888 MiB. Actual generated Python checks CPU and memory limits before running the unchanged proof; an extra allocation or active Maia must fail admission.
+- `study_priority_background_isolation_stops_maia_and_restores_it_after_api_readiness` retains all four optional consumers, keeps API/writer/web available, and restores both inference workers only after API readiness. The existing scheduler-isolation proof now checks the exact four-consumer set.
+- `study_priority_profile_selection_cannot_understate_diagnostic_native_caps` binds each Docker profile to its actual requested allocation and rejects conflicting profiles. The existing sibling-import/cgroup regression checks both native profiles and rejects wrong CPU or memory limits before entry.
+
 ## Study Priority v1 development resource repairs
 
 - `tests/runner/development-budget.test.mjs`: A1–A11 cover journal-before-create,

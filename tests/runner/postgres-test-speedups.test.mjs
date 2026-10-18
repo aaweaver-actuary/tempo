@@ -948,7 +948,7 @@ test("background workload prevents scheduler claims and restores dispatch after 
   }), error => error === measurementFailure);
   dispatchQueuedFixture();
   assert.equal(queuedFixture.state, "leased", "normal dispatch resumes after fixture cleanup");
-  assert.equal(runningConsumers.size, 3);
+  assert.deepEqual([...runningConsumers].sort(), ["background-scheduler", "background-worker", "defense-engine", "maia-worker"]);
 });
 
 for (const failWorkload of [false, true]) {
@@ -1030,7 +1030,7 @@ test("pr102 background restoration recovers API health before starting dependent
     },
   });
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
-    ["defense-engine"], "verified all running"]);
+    ["defense-engine", "maia-worker"], "verified all running"]);
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
 });
@@ -1095,12 +1095,16 @@ test('study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup
     writeFileSync(join(directory,'sibling.py'),'VALUE = 173\n');
     const entry=join(directory,'entry.py');
     writeFileSync(entry,"import sibling\nassert sibling.VALUE == 173\nprint('original native proof completed')\n");
-    const source=allocatedNativeProofSource(entry,'allocated_import_fixture',{cpus:1.5,memoryMiB:1536});
-    for(const cpu of ['150000 100000','20000 100000']){
-      const fixtures=`import pathlib\noriginal_read=pathlib.Path.read_text\ndef read(path,*a,**kw):\n if str(path)=='/sys/fs/cgroup/cpu.max': return ${JSON.stringify(cpu)}\n if str(path)=='/sys/fs/cgroup/memory.max': return '1610612736'\n return original_read(path,*a,**kw)\npathlib.Path.read_text=read\n`;
-      const result=spawnSync('python3',['-I','-c',fixtures+source],{cwd:tmpdir(),encoding:'utf8'});
-      if(cpu.startsWith('150000')){assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/original native proof completed/);}
-      else{assert.notEqual(result.status,0);assert.doesNotMatch(result.stdout,/original native proof completed/);}
+    for(const limit of [{cpus:1.5,memoryMiB:1536},{cpus:0.95,memoryMiB:1024}]){
+      const source=allocatedNativeProofSource(entry,'allocated_import_fixture',limit);
+      const expectedCpu=String(limit.cpus*100000)+' 100000';
+      const expectedMemory=String(limit.memoryMiB*1024*1024);
+      for(const [cpu,memory,passes]of [[expectedCpu,expectedMemory,true],['20000 100000',expectedMemory,false],[expectedCpu,'268435456',false]]){
+        const fixtures=`import pathlib\noriginal_read=pathlib.Path.read_text\ndef read(path,*a,**kw):\n if str(path)=='/sys/fs/cgroup/cpu.max': return ${JSON.stringify(cpu)}\n if str(path)=='/sys/fs/cgroup/memory.max': return ${JSON.stringify(memory)}\n return original_read(path,*a,**kw)\npathlib.Path.read_text=read\n`;
+        const result=spawnSync('python3',['-I','-c',fixtures+source],{cwd:tmpdir(),encoding:'utf8'});
+        if(passes){assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/original native proof completed/);}
+        else{assert.notEqual(result.status,0);assert.doesNotMatch(result.stdout,/original native proof completed/);}
+      }
     }
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
@@ -1114,4 +1118,51 @@ test('study_priority_restoration_captures_output_and_checks_every_owned_consumer
   };
   verifyRestoredPostgresConsumers(execute(clients),['compose','-p','owned'],clients);
   assert.throws(()=>verifyRestoredPostgresConsumers(execute(clients.slice(1)),['compose','-p','owned'],clients),/api was not restored/);
+});
+
+test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_original_read_deadline', async () => {
+  const {resourceBudgets,assertDevelopmentCapacity}=await import('../../scripts/development-budget.mjs');
+  const diagnostic=resourceBudgets.diagnosticRehearsalServices;
+  assert(diagnostic?.schema,'The 50ms diagnostic proof needs an explicit bounded helper allocation');
+  assert.equal(diagnostic.schema.cpus,0.95);
+  assert.equal(diagnostic.schema.memoryMiB,1024);
+  const retained=['postgres','redis','api','foreground-worker','web'];
+  const rows=retained.map(service=>({Id:service,Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':service}},
+    HostConfig:{NanoCpus:resourceBudgets.developmentServices[service].cpus*1e9,
+      Memory:resourceBudgets.developmentServices[service].memoryMiB*1024*1024}}));
+  const docker=args=>args[0]==='ps'?rows.map(row=>row.Id).join('\n'):JSON.stringify(rows);
+  assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic);
+  assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
+    {schema:{...diagnostic.schema,cpus:diagnostic.schema.cpus+0.001}}),/exceed the aggregate/);
+  const maia=resourceBudgets.developmentServices['maia-worker'];
+  rows.push({Id:'maia',Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':'maia-worker'}},
+    HostConfig:{NanoCpus:maia.cpus*1e9,Memory:maia.memoryMiB*1024*1024}});
+  assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic),/exceed the aggregate/);
+  const runner=readFileSync(join(root,'scripts/test-postgres-docker.mjs'),'utf8');
+  assert.match(runner,/runAllocatedDiagnosticProof\("\/source\/scripts\/check_postgres_opening_segmentation\.py"/);
+  const original=readFileSync(join(root,'scripts/check_postgres_opening_segmentation.py'),'utf8');
+  assert(original.includes("'50ms'"));
+  assert(original.includes('assert replay.status_code == 200, replay.text'));
+});
+
+test('study_priority_background_isolation_stops_maia_and_restores_it_after_api_readiness', async () => {
+  assert(backgroundWorkloadConsumers.includes('maia-worker'),'Maia must not consume diagnostic rehearsal capacity');
+  for(const essential of ['api','foreground-worker','web'])assert(!backgroundWorkloadConsumers.includes(essential));
+  const events=[];
+  await restoreBackgroundWorkloadConsumers({startConsumers:services=>events.push(services),
+    waitForReady:()=>events.push('api ready'),verifyConsumers:()=>events.push('all restored')});
+  assert.deepEqual(events,[['background-worker','background-scheduler'],'api ready',
+    ['defense-engine','maia-worker'],'all restored']);
+});
+
+test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps', async () => {
+  const {postgresProofAllocations}=await import('../../scripts/postgres-maintenance-proof.mjs');
+  assert.equal(typeof postgresProofAllocations,'function');
+  const budgets={developmentServices:{schema:{cpus:0.2}},priorityRehearsalServices:{schema:{cpus:1.5}},
+    diagnosticRehearsalServices:{schema:{cpus:0.95}}};
+  const paths={priority:'priority.json',diagnostic:'diagnostic.json'};
+  assert.equal(postgresProofAllocations(['run','schema'],paths,budgets),budgets.developmentServices);
+  assert.equal(postgresProofAllocations(['-f',paths.priority,'run','schema'],paths,budgets),budgets.priorityRehearsalServices);
+  assert.equal(postgresProofAllocations(['-f',paths.diagnostic,'run','schema'],paths,budgets),budgets.diagnosticRehearsalServices);
+  assert.throws(()=>postgresProofAllocations(['-f',paths.priority,'-f',paths.diagnostic,'run','schema'],paths,budgets),/Conflicting/);
 });

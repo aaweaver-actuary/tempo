@@ -101,5 +101,11 @@
       "cpus": 1.5,
       "memoryMiB": 1536
     }
+  },
+  "diagnosticRehearsalServices": {
+    "schema": {
+      "cpus": 0.95,
+      "memoryMiB": 1024
+    }
   }
 }
