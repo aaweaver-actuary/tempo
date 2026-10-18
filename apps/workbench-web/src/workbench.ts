@@ -138,6 +138,12 @@ export function mountWorkbench(root:HTMLElement){
       const boardActions=node("div");boardActions.className="board-actions";visual.append(boardActions);
       const info=node("div");info.append(node("small",labels[finding.category]),node("h2",`Game ${finding.representative.game_id??"population evidence"} · ply ${finding.representative.ply??"—"}`),node("p",`Played: ${finding.representative.actual_move??"unavailable"}`),node("p",`Accepted: ${finding.expected_moves.join(", ")||"no accepted response established"}`),node("p",`Evidence: ${finding.evidence_status} · ${finding.dismissal_state}`),node("p",`Supporting games: ${finding.supporting_games.join(", ")||"none; model/population evidence"}`),node("p",finding.reason_codes.map(reason=>reason.replaceAll("_"," ")).join(" · ")));
       info.append(node("p",comparisonChronologyNotice));
+      if(finding.category==="practical_gap"){
+        const move=typeof finding.opponent_move==="string"?finding.opponent_move:null;
+        const fen=typeof finding.opponent_fen==="string"?finding.opponent_fen:null;
+        const reply=move&&fen?new Chess(fen).move(move).san:move??"unknown";
+        info.append(node("p",`Uncovered opponent reply: ${reply}. No accepted continuation under this policy.`));
+      }
       const sourceUrl=gameSourceUrl(finding.representative.provider,finding.representative.game_url);
       if(sourceUrl){const sourceLink=node("a","Open original game");sourceLink.href=sourceUrl;sourceLink.target="_blank";sourceLink.rel="noopener noreferrer";info.append(sourceLink);}
       info.append(node("p",`Repertoire: ${String(finding.repertoire_title??finding.repertoire_id??"unknown")} · Policy: ${String(finding.policy_id??"unknown")}`));

@@ -70,3 +70,8 @@ cannot pass by leaving an incomplete board. No timeout budget was increased.
 with complete input scope and incomplete analysis. It requires both “Analysis
 incomplete” and “complete inputs” in the report state, preserving the engine
 remaining-work count rather than labeling the report complete from input scope.
+
+`C3_gap_names_opponent_reply_separately_from_learner_response` requires the actual
+native fixture's a6 opponent reply directly in finding detail. The learner's
+played response remains separate. Display notation comes only from the supplied
+opponent FEN/move; it grants no new route authority or move-quality judgment.

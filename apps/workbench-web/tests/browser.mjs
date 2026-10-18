@@ -100,6 +100,8 @@ try{
   await page.setViewportSize({width:1280,height:960});await page.getByLabel('Category',{exact:true}).waitFor();
   await page.getByLabel('Category',{exact:true}).selectOption('practical_gap');await expect(page.getByRole('button',{name:'Inspect finding'})).toHaveCount(1);
   await page.getByRole('button',{name:'Inspect finding'}).click();await page.getByLabel('Finding chessboard').waitFor();await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();await expect(page.locator('piece')).toHaveCount(32);
+  // C3_gap_names_opponent_reply_separately_from_learner_response.
+  await expect(page.getByText('Uncovered opponent reply: a6. No accepted continuation under this policy.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Flip board'}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Show played move'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','f3']);await page.getByRole('button',{name:'Decision position'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','g1']);
   await page.getByText('Response proposal unavailable:',{exact:false}).waitFor();await page.screenshot({path:resolve(evidence,'detail-desktop.png'),fullPage:true});
   await page.getByRole('button',{name:'Dismiss',exact:true}).click();await expect(page.getByRole('status')).toHaveText('Saving dismissal state…');
