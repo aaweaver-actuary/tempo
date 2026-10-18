@@ -220,6 +220,11 @@ class NativeHarness:
                 self.markers_during_cleanup.append(json.loads((self.directory/'native.json').read_text())['complete'])
                 if self.mode == 'inspection_failure': raise RuntimeError('daemon inspection failed')
             return SimpleNamespace(stdout='fixture-container\n' if self.created or self.mode == 'collision' else '', returncode=0)
+        if arguments[:2] == ('container','inspect'):
+            caps={'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
+            if self.mode=='cpu_mismatch': caps['cpu_nanos']=2_000_000_000
+            if self.mode=='memory_mismatch': caps['memory_bytes']=512*1024*1024
+            return SimpleNamespace(stdout=json.dumps(caps),returncode=0)
         if arguments[0] == 'run':
             self.identity = arguments[arguments.index('--name')+1]
             self.created = self.mode != 'start_without_creation'
@@ -342,3 +347,41 @@ def test_atomic_summary_replacement_never_exposes_partial_json(monkeypatch, tmp_
     with pytest.raises(OSError): qualification.write_json(destination, {'complete':False})
     assert destination.read_text() == original
     assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_native_failure_stops_before_next_case_and_retains_failed_inventory(monkeypatch,tmp_path):
+    runner=load_runner(monkeypatch,'integration/run_postgres.py')
+    owner=tmp_path/'owner'
+    suite=owner/'integration'
+    suite.mkdir(parents=True)
+    marker=tmp_path/'must-not-run'
+    (owner/'qualification.py').write_text((APPLICATION/'qualification.py').read_text())
+    (owner/'pyproject.toml').write_text('[tool.pytest.ini_options]\n')
+    (suite/'test_postgres.py').write_text('from pathlib import Path\n'
+        'def test_first(): assert False, "stop the owned window"\n'
+        f'def test_second(): Path({str(marker)!r}).write_text("ran")\n')
+    run_directory=tmp_path/'evidence'/'runs'/'fixture'
+    run_directory.mkdir(parents=True)
+    monkeypatch.setattr(runner,'ROOT',owner)
+    monkeypatch.setattr(runner,'HERE',suite)
+    report={'commands':[],'complete':False}
+    with pytest.raises(RuntimeError,match='Native executed failed'):
+        runner.run_required_tests(qualification.controlled_environment(),run_directory,None,report)
+    assert not marker.exists(),'A failed native case must stop before another selected case begins'
+    collected=json.loads((run_directory/'native-collected.json').read_text())
+    executed=json.loads((run_directory/'native-executed.json').read_text())
+    assert len(collected['collected'])==2 and executed['exit_code']!=0
+    assert report['complete'] is False and 'passed' not in report
+    with pytest.raises(RuntimeError):
+        qualification.validate_inventory(collected,executed,run_directory/'native.xml')
+
+
+@pytest.mark.parametrize('mode',['cpu_mismatch','memory_mismatch'])
+def test_native_cap_mismatch_stops_before_tests_and_cleans_owned_fixture(monkeypatch,tmp_path,mode):
+    runner,harness=native_harness(monkeypatch,tmp_path)
+    harness.mode=mode
+    assert runner.main([str(harness.directory)])!=0
+    report=json.loads((harness.directory/'native.json').read_text())
+    assert not report['complete'] and not harness.test_calls
+    assert report['resource']['observed_caps']!={'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
+    assert report['resource']['cleanup_verified'] and report['resource']['container_absent']

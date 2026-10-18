@@ -81,7 +81,7 @@ def run_required_tests(environment, run_directory, external_junit, report):
                  '-p','no:cacheprovider',str(HERE/'test_postgres.py')]
     receipts = {}
     for stage, extra in (('collected',['--collect-only','-q']),
-                         ('executed',['-v','--tb=short','--junitxml='+str(junit)])):
+                         ('executed',['-v','--tb=short','--maxfail=1','--junitxml='+str(junit)])):
         receipt = run_directory/('native-'+stage+'.json')
         command = [sys.executable,str(HERE.parent/'qualification.py'),str(receipt),*arguments,*extra]
         result = subprocess.run(command, env=environment, cwd=ROOT, capture_output=True,text=True)

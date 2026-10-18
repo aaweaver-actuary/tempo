@@ -508,3 +508,106 @@ def test_native_split_then_refresh_retains_verified_after_four_placement(case):
         assert tuple(database.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=? AND status=\'queued\'',(parent,)).fetchone()) == (0,'clean')
         queue_application.randomize_daily_queue(database,case['day'])
         assert [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before
+
+
+def test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget(case,local_host_admission,monkeypatch,tmp_path):
+    """Measure actual review/selector/provenance work, not just the bulk UPDATE."""
+    from contextlib import contextmanager
+    from app.services.retry_queue import select_queue_head
+    from tempo_learning_runtime import retry_store
+    original_connection=postgres_store.connection
+    original_execute=postgres_store.PostgresConnection.execute
+    original_native=postgres_store.PostgresConnection.execute_native
+    monkeypatch.setattr(retry_store,'random_retry_draws',lambda:(600,'0'*32))
+    prefix=case['identity']+'-retry-budget-'
+    # Explicit synthetic admission setup outside measured product work. Each
+    # 512-row section commits/yields under its own short setup-only limits.
+    for lower in range(1,34999,512):
+        upper=min(lower+511,34998)
+        with original_connection() as database:
+            database.execute_native("SET LOCAL statement_timeout='5s'")
+            database.execute_native("SET LOCAL transaction_timeout='10s'")
+            database.execute_native('''INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,
+                trained_color,state,due_date,content_type)
+                SELECT %s||n::text,%s,'prefix',%s,'["e2e4"]','white','learning',%s,'tactic'
+                FROM generate_series(%s,%s) n''',(prefix,case['identity'],FEN,case['day'],lower,upper))
+            database.execute_native('''INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_kind)
+                SELECT %s,%s||n::text,n,'tactic','review' FROM generate_series(%s,%s) n''',(case['day'],prefix,lower,upper))
+    stage='review'
+    statements=[]
+    transactions=[]
+    plan_reads={}
+    def observe(self,statement,parameters=()):
+        statements.append((stage,'translated',statement))
+        if stage=='selector' and statement.startswith('SELECT') and 'FOR UPDATE' not in statement:
+            plan_reads[(statement,tuple(parameters))]=None
+        return original_execute(self,statement,parameters)
+    def observe_native(self,statement,parameters=()):
+        statements.append((stage,'native',statement))
+        return original_native(self,statement,parameters)
+    @contextmanager
+    def capped_connection(*arguments,**keywords):
+        started=time.perf_counter()
+        limits=caps=None
+        complete=False
+        try:
+            with original_connection(*arguments,**keywords) as database:
+                limits={row['name']:int(row['setting']) for row in original_native(database,
+                    "SELECT name,setting FROM pg_settings WHERE name IN ('statement_timeout','transaction_timeout','lock_timeout')")}
+                caps={name:min(limits[name] or maximum,maximum) for name,maximum in
+                    [('statement_timeout',1500),('transaction_timeout',2500),('lock_timeout',250)]}
+                for name,value in caps.items():
+                    original_native(database,'SELECT set_config(%s,%s,true)',(name,str(value)+'ms'))
+                yield database
+            complete=True
+        finally:
+            elapsed=(time.perf_counter()-started)*1000
+            observation={'stage':stage,'wall_ms':round(elapsed,2),'configured_ms':limits,'caps_ms':caps,'complete':complete}
+            transactions.append(observation)
+            # Preserve active limits/stage/timing even if PostgreSQL aborts the
+            # operation before a final budget/plan report can be written.
+            print('RETRY_35000_TRANSACTION '+json.dumps(observation),flush=True)
+        assert elapsed<caps['transaction_timeout']
+    monkeypatch.setattr(postgres_store,'connection',capped_connection)
+    monkeypatch.setattr(postgres_store.PostgresConnection,'execute',observe)
+    monkeypatch.setattr(postgres_store.PostgresConnection,'execute_native',observe_native)
+    payload={**case['payload'],'review':{**case['payload']['review'],'outcome':'again','prepared_next':None}}
+    reviewed,_=operation(case,'retry-35000',payload)
+    stage='setup-projection'
+    with original_connection() as database:
+        # The benchmark supplies a fixed fully-admitted pool; admission itself
+        # has separate real owner tests. Align task and projection completeness.
+        database.execute("UPDATE background_tasks SET state='complete',lease_token=NULL,lease_expires_at=NULL WHERE kind='daily_queue'")
+        database.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?",(case['day'],))
+        policy=dict(database.execute('SELECT * FROM queue_retry_policies WHERE review_id=?',(reviewed['review_id'],)).fetchone())
+        positions_sql=queue_commands.available_attempt_sql().replace('SELECT q.id FROM','SELECT q.id,q.position FROM',1)+' ORDER BY q.position,q.id'
+        before=[tuple(row) for row in database.execute(positions_sql,(case['day'],)).fetchall()]
+        assert len(before)==35000
+    stage='selector'
+    started=time.perf_counter()
+    with capped_connection() as database:
+        selected=select_queue_head(database,observed_at=datetime.fromisoformat(policy['ready_at']),local_date=case['day'])
+        assert selected.status=='issued' and selected.identity.entry_id==reviewed['requeue_entry_id']
+    selector_ms=(time.perf_counter()-started)*1000
+    selector_statements=[row for row in statements if row[0]=='selector']
+    bulk=[row for row in selector_statements if 'jsonb_to_recordset' in row[2]]
+    assert len(bulk)==1 and len(selector_statements)<=60
+    stage='verify'
+    with capped_connection(read_only=True) as database:
+        after=[tuple(row) for row in database.execute(positions_sql,(case['day'],)).fetchall()]
+        saved=dict(database.execute('SELECT * FROM queue_retry_policies WHERE review_id=?',(reviewed['review_id'],)).fetchone())
+    assert {entry for entry,_ in after}=={entry for entry,_ in before}
+    assert [entry for entry,_ in after if entry!=reviewed['requeue_entry_id']]==[entry for entry,_ in before if entry!=reviewed['requeue_entry_id']]
+    assert sorted(position for _,position in after)==sorted(position for _,position in before)
+    assert saved['ready_at']==policy['ready_at'] and saved['order_token']==policy['order_token']
+    stage='explain'
+    plans=[]
+    for statement,parameters in plan_reads:
+        with capped_connection(read_only=True) as database:
+            plan=original_native(database,'EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+postgres_store.postgres_sql(statement),parameters).fetchone()[0]
+        plans.append({'statement':statement,'plan':plan})
+    assert any('SELECT id,card_id FROM daily_queue' in item['statement'] for item in plans)
+    report={'rows':35000,'selector_wall_ms':round(selector_ms,2),'selector_sql_count':len(selector_statements),
+        'bulk_updates':len(bulk),'transactions':transactions,'plans':plans}
+    (tmp_path/'retry-35000-budget.json').write_text(json.dumps(report,indent=2))
+    print('RETRY_35000_BUDGET '+json.dumps(report))

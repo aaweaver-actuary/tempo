@@ -57,6 +57,25 @@ tests remain with C and are not edited here.
 suite, registered alongside the package and native suites in `components.json`.
 It requires no PostgreSQL cluster and stays outside the guarded application tests.
 
+`test_native_failure_stops_before_next_case_and_retains_failed_inventory` uses a
+real two-case pytest subprocess: the first failure stops the owned native window,
+the second case's effect never runs, and the incomplete failed inventory cannot
+qualify. Ambient caller selectors/exit flags remain rejected. The native runners
+own their fixed first-failure stop; successful qualification still requires every
+collected identity. `test_native_cap_mismatch_stops_before_tests_and_cleans_owned_fixture`
+keeps actual-cap inspection mandatory and cleanup limited to the fixture owner.
+The Docker-free harness now represents the existing actual-cap inspection seam;
+its previously missing response was a test fixture omission, not a product fix.
+
+`integration/test_postgres.py::test_native_retry_review_and_selection_keep_35000_cards_within_foreground_budget`
+owns the actual restricted-role review, whole-queue selection, provenance reads,
+one native JSON placement and unchanged peer/member/slot proofs over35000 cards.
+Short512-row fixture setup commits are outside measurement. Product transactions
+record existing role limits and cap them at1500ms statement/2500ms transaction/
+250ms lock without relaxing stricter limits. Timings survive failure; successful
+evidence retains actual SELECT plans/buffers and constant statement/bulk counts.
+AST/SQLite evidence does not establish this native budget result.
+
 - `test_full_qualification_rejects_inherited_partial_selection`: selectors,
   ignore options, early exits and plugin injection cannot become qualification.
 - `test_qualifier_rejects_selectors_before_build_and_native_before_docker`: a

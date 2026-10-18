@@ -128,6 +128,10 @@ production wire-v1 adoption are not delivered by this library.
 
 ## Native failure and evidence lifecycle
 
+Native execution stops on its first failed case. The full collected inventory
+is still required for success; stopped, failed or missing execution never passes.
+Caller-inherited selectors and exit flags remain rejected.
+
 The native runner marks the current summary incomplete before image inspection or
 provisioning. A rejected invocation also invalidates any existing current success
 record, while a rejected new evidence path creates no database/build resources.

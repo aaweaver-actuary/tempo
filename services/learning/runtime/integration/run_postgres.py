@@ -280,7 +280,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
             ("collected", ["--collect-only", "-q"]),
             (
                 "executed",
-                ["-v", "--tb=short", "--junitxml=" + str(evidence / "native.xml")],
+                ["-v", "--tb=short", "--maxfail=1", "--junitxml=" + str(evidence / "native.xml")],
             ),
         ]:
             receipt = evidence / (stage + ".json")
