@@ -12,12 +12,12 @@ def parser(commands):
     accept.add_argument("--manifest",type=Path,required=True)
     accept.add_argument("--pages-directory",type=Path,required=True)
     run=operations.add_parser("run");run.add_argument("--file",type=Path,required=True)
-    for name in ("status","report","remaining","work","continue","retry","cancel","resume"):
+    for name in ("status","report","remaining","games","work","continue","retry","cancel","resume"):
         operation=operations.add_parser(name);operation.add_argument("run_id")
         if name in ("continue","retry","cancel","resume"):
             operation.add_argument("--file",type=Path,required=True)
-        if name in ("report","remaining"):
-            operation.add_argument("--after");operation.add_argument("--limit",type=int,default=50)
+        if name in ("report","remaining","games"):
+            operation.add_argument("--after");operation.add_argument("--limit",type=int,default=10 if name=="games" else 50)
         if name=="report":
             operation.add_argument("--generation",type=int)
             operation.add_argument("--category",choices=["repertoire_miss","practical_gap","engine_opportunity"])
@@ -67,6 +67,8 @@ def execute(options,store,read_document):
         return owner.export(options.run_id,options.finding_id,options.generation,options.kind)
     if operation=="report":
         return owner.report(options.run_id,after=options.after,limit=options.limit,category=options.category,dismissal=options.dismissal,generation=options.generation)
+    if operation=="games":
+        return owner.games(options.run_id,options.after,options.limit)
     if operation=="remaining":
         return owner.remaining(options.run_id,options.after,options.limit)
     if operation=="work":

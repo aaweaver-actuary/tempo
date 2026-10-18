@@ -49,3 +49,10 @@ switching origin/workspace retains the original record for reconnection.
 Unknown engine repertoire/lineage is displayed explicitly. Old report generations
 remain readable with a legacy attribution notice. A report or response draft does
 not approve, publish, activate or admit training content.
+
+“Browse selected games” reads the accepted input even when a game has no positive
+finding. It pages through the exact selected scope, renders its full legal move
+order and original comparison status/reason at each learner position, and retains
+explicit unknowns. It uses only Intelligence's authenticated read endpoint;
+provider links are supplied provenance, never guessed IDs. The native producer
+fixture now includes the actual games read response for browser qualification.

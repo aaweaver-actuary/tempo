@@ -63,6 +63,16 @@ A binding needs a matching route/policy/repertoire membership. The exercise's
 policy must match that binding. Chess legality is separately validated by bounded
 work, because contract shape validation alone does not prove legal play.
 
+An opening exercise may explicitly retain one opponent `execution_prelude`
+(`starting_fen`, exactly one legal UCI move). Its logical `starting_fen` must be
+the exact resulting learner position. Publication retains the original full
+physical FEN and prepends that move to every accepted line; no historical alias
+is inferred. A binding's optional `exercise_ply` selects a learner decision within
+the logical exercise. Content verifies the exact authored route occurrence and
+publishes the full-executable offset with a stable decision identity. All accepted
+alternatives must reach the same projected position. These additive fields are
+omitted when absent/zero, preserving existing source and publication bytes.
+
 Stable public source, repertoire, policy, route, card, and decision IDs derive
 from explicit workspace/source/entity keys. Renaming, input permutation,
 publication rebuilding, or transposition does not create a new card. Policy and
@@ -234,3 +244,26 @@ workspace, command, original request, publication, generation and ID all match.
 
 Exact request comparisons preserve canonical JSON primitive types: integer,
 boolean and floating-point substitutions do not compare equal.
+
+## Captured legacy authority (C3)
+
+The offline `tempo-a-legacy-export` consumer translates an explicitly selected,
+complete route scope into the existing authored-import documents. It does not
+assign physical Learning identity to normalized opponent-prelude exercises.
+`historical_mapping_unknown` lists source exercise keys whose historical physical
+identity is unresolved; Game Evidence must return unknown at these learner
+bindings. This does not weaken Learning's exact alias validation.
+
+A source route may declare `authority_start_ply` (default 0, null means never
+established). This is an ordered-route policy-selection boundary, included in the
+source and activation route digests. Opponent-response completeness and learner
+comparisons cannot become authoritative before it. Default zero is omitted from
+serialization to preserve previous route identities. Re-entry still requires its
+existing explicit binding authority.
+
+Complete bridge scope now permits 8192 definitions; the Learning execution bundle
+is bounded at 12 MiB and the immutable export at 64 MiB. Authored CLI inputs
+are bounded at 16 MiB. The enclosing comparison snapshot is separately bounded at 128 MiB because it
+contains the export plus publication/routes/activation evidence. Large immutable internal bridge checkpoints use bounded,
+hash-verified compression; public operation/export/snapshot documents retain their
+original canonical contents. Existing inline checkpoints remain readable.

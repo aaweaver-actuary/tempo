@@ -13,7 +13,7 @@ from psycopg_pool import ConnectionPool
 from tempo_content_publication_contracts.v1 import Publication, PublicationValidation, serialize_contract
 
 from .models import SourceSnapshot, SourceExercise
-from .domain import ContentError, stable_id, canonical_source, canonical_position, inventory_segment, validate_exercise_step, build_publication
+from .domain import ContentError, stable_id, canonical_source, canonical_position, inventory_segment, validate_exercise_step, build_publication, project_move_line
 from .migrate import readiness
 
 INVENTORY_VERSION = 'content-legal-v1/chess-1.11.2'
@@ -465,9 +465,9 @@ class ContentService:
         _hook(hook,'after_read',task=task)
         if not occurrence or not route['complete']:
             raise ContentError('incomplete_binding','Route occurrence is not complete')
-        if occurrence['opponent'] or occurrence['position_key']!=canonical_position(exercise['starting_fen']):
-            raise ContentError('invalid_binding','Binding must match learner position and exercise')
-        specification = exercise['specification']
+        decision_fen,specification=project_move_line(exercise['starting_fen'],exercise['specification'],binding.get('exercise_ply',0))
+        if occurrence['opponent'] or occurrence['position_key']!=canonical_position(decision_fen):
+            raise ContentError('invalid_binding','Binding must match the declared learner decision in its exercise')
         accepted = [line[0] for line in specification['accepted_lines']] if specification['type']=='move_line' else []
         if accepted and occurrence['authored_move'] and specification['grading_policy']=='reference' and occurrence['authored_move'] not in accepted:
             raise ContentError('route_policy_conflict','Authored response differs from executable policy')

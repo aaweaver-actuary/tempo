@@ -11,7 +11,7 @@ def register(app):
 
     @router.get("/bootstrap")
     def bootstrap():
-        return {"schema_version":1,"workspace_id":app.state.store.workspace_id,"capabilities":["analysis-v1","informational-export"],"policy_version":"c-analysis-v1"}
+        return {"schema_version":1,"workspace_id":app.state.store.workspace_id,"capabilities":["analysis-v1","informational-export","selected-games-v1"],"policy_version":"c-analysis-v1"}
 
     @router.get("/inputs")
     def inputs():
@@ -48,6 +48,10 @@ def register(app):
     @router.get("/runs/{run_id}/report")
     def report(run_id:str,after:str|None=None,limit:int=Query(50,ge=1,le=100),category:str|None=None,dismissal:str|None=None,generation:int|None=Query(None,ge=1)):
         return owner().report(run_id,after=after,limit=limit,category=category,dismissal=dismissal,generation=generation)
+
+    @router.get("/runs/{run_id}/games")
+    def games(run_id:str,after:str|None=None,limit:int=Query(10,ge=1,le=10)):
+        return owner().games(run_id,after,limit)
 
     @router.get("/runs/{run_id}/remaining")
     def remaining(run_id:str,after:str|None=None,limit:int=Query(64,ge=1,le=100)):

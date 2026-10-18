@@ -78,14 +78,15 @@ class AcceptedDefinitions:
         ).fetchone()
         if row is None:
             return None
-        publication = json.loads(row[0])["publication"]
+        document=json.loads(row[0])
+        publication = document["publication"]
         if publication["workspace_id"] != workspace_id():
             return None
         definition = next(
             (fact for fact in publication["definitions"] if fact["card_id"] == authored_id),
             None,
         )
-        if definition is None or decision_id not in (None, definition["decision_id"]):
+        if definition is None:
             return None
         specification = definition["specification"]
         if (
@@ -93,14 +94,27 @@ class AcceptedDefinitions:
             or specification["grading_policy"] != "reference"
         ):
             return None
+        selected_decision=decision_id or definition['decision_id']
+        if document.get('schema_version')==2:
+            projections={binding.get('exercise_ply',0) for route in document.get('routes',[]) for binding in route['bindings']
+                if binding['card_id']==authored_id and (binding.get('decision_id') or definition['decision_id'])==selected_decision}
+            if len(projections)!=1:
+                return None
+            offset=next(iter(projections))
+        elif selected_decision==definition['decision_id']:
+            offset=0
+        else:
+            return None
+        from .publication_bridge import project_decision
+        decision_fen,accepted_moves=project_decision(definition['starting_fen'],specification['accepted_lines'],offset)
         return AcceptedDecision(
             card_id,
             definition["exercise_revision"],
-            definition["decision_id"],
+            selected_decision,
             publication_id,
             publication_generation,
-            canonical_fen_key(definition["starting_fen"]),
-            tuple(sorted({line[0] for line in specification["accepted_lines"]})),
+            canonical_fen_key(decision_fen),
+            accepted_moves,
             workspace_id(),
             active=bool(
                 row[2]
