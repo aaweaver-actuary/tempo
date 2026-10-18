@@ -11,7 +11,7 @@ import chess
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from ..database import card_columns
 from .cards import card_id
-from .review_service import preserve_daily_queue_order
+from .review_service import capture_daily_queue_order, preserve_daily_queue_order
 
 
 def _trained_color_for_card(database: sqlite3.Connection, card: sqlite3.Row) -> str:
@@ -129,6 +129,8 @@ def _queue_split_followups(
     shortened_card_id: str,
     continuation_card_id: str,
     today: str,
+    *,
+    previous_order=None,
 ) -> None:
     """Place both split cards after four other queued cards in one queue pass."""
     followup_ids: list[int] = []
@@ -173,7 +175,7 @@ def _queue_split_followups(
             if current_positions[entry_id] != position
         ),
     )
-    preserve_daily_queue_order(database, today)
+    preserve_daily_queue_order(database, today, previous=previous_order)
 
 
 @refresh_game_publications_after_mutation
@@ -205,6 +207,7 @@ def apply_prefix_split(
 
     now = datetime.now(timezone.utc).isoformat()
     today = date.today().isoformat()
+    previous_order = capture_daily_queue_order(database, today)
     shortened_card_id = split["shortened_card_id"]
     continuation_card_id = split["continuation_card_id"]
     source_memberships = [
@@ -333,7 +336,10 @@ def apply_prefix_split(
         (shortened_card_id, source_card_id),
     )
     database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
-    _queue_split_followups(database, shortened_card_id, continuation_card_id, today)
+    _queue_split_followups(
+        database, shortened_card_id, continuation_card_id, today,
+        previous_order=previous_order,
+    )
     database.execute(
         """INSERT INTO prefix_splits(
                source_card_id,source_revision,shortened_card_id,

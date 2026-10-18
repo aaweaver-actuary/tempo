@@ -485,3 +485,26 @@ def test_native_large_presentation_uses_bounded_reads_at_fifty_ms(case, local_ho
     assert all('FROM reviews' not in row[0] for row in pages)
     assert all(row[1]<=16 for row in observed)
     print('QUEUE_PRESENTATION_BUDGET '+json.dumps(dict(rows=1024,transaction_timeout_ms=50,reads=len(observed),max_read_wall_ms=round(max(row[2] for row in observed)*1000,2))))
+
+
+def test_native_split_then_refresh_retains_verified_after_four_placement(case):
+    from app.services import queue_application
+    from app.services.prefix_split import apply_prefix_split
+    source = case['identity']+'-a'
+    with postgres_store.connection() as database:
+        database.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(case['entries'][1],))
+        database.execute("UPDATE cards SET revision=3,moves_json='[\"e2e4\",\"e7e5\",\"g1f3\",\"b8c6\",\"f1b5\"]' WHERE id=?",(source,))
+        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(?,'again',?,0,0,'study')",(source,case['day']))
+        for index in range(30):
+            identifier = case['identity']+f'-split-tactic-{index}'
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'tactic')",(identifier,case['identity'],FEN,case['day']))
+            database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)',(case['day'],identifier,index+1))
+        queue_application.randomize_daily_queue(database,case['day'])
+        result = apply_prefix_split(database,source,3)
+        parent,child = result['parent']['card_id'],result['continuation']['card_id']
+        database.execute('UPDATE cards SET pending_validation=0 WHERE id IN (?,?)',(parent,child))
+        before = [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
+        assert [row[1] for row in before[4:6]] == [parent,child]
+        assert tuple(database.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=? AND status=\'queued\'',(parent,)).fetchone()) == (0,'clean')
+        queue_application.randomize_daily_queue(database,case['day'])
+        assert [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before

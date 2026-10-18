@@ -13,6 +13,42 @@ from app.services.cards import card_id
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
+@pytest.mark.parametrize('prior_state', ['mixed', 'unmixed_admission', 'replacement_frozen_token'])
+def test_split_then_refresh_preserves_after_four_only_from_verified_presentation(tmp_path, monkeypatch, prior_state):
+    from app.services import frozen_opening_order, queue_application
+    from app.services.prefix_split import apply_prefix_split
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path/'split-presentation.db')
+    database.initialize()
+    day = date.today().isoformat()
+    with database.connection() as connection:
+        source = seed_prefix_card(connection, 'white', ['e2e4','e7e5','g1f3','b8c6','f1b5'])
+        for position in range(30):
+            identifier = f'ordinary-tactic-{position}'
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,'white-repertoire','prefix',?,'[\"e2e4\"]','learning',?,'tactic')", (identifier,STARTING_FEN,day))
+            connection.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)',(day,identifier,position+1))
+        queue_application.randomize_daily_queue(connection, day)
+        if prior_state=='unmixed_admission':
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES('unmixed-admission','white-repertoire','prefix',?,'[\"e2e4\"]','learning',?,'tactic')", (STARTING_FEN,day))
+            connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'unmixed-admission',99)",(day,))
+        elif prior_state=='replacement_frozen_token':
+            monkeypatch.setattr(frozen_opening_order,'activation',lambda *args,**kwargs: ('replacement',2))
+        result = apply_prefix_split(connection, source, 3)
+        parent,child = result['parent']['card_id'],result['continuation']['card_id']
+        # Complete the existing validation seam before ordinary presentation.
+        connection.execute('UPDATE cards SET pending_validation=0 WHERE id IN (?,?)',(parent,child))
+        before = [tuple(row) for row in connection.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
+        assert [row[1] for row in before[4:6]] == [parent,child]
+        assert tuple(connection.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=?',(parent,)).fetchone()) == (0,'clean')
+        fingerprint = connection.execute('SELECT membership_hash FROM daily_queue_days WHERE queue_date=?',(day,)).fetchone()[0]
+        if prior_state!='mixed':
+            assert fingerprint.startswith('unmixed:')
+            return
+        queue_application.randomize_daily_queue(connection, day)
+        after = [tuple(row) for row in connection.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
+        assert after == before
+        assert fingerprint.startswith('queue-presentation-v3:')
+
+
 def seed_prefix_card(database_connection, trained_color: str, moves: list[str]) -> str:
     repertoire_id = f"{trained_color}-repertoire"
     identifier = card_id(STARTING_FEN, moves)
