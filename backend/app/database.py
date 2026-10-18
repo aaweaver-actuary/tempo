@@ -1746,8 +1746,10 @@ def initialize() -> None:
 
     migrate_studies()
     from .queue_attempt_origins import initialize_sqlite_origins
+    from tempo_learning_runtime.retry_store import initialize_sqlite_retry_policies
     with connection() as database:
         initialize_sqlite_origins(database)
+        initialize_sqlite_retry_policies(database)
         database.execute("CREATE TABLE IF NOT EXISTS deleted_cards(card_id TEXT PRIMARY KEY,deleted_at TEXT NOT NULL)")
         database.execute("""CREATE TRIGGER IF NOT EXISTS deleted_card_recreation_guard
             BEFORE INSERT ON cards WHEN EXISTS(SELECT 1 FROM deleted_cards WHERE card_id=NEW.id)

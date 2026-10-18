@@ -1,5 +1,14 @@
 # Learning review application regression ownership
 
+`tests/test_retry_policy.py` owns the soft failed-retry decision: bounded saved
+draws, original-time/midnight deadlines, ready-work preference, one early fallback,
+issued-head authority, persisted insertion order/priority and projection placement
+restoration. `test_failed_review_binds_original_identity_time_once_before_receipt_replay`
+and `test_required_failed_retry_failure_preserves_transaction_owner_failure_boundary`
+in `test_application.py` own the review-port binding and required-effect boundary.
+The regular package selection includes these cases; source checks do not replace
+installed-package or native qualification.
+
 The regular owning package command is `python -m pytest tests` against the installed
 artifact. All parametrized identities in `tests/test_application.py` and
 `tests/test_boundary.py` must collect and pass, including original receipt replay,

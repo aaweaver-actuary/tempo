@@ -109,6 +109,7 @@ class LearningReviewAdapter:
         policy_provider=None,
         observed_at=None,
         local_day=None,
+        retry_draws=None,
     ):
         self.database = database
         self.request = request
@@ -116,6 +117,7 @@ class LearningReviewAdapter:
         self.policy_provider = policy_provider
         self.observed_at = observed_at
         self.local_day = local_day
+        self.retry_draws = retry_draws
         self.deferred_effects = []
         self.queue_refreshes = {}
         self.remediation_days = set()
@@ -360,6 +362,13 @@ class LearningReviewAdapter:
         return queue_application.requeue(
             self.database, attempt.queue_date, card_id, after, state
         )
+
+    def requeue_failed(self, request):
+        from .retry_store import persist_failed_retry
+        source = request.source_attempt
+        return persist_failed_retry(self.database, request, draws=self.retry_draws,
+            create_entry=lambda: queue_application.requeue(
+                self.database, source.queue_date, source.card_id, None, "guided"))
 
     def save_snapshot(self, review_id, snapshot):
         save_schedule_snapshot(self.database, review_id, snapshot)

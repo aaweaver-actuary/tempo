@@ -5,6 +5,20 @@
 application library within the still-planned independent Learning deployment.
 Legacy HTTP payloads remain legacy payloads; no wire-v1 conformance is implied.
 
+Within-session retry decisions are exposed by `retry_policy`: a
+`FailedRetryRequest` binds one committed review and its original completion time;
+`plan_failed_retry` consumes explicit 300–600-second/token draws. The borrowed
+`ReviewStore.requeue_failed` capability persists that decision atomically with
+history, scheduling and receipts. Clean reinforcement keeps its separate port.
+`QueueSelectionStore` supplies whole-queue readiness facts and applies a proposed
+selection under the composition's existing locks. `select_queue_head` never opens
+a transaction or infers absence from a page. Already-issued identities remain
+authoritative, while a natural placement that changes the head can return
+`changed` for reacquisition in a new card-before-day transaction. These are domain
+capabilities; HTTP, clock/randomness sources, SQL and connection ownership remain
+in the adapters. Scheduler due dates and presentation/admission membership are
+separate from within-session retry readiness.
+
 The application owns replay/validation/recovery decisions, review sequencing,
 required evidence binding and prepared-successor orchestration. Immutable records
 carry the original durable payload, effective review time, local queue day,

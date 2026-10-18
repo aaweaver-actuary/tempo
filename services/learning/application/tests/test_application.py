@@ -75,6 +75,9 @@ class Capabilities:
     def requeue(self, *args):
         self.event("requeue", args[-1])
         return 2
+    def requeue_failed(self, request):
+        self.event("requeue_failed", request)
+        return 2
     def save_snapshot(self, *args): self.event("snapshot")
     def save_receipt(self, cmd, ctx, result):
         self.event("receipt")
@@ -158,6 +161,28 @@ def test_guided_failure_schedules_again_but_binds_original_request(guided, faile
     assert ("schedule", "again", True, NOW, DAY) in store.calls
     assert store.saved_receipt.outcome == "correct" and store.saved_receipt.guided == guided
     assert ("clean",) not in store.calls
+    retry = next(call[1] for call in store.calls if call[0] == "requeue_failed")
+    assert retry == review.FailedRetryRequest(12, store.attempt, NOW)
+    assert not any(call[0] == "requeue" for call in store.calls)
+
+
+def test_failed_review_binds_original_identity_time_once_before_receipt_replay():
+    store = Capabilities()
+    cmd = command(outcome="again", recorded_at=NOW.isoformat())
+    result = review.apply_review(store, cmd, CONTEXT)
+    assert ("requeue_failed", review.FailedRetryRequest(12, store.attempt, NOW)) in store.calls
+    before = list(store.calls)
+    store.requeue_failed = lambda *_: (_ for _ in ()).throw(AssertionError("resampled retry"))
+    assert review.apply_review(store, cmd, CONTEXT) == result
+    assert store.calls == before
+
+
+def test_required_failed_retry_failure_preserves_transaction_owner_failure_boundary():
+    store = Capabilities()
+    store.failure = "requeue_failed"
+    with pytest.raises(RuntimeError, match="requeue_failed"):
+        review.submit_review(store, command(outcome="again"), lambda: CONTEXT)
+    assert not any(call[0] in {"receipt", "issue"} for call in store.calls)
 
 
 def test_completed_projection_legacy_confirmation_and_broader_replay():

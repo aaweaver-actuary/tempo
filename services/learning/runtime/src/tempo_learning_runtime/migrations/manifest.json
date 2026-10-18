@@ -27,5 +27,11 @@
     "owner": "#193/A",
     "path": "0003_content_bridge.sql",
     "depends_on": ["learning.remediation/0001"]
+  },
+  {
+    "id": "learning.runtime/0004",
+    "owner": "Learning / soft failed retries",
+    "path": "0004_soft_failed_retries.sql",
+    "depends_on": ["learning.bridge/0001"]
   }
 ]

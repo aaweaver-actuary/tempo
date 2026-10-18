@@ -6,6 +6,7 @@ import json
 
 from .errors import ReviewConflict, ReviewFailure
 from .models import ReviewCommand, ReviewContext, ReviewResult
+from .retry_policy import FailedRetryRequest
 from .ports import ReviewStore, ReviewSubmissionStore
 
 
@@ -139,11 +140,16 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
     if outcome == "correct" and not guided and not attempt.attempt_failed:
         store.mark_clean_tactic(command.card_id, context)
     repeated_entry_id = None
+    review_id = store.latest_review_id(command.card_id, valid_only=False)
     if scheduled["requeue_today"]:
-        repeated_entry_id = store.requeue(attempt, command.card_id, scheduled["requeue_after_cards"],
-                                          "guided" if outcome == "again" else "reinforcement")
+        if outcome == "again":
+            repeated_entry_id = store.requeue_failed(FailedRetryRequest(
+                review_id, replace(attempt, revision=card.revision), context.reviewed_at))
+        else:
+            repeated_entry_id = store.requeue(attempt, command.card_id, scheduled["requeue_after_cards"],
+                                              "reinforcement")
     result = {**scheduled, "queue_entry_id": attempt.id, "requeue_entry_id": repeated_entry_id,
-              "review_id": store.latest_review_id(command.card_id, valid_only=False),
+              "review_id": review_id,
               "persisted": True, "idempotent": False,
               **({"reconciliation": "queue_origin"} if attempt.recovered else {})}
     if snapshot:
