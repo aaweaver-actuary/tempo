@@ -49,7 +49,13 @@
         "RunCreationRequest",
         "gameFrames",
         "gameSourceUrl",
-        "mountWorkbench"
+        "mountWorkbench",
+        "WorkbenchOptions",
+        "intelligenceOrigin",
+        "intelligenceOriginForBuild",
+        "studyHandoffNotice",
+        "studyUrl",
+        "studyUrlForBuild"
       ],
       "dependencies": [
         "@lichess-org/chessground",
@@ -61,6 +67,7 @@
         "public",
         "index.html",
         "tsconfig.json",
+        "vite.config.ts",
         "package.json",
         "package-lock.json",
         "tests",
@@ -88,13 +95,14 @@
             "tsconfig.json",
             "package.json",
             "package-lock.json",
-            "test.mjs"
+            "test.mjs",
+            "vite.config.ts"
           ]
         },
         {
           "owner": "workbench-web",
           "kind": "node",
-          "command": "node tests/browser.mjs tests/fixtures/producer.json",
+          "command": "npm run test:browser -- tests/fixtures/producer.json",
           "inputs": [
             "src",
             "tests",
@@ -102,7 +110,8 @@
             "package.json",
             "package-lock.json",
             "index.html",
-            "tsconfig.json"
+            "tsconfig.json",
+            "vite.config.ts"
           ]
         }
       ],

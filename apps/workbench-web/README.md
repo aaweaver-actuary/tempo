@@ -9,7 +9,7 @@ browser origin in `TEMPO_INTELLIGENCE_ORIGINS`. No API proxy or live fallback ex
 ```sh
 npm ci --prefix apps/workbench-web --workspaces=false
 npm test --prefix apps/workbench-web
-node apps/workbench-web/tests/browser.mjs /absolute/native/workbench-producer.json /absolute/evidence/browser
+npm run test:browser --prefix apps/workbench-web -- /absolute/native/workbench-producer.json /absolute/evidence/browser
 node apps/workbench-web/qualify.mjs /absolute/evidence/restricted
 ```
 
@@ -56,3 +56,52 @@ order and original comparison status/reason at each learner position, and retain
 explicit unknowns. It uses only Intelligence's authenticated read endpoint;
 provider links are supplied provenance, never guessed IDs. The native producer
 fixture now includes the actual games read response for browser qualification.
+
+
+## Connected navigation
+
+`TEMPO_STUDY_URL` is an optional, public **build-time** setting for the general
+Open Study link. It must be an absolute HTTP(S) root URL, without userinfo, path,
+query or fragment. For example:
+
+```sh
+TEMPO_STUDY_URL=http://127.0.0.1:3000/ TEMPO_INTELLIGENCE_ORIGIN=http://127.0.0.1:8149 npm run build --prefix apps/workbench-web
+```
+
+The owning Vite config rejects unsafe settings before emitting assets and does
+not echo the rejected value. The public `mountWorkbench(root, {studyUrl})` API
+applies the same validation. With no setting, no Study link appears. A finding
+link opens the normal Study destination and explicitly leaves its physical-card
+identity unverified. A gap does not imply an existing Study card. No card-specific
+URL, admission, review, Content operation or credential transfer occurs.
+
+The full local app can launch this independent app using its existing public
+`TEMPO_WORKBENCH_URL` build setting. Supported query keys are only `run`,
+`category` and `dismissal`; userinfo, fragments and non-HTTP(S) schemes are rejected
+before bundling. Neither setting is a runtime switch for an already built app.
+
+The Intelligence origin is an API address to enter in the connection form, not
+the Workbench page to navigate to. Connection credentials remain in the existing
+per-tab session storage: reload or return to that connected tab to stay connected;
+a fresh tab needs Connect. No localStorage credential, proxy, cross-window
+handoff or persistent credential is added.
+
+The owning qualifier builds with the non-secret fixture Study URL
+`https://study.example.test/`; the browser intercepts this target locally and
+proves a general root GET with no Authorization, referrer, card query or API
+mutation. The regular `test:browser` entry builds with those fixture settings before running
+the browser, and the registered component command uses that entry. A normal
+`npm test` separately checks empty public defaults and does not leave a guessed
+API origin. The source-removed qualifier sets the same explicit fixture settings
+when building its artifact.
+The qualifier also executes the actual public Vite build-config rejection checks
+before bundling, then verifies the source-removed package as before.
+
+`TEMPO_INTELLIGENCE_ORIGIN` is a separate optional public build setting. It must
+be a root HTTP(S) origin with no userinfo, path, query or fragment. It prefills the
+connection form only; it never auto-connects or carries a token. Without it, the
+origin field is empty rather than guessing a port. An existing per-tab connection
+continues to use its saved origin. The owning build boundary rejects unsafe values
+before embedding them. The qualifier uses `https://intelligence.example.test` as
+its explicit non-secret fixture form default, then fills the intercepted test API
+through the normal connection UI.

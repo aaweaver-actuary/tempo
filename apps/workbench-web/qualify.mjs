@@ -1,3 +1,4 @@
+import { navigationFixture } from './tests/navigation-fixture.mjs';
 import { mkdtemp,cp,rm,mkdir,readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve,join } from 'node:path';
@@ -10,8 +11,12 @@ const environment=Object.fromEntries(Object.entries(process.env).filter(([key])=
 function run(args,cwd,label,expected=0){const result=spawnSync(args[0],args.slice(1),{cwd,env:environment,encoding:'utf8',maxBuffer:16*1024*1024});report.commands.push({label,args,status:result.status});return writeFile(join(destination,label+'.log'),(result.stdout??'')+(result.stderr??'')).then(()=>{if(result.status!==expected)throw new Error(label+'_failed');return result.stdout;});}
 try{
  const build=join(temporary,'build');await mkdir(build);
- for(const path of ['src','public','index.html','package.json','package-lock.json','tsconfig.json','test.mjs','tests'])await cp(join(source,path),join(build,path),{recursive:true});
- await run(['npm','ci','--workspaces=false','--ignore-scripts'],build,'install');await run(['npm','run','build'],build,'build');
+ for(const path of ['src','public','index.html','package.json','package-lock.json','tsconfig.json','vite.config.ts','test.mjs','tests'])await cp(join(source,path),join(build,path),{recursive:true});
+ await run(['npm','ci','--workspaces=false','--ignore-scripts'],build,'install');
+ await run(['node','tests/public-build-config.mjs'],build,'public-build-settings');
+ // Explicit non-secret fixture routing; no live Study service is contacted.
+ Object.assign(environment,navigationFixture);
+ await run(['npm','run','build'],build,'build');
  const packed=JSON.parse(await run(['npm','pack','--json','--pack-destination',destination],build,'pack'))[0];const artifact=join(destination,packed.filename);report.artifact=packed.filename;report.sha256=createHash('sha256').update(await readFile(artifact)).digest('hex');
  const consumer=join(temporary,'consumer');await mkdir(consumer);await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@tempo/workbench-web':'file:'+artifact},devDependencies:{'@playwright/test':'1.63.0'}}));
  await run(['npm','install','--workspaces=false','--ignore-scripts'],consumer,'consumer-install');

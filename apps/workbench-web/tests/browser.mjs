@@ -1,3 +1,4 @@
+import { navigationFixture } from './navigation-fixture.mjs';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, relative } from 'node:path';
@@ -21,7 +22,7 @@ const host=createServer(async(request,response)=>{
 });
 await mkdir(evidence,{recursive:true});
 await new Promise(resolve=>host.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+host.address().port;
-let passed=false;let creationCases=[];
+let passed=false;let creationCases=[];const navigationCases=[];
 try{
   browser=await chromium.launch({headless:true});const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1280,height:900}});
   await context.route('**/*',async route=>{
@@ -55,7 +56,19 @@ try{
   });
   await context.addInitScript(ids=>{crypto.randomUUID=()=>{const count=Number(sessionStorage.getItem('test-command-sequence')??0);sessionStorage.setItem('test-command-sequence',String(count+1));return ids[count]??ids.at(-1);};},[fixtures.dismissal.command.command_id,'browser-blocked-command',fixtures.reopening.command.command_id,fixtures.unscoped.dismissal.command.command_id]);
   page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>unexpected.push('pageerror '+error.message));page.on('websocket',socket=>unexpected.push('WebSocket '+socket.url()));
-  await page.goto(origin+'/?run=run');await page.getByLabel('Intelligence origin').fill(origin);await page.getByLabel('Workspace',{exact:true}).fill('fixture');await page.getByLabel('Caller credential').fill('synthetic-caller');await page.getByRole('button',{name:'Connect',exact:true}).click();
+  // C_connected_fresh_navigation: the shared page is HTML, never an API JSON page.
+  const freshNavigation=await page.goto(origin+'/?run=run');
+  assert.equal(freshNavigation.status(),200);assert.match(freshNavigation.headers()['content-type'],/text\/html/);
+  assert.equal(freshNavigation.request().redirectedFrom(),null);assert.equal(page.url(),origin+'/?run=run');
+  await expect(page.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toBeVisible();
+  await expect(page.getByLabel('Caller credential',{exact:true})).toHaveValue('');
+  await expect(page.getByLabel('Intelligence origin',{exact:true})).toHaveValue(navigationFixture.TEMPO_INTELLIGENCE_ORIGIN);
+  await expect(page.getByText('The Intelligence origin is an API address entered in this form, not the Workbench page to open in your browser.',{exact:false})).toBeVisible();
+  assert.equal(await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-connection-v1')),null);
+  assert.equal(traffic.length,0,'Fresh page navigation must not call the authenticated API');
+  await page.screenshot({path:resolve(evidence,'fresh-connection-form.png'),fullPage:true});
+  navigationCases.push('C_connected_fresh_navigation');
+  await page.getByLabel('Intelligence origin').fill(origin);await page.getByLabel('Workspace',{exact:true}).fill('fixture');await page.getByLabel('Caller credential').fill('synthetic-caller');await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByRole('heading',{name:'Analysis runs'}).waitFor();await page.getByRole('button',{name:'Inspect finding'}).first().waitFor();
   // C3_retrospective_repertoire_scope_visible: source mismatch is not historical knowledge.
   const chronologyNotice='Repertoire comparisons use the exported snapshot. Repertoire availability and prior study at game time are unverified.';
@@ -104,6 +117,39 @@ try{
   await expect(page.getByText('Uncovered opponent reply: a6. No accepted continuation under this policy.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Flip board'}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Show played move'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','f3']);await page.getByRole('button',{name:'Decision position'}).click();await expect.poll(()=>page.locator('piece.white.knight').evaluateAll(nodes=>nodes.map(node=>node.cgKey).sort())).toEqual(['b1','g1']);
   await page.getByText('Response proposal unavailable:',{exact:false}).waitFor();await page.screenshot({path:resolve(evidence,'detail-desktop.png'),fullPage:true});
+  // C_connected_general_study: only a general root navigation, no card authority claim.
+  await expect(page.getByText('Study opens its normal queue. This gap does not identify an existing Study card.',{exact:true})).toBeVisible();
+  const studyLink=page.locator('.detail').getByRole('link',{name:'Open Study',exact:true});
+  assert.equal(await studyLink.getAttribute('href'),navigationFixture.TEMPO_STUDY_URL);
+  assert.equal(await studyLink.getAttribute('rel'),'noopener noreferrer');
+  const apiBeforeStudy=traffic.length;let studyRequests=0;
+  await context.route('https://study.example.test/**',async route=>{
+    assert.equal(route.request().url(),navigationFixture.TEMPO_STUDY_URL);assert.equal(route.request().method(),'GET');
+    assert.equal(route.request().headers().authorization,undefined);assert.equal(route.request().headers().referer,undefined);studyRequests++;
+    await route.fulfill({status:200,contentType:'text/html',body:'<h1>General Study target fixture</h1>'});
+  });
+  const openedStudy=context.waitForEvent('page');await studyLink.click();const studyPage=await openedStudy;
+  await expect(studyPage.getByRole('heading',{name:'General Study target fixture',exact:true})).toBeVisible();
+  assert.equal(studyPage.url(),navigationFixture.TEMPO_STUDY_URL);assert.equal(studyRequests,1);assert.equal(traffic.length,apiBeforeStudy);
+  // Playwright's debugging parent is not the page's JavaScript opener authority.
+  const automationParentPresent=Boolean(await studyPage.opener());
+  const domOpenerIsNull=await studyPage.evaluate(()=>window.opener===null);
+  await writeFile(resolve(evidence,'study-opener-boundary.json'),JSON.stringify({automationParentPresent,domOpenerIsNull},null,2)+'\n');
+  assert.equal(domOpenerIsNull,true,'Study target must not expose a JavaScript opener');
+  await studyPage.close();navigationCases.push('C_connected_general_study');
+  // C_connected_session_scope: preserve existing per-tab connection, never copy it to another tab.
+  const freshTab=await context.newPage();const apiBeforeFreshTab=traffic.length;
+  await freshTab.goto(origin+'/?run=run');await expect(freshTab.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toBeVisible();
+  await expect(freshTab.getByLabel('Caller credential',{exact:true})).toHaveValue('');
+  assert.equal(await freshTab.evaluate(()=>sessionStorage.getItem('tempo-analysis-connection-v1')),null);
+  assert.equal(await freshTab.evaluate(()=>localStorage.getItem('tempo-analysis-connection-v1')),null);
+  assert.equal(traffic.length,apiBeforeFreshTab);await freshTab.close();
+  const writesBeforeReload=traffic.filter(item=>item.method==='POST').length;await page.reload();
+  await expect(page.getByRole('button',{name:'Inspect finding',exact:true})).toHaveCount(1);
+  await expect(page.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toHaveCount(0);
+  assert.equal(traffic.filter(item=>item.method==='POST').length,writesBeforeReload);
+  await page.getByRole('button',{name:'Inspect finding',exact:true}).click();await page.getByLabel('Finding chessboard').waitFor();
+  navigationCases.push('C_connected_session_scope');
   await page.getByRole('button',{name:'Dismiss',exact:true}).click();await expect(page.getByRole('status')).toHaveText('Saving dismissal state…');
   assert.ok((await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-command-v2:'+JSON.stringify([location.origin,'fixture'])))).includes(fixtures.dismissal.command.command_id));
   const originalPending=await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-command-v2:'+JSON.stringify([location.origin,'fixture'])));
@@ -137,6 +183,6 @@ try{
 }finally{
   if(!passed&&page&&!page.isClosed()){await writeFile(resolve(evidence,"failure.html"),await page.content());await page.screenshot({path:resolve(evidence,"failure.png"),fullPage:true});}
   await browser?.close();await new Promise(resolve=>host.close(resolve));
-  console.log(JSON.stringify({executedIdentities:passed?['C_native_workbench',...creationCases.map(item=>item.case)]:[],passed:passed?1+creationCases.length:creationCases.filter(item=>item.passed).length,failed:passed?0:Math.max(1,creationCases.filter(item=>!item.passed).length),skipped:0,success:passed}));
-  await writeFile(resolve(evidence,'browser.json'),JSON.stringify({case:'C_native_workbench',passed,fixture:fixturePath,traffic,unexpected,port_closed:!host.listening},null,2)+'\n');
+  console.log(JSON.stringify({executedIdentities:passed?['C_native_workbench',...navigationCases,...creationCases.map(item=>item.case)]:[],passed:passed?1+navigationCases.length+creationCases.length:creationCases.filter(item=>item.passed).length,failed:passed?0:Math.max(1,creationCases.filter(item=>!item.passed).length),skipped:0,success:passed}));
+  await writeFile(resolve(evidence,'browser.json'),JSON.stringify({case:'C_native_workbench',passed,navigationCases,fixture:fixturePath,traffic,unexpected,port_closed:!host.listening},null,2)+'\n');
 }

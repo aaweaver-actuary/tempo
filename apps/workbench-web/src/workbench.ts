@@ -1,3 +1,4 @@
+import { studyUrl, studyHandoffNotice, intelligenceOrigin } from "./public-navigation.js";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import { Chess } from "chess.js";
@@ -14,13 +15,18 @@ function button(text:string,action:()=>void|Promise<void>){const value=node("but
 function field(label:string,value="",type="text"){const wrapper=node("label",label);const input=node("input");input.type=type;input.value=value;wrapper.append(input);return {wrapper,input};}
 function select(label:string,choices:Record<string,string>,value:string,onChange:(value:string)=>void){const wrapper=node("label",label);const input=node("select");input.setAttribute("aria-label",label);for(const [id,title]of Object.entries(choices)){const option=node("option",title);option.value=id;input.append(option);}input.value=value;input.onchange=()=>onChange(input.value);wrapper.append(input);return wrapper;}
 function record(value:unknown){return value as Record<string,unknown>;}
-export function mountWorkbench(root:HTMLElement){
+export type WorkbenchOptions = { studyUrl?: string; intelligenceOrigin?: string };
+export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
+  const studyDestination=studyUrl(options.studyUrl);
+  const defaultIntelligenceOrigin=intelligenceOrigin(options.intelligenceOrigin)??"";
+  function studyLink(){const link=node("a","Open Study");link.href=studyDestination!;link.target="_blank";link.rel="noopener noreferrer";return link;}
   const commands=new PendingCommands(sessionStorage);
   let client:IntelligenceClient|undefined,board:Api|undefined,renderGeneration=0;
   let closeGameBrowser:(()=>void)|undefined;
   let gameInspectionAvailable=false;
   let runId=new URL(location.href).searchParams.get("run")??"",category=new URL(location.href).searchParams.get("category")??"",dismissal=new URL(location.href).searchParams.get("dismissal")??"",report:Report|undefined;
   const header=node("header");const title=node("div");title.append(node("small","TEMPO WORKBENCH"),node("h1","Your games, understood."));header.append(title,node("span","Analysis"));
+  if(studyDestination)header.append(studyLink());
   const message=node("p");message.setAttribute("role","status");
   const content=node("main");root.replaceChildren(header,message,content);
   function status(text:string){message.textContent=text;}
@@ -29,8 +35,8 @@ export function mountWorkbench(root:HTMLElement){
   function connectionForm(saved?:Partial<Connection>){
     renderGeneration++;closeGameBrowser?.();closeGameBrowser=undefined;
     board?.destroy();board=undefined;content.replaceChildren();
-    const panel=node("section");panel.className="connection";panel.append(node("h2","Connect to Intelligence"),node("p","Use the caller credential for this workspace. Study connects separately."));
-    const origin=field("Intelligence origin",saved?.origin??"http://127.0.0.1:8049"),workspace=field("Workspace",saved?.workspace),credential=field("Caller credential",saved?.credential,"password");
+    const panel=node("section");panel.className="connection";panel.append(node("h2","Connect to Intelligence"),node("p","The Intelligence origin is an API address entered in this form, not the Workbench page to open in your browser. Use the caller credential for this workspace. Reload or return to this connected tab to stay connected; a fresh tab needs Connect. Study connects separately."));
+    const origin=field("Intelligence origin",saved?.origin??defaultIntelligenceOrigin),workspace=field("Workspace",saved?.workspace),credential=field("Caller credential",saved?.credential,"password");
     panel.append(origin.wrapper,workspace.wrapper,credential.wrapper,button("Connect",async()=>{
       status("Checking connection…");
       try{const next=new IntelligenceClient({origin:origin.input.value,workspace:workspace.input.value,credential:credential.input.value});const capabilities=await next.bootstrap();gameInspectionAvailable=capabilities.capabilities.includes("selected-games-v1");client?.disconnect();client=next;sessionStorage.setItem(key,JSON.stringify(next.connection));status("Connected");await home();}catch(value){error(value);}
@@ -151,6 +157,7 @@ export function mountWorkbench(root:HTMLElement){
       const encounterCount=finding.eligible_encounter_games;
       info.append(node("p",typeof encounterCount==="number"?`Observed in ${finding.supporting_game_count} of ${encounterCount} eligible selected games.`:"Eligible encounter denominator: unknown."));
       info.append(node("p",finding.category==="repertoire_miss"?`Review existing ${finding.learning_card_id?`Learning card ${String(finding.learning_card_id)} (Content ${String(finding.card_id??"unknown")})`:`Content card ${String(finding.card_id??"unknown")}; physical Learning identity unavailable`}; a repertoire miss does not establish an engine mistake.`:finding.category==="practical_gap"?"Review a proposed continuation through Content before adding training content.":"Informational engine opportunity; repertoire relevance may be unknown."));
+      if(studyDestination){info.append(studyLink(),node("p",studyHandoffNotice(finding.category)));}
       if(Array.isArray(finding.related_findings)&&finding.related_findings.length){info.append(node("h3","Other evidence for this incident"));for(const related of finding.related_findings){const item=record(related);info.append(button(labels[String(item.category)]??"Related finding",()=>detail({...finding,finding_id:String(item.finding_id)})));}}
       info.append(button(finding.dismissal_state==="dismissed"?"Reopen":"Dismiss",async()=>{const action=finding.dismissal_state==="dismissed"?"reopen":"dismiss";const command={schema_version:1,command_id:crypto.randomUUID(),action,expected_revision:finding.finding_revision};status("Saving dismissal state…");try{await saveCommand(`/v1/analysis/findings/${encodeURIComponent(finding.finding_id)}/commands?${query}`,command);status("State confirmed. The updated report is pending publication.");await home();}catch(value){error(value);}}));
       info.append(button("Export informational context",async()=>{try{const result=await client!.request(`/v1/analysis/findings/${encodeURIComponent(finding.finding_id)}/export?${query}&kind=context`,z.object({workspace_id:z.string()}).passthrough());const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:"application/json"}));const link=node("a");link.href=url;link.download="tempo-gap-context.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}catch(value){error(value);}}));
