@@ -18,8 +18,10 @@ if(args[0]!=='--managed-child') {
     const env=managedDockerEnvironment(process.env,directory);
     env.PYTHONDONTWRITEBYTECODE='1';env.PYTEST_DISABLE_PLUGIN_AUTOLOAD='1';
     for(const key of ['PYTHONPATH','PYTHONHOME','PYTEST_ADDOPTS','PYTEST_PLUGINS'])delete env[key];
-    const child=spawn(python,[fileURLToPath(new URL('./qualify_legacy_bridge.py',import.meta.url)),...args.slice(3)],{env,stdio:'inherit'});
-    const mode=args[args.indexOf('--mode')+1], totalSeconds={artifacts:1200,native:900}[mode];
+    const mode=args[args.indexOf('--mode')+1];
+    const script=mode==='backend-native'?'./qualify_legacy_backend.py':'./qualify_legacy_bridge.py';
+    const child=spawn(python,[fileURLToPath(new URL(script,import.meta.url)),...args.slice(3)],{env,stdio:'inherit'});
+    const totalSeconds={artifacts:1200,native:900,'backend-native':1200}[mode];
     if(!totalSeconds){child.kill('SIGTERM');throw new Error('Explicit finite artifact/native mode required');}
     // Last-resort watchdog. Python owns the work deadline and five-minute
     // verified cleanup phase. A forced exit leaves managed resource journals,

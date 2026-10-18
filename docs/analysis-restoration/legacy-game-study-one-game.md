@@ -63,6 +63,17 @@ PYTHONPATH=backend python -m app.legacy_game_observation \
   --output one-game.capture.json
 ```
 
+`--decision-ply N` is optional and repeatable, with **zero-based plies before
+the played move**: initial White is0, Black is1, and Black's third move is5.
+For an explicitly selected decision, add `--decision-ply 5`; use repeated sorted
+values for several selected decisions. This narrows encountered-decision scope
+while preserving complete traversal and **all global competitors** at each named
+decision. It does not filter the catalogue to the selected repertoire. Default
+all-learner scope includes White ply0 and can retain every White route, exceeding
+the64-candidate cap even when a later decision is narrow; that bounded refusal
+is not evidence of a miss. Keep the chosen game fixed and state the inspected
+decision scope instead of silently sampling or expanding games.
+
 Then use the installed A bridge and GE tools offline:
 
 ```sh
@@ -89,8 +100,9 @@ tempo-a-legacy-study --endpoint http://127.0.0.1:8000 receipt \
 
 Acceptance is true only for a completed typed acknowledgement matching the
 original delivery/evidence/revision and exact obligation IDs. Queued, retrying,
-blocked or unknown transport state is not acceptance. The tool performs one
-request per explicit action; it does not poll or drain. Foreground activity can
+blocked or unknown transport state is not acceptance. The tool performs no
+automatic polling/retry or draining. Accept checks the target then posts; queue
+can read the receipt and target before posting. Foreground activity can
 defer intake without discarding its saved durable envelope.
 
 If a response is lost, keep the original preview. Explicitly read its receipt;

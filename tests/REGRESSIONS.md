@@ -4872,6 +4872,15 @@ review/replay/invalidation, with a paired prior-issued attempt fence. PostgreSQL
 rows and HTTP/Celery/operation transport are scripted; actual backend native
 durability and locking remain a separate, unexecuted qualification gate.
 
+`backend/integration/legacy_bridge/test_native.py` prepares the actual installed
+producer/capture → HTTP/Celery/Redis → backend migration50/module PostgreSQL →
+normal Study boundary in three explicit cases: fresh/replayed/restarted normal
+Study, prior-issued attempt fencing, and module/completed-operation rollback.
+They are not executed by regular unit discovery and have not run yet. The pure
+`backend/tests/test_legacy_backend_native_plan.py` owns finite caps, fresh-grant,
+immutable-image and qualified-artifact refusal checks; those checks do not prove
+native startup, cleanup or application behavior.
+
 `test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline`
 uses a synthetic wheel and mocked version command. Qualification-plan tests
 cover hash refusal, no native download fallback and first pytest failure with

@@ -12,6 +12,12 @@ Artifact dependency downloads use the pinned contract requirements and locked
 Game Evidence runtime export; the chess1.11.2 pinned pure-Python sdist may build.
 No whole-repository installation, engines, app services or browser is included.
 
+The separate [real backend native plan](legacy-game-study-backend-native.md)
+prepares the existing two vertical scenarios plus rollback over real HTTP,
+Celery, Redis and backend migration50. Its three cases are unexecuted and require
+their own grant. The five module-only native cases below do not qualify that
+backend boundary.
+
 ## Artifact window: 15 minutes work + 5 minutes verified cleanup
 
 After coordinator approval, use its actual local image ID as
