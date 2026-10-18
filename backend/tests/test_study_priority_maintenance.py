@@ -212,3 +212,48 @@ def test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding
     assert observed['rejected_pages'] == 936
     assert observed['maximum_examined_candidates'] == 16
     assert unlocked == sorted(eligible)
+
+
+def test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounded_write_client(monkeypatch):
+    import importlib
+    from pathlib import Path
+    import redis
+    from app.services import redis_admission_gate, study_priority
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
+    proof = importlib.import_module('check_postgres_study_priority')
+    monkeypatch.setenv('TEMPO_REDIS_URL', 'redis://127.0.0.1:1/0')
+    # Construct only; neither client connects. Production poll/write deadlines
+    # stay exactly as configured, including when this fixture is repaired.
+    poll = study_priority.control_client.__wrapped__()
+    writer = redis_admission_gate.client.__wrapped__()
+    try:
+        assert poll.connection_pool.connection_kwargs['socket_timeout'] == 0.05
+        assert poll.connection_pool.connection_kwargs['socket_connect_timeout'] == 0.05
+        assert writer.connection_pool.connection_kwargs['socket_timeout'] == 1
+        assert writer.connection_pool.connection_kwargs['socket_connect_timeout'] == 1
+    finally:
+        poll.close()
+        writer.close()
+
+    calls = []
+    class SetupClient:
+        def eval(self, *_):
+            calls.append('bounded-write')
+            return 1
+    class PollClient:
+        def eval(self, *_):
+            raise redis.TimeoutError('Controlled fixture setup exceeded the 50ms poll deadline')
+
+    fixture_client = SetupClient()
+    monkeypatch.setattr(redis_admission_gate, 'client', lambda: fixture_client)
+    monkeypatch.setattr(study_priority, 'control_client', lambda: PollClient())
+    def unchanged_invariant(server, namespace):
+        assert namespace == 'private-native-regression'
+        server.eval('Controlled direct fixture setup')
+        return {'unchanged_monotonic_invariant': True}
+    monkeypatch.setattr(proof, 'assert_monotonic_activity_renewal', unchanged_invariant)
+    shared, result = proof.prepare_priority_control_fixture('private-native-regression')
+    assert shared is fixture_client
+    assert result == {'unchanged_monotonic_invariant': True}
+    assert calls == ['bounded-write']
