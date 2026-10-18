@@ -1,0 +1,4 @@
+tempo-evidence-math==0.1.0
+pytest==9.1.1
+build==1.4.0
+hatchling==1.27.0
