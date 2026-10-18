@@ -2,7 +2,8 @@
 
 Run --describe without resources. Actual runs require the managed development
 budget entry point, an explicitly approved window and an already-local immutable
-helper image containing Python and uv. No image is built or pulled here.
+helper image containing Python. uv is one pinned, hash-verified PyPI wheel in
+owned evidence under the same caps/deadline. No image is built or pulled here.
 """
 import argparse
 import hashlib
@@ -18,6 +19,8 @@ import sys
 import time
 import uuid
 import zipfile
+import platform
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ("contracts/content-publication", "contracts/game-evidence", "packages/chess-core",
@@ -31,8 +34,8 @@ NATIVE_NAMES = (
 )
 ARTIFACT_CASES = (
     ("wire-v3", "contracts/game-evidence", ("tests/test_v3.py",), 17, True),
-    ("remediation", "services/learning/remediation", ("tests",), 83, True),
-    ("game-evidence", "services/game-evidence", ("tests",), 113, True),
+    ("remediation", "services/learning/remediation", ("tests",), 85, True),
+    ("game-evidence", "services/game-evidence", ("tests",), 115, True),
     ("bridge", "tools/analysis-restoration/a_bridge", ("tests/test_legacy.py", "tests/test_legacy_observation.py",
       "tests/test_operator.py::test_installed_operator_is_independent_of_all_domain_services"), 38, False),
 )
@@ -40,17 +43,60 @@ WORK_SECONDS = {"artifacts": 900, "native": 600}
 CLEANUP_SECONDS = 300
 HELPER_MEMORY = 768 * 1024 * 1024
 MODULE_SHA = "96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d"
+POSTGRES_IMAGE_ID = "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
+UV_VERSION = "0.9.3"
+UV_WHEELS = {
+    "aarch64": ("https://files.pythonhosted.org/packages/07/19/bb8aa38b4441e03c742e71a31779f91b42d9db255ede66f80cdfdb672618/uv-0.9.3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", "406ab1a8b313b4b3cf67ad747fb8713a0c0cf3d3daf11942b5a4e49f60882339"),
+    "x86_64": ("https://files.pythonhosted.org/packages/82/45/488417c6c0127c00bcdfac3556ae2ea0597df8245fe5f9bcfda35ebdbe85/uv-0.9.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.musllinux_1_1_x86_64.whl", "73ae4bbc7d555ba1738da08c64b55f21ab0ea0ff85636708cebaf460d98a440d"),
+}
+
+
+def pinned_uv(root, mode, timer, destination):
+    """One reviewed binary in owned evidence, inside the helper's work budget.
+
+    No installer script, pip, credentials, image build, image pull or fallback.
+    Only artifact mode downloads; native reuses the exact verified wheel.
+    """
+    url, expected = UV_WHEELS[platform.machine()]
+    directory = root / "tools" / ("uv-" + UV_VERSION)
+    directory.mkdir(parents=True, exist_ok=True)
+    wheel = directory / "vendor.whl"
+    if not wheel.exists():
+        if mode != "artifacts": raise RuntimeError("Native window requires the qualified pinned tool")
+        with urllib.request.urlopen(url, timeout=20) as response:
+            if response.geturl() != url: raise RuntimeError("Unreviewed tool redirect")
+            data = response.read(24 * 1024 * 1024 + 1)
+        if len(data) > 24 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected:
+            raise RuntimeError("Pinned uv wheel size/hash mismatch")
+        wheel.write_bytes(data)
+    if hashlib.sha256(wheel.read_bytes()).hexdigest() != expected:
+        raise RuntimeError("Retained pinned uv wheel changed")
+    with zipfile.ZipFile(wheel) as archive:
+        entries = [info for info in archive.infolist() if not info.is_dir() and info.filename.rsplit('/', 1)[-1] == 'uv']
+        if len(entries) != 1 or entries[0].file_size > 64 * 1024 * 1024:
+            raise RuntimeError("Unexpected pinned uv wheel layout")
+        binary = directory / "uv"
+        binary.write_bytes(archive.read(entries[0]))
+        binary.chmod(0o700)
+    version = timer.capture([str(binary), "--version"], maximum=10).stdout.strip()
+    if not version.startswith("uv " + UV_VERSION + " ") and version != "uv " + UV_VERSION:
+        raise RuntimeError("Pinned uv version mismatch")
+    write(destination / "tool.json", dict(version=version, url=url, sha256=expected))
+    return str(binary)
 
 
 def describe():
     return dict(work_seconds=WORK_SECONDS, cleanup_reserve_seconds=CLEANUP_SECONDS,
         helper=dict(cpus=1, memory_mib=768, swap_mib=0, pids=128, tmpfs_mib=256, docker_socket=False),
-        postgres=dict(cpus=1, memory_mib=256, pids=256, tmpfs_mib=256, image="postgres:18.6-trixie"),
+        postgres=dict(cpus=1, memory_mib=256, pids=256, tmpfs_mib=256, image=POSTGRES_IMAGE_ID),
         native_total=dict(containers=2, cpus=2, memory_mib=1024, pids=384, owned_internal_networks=1),
         own_packages=list(PACKAGES), own_artifacts=dict(wheels=6, sdists=6),
         artifact_tests={name: count for name, _path, _tests, count, _mode in ARTIFACT_CASES},
         artifact_test_total=sum(item[3] for item in ARTIFACT_CASES), native_tests=list(NATIVE_NAMES),
         native_test_total=len(NATIVE_NAMES),
+        pinned_tool=dict(version=UV_VERSION, source="https://pypi.org/pypi/uv/0.9.3/json",
+            sha256={architecture: item[1] for architecture, item in UV_WHEELS.items()},
+            maximum_download_mib=24, download_timeout_seconds=20, setup_budget="included in 900s artifact work"),
         limits="No full v1/v2 contract exchange, backend native migration/HTTP/Study or image-build qualification")
 
 
@@ -78,7 +124,7 @@ def helper_arguments(image, name, evidence, mode, *, network=None, env_file=None
         "--env", "CARGO_BUILD_JOBS=1", "--env", "RAYON_NUM_THREADS=1", "--env", "OMP_NUM_THREADS=1"]
     if env_file: args += ["--env-file", str(env_file)]
     python = "python" if mode == "artifacts" else "/evidence/work/environment/bin/python"
-    return [*args, image, python, "/source/scripts/qualify_legacy_bridge.py", "--inside", mode,
+    return [*args, "--entrypoint", python, image, "/source/scripts/qualify_legacy_bridge.py", "--inside", mode,
             "--report-relative", report_relative]
 
 
@@ -144,7 +190,7 @@ def verify_helper_caps():
 
 def run_suite(timer, python, directory, name, project, nodes, expected, importlib_mode):
     checker = load("legacy_bridge_inventory", ROOT / "services/learning/application/qualification.py")
-    common = ["-c", str(project / "pyproject.toml"), "-o", "addopts=", "-p", "no:cacheprovider"]
+    common = ["-c", str(project / "pyproject.toml"), "-o", "addopts=", "-p", "no:cacheprovider", "--maxfail=1"]
     if importlib_mode: common += ["--import-mode=importlib"]
     selection = [str(project / node.split("::", 1)[0]) + ("::" + node.split("::", 1)[1] if "::" in node else "")
                  for node in nodes]
@@ -173,6 +219,7 @@ def inside(mode, relative):
     report = dict(complete=False, mode=mode, plan=describe(), commands=[])
     timer = Deadline(WORK_SECONDS[mode], report)
     try:
+        uv = pinned_uv(root, mode, timer, destination)
         if mode == "artifacts":
             work = root / "work"
             work.mkdir()
@@ -186,8 +233,6 @@ def inside(mode, relative):
                     source = ROOT / package / item
                     if source.is_dir(): shutil.copytree(source, target / item, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
                     elif source.is_file(): shutil.copy2(source, target / item)
-            uv = shutil.which("uv")
-            if not uv: raise RuntimeError("Approved helper lacks uv; no bootstrap or image pull is permitted")
             def stage(command, label, cwd=None):
                 timer.run(command, cwd=cwd, log=destination / (label + ".log"))
             environment = work / "environment"
@@ -224,8 +269,6 @@ def inside(mode, relative):
             if (settings.get("host"), settings.get("dbname"), settings.get("user")) != ("native-db", "learning", "learning_runtime"):
                 raise RuntimeError("Only the generated owned internal fixture is accepted")
             python = "/evidence/work/environment/bin/python"
-            uv = shutil.which("uv")
-            if not uv: raise RuntimeError("Approved helper lacks uv")
             timer.run([uv, "pip", "install", "--python", python, "--reinstall", "--no-deps",
                 *map(str, sorted((root / "wheels").glob("*.whl")))], log=destination / "native-wheel-reinstall.log")
             nodes = tuple("integration/test_postgres.py::" + name for name in NATIVE_NAMES)
@@ -279,6 +322,7 @@ def controller(args):
                 if hashlib.sha256((root / "wheels" / name).read_bytes()).hexdigest() != digest:
                     raise RuntimeError("Qualified artifact bytes changed")
             fixture_module = load("legacy_bridge_fixture", ROOT / "contracts/database-ownership/fixture.py")
+            fixture_module.IMAGE = POSTGRES_IMAGE_ID
             def bounded_docker(*arguments, check=True):
                 if arguments[0] == "run":
                     arguments = ("run", "--memory-swap", "256m", *arguments[1:])

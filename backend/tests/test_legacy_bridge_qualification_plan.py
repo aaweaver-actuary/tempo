@@ -1,5 +1,9 @@
 """Pure plan/supervision checks; never start Docker, build or native testing."""
 import importlib.util
+import json
+import hashlib
+import io
+import zipfile
 from pathlib import Path
 import signal
 import subprocess
@@ -15,7 +19,7 @@ spec.loader.exec_module(qualification)
 
 def test_finite_plan_pins_six_artifacts_exact_test_counts_caps_and_five_minute_cleanup():
     plan = qualification.describe()
-    assert plan["artifact_test_total"] == 251 and plan["native_test_total"] == 5
+    assert plan["artifact_test_total"] == 255 and plan["native_test_total"] == 5
     assert plan["cleanup_reserve_seconds"] == 300
     assert plan["work_seconds"] == {"artifacts": 900, "native": 600}
     assert plan["native_total"] == dict(containers=2, cpus=2, memory_mib=1024, pids=384, owned_internal_networks=1)
@@ -72,3 +76,64 @@ def test_helper_refuses_missing_or_wrong_cgroup_caps(monkeypatch):
     qualification.verify_helper_caps()
     values["pids.max"] = "max"
     with pytest.raises(ValueError): qualification.verify_helper_caps()
+
+
+def test_pytest_first_failure_stops_the_window_with_no_complete_inventory(tmp_path):
+    commands = []
+    class Timer:
+        def run(self, command, **_options):
+            commands.append(command)
+            assert "--maxfail=1" in command
+            if "--collect-only" in command:
+                Path(command[3]).write_text(json.dumps({"collected": ["first", "not-executed"]}))
+                return
+            Path(command[3]).write_text(json.dumps({"collected": ["first", "not-executed"],
+                                                  "executed": ["first"], "exit_code": 1}))
+            raise RuntimeError("first test failed")
+    with pytest.raises(RuntimeError, match="first test failed"):
+        qualification.run_suite(Timer(), "python", tmp_path, "failed", ROOT / "services/learning/remediation",
+                                ("tests",), 2, True)
+    assert len(commands) == 2
+    assert json.loads((tmp_path / "failed-execution.json").read_text())["exit_code"] == 1
+
+
+def test_native_pinned_tool_requires_retained_artifact_without_network(tmp_path, monkeypatch):
+    monkeypatch.setattr(qualification.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(qualification.urllib.request, "urlopen", lambda *a, **k: pytest.fail("network fallback"))
+    with pytest.raises(RuntimeError, match="qualified pinned tool"):
+        qualification.pinned_uv(tmp_path, "native", None, tmp_path)
+
+
+def test_pinned_tool_rejects_changed_wheel_before_extraction_or_execution(tmp_path, monkeypatch):
+    monkeypatch.setattr(qualification.platform, "machine", lambda: "aarch64")
+    directory = tmp_path / "tools/uv-0.9.3"
+    directory.mkdir(parents=True)
+    (directory / "vendor.whl").write_bytes(b"changed")
+    with pytest.raises(RuntimeError, match="wheel changed"):
+        qualification.pinned_uv(tmp_path, "artifacts", None, tmp_path)
+
+
+def test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline(tmp_path, monkeypatch):
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, "w") as archive:
+        archive.writestr("uv.data/scripts/uv", b"synthetic binary, never executed")
+        archive.writestr("uv.data/scripts/uvx", b"not extracted")
+    data = content.getvalue()
+    url = "https://files.pythonhosted.org/synthetic-reviewed.whl"
+    monkeypatch.setattr(qualification.platform, "machine", lambda: "aarch64")
+    monkeypatch.setitem(qualification.UV_WHEELS, "aarch64", (url, hashlib.sha256(data).hexdigest()))
+    class Download:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def geturl(self): return url
+        def read(self, maximum):
+            assert maximum == 24 * 1024 * 1024 + 1
+            return data
+    monkeypatch.setattr(qualification.urllib.request, "urlopen", lambda source, timeout:
+        Download() if source == url and timeout == 20 else pytest.fail("unreviewed download"))
+    timer = SimpleNamespace(capture=lambda argv, maximum: SimpleNamespace(stdout="uv 0.9.3\n"))
+    binary = qualification.pinned_uv(tmp_path, "artifacts", timer, tmp_path)
+    assert Path(binary).read_bytes() == b"synthetic binary, never executed"
+    assert not (Path(binary).parent / "uvx").exists()
+    monkeypatch.setattr(qualification.urllib.request, "urlopen", lambda *a, **k: pytest.fail("native network"))
+    assert qualification.pinned_uv(tmp_path, "native", timer, tmp_path) == binary
