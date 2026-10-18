@@ -1,0 +1,6 @@
+chess==1.11.2
+pydantic==2.12.5
+pytest==9.1.1
+build==1.4.0
+hatchling==1.27.0
+pydantic-core==2.41.5

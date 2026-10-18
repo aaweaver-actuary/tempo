@@ -1,0 +1,1742 @@
+{
+  "bundle": {
+    "contract_version": 1,
+    "position": {
+      "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+      "legal_moves": [
+        "e8d7",
+        "e8d8",
+        "e8e7",
+        "e8f7",
+        "e8f8"
+      ]
+    },
+    "sources": [
+      {
+        "captured_at": "2026-10-10T11:30:00Z",
+        "cohort": {
+          "ratings": [
+            1600
+          ],
+          "speeds": [
+            "rapid"
+          ]
+        },
+        "contract_version": 1,
+        "derived_from": [],
+        "distribution": {
+          "contract_version": 1,
+          "moves": [
+            {
+              "move_uci": "e8d7",
+              "probability": null
+            },
+            {
+              "move_uci": "e8d8",
+              "probability": null
+            },
+            {
+              "move_uci": "e8e7",
+              "probability": null
+            },
+            {
+              "move_uci": "e8f7",
+              "probability": null
+            },
+            {
+              "move_uci": "e8f8",
+              "probability": null
+            }
+          ],
+          "position": {
+            "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+            "legal_moves": [
+              "e8d7",
+              "e8d8",
+              "e8e7",
+              "e8f7",
+              "e8f8"
+            ]
+          },
+          "unknown_mass": 1
+        },
+        "evidence_id": "explorer-1600",
+        "freshness": {
+          "as_of": "2026-10-10T12:00:00Z",
+          "state": "fresh",
+          "valid_until": "2026-10-11T12:00:00Z"
+        },
+        "normalization": null,
+        "provenance": [
+          {
+            "input_fingerprint": "synthetic-explorer-1600",
+            "limitations": [
+              "not_provider_data"
+            ],
+            "record_id": "explorer-1600-input",
+            "references": [
+              "synthetic-fixture"
+            ]
+          }
+        ],
+        "quality": {
+          "effective_sample_size": null,
+          "flags": [
+            "synthetic_fixture"
+          ],
+          "uncertainty": null
+        },
+        "raw_evidence": {
+          "kind": "counts",
+          "moves": [
+            {
+              "count": 7,
+              "move_uci": "e8d7"
+            },
+            {
+              "count": 0,
+              "move_uci": "e8d8"
+            }
+          ],
+          "total_count": 10
+        },
+        "source_generation": "synthetic-generation-1",
+        "source_id": "explorer-like",
+        "source_timestamp": "2026-10-10T11:00:00Z",
+        "source_version": "synthetic-v1"
+      },
+      {
+        "captured_at": "2026-10-10T11:30:00Z",
+        "cohort": {
+          "ratings": [
+            1800
+          ],
+          "speeds": [
+            "blitz"
+          ]
+        },
+        "contract_version": 1,
+        "derived_from": [],
+        "distribution": {
+          "contract_version": 1,
+          "moves": [
+            {
+              "move_uci": "e8d7",
+              "probability": null
+            },
+            {
+              "move_uci": "e8d8",
+              "probability": null
+            },
+            {
+              "move_uci": "e8e7",
+              "probability": null
+            },
+            {
+              "move_uci": "e8f7",
+              "probability": null
+            },
+            {
+              "move_uci": "e8f8",
+              "probability": null
+            }
+          ],
+          "position": {
+            "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+            "legal_moves": [
+              "e8d7",
+              "e8d8",
+              "e8e7",
+              "e8f7",
+              "e8f8"
+            ]
+          },
+          "unknown_mass": 1
+        },
+        "evidence_id": "explorer-1800",
+        "freshness": {
+          "as_of": "2026-10-10T12:00:00Z",
+          "state": "fresh",
+          "valid_until": "2026-10-11T12:00:00Z"
+        },
+        "normalization": null,
+        "provenance": [
+          {
+            "input_fingerprint": "synthetic-explorer-1800",
+            "limitations": [
+              "not_provider_data"
+            ],
+            "record_id": "explorer-1800-input",
+            "references": [
+              "synthetic-fixture"
+            ]
+          }
+        ],
+        "quality": {
+          "effective_sample_size": null,
+          "flags": [
+            "synthetic_fixture"
+          ],
+          "uncertainty": null
+        },
+        "raw_evidence": {
+          "kind": "counts",
+          "moves": [
+            {
+              "count": 3,
+              "move_uci": "e8f7"
+            }
+          ],
+          "total_count": 8
+        },
+        "source_generation": "synthetic-generation-1",
+        "source_id": "explorer-like",
+        "source_timestamp": "2026-10-10T11:00:00Z",
+        "source_version": "synthetic-v1"
+      },
+      {
+        "captured_at": "2026-10-10T11:30:00Z",
+        "cohort": {
+          "opponent_rating": 1600,
+          "speed_conditioning": "unsupported"
+        },
+        "contract_version": 1,
+        "derived_from": [],
+        "distribution": {
+          "contract_version": 1,
+          "moves": [
+            {
+              "move_uci": "e8d7",
+              "probability": 0.4
+            },
+            {
+              "move_uci": "e8d8",
+              "probability": 0.3
+            },
+            {
+              "move_uci": "e8e7",
+              "probability": 0.2
+            },
+            {
+              "move_uci": "e8f7",
+              "probability": 0.1
+            },
+            {
+              "move_uci": "e8f8",
+              "probability": 0
+            }
+          ],
+          "position": {
+            "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+            "legal_moves": [
+              "e8d7",
+              "e8d8",
+              "e8e7",
+              "e8f7",
+              "e8f8"
+            ]
+          },
+          "unknown_mass": 0
+        },
+        "evidence_id": "maia-dense",
+        "freshness": {
+          "as_of": "2026-10-10T12:00:00Z",
+          "state": "fresh",
+          "valid_until": "2026-10-11T12:00:00Z"
+        },
+        "normalization": {
+          "id": "supplied-probabilities",
+          "parameters": {},
+          "version": "fixture-v1"
+        },
+        "provenance": [
+          {
+            "input_fingerprint": "synthetic-maia-dense",
+            "limitations": [
+              "not_provider_data"
+            ],
+            "record_id": "maia-dense-input",
+            "references": [
+              "synthetic-fixture"
+            ]
+          }
+        ],
+        "quality": {
+          "effective_sample_size": null,
+          "flags": [
+            "synthetic_fixture"
+          ],
+          "uncertainty": null
+        },
+        "raw_evidence": {
+          "basis": "probability",
+          "kind": "scores",
+          "moves": [
+            {
+              "move_uci": "e8d7",
+              "value": 0.4
+            },
+            {
+              "move_uci": "e8d8",
+              "value": 0.3
+            },
+            {
+              "move_uci": "e8e7",
+              "value": 0.2
+            },
+            {
+              "move_uci": "e8f7",
+              "value": 0.1
+            },
+            {
+              "move_uci": "e8f8",
+              "value": 0
+            }
+          ]
+        },
+        "source_generation": "synthetic-generation-1",
+        "source_id": "maia-like",
+        "source_timestamp": "2026-10-10T11:00:00Z",
+        "source_version": "synthetic-v1"
+      }
+    ],
+    "target_context": {
+      "inventory": {
+        "covered_moves": [
+          "e8d7"
+        ],
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "graph_generation": 3,
+        "inventory_version": 1,
+        "legal_replies": [
+          {
+            "move_uci": "e8d7",
+            "resulting_fen_key": "8/3k4/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8d8",
+            "resulting_fen_key": "3k4/8/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8e7",
+            "resulting_fen_key": "8/4k3/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8f7",
+            "resulting_fen_key": "8/5k2/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8f8",
+            "resulting_fen_key": "5k2/8/8/8/8/8/8/4K3 w - -"
+          }
+        ],
+        "publication_generation": "synthetic-inventory-1",
+        "source_revision": 2
+      },
+      "profile": {
+        "cohorts": [
+          {
+            "effective_sample_size": 8,
+            "opponent_ratings": [
+              {
+                "rating": 1600,
+                "weight": 0.6
+              },
+              {
+                "rating": 1800,
+                "weight": 0.4
+              }
+            ],
+            "quality_flags": [
+              "synthetic_fixture"
+            ],
+            "speed": "rapid"
+          }
+        ],
+        "effective_speed_mixture": [
+          {
+            "speed": "rapid",
+            "weight": 0.75
+          },
+          {
+            "speed": "blitz",
+            "weight": 0.25
+          }
+        ],
+        "evidence_digest": "synthetic-game-evidence",
+        "freshness": {
+          "as_of": "2026-10-10T12:00:00Z",
+          "state": "fresh",
+          "valid_until": "2026-10-11T12:00:00Z"
+        },
+        "method_version": "synthetic-next-opponent-v1",
+        "quality_flags": [
+          "synthetic_fixture"
+        ],
+        "requested_speed": "auto",
+        "source_account": "synthetic-player",
+        "unsupported_speed_mass": 0,
+        "version": "synthetic-profile-1"
+      },
+      "trained_color": "white"
+    }
+  },
+  "explorer": {
+    "captured_at": "2026-10-10T11:30:00Z",
+    "cohort": {
+      "ratings": [
+        1600
+      ],
+      "speeds": [
+        "rapid"
+      ]
+    },
+    "contract_version": 1,
+    "derived_from": [],
+    "distribution": {
+      "contract_version": 1,
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8d8",
+          "probability": null
+        },
+        {
+          "move_uci": "e8e7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8f7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8f8",
+          "probability": null
+        }
+      ],
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      },
+      "unknown_mass": 1
+    },
+    "evidence_id": "explorer-1600",
+    "freshness": {
+      "as_of": "2026-10-10T12:00:00Z",
+      "state": "fresh",
+      "valid_until": "2026-10-11T12:00:00Z"
+    },
+    "normalization": null,
+    "provenance": [
+      {
+        "input_fingerprint": "synthetic-explorer-1600",
+        "limitations": [
+          "not_provider_data"
+        ],
+        "record_id": "explorer-1600-input",
+        "references": [
+          "synthetic-fixture"
+        ]
+      }
+    ],
+    "quality": {
+      "effective_sample_size": null,
+      "flags": [
+        "synthetic_fixture"
+      ],
+      "uncertainty": null
+    },
+    "raw_evidence": {
+      "kind": "counts",
+      "moves": [
+        {
+          "count": 7,
+          "move_uci": "e8d7"
+        },
+        {
+          "count": 0,
+          "move_uci": "e8d8"
+        }
+      ],
+      "total_count": 10
+    },
+    "source_generation": "synthetic-generation-1",
+    "source_id": "explorer-like",
+    "source_timestamp": "2026-10-10T11:00:00Z",
+    "source_version": "synthetic-v1"
+  },
+  "explorer_other_cohort": {
+    "captured_at": "2026-10-10T11:30:00Z",
+    "cohort": {
+      "ratings": [
+        1800
+      ],
+      "speeds": [
+        "blitz"
+      ]
+    },
+    "contract_version": 1,
+    "derived_from": [],
+    "distribution": {
+      "contract_version": 1,
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8d8",
+          "probability": null
+        },
+        {
+          "move_uci": "e8e7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8f7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8f8",
+          "probability": null
+        }
+      ],
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      },
+      "unknown_mass": 1
+    },
+    "evidence_id": "explorer-1800",
+    "freshness": {
+      "as_of": "2026-10-10T12:00:00Z",
+      "state": "fresh",
+      "valid_until": "2026-10-11T12:00:00Z"
+    },
+    "normalization": null,
+    "provenance": [
+      {
+        "input_fingerprint": "synthetic-explorer-1800",
+        "limitations": [
+          "not_provider_data"
+        ],
+        "record_id": "explorer-1800-input",
+        "references": [
+          "synthetic-fixture"
+        ]
+      }
+    ],
+    "quality": {
+      "effective_sample_size": null,
+      "flags": [
+        "synthetic_fixture"
+      ],
+      "uncertainty": null
+    },
+    "raw_evidence": {
+      "kind": "counts",
+      "moves": [
+        {
+          "count": 3,
+          "move_uci": "e8f7"
+        }
+      ],
+      "total_count": 8
+    },
+    "source_generation": "synthetic-generation-1",
+    "source_id": "explorer-like",
+    "source_timestamp": "2026-10-10T11:00:00Z",
+    "source_version": "synthetic-v1"
+  },
+  "fused": {
+    "contract_version": 1,
+    "contributions": [
+      {
+        "effective_sample_size": null,
+        "evidence_id": "maia-dense",
+        "weight": 1
+      }
+    ],
+    "distribution": {
+      "contract_version": 1,
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "probability": 0.4
+        },
+        {
+          "move_uci": "e8d8",
+          "probability": 0.3
+        },
+        {
+          "move_uci": "e8e7",
+          "probability": 0.2
+        },
+        {
+          "move_uci": "e8f7",
+          "probability": 0.1
+        },
+        {
+          "move_uci": "e8f8",
+          "probability": 0
+        }
+      ],
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      },
+      "unknown_mass": 0
+    },
+    "freshness": {
+      "as_of": "2026-10-10T12:00:00Z",
+      "state": "fresh",
+      "valid_until": "2026-10-11T12:00:00Z"
+    },
+    "policy": {
+      "id": "fixture-selection",
+      "parameters": {
+        "selected_evidence_id": "maia-dense"
+      },
+      "version": "fixture-v1"
+    },
+    "position": {
+      "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+      "legal_moves": [
+        "e8d7",
+        "e8d8",
+        "e8e7",
+        "e8f7",
+        "e8f8"
+      ]
+    },
+    "provenance": [
+      {
+        "input_fingerprint": "synthetic-maia-dense",
+        "limitations": [
+          "not_provider_data"
+        ],
+        "record_id": "maia-dense-input",
+        "references": [
+          "synthetic-fixture"
+        ]
+      }
+    ],
+    "quality": {
+      "effective_sample_size": null,
+      "flags": [
+        "synthetic_fixture"
+      ],
+      "uncertainty": null
+    },
+    "status": "available",
+    "target_context": {
+      "inventory": {
+        "covered_moves": [
+          "e8d7"
+        ],
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "graph_generation": 3,
+        "inventory_version": 1,
+        "legal_replies": [
+          {
+            "move_uci": "e8d7",
+            "resulting_fen_key": "8/3k4/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8d8",
+            "resulting_fen_key": "3k4/8/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8e7",
+            "resulting_fen_key": "8/4k3/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8f7",
+            "resulting_fen_key": "8/5k2/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8f8",
+            "resulting_fen_key": "5k2/8/8/8/8/8/8/4K3 w - -"
+          }
+        ],
+        "publication_generation": "synthetic-inventory-1",
+        "source_revision": 2
+      },
+      "profile": {
+        "cohorts": [
+          {
+            "effective_sample_size": 8,
+            "opponent_ratings": [
+              {
+                "rating": 1600,
+                "weight": 0.6
+              },
+              {
+                "rating": 1800,
+                "weight": 0.4
+              }
+            ],
+            "quality_flags": [
+              "synthetic_fixture"
+            ],
+            "speed": "rapid"
+          }
+        ],
+        "effective_speed_mixture": [
+          {
+            "speed": "rapid",
+            "weight": 0.75
+          },
+          {
+            "speed": "blitz",
+            "weight": 0.25
+          }
+        ],
+        "evidence_digest": "synthetic-game-evidence",
+        "freshness": {
+          "as_of": "2026-10-10T12:00:00Z",
+          "state": "fresh",
+          "valid_until": "2026-10-11T12:00:00Z"
+        },
+        "method_version": "synthetic-next-opponent-v1",
+        "quality_flags": [
+          "synthetic_fixture"
+        ],
+        "requested_speed": "auto",
+        "source_account": "synthetic-player",
+        "unsupported_speed_mass": 0,
+        "version": "synthetic-profile-1"
+      },
+      "trained_color": "white"
+    },
+    "unavailable_reason": null
+  },
+  "fusion_request": {
+    "contract_version": 1,
+    "evidence": {
+      "contract_version": 1,
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      },
+      "sources": [
+        {
+          "captured_at": "2026-10-10T11:30:00Z",
+          "cohort": {
+            "ratings": [
+              1600
+            ],
+            "speeds": [
+              "rapid"
+            ]
+          },
+          "contract_version": 1,
+          "derived_from": [],
+          "distribution": {
+            "contract_version": 1,
+            "moves": [
+              {
+                "move_uci": "e8d7",
+                "probability": null
+              },
+              {
+                "move_uci": "e8d8",
+                "probability": null
+              },
+              {
+                "move_uci": "e8e7",
+                "probability": null
+              },
+              {
+                "move_uci": "e8f7",
+                "probability": null
+              },
+              {
+                "move_uci": "e8f8",
+                "probability": null
+              }
+            ],
+            "position": {
+              "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+              "legal_moves": [
+                "e8d7",
+                "e8d8",
+                "e8e7",
+                "e8f7",
+                "e8f8"
+              ]
+            },
+            "unknown_mass": 1
+          },
+          "evidence_id": "explorer-1600",
+          "freshness": {
+            "as_of": "2026-10-10T12:00:00Z",
+            "state": "fresh",
+            "valid_until": "2026-10-11T12:00:00Z"
+          },
+          "normalization": null,
+          "provenance": [
+            {
+              "input_fingerprint": "synthetic-explorer-1600",
+              "limitations": [
+                "not_provider_data"
+              ],
+              "record_id": "explorer-1600-input",
+              "references": [
+                "synthetic-fixture"
+              ]
+            }
+          ],
+          "quality": {
+            "effective_sample_size": null,
+            "flags": [
+              "synthetic_fixture"
+            ],
+            "uncertainty": null
+          },
+          "raw_evidence": {
+            "kind": "counts",
+            "moves": [
+              {
+                "count": 7,
+                "move_uci": "e8d7"
+              },
+              {
+                "count": 0,
+                "move_uci": "e8d8"
+              }
+            ],
+            "total_count": 10
+          },
+          "source_generation": "synthetic-generation-1",
+          "source_id": "explorer-like",
+          "source_timestamp": "2026-10-10T11:00:00Z",
+          "source_version": "synthetic-v1"
+        },
+        {
+          "captured_at": "2026-10-10T11:30:00Z",
+          "cohort": {
+            "ratings": [
+              1800
+            ],
+            "speeds": [
+              "blitz"
+            ]
+          },
+          "contract_version": 1,
+          "derived_from": [],
+          "distribution": {
+            "contract_version": 1,
+            "moves": [
+              {
+                "move_uci": "e8d7",
+                "probability": null
+              },
+              {
+                "move_uci": "e8d8",
+                "probability": null
+              },
+              {
+                "move_uci": "e8e7",
+                "probability": null
+              },
+              {
+                "move_uci": "e8f7",
+                "probability": null
+              },
+              {
+                "move_uci": "e8f8",
+                "probability": null
+              }
+            ],
+            "position": {
+              "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+              "legal_moves": [
+                "e8d7",
+                "e8d8",
+                "e8e7",
+                "e8f7",
+                "e8f8"
+              ]
+            },
+            "unknown_mass": 1
+          },
+          "evidence_id": "explorer-1800",
+          "freshness": {
+            "as_of": "2026-10-10T12:00:00Z",
+            "state": "fresh",
+            "valid_until": "2026-10-11T12:00:00Z"
+          },
+          "normalization": null,
+          "provenance": [
+            {
+              "input_fingerprint": "synthetic-explorer-1800",
+              "limitations": [
+                "not_provider_data"
+              ],
+              "record_id": "explorer-1800-input",
+              "references": [
+                "synthetic-fixture"
+              ]
+            }
+          ],
+          "quality": {
+            "effective_sample_size": null,
+            "flags": [
+              "synthetic_fixture"
+            ],
+            "uncertainty": null
+          },
+          "raw_evidence": {
+            "kind": "counts",
+            "moves": [
+              {
+                "count": 3,
+                "move_uci": "e8f7"
+              }
+            ],
+            "total_count": 8
+          },
+          "source_generation": "synthetic-generation-1",
+          "source_id": "explorer-like",
+          "source_timestamp": "2026-10-10T11:00:00Z",
+          "source_version": "synthetic-v1"
+        },
+        {
+          "captured_at": "2026-10-10T11:30:00Z",
+          "cohort": {
+            "opponent_rating": 1600,
+            "speed_conditioning": "unsupported"
+          },
+          "contract_version": 1,
+          "derived_from": [],
+          "distribution": {
+            "contract_version": 1,
+            "moves": [
+              {
+                "move_uci": "e8d7",
+                "probability": 0.4
+              },
+              {
+                "move_uci": "e8d8",
+                "probability": 0.3
+              },
+              {
+                "move_uci": "e8e7",
+                "probability": 0.2
+              },
+              {
+                "move_uci": "e8f7",
+                "probability": 0.1
+              },
+              {
+                "move_uci": "e8f8",
+                "probability": 0
+              }
+            ],
+            "position": {
+              "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+              "legal_moves": [
+                "e8d7",
+                "e8d8",
+                "e8e7",
+                "e8f7",
+                "e8f8"
+              ]
+            },
+            "unknown_mass": 0
+          },
+          "evidence_id": "maia-dense",
+          "freshness": {
+            "as_of": "2026-10-10T12:00:00Z",
+            "state": "fresh",
+            "valid_until": "2026-10-11T12:00:00Z"
+          },
+          "normalization": {
+            "id": "supplied-probabilities",
+            "parameters": {},
+            "version": "fixture-v1"
+          },
+          "provenance": [
+            {
+              "input_fingerprint": "synthetic-maia-dense",
+              "limitations": [
+                "not_provider_data"
+              ],
+              "record_id": "maia-dense-input",
+              "references": [
+                "synthetic-fixture"
+              ]
+            }
+          ],
+          "quality": {
+            "effective_sample_size": null,
+            "flags": [
+              "synthetic_fixture"
+            ],
+            "uncertainty": null
+          },
+          "raw_evidence": {
+            "basis": "probability",
+            "kind": "scores",
+            "moves": [
+              {
+                "move_uci": "e8d7",
+                "value": 0.4
+              },
+              {
+                "move_uci": "e8d8",
+                "value": 0.3
+              },
+              {
+                "move_uci": "e8e7",
+                "value": 0.2
+              },
+              {
+                "move_uci": "e8f7",
+                "value": 0.1
+              },
+              {
+                "move_uci": "e8f8",
+                "value": 0
+              }
+            ]
+          },
+          "source_generation": "synthetic-generation-1",
+          "source_id": "maia-like",
+          "source_timestamp": "2026-10-10T11:00:00Z",
+          "source_version": "synthetic-v1"
+        }
+      ],
+      "target_context": {
+        "inventory": {
+          "covered_moves": [
+            "e8d7"
+          ],
+          "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+          "graph_generation": 3,
+          "inventory_version": 1,
+          "legal_replies": [
+            {
+              "move_uci": "e8d7",
+              "resulting_fen_key": "8/3k4/8/8/8/8/8/4K3 w - -"
+            },
+            {
+              "move_uci": "e8d8",
+              "resulting_fen_key": "3k4/8/8/8/8/8/8/4K3 w - -"
+            },
+            {
+              "move_uci": "e8e7",
+              "resulting_fen_key": "8/4k3/8/8/8/8/8/4K3 w - -"
+            },
+            {
+              "move_uci": "e8f7",
+              "resulting_fen_key": "8/5k2/8/8/8/8/8/4K3 w - -"
+            },
+            {
+              "move_uci": "e8f8",
+              "resulting_fen_key": "5k2/8/8/8/8/8/8/4K3 w - -"
+            }
+          ],
+          "publication_generation": "synthetic-inventory-1",
+          "source_revision": 2
+        },
+        "profile": {
+          "cohorts": [
+            {
+              "effective_sample_size": 8,
+              "opponent_ratings": [
+                {
+                  "rating": 1600,
+                  "weight": 0.6
+                },
+                {
+                  "rating": 1800,
+                  "weight": 0.4
+                }
+              ],
+              "quality_flags": [
+                "synthetic_fixture"
+              ],
+              "speed": "rapid"
+            }
+          ],
+          "effective_speed_mixture": [
+            {
+              "speed": "rapid",
+              "weight": 0.75
+            },
+            {
+              "speed": "blitz",
+              "weight": 0.25
+            }
+          ],
+          "evidence_digest": "synthetic-game-evidence",
+          "freshness": {
+            "as_of": "2026-10-10T12:00:00Z",
+            "state": "fresh",
+            "valid_until": "2026-10-11T12:00:00Z"
+          },
+          "method_version": "synthetic-next-opponent-v1",
+          "quality_flags": [
+            "synthetic_fixture"
+          ],
+          "requested_speed": "auto",
+          "source_account": "synthetic-player",
+          "unsupported_speed_mass": 0,
+          "version": "synthetic-profile-1"
+        },
+        "trained_color": "white"
+      }
+    },
+    "policy": {
+      "id": "fixture-selection",
+      "parameters": {
+        "selected_evidence_id": "maia-dense"
+      },
+      "version": "fixture-v1"
+    }
+  },
+  "identity_cases": [
+    {
+      "fen": "4k3/8/8/8/8/8/8/4K3 b - - 22 91",
+      "name": "counters",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+      "name": "uncapturable_ep",
+      "position": {
+        "fen_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "legal_moves": [
+          "a7a5",
+          "a7a6",
+          "b7b5",
+          "b7b6",
+          "b8a6",
+          "b8c6",
+          "c7c5",
+          "c7c6",
+          "d7d5",
+          "d7d6",
+          "e7e5",
+          "e7e6",
+          "f7f5",
+          "f7f6",
+          "g7g5",
+          "g7g6",
+          "g8f6",
+          "g8h6",
+          "h7h5",
+          "h7h6"
+        ]
+      }
+    },
+    {
+      "fen": "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+      "name": "legal_ep",
+      "position": {
+        "fen_key": "4k3/8/8/3pP3/8/8/8/4K3 w - d6",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e5d6",
+          "e5e6"
+        ]
+      }
+    },
+    {
+      "fen": "k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+      "name": "pinned_ep",
+      "position": {
+        "fen_key": "k3r3/8/8/3pP3/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e5e6"
+        ]
+      }
+    },
+    {
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+      "name": "castling",
+      "position": {
+        "fen_key": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq -",
+        "legal_moves": [
+          "a1a2",
+          "a1a3",
+          "a1a4",
+          "a1a5",
+          "a1a6",
+          "a1a7",
+          "a1a8",
+          "a1b1",
+          "a1c1",
+          "a1d1",
+          "e1c1",
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e1g1",
+          "h1f1",
+          "h1g1",
+          "h1h2",
+          "h1h3",
+          "h1h4",
+          "h1h5",
+          "h1h6",
+          "h1h7",
+          "h1h8"
+        ]
+      }
+    },
+    {
+      "fen": "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+      "name": "promotion",
+      "position": {
+        "fen_key": "4k3/P7/8/8/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "a7a8b",
+          "a7a8n",
+          "a7a8q",
+          "a7a8r",
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    }
+  ],
+  "maia_dense": {
+    "captured_at": "2026-10-10T11:30:00Z",
+    "cohort": {
+      "opponent_rating": 1600,
+      "speed_conditioning": "unsupported"
+    },
+    "contract_version": 1,
+    "derived_from": [],
+    "distribution": {
+      "contract_version": 1,
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "probability": 0.4
+        },
+        {
+          "move_uci": "e8d8",
+          "probability": 0.3
+        },
+        {
+          "move_uci": "e8e7",
+          "probability": 0.2
+        },
+        {
+          "move_uci": "e8f7",
+          "probability": 0.1
+        },
+        {
+          "move_uci": "e8f8",
+          "probability": 0
+        }
+      ],
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      },
+      "unknown_mass": 0
+    },
+    "evidence_id": "maia-dense",
+    "freshness": {
+      "as_of": "2026-10-10T12:00:00Z",
+      "state": "fresh",
+      "valid_until": "2026-10-11T12:00:00Z"
+    },
+    "normalization": {
+      "id": "supplied-probabilities",
+      "parameters": {},
+      "version": "fixture-v1"
+    },
+    "provenance": [
+      {
+        "input_fingerprint": "synthetic-maia-dense",
+        "limitations": [
+          "not_provider_data"
+        ],
+        "record_id": "maia-dense-input",
+        "references": [
+          "synthetic-fixture"
+        ]
+      }
+    ],
+    "quality": {
+      "effective_sample_size": null,
+      "flags": [
+        "synthetic_fixture"
+      ],
+      "uncertainty": null
+    },
+    "raw_evidence": {
+      "basis": "probability",
+      "kind": "scores",
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "value": 0.4
+        },
+        {
+          "move_uci": "e8d8",
+          "value": 0.3
+        },
+        {
+          "move_uci": "e8e7",
+          "value": 0.2
+        },
+        {
+          "move_uci": "e8f7",
+          "value": 0.1
+        },
+        {
+          "move_uci": "e8f8",
+          "value": 0
+        }
+      ]
+    },
+    "source_generation": "synthetic-generation-1",
+    "source_id": "maia-like",
+    "source_timestamp": "2026-10-10T11:00:00Z",
+    "source_version": "synthetic-v1"
+  },
+  "maia_sparse": {
+    "captured_at": "2026-10-10T11:30:00Z",
+    "cohort": {
+      "opponent_rating": 1800,
+      "speed_conditioning": "unsupported"
+    },
+    "contract_version": 1,
+    "derived_from": [],
+    "distribution": {
+      "contract_version": 1,
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "probability": 0.45
+        },
+        {
+          "move_uci": "e8d8",
+          "probability": null
+        },
+        {
+          "move_uci": "e8e7",
+          "probability": 0.35
+        },
+        {
+          "move_uci": "e8f7",
+          "probability": null
+        },
+        {
+          "move_uci": "e8f8",
+          "probability": null
+        }
+      ],
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      },
+      "unknown_mass": 0.2
+    },
+    "evidence_id": "maia-sparse",
+    "freshness": {
+      "as_of": "2026-10-10T12:00:00Z",
+      "state": "fresh",
+      "valid_until": "2026-10-11T12:00:00Z"
+    },
+    "normalization": {
+      "id": "supplied-probabilities",
+      "parameters": {},
+      "version": "fixture-v1"
+    },
+    "provenance": [
+      {
+        "input_fingerprint": "synthetic-maia-sparse",
+        "limitations": [
+          "not_provider_data"
+        ],
+        "record_id": "maia-sparse-input",
+        "references": [
+          "synthetic-fixture"
+        ]
+      }
+    ],
+    "quality": {
+      "effective_sample_size": null,
+      "flags": [
+        "synthetic_fixture"
+      ],
+      "uncertainty": null
+    },
+    "raw_evidence": {
+      "basis": "probability",
+      "kind": "scores",
+      "moves": [
+        {
+          "move_uci": "e8d7",
+          "value": 0.45
+        },
+        {
+          "move_uci": "e8e7",
+          "value": 0.35
+        }
+      ]
+    },
+    "source_generation": "synthetic-generation-1",
+    "source_id": "maia-like",
+    "source_timestamp": "2026-10-10T11:00:00Z",
+    "source_version": "synthetic-v1"
+  },
+  "unavailable": {
+    "contract_version": 1,
+    "contributions": [],
+    "distribution": null,
+    "freshness": {
+      "as_of": "2026-10-10T12:00:00Z",
+      "state": "fresh",
+      "valid_until": "2026-10-11T12:00:00Z"
+    },
+    "policy": {
+      "id": "fixture-selection",
+      "parameters": {
+        "selected_evidence_id": "maia-dense"
+      },
+      "version": "fixture-v1"
+    },
+    "position": {
+      "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+      "legal_moves": [
+        "e8d7",
+        "e8d8",
+        "e8e7",
+        "e8f7",
+        "e8f8"
+      ]
+    },
+    "provenance": [],
+    "quality": {
+      "effective_sample_size": null,
+      "flags": [
+        "synthetic_fixture"
+      ],
+      "uncertainty": null
+    },
+    "status": "unavailable",
+    "target_context": {
+      "inventory": {
+        "covered_moves": [
+          "e8d7"
+        ],
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "graph_generation": 3,
+        "inventory_version": 1,
+        "legal_replies": [
+          {
+            "move_uci": "e8d7",
+            "resulting_fen_key": "8/3k4/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8d8",
+            "resulting_fen_key": "3k4/8/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8e7",
+            "resulting_fen_key": "8/4k3/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8f7",
+            "resulting_fen_key": "8/5k2/8/8/8/8/8/4K3 w - -"
+          },
+          {
+            "move_uci": "e8f8",
+            "resulting_fen_key": "5k2/8/8/8/8/8/8/4K3 w - -"
+          }
+        ],
+        "publication_generation": "synthetic-inventory-1",
+        "source_revision": 2
+      },
+      "profile": {
+        "cohorts": [
+          {
+            "effective_sample_size": 8,
+            "opponent_ratings": [
+              {
+                "rating": 1600,
+                "weight": 0.6
+              },
+              {
+                "rating": 1800,
+                "weight": 0.4
+              }
+            ],
+            "quality_flags": [
+              "synthetic_fixture"
+            ],
+            "speed": "rapid"
+          }
+        ],
+        "effective_speed_mixture": [
+          {
+            "speed": "rapid",
+            "weight": 0.75
+          },
+          {
+            "speed": "blitz",
+            "weight": 0.25
+          }
+        ],
+        "evidence_digest": "synthetic-game-evidence",
+        "freshness": {
+          "as_of": "2026-10-10T12:00:00Z",
+          "state": "fresh",
+          "valid_until": "2026-10-11T12:00:00Z"
+        },
+        "method_version": "synthetic-next-opponent-v1",
+        "quality_flags": [
+          "synthetic_fixture"
+        ],
+        "requested_speed": "auto",
+        "source_account": "synthetic-player",
+        "unsupported_speed_mass": 0,
+        "version": "synthetic-profile-1"
+      },
+      "trained_color": "white"
+    },
+    "unavailable_reason": "no_applicable_source"
+  },
+  "invalid_position_cases": [
+    {
+      "name": "missing_black_king",
+      "position": {
+        "fen_key": "8/8/8/8/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "missing_white_king",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/8 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "name": "multiple_white_kings",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/4K3/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1f1",
+          "e1f2",
+          "e2d1",
+          "e2d2",
+          "e2d3",
+          "e2e3",
+          "e2f1",
+          "e2f2",
+          "e2f3"
+        ]
+      }
+    },
+    {
+      "name": "pawn_on_back_rank",
+      "position": {
+        "fen_key": "P3k3/8/8/8/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "white_kingside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 w K -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e1g1"
+        ]
+      }
+    },
+    {
+      "name": "white_queenside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 w Q -",
+        "legal_moves": [
+          "e1c1",
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "black_kingside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b k -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8",
+          "e8g8"
+        ]
+      }
+    },
+    {
+      "name": "black_queenside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b q -",
+        "legal_moves": [
+          "e8c8",
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "name": "castling_king_off_home_square",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/4K3/R6R w KQ -",
+        "legal_moves": [
+          "a1a2",
+          "a1a3",
+          "a1a4",
+          "a1a5",
+          "a1a6",
+          "a1a7",
+          "a1a8",
+          "a1b1",
+          "a1c1",
+          "a1d1",
+          "a1e1",
+          "a1f1",
+          "a1g1",
+          "e2c2",
+          "e2d1",
+          "e2d2",
+          "e2d3",
+          "e2e1",
+          "e2e3",
+          "e2f1",
+          "e2f2",
+          "e2f3",
+          "e2g2",
+          "h1b1",
+          "h1c1",
+          "h1d1",
+          "h1e1",
+          "h1f1",
+          "h1g1",
+          "h1h2",
+          "h1h3",
+          "h1h4",
+          "h1h5",
+          "h1h6",
+          "h1h7",
+          "h1h8"
+        ]
+      }
+    },
+    {
+      "name": "castling_rook_wrong_color",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K2r w K -",
+        "legal_moves": [
+          "e1d2",
+          "e1e2",
+          "e1f2"
+        ]
+      }
+    }
+  ]
+}
