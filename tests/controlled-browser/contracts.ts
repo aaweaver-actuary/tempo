@@ -1,14 +1,22 @@
 import receiptExamples from "../fixtures/controlled-browser/receipts.json" with { type: "json" };
 export type ControlledRequest = { url: string; method: string; headers: Record<string, string>; body: unknown };
 export type ControlledContract = {
-  method: string; path: string | (() => string); query: Record<string, string>;
+  method: string; path: string | (() => string); query: Record<string, string | RegExp>;
   validate?: (request: ControlledRequest) => void;
+};
+export const browserActivityQuery = {
+  session_id: /^[A-Za-z0-9_-]{1,80}$/,
+  expires_in_ms: /^(?:[1-9]\d{0,2}|[12]\d{3}|3000)$/,
 };
 export function matchesContract(contract: ControlledContract, request: ControlledRequest, origin: string) {
   const url = new URL(request.url);
   const expectedPath = typeof contract.path === "function" ? contract.path() : contract.path;
   return url.origin === origin && request.method === contract.method && url.pathname === expectedPath &&
-    JSON.stringify([...url.searchParams].sort()) === JSON.stringify(Object.entries(contract.query).sort());
+    [...url.searchParams].length === Object.keys(contract.query).length &&
+    Object.entries(contract.query).every(([name,expected]) => {
+      const values=url.searchParams.getAll(name);
+      return values.length===1 && (typeof expected==='string' ? values[0]===expected : expected.test(values[0]));
+    });
 }
 export function validateReview(request: ControlledRequest, cardId: string, queueEntryId: number) {
   const body = request.body as Record<string, unknown> | null;

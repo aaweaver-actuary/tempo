@@ -136,11 +136,12 @@ export function readWorkspaceData(
         );
       return response
         .json()
-        .then((raw: unknown) =>
-          url.includes("/api/")
+        .then((raw: unknown) => {
+          clearTimeout(requestTimeout); // Optional compute/idle waits are not network failures.
+          return url.includes("/api/")
             ? runStudyTask<unknown>({ kind: "workspace", url, payload: raw }, undefined, ownsCacheEntry)
-            : raw,
-        );
+            : raw;
+        });
     })
     .then((raw) => {
       const validated = schema ? parseData(schema, raw, url, undefined, undefined, ownsCacheEntry) : raw;

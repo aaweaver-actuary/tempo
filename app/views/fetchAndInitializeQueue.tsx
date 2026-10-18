@@ -1,3 +1,4 @@
+import { holdActiveStudyRequest } from "../lib/study-priority";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
 import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../lib/study-intent-storage";
@@ -269,6 +270,7 @@ export async function fetchAndInitializeQueue(
   let failedOperation = "process today queue";
   let failedEndpoint: string | undefined;
   let queueRequestFailed = false;
+  const releasePriority = holdActiveStudyRequest();
   try {
     const intentStore = await awaitQueueStage(initializeStudyIntentStorage(), controller.signal);
     if (options.replaySavedReviews !== false) await awaitQueueStage(recoverStudyRequests(controller.signal), controller.signal);
@@ -540,6 +542,7 @@ export async function fetchAndInitializeQueue(
       );
     throw error;
   } finally {
+    releasePriority();
     clearTimeout(deadline);
     options.signal?.removeEventListener("abort", cancelAcquisition);
     if (generation === requestGeneration && (queueInitialized || expectedAttemptMatches()))

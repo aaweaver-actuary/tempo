@@ -3,6 +3,7 @@ import { readOpeningEvidenceRecoverySchedule, recoverOpeningEvidence, subscribeO
 import { openingEvidenceRecoveryPolicy } from "../lib/opening-evidence-recovery-policy";
 import { publishNotification } from "../lib/notifications";
 import { useTrainingStore } from "../state/training-store";
+import { studyInteractionActive, subscribeStudyPriority } from '../lib/study-priority';
 
 /** Retry eligibility is separate from queue/foreground/idle admission. */
 export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blocked: boolean): void {
@@ -31,20 +32,23 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
     const unsubscribeAppend = subscribeOpeningEvidenceAppend(requestRecovery);
     const unsubscribeLeaseRelease = subscribeOpeningEvidenceLeaseRelease(requestRecovery);
     const unsubscribeOperationResume = subscribeOpeningEvidenceOperationResume(requestRecovery);
+    const unsubscribePriority = subscribeStudyPriority(() => {
+      if (!studyInteractionActive()) requestRecovery();
+    });
     return () => {
       active.current = false; lifecycle.current++;
       clearTimeout(retryTimer.current); retryTimer.current = undefined;
       window.removeEventListener("online", requestRecovery); window.removeEventListener("offline", requestRecovery);
-      unsubscribeAppend(); unsubscribeLeaseRelease(); unsubscribeOperationResume();
+      unsubscribeAppend(); unsubscribeLeaseRelease(); unsubscribeOperationResume(); unsubscribePriority();
     };
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled || !ready || blocked || !pending.current || running.current || suspended.current ||
+    if (!enabled || !ready || blocked || studyInteractionActive() || !pending.current || running.current || suspended.current ||
       navigator.onLine === false) return;
     let canceled = false;
     const recover = () => {
-      if (canceled || navigator.onLine === false || useTrainingStore.getState().queueReadiness !== "ready") return;
+      if (canceled || studyInteractionActive() || navigator.onLine === false || useTrainingStore.getState().queueReadiness !== "ready") return;
       pending.current = false; running.current = true;
       const startedLifecycle = lifecycle.current;
       const requestNextSlice = () => setRecoveryGeneration(generation => generation + 1);
@@ -53,7 +57,7 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
         const policy = openingEvidenceRecoveryPolicy(error);
         try {
           publishNotification({
-            severity: policy === "retry" ? "info" : "warning", source: "opening evidence", key: "opening-evidence-recovery",
+            coalesceResolved: policy === "retry", severity: policy === "retry" ? "info" : "warning", source: "opening evidence", key: "opening-evidence-recovery",
             details: { error: String(error), recoveryPolicy: policy },
             message: policy === "retry" ? "Opening details are waiting to sync. You can keep training."
               : policy === "blocked" ? "Opening details could not sync. Resolve and retry the blocked operation in Jobs. You can keep training."

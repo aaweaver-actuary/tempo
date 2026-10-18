@@ -1,3 +1,4 @@
+import { holdActiveStudyRequest } from "./study-priority";
 import { z } from "zod";
 import { API_URL } from "../const";
 
@@ -79,10 +80,25 @@ export function learningDayKey(date = new Date()) {
   return zone ? new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date)
     : `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 }
-const learningPaths = /^\/api\/(?:study\/(?:bootstrap|settings)|queue\/(?:window|today|prepared|entries\/)|cards\/[^/]+\/(?:review|teaching|move-membership)|operations\/|opening-evidence\/|studies\/[^/]+\/exercises\/|tactics\/(?:attempt|progress)|defense-exercises\/|endgames\/)/;
+const learningPaths = /^\/api\/(?:study\/(?:bootstrap|settings|activity)|queue\/(?:window|today|prepared|entries\/)|cards\/[^/]+\/(?:review|teaching|move-membership)|operations\/|opening-evidence\/|studies\/[^/]+\/exercises\/|tactics\/(?:attempt|progress)|defense-exercises\/|endgames\/)/;
+/** Optional activity delivery cannot change authority or manufacture a Study request hold. */
+export async function sendStudyActivity(session: string, remainingMs = 3000): Promise<void> {
+  const connection = studyConnection();
+  if (!connection) return;
+  const response = await authenticatedLearningFetch(`${connection.origin}/api/study/activity?session_id=${encodeURIComponent(session)}&expires_in_ms=${remainingMs}`,
+    {method: 'POST', signal: AbortSignal.timeout(500)}, connection, false);
+  if (!response.ok) throw new Error(`Study host activity unavailable (HTTP ${response.status})`);
+}
 export function learningFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
-  if (!independentStudy) return globalThis.fetch(input, options);
-  return authenticatedLearningFetch(input, options);
+  const address = input instanceof Request ? input.url : String(input);
+  const path = new URL(address, typeof window === "undefined" ? "http://tempo.local" : window.location.href).pathname;
+  const background = new Headers(options.headers ?? (input instanceof Request ? input.headers : undefined)).get("X-Tempo-Work-Class") === "background";
+  const essential = !background && /^\/api\/(queue\/|operations\/|cards\/[^/]+\/(review|teaching|move-membership)|tactics\/attempt|defense-exercises\/|endgames\/)/.test(path);
+  const release = essential ? holdActiveStudyRequest() : () => {};
+  try {
+    const request = independentStudy ? authenticatedLearningFetch(input, options) : globalThis.fetch(input, options);
+    return request.finally(release);
+  } catch (error) { release(); throw error; }
 }
 async function authenticatedLearningFetch(input: RequestInfo | URL, options: RequestInit, connection = studyConnection(), notifyAuthentication = true): Promise<Response> {
   if (!connection) throw new Error("Connect to Learning before studying.");
@@ -183,6 +199,11 @@ export async function assertStudyAuthority(origin: string, workspace: string, tr
   return retained;
 }
 export async function connectStudy(origin: string, workspace: string, credential: string) {
+  const release = holdActiveStudyRequest();
+  try { return await connectStudyWithAuthority(origin, workspace, credential); }
+  finally { release(); }
+}
+async function connectStudyWithAuthority(origin: string, workspace: string, credential: string) {
   const generation = ++connectionGeneration;
   const previous = studyConnection();
   const requireCurrent = () => {

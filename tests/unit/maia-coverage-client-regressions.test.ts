@@ -6,6 +6,38 @@ const response = (status: number, body: unknown) => new Response(JSON.stringify(
 });
 
 describe("Maia background command receipts", () => {
+  it('C failed receipt lookup retains the authoritative receipt identity already returned by the server',async()=>{
+    const fetchImpl=vi.fn().mockResolvedValueOnce(response(202,{operation_id:'server-receipt'}))
+      .mockRejectedValueOnce(new TypeError('receipt connection lost'));
+    await expect(requestMaiaApi('http://tempo','/api/repertoire-coverage/maia/release',
+      {method:'POST',operationId:'original-release'},{fetchImpl,pause:async()=>{}}))
+      .rejects.toMatchObject({name:'PendingMaiaCommandError',operationId:'server-receipt'});
+  });
+  it('C unconfirmed transport retains the supplied operation identity instead of reporting a model failure',async()=>{
+    const fetchImpl=vi.fn().mockRejectedValue(new TypeError('response lost'));
+    await expect(requestMaiaApi('http://tempo','/api/repertoire-coverage/maia/release',
+      {method:'POST',operationId:'original-release'},{fetchImpl,pause:async()=>{}}))
+      .rejects.toMatchObject({name:'PendingMaiaCommandError',operationId:'original-release'});
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    for(const [,options]of fetchImpl.mock.calls) {
+      expect(options.headers['Idempotency-Key']).toBe('original-release');
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+  it('C interrupted successful response body retains the immutable operation instead of reporting model failure', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"status":'));
+        queueMicrotask(() => controller.error(new TypeError('Accepted response body interrupted')));
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
+    await expect(requestMaiaApi('http://tempo', '/api/repertoire-coverage/maia/submit',
+      { method: 'POST', operationId: 'accepted-submit' }, { fetchImpl, pause: async () => {} }))
+      .rejects.toMatchObject({ name: 'PendingMaiaCommandError', operationId: 'accepted-submit' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][1].headers['Idempotency-Key']).toBe('accepted-submit');
+  });
   it("Docker engine callback waits for its PostgreSQL receipt with the worker header", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(202, { operation_id: "position-save", state: "pending" }))

@@ -1,3 +1,20 @@
+## Study Priority v1 browser and inference repairs
+
+- `tests/runner/inference-priority.test.mjs`: C1–C15 cover normal completion,
+  delayed/missing exit, failed termination, quarantine, late results, control
+  failure, active/idle child failure, admission/probe races and immutable release retries.
+  C15 preserves the original preemption or process failure when an IPC error
+  arrives during verified termination.
+  Existing real inference cases retain requested depth/full legal output.
+- `tests/unit/study-interaction-priority.test.ts`: B remaining-quiet-time pulses
+  prevent renewal from extending the server pause beyond three seconds.
+- `tests/unit/study-learning-connection-regressions.test.ts`: B optional reporting
+  preserves authentication/authority boundaries; delayed success, rejection and
+  synchronous transport errors retain and release essential request holds.
+- `tests/unit/maia-coverage-client-regressions.test.ts`: C uncertain delivery
+  remains pending under its original operation identity, never a model failure.
+  `C interrupted successful response body retains the immutable operation instead of reporting model failure` uses an actual failed response stream after HTTP 200; body consumption stays inside pending-delivery classification, preserving the accepted command identity.
+
 ## Study Priority v1 bounded sparse-unlock proof
 
 - `backend/tests/test_study_priority_maintenance.py::test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding_rejected_pages` owns the PostgreSQL proof's replacement for the retired three-total-page assumption. With the unchanged 15,000 locked / 21 eligible fixture, the actual selector advances through 939 pages, including 936 rejected pages, examines at most sixteen candidates per page, and preserves exactly three write batches of eight, eight, and five cards in order. The native proof additionally verifies actual row counts and exact persisted eligibility; background transactions retain the existing 250 ms deadline. SQLite's three-page sparse-selector regression remains unchanged.
@@ -4656,6 +4673,32 @@ algorithm and the existing review/evidence/history/receipt transaction owners ar
 retained. Original literal SQL fixtures remain a transitional compatibility owner;
 they do not select the retired native parent-wide query.
 
+Browser/inference owners: `tests/unit/study-interaction-priority.test.ts`,
+`study-bulk-priority-regressions.test.ts`, `study-owned-index-priority.test.ts`,
+`maia-interaction-priority.test.ts`, the existing defensive cancellation suite,
+and `tests/runner/inference-priority.test.mjs`. Named cases prove held pointers
+and touch, elapsed-time quiet windows, overlapping operations and independent
+remote leases; termination of confirmed running computation, stale reply fencing,
+retained confirmed indexes after replacement cancellation, filtered comparison
+ownership, serial optional index execution, and real Stockfish/Maia preemption
+followed by unchanged depth/full legal distributions. The Home regression
+`study_priority_non_opening_wrong_move_does_not_request_opening_membership_or_fabricate_evidence`
+keeps tactic grading independent of opening evidence. The notification regression
+`study_priority_routine_recovery_reopens_one_status_record_and_preserves_real_timeout_attention`
+retains genuine failures while coalescing ordinary recovery status.
+`study_priority_opening_membership_remains_essential_while_optional_index_is_paused`
+keeps authoritative alternative-move verification available during interaction.
+
+Real browser owner: `tests/controlled-browser/priority.spec.ts`, registered in the
+controlled inventory. It covers running workers, held dragging, repeated actual
+cancellation, essential queue capacity, useful quiet progress, paired native UI
+input and prepared-next presentation proxies. Existing native phone/recovery
+cases remain registered and unchanged. Dynamic activity sessions have a strict
+owning contract regression in `tests/controlled-browser/unit/controlled-browser-regressions.test.ts`.
+
+Study Priority v1: `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` retains serialized bulk ownership and probes a saved late handler. Invalidated bulk failures stay diagnostic without publishing notifications; current diagnostics and workspace publication remain authoritative. Home lifecycle regressions await the existing three-second quiet period before idle recovery.
+
+`study_priority_bootstrap_body_resolve_retains_operation_hold_until_authority_settlement`, its `reject` variant, and `study_priority_queue_body_remains_essential_until_queue_installation_settles` keep optional work paused after headers while essential bodies and authority/queue settlement remain pending. Existing #296 classification, timeout, cached recovery and supersession assertions remain unchanged.
 The existing native `test_postgres_priority_unlock_rejected_pages_and_restart` case now forces a real 250 ms PostgreSQL transaction cutoff, verifies the durable checkpoint did not move, and retries a finite number of fresh slices without extending deadlines or changing page/write bounds. Natural deadline aborts remain visible in `checkpoint-retries.jsonl`; exhaustion fails the proof.
 
 The complete native frozen-order proof reads the authoritative schema version and pins legacy confirmation to its fixture queue date (`test_frozen_legacy_confirmation_uses_fixture_day`). The 361-card capture, 260 attempt origins, unchanged queue membership, stale proposal fences, and all fourteen native proof groups remain asserted. This compatibility fixture belongs to the schema/control producer in #297.
