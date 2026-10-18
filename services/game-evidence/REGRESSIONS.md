@@ -135,6 +135,18 @@ re-entry. The independent real cohort audit exposed this case before report
 acceptance.
 
 `test_C3_export_derivation_upgrade_preserves_reserved_original_bytes` owns the
-export identity transition: new exports use derivation2 (schema remains v1), while
+export identity transition: new exports use the current derivation (schema remains v1), while
 existing directory reservations retain their original immutable manifest/pages.
 A correctness repair never rewrites an accepted input under its old identity.
+
+`tests/test_analysis_packing.py` owns C3 byte-aware immutable page packing:
+64 remains the item ceiling, 8 MiB remains the page ceiling, and 64 MiB remains
+the complete-export ceiling. UTF-8 payloads split without losing observations;
+individual oversized records and oversized complete exports remain errors.
+`test_C3_dense_80_game_export_keeps_scope_and_closes_source_transaction` owns the
+native 80-game traversal, complete encountered reply inventories, exact selected
+scope, offline verification, and release of the source read transaction before
+chess traversal. Derivation 3 exports only inventories for opponent positions
+actually encountered in the selected games; every scope and reply at those
+positions is retained. Definitions, routes, games and observations are retained.
+Previously reserved exports keep their original bytes and identity.
