@@ -282,7 +282,7 @@ def test_selected_rebuild_rejects_replacement_generation_source_day_and_unrelate
     assert task == {'state': 'queued', 'attempt_count': 0}
 
 
-def test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint(disposable_postgres):
+def _assert_selected_source_mutation_rolls_back():
     from app.services import postgres_opening_graph as graph
     prepared, _ = seed_selected_rebuild()
     with postgres_store.connection(background=True) as database:
@@ -303,6 +303,10 @@ def test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint(d
     checkpoint = recovery.read_rows('SELECT phase,state,payload_json FROM background_tasks WHERE id=%s', (task['id'],))[0]
     assert checkpoint['phase'] == 'queued' and checkpoint['state'] == 'leased'
     assert json.loads(checkpoint['payload_json']) == task['payload']
+
+
+def _assert_selected_absent_followup_lease_is_preserved():
+    from app.services import postgres_opening_graph as graph
     # A real second connection inserts/leases an absent downstream row after
     # the predecessor guard's SELECT. Its generation would otherwise still
     # produce the predicted result, hiding an overwritten foreign lease.
@@ -341,6 +345,13 @@ def test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint(d
     retained = recovery.read_rows('SELECT generation,state,lease_token FROM background_tasks WHERE id=%s', (foreign[0],))[0]
     assert retained == {'generation': 2, 'state': 'leased', 'lease_token': 'foreign-fixture'}
     assert recovery.read_rows('SELECT * FROM repertoire_integrity_state WHERE repertoire_id=%s', (prepared['repertoire_id'],)) == before_state
+
+
+def test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint(disposable_postgres):
+    for subscenario in (_assert_selected_source_mutation_rolls_back,
+                        _assert_selected_absent_followup_lease_is_preserved):
+        with isolated_scenario_database(disposable_postgres):
+            subscenario()
 
 
 def _apply_scenario_migrations(url):

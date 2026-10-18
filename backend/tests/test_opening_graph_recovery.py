@@ -605,3 +605,34 @@ def test_native_recovery_runner_enters_a_fresh_scenario_scope_before_each_case(m
     assert [name for name, _ in calls] == list(names)
     assert [url for _, url in calls] == scopes == closed
     assert len(set(scopes)) == 6
+
+
+def test_native_sixth_case_isolates_each_reused_card_seed_boundary(monkeypatch):
+    native = native_recovery_fixture_module()
+    administrator = Mock()
+    monkeypatch.setattr(native.psycopg, 'connect', lambda *args, **kwargs: nullcontext(administrator))
+    migrations = Mock();monkeypatch.setattr(native, '_apply_scenario_migrations', migrations)
+    pools = Mock();monkeypatch.setattr(native.postgres_store, 'close_pools', pools)
+    tokens = iter(['d' * 12, 'e' * 12]);monkeypatch.setattr(native.secrets, 'token_hex', lambda count: next(tokens))
+    monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
+    monkeypatch.setenv('TEMPO_DATABASE_READ_URL', 'original-reader')
+    monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', 'original-writer')
+    seeds = []
+    def record_seed(identity):
+        url = native.os.environ['TEMPO_DATABASE_READ_URL']
+        assert url == native.os.environ['TEMPO_DATABASE_WRITE_URL']
+        seeds.append((identity, url))
+    monkeypatch.setattr(native, '_assert_selected_source_mutation_rolls_back', lambda: record_seed('source-rollback'))
+    monkeypatch.setattr(native, '_assert_selected_absent_followup_lease_is_preserved', lambda: record_seed('competing-lease'))
+    native.test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint('postgresql://postgres@fixture/postgres')
+    assert [identity for identity, _ in seeds] == ['source-rollback', 'competing-lease']
+    assert len({url for _, url in seeds}) == 2
+    assert [call.args[0] for call in migrations.call_args_list] == [url for _, url in seeds]
+    statements = [call.args[0].as_string() for call in administrator.execute.call_args_list]
+    for token in ['d' * 12, 'e' * 12]:
+        name = 'tempo_caro_recovery_scenario_' + token
+        assert statements.count('CREATE DATABASE "' + name + '"') == 1
+        assert statements.count('DROP DATABASE "' + name + '"') == 1
+    assert pools.call_count == 4
+    assert native.os.environ['TEMPO_DATABASE_READ_URL'] == 'original-reader'
+    assert native.os.environ['TEMPO_DATABASE_WRITE_URL'] == 'original-writer'
