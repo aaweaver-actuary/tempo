@@ -9,6 +9,7 @@ export const repository = resolve(new URL("../../", import.meta.url).pathname);
 const readJson = path => JSON.parse(readFileSync(path, "utf8"));
 const inside = (root, path) => path === root || path.startsWith(root + sep);
 export function validateSuite(suite, root, defaultCwd) {
+  if (suite.requiresDocker !== undefined && typeof suite.requiresDocker !== "boolean") throw new Error("Invalid suite Docker requirement");
   if (!suite.owner || !suite.kind || !suite.command || !Array.isArray(suite.inputs) || !suite.inputs.length) throw new Error("Unavailable implemented suite contract");
   const cwd = resolve(root, suite.cwd ?? defaultCwd);
   if (!inside(resolve(root), cwd) || !existsSync(cwd) || !inside(realpathSync(root), realpathSync(cwd))) throw new Error("Unavailable/escaping suite cwd: " + suite.cwd);

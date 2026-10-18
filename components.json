@@ -559,6 +559,7 @@
           "owner": "stockfish",
           "kind": "node",
           "command": "node qualify.mjs container",
+          "requiresDocker": true,
           "inputs": [
             "qualify.mjs",
             "qualify_container.py",
@@ -1739,6 +1740,24 @@
     }
   ],
   "suites": [
+    {
+      "id": "learning",
+      "owner": "learning",
+      "kind": "postgres",
+      "cwd": ".",
+      "command": "python services/learning/runtime/integration/run_postgres.py",
+      "inputs": [
+        "services/learning/runtime",
+        "services/learning/application/qualification.py",
+        "app/lib",
+        "app/domain",
+        "app/const.ts",
+        "services/learning/remediation",
+        "services/game-evidence",
+        "services/content",
+        "tools/analysis-restoration/a_bridge"
+      ]
+    },
     {
       "id": "contract-exchange",
       "owner": "#264",

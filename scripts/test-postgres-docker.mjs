@@ -1,11 +1,13 @@
 // Disposable PostgreSQL product and container-recreation gate.
 
 import assert from "node:assert/strict";
+import {allocatedNativeProofSource,postgresProofAllocations,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
+import { withDevelopmentStartup, reconcileDevelopmentStartup, assertDevelopmentProjectOwned, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from './development-budget.mjs';
 import { randomBytes } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
@@ -22,6 +24,10 @@ if (options.list) {
     browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
   process.exit(0);
 }
+
+// Docker Desktop only shares the project checkout, so the short-lived secret
+if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
+  process.exit(await runWithDevelopmentBudget(process.execPath, process.argv.slice(1)));
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
 // files must be created there and removed in the cleanup block.
@@ -52,7 +58,19 @@ const testPort = await new Promise((resolve, reject) => {
 });
 const project = `tempo-pg-regressions-${process.pid}-${randomBytes(4).toString("hex")}`;
 const maintenanceImage = `${project}-maintenance`;
+const maintenanceHelpContainer = `${project}-maintenance-help`;
 const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
+const resourceLimits = join(secretsDirectory, 'resource-limits.json');
+writeFileSync(resourceLimits, JSON.stringify(composeResourceLimits(['postgres', 'redis', 'api',
+  'foreground-worker', 'background-worker', 'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'],
+  process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)), { mode: 0o600 });
+compose.push('-f', resourceLimits);
+const priorityResourceLimits = join(secretsDirectory,'priority-resource-limits.json');
+writeFileSync(priorityResourceLimits,JSON.stringify(composeResourceLimits(Object.keys(resourceBudgets.priorityRehearsalServices),
+  process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,resourceBudgets.priorityRehearsalServices)),{mode:0o600});
+const diagnosticResourceLimits = join(secretsDirectory,'diagnostic-resource-limits.json');
+writeFileSync(diagnosticResourceLimits,JSON.stringify(composeResourceLimits(['schema'],
+  process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,resourceBudgets.diagnosticRehearsalServices)),{mode:0o600});
 const environment = createIsolatedTestEnvironment(process.env, {
   TEMPO_PG_TEST_SECRETS: secretsDirectory,
   TEMPO_PG_TEST_PORT: String(testPort),
@@ -121,6 +139,55 @@ async function verifyStudyOpeningAdmission() {
     "--restart-stage", "verify", "--restart-database", restartDatabaseName]);
 }
 
+async function withPriorityMaintenanceAllocation(proof) {
+  const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
+  await executeIsolatedBackgroundWorkload({
+    stopConsumers: () => run('docker',[...compose,'stop',...clients]),
+    measureWorkload: proof,
+    restoreConsumers: async () => {
+      run('docker',[...compose,'up','--no-build','-d']);
+      await waitForReady();
+      verifyRestoredPostgresConsumers(run,compose,clients);
+    },
+  });
+}
+
+async function runAllocatedNativeProof(scriptPath, proofName, containerOptions = []) {
+    const limit=resourceBudgets.priorityRehearsalServices.schema;
+    const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
+    await withPriorityMaintenanceAllocation(() => run("docker", [...compose, "-f", priorityResourceLimits,
+      "run", "--rm", "--no-deps", ...containerOptions, "schema", "python", "-c", proof]));
+}
+
+function runAllocatedDiagnosticProof(scriptPath, proofName, containerOptions = []) {
+  // Keep the deployed reader and foreground writer for the unchanged proof.
+  // All optional consumers, including Maia, must yield their allocation first.
+  verifyWorkloadConsumers('exited');
+  const limit=resourceBudgets.diagnosticRehearsalServices.schema;
+  const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
+  return run('docker',[...compose,'-f',diagnosticResourceLimits,'run','--rm','--no-deps',
+    ...containerOptions,'schema','python','-c',proof]);
+}
+
+async function verifyStudyPriorityMaintenance() {
+  await withPriorityMaintenanceAllocation(async () => {
+    await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
+      const evidenceParent = join(process.env.TEMPO_TEST_TIMING_DIR ?? 'test-results/performance', 'study-priority');
+      mkdirSync(evidenceParent, {recursive: true});
+      const evidenceDirectory = resolve(evidenceParent, project);
+      mkdirSync(evidenceDirectory, {mode: 0o700});
+      run('docker',[...compose,'-f',priorityResourceLimits,'run','--rm','--no-deps',
+        '--volume', `${evidenceDirectory}:/evidence`, 'schema','python',
+        '/source/scripts/check_postgres_study_priority.py','--owned-stack','--evidence','/evidence']);
+      const receipt = JSON.parse(readFileSync(join(evidenceDirectory, 'native.json'), 'utf8'));
+      assert.equal(receipt.complete, true, 'Read-only-source priority proof did not retain complete evidence');
+      assert.equal(Object.keys(receipt.cases).length, 6, 'Priority proof omitted native cases');
+      atomicJson(join(evidenceDirectory, 'assembly.json'), {revision: candidateRevision, project,
+        source_mount: 'read-only', evidence_mount: '/evidence', complete: true});
+    });
+  });
+}
+
 function verifyProjectIsUnused() {
   for (const [resourceName, argumentsList] of [
     ["container", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]],
@@ -139,14 +206,47 @@ function isMissingMaintenanceImage(result) {
       result.stderr?.trim() === `Error response from daemon: No such image: ${tag}`);
 }
 
+function removeOwnedMaintenanceHelpContainer() {
+  const inspect = identity => {
+    const result = spawnSync('docker',['container','inspect',identity],{encoding:'utf8',env:environment,timeout:5000});
+    if(!result.error && result.status===1 && result.stderr?.trim()===`Error response from daemon: No such container: ${identity}`)return undefined;
+    assert.equal(result.status,0,'Maintenance help container inspection is uncertain');
+    const values=JSON.parse(result.stdout);assert.equal(values.length,1);return values[0];
+  };
+  const container=inspect(maintenanceHelpContainer);if(!container)return;
+  assert.equal(container.Name,'/'+maintenanceHelpContainer);
+  assert.equal(container.Config.Labels['tempo.resource-owner'],process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,'Maintenance help ownership mismatch');
+  assert.equal(container.Config.Labels['com.docker.compose.project'],project,'Maintenance help project mismatch');
+  const removed=spawnSync('docker',['rm','--force','--volumes',container.Id],{encoding:'utf8',env:environment,timeout:5000});
+  assert(!removed.error&&removed.status===0,'Maintenance help container removal failed');
+  assert.equal(inspect(maintenanceHelpContainer),undefined,'Maintenance help name still exists after removal');
+  assert.equal(inspect(container.Id),undefined,'Maintenance help identity still exists after removal');
+}
+
 function run(command, argumentsList, options = {}) {
   const { label, category } = postgresCommandTiming(argumentsList);
-  return measureScenario.syncDetail(label, category, () => {
+  const execute = () => measureScenario.syncDetail(label, category, () => {
     const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
     measureScenario.processResult(result);
     if (result.error || result.status !== 0) throw new Error(`${command} ${argumentsList.join(" ")} failed`);
     return result;
   });
+  if(command==='docker'&&argumentsList[0]==='run') {
+    for(const value of [maintenanceHelpContainer,`tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`,
+      `com.docker.compose.project=${project}`,'com.docker.compose.service=maintenance-help'])assert(argumentsList.includes(value),'Untracked standalone maintenance startup');
+    assert.equal(argumentsList[argumentsList.indexOf('--cpus')+1],'0.2');
+    assert.equal(argumentsList[argumentsList.indexOf('--memory')+1],'256m');
+    return withDevelopmentStartup(['maintenance-help'],project,execute,{oneOff:true,allocations:{'maintenance-help':{cpus:0.2,memoryMiB:256}}});
+  }
+  if (command === 'docker' && ['up', 'start', 'run'].some(operation => argumentsList.includes(operation))) {
+    const names = ['postgres', 'redis', 'api', 'foreground-worker', 'background-worker',
+      'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'];
+    const requested = names.filter(name => argumentsList.includes(name));
+    return withDevelopmentStartup(requested.length ? requested : names.filter(name => name !== 'schema'),project,execute,
+      {oneOff:argumentsList.includes('run'),allocations:postgresProofAllocations(argumentsList,
+        {priority:priorityResourceLimits,diagnostic:diagnosticResourceLimits},resourceBudgets)});
+  }
+  return execute();
 }
 
 const workloadConsumers = backgroundWorkloadConsumers;
@@ -931,21 +1031,25 @@ const actions = {
     verifyProjectIsUnused();
   },
   image_build: async () => {
+    await waitForStudyQuiet();
+    await recordBudgetResource(`compose:${project}`, true);
     resourcesCreated = true;
-    run("docker", [...compose, "build"]);
+    await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print'],{encoding:'utf8',env:environment}),
+      args => run('docker',args));
     // The rehearsal records dependency images before starting its child stack.
     // Standalone mode has no parent startup to pull these images first.
     if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
     maintenanceImageCleanupRequired = true;
-    run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
+    await managedBuild(builder => run("docker", ['buildx', "build", '--builder', builder, '--load', "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]));
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
-      run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
+      run("docker", ["run", "--rm", "--name", maintenanceHelpContainer, "--cpus", "0.2", "--memory", "256m", "--label", "tempo.resource-class=development", "--label", `tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`, "--label", `com.docker.compose.project=${project}`, "--label", "com.docker.compose.service=maintenance-help", maintenanceImage, `scripts/${script}`, "--help"]);
     }
     console.log("PASS PostgreSQL maintenance image starts migration and import commands");
   },
   startup: async () => {
+    await waitForStudyQuiet();
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
   },
@@ -966,14 +1070,13 @@ const actions = {
       "/source/scripts/check_postgres_background_budget.py"]);
   },
   operation_recovery: async () => {
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_operation_recovery.py"]);
+    await runAllocatedNativeProof('/source/scripts/check_postgres_operation_recovery.py',
+      'test_postgres_operation_recovery_uses_bounded_maintenance_allocation');
   },
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_study_priority.py", "--owned-stack"]);
+    await verifyStudyPriorityMaintenance();
     await verifyStudyOpeningAdmission();
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
@@ -981,8 +1084,8 @@ const actions = {
       "/source/scripts/check_postgres_next_opponent.py"]);
   },
   priority_recovery: async () => {
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_priority_recovery.py"]);
+    await runAllocatedNativeProof('/source/scripts/check_postgres_priority_recovery.py',
+      'test_postgres_priority_recovery_uses_bounded_maintenance_allocation');
   },
   background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -990,29 +1093,29 @@ const actions = {
   },
   deployment_lifecycle: async () => {
     const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
-      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels], measure: measureScenario });
+      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
     if (options.mode === "lifecycle") {
       await verifyLifecycle();
       return;
     }
-    const consumers = ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
+    const consumers = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
     run("docker", [...compose, "stop", ...consumers]);
     try {
       await verifyLifecycle();
     } finally {
-      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...consumers]);
+      run("docker", [...compose, "up", "--no-build", "-d"]);
       await waitForReady();
     }
   },
   background_workloads: async () => {
+    await runAllocatedNativeProof("/source/scripts/check_postgres_daily_study_dispatch.py",
+      "test_postgres_daily_dispatch_uses_bounded_maintenance_allocation", ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/scripts/check_postgres_daily_study_dispatch.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
@@ -1033,16 +1136,18 @@ const actions = {
           "/source/scripts/check_postgres_defensive_pause.py"]);
         run("docker", [...compose, "exec", "-T", "api", "python", "-c",
           "import os; assert os.environ.get('TEMPO_DATABASE_READ_URL'); assert 'TEMPO_DATABASE_WRITE_URL' not in os.environ; print('PASS deployed prefix API has reader URL and no writer credentials')"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/scripts/check_postgres_opening_segmentation.py"]);
+        runAllocatedDiagnosticProof("/source/scripts/check_postgres_opening_segmentation.py",
+          "test_postgres_opening_segmentation_uses_bounded_diagnostic_allocation",
+          ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_evidence.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_canonical_freshness.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_graph_recovery.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/scripts/check_postgres_prefix_transition_application.py"]);
+        runAllocatedDiagnosticProof("/source/scripts/check_postgres_prefix_transition_application.py",
+          "test_postgres_large_transition_planning_uses_bounded_diagnostic_allocation",
+          ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
         startConsumers: (services) => run("docker", [...compose, "start", ...services]),
@@ -1185,8 +1290,7 @@ const actions = {
   study_only: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_study_priority.py", "--owned-stack"]);
+    await verifyStudyPriorityMaintenance();
     await verifyStudyOpeningAdmission();
   },
   study_queue_receipts: async () => {
@@ -1265,7 +1369,9 @@ const actions = {
   }, async () => {
     const cleanupErrors = [];
     try {
+      if(resourcesCreated||maintenanceImageCleanupRequired)removeOwnedMaintenanceHelpContainer();
       if (resourcesCreated) {
+        assertDevelopmentProjectOwned(project);
         const stopped = spawnSync("docker", [...compose, "down", "--rmi", "local", "-v"],
           { stdio: "inherit", env: environment });
         if (stopped.error || stopped.status !== 0) cleanupErrors.push(new Error("Disposable PostgreSQL stack cleanup failed"));
@@ -1286,6 +1392,8 @@ const actions = {
       rmSync(secretsDirectory, { recursive: true, force: true });
     }
     if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "PostgreSQL resource cleanup failed");
+    reconcileDevelopmentStartup(project);
+    await recordBudgetResource(`compose:${project}`, false);
   }),
 };
 

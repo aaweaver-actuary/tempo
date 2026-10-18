@@ -390,6 +390,19 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 parent.execute(sql.SQL('DROP ROLE IF EXISTS {}').format(sql.Identifier(reader)))
 
 
+def record_owned_rehearsal(owner, present):
+    directory = os.environ.get('TEMPO_DEVELOPMENT_BUDGET_DIRECTORY')
+    token = os.environ.get('TEMPO_DEVELOPMENT_BUDGET_TOKEN')
+    if not directory or not token:
+        raise RuntimeError('Standalone proof requires scripts/development-budget.mjs')
+    from urllib.parse import quote
+    root = Path(directory)
+    metadata = json.loads((root/'owner.json').read_text())
+    if metadata['token'] != token: raise RuntimeError('Rehearsal budget owner changed')
+    resource = root/'resources'/quote('rehearsal:'+owner,safe='')
+    if present: resource.write_text(json.dumps({'token':token,'pid':os.getpid(),'owner':owner}))
+    else: resource.unlink()
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -414,6 +427,7 @@ def main():
               'source_sha256': {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in [Path(__file__), * (ROOT/'backend/app').rglob('*.py')]},
               'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()}
     attempted = []
+    record_owned_rehearsal(owner,True)
     try:
         for name,image,port,memory,cpu in ((names[0],'postgres:18.6-trixie',5432,'512m','1'),
                                            (names[1],'redis:7-alpine',6379,'64m','0.1')):
@@ -446,6 +460,7 @@ def main():
                 if details['State'].get('Paused'): docker('unpause',name)
                 docker('rm','--force','--volumes',name)
             except Exception as error: cleanup_errors.append(str(error))
+        if not cleanup_errors: record_owned_rehearsal(owner,False)
         report['cleanup'] = not cleanup_errors
         report['cleanup_errors'] = cleanup_errors
         (args.evidence/'native.json').write_text(json.dumps(report,indent=2)+'\n')

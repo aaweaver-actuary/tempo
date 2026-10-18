@@ -1,3 +1,4 @@
+import { runWithDevelopmentBudget } from '../../scripts/development-budget.mjs';
 import { cpSync, mkdtempSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
@@ -147,6 +148,10 @@ export function restrictedBuild(options) {
 
 }
 if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
-  try { restrictedBuild(parseSelection(process.argv.slice(2))); }
+  try {
+    if (!process.argv.includes('--list') && !process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
+      process.exitCode = await runWithDevelopmentBudget(process.execPath, process.argv.slice(1));
+    else restrictedBuild(parseSelection(process.argv.slice(2)));
+  }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

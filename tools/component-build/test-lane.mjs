@@ -58,8 +58,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   try {
     const argumentsList = process.argv.slice(2);
     if (argumentsList.some(argument => ["--component", "--suite"].includes(argument))) {
-      const { runComponentSelection } = await import("./component-tests.mjs");
-      runComponentSelection(argumentsList);
+      const { runComponentSelection, componentSelectionNeedsBudget } = await import("./component-tests.mjs");
+      if(!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN && componentSelectionNeedsBudget(argumentsList)) {
+        const { runWithDevelopmentBudget } = await import('../../scripts/development-budget.mjs');
+        process.exitCode=await runWithDevelopmentBudget(process.execPath,process.argv.slice(1));
+      }
+      else runComponentSelection(argumentsList);
     } else if (argumentsList.includes("--list")) {
       const [lane, filter] = argumentsList.filter(argument => argument !== "--list");
       console.log(JSON.stringify({ inventory: validateInventory(), lane, selectedFiles: selectFiles(lane, filter) }));

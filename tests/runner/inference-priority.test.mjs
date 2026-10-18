@@ -183,3 +183,60 @@ test('real Stockfish search stops for study and a quiet search still reaches its
     console.log(JSON.stringify({case:'real-stockfish-priority',yield_ms:yieldMs,depth:4}));
   } finally {engine.terminate();}
 });
+
+for (const kind of ['maia','stockfish']) {
+  test(`C18 ${kind} verified preemption acknowledges a delayed input marker while contact remains held`, {timeout:30_000}, async()=>{
+    const {createInferenceYieldReceipt}=await import('../../scripts/study-priority-qualification/inference-yield.mjs');
+    let held=false, inputAt, marker, engine, inference, launches=0;
+    const startedAt=Date.now();
+    try {
+      let proof;
+      if(kind==='maia'){
+        inference=createCancellableMaia({launch:()=>{
+          launches++;
+          const child=fork(fileURLToPath(new URL('../fixtures/study-priority/busy-maia.mjs',import.meta.url)),[],{execArgv:[],stdio:['ignore','ignore','inherit','ipc']});
+          child.once('message',()=>{inputAt=Date.now();held=true;});
+          return child;
+        }});
+        const error=await inference.analyze(fen,1500,async()=>!held).catch(error=>error);
+        assert.equal(error.code,'STUDY_PREEMPTED');assert.equal(inference.terminationVerified(),true);
+        proof={verified:true,kind:'maia-termination-verified'};
+      }else{
+        launches++;engine=await createStockfishProcess();
+        engine.uci('uci');engine.uci('setoption name Threads value 1');engine.uci('setoption name Hash value 32');engine.uci('isready');
+        const searches=createEngineSearch(engine,async()=>({active:held,available:true,study_only_mode:false}));
+        const pending=searches.evaluate({request:{position_start_fen:fen,position_prefix_uci:[],depth:99,multipv:1}},'engine_game').catch(error=>error);
+        const listener=engine.listen;
+        engine.listen=text=>{listener(text);if(inputAt===undefined&&text.startsWith('info ')&&text.includes(' pv ')){inputAt=Date.now();held=true;}};
+        assert.equal((await pending).diagnostics.outcome,'preempted');assert.equal(searches.fatalEngineError,false);
+        proof={verified:true,kind:'stockfish-protocol-stop'};
+      }
+      const stoppedAt=Date.now();assert.notEqual(inputAt,undefined);assert(stoppedAt-inputAt<=250);
+      const receipts=[];let logicalTime=0;
+      const receipt=createInferenceYieldReceipt({kind,readInteraction:async()=>marker,publish:async value=>receipts.push(value)});
+      receipt.record({generation:1,startedAt,stoppedAt,outcome:'preempted',proof});
+      assert.equal(await receipt.confirm(),false,'The marker is still delayed after verified preemption');
+      const admitted=await receipt.waitForTurn({allowed:async()=>!held,now:()=>logicalTime,deadline:50,pause:async()=>{
+        logicalTime+=25;marker={started:true,at:inputAt,generations:{[kind]:1}};
+      }});
+      assert.equal(admitted,false,'Acknowledge the stopped generation without another optional admission');
+      assert.equal(held,true);assert.equal(launches,1);assert.equal(receipts.length,1);
+      assert.equal(receipts[0].at,stoppedAt,'Receipt delivery latency cannot replace actual verified stop time');
+      assert.equal(receipts[0].generation,1);assert.deepEqual(receipts[0].proof,proof);
+      assert.equal(await receipt.confirm(),true);assert.equal(receipts.length,1);
+    }finally{inference?.close();engine?.terminate();}
+  });
+}
+
+test('C19 yield receipt rejects pre-input cancellation, stale generation and unverified running false during unavailable control',async()=>{
+  const {createInferenceYieldReceipt}=await import('../../scripts/study-priority-qualification/inference-yield.mjs');
+  let marker={started:true,at:21,generations:{maia:1}},published=0,logicalTime=0;
+  const receipt=createInferenceYieldReceipt({kind:'maia',readInteraction:async()=>marker,publish:async()=>published++});
+  assert.throws(()=>receipt.record({generation:1,startedAt:1,stoppedAt:20,proof:{verified:false}}),/not verified cancellation/);
+  receipt.record({generation:1,startedAt:1,stoppedAt:20,proof:{verified:true,kind:'maia-termination-verified'}});
+  assert.equal(await receipt.confirm(),false,'A genuine pre-input control deferral must stay deferred');
+  marker={started:true,at:10,generations:{maia:2}};assert.equal(await receipt.confirm(),false,'Old generations cannot acknowledge new input');
+  marker=undefined;
+  await assert.rejects(receipt.waitForTurn({allowed:async()=>false,deadline:50,now:()=>logicalTime,pause:async()=>{logicalTime+=25;}}),/bounded rehearsal/);
+  assert.equal(published,0);
+});
