@@ -1,7 +1,7 @@
 // Disposable PostgreSQL product and container-recreation gate.
 
 import assert from "node:assert/strict";
-import {allocatedNativeProofSource,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
+import {allocatedNativeProofSource,postgresProofAllocations,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
 import { assertDevelopmentCapacity, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from './development-budget.mjs';
 import { randomBytes } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
@@ -67,6 +67,9 @@ compose.push('-f', resourceLimits);
 const priorityResourceLimits = join(secretsDirectory,'priority-resource-limits.json');
 writeFileSync(priorityResourceLimits,JSON.stringify(composeResourceLimits(Object.keys(resourceBudgets.priorityRehearsalServices),
   process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,resourceBudgets.priorityRehearsalServices)),{mode:0o600});
+const diagnosticResourceLimits = join(secretsDirectory,'diagnostic-resource-limits.json');
+writeFileSync(diagnosticResourceLimits,JSON.stringify(composeResourceLimits(['schema'],
+  process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,resourceBudgets.diagnosticRehearsalServices)),{mode:0o600});
 const environment = createIsolatedTestEnvironment(process.env, {
   TEMPO_PG_TEST_SECRETS: secretsDirectory,
   TEMPO_PG_TEST_PORT: String(testPort),
@@ -155,6 +158,16 @@ async function runAllocatedNativeProof(scriptPath, proofName, containerOptions =
       "run", "--rm", "--no-deps", ...containerOptions, "schema", "python", "-c", proof]));
 }
 
+function runAllocatedDiagnosticProof(scriptPath, proofName, containerOptions = []) {
+  // Keep the deployed reader and foreground writer for the unchanged proof.
+  // All optional consumers, including Maia, must yield their allocation first.
+  verifyWorkloadConsumers('exited');
+  const limit=resourceBudgets.diagnosticRehearsalServices.schema;
+  const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
+  return run('docker',[...compose,'-f',diagnosticResourceLimits,'run','--rm','--no-deps',
+    ...containerOptions,'schema','python','-c',proof]);
+}
+
 async function verifyStudyPriorityMaintenance() {
   await withPriorityMaintenanceAllocation(async () => {
     await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
@@ -198,7 +211,7 @@ function run(command, argumentsList, options = {}) {
       'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'];
     const requested = names.filter(name => argumentsList.includes(name));
     assertDevelopmentCapacity(requested.length ? requested : names.filter(name => name !== 'schema'), project,undefined,
-      argumentsList.includes(priorityResourceLimits) ? resourceBudgets.priorityRehearsalServices : resourceBudgets.developmentServices);
+      postgresProofAllocations(argumentsList,{priority:priorityResourceLimits,diagnostic:diagnosticResourceLimits},resourceBudgets));
   }
   const { label, category } = postgresCommandTiming(argumentsList);
   return measureScenario.syncDetail(label, category, () => {
@@ -1096,8 +1109,9 @@ const actions = {
           "/source/scripts/check_postgres_defensive_pause.py"]);
         run("docker", [...compose, "exec", "-T", "api", "python", "-c",
           "import os; assert os.environ.get('TEMPO_DATABASE_READ_URL'); assert 'TEMPO_DATABASE_WRITE_URL' not in os.environ; print('PASS deployed prefix API has reader URL and no writer credentials')"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/scripts/check_postgres_opening_segmentation.py"]);
+        runAllocatedDiagnosticProof("/source/scripts/check_postgres_opening_segmentation.py",
+          "test_postgres_opening_segmentation_uses_bounded_diagnostic_allocation",
+          ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_evidence.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",

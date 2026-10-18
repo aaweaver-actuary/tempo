@@ -16,3 +16,11 @@ export function verifyRestoredPostgresConsumers(run, compose, clients) {
     .map(line=>JSON.parse(line)).filter(container=>container.State==='running').map(container=>container.Service));
   for(const service of clients)assert(running.has(service),`${service} was not restored after the native maintenance proof`);
 }
+
+export function postgresProofAllocations(argumentsList, paths, budgets) {
+  const priority = argumentsList.includes(paths.priority);
+  const diagnostic = argumentsList.includes(paths.diagnostic);
+  assert(!(priority && diagnostic), 'Conflicting native proof allocations');
+  return priority ? budgets.priorityRehearsalServices
+    : diagnostic ? budgets.diagnosticRehearsalServices : budgets.developmentServices;
+}

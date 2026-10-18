@@ -1,0 +1,35 @@
+{
+  "name": "@tempo/board-ui",
+  "version": "0.1.0",
+  "description": "Presentation-only React chessboard with explicit position and input ownership",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "engines": { "node": ">=22.13.0" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./styles.css": "./styles/board.css",
+    "./assets/*": "./assets/*",
+    "./notices/*": "./notices/*"
+  },
+  "files": ["dist", "styles", "assets", "notices", "src", "LICENSE", "README.md"],
+  "sideEffects": ["**/*.css"],
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts",
+    "qualify": "node qualify.mjs",
+    "test:browser": "node browser/run.mjs"
+  },
+  "dependencies": { "@lichess-org/chessground": "10.1.1" },
+  "peerDependencies": { "react": "^19.2.6" },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.27.3",
+    "jsdom": "30.0.1",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "typescript": "5.9.3",
+    "vitest": "5.0.1"
+  }
+}
