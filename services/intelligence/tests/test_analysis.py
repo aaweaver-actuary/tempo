@@ -198,3 +198,49 @@ def test_positive_opponent_encounters_supply_distinct_game_denominator():
     covered['opponent_encounters_complete']=False
     finding=next(item for item in source_findings(manifest,[gap,covered])[0] if item['category']=='practical_gap')
     assert finding['eligible_encounter_games'] is None and 'eligible_encounter_denominator_unavailable' in finding['uncertainty']
+
+
+def test_C3_original_game_url_and_repertoire_title_survive_findings():
+    manifest,games=corpus()
+    games[0]['game_url']='https://www.chess.com/game/live/123'
+    manifest['selections'][0]['repertoire_title']='Authored Italian'
+    finding=source_findings(manifest,[games[0]])[0][0]
+    assert finding['representative']['game_url']=='https://www.chess.com/game/live/123'
+    assert finding['repertoire_title']=='Authored Italian'
+
+
+def test_C3_original_physical_learning_card_is_distinct_from_content_identity():
+    from tempo_intelligence.analysis.read_models import Finding
+    manifest,games=corpus()
+    context=games[0]['contexts'][0]
+    context['learning_card_id']='original-physical-card'
+    finding=source_findings(manifest,[games[0]])[0][0]
+    assert finding['learning_card_id']=='original-physical-card'
+    assert finding['card_id']==context['card_id']
+    metadata={'finding_revision':1,'evidence_revision':'sha256:'+'a'*64,'input_id':'input','input_revision':1}
+    assert Finding.model_validate({**finding,**metadata}).learning_card_id=='original-physical-card'
+    # Absent metadata never changes accepted historical input/report bytes.
+    del context['learning_card_id']
+    historical=source_findings(manifest,[games[0]])[0][0]
+    assert 'learning_card_id' not in historical
+    assert 'learning_card_id' not in Finding.model_validate({**historical,**metadata}).model_dump(mode='json')
+
+
+def test_C3_absent_optional_metadata_preserves_original_input_page_digest():
+    from tempo_intelligence.analysis.models import Page
+    from tempo_intelligence.identity import digest
+    root=Path(__file__).parents[1]/'fixtures/analysis'
+    original=json.loads((root/'games-0.json').read_text())
+    assert Page.model_validate(original).model_dump(mode='json')==original
+    assert digest(Page.model_validate(original).model_dump(mode='json'))==digest(original)
+
+
+def test_C3_route_reference_capacity_matches_complete_authored_source_bound():
+    from tempo_intelligence.analysis.models import Context,OpponentEncounter
+    context={'ply':0,'repertoire_id':'rep','policy_id':'policy','evidence_id':'source'}
+    encounter={**context,'fen':chess.STARTING_FEN,'scope_complete':True,'scope_revision':1}
+    for model,value in [(Context,context),(OpponentEncounter,encounter)]:
+        references=[f'route-{index}' for index in range(1032)]
+        assert model.model_validate({**value,'route_ids':references}).route_ids==references
+        with pytest.raises(ValueError):
+            model.model_validate({**value,'route_ids':[f'route-{index}' for index in range(10001)]})

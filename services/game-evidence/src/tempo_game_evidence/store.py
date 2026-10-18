@@ -8,7 +8,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .comparison import compare_game
-from .snapshot import ComparisonSnapshot, parse_snapshot
+from .snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage
 from .source import INDEX_VERSION, MAX_SOURCE_BYTES, identity, normalize_pgn, replay_positions, utc_now
 
 
@@ -21,6 +21,15 @@ class EvidenceStore:
         if not database_url:
             raise ValueError("explicit_game_evidence_database_required")
         self.database_url = database_url
+        self._validated_snapshot = None
+
+    def comparison_snapshot(self, digest, document):
+        # One immutable snapshot per worker, with changed bytes invalidating the
+        # cache even under a reused identity. Epoch fencing still governs publish.
+        key = (digest, identity(document))
+        if self._validated_snapshot is None or self._validated_snapshot[0] != key:
+            self._validated_snapshot = (key, parse_snapshot(document))
+        return self._validated_snapshot[1]
 
     def connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row, connect_timeout=3,
@@ -114,7 +123,7 @@ class EvidenceStore:
                 if item:
                     affected.update(key for _, keys, _ in item.compiled_routes() for key in keys)
             database.execute("INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                             (digest,workspace,snapshot.snapshot_id,snapshot.revision,Jsonb(document)))
+                             (digest,workspace,snapshot.snapshot_id,snapshot.revision,Jsonb(snapshot_storage(document))))
             database.execute("UPDATE workspace_inputs SET epoch=epoch+1,snapshot_digest=%s,changed_positions=%s WHERE workspace_id=%s",
                              (digest,Jsonb(sorted(affected)),workspace))
             database.execute("""INSERT INTO jobs(job_key,workspace_id,kind) VALUES(%s,%s,'rescope')
@@ -197,7 +206,7 @@ class EvidenceStore:
                     "position_count": len(game.get("moves", []))+1, "complete": True}
                     and row["positions"] is not None and len(row["positions"]) == receipt["position_count"])
         positions = row["positions"] if reusable else replay_positions(game) if "source_error" not in game else []
-        snapshot = parse_snapshot(snapshot_row["document"]) if snapshot_row else None
+        snapshot = self.comparison_snapshot(inputs["snapshot_digest"], snapshot_row["document"]) if snapshot_row else None
         findings = compare_game(game, positions, snapshot) if snapshot and positions else []
         token = identity(row["revision"],row["input_digest"],inputs["epoch"],inputs["snapshot_digest"],INDEX_VERSION)
         if before_publish:
@@ -227,7 +236,7 @@ class EvidenceStore:
                                  (revision,Jsonb(positions),Jsonb({"input_digest": row["input_digest"], "version": INDEX_VERSION,
                                   "position_count": len(positions), "complete": "source_error" not in game}),game["game_id"]))
                 request_reconciliation(database, job["workspace_id"], game["game_id"])
-                finalize(database, game["game_id"])
+                finalize(database, game["game_id"], snapshot_loader=self.comparison_snapshot)
             database.execute("UPDATE jobs SET published=requested,lease_token=NULL,leased_until=NULL,error=NULL WHERE job_key=%s", (job["job_key"],))
 
     def report(self, workspace, game_id):

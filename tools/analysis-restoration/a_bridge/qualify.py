@@ -57,6 +57,7 @@ def main():
                     run(['uv', 'pip', 'install', '--python', python, '-r', requirements], consumer, label + '-dependencies')
                     run(['uv', 'pip', 'install', '--python', python, '--no-build-isolation', next(artifacts.glob(pattern))], consumer, label + '-install')
                     shutil.copytree(ROOT / 'tests', consumer / 'tests', ignore=shutil.ignore_patterns('__pycache__'))
+                    shutil.copytree(ROOT / 'fixtures', consumer / 'fixtures')
                     run([python, '-I', '-c', "import tempo_a_bridge; assert 'site-packages' in tempo_a_bridge.__file__"], consumer, label + '-guard')
                     collected = run([python, '-I', '-m', 'pytest', 'tests', '--collect-only', '-q'], consumer, label + '-collection')
                     identities = [line for line in collected.splitlines() if '::' in line]
