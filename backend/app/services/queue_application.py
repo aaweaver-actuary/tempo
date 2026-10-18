@@ -582,6 +582,10 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
     eligible = {row[0] for row in read(available_attempt_sql() + " AND q.id IN (" + placeholders + ")",
                                      (day, *(row['id'] for row in rows)))}
     for row in rows:
+        from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
+        if isinstance(database, PostgresConnection) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
+            from .legacy_study_remediation import has_current_miss
+            if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
         row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
                                  else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed else 'new')
         row['eligible'] = row['id'] in eligible

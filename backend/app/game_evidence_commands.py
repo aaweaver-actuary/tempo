@@ -1,7 +1,7 @@
-"""Worker-only legacy evidence receiver under the existing command receipt owner.
+"""Legacy evidence receiver under the existing worker command receipt owner.
 
-No HTTP route is exposed here. Authentication/producer operation polling and
-queue issuance/settlement adoption remain separate integration gates.
+HTTP dispatch owns no database write; immutable operation and module receipts
+commit together in the caller's existing command transaction.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -185,3 +185,13 @@ def receive_legacy_delivery(database, prepared):
 
 
 register_command("game_evidence.receive_legacy", receive_legacy_delivery, prepare=prepare_legacy_delivery)
+
+
+def admit_legacy_card(database, payload):
+    if set(payload) != {"card_id"} or not isinstance(payload["card_id"], str) or not 1 <= len(payload["card_id"]) <= 128:
+        raise HTTPException(422, "One accepted physical card identity is required")
+    from .services.legacy_study_remediation import admit_card
+    return admit_card(database, payload)
+
+
+register_command("game_evidence.admit_legacy", admit_legacy_card)

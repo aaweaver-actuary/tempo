@@ -4836,3 +4836,17 @@ Ruy. Backend and shared remediation now require the owner-derived exclusive
 anchor. The paired route ending a ply earlier preserves later valid separation;
 Game Evidence independently keeps the incomplete overlap unknown.
 
+`backend/tests/test_legacy_study_remediation.py` owns the synthetic source
+acceptance/replay → existing queue writer → first actual head issuance → normal
+and reconciled review → shared settlement/invalidation bridge. It preserves
+protected heads, prior-issued/prefetched/offline fences, guided/failed outcomes,
+burial, source correction, unrelated cards and disjoint old legacy clearing.
+Its module SQL effects are scripted; it is explicitly not native durability or
+locking proof. HTTP cases verify immutable command dispatch, exact cutover
+matching, background admission and retained GET query-only scope.
+
+`test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline`
+uses a synthetic wheel and mocked version command. Qualification-plan tests
+cover hash refusal, no native download fallback and first pytest failure with
+retained incomplete inventory. They do not execute a real tool, build or Docker.
+

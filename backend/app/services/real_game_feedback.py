@@ -119,8 +119,13 @@ def prioritize_real_game_miss(database: sqlite3.Connection, event_id: str) -> bo
 
 def clear_satisfied_miss_priority(database, card_id: str) -> None:
     if not has_outstanding_real_game_miss(database, card_id):
-        database.execute("UPDATE daily_queue SET gameplay_priority_reason=NULL "
-                         "WHERE card_id=? AND gameplay_priority_reason=?", (card_id, MISS_REASON))
+        reason = None
+        if isinstance(database, PostgresConnection):
+            from .legacy_study_remediation import has_current_miss
+            from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
+            if has_current_miss(database, card_id): reason = BRIDGE_MISS_REASON
+        database.execute("UPDATE daily_queue SET gameplay_priority_reason=? "
+                         "WHERE card_id=? AND gameplay_priority_reason=?", (reason, card_id, MISS_REASON))
 
 
 def apply_real_game_misses(game_id: str, *, background: bool = False) -> None:
