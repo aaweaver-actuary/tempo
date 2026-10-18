@@ -6,6 +6,9 @@
 single and multiple categories; identical membership under different seeds;
 stable replay; frozen opening relative rank across category slots; protected
 positions; stable urgent priority; versioned fingerprints and preparation fences.
+The named fresh-urgent-cycle and pre-mutation provenance cases distinguish new
+obligations from positioned retries and keep replacement ranks/unmixed additions
+dirty until actual presentation. Verified controlled edits retain the sequence.
 `test_queue_presentation.py::test_runtime_balances_admitted_work_and_replays_without_moving_issued_head`
 owns actual admission/refresh/reload through the independent runtime and restricted
 PostgreSQL. Existing `test_eligibility.py`, `test_families.py` and

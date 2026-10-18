@@ -4,7 +4,7 @@ from tempo_learning_runtime.database import connection
 from tempo_learning_runtime.maintenance import run_once
 from tempo_learning_runtime.queue_application import request_queue_refresh_in_transaction
 from tempo_learning_runtime.queue_ordering import PRESENTATION_VERSION
-from test_runtime import activate, bundle, head
+from test_runtime import activate, bundle, head, review_payload, submit
 
 
 def test_runtime_balances_admitted_work_and_replays_without_moving_issued_head(case):
@@ -31,3 +31,19 @@ def test_runtime_balances_admitted_work_and_replays_without_moving_issued_head(c
     assert [tuple(row) for row in case.query("SELECT queue_entry_id,card_id,admission_kind,admission_repertoire_id FROM learning.queue_attempt_origins ORDER BY queue_entry_id")] == origins
     assert case.query("SELECT membership_hash FROM learning.daily_queue_days")[0][0].startswith(PRESENTATION_VERSION+':')
     assert case.query("SELECT position FROM learning.daily_queue WHERE id=%s",(issued['queue_entry_id'],))[0][0] == rows[0][2]
+    # A real failed review completes the issued head and inserts its positioned
+    # repeat. Its verified receipt must survive the subsequent refresh intact.
+    import uuid
+    operation = uuid.uuid4().hex
+    payload = review_payload(issued, outcome='again')
+    response = submit(case, issued, payload, operation=operation)
+    assert response.status_code == 200, response.text
+    assert submit(case, issued, payload, operation=operation).json() == response.json()
+    assert case.query("SELECT membership_hash FROM learning.daily_queue_days")[0][0].startswith(PRESENTATION_VERSION+':')
+    positioned = [tuple(row) for row in case.query("SELECT id,position FROM learning.daily_queue WHERE status='queued' ORDER BY position,id")]
+    with case.database.scope():
+        for _ in range(30):
+            if not run_once(): break
+        else: raise AssertionError('Finite post-review refresh did not finish')
+    assert [tuple(row) for row in case.query("SELECT id,position FROM learning.daily_queue WHERE status='queued' ORDER BY position,id")] == positioned
+    assert case.query('SELECT COUNT(*) FROM learning.reviews')[0][0] == 1

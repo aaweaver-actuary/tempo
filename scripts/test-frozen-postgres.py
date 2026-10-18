@@ -44,6 +44,10 @@ def model_provenance():
 
 
 def main():
+    # This disposable PostgreSQL proof owns local admission, not the separate
+    # shared-host Redis/HTTP gate qualification or any ambient live endpoint.
+    os.environ.pop('TEMPO_REDIS_URL',None)
+    os.environ.pop('TEMPO_FOREGROUND_ACTIVITY_URL',None)
     suffix=secrets.token_hex(5);container='tempo-frozen-'+suffix;volume=container+'-data'
     password=secrets.token_urlsafe(24)
     reader_password=secrets.token_urlsafe(24);writer_password=secrets.token_urlsafe(24)
@@ -55,6 +59,11 @@ def main():
         command(['docker','run','-d','--name',container,'--label','tempo.owner='+container,'--label','tempo.disposable=true',
                  '--cpus','1','--memory','384m','--pids-limit','256','-e','POSTGRES_PASSWORD='+password,
                  '-p','127.0.0.1::5432','-v',volume+':/var/lib/postgresql','postgres:18.6-trixie'])
+        caps=json.loads(command(['docker','container','inspect',container,'--format',
+                                '{"cpu_nanos":{{.HostConfig.NanoCpus}},"memory_bytes":{{.HostConfig.Memory}}}']))
+        assert caps=={'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
+        print(json.dumps({'stage':'frozen-native','pid':os.getpid(),'pgid':os.getpgid(0),
+                          'container':container,'volume':volume,'observed_caps':caps}),flush=True)
         port=command(['docker','inspect',container,'--format','{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}'])
         url=f'postgresql://postgres:{password}@127.0.0.1:{port}/postgres'
         for attempt in range(100):

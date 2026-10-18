@@ -66,17 +66,27 @@ def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
     )
 
 
-def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) -> None:
-    """Keep a manually positioned queue entry stable across projection rebuilds."""
+def _queue_order_inputs(database, queue_date):
     entries = database.execute(
         """SELECT id,card_id FROM daily_queue
            WHERE queue_date=? AND status='queued' ORDER BY id""",
         (queue_date,),
     ).fetchall()
-    from .queue_ordering import _preserved_queue_fingerprint
     from .frozen_opening_order import activation
     saved = database.execute("SELECT membership_hash FROM daily_queue_days WHERE queue_date=?", (queue_date,)).fetchone()
-    membership_hash = _preserved_queue_fingerprint(entries, saved, activation(database))
+    return entries, saved, activation(database)
+
+
+def capture_daily_queue_order(database, queue_date):
+    """Prove the pre-mutation rows/token have actually received presentation."""
+    from .queue_ordering import _queue_order_provenance
+    return _queue_order_provenance(*_queue_order_inputs(database, queue_date))
+
+
+def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str, *, previous=None) -> None:
+    """Carry a verified receipt across one controlled positional mutation."""
+    from .queue_ordering import _preserved_queue_fingerprint
+    membership_hash = _preserved_queue_fingerprint(*_queue_order_inputs(database, queue_date), previous=previous)
     seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
     database.execute(
         """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
@@ -126,6 +136,7 @@ def ensure_card_queued_after(
     preserve_order: bool = True,
 ) -> None:
     day = queue_date or date.today().isoformat()
+    previous_order = capture_daily_queue_order(database, day) if preserve_order else None
     entry = database.execute(
         "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",
         (day, card_id),
@@ -172,4 +183,4 @@ def ensure_card_queued_after(
         (entry["id"],),
     )
     if preserve_order:
-        preserve_daily_queue_order(database, day)
+        preserve_daily_queue_order(database, day, previous=previous_order)

@@ -815,10 +815,18 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
     """Capture attempt authority, then compute presentation with connections closed."""
     with background_read_connection() as database:
         frozen_token = list(frozen_opening_order.activation(database))
-        rows = queue_application.presentation_rows(database, queue_date)
         saved = database.execute(
             "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (queue_date,),
         ).fetchone()
+    rows = []
+    after_entry_id = 0
+    while True:
+        page = queue_application.presentation_rows(None, queue_date, read=_bounded_read,
+                                                 after_entry_id=after_entry_id, limit=16)
+        rows.extend(page)
+        if len(page)<16:
+            break
+        after_entry_id = page[-1]['id']
     raw_membership_hash = queue_ordering._queue_membership_hash(rows)
     membership_hash = frozen_opening_order.queue_hash(raw_membership_hash, frozen_token)
     captured = {

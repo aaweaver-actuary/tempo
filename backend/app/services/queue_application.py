@@ -546,22 +546,46 @@ _QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,q.position,c.content_ty
            ORDER BY q.id"""
 
 
-def presentation_rows(database, day):
+def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=None):
     """Capture eligibility and attempt protection without changing membership."""
+    if read is None:
+        read = lambda statement, parameters: database.execute(statement, parameters).fetchall()
     # Shadow evidence is PostgreSQL-only; SQLite remains the recovery adapter.
     presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
                  if postgres_store.configured() else "0")
-    statement = _QUEUE_RANDOMIZATION_ROWS_SQL.replace(
-        "q.gameplay_priority_reason\n", """q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
+    statement = """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,
+                  q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
                   (q.review_result_json IS NOT NULL) review_completed,c.revision,
                   EXISTS(SELECT 1 FROM queue_attempt_origins origin
                     WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
                       AND origin.revision=c.revision AND origin.issued_as_head=1) issued,
                   """ + presented + """ presented,
-                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught,
-                  q.id IN (""" + available_attempt_sql() + ") eligible\n",
-    )
-    return [dict(row) for row in database.execute(statement, (day, day)).fetchall()]
+                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=? AND q.status='queued'"""
+    parameters = [day]
+    if after_entry_id is not None:
+        statement += " AND q.id>?"
+        parameters.append(after_entry_id)
+    statement += " ORDER BY q.id"
+    if limit is not None:
+        statement += " LIMIT ?"
+        parameters.append(limit)
+    rows = [dict(row) for row in read(statement, tuple(parameters))]
+    if not rows:
+        return rows
+    placeholders = ','.join('?' for _ in rows)
+    reviewed = {row[0] for row in read(
+        "SELECT DISTINCT card_id FROM reviews WHERE invalidated_at IS NULL AND card_id IN (" + placeholders + ")",
+        tuple(row['card_id'] for row in rows),
+    )}
+    eligible = {row[0] for row in read(available_attempt_sql() + " AND q.id IN (" + placeholders + ")",
+                                     (day, *(row['id'] for row in rows)))}
+    for row in rows:
+        row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
+                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed else 'new')
+        row['eligible'] = row['id'] in eligible
+    return rows
 
 
 def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None = None) -> None:
@@ -699,6 +723,8 @@ def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry
 
 
 def requeue(db, day, cid, after, attempt):
+    from .review_service import capture_daily_queue_order
+    previous_order = capture_daily_queue_order(db, day)
     cycle = db.execute(
         "SELECT COALESCE(MAX(cycle),-1)+1 FROM ("
         "SELECT cycle FROM daily_queue WHERE queue_date=? AND card_id=? UNION ALL "
@@ -740,7 +766,7 @@ def requeue(db, day, cid, after, attempt):
            WHERE id=?""",
         (inserted_entry_id,),
     )
-    preserve_daily_queue_order(db, day)
+    preserve_daily_queue_order(db, day, previous=previous_order)
     return inserted_entry_id
 
 

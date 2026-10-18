@@ -61,10 +61,19 @@ Issued attempts, teaching/presentation checkpoints, unavailable rows, explicit
 entries and positioned repeats keep their physical positions. Mandatory real-game
 misses retain priority among the remaining movable slots. Existing failed
 remediation repeats and first-success reinforcement retain their positioned
-behavior. Reloads and refreshes reuse the saved order; legacy prepared publication
+behavior; a fresh urgent admission after an earlier completed cycle can still
+move into priority. A receipt carries across a controlled completion, burial or
+positioned insertion only if the pre-mutation membership and frozen activation
+matched that receipt. Unmixed admissions and replacement ranks remain dirty.
+Reloads and refreshes reuse the saved order; legacy prepared publication
 rejects changed membership, issuance, revision, eligibility or positions before
 writing. No scheduler formula, due date, quota, admission rule or offline protocol
 changes here. Soft failed-retry cooldowns require a separate policy adoption.
+
+Legacy background preparation pages at most 16 queue entries per read section,
+looks up review history separately, and evaluates eligibility only for that page.
+The owning native large-queue regression runs with a 50 ms transaction limit;
+this is a bounded fixture proof, not a host latency guarantee.
 
 ## Accepted definitions and integration
 

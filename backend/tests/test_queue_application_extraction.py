@@ -93,6 +93,33 @@ def test_queue_application_sql_matches_pinned_pre_extraction_literals():
     assert found == frozen_sql
 
 
+@pytest.mark.parametrize('unmixed_append', [False, True])
+def test_burial_carries_only_a_verified_pre_mutation_presentation_receipt(queued_attempts, unmixed_append):
+    from fastapi.testclient import TestClient
+    from app import main
+    day = date.today().isoformat()
+    with database.connection() as connection:
+        queue_application.randomize_daily_queue(connection, day)
+        saved = dict(connection.execute('SELECT seed,membership_hash FROM daily_queue_days').fetchone())
+    client = TestClient(main.app)
+    head = client.get('/api/queue/today').json()['cards'][0]
+    with database.connection() as connection:
+        if unmixed_append:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) SELECT 'unmixed-append',repertoire_id,kind,start_fen,moves_json,state,due_date,content_type FROM cards LIMIT 1")
+            connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'unmixed-append',99)", (day,))
+        before = [tuple(row) for row in connection.execute('SELECT id,position FROM daily_queue WHERE status=\'queued\' AND id!=? ORDER BY position,id', (head['queue_entry_id'],))]
+    response = client.post(f"/api/queue/entries/{head['queue_entry_id']}/bury", json={'card_id':head['id'],'expected_revision':head['revision']})
+    assert response.status_code == 200, response.text
+    with database.connection() as connection:
+        current = connection.execute('SELECT seed,membership_hash FROM daily_queue_days').fetchone()
+        assert current['seed'] == saved['seed']
+        assert current['membership_hash'].startswith('unmixed:') is unmixed_append
+        queue_application.randomize_daily_queue(connection, day)
+        assert connection.execute('SELECT membership_hash FROM daily_queue_days').fetchone()[0].startswith(queue_ordering.PRESENTATION_VERSION+':')
+        if not unmixed_append:
+            assert [tuple(row) for row in connection.execute("SELECT id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before
+
+
 @pytest.mark.parametrize('after,expected_cards', [(None, ['later-b', 'active-a', 'active-a']),
                                                  (0, ['active-a', 'later-b', 'active-a']),
                                                  (99, ['later-b', 'active-a', 'active-a'])])

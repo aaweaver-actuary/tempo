@@ -48,6 +48,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
     password = secrets.token_urlsafe(32)
     report = {
         "identity": identity,
+        "process": {"pid":os.getpid(),"pgid":os.getpgid(0)},
         "complete": False,
         "container_absent": None,
         "commands": [],
@@ -180,6 +181,10 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
             "-c",
             "max_locks_per_transaction=512",
         )
+        report['observed_caps'] = json.loads(docker('container','inspect',identity,'--format',
+            '{"cpu_nanos":{{.HostConfig.NanoCpus}},"memory_bytes":{{.HostConfig.Memory}}}'))
+        assert report['observed_caps'] == {'cpu_nanos':1_000_000_000,'memory_bytes':512*1024*1024}
+        write_json(evidence / 'native-start.json',report)
         port = docker(
             "inspect",
             identity,

@@ -22,7 +22,7 @@ from .durable_tasks import (
     lock_current_slice,
 )
 from .review_service import (
-    apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order,
+    apply_scheduling_review, capture_daily_queue_order, ensure_card_queued_after, preserve_daily_queue_order,
     rebuild_defense_schedule,
 )
 from .threat_grading import DefenseExercise, grade_defense_move
@@ -578,6 +578,7 @@ def _complete_defense_in_transaction(
     now = datetime.now(timezone.utc)
     today = date.today()
     correct = response["status"] == "correct"
+    previous_order = capture_daily_queue_order(database, today.isoformat())
     scheduling = apply_scheduling_review(
         database, candidate["card_id"], "correct" if correct else "again",
         guided=False, source_kind="study", source_ref=f"defense:{attempt_id}",
@@ -605,12 +606,13 @@ def _complete_defense_in_transaction(
                 (today.isoformat(), candidate["card_id"], next_cycle, final_position,
                  "reinforcement"),
             )
-            preserve_daily_queue_order(database, today.isoformat())
         else:
             ensure_card_queued_after(
                 database, candidate["card_id"], scheduling["requeue_after_cards"],
                 "reinforcement" if correct else "again",
+                preserve_order=False,
             )
+    preserve_daily_queue_order(database, today.isoformat(), previous=previous_order)
     database.execute(
         """INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,
               queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at)

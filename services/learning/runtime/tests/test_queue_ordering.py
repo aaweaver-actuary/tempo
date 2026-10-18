@@ -118,3 +118,40 @@ def test_prepared_presentation_state_fences_issuance_positions_and_eligibility()
         changed = deepcopy(rows)
         changed[0][field] = value
         assert ordering._queue_presentation_state(changed) != before
+
+
+def test_fresh_urgent_admission_after_prior_cycle_is_not_a_positioned_retry():
+    rows = rows_for(("review", "opening", 4))
+    rows[0]['issued'] = True
+    rows[-1].update(cycle=2, attempt_state='gameplay', gameplay_priority_reason=ordering.MISS_REASON)
+    assert ordering._priority_queue_order(rows)[:2] == [rows[0], rows[-1]]
+    assert plan(rows)[2][:2] == [rows[0], rows[-1]]
+    for state in ('guided', 'reinforcement'):
+        rows[-1]['attempt_state'] = state
+        assert ordering._priority_queue_order(rows)[-1] == rows[-1]
+    rows[-1]['attempt_state'] = 'gameplay'
+    for protection in ('issued','presented','attempt_failed','review_completed'):
+        rows[-1][protection] = True
+        assert ordering._priority_queue_order(rows)[-1] == rows[-1]
+        rows[-1][protection] = False
+
+
+def test_prior_v3_receipt_cannot_certify_replacement_activation_or_unmixed_append():
+    rows = rows_for(("new", "opening", 3))
+    token = ['old', 1]
+    saved = {'membership_hash': ordering._queue_order_fingerprint(ordering._queue_membership_hash(rows), token)}
+    assert ordering._preserved_queue_fingerprint(rows[1:], saved, ['replacement', 2]).startswith('unmixed:')
+    appended = rows + [{**rows[-1], 'id': 4, 'card_id': 'new-admission'}]
+    assert ordering._preserved_queue_fingerprint(appended, saved, token).startswith('unmixed:')
+
+
+def test_only_verified_pre_mutation_provenance_preserves_removal_and_positioned_retry():
+    rows = rows_for(("new", "opening", 3))
+    token = ['active', 1]
+    saved = {'membership_hash': ordering._queue_order_fingerprint(ordering._queue_membership_hash(rows), token)}
+    previous = ordering._queue_order_provenance(rows, saved, token)
+    changed = rows[1:] + [{**rows[0], 'id': 4, 'cycle': 1, 'attempt_state': 'guided'}]
+    expected = ordering._queue_order_fingerprint(ordering._queue_membership_hash(changed), token)
+    assert ordering._preserved_queue_fingerprint(changed, saved, token, previous=previous) == expected
+    assert ordering._preserved_queue_fingerprint(changed, saved, ['replacement', 2], previous=previous).startswith('unmixed:')
+    assert ordering._queue_order_provenance(rows[1:], saved, token) is None

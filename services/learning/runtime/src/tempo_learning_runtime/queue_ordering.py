@@ -57,11 +57,24 @@ def _queue_order_fingerprint(membership_hash: str, frozen_token) -> str:
     return PRESENTATION_VERSION + ":" + _digest([membership_hash, list(frozen_token)])
 
 
-def _preserved_queue_fingerprint(rows, saved, frozen_token) -> str:
+def _queue_order_provenance(rows, saved, frozen_token):
     fingerprint = _queue_order_fingerprint(_queue_membership_hash(rows), frozen_token)
-    # A positioned retry retains an existing mix. Initial admission/legacy days
-    # still need their first versioned presentation pass.
-    return fingerprint if saved and saved["membership_hash"].startswith(PRESENTATION_VERSION + ":") else "unmixed:" + fingerprint
+    if saved and saved["membership_hash"] == fingerprint:
+        return {"fingerprint": fingerprint, "frozen_token": list(frozen_token)}
+    return None
+
+
+def _preserved_queue_fingerprint(rows, saved, frozen_token, *, previous=None) -> str:
+    fingerprint = _queue_order_fingerprint(_queue_membership_hash(rows), frozen_token)
+    if _queue_order_provenance(rows, saved, frozen_token) or (
+        previous and saved and saved["membership_hash"] == previous["fingerprint"]
+        and previous["frozen_token"] == list(frozen_token)
+    ):
+        return fingerprint
+    # Only a matching pre-mutation receipt can certify a controlled removal or
+    # positioned insertion. A v3 prefix alone cannot certify new admissions or
+    # a replacement frozen publication that has not yet been presented.
+    return "unmixed:" + fingerprint
 
 
 def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderingRow]:
@@ -100,7 +113,9 @@ def _protected_queue_ids(rows: Sequence[QueueOrderingRow], *, preserve_through_e
     return {row["id"] for row in rows if (
         row.get("eligible", True) is False or row.get("eligible") == 0
         or row["admission_kind"] == "explicit"
-        or row.get("cycle", 0) > 0
+        or (row.get("cycle", 0) > 0 and not (
+            row["gameplay_priority_reason"] == MISS_REASON and row.get("attempt_state") == "gameplay"
+        ))
         or row.get("attempt_failed", False) or row.get("review_completed", False)
         or row.get("issued", False) or row.get("presented", False)
         or row.get("attempt_state", "clean") not in ("clean", "unstarted", "gameplay")

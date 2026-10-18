@@ -120,6 +120,7 @@ def main(arguments=None):
         'TEMPO_LEARNING_EVIDENCE_DIR', str(ROOT/'test-results/learning-review-224'))).resolve()
     identity = 'tempo224-' + secrets.token_hex(8)
     report = {'identity':identity,'image':None,'complete':False,'exit_code':1,
+              'process':{'pid':os.getpid(),'pgid':os.getpgid(0)},
               'pytest_exit_code':None,'collection_exit_code':None,'error':None,'cleanup_error':None,
               'external_database_accepted':False,'commands':[],'runtime':sys.version,
               'resource':{'creation_attempted':False,'container_removed':False,
@@ -159,6 +160,10 @@ def main(arguments=None):
                    '--pids-limit','256','--tmpfs','/var/lib/postgresql:rw,size=512m',
                    '--publish','127.0.0.1::5432','--env-file',str(secret_file),report['image'],
                    'postgres','-c','shared_buffers=32MB','-c','max_connections=32')
+        report['resource']['observed_caps'] = json.loads(docker('container','inspect',identity,'--format',
+            '{"cpu_nanos":{{.HostConfig.NanoCpus}},"memory_bytes":{{.HostConfig.Memory}}}').stdout)
+        assert report['resource']['observed_caps'] == {'cpu_nanos':1_000_000_000,'memory_bytes':384*1024*1024}
+        publish_reports(directory, report)
         environment = provision_owned_cluster(identity, password)
         run_required_tests(environment, run_directory, external_junit, report)
         validated = True

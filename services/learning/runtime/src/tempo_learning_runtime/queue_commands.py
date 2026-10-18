@@ -14,7 +14,7 @@ from .review_conflicts import ReviewConflict
 from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .durable_tasks import enqueue_task_in_transaction
-from .review_service import preserve_daily_queue_order
+from .review_service import capture_daily_queue_order, preserve_daily_queue_order
 
 
 _QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL
@@ -148,13 +148,14 @@ def bury_queue_entry(
     )
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
+    previous_order = capture_daily_queue_order(database, queue_date)
     database.execute(
         """UPDATE daily_queue SET status='buried'
            WHERE queue_date=? AND status!='complete'
              AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
         (queue_date, entry_id),
     )
-    preserve_daily_queue_order(database, queue_date)
+    preserve_daily_queue_order(database, queue_date, previous=previous_order)
     return {"buried": True, "queue_entry_id": entry_id}
 
 

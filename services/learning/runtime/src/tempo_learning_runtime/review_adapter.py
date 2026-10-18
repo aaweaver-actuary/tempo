@@ -15,7 +15,7 @@ from .postgres_store import PostgresConnection
 from .review_conflicts import ReviewConflict
 from .queue_position_lock import lock_queue_date_for_position
 from . import queue_application
-from .review_service import apply_scheduling_review
+from .review_service import apply_scheduling_review, capture_daily_queue_order, preserve_daily_queue_order
 from .review_reconciliation import (
     card_schedule_state,
     save_schedule_snapshot,
@@ -331,6 +331,9 @@ class LearningReviewAdapter:
             )
 
     def complete_attempt(self, command, context, *, guided):
+        queue_day = self.database.execute("SELECT queue_date FROM daily_queue WHERE id=?", (command.queue_entry_id,)).fetchone()
+        day = queue_day[0] if queue_day else context.local_day.isoformat()
+        previous_order = capture_daily_queue_order(self.database, day)
         if command.queue_entry_id:
             self.database.execute(
                 "UPDATE daily_queue SET status='complete',attempt_state=? WHERE id=? AND card_id=?",
@@ -345,6 +348,7 @@ class LearningReviewAdapter:
                 "UPDATE daily_queue SET status='complete' WHERE id=(SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position LIMIT 1)",
                 (context.local_day.isoformat(), command.card_id),
             )
+        preserve_daily_queue_order(self.database, day, previous=previous_order)
 
     def mark_clean_tactic(self, card_id, context):
         self.database.execute(
