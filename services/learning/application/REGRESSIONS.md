@@ -15,6 +15,14 @@ SQLite proof for required first-issuance effects, rollback, essential work befor
 and after the final facts read, missing projection without a replacement, same
 identity/position recovery, protected replacement and ID/content/revision/lifecycle
 conflicts. Retained timestamp/decision fields stay immutable through recovery.
+The locked-card case proves restoration cannot bypass the existing recovered
+review rejection. Real SQLite burial and legacy promotion cover same-day burial
+and reused original cycles without treating every earlier completed row as a
+conflict. `test_released_issued_retry_rebinds_next_day_issuance_to_the_actual_identity_and_slot`
+keeps decision/first-release fields immutable while rebinding current-identity
+issuance metadata before next-day missing-row recovery.
+That same case preserves the issued attempt state through restoration; the narrow
+policy row snapshots state with time/position for its current bound identity.
 
 The regular owning package command is `python -m pytest tests` against the installed
 artifact. All parametrized identities in `tests/test_application.py` and

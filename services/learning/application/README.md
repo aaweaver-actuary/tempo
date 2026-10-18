@@ -27,6 +27,11 @@ origin is found independently of replaceable queue rows: the adapter may restore
 that same proven identity at its saved first-issued position, returning `changed`,
 or return actionable `conflict` if content, lifecycle, slot or ID cannot be proven.
 It never creates another issued attempt or loops silently on missing authority.
+Restoration keeps the existing locked-card recovery and same-day burial fences;
+nonqueued occupancy of the original cycle conflicts, while completed source
+history at an earlier cycle remains valid. First issuance time/position/attempt state are scoped
+to the bound retry identity and reset on an actual rebind; original decision,
+deadline and first release remain unchanged across valid daily admissions.
 
 The application owns replay/validation/recovery decisions, review sequencing,
 required evidence binding and prepared-successor orchestration. Immutable records

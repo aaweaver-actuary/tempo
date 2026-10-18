@@ -16,6 +16,14 @@ and `test_remediation.py::test_shared_queue_selector_preserves_runtime_issuance_
 retain the canonical first-issuance frontier and actual successful settlement,
 without a new settlement policy. These native specifications require the regular
 owned PostgreSQL runner; source/SQLite passes do not establish their qualification.
+The native recovered-Again case supplies the actual recorded completion instant
+and verifies the original review/deadline rather than accidentally exercising the
+separate no-recorded-time reconciliation branch. Locked-card restoration, actual
+runtime burial, compatible reused-cycle occupancy, and released/issued cross-day
+identity/time/slot/attempt-state carryover are also named in `test_failed_retry.py`.
+Runtime's normal promotion already uses retained cycles; only the legacy owner
+produces that reused cycle, so runtime's same-cycle case explicitly supplies a
+compatible projection state rather than claiming runtime promotion reuses it.
 
 ## Balanced daily presentation
 

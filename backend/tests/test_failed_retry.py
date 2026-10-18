@@ -403,7 +403,7 @@ def test_released_projection_rebind_preserves_first_release_and_placement_on_rel
         selected = _select(connection,now=observed+timedelta(seconds=1))
         assert selected.status=='issued' and selected.identity.entry_id==replacement
         after = dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())
-        assert after=={**before,'retry_queue_entry_id':replacement,'issued_at':(observed+timedelta(seconds=1)).isoformat(),'issued_position':10}
+        assert after=={**before,'retry_queue_entry_id':replacement,'issued_at':(observed+timedelta(seconds=1)).isoformat(),'issued_position':10,'issued_attempt_state':'guided'}
 
 
 def test_missing_issued_retry_origin_never_authorizes_a_second_projection_attempt(queued_attempts):
@@ -577,7 +577,7 @@ def test_deleted_issued_retry_without_replacement_cannot_report_daily_completion
         assert dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())==before
 
 
-@pytest.mark.parametrize('obstruction',['occupied_id','changed_content','revised_card','archived_card','protected_replacement','unknown_slot'])
+@pytest.mark.parametrize('obstruction',['occupied_id','changed_content','revised_card','archived_card','locked_card','protected_replacement','unknown_slot'])
 def test_unprovable_issued_retry_recovery_is_bounded_actionable_and_nonmutating(queued_attempts,obstruction):
     with database.connection() as connection:
         first = _failed_review(connection,queued_attempts)
@@ -593,10 +593,21 @@ def test_unprovable_issued_retry_recovery_is_bounded_actionable_and_nonmutating(
             connection.execute("UPDATE cards SET revision=2 WHERE id='active-a'")
         elif obstruction=='archived_card':
             connection.execute("UPDATE cards SET archived=1 WHERE id='active-a'")
+        elif obstruction=='locked_card':
+            connection.execute("UPDATE cards SET state='locked' WHERE id='active-a'")
+            request=ReviewRequest(outcome='again',queue_entry_id=first['requeue_entry_id'],
+                expected_revision=1,expected_review_id=first['review_id'],
+                attempt_id='locked-issued-recovery',recorded_at=(FIXED_TIME+timedelta(seconds=10)).isoformat())
+            adapter=LearningReviewAdapter(connection,request,observed_at=FIXED_TIME+timedelta(seconds=10),
+                policy_provider=lambda:SimpleNamespace(timezone='UTC',light_first_interval_days=7))
+            command=command_from_request('active-a',request)
+            with pytest.raises(learning.ReviewConflict) as rejection:
+                learning.apply_review(adapter,command,adapter.context(command))
+            assert rejection.value.code=='card_integrity_blocked'
         elif obstruction=='protected_replacement':
             connection.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind) VALUES('2026-10-18','active-a',1,30,'explicit')")
         else:
-            connection.execute('UPDATE queue_retry_policies SET issued_at=NULL,issued_position=NULL')
+            connection.execute('UPDATE queue_retry_policies SET issued_at=NULL,issued_position=NULL,issued_attempt_state=NULL')
         before = {table:[tuple(row) for row in connection.execute('SELECT * FROM '+table+' ORDER BY 1')]
             for table in ('daily_queue','queue_attempt_origins','queue_retry_policies','daily_queue_days')}
         for _ in range(2):
@@ -638,7 +649,7 @@ def test_atomic_fallback_checks_retained_issued_origin_even_without_a_queue_row(
                 if not self.observed and statement.startswith('UPDATE queue_retry_policies SET retry_queue_entry_id='):
                     self.observed=True
                     timestamp=FIXED_TIME.isoformat()
-                    connection.execute("UPDATE queue_retry_policies SET released_at=?,release_reason='no_ready_work',issued_at=?,issued_position=5 WHERE review_id=?",
+                    connection.execute("UPDATE queue_retry_policies SET released_at=?,release_reason='no_ready_work',issued_at=?,issued_position=5,issued_attempt_state='guided' WHERE review_id=?",
                         (timestamp,timestamp,other['review_id']))
                     connection.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?',(other['requeue_entry_id'],))
                     connection.execute('DELETE FROM daily_queue WHERE id=?',(other['requeue_entry_id'],))
@@ -647,3 +658,69 @@ def test_atomic_fallback_checks_retained_issued_origin_even_without_a_queue_row(
         selected=learning.select_queue_head(selection_store(arrival),learning.QueueContext(FIXED_TIME,'2026-10-18'))
         assert arrival.observed and selected.status=='pending'
         assert connection.execute('SELECT released_at FROM queue_retry_policies WHERE review_id=?',(first['review_id'],)).fetchone()[0] is None
+
+
+def test_released_issued_retry_rebinds_next_day_issuance_to_the_actual_identity_and_slot(queued_attempts):
+    with database.connection() as connection:
+        first=_failed_review(connection,queued_attempts)
+        connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
+        connection.execute('UPDATE daily_queue SET position=4 WHERE id=?',(first['requeue_entry_id'],))
+        _complete_projection(connection)
+        assert _select(connection).status=='issued'
+        original=dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())
+        assert original['issued_position']==4 and original['issued_at']==FIXED_TIME.isoformat()
+        next_day='2026-10-19'
+        now=FIXED_TIME+timedelta(minutes=5)
+        admitted=connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(?,'active-a',0,'review') RETURNING id",(next_day,)).fetchone()[0]
+        _complete_projection(connection,next_day)
+        selected=_select(connection,now=now,day=next_day)
+        assert selected.status=='issued' and selected.identity.entry_id==admitted
+        rebound=dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())
+        assert rebound=={**original,'retry_queue_entry_id':admitted,'issued_at':now.isoformat(),'issued_position':0,'issued_attempt_state':'clean'}
+        connection.execute('DELETE FROM daily_queue WHERE id=?',(admitted,))
+        assert _select(connection,now=now+timedelta(seconds=1),day=next_day).status=='changed'
+        assert connection.execute('SELECT position FROM daily_queue WHERE id=?',(admitted,)).fetchone()[0]==0
+        assert connection.execute('SELECT attempt_state FROM daily_queue WHERE id=?',(admitted,)).fetchone()[0]=='clean'
+        assert connection.execute('SELECT position FROM daily_queue WHERE id=?',(first['requeue_entry_id'],)).fetchone()[0]==4
+        assert dict(connection.execute('SELECT * FROM queue_retry_policies').fetchone())==rebound
+
+
+@pytest.mark.parametrize('retirement',['burial_other_cycle','burial_original_cycle','complete_original_cycle','blocked_original_cycle'])
+def test_missing_issued_retry_respects_real_burial_and_nonqueued_original_cycle(queued_attempts,retirement,monkeypatch):
+    from app import main
+    from contextlib import nullcontext
+    from app.services.review_service import ensure_card_queued_after
+    with database.connection() as connection:
+        first=_failed_review(connection,queued_attempts)
+        connection.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(queued_attempts['later-b'],))
+        _complete_projection(connection)
+        assert _select(connection).status=='issued'
+        original_cycle=connection.execute('SELECT cycle FROM daily_queue WHERE id=?',(first['requeue_entry_id'],)).fetchone()[0]
+        connection.execute('DELETE FROM daily_queue WHERE id=?',(first['requeue_entry_id'],))
+        if retirement=='burial_other_cycle':
+            replacement=connection.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind) VALUES('2026-10-18','active-a',?,9,'review') RETURNING id",(original_cycle+1,)).fetchone()[0]
+        else:
+            # Use the real legacy priority owner, whose surviving-row cycle
+            # calculation can reuse the missing retry's original cycle.
+            ensure_card_queued_after(connection,'active-a',0,queue_date='2026-10-18')
+            row=connection.execute("SELECT id,cycle FROM daily_queue WHERE card_id='active-a' AND status='queued'").fetchone()
+            replacement=row['id']
+            assert row['cycle']==original_cycle
+        if retirement.startswith('burial'):
+            # Borrow this test transaction through the actual SQLite API owner;
+            # the native command intentionally requires PostgreSQL locks.
+            with monkeypatch.context() as patch:
+                patch.setattr(main,'connection',lambda:nullcontext(connection))
+                result=main.bury_queue_entry(replacement)
+            assert result['buried'] is True
+        else:
+            status='complete' if retirement=='complete_original_cycle' else 'blocked'
+            connection.execute('UPDATE daily_queue SET status=? WHERE id=?',(status,replacement))
+        assert connection.execute("SELECT status FROM daily_queue WHERE id=?",(queued_attempts['active-a'],)).fetchone()[0]=='complete'
+        before={table:[tuple(row) for row in connection.execute('SELECT * FROM '+table+' ORDER BY 1')]
+            for table in ('daily_queue','queue_attempt_origins','queue_retry_policies','daily_queue_days')}
+        for _ in range(2):
+            selected=_select(connection)
+            assert selected.status=='conflict' and selected.reason=='issued_retry_recovery_required'
+        assert {table:[tuple(row) for row in connection.execute('SELECT * FROM '+table+' ORDER BY 1')]
+            for table in before}==before

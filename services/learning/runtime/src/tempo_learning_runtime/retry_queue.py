@@ -92,7 +92,11 @@ class QueueSelectionAdapter:
             guard += ' AND ' + complete_guard
             arguments.extend((context.local_date,context.local_date,timestamp,context.local_date,context.local_date,*complete_parameters))
         if policy['released_at'] is not None:
-            changed = self.database.execute('UPDATE queue_retry_policies SET retry_queue_entry_id=? '
+            # Issuance belongs to this projection identity. Keep the original
+            # review decision/release but do not carry another day's slot/time
+            # into a newly admitted, as-yet unissued identity.
+            changed = self.database.execute('UPDATE queue_retry_policies SET retry_queue_entry_id=?, '
+                'issued_at=NULL,issued_position=NULL,issued_attempt_state=NULL '
                 'WHERE review_id=? AND released_at IS NOT NULL AND retry_queue_entry_id!=?',
                 (current.identity.entry_id,policy['review_id'],current.identity.entry_id)).rowcount
         else:
@@ -168,21 +172,32 @@ class QueueSelectionAdapter:
         No new admission, retry decision, issued identity, or alternate card lock
         is acquired. A savepoint keeps a failed eligibility proof non-mutating.
         """
-        origin = self.database.execute('SELECT retained.*,retry.issued_position FROM queue_retry_policies retry '
+        origin = self.database.execute('SELECT retained.*,retry.issued_position,retry.issued_attempt_state FROM queue_retry_policies retry '
             'JOIN queue_attempt_origins retained ON retained.queue_entry_id=retry.retry_queue_entry_id '
             'AND retained.card_id=retry.card_id AND retained.revision=retry.revision '
             "WHERE retained.queue_entry_id=? AND retained.card_id=? AND retained.revision=? "
             "AND retained.queue_date=? AND retained.issued_as_head=1 AND retained.last_status='queued' "
             'AND retained.review_result_json IS NULL',
             (identity.entry_id,identity.card_id,identity.revision,context.local_date)).fetchone()
-        card = self.database.execute('SELECT revision,start_fen,moves_json,trained_color,content_type '
+        card = self.database.execute('SELECT revision,start_fen,moves_json,trained_color,content_type,state '
             'FROM cards WHERE id=?',(identity.card_id,)).fetchone()
         conflict = QueueSelection('conflict',identity,'issued_retry_recovery_required')
-        if not origin or not card or origin['issued_position'] is None or any(
+        # Preserve apply_review's recovered-attempt lifecycle fence. Restoring a
+        # projection must not convert a locked recovered attempt into an ordinary
+        # surviving one that the existing review path would accept.
+        if (not origin or not card or card['state']=='locked' or origin['issued_position'] is None
+                or origin['issued_attempt_state'] is None or any(
                 origin[field]!=card[field] for field in
-                ('revision','start_fen','moves_json','trained_color','content_type')):
+                ('revision','start_fen','moves_json','trained_color','content_type'))):
             return conflict
         if self.database.execute('SELECT 1 FROM daily_queue WHERE id=?',(identity.entry_id,)).fetchone():
+            return conflict
+        if self.database.execute("SELECT 1 FROM daily_queue WHERE card_id=? AND queue_date=? "
+                "AND (status='buried' OR (cycle=? AND status!='queued')) LIMIT 1",
+                (identity.card_id,context.local_date,origin['cycle'])).fetchone():
+            # Match the admission owner's same-day burial fence and do not
+            # collide with an already-retired projection of this same cycle.
+            # Completed source history at an EARLIER cycle remains legitimate.
             return conflict
         presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
                      if hasattr(self.database,'execute_native') else '0')
@@ -205,9 +220,9 @@ class QueueSelectionAdapter:
             priority = self.priority_for_retry(self.database,identity.card_id) if self.priority_for_retry else None
             self.database.execute('INSERT INTO daily_queue(id,queue_date,card_id,cycle,position,status,attempt_state,'
                 'attempt_failed,card_bucket,admission_kind,admission_repertoire_id,gameplay_priority_reason) '
-                "VALUES(?,?,?,?,?,'queued','guided',?,?,?,?,?)",
+                "VALUES(?,?,?,?,?,'queued',?,?,?,?,?,?)",
                 (identity.entry_id,context.local_date,identity.card_id,origin['cycle'],origin['issued_position'],
-                 origin['attempt_failed'],origin['content_type'],origin['admission_kind'],
+                 origin['issued_attempt_state'],origin['attempt_failed'],origin['content_type'],origin['admission_kind'],
                  origin['admission_repertoire_id'],priority))
             eligible = self.database.execute(self.queue_application.available_attempt_sql()+' AND q.id=?',
                 (context.local_date,identity.entry_id)).fetchone()
@@ -237,9 +252,10 @@ class QueueSelectionAdapter:
         if not changed:
             return QueueSelection('pending',reason='origin_unavailable')
         self.database.execute('UPDATE queue_retry_policies SET issued_at=COALESCE(issued_at,?), '
-            'issued_position=COALESCE(issued_position,(SELECT position FROM daily_queue WHERE id=?)) '
+            'issued_position=COALESCE(issued_position,(SELECT position FROM daily_queue WHERE id=?)), '
+            'issued_attempt_state=COALESCE(issued_attempt_state,(SELECT attempt_state FROM daily_queue WHERE id=?)) '
             'WHERE retry_queue_entry_id=? AND released_at IS NOT NULL',
-            (context.observed_at.astimezone(timezone.utc).isoformat(),identity.entry_id,identity.entry_id))
+            (context.observed_at.astimezone(timezone.utc).isoformat(),identity.entry_id,identity.entry_id,identity.entry_id))
         return QueueSelection('issued',replace(identity,issued=True))
 
 
