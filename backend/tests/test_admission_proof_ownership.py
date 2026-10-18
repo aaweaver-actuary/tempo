@@ -5,6 +5,8 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 import json
+import math
+import time
 
 import pytest
 
@@ -29,6 +31,9 @@ def admission_proof(monkeypatch):
             elif script == redis_admission_gate._CLAIM_BACKGROUND:
                 self.leases[(arguments[2], arguments[4])] = 1
             return 1
+
+        def zadd(self, key, entries):
+            self.leases.update({(key, token): score for token, score in entries.items()})
 
         def zscore(self, key, token):
             return self.leases.get((key, token))
@@ -234,3 +239,52 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
     assert (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY) == parent_keys
     assert server.deleted_keys == list(owned_keys)
     assert server.leases == {(parent_keys[0], "parent-request"): 1}
+
+
+@pytest.mark.parametrize("proof_name", ["http_admission_preserves_saved_payload_replay",
+                                        "restart_recomputes_original_receipt"])
+@pytest.mark.parametrize("fail_proof", [False, True], ids=["complete", "failure-cleanup"])
+def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_registration(
+    admission_proof, monkeypatch, proof_name, fail_proof,
+):
+    import check_postgres_graph_retention
+
+    proof, server = admission_proof
+    parent_keys = redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY
+    original_leases = dict(server.leases)
+
+    @contextmanager
+    def private_scope(namespace):
+        with monkeypatch.context() as isolated:
+            isolated.setattr(redis_admission_gate, "_FOREGROUND_KEY", namespace + ":foreground")
+            isolated.setattr(redis_admission_gate, "_BACKGROUND_KEY", namespace + ":background")
+            yield
+
+    monkeypatch.setattr(check_postgres_graph_retention, "owned_admission_scope", private_scope)
+
+    def checkpoint_proof(*_arguments):
+        barriers = {identity: score for identity, score in server.leases.items()
+                    if identity not in original_leases}
+        assert len(barriers) == 1
+        (key, _token), expiry = next(iter(barriers.items()))
+        assert key == parent_keys[0]
+        # Redis PEXPIRE accepts integer milliseconds. An infinite sentinel
+        # poisons the shared key when another process renews foreground work.
+        lifetime = expiry - int(time.time() * 1000) + 1000
+        assert math.isfinite(lifetime) and lifetime == int(lifetime), "Invalid Redis PEXPIRE lifetime"
+        assert lifetime > 120_000, "Parent barrier cannot cover the bounded proof"
+        with monkeypatch.context() as external_worker:
+            external_worker.setattr(redis_admission_gate, "_FOREGROUND_KEY", parent_keys[0])
+            with redis_admission_gate.foreground_lease():
+                assert all(server.leases[identity] == score for identity, score in barriers.items())
+                assert len(server.leases) == len(original_leases) + 2
+        assert all(server.leases[identity] == score for identity, score in barriers.items())
+        if fail_proof:
+            raise RuntimeError("Controlled checkpoint proof failure")
+
+    monkeypatch.setattr(proof, "_prove_opening_checkpoint_" + proof_name, checkpoint_proof)
+    expected_error = pytest.raises(RuntimeError, match="Controlled checkpoint proof failure") if fail_proof else nullcontext()
+    with expected_error:
+        getattr(proof, "test_postgres_opening_checkpoint_" + proof_name)()
+    assert server.leases == original_leases
+    assert (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY) == parent_keys
