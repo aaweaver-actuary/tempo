@@ -2,12 +2,14 @@
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from unittest.mock import patch
 
@@ -76,7 +78,7 @@ def disposable_postgres():
 
 
 def seed_failed_publication():
-    day = datetime.now(timezone.utc).date().isoformat()
+    day = recovery.local_study_day()
     repertoire = 'caro-' + secrets.token_hex(4)
     moves = ['e2e4', 'c7c6', 'd2d4', 'd7d5', 'e4e5', 'c8f5', 'g1f3', 'e7e6', 'f1e2', 'c6c5', 'e1g1']
     line = {'id': repertoire + '-line', 'start_fen': chess.STARTING_FEN, 'moves_json': json.dumps(moves), 'trained_color': 'white', 'learner_decision_count': 3}
@@ -166,7 +168,7 @@ def test_scoped_recovery_claim_preserves_publish_and_fences_other_tasks(disposab
             recovery.claim_exact_task(database, task['id'], 'opening_graph_rebuild', repertoire, 1, resume_failed=True, day=day)
 
 
-def seed_selected_rebuild(*, new_generated_route=False):
+def seed_selected_rebuild(*, new_generated_route=False, missing_integrity=False):
     """Match the retained gen1 / queued gen2 / old completed scan situation."""
     from app.services.postgres_opening_graph import request_graph_rebuild_in_transaction
     from app.services.postgres_integrity import invalidate_integrity_in_transaction
@@ -174,6 +176,8 @@ def seed_selected_rebuild(*, new_generated_route=False):
     day = recovery.local_study_day()
     recovery.recover(recovery.preflight(task['id'], repertoire, 1, recovery.target_id()), day=day)
     with postgres_store.connection() as database:
+        if missing_integrity:
+            database.execute_native("DELETE FROM background_tasks WHERE kind='integrity_scan' AND deduplication_key=%s", (repertoire,))
         if new_generated_route:
             line = dict(database.execute_native('SELECT * FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id LIMIT 1', (repertoire,)).fetchone())
             moves = json.loads(line['moves_json'])
@@ -193,38 +197,65 @@ def seed_selected_rebuild(*, new_generated_route=False):
     return prepared, unrelated
 
 
+@contextmanager
+def quiesced_baseline_fixture(prepared):
+    """A genuine fixture schedule/history change between dry-run and execution."""
+    with tempfile.TemporaryDirectory(prefix='tempo-pr312-baseline-') as temporary:
+        output = Path(temporary)
+        original = recovery.capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
+        (output / 'before.json').write_text(json.dumps(original))
+        with postgres_store.connection() as database:
+            card = database.execute_native('SELECT id FROM cards WHERE repertoire_id=%s AND introduced_at IS NOT NULL ORDER BY id LIMIT 1',
+                                           (prepared['repertoire_id'],)).fetchone()[0]
+            database.execute_native('UPDATE cards SET repetitions=repetitions+1,interval_days=interval_days+1 WHERE id=%s', (card,))
+            database.execute_native("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'correct',%s,1,2,'study')",
+                                    (card, prepared['day']))
+        path = ROOT / 'scripts/recover-opening-publication.py'
+        if not path.exists():
+            path = Path('/operator/scripts/recover-opening-publication.py')
+        spec = importlib.util.spec_from_file_location('native_rebuild_baseline_cli', path)
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        baseline = cli.prepare_execution_baseline(output, prepared)
+        assert len(baseline['reviews']) == len(original['reviews']) + 1
+        assert json.loads((output / 'before.json').read_text()) == original
+        yield baseline, output, cli
+
+
 def test_selected_queued_rebuild_restart_matches_scan_segmentation_and_preserves_protected_data(disposable_postgres):
     prepared, unrelated = seed_selected_rebuild(new_generated_route=True)
-    before = recovery.capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
-    unrelated_before = recovery.read_rows('SELECT * FROM background_tasks WHERE id=%s', (unrelated['id'],))
-    with unittest.TestCase().assertRaisesRegex(RuntimeError, 'budget'):
-        recovery.finish_queued_rebuild(prepared, max_slices=1)
-    checkpoint = recovery.read_rows('SELECT phase,payload_json FROM background_tasks WHERE id=%s', (prepared['task_id'],))[0]
-    assert checkpoint['phase'] == 'stage'
-    with postgres_store.connection(background=True) as database:
-        abandoned = recovery.claim_exact_task(database, prepared['task_id'], 'opening_graph_rebuild', prepared['repertoire_id'],
-                      prepared['generation'], day=prepared['day'], selected_rebuild=prepared)
-    with postgres_store.connection(background=True) as database:
-        with unittest.TestCase().assertRaisesRegex(ValueError, 'leased'):
-            recovery.claim_exact_task(database, prepared['task_id'], 'opening_graph_rebuild', prepared['repertoire_id'],
-                      prepared['generation'], day=prepared['day'], selected_rebuild=prepared)
-    # Fixture-only clock simulation of a killed runner's 60-second lease.
-    with postgres_store.connection() as database:
-        database.execute_native('UPDATE background_tasks SET lease_expires_at=%s WHERE id=%s',
-            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), prepared['task_id']))
-    result = recovery.finish_queued_rebuild(prepared)
-    assert result['state'] == 'complete' and result['integrity_status'] in {'clean', 'needs_repair'}
-    with postgres_store.connection(background=True) as database:
-        assert not lock_current_slice(database, abandoned)
-    after = recovery.capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
-    assert recovery.verify_preservation(before, after)['passed']
-    assert len(after['cards']) > len(before['cards'])
-    assert recovery.read_rows('SELECT * FROM background_tasks WHERE id=%s', (unrelated['id'],)) == unrelated_before
-    assert before['protected_schedules'] and before['protected_queue'] and before['issued_origins']
-    assert recovery.read_rows('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s',
-                             (prepared['repertoire_id'],))[0]['generation'] == prepared['generation']
-    refresh = recovery.read_rows("SELECT state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'")[0]
-    assert refresh['state'] == 'queued' and json.loads(refresh['payload_json'])['queue_date'] == prepared['day']
+    with quiesced_baseline_fixture(prepared) as (before, output, cli):
+        baseline_hash = hashlib.sha256((output / 'execution-before.json').read_bytes()).hexdigest()
+        unrelated_before = recovery.read_rows('SELECT * FROM background_tasks WHERE id=%s', (unrelated['id'],))
+        with unittest.TestCase().assertRaisesRegex(RuntimeError, 'budget'):
+            recovery.finish_queued_rebuild(prepared, max_slices=1)
+        checkpoint = recovery.read_rows('SELECT phase,payload_json FROM background_tasks WHERE id=%s', (prepared['task_id'],))[0]
+        assert checkpoint['phase'] == 'stage'
+        cli.prepare_execution_baseline(output, prepared)
+        assert hashlib.sha256((output / 'execution-before.json').read_bytes()).hexdigest() == baseline_hash
+        with postgres_store.connection(background=True) as database:
+            abandoned = recovery.claim_exact_task(database, prepared['task_id'], 'opening_graph_rebuild', prepared['repertoire_id'],
+                          prepared['generation'], day=prepared['day'], selected_rebuild=prepared)
+        with postgres_store.connection(background=True) as database:
+            with unittest.TestCase().assertRaisesRegex(ValueError, 'leased'):
+                recovery.claim_exact_task(database, prepared['task_id'], 'opening_graph_rebuild', prepared['repertoire_id'],
+                          prepared['generation'], day=prepared['day'], selected_rebuild=prepared)
+        # Fixture-only clock simulation of a killed runner's 60-second lease.
+        with postgres_store.connection() as database:
+            database.execute_native('UPDATE background_tasks SET lease_expires_at=%s WHERE id=%s',
+                ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), prepared['task_id']))
+        result = recovery.finish_queued_rebuild(prepared)
+        assert result['state'] == 'complete' and result['integrity_status'] in {'clean', 'needs_repair'}
+        with postgres_store.connection(background=True) as database:
+            assert not lock_current_slice(database, abandoned)
+        after = recovery.capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
+        assert recovery.verify_preservation(before, after)['passed']
+        assert len(after['cards']) > len(before['cards'])
+        assert recovery.read_rows('SELECT * FROM background_tasks WHERE id=%s', (unrelated['id'],)) == unrelated_before
+        assert before['protected_schedules'] and before['protected_queue'] and before['issued_origins']
+        assert recovery.read_rows('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s',
+                                 (prepared['repertoire_id'],))[0]['generation'] == prepared['generation']
+        refresh = recovery.read_rows("SELECT state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'")[0]
+        assert refresh['state'] == 'queued' and json.loads(refresh['payload_json'])['queue_date'] == prepared['day']
 
 
 def test_selected_rebuild_rejects_replacement_generation_source_day_and_unrelated_claim(disposable_postgres):
@@ -268,6 +299,44 @@ def test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint(d
     checkpoint = recovery.read_rows('SELECT phase,state,payload_json FROM background_tasks WHERE id=%s', (task['id'],))[0]
     assert checkpoint['phase'] == 'queued' and checkpoint['state'] == 'leased'
     assert json.loads(checkpoint['payload_json']) == task['payload']
+    # A real second connection inserts/leases an absent downstream row after
+    # the predecessor guard's SELECT. Its generation would otherwise still
+    # produce the predicted result, hiding an overwritten foreign lease.
+    from app.services import durable_tasks
+    prepared, _ = seed_selected_rebuild(missing_integrity=True)
+    for _ in range(200):
+        current = recovery.read_rows('SELECT phase FROM background_tasks WHERE id=%s', (prepared['task_id'],))[0]
+        if current['phase'] == 'finalize':
+            break
+        with postgres_store.connection(background=True) as database:
+            step = recovery.claim_exact_task(database, prepared['task_id'], 'opening_graph_rebuild', prepared['repertoire_id'],
+                                             prepared['generation'], day=prepared['day'], selected_rebuild=prepared)
+        graph.execute_postgres_opening_graph_slice(step)
+    else:
+        raise AssertionError('Fixture graph did not reach its bounded finalize checkpoint')
+    with postgres_store.connection(background=True) as database:
+        task = recovery.claim_exact_task(database, prepared['task_id'], 'opening_graph_rebuild', prepared['repertoire_id'],
+                                         prepared['generation'], day=prepared['day'], selected_rebuild=prepared)
+    original_execute = postgres_store.PostgresConnection.execute
+    foreign = []
+    def insert_competing_lease(database, statement, parameters=()):
+        cursor = original_execute(database, statement, parameters)
+        if statement == durable_tasks._TASK_BY_KIND_SQL and parameters == ('integrity_scan', prepared['repertoire_id']) and not foreign:
+            foreign.append('inserting')
+            with postgres_store.connection() as competitor:
+                queued = durable_tasks.enqueue_task_in_transaction(competitor, 'integrity_scan', prepared['repertoire_id'],
+                    {'repertoire_id': prepared['repertoire_id'], 'graph_generation': 1, 'local_day': prepared['day']}, minimum_generation=1)
+                competitor.execute_native("UPDATE background_tasks SET state='leased',lease_token='foreign-fixture',lease_expires_at=%s WHERE id=%s",
+                    ((datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat(), queued['id']))
+                foreign[0] = queued['id']
+        return cursor
+    before_state = recovery.read_rows('SELECT * FROM repertoire_integrity_state WHERE repertoire_id=%s', (prepared['repertoire_id'],))
+    with patch.object(postgres_store.PostgresConnection, 'execute', insert_competing_lease):
+        with unittest.TestCase().assertRaisesRegex(ValueError, 'Owner enqueue differs'):
+            graph.execute_postgres_opening_graph_slice(task)
+    retained = recovery.read_rows('SELECT generation,state,lease_token FROM background_tasks WHERE id=%s', (foreign[0],))[0]
+    assert retained == {'generation': 2, 'state': 'leased', 'lease_token': 'foreign-fixture'}
+    assert recovery.read_rows('SELECT * FROM repertoire_integrity_state WHERE repertoire_id=%s', (prepared['repertoire_id'],)) == before_state
 
 
 def run_cases(url):

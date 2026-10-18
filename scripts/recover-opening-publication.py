@@ -13,6 +13,29 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app.services.opening_graph_recovery import preflight, recover, capture_evidence, target_id, validate_staged_graph, scope_token, verify_preservation
 from app.services.opening_graph_recovery import QUEUED_REBUILD_MODE, preflight_queued_rebuild, finish_queued_rebuild
+from app.services.opening_graph_recovery import assert_selected_execution_not_started, _selected_scope_key
+
+
+def prepare_execution_baseline(output, prepared):
+    """Capture after quiescence, then retain the same baseline across partial resumes."""
+    path = output / 'execution-before.json'
+    scope = _selected_scope_key(prepared)
+    if not path.exists():
+        assert_selected_execution_not_started(prepared)
+        before = capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
+        assert_selected_execution_not_started(prepared)
+        before['maintenance_scope_key'] = scope
+        with path.open('x') as destination:
+            destination.write(json.dumps(before, indent=2) + '\n')
+        return before
+    before = json.loads(path.read_text())
+    if before.get('maintenance_scope_key') != scope:
+        raise ValueError('Execution baseline belongs to a different pinned maintenance plan')
+    current = capture_evidence(prepared['repertoire_id'], prepared['day'], selected_rebuild=True)
+    preservation = verify_preservation(before, current)
+    if not preservation['passed']:
+        raise ValueError('Protected evidence changed before resume; no new task claims permitted')
+    return before
 
 
 def selected_rebuild_main(args):
@@ -59,6 +82,10 @@ def selected_rebuild_main(args):
         print(json.dumps({'state': 'validated', 'mode': args.mode, 'tasks': prepared['tasks'], 'day': args.day,
                           'queue_refresh': 'shared ordinary refresh; may change other unissued queue entries'}))
         return
+    # The app may legitimately have served study between dry-run and downtime.
+    # Preserve before.json as preflight evidence; compare all writes against a
+    # fresh quiesced baseline, never one recreated after a claim/partial write.
+    baseline = prepare_execution_baseline(output, prepared)
     remaining = args.max_seconds - (time.monotonic() - started)
     if remaining <= 0:
         raise RuntimeError('Preflight consumed the maintenance budget; no tasks claimed')
@@ -88,7 +115,7 @@ def selected_rebuild_main(args):
             signal.signal(number, handler)
         after = capture_evidence(args.repertoire_id, args.day, selected_rebuild=True)
         (attempt / 'after.json').write_text(json.dumps(after, indent=2) + '\n')
-        preservation = verify_preservation(json.loads((output / 'before.json').read_text()), after)
+        preservation = verify_preservation(baseline, after)
         (attempt / 'preservation.json').write_text(json.dumps(preservation, indent=2) + '\n')
     if not preservation['passed']:
         raise RuntimeError('Maintenance preservation differs; stop and inspect private evidence')

@@ -48,13 +48,13 @@ def test_maintenance_preflight_and_release_yield_to_foreground(monkeypatch):
 def selected(monkeypatch):
     from app.services import opening_graph_recovery as recovery
     day = recovery.local_study_day()
-    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'target': 'target-hash', 'task_id': 'target',
+    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'plan_version': 2, 'target': 'target-hash', 'task_id': 'target',
                 'generation': 2, 'repertoire_id': 'caro', 'day': day, 'previous_graph_generation': 1,
                 'scope_token': {'scope_source_revision': 197, 'canonical_prefix_revision': 0,
                                 'initial_depth': 3, 'study_only_mode': 1, 'run_id': 'ranks', 'epoch': 1},
                 'tasks': {'opening_graph_rebuild': {'id': 'target', 'generation': 2},
-                          'integrity_scan': {'id': 'scan', 'generation': 3},
-                          'opening_segmentation': {'id': 'segments', 'generation': 2}}}
+                          'integrity_scan': {'id': 'scan', 'generation': 3, 'prior': None},
+                          'opening_segmentation': {'id': 'segments', 'generation': 2, 'prior': None}}}
     row = task_row(generation=2, state='queued', phase='queued', attempt_count=0,
                    lease_expires_at=None, next_attempt_at=datetime.now(timezone.utc).isoformat())
     database = Mock()
@@ -134,7 +134,7 @@ def test_selected_transaction_scope_rejects_identity_source_day_policy_and_gener
     identity = {'cluster_id': 'cluster', 'database_oid': '1', 'database': 'tempo', 'schema': 'public'}
     token = {'scope_source_revision': 197, 'canonical_prefix_revision': 0, 'initial_depth': 3,
              'study_only_mode': 1, 'run_id': 'ranks', 'epoch': 1}
-    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'day': recovery.local_study_day(), 'repertoire_id': 'caro',
+    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'plan_version': 2, 'day': recovery.local_study_day(), 'repertoire_id': 'caro',
                 'target': recovery.stable_key(*identity.values()), 'scope_token': deepcopy(token),
                 'task_id': 'target', 'generation': 2, 'previous_graph_generation': 1}
     graph = {'id': 'target', 'generation': 2, 'state': 'queued', 'phase': 'queued'}
@@ -163,14 +163,18 @@ def test_selected_scope_publication_follows_the_owner_checkpoint_and_keeps_polic
     identity = {'cluster_id': 'cluster', 'database_oid': '1', 'database': 'tempo', 'schema': 'public'}
     token = {'scope_source_revision': 197, 'canonical_prefix_revision': 0, 'initial_depth': 3,
              'study_only_mode': 1, 'run_id': 'ranks', 'epoch': 1}
-    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'day': recovery.local_study_day(), 'repertoire_id': 'caro',
+    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'plan_version': 2, 'day': recovery.local_study_day(), 'repertoire_id': 'caro',
                 'target': recovery.stable_key(*identity.values()), 'scope_token': token,
-                'task_id': 'target', 'generation': 2, 'previous_graph_generation': 1}
+                'task_id': 'target', 'generation': 2, 'previous_graph_generation': 1,
+                'tasks': {'integrity_scan': {'id': 'scan', 'generation': 3, 'prior': None},
+                          'opening_segmentation': {'id': 'segments', 'generation': 2, 'prior': None}}}
     published = phase in {'classify', 'integrity', 'cleanup', 'finalize', 'published'}
     database = Mock()
     database.execute_native.return_value.fetchone.side_effect = [identity, token,
         {'id': 'target', 'generation': 2, 'state': 'complete' if phase == 'published' else 'queued', 'phase': phase},
-        {'generation': 2 if published else 1, 'state': 'ready'}, None]
+        {'generation': 2 if published else 1, 'state': 'ready'}, None,
+        {'id': 'scan', 'generation': 3, 'state': 'queued', 'payload_json': '{"repertoire_id":"caro","graph_generation":2}'} if phase == 'published' else None,
+        None]
     recovery.validate_selected_scope(database, prepared)
     assert 'FOR SHARE OF r,s,a' in database.execute_native.call_args_list[1].args[0]
     assert 'FOR SHARE' in database.execute_native.call_args_list[2].args[0]
@@ -293,13 +297,16 @@ def test_selected_queued_preflight_is_read_only_pins_followup_generations_and_re
         if 'opening_graph_steps' in statement:
             return staging
         kind = parameters[0]
-        return [{'id': prepared['tasks'][kind]['id'], 'generation': 2 if kind == 'integrity_scan' else 1, 'state': 'complete'}]
+        return [{'id': prepared['tasks'][kind]['id'], 'generation': 2 if kind == 'integrity_scan' else 1, 'state': 'complete',
+                 'phase': 'published', 'lease_token': None, 'lease_expires_at': None}]
     monkeypatch.setattr(recovery, 'read_rows', read)
     arguments = ('target', 'caro', 2, 'target-hash')
     keywords = {'source_revision': 197, 'prefix_revision': 0, 'day': prepared['day']}
     plan = recovery.preflight_queued_rebuild(*arguments, **keywords)
-    assert plan['tasks']['integrity_scan'] == {'id': 'scan', 'generation': 3}
-    assert plan['tasks']['opening_segmentation'] == {'id': 'segments', 'generation': 2}
+    assert plan['tasks']['integrity_scan']['generation'] == 3
+    assert plan['tasks']['integrity_scan']['prior']['generation'] == 2
+    assert plan['tasks']['opening_segmentation']['generation'] == 2
+    assert plan['tasks']['opening_segmentation']['prior']['generation'] == 1
     assert connections == [{'read_only': True, 'authoritative': True, 'background': True}]
     assert database.execute_native.call_count == 0
     staging.append({'exists': 1})
@@ -353,3 +360,157 @@ def test_selected_evidence_pages_every_issued_revision_across_a_shared_queue_ent
     evidence = recovery.capture_evidence('caro', recovery.local_study_day(), selected_rebuild=True)
     assert evidence['issued_origins'] == origins
     assert pages == [(0, '', 0), (1, 'card', 128)]
+
+
+@pytest.mark.parametrize('kind', ['integrity_scan', 'opening_segmentation'])
+@pytest.mark.parametrize('change', ['leased', 'generation', 'identity', 'phase'])
+def test_selected_followup_predecessor_is_locked_and_drift_refused_before_owner_mutation(selected, kind, change):
+    recovery, prepared, row, database = selected
+    prior = {'id': 'old', 'generation': 1, 'state': 'queued', 'phase': 'queued', 'lease_token': None, 'lease_expires_at': None}
+    prepared['tasks'][kind]['prior'] = prior
+    actual = {**prior}
+    if change == 'leased': actual.update(state='leased', lease_token='foreign', lease_expires_at='later')
+    if change == 'generation': actual['generation'] += 1
+    if change == 'identity': actual['id'] = 'replacement'
+    if change == 'phase': actual['phase'] = 'scan'
+    database.execute_native.side_effect = None
+    database.execute_native.return_value.fetchone.return_value = actual
+    with pytest.raises(ValueError, match='predecessor changed'):
+        recovery._validate_followup(database, prepared, kind, prior=True, lock=True)
+    assert database.execute_native.call_count == 1
+    assert 'FOR UPDATE' in database.execute_native.call_args.args[0]
+
+
+@pytest.mark.parametrize('absent_race', [False, True])
+def test_selected_handoff_upsert_never_overwrites_a_changed_or_newly_arriving_lease(selected, monkeypatch, absent_race):
+    from app.services import durable_tasks
+    recovery, prepared, row, database = selected
+    prior = None if absent_race else {'id': 'scan', 'generation': 2, 'state': 'complete', 'phase': 'published',
+                                     'lease_token': None, 'lease_expires_at': None}
+    prepared['tasks']['integrity_scan']['prior'] = prior
+    task = claim_selected(selected)
+    task['phase'] = 'finalize'
+    recovery.validate_selected_delivery(database, task)
+    assert database._selected_rebuild_handoff['kind'] == 'integrity_scan'
+    events = Mock()
+    monkeypatch.setattr(durable_tasks, '_record_event', events)
+    database.execute.return_value.fetchone.side_effect = ([None, None] if absent_race else
+        [{**prior, 'state': 'leased', 'lease_token': 'foreign', 'lease_expires_at': 'later', 'created_at': 'earlier'}])
+    with pytest.raises(ValueError):
+        durable_tasks.enqueue_task_in_transaction(database, 'integrity_scan', 'caro',
+            {'repertoire_id': 'caro', 'graph_generation': 2}, minimum_generation=2)
+    if absent_race:
+        assert ' WHERE FALSE RETURNING *' in database.execute.call_args_list[1].args[0]
+    else:
+        assert database.execute.call_count == 1
+    events.assert_not_called()
+
+
+def test_selected_handoff_upsert_uses_prior_fence_and_checks_the_owner_result(selected, monkeypatch):
+    from app.services import durable_tasks
+    recovery, prepared, row, database = selected
+    prior = {'id': 'scan', 'generation': 2, 'state': 'complete', 'phase': 'published', 'lease_token': None, 'lease_expires_at': None}
+    prepared['tasks']['integrity_scan']['prior'] = prior
+    task = claim_selected(selected); task['phase'] = 'finalize'
+    recovery.validate_selected_delivery(database, task)
+    monkeypatch.setattr(durable_tasks, '_record_event', Mock())
+    queued = {**prior, 'generation': 3, 'state': 'queued', 'phase': 'queued', 'replaced_pending_generation': False,
+              'payload_json': json.dumps({'repertoire_id': 'caro', 'graph_generation': 2, 'local_day': prepared['day']})}
+    database.execute.return_value.fetchone.side_effect = [{**prior, 'created_at': 'earlier'}, queued, queued]
+    result = durable_tasks.enqueue_task_in_transaction(database, 'integrity_scan', 'caro',
+        {'repertoire_id': 'caro', 'graph_generation': 2, 'local_day': prepared['day']}, minimum_generation=2)
+    assert result['generation'] == 3
+    statement, parameters = database.execute.call_args_list[1].args
+    assert durable_tasks._SELECTED_REBUILD_UPSERT_FENCE in statement
+    assert parameters[-4:] == ('scan', 2, 'complete', 'published')
+
+
+@pytest.mark.parametrize('fence,placeholder_count', [('existing', 14), ('absent', 10)])
+def test_selected_handoff_fence_retains_native_parameter_binding(fence, placeholder_count):
+    from app import postgres_store
+    from app.services import durable_tasks
+    predicate = durable_tasks._SELECTED_REBUILD_UPSERT_FENCE if fence == 'existing' else ' WHERE FALSE'
+    translated = postgres_store.postgres_sql(durable_tasks._TASK_UPSERT_SQL + predicate + ' RETURNING *')
+    assert translated.count('%s') == placeholder_count
+    assert 'RETURNING *' in translated and ' WHERE ' in translated
+
+
+@pytest.mark.parametrize('change', ['generation', 'identity', 'leased', 'repertoire', 'graph', 'day'])
+def test_selected_handoff_checks_returned_identity_lease_and_payload_before_commit(selected, change):
+    recovery, prepared, row, database = selected
+    payload = {'repertoire_id': 'caro', 'graph_generation': 2, 'local_day': prepared['day']}
+    actual = dict(payload)
+    returned = {'id': 'scan', 'generation': 3, 'state': 'queued', 'phase': 'queued', 'lease_token': None, 'lease_expires_at': None}
+    if change == 'generation': returned['generation'] = 4
+    if change == 'identity': returned['id'] = 'other'
+    if change == 'leased': returned.update(state='leased', lease_token='foreign')
+    if change == 'repertoire': actual['repertoire_id'] = 'other'
+    if change == 'graph': actual['graph_generation'] = 1
+    if change == 'day': actual['local_day'] = '2000-01-01'
+    returned['payload_json'] = json.dumps(actual)
+    handoff = {'kind': 'integrity_scan', 'repertoire_id': 'caro', 'pin': prepared['tasks']['integrity_scan'],
+               'graph_generation': 2, 'day': prepared['day']}
+    with pytest.raises(ValueError, match='Owner enqueue differs'):
+        recovery.validate_selected_enqueue(handoff, 'integrity_scan', 'caro', returned, payload, after=True)
+
+
+def test_selected_execution_baseline_rebases_live_preflight_then_is_immutable_on_resume(selected, monkeypatch, tmp_path):
+    recovery, prepared, row, database = selected
+    path = Path(__file__).resolve().parents[2] / 'scripts/recover-opening-publication.py'
+    spec = importlib.util.spec_from_file_location('quiesced_baseline_cli', path)
+    cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    preflight = {'mode': recovery.QUEUED_REBUILD_MODE, 'target': 'target', 'settings': [], 'sources': [],
+                 'memberships': [], 'cards': [], 'reviews': [{'id': 1, 'rating': 'again'}], 'issued_origins': [],
+                 'activation': {}, 'frozen_ranks': [], 'protected_schedules': [{'id': 'card', 'fsrs_card_json': 'old'}],
+                 'protected_queue': [{'id': 7, 'position': 0}]}
+    (tmp_path / 'before.json').write_text(json.dumps(preflight))
+    current = deepcopy(preflight)
+    current['reviews'].append({'id': 2, 'rating': 'correct'})
+    current['protected_schedules'][0]['fsrs_card_json'] = 'reviewed between dry-run and downtime'
+    current['protected_queue'] = [{'id': 8, 'position': 0}]
+    assertion = Mock()
+    monkeypatch.setattr(cli, 'assert_selected_execution_not_started', assertion)
+    monkeypatch.setattr(cli, 'capture_evidence', lambda *args, **kwargs: deepcopy(current))
+    baseline = cli.prepare_execution_baseline(tmp_path, prepared)
+    saved = (tmp_path / 'execution-before.json').read_bytes()
+    assert baseline['reviews'] == current['reviews'] and assertion.call_count == 2
+    assert json.loads((tmp_path / 'before.json').read_text()) == preflight
+    assertion.reset_mock()
+    assert cli.prepare_execution_baseline(tmp_path, prepared) == baseline
+    assertion.assert_not_called()
+    assert (tmp_path / 'execution-before.json').read_bytes() == saved
+    current['protected_schedules'][0]['fsrs_card_json'] = 'unexpected later review'
+    with pytest.raises(ValueError, match='Protected evidence changed before resume'):
+        cli.prepare_execution_baseline(tmp_path, prepared)
+    assert (tmp_path / 'execution-before.json').read_bytes() == saved
+
+
+def test_selected_execution_baseline_cannot_be_created_after_partial_writes(selected, monkeypatch, tmp_path):
+    recovery, prepared, row, database = selected
+    path = Path(__file__).resolve().parents[2] / 'scripts/recover-opening-publication.py'
+    spec = importlib.util.spec_from_file_location('missing_baseline_cli', path)
+    cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    capture = Mock()
+    monkeypatch.setattr(cli, 'capture_evidence', capture)
+    monkeypatch.setattr(cli, 'assert_selected_execution_not_started', Mock(side_effect=ValueError('Execution baseline is missing after maintenance started')))
+    with pytest.raises(ValueError, match='after maintenance started'):
+        cli.prepare_execution_baseline(tmp_path, prepared)
+    capture.assert_not_called()
+    assert not (tmp_path / 'execution-before.json').exists()
+
+
+@pytest.mark.parametrize('started', ['no', 'marker', 'phase', 'event'])
+def test_selected_execution_baseline_requires_an_authoritatively_unstarted_graph(selected, monkeypatch, started):
+    recovery, prepared, row, database = selected
+    monkeypatch.setattr(recovery, 'background_lease', nullcontext)
+    monkeypatch.setattr(recovery.postgres_store, 'connection', lambda **kwargs: nullcontext(database))
+    saved = {**row}
+    if started == 'marker': saved['payload_json'] = '{"repertoire_id":"caro","maintenance_recovery_scope":"saved"}'
+    if started == 'phase': saved['phase'] = 'stage'
+    database.execute_native.side_effect = None
+    database.execute_native.return_value.fetchone.side_effect = [saved, {'claimed': 1} if started == 'event' else None]
+    if started == 'no':
+        recovery.assert_selected_execution_not_started(prepared)
+    else:
+        with pytest.raises(ValueError, match='baseline is missing after maintenance started'):
+            recovery.assert_selected_execution_not_started(prepared)

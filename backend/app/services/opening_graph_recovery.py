@@ -27,6 +27,7 @@ _SELECTED_PHASES = {
     'integrity_scan': {'queued', 'scan', 'aggregate', 'evaluate', 'publish', 'validate_cards', 'complete'},
     'opening_segmentation': {'queued', 'scan', 'groups', 'cleanup', 'publish'},
 }
+_PREDECESSOR_FIELDS = ('id', 'generation', 'state', 'phase', 'lease_token', 'lease_expires_at')
 
 
 def local_study_day():
@@ -35,11 +36,32 @@ def local_study_day():
 
 def _selected_scope_key(prepared):
     return stable_key(prepared['target'], prepared['task_id'], prepared['generation'],
-                      prepared['scope_token'], prepared['day'])
+                      prepared['scope_token'], prepared['day'], prepared['plan_version'],
+                      {kind: pin['prior'] for kind, pin in prepared['tasks'].items() if kind != 'opening_graph_rebuild'})
+
+
+def _validate_followup(database, prepared, kind, *, prior, lock):
+    pin = prepared['tasks'][kind]
+    row = database.execute_native(
+        'SELECT * FROM background_tasks WHERE kind=%s AND deduplication_key=%s' + (' FOR UPDATE' if lock else ''),
+        (kind, prepared['repertoire_id'])).fetchone()
+    if prior:
+        if pin['prior'] and (pin['prior']['state'] == 'leased' or pin['prior']['lease_token'] is not None or pin['prior']['lease_expires_at'] is not None):
+            raise ValueError('Pinned downstream predecessor must not carry a lease')
+        actual = {field: row[field] for field in _PREDECESSOR_FIELDS} if row else None
+        if actual != pin['prior']:
+            raise ValueError('Pinned downstream predecessor changed; refusing owner enqueue')
+    elif (row is None or row['generation'] != pin['generation'] or pin['id'] not in {None, row['id']}
+          or json.loads(row['payload_json']).get('repertoire_id') != prepared['repertoire_id']
+          or json.loads(row['payload_json']).get('graph_generation') != prepared['generation']):
+        raise ValueError('Owner did not retain the pinned matching downstream task')
+    return row
 
 
 def validate_selected_scope(database, prepared, *, lock=True):
     """Fence every selected claim AND owner write; hold source/policy rows to commit."""
+    if prepared.get('plan_version') != 2:
+        raise ValueError('Maintenance plan requires pinned downstream predecessors; use fresh preflight before any claims')
     if prepared.get('mode') != QUEUED_REBUILD_MODE or local_study_day() != prepared['day']:
         raise ValueError('Maintenance mode or local study day changed')
     identity = dict(database.execute_native(
@@ -73,6 +95,9 @@ def validate_selected_scope(database, prepared, *, lock=True):
         "AND state IN ('publishing','recovery_required') LIMIT 1",
         (prepared['repertoire_id'],)).fetchone():
         raise ValueError('An active prefix transition requires its own recovery owner')
+    scan = _validate_followup(database, prepared, 'integrity_scan', prior=graph['state'] != 'complete', lock=lock)
+    _validate_followup(database, prepared, 'opening_segmentation',
+                       prior=graph['state'] != 'complete' or scan['state'] != 'complete', lock=lock)
 
 
 def preflight_queued_rebuild(task_id, repertoire_id, generation, expected_target, *, source_revision, prefix_revision, day):
@@ -95,13 +120,14 @@ def preflight_queued_rebuild(task_id, repertoire_id, generation, expected_target
         raise ValueError('Untouched queued task already has target or newer staging')
     tasks = {'opening_graph_rebuild': {'id': task_id, 'generation': generation}}
     for kind in ('integrity_scan', 'opening_segmentation'):
-        rows = read_rows('SELECT id,generation,state FROM background_tasks WHERE kind=%s AND deduplication_key=%s', (kind, repertoire_id))
-        if rows and rows[0]['state'] == 'leased':
+        rows = read_rows('SELECT id,generation,state,phase,lease_token,lease_expires_at FROM background_tasks WHERE kind=%s AND deduplication_key=%s', (kind, repertoire_id))
+        if rows and (rows[0]['state'] == 'leased' or rows[0]['lease_token'] is not None or rows[0]['lease_expires_at'] is not None):
             raise ValueError('A follow-up task already has a lease')
         tasks[kind] = {'id': rows[0]['id'] if rows else None,
                        'generation': max(rows[0]['generation'] if rows else 0,
-                                         generation if kind == 'integrity_scan' else 0) + 1}
-    prepared = {'mode': QUEUED_REBUILD_MODE, 'target': expected_target, 'task_id': task_id,
+                                         generation if kind == 'integrity_scan' else 0) + 1,
+                       'prior': rows[0] if rows else None}
+    prepared = {'mode': QUEUED_REBUILD_MODE, 'plan_version': 2, 'target': expected_target, 'task_id': task_id,
                 'repertoire_id': repertoire_id, 'generation': generation, 'scope_token': token,
                 'day': day, 'previous_graph_generation': publication[0]['generation'], 'tasks': tasks}
     with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
@@ -109,7 +135,7 @@ def preflight_queued_rebuild(task_id, repertoire_id, generation, expected_target
     return prepared
 
 
-def validate_selected_delivery(database, task):
+def validate_selected_delivery(database, task, *, after_checkpoint=False):
     prepared = task['maintenance_scope']
     pin = prepared['tasks'].get(task['kind'])
     if (pin is None or (task['id'], task['generation']) != (pin['id'], pin['generation'])
@@ -120,6 +146,44 @@ def validate_selected_delivery(database, task):
                 and task['payload'].get('graph_generation') != prepared['generation'])):
         raise ValueError('Selected maintenance delivery differs from pinned scope')
     validate_selected_scope(database, prepared)
+    next_kind = ({('opening_graph_rebuild', 'finalize'): 'integrity_scan',
+                  ('integrity_scan', 'complete'): 'opening_segmentation'}).get((task['kind'], task['phase']))
+    if next_kind and not after_checkpoint:
+        # Transaction-local handoff authority. Existing row locks above protect
+        # predecessors; the guarded upsert also fences the absent-row race.
+        database._selected_rebuild_handoff = {'kind': next_kind, 'repertoire_id': prepared['repertoire_id'],
+                                             'pin': prepared['tasks'][next_kind], 'graph_generation': prepared['generation'],
+                                             'day': prepared['day']}
+
+
+def validate_selected_enqueue(handoff, kind, repertoire_id, row, payload, *, after=False):
+    if (kind, repertoire_id) != (handoff['kind'], handoff['repertoire_id']):
+        raise ValueError('Selected owner attempted an unrelated handoff')
+    pin = handoff['pin']
+    actual_payload = json.loads(row['payload_json']) if after and row is not None else payload
+    if not after:
+        actual = {field: row[field] for field in _PREDECESSOR_FIELDS} if row else None
+        if actual != pin['prior']:
+            raise ValueError('Pinned downstream predecessor changed before enqueue')
+    elif (row is None or row['generation'] != pin['generation'] or pin['id'] not in {None, row['id']}
+          or (row['state'], row['phase'], row['lease_token'], row['lease_expires_at']) != ('queued', 'queued', None, None)
+          or actual_payload != payload or actual_payload.get('repertoire_id') != repertoire_id
+          or actual_payload.get('graph_generation') != handoff['graph_generation']
+          or (kind == 'integrity_scan' and actual_payload.get('local_day') != handoff['day'])):
+        raise ValueError('Owner enqueue differs from the pinned downstream result; rolling back')
+
+
+def assert_selected_execution_not_started(prepared):
+    """Never create a fresh preservation baseline after a claim/partial write."""
+    with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
+        validate_selected_scope(database, prepared, lock=False)
+        row = database.execute_native('SELECT state,phase,attempt_count,payload_json FROM background_tasks WHERE id=%s AND generation=%s',
+                                      (prepared['task_id'], prepared['generation'])).fetchone()
+        claimed = database.execute_native("SELECT 1 FROM background_task_events WHERE task_id=%s AND generation=%s AND event='maintenance_recovery_claim' LIMIT 1",
+                                         (prepared['task_id'], prepared['generation'])).fetchone()
+        if (row is None or (row['state'], row['phase'], row['attempt_count']) != ('queued', 'queued', 0)
+                or json.loads(row['payload_json']).get('maintenance_recovery_scope') is not None or claimed):
+            raise ValueError('Execution baseline is missing after maintenance started; preserve checkpoints and diagnose')
 
 
 def wait_for_admission(operation):

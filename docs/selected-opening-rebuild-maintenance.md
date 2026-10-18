@@ -7,11 +7,15 @@ settings change, content repair, general worker exception, or new credential.
 ## Operator contract
 
 `scripts/recover-opening-publication.py --mode queued-rebuild` defaults to
-read-only preflight plus private filesystem evidence. Initial pins are exact
+read-only PostgreSQL preflight plus private filesystem evidence. It also acquires
+an ordinary transient Redis admission lease (ZREM/ZADD/EXPIRE coordination), so
+preflight is not globally nonmutating; it makes no task claims or domain writes.
+Initial pins are exact
 database target hash, repertoire/task ID, generation, source/prefix revisions,
 and New York study day. The existing task must be `queued`/`queued`, zero attempts,
 with an older ready publication and no target-or-newer staging. Depth,
-Study-only, frozen activation and expected follow-up task generations are saved.
+Study-only, frozen activation, expected follow-up generations and their prior
+row identity/generation/state/phase/lease fields are saved in version-2 plans.
 Active prefix publication/recovery is refused.
 
 Apply claims only that graph row and calls existing bounded phase handlers.
@@ -25,6 +29,10 @@ and checkpoint/completion repeat the scope check. Existing migration 35 triggers
 exclude generated provenance from authored source revisions; a slice advancing
 the pinned authoritative source rolls back. Protected card reclassification or
 cleanup of an issued attempt/today's queued head stops before that mutation.
+Downstream predecessor rows are locked and compared before owner effects. The
+ordinary enqueue path gains a maintenance-only conflict predicate, fencing an
+insert/lease arriving after an absent-row read, and checks the owner result
+before commit. Ordinary callers keep their existing upsert policy.
 
 Resume requires the same saved plan/pins and its durable task scope marker.
 Only that plan's expired lease may be reclaimed. Current leases, replacement
@@ -58,10 +66,15 @@ unrelated-task refusal, real transaction rollback, protected schedule/history/
 issued-head/frozen evidence, and the queued shared refresh. Expiry is simulated
 in the disposable fixture; this is not an OS-kill rehearsal.
 
-Obtain the parent's finite resource window before native work. Proposed cap:
-**10 minutes, 1.8 CPUs / 1920 MiB total**, with three unique owned containers:
-PostgreSQL 18.6-trixie (0.7 CPU / 768 MiB), Redis 7.4-alpine (0.1 CPU / 128 MiB),
-and a prebuilt backend helper (1 CPU / 1024 MiB). Use an isolated network,
+Obtain the parent's finite resource window before native work. First qualify the
+older-live overlay: exactly six cases (three retained, three selected-mode cases),
+with **five minutes for setup and work plus five minutes for verified cleanup**,
+ten minutes total, and **1.8 CPUs / 1920 MiB** across three unique containers:
+PostgreSQL 18.6-trixie (0.7 CPU / 768 MiB / 128 PIDs), Redis 7.4-alpine
+(0.1 CPU / 128 MiB / 64 PIDs), and the existing backend helper
+(1 CPU / 1024 MiB / 128 PIDs). Memory-swap equals memory for every container;
+there is no additional swap. PG storage and Redis `/data` use capped tmpfs.
+Use an isolated internal network,
 aliases `postgres`/`redis`, no host ports, no study volumes/credentials. Record
 container/image IDs, owner labels, inspected limits, network, exit code and log.
 Mount the exact feature revision read-only at `/source`; in the helper run:
@@ -70,18 +83,23 @@ Mount the exact feature revision read-only at `/source`; in the helper run:
 TEMPO_TEST_INSTANCE=disposable TEMPO_REDIS_URL=redis://redis:6379/0 \
 PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH=/source/backend:/source/packages/scheduling/src:/source/packages/chess-core/src:/source/services/learning/application/src:/source/services/learning/runtime/src:/source/services/learning/remediation/src:/source/contracts/game-evidence/src:/source/contracts/content-publication/src \
-/usr/bin/timeout --signal=TERM --kill-after=10s 540s \
+/usr/bin/timeout --signal=TERM --kill-after=5s "${WORK_SECONDS_REMAINING:?set from the original work deadline}s" \
 python /source/scripts/check_postgres_opening_graph_recovery.py
 ```
 
 Use a prebuilt qualified image; no build, engines, browser or full-system runner.
-The script's `postgres@postgres` admin connection must reach only this isolated
+This source-path command describes a later separately approved source pass;
+the older-live overlay instead uses `/app` imports and the exact four overlays
+below. The script's `postgres@postgres` admin connection must reach only this isolated
 fixture (private-network trust authentication is acceptable only there). It owns
-one unique temporary database. Reserve 60 seconds for verified owned cleanup.
+one unique temporary database. The prepared finite wrapper stops at first
+failure, independently bounds every container lifetime and host command group,
+and reserves five minutes for label/ID-verified removal and independent absence
+checks for containers, network and volumes. No automatic retries.
 Do not substitute the host `--disposable` shortcut without resource fencing.
 
-Also qualify the four-file overlay below against the exact recorded live backend
-image in disposable PostgreSQL. Main `67a11752` includes queue changes absent
+Qualify the four-file overlay below against the exact recorded live backend
+image first. Main `67a11752` includes queue changes absent
 from live `72530cfa`; main-based tests do not prove that compatibility. Each
 native/compatibility pass needs its own approved finite allocation. Missing
 native/compatibility runs are unqualified; source-level passes are not substitutes.
@@ -109,6 +127,15 @@ and the retained private viewer stay up. Engines/scheduler already stopped stay
 stopped. Record as Bash array `APP_IDS` only the previously running `api`,
 `foreground-worker`, `background-worker`, `web` container IDs. Restart these
 same IDs, avoiding recreation, image selection, migrations and deployment.
+
+`before.json` is immutable dry-run evidence and may precede legitimate reviews.
+On the first apply, after the coordinator proves app/writer quiescence, the CLI
+captures `execution-before.json` before any task claim. Authoritative task state,
+scope marker and claim-event checks forbid creating that file after work began.
+Interrupted resumes retain this same execution baseline and check protected
+evidence against it before further claims. They never silently recapture after
+partial writes. Final preservation compares the execution baseline, while the
+original dry-run evidence remains available for inspection.
 
 Populate verified values in a clean Bash shell: `FEATURE` (exact feature source),
 `PRIVATE` (0700 evidence directory), `BACKEND_IMAGE` (immutable live backend image
@@ -193,7 +220,7 @@ terminal failure needs diagnosis and a separately reviewed plan.
 Before the deadline preserve logs, inspect/exit code, per-attempt leases,
 after/error/result and preservation files. Verify exact graph task/publication,
 matching scan/status and segmentation run, Study-only true, all preservation
-checks, and no active owned helper/lease. Then restart the same IDs, whether the
+checks against `execution-before.json`, and no active owned helper/lease. Then restart the same IDs, whether the
 operator completed or stopped:
 
 ```bash
