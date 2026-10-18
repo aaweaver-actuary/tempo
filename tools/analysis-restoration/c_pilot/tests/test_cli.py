@@ -53,3 +53,58 @@ def test_R3_invalid_job_bound_fails_before_worker_start(tmp_path,monkeypatch,max
     path=tmp_path/'config.json';path.write_text(json.dumps({'schema_version':1,'max_jobs':maximum}))
     monkeypatch.setattr(sys,'argv',['pilot','--config',str(path),'--evidence',str(tmp_path/'evidence')])
     with pytest.raises(ValueError,match='invalid_analysis_work_bound'):cli.main()
+
+
+def test_C3_normalized_documents_fit_actual_consumer_file_limit(tmp_path, monkeypatch):
+    """Canonical packing must survive the pilot's final disk serialization."""
+    from tempo_analysis_pilot.inputs import canonical_json
+    manifest = {'input_id': 'input', 'revision': 1, 'source_artifact_digest': 'digest',
+                'producer_manifest': {'provenance': {'kind': 'synthetic'}}}
+    page = {'page_id': 'games-0', 'games': [{'contexts': [
+        {'route_ids': ['route'] * 1500} for _ in range(64)]}]}
+    assert len(canonical_json(page).encode()) < 1024 * 1024
+    assert len(json.dumps(page, indent=2).encode()) > 1024 * 1024
+    monkeypatch.setattr(cli, 'normalize', lambda *args, **kwargs: (manifest, [page]))
+    consumed = []
+    def consumer(argv, **kwargs):
+        if argv[2] == 'accept-input':
+            directory = tmp_path / 'evidence'
+            for name, document in [('manifest.json', manifest), ('games-0.json', page)]:
+                encoded = (directory / name).read_bytes()
+                assert len(encoded) <= 1024 * 1024
+                assert json.loads(encoded) == document
+                consumed.append(name)
+        return SimpleNamespace(returncode=0, stdout='{}')
+    monkeypatch.setattr(cli.subprocess, 'run', consumer)
+    config = {'schema_version': 1, 'workspace_id': 'fixture',
+              'a_export_directory': 'unused', 'game_ids': ['game'],
+              'intelligence_command': ['installed'], 'run_id': 'run'}
+    path = tmp_path / 'config.json'; path.write_text(json.dumps(config))
+    monkeypatch.setattr(sys, 'argv', ['pilot', '--config', str(path), '--evidence', str(tmp_path / 'evidence')])
+    cli.main()
+    assert consumed == ['manifest.json', 'games-0.json']
+
+
+def test_C3_oversized_normalized_document_rejects_before_consumer_start(tmp_path, monkeypatch):
+    manifest = {'input_id': 'input'}
+    page = {'page_id': 'games-0', 'value': 'x' * (1024 * 1024)}
+    monkeypatch.setattr(cli, 'normalize', lambda *args, **kwargs: (manifest, [page]))
+    def unexpected(*args, **kwargs):
+        raise AssertionError('consumer must not receive oversized files')
+    monkeypatch.setattr(cli.subprocess, 'run', unexpected)
+    config = {'schema_version': 1, 'workspace_id': 'fixture',
+              'a_export_directory': 'unused', 'game_ids': ['game'],
+              'intelligence_command': ['installed'], 'run_id': 'run'}
+    path = tmp_path / 'config.json'; path.write_text(json.dumps(config))
+    monkeypatch.setattr(sys, 'argv', ['pilot', '--config', str(path), '--evidence', str(tmp_path / 'evidence')])
+    with pytest.raises(ValueError, match='normalized_analysis_document_size_exceeded'):
+        cli.main()
+    assert not (tmp_path / 'evidence/games-0.json').exists()
+
+
+def test_C3_consumer_document_bound_counts_utf8_and_newline(tmp_path):
+    from tempo_analysis_pilot.inputs import canonical_json
+    document = {'value': 'é♞'}
+    path = tmp_path / 'page.json'
+    cli.write_analysis_document(path, document)
+    assert path.read_bytes() == (canonical_json(document) + '\n').encode()

@@ -145,6 +145,35 @@ class AnalysisStore:
             rows=db.execute("SELECT r.* FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) ORDER BY r.created_at DESC,r.run_id LIMIT 100").fetchall()
             return {"schema_version":1,"workspace_id":self.workspace,"items":[self._status(db,r) for r in rows]}
 
+    def games(self,run_id,after=None,limit=10):
+        """Read exact accepted input games, independently of engine progress."""
+        if type(limit) is not int or not 1<=limit<=10:
+            raise DomainError('invalid_analysis_game_limit',422)
+        with self.owner.transaction(read_only=True) as db:
+            run=self._head(db,run_id)
+        source,games=self._input(run['payload']['input_id'],run['payload']['input_revision'])
+        if source['state']!='accepted':
+            raise DomainError('analysis_input_not_accepted')
+        scope={'workspace':self.workspace,'run':run_id,'revision':run['revision'],
+            'input_id':source['input_id'],'input_revision':source['revision'],'ordering':'game-id-v1'}
+        last=''
+        if after:
+            try:
+                if len(after)>4096:raise ValueError()
+                cursor=json.loads(base64.urlsafe_b64decode(after.encode()))
+                last=cursor.pop('last')
+                if type(last) is not str or not last:raise ValueError()
+            except Exception:raise DomainError('invalid_analysis_game_cursor',422) from None
+            if cursor!=scope:raise DomainError('stale_analysis_game_cursor')
+        ordered=sorted(games,key=lambda game:game['game_id'])
+        if last and not any(game['game_id']==last for game in ordered):
+            raise DomainError('invalid_analysis_game_cursor',422)
+        selected=[game for game in ordered if game['game_id']>last]
+        cursor=base64.urlsafe_b64encode(canonical_json({**scope,'last':selected[limit-1]['game_id']}).encode()).decode() if len(selected)>limit else None
+        return public({'schema_version':1,'workspace_id':self.workspace,'run_id':run_id,'revision':run['revision'],
+            'input_id':source['input_id'],'input_revision':source['revision'],'game_count':len(ordered),
+            'selections':source['payload']['selections'],'items':selected[:limit],'next_after':cursor})
+
     def _receipt(self,db,command_id,payload):
         db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("analysis-command:"+command_id,))
         row=db.execute("SELECT * FROM analysis_commands WHERE command_id=%s",(command_id,)).fetchone()

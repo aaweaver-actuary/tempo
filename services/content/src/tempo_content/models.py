@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, model_serializer
 from tempo_content_publication_contracts.v1 import ExecutableExercise
 
 
@@ -42,6 +42,15 @@ class SourcePolicy(SourceModel):
 
 
 class SourceRoute(SourceModel):
+    authority_start_ply: int | None = Field(default=0, ge=0, le=1000)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_routes(self, handler):
+        value=handler(self)
+        if self.authority_start_ply == 0:
+            value.pop('authority_start_ply',None)
+        return value
+
     key: SourceKey
     starting_fen: Annotated[str, Field(min_length=1, max_length=120)]
     moves: list[UciMove] = Field(default_factory=list, max_length=1000)
@@ -53,7 +62,21 @@ class RouteMembership(SourceModel):
     route_key: SourceKey
 
 
+class ExecutionPrelude(SourceModel):
+    starting_fen: Annotated[str, Field(min_length=1, max_length=120)]
+    moves: list[UciMove] = Field(min_length=1, max_length=1)
+
+
 class SourceExercise(SourceModel):
+    execution_prelude: ExecutionPrelude | None = None
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_exercises(self, handler):
+        value=handler(self)
+        if self.execution_prelude is None:
+            value.pop('execution_prelude',None)
+        return value
+
     key: SourceKey
     decision_key: SourceKey
     policy_key: SourceKey
@@ -70,6 +93,15 @@ class SourceExercise(SourceModel):
 
 
 class ExerciseBinding(SourceModel):
+    exercise_ply: int = Field(default=0,ge=0,le=39)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_bindings(self,handler):
+        value=handler(self)
+        if self.exercise_ply==0:
+            value.pop('exercise_ply',None)
+        return value
+
     route_key: SourceKey
     policy_key: SourceKey
     ply: Annotated[int, Field(ge=0, le=1000)]
@@ -121,6 +153,8 @@ class SourceSnapshot(SourceModel):
             memberships.add(identity)
         if set(indexed["routes"]) - {membership.route_key for membership in self.memberships}:
             raise ValueError("every authored route requires a repertoire policy membership")
+        if any(route.authority_start_ply is not None and route.authority_start_ply > len(route.moves) for route in self.routes):
+            raise ValueError('policy authority anchor exceeds route')
         for exercise in self.exercises:
             if exercise.policy_key not in indexed["policies"]:
                 raise ValueError("exercise references unknown policy")

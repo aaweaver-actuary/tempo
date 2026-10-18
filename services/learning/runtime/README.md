@@ -56,7 +56,22 @@ Publication JSON includes the existing Content `Publication` plus versioned Lear
 
 Memberships must be unique. Opening route orders must be unique within each repertoire, and every accepted opening line must finish on the trained learner's move. Activation verifies the exact graph steps and executable payloads for every accepted membership. Activation and retirement serialize repertoire ownership with sorted transaction advisory locks, including removed memberships, before acquiring sorted card locks and applying queue effects. A competing owner is a terminal conflict. Malformed previously staged bundles are revalidated and produce terminal operation receipts; transient database contention retains retryable intent.
 
-One opening repertoire has one active publication owner. The 128-definition limit therefore cannot be bypassed with multiple independently active chunks, and a replacement generation is not an append operation: omitted definitions stop serving. Larger repertoire import/cutover needs a deliberately designed protocol from its integration owner.
+One opening repertoire has one active publication owner. V1 retains its
+128-definition limit. The Content bridge v2 accepts at most 8,192 definitions in
+one complete 12 MiB bundle; independently active chunks cannot replace it. A
+replacement generation is not an append operation: omitted definitions stop serving.
+
+Full historical alias activation locks both physical and Content card identities
+in the existing sorted card-edit protocol. The 6,524-alias real-data rehearsal
+exhausted a disposable PostgreSQL cluster configured with
+`max_locks_per_transaction=64` and `max_connections=48`. That leaves the exact
+activation intent queued and rolls back its effects; it is not a successful
+activation. Provision shared lock capacity for the actual complete source and
+other cluster work. The invocation-owned native qualifier uses startup setting
+`max_locks_per_transaction=512` and records the actual configuration while
+retaining its CPU/memory and transaction-time limits. Runtime never changes that
+setting. PostgreSQL documents this as shared lock-table capacity, not a per-review
+row limit: [PostgreSQL 18 lock management](https://www.postgresql.org/docs/18/runtime-config-locks.html).
 
 Endgame probes read the persistent cache first. A cache miss with no configured provider is an explicit 503. Provider failure is an explicit 503. Defense grading uses validated accepted engine reports; an uncovered legal move creates durable `needs_analysis` intent without a grade or scheduling event.
 

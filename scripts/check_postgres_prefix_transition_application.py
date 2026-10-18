@@ -32,6 +32,9 @@ def idle_call(callback):
             return callback()
         except (HTTPException,psycopg.errors.SerializationFailure,BackgroundAdmissionDeferred) as error:
             cause=error.__cause__ if isinstance(error,psycopg.errors.SerializationFailure) else error
+            if isinstance(error, BackgroundAdmissionDeferred) and (
+                    error.__cause__ is not None or str(error) == 'Foreground admission is unavailable'):
+                raise
             if not isinstance(error, BackgroundAdmissionDeferred) and not (isinstance(cause,HTTPException) and cause.status_code==503 and isinstance(cause.detail,dict)
                     and cause.detail.get('message')=='Study work is active. Retry the diagnostic when study is idle.'):
                 raise

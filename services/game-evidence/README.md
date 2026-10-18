@@ -23,6 +23,12 @@ Re-entry traces identify the actual authorizing binding; FEN coincidence alone
 does not establish route context. Exports remain observations, never admission or
 content-approval authority. Bounds are 8 MiB per page and 64 MiB per export.
 
+Explicit Content/Learning route bindings can identify learner decisions inside
+an unchanged physical executable with `exercise_ply` and `decision_id`. Game
+Evidence independently validates the projected legal position and alternatives;
+the physical card and publication remain unchanged. This does not authorize
+transposition re-entry or historical aliases. Prior bindings omit these fields.
+
 Independently installed repertoire review, source/index storage, read API and durable
 Learning delivery intent. A repertoire miss is an authored move not played; it is
 not an engine judgment. This increment supports completed standard/from-position

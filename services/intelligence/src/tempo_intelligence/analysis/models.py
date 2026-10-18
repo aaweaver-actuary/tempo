@@ -2,7 +2,7 @@
 from typing import Literal
 from datetime import datetime
 import chess
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, model_serializer
 from ..models import StrictModel, Identifier, Revision, Digest, UciMove
 from ..identity import digest
 
@@ -20,6 +20,14 @@ class Lineage(StrictModel):
     serving_status: Literal["current", "historical", "unknown"] = "unknown"
 
 class Selection(StrictModel):
+    @model_serializer(mode='wrap')
+    def preserve_existing_bytes(self, handler):
+        value=handler(self)
+        if self.repertoire_title is None:
+            value.pop('repertoire_title',None)
+        return value
+
+    repertoire_title: str | None = Field(default=None, max_length=2000)
     repertoire_id: Identifier
     policy_id: Identifier
     learner_color: Literal["white", "black"]
@@ -51,6 +59,13 @@ class CoverageScope(StrictModel):
         return self
 
 class Context(StrictModel):
+    @model_serializer(mode='wrap')
+    def preserve_prior_context_bytes(self,handler):
+        value=handler(self)
+        if self.learning_card_id is None:value.pop('learning_card_id',None)
+        return value
+
+    learning_card_id: Identifier | None = None
     ply: int = Field(ge=0, le=1000)
     repertoire_id: Identifier
     policy_id: Identifier
@@ -59,7 +74,7 @@ class Context(StrictModel):
     card_id: Identifier | None = None
     decision_id: Identifier | None = None
     expected_moves: list[UciMove] = Field(default_factory=list, max_length=256)
-    route_ids: list[Identifier] = Field(default_factory=list, max_length=256)
+    route_ids: list[Identifier] = Field(default_factory=list, max_length=10000)
     coverage: Literal["covered", "uncovered", "unknown"] = "unknown"
     route_established: bool = False
     scope_complete: bool = False
@@ -78,13 +93,21 @@ class OpponentEncounter(StrictModel):
     repertoire_id: Identifier
     policy_id: Identifier
     fen: str = Field(max_length=120)
-    route_ids: list[Identifier] = Field(min_length=1,max_length=256)
+    route_ids: list[Identifier] = Field(min_length=1,max_length=10000)
     scope_complete: bool
     scope_revision: Revision
     evidence_id: Identifier
 
 
 class Game(StrictModel):
+    @model_serializer(mode='wrap')
+    def preserve_existing_bytes(self, handler):
+        value=handler(self)
+        if self.game_url is None:
+            value.pop('game_url',None)
+        return value
+
+    game_url: str | None = Field(default=None, max_length=2048)
     game_id: Identifier
     learner_id: Identifier | None = None
     provider: Identifier | None = None

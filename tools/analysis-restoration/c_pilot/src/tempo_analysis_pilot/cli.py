@@ -4,7 +4,17 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from .inputs import normalize
+from .inputs import normalize, canonical_json
+
+
+MAX_CONSUMER_DOCUMENT_BYTES = 1024 * 1024
+
+
+def write_analysis_document(path, document):
+    encoded = (canonical_json(document) + "\n").encode('utf-8')
+    if len(encoded) > MAX_CONSUMER_DOCUMENT_BYTES:
+        raise ValueError('normalized_analysis_document_size_exceeded')
+    path.write_bytes(encoded)
 
 
 def main():
@@ -25,8 +35,8 @@ def main():
     if type(maximum) is not int or not 1<=maximum<=1000:raise ValueError('invalid_analysis_work_bound')
     destination=options.evidence.resolve();destination.mkdir(parents=True,exist_ok=True)
     manifest,pages=normalize(config['a_export_directory'],workspace=config['workspace_id'],selected_game_ids=config['game_ids'])
-    (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    for page in pages:(destination/(page['page_id']+'.json')).write_text(json.dumps(page,indent=2)+'\n')
+    write_analysis_document(destination/'manifest.json',manifest)
+    for page in pages:write_analysis_document(destination/(page['page_id']+'.json'),page)
     command=config['intelligence_command']
     if not isinstance(command,list) or not command or any(not isinstance(value,str) for value in command):raise ValueError('explicit_installed_cli_required')
     commands=[]
