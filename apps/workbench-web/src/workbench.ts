@@ -111,7 +111,8 @@ export function mountWorkbench(root:HTMLElement){
       const query=new URLSearchParams();if(category)query.set("category",category);if(dismissal)query.set("dismissal",dismissal);if(after)query.set("after",after);
       const next=await client!.request(`/v1/analysis/runs/${encodeURIComponent(runId)}/report?${query}`,reportSchema);if(generation!==renderGeneration)return;if(next.run_id!==runId)throw new Error("Report identity mismatch");report=next;
       if(!after)target.replaceChildren();else target.querySelector(".more")?.remove();
-      const state=node("p",`${String(record(next.source_provenance??{}).kind??"explicit source")} · ${next.status} · ${String(next.source_completeness??"inputs pending")} · ${String(next.unprocessed_count??"unknown")} engine decisions unprocessed · ${String(next.insufficient_quality_count??0)} searches need better evidence`);state.className="report-state";target.append(state);
+      const completion=next.complete===true?"Analysis complete":next.complete===false?"Analysis incomplete":"Analysis completeness unknown";
+      const state=node("p",`${completion} · ${String(record(next.source_provenance??{}).kind??"explicit source")} · ${next.status} · ${String(next.source_completeness??"unknown")} inputs · ${String(next.unprocessed_count??"unknown")} engine decisions unprocessed · ${String(next.insufficient_quality_count??0)} searches need better evidence`);state.className="report-state";target.append(state);
       const scope=record(next.scope??{});const selectedGames=Array.isArray(scope.game_ids)?scope.game_ids.length:"unknown";
       target.append(node("p",comparisonChronologyNotice));
       target.append(node("p",`${selectedGames} selected games · ${String(next.unknown_coverage_count??"unknown")} comparison decisions unknown.`));

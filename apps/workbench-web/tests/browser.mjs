@@ -60,6 +60,10 @@ try{
   // C3_retrospective_repertoire_scope_visible: source mismatch is not historical knowledge.
   const chronologyNotice='Repertoire comparisons use the exported snapshot. Repertoire availability and prior study at game time are unverified.';
   await expect(page.getByText(chronologyNotice,{exact:true})).toBeVisible();
+  // C3_report_completion_separate_from_input_scope: full input is not a finished scan.
+  assert.equal(fixtures.report.complete,false);assert.equal(fixtures.report.source_completeness,'complete');
+  await expect(page.locator('.report-state')).toContainText('Analysis incomplete');
+  await expect(page.locator('.report-state')).toContainText('complete inputs');
   await expect(page.getByRole('button',{name:'Continue · next 250 decisions',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Retry',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Resume',exact:true})).toHaveCount(1);

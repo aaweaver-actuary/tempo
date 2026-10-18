@@ -65,3 +65,8 @@ wrapper shrank. Board painting is now bounded and coordinates stay inside the
 board; the original immediate document-width assertion remains unchanged. An
 additional assertion requires all32pieces inside the resized board, so clipping
 cannot pass by leaving an incomplete board. No timeout budget was increased.
+
+`C3_report_completion_separate_from_input_scope` uses the actual native fixture
+with complete input scope and incomplete analysis. It requires both “Analysis
+incomplete” and “complete inputs” in the report state, preserving the engine
+remaining-work count rather than labeling the report complete from input scope.
