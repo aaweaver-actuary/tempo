@@ -1,5 +1,11 @@
 # Intelligence local interface version 1
 
+Analysis v1 encounter/context route references retain up to 10,000 authored route
+IDs, matching the producer's complete route bound. A 1,032-route shared prefix
+must not be truncated to 256 or rejected solely for that cardinality. Existing
+page/input byte limits still apply, and this changes no classification, ranking,
+frequency or engine-quality policy. Older serialized inputs remain unchanged.
+
 This document describes the implemented component-local schemas and protocol.
 It does not extend shared Intelligence, Content or analysis-jobs wire v1. Unknown
 input fields are rejected. HTTP and CLI document bodies are bounded to 1 MiB;

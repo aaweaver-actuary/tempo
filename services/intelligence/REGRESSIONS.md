@@ -1,5 +1,12 @@
 # Intelligence regression ownership
 
+`test_C3_route_reference_capacity_matches_complete_authored_source_bound` owns
+lossless shared-prefix route references within the producer's 10,000-route bound
+and rejection beyond it. The external pilot's regular
+`test_C3_full_authored_shared_prefix_retains_every_route_context` verifies 1,032
+serialized authored branches through actual normalization and public Page parsing,
+including encounter, learner comparison, gap and deterministic proposal anchor.
+
 ## PR295 R6/R7 corrective regressions
 
 `integration/test_analysis_postgres.py` owns the native cases:

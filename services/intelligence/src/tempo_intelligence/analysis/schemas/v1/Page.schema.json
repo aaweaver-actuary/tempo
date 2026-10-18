@@ -172,7 +172,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 256,
+          "maxItems": 10000,
           "title": "Route Ids",
           "type": "array"
         },
@@ -398,7 +398,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 256,
+          "maxItems": 10000,
           "minItems": 1,
           "title": "Route Ids",
           "type": "array"

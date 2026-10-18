@@ -74,7 +74,7 @@ class Context(StrictModel):
     card_id: Identifier | None = None
     decision_id: Identifier | None = None
     expected_moves: list[UciMove] = Field(default_factory=list, max_length=256)
-    route_ids: list[Identifier] = Field(default_factory=list, max_length=256)
+    route_ids: list[Identifier] = Field(default_factory=list, max_length=10000)
     coverage: Literal["covered", "uncovered", "unknown"] = "unknown"
     route_established: bool = False
     scope_complete: bool = False
@@ -93,7 +93,7 @@ class OpponentEncounter(StrictModel):
     repertoire_id: Identifier
     policy_id: Identifier
     fen: str = Field(max_length=120)
-    route_ids: list[Identifier] = Field(min_length=1,max_length=256)
+    route_ids: list[Identifier] = Field(min_length=1,max_length=10000)
     scope_complete: bool
     scope_revision: Revision
     evidence_id: Identifier

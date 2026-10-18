@@ -1,5 +1,9 @@
 # External C pilot
 
+Complete shared prefixes may reference up to 10,000 authored routes, subject to
+the unchanged serialized page/input byte bounds. Normalization retains every
+reference; it does not truncate source scope to the older 256-route C limit.
+
 Consumes A's `tempo-analysis-inputs` version 1 serialized manifest/pages. Verifies
 all hashes, counts, workspace, exact selected games, position history and original
 comparison identity, then normalizes into C's public analysis-v1 input API.

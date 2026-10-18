@@ -233,3 +233,14 @@ def test_C3_absent_optional_metadata_preserves_original_input_page_digest():
     original=json.loads((root/'games-0.json').read_text())
     assert Page.model_validate(original).model_dump(mode='json')==original
     assert digest(Page.model_validate(original).model_dump(mode='json'))==digest(original)
+
+
+def test_C3_route_reference_capacity_matches_complete_authored_source_bound():
+    from tempo_intelligence.analysis.models import Context,OpponentEncounter
+    context={'ply':0,'repertoire_id':'rep','policy_id':'policy','evidence_id':'source'}
+    encounter={**context,'fen':chess.STARTING_FEN,'scope_complete':True,'scope_revision':1}
+    for model,value in [(Context,context),(OpponentEncounter,encounter)]:
+        references=[f'route-{index}' for index in range(1032)]
+        assert model.model_validate({**value,'route_ids':references}).route_ids==references
+        with pytest.raises(ValueError):
+            model.model_validate({**value,'route_ids':[f'route-{index}' for index in range(10001)]})

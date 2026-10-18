@@ -135,3 +135,39 @@ def test_C3_shared_prefix_can_anchor_a_draft_only_with_exact_route_history(tmp_p
     (tmp_path/'manifest.json').write_text(json.dumps(manifest))
     _,repeated=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
     assert repeated[0]['games'][0]['contexts'][-1]['proposal_anchor']==anchor
+
+
+def test_C3_full_authored_shared_prefix_retains_every_route_context(tmp_path):
+    """A real selected policy has 1,032 routes; these game bytes are synthetic."""
+    export_fixture(tmp_path)
+    manifest=json.loads((tmp_path/'manifest.json').read_text())
+    records={}
+    for reference in manifest['pages']:
+        page=json.loads((tmp_path/reference['filename']).read_text())
+        records.setdefault(reference['kind'],[]).extend(page['items'])
+    original=records['routes'][0]
+    records['routes']=[{**original,'route_id':f'route-{index:04d}','route_key':f'branch-{index:04d}',
+        'repertoire_title':'Synthetic complete branch scope'} for index in range(1032)]
+    contexts=[{'repertoire_id':'rep','policy_id':'policy','route_id':route['route_id'],'route_ply':1} for route in records['routes']]
+    records['deviations'][0]['route_contexts']=contexts
+    records['comparisons'][0]['findings'][0]['memberships']=[{'repertoire_id':'rep','route_id':route['route_id']} for route in records['routes']]
+    records['positions'][1]['opponent_decision']={'game_id':'game','game_revision':1,'ply':1,'decision_ply':2,
+        'fen':records['positions'][1]['fen'],'history':['e2e4','a7a6'],'route_contexts':contexts,
+        'response_inventory':{'complete':True,'source_revision':1},'status':'established_opponent_deviation'}
+    records['positions'][1]['comparison_key']=' '.join(chess.Board(records['positions'][1]['fen']).fen(en_passant='legal').split()[:4])
+    manifest['pages']=[];manifest['counts']={kind:len(items) for kind,items in records.items()}
+    for kind,items in records.items():
+        for offset in range(0,len(items),64):
+            index=offset//64;filename=f'{kind}-{index:06d}.json'
+            page={'schema_version':1,'input_id':manifest['input_id'],'workspace_id':'fixture','revision':1,'kind':kind,'page_index':index,'items':items[offset:offset+64]}
+            (tmp_path/filename).write_text(json.dumps(page))
+            manifest['pages'].append({'kind':kind,'page_index':index,'filename':filename,'count':len(page['items']),'digest':fingerprint(page)})
+    manifest['manifest_digest']=fingerprint({key:value for key,value in manifest.items() if key!='manifest_digest'})
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    accepted,pages=normalize(tmp_path,workspace='fixture',selected_game_ids=['game'])
+    game=pages[0]['games'][0]
+    assert len(game['opponent_encounters'][0]['route_ids'])==1032
+    assert len(game['contexts'][0]['route_ids'])==1032
+    assert len(game['contexts'][-1]['route_ids'])==1032
+    assert game['contexts'][-1]['proposal_anchor']['route_key']=='branch-0000'
+    assert accepted['producer_manifest']['counts']['routes']==1032
