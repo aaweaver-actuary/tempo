@@ -1,6 +1,7 @@
 """Named regressions for authored studies and the shared review queue."""
 
 import json
+import runpy
 import sqlite3
 import time
 import uuid
@@ -398,3 +399,40 @@ def test_study_new_exercise_allowance_is_independent_and_due_reviews_remain(tmp_
                 break
             time.sleep(0.02)
         assert exercise_ids[2] in queued_ids
+
+
+def test_stalemate_history_protection_fixture_seeds_authored_and_standard_review_owners(tmp_path, monkeypatch):
+    """Both real review owners protect nonempty history during portable reimport."""
+    from app import queue_commands, review_commands
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "stalemate-history.db")
+    proof = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/check_postgres_stalemate_swindles.py"))
+    handlers = {"queue.issue_head": queue_commands.issue_queue_head, "cards.review": review_commands.submit_review}
+
+    def execute_owned_command(_operation_id, name, payload):
+        with database.connection() as connection:
+            return handlers[name](connection, payload)
+
+    with TestClient(app) as client:
+        study_id, _, position_id = make_study(client)
+        created = client.post(f"/api/studies/{study_id}/exercises", json={"position_id": position_id,
+            "specification": {"type": "square_set", "prompt": "Select the knight square",
+                              "criterion": "The white knight", "required": ["g1"]}})
+        assert created.status_code == 200, created.text
+        exercise_id = created.json()["id"]
+        assert client.post(f"/api/studies/{study_id}/exercises/{exercise_id}/enroll").status_code == 200
+        card = wait_for_study_card(client, exercise_id)
+        reviewed = client.post(f"/api/studies/{study_id}/exercises/{exercise_id}/attempts", json={
+            "attempt_id": str(uuid.uuid4()), "revision": 1, "answer": {"type": "square_set", "squares": ["g1"]},
+            "context": "review", "card_id": card["id"], "queue_entry_id": card["queue_entry_id"], "queue_cycle": card["cycle"]})
+        assert reviewed.status_code == 200 and reviewed.json()["persisted"], reviewed.text
+        proof["seed_standard_review_history"](database.connection, execute_owned_command)
+        with database.read_connection() as connection:
+            before = proof["review_history_snapshot"](connection)
+        assert all(before.values()), {table: len(rows) for table, rows in before.items()}
+        bundle = client.get(f"/api/studies/{study_id}/export").json()
+        for _ in range(2):
+            imported = client.post("/api/studies/import-bundle", json={"bundle": bundle})
+            assert imported.status_code == 200 and imported.json()["idempotent"], imported.text
+            with database.read_connection() as connection:
+                assert proof["review_history_snapshot"](connection) == before
