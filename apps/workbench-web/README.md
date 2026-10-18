@@ -9,7 +9,7 @@ browser origin in `TEMPO_INTELLIGENCE_ORIGINS`. No API proxy or live fallback ex
 ```sh
 npm ci --prefix apps/workbench-web --workspaces=false
 npm test --prefix apps/workbench-web
-node apps/workbench-web/tests/browser.mjs /absolute/native/workbench-producer.json /absolute/evidence/browser
+npm run test:browser --prefix apps/workbench-web -- /absolute/native/workbench-producer.json /absolute/evidence/browser
 node apps/workbench-web/qualify.mjs /absolute/evidence/restricted
 ```
 
@@ -89,7 +89,11 @@ handoff or persistent credential is added.
 The owning qualifier builds with the non-secret fixture Study URL
 `https://study.example.test/`; the browser intercepts this target locally and
 proves a general root GET with no Authorization, referrer, card query or API
-mutation. For a direct native browser run, first build using that fixture setting.
+mutation. The regular `test:browser` entry builds with those fixture settings before running
+the browser, and the registered component command uses that entry. A normal
+`npm test` separately checks empty public defaults and does not leave a guessed
+API origin. The source-removed qualifier sets the same explicit fixture settings
+when building its artifact.
 The qualifier also executes the actual public Vite build-config rejection checks
 before bundling, then verifies the source-removed package as before.
 

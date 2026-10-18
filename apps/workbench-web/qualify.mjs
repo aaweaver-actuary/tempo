@@ -1,3 +1,4 @@
+import { navigationFixture } from './tests/navigation-fixture.mjs';
 import { mkdtemp,cp,rm,mkdir,readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve,join } from 'node:path';
@@ -14,8 +15,7 @@ try{
  await run(['npm','ci','--workspaces=false','--ignore-scripts'],build,'install');
  await run(['node','tests/public-build-config.mjs'],build,'public-build-settings');
  // Explicit non-secret fixture routing; no live Study service is contacted.
- environment.TEMPO_STUDY_URL='https://study.example.test/';
- environment.TEMPO_INTELLIGENCE_ORIGIN='https://intelligence.example.test';
+ Object.assign(environment,navigationFixture);
  await run(['npm','run','build'],build,'build');
  const packed=JSON.parse(await run(['npm','pack','--json','--pack-destination',destination],build,'pack'))[0];const artifact=join(destination,packed.filename);report.artifact=packed.filename;report.sha256=createHash('sha256').update(await readFile(artifact)).digest('hex');
  const consumer=join(temporary,'consumer');await mkdir(consumer);await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',dependencies:{'@tempo/workbench-web':'file:'+artifact},devDependencies:{'@playwright/test':'1.63.0'}}));

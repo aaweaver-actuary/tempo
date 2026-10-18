@@ -1,3 +1,4 @@
+import { navigationFixture } from './navigation-fixture.mjs';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, relative } from 'node:path';
@@ -61,7 +62,7 @@ try{
   assert.equal(freshNavigation.request().redirectedFrom(),null);assert.equal(page.url(),origin+'/?run=run');
   await expect(page.getByRole('heading',{name:'Connect to Intelligence',exact:true})).toBeVisible();
   await expect(page.getByLabel('Caller credential',{exact:true})).toHaveValue('');
-  await expect(page.getByLabel('Intelligence origin',{exact:true})).toHaveValue('https://intelligence.example.test');
+  await expect(page.getByLabel('Intelligence origin',{exact:true})).toHaveValue(navigationFixture.TEMPO_INTELLIGENCE_ORIGIN);
   await expect(page.getByText('The Intelligence origin is an API address entered in this form, not the Workbench page to open in your browser.',{exact:false})).toBeVisible();
   assert.equal(await page.evaluate(()=>sessionStorage.getItem('tempo-analysis-connection-v1')),null);
   assert.equal(traffic.length,0,'Fresh page navigation must not call the authenticated API');
@@ -119,17 +120,17 @@ try{
   // C_connected_general_study: only a general root navigation, no card authority claim.
   await expect(page.getByText('Study opens its normal queue. This gap does not identify an existing Study card.',{exact:true})).toBeVisible();
   const studyLink=page.locator('.detail').getByRole('link',{name:'Open Study',exact:true});
-  assert.equal(await studyLink.getAttribute('href'),'https://study.example.test/');
+  assert.equal(await studyLink.getAttribute('href'),navigationFixture.TEMPO_STUDY_URL);
   assert.equal(await studyLink.getAttribute('rel'),'noopener noreferrer');
   const apiBeforeStudy=traffic.length;let studyRequests=0;
   await context.route('https://study.example.test/**',async route=>{
-    assert.equal(route.request().url(),'https://study.example.test/');assert.equal(route.request().method(),'GET');
+    assert.equal(route.request().url(),navigationFixture.TEMPO_STUDY_URL);assert.equal(route.request().method(),'GET');
     assert.equal(route.request().headers().authorization,undefined);assert.equal(route.request().headers().referer,undefined);studyRequests++;
     await route.fulfill({status:200,contentType:'text/html',body:'<h1>General Study target fixture</h1>'});
   });
   const openedStudy=context.waitForEvent('page');await studyLink.click();const studyPage=await openedStudy;
   await expect(studyPage.getByRole('heading',{name:'General Study target fixture',exact:true})).toBeVisible();
-  assert.equal(studyPage.url(),'https://study.example.test/');assert.equal(studyRequests,1);assert.equal(traffic.length,apiBeforeStudy);
+  assert.equal(studyPage.url(),navigationFixture.TEMPO_STUDY_URL);assert.equal(studyRequests,1);assert.equal(traffic.length,apiBeforeStudy);
   assert.equal(await studyPage.opener(),null);await studyPage.close();navigationCases.push('C_connected_general_study');
   // C_connected_session_scope: preserve existing per-tab connection, never copy it to another tab.
   const freshTab=await context.newPage();const apiBeforeFreshTab=traffic.length;

@@ -102,7 +102,7 @@
         {
           "owner": "workbench-web",
           "kind": "node",
-          "command": "node tests/browser.mjs tests/fixtures/producer.json",
+          "command": "npm run test:browser -- tests/fixtures/producer.json",
           "inputs": [
             "src",
             "tests",

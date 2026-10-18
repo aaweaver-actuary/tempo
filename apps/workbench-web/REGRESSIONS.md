@@ -89,3 +89,10 @@ unverified authority wording. `tests/public-build-config.mjs` executes the ownin
 Vite config against unsafe public settings before asset emission, without echoing
 rejected values. The qualifier includes this config input and checks source
 removal; no live/rehearsal Study authority is used by the browser fixture.
+
+The regular `test:browser` entry owns a configured fixture build before invoking
+these assertions. Its shared public fixture data also configures qualification;
+the installed consumer uses that already-built artifact. The component registry
+calls this entry, so a prior plain default-empty build cannot invalidate the
+registered browser suite. Empty defaults remain independently covered by the
+actual build-config checks and public-client contract cases.
