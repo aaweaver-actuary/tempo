@@ -1166,3 +1166,19 @@ test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps'
   assert.equal(postgresProofAllocations(['-f',paths.diagnostic,'run','schema'],paths,budgets),budgets.diagnosticRehearsalServices);
   assert.throws(()=>postgresProofAllocations(['-f',paths.priority,'-f',paths.diagnostic,'run','schema'],paths,budgets),/Conflicting/);
 });
+
+test('study_priority_large_transition_planning_uses_bounded_diagnostic_allocation_without_retrying_read_failures', () => {
+  const runner=readFileSync(join(root,'scripts/test-postgres-docker.mjs'),'utf8');
+  const workload=runner.slice(runner.indexOf('  background_workloads: async () => {'),
+    runner.indexOf('  priority_benchmark: async () => {'));
+  assert.match(workload,/runAllocatedDiagnosticProof\("\/source\/scripts\/check_postgres_prefix_transition_application\.py"/,
+    'The 128/512-line planning proof must not use the 0.2 CPU helper');
+  const proof=readFileSync(join(root,'scripts/check_postgres_prefix_transition_application.py'),'utf8');
+  assert.match(proof,/for obsolete_count in \(128, 512\):/);
+  assert.match(proof,/len\(set\(obsolete_ids\)\) == obsolete_count/);
+  assert.match(proof,/len\(set\(created_ids\)\) == 2 \* obsolete_count/);
+  const idleCall=proof.slice(proof.indexOf('def idle_call('),proof.indexOf('\n\ndef execute('));
+  assert.match(idleCall,/Study work is active\. Retry the diagnostic when study is idle\./);
+  assert.doesNotMatch(idleCall,/temporarily unavailable|OperationalError|transaction_timeout/,
+    'A terminated read must remain a visible proof failure');
+});

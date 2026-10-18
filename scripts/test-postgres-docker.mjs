@@ -1118,8 +1118,9 @@ const actions = {
           "/source/scripts/check_postgres_canonical_freshness.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_graph_recovery.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/scripts/check_postgres_prefix_transition_application.py"]);
+        runAllocatedDiagnosticProof("/source/scripts/check_postgres_prefix_transition_application.py",
+          "test_postgres_large_transition_planning_uses_bounded_diagnostic_allocation",
+          ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
         startConsumers: (services) => run("docker", [...compose, "start", ...services]),
