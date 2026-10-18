@@ -1,5 +1,12 @@
 # Intelligence regression ownership
 
+`test_C3_route_reference_capacity_matches_complete_authored_source_bound` owns
+lossless shared-prefix route references within the producer's 10,000-route bound
+and rejection beyond it. The external pilot's regular
+`test_C3_full_authored_shared_prefix_retains_every_route_context` verifies 1,032
+serialized authored branches through actual normalization and public Page parsing,
+including encounter, learner comparison, gap and deterministic proposal anchor.
+
 ## PR295 R6/R7 corrective regressions
 
 `integration/test_analysis_postgres.py` owns the native cases:
@@ -380,3 +387,12 @@ legacy recovery from blocking corrected runs or retaining orphaned capacity.
 no-engine → configured bounded success → continuation → explicit no-engine again.
 Acceptance clears only the current revision's pending absence markers, preserving
 other failures, states, results and other runs.
+
+## C3 accepted game inspection
+
+`tests/test_game_browser.py` owns read-only game paging, complete selected scope,
+strict limits, malformed cursors and cursor fencing across runs/revisions.
+`integration/test_analysis_postgres.py::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free`
+compares responses with actual accepted input, checks authentication/workspace
+rejection and proves unchanged run/job progress across reads. The native
+Workbench producer exports this real read response for its constructed fixture.

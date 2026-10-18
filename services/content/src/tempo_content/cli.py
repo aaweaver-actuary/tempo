@@ -109,8 +109,8 @@ def main(argv=None):
                 from .bridge import Bridge, ResponseProposal, map_import
                 bridge = Bridge(service)
                 if arguments.command=='import':
-                    if arguments.file.stat().st_size>8*1024*1024:
-                        raise ContentError('source_byte_bound','Import exceeds 8 MiB')
+                    if arguments.file.stat().st_size>16*1024*1024:
+                        raise ContentError('source_byte_bound','Import exceeds 16 MiB')
                     source,manifest = map_import(arguments.file.read_bytes(),json.loads(arguments.manifest.read_text()))
                     result = bridge.draft(source.model_dump(mode='json'),manifest.model_dump(mode='json'),arguments.expected_revision)
                 elif arguments.command=='proposal':

@@ -36,7 +36,9 @@ def admitted_segmentation_call(operation, *arguments):
     while True:
         try:
             return operation(*arguments)
-        except BackgroundAdmissionDeferred:
+        except BackgroundAdmissionDeferred as error:
+            if error.__cause__ is not None or str(error) == 'Foreground admission is unavailable':
+                raise
             if time.monotonic() >= admission_deadline:
                 raise AssertionError('Segmentation never obtained foreground-idle admission within 10 seconds')
             time.sleep(0.01)

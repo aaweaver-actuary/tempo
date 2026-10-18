@@ -65,7 +65,7 @@ class AnalysisManifest(Model):
         document=self.model_dump(mode='json',exclude={'manifest_digest'})
         if digest(document)!=self.manifest_digest or set(self.counts)!=set(KINDS) or any(value<0 for value in self.counts.values()):
             raise ValueError('analysis_manifest_digest_or_counts_invalid')
-        if not 1<=self.counts['definitions']<=2048 or not 1<=self.counts['games']<=100 or self.counts['comparisons']!=self.counts['games'] or self.counts['positions']<self.counts['games']:
+        if not 1<=self.counts['definitions']<=8192 or not 1<=self.counts['games']<=100 or self.counts['comparisons']!=self.counts['games'] or self.counts['positions']<self.counts['games']:
             raise ValueError('analysis_manifest_scope_bound')
         identities=set()
         for kind in KINDS:

@@ -223,7 +223,9 @@ def _wait_for_checkpoint_admission(operation):
     while True:
         try:
             return operation()
-        except BackgroundAdmissionDeferred:
+        except BackgroundAdmissionDeferred as error:
+            if error.__cause__ is not None or str(error) == 'Foreground admission is unavailable':
+                raise
             assert time.monotonic() < admission_deadline, 'Recovery never obtained foreground-idle admission within 10 seconds'
             time.sleep(0.01)
 

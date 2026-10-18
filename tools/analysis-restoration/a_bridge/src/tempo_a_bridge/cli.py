@@ -52,14 +52,18 @@ def execution_bundle(export, due_date):
     """Map the public serialized Content output, without importing its implementation."""
     definitions = export["publication"]["definitions"]
     facts = []
+    routes_by_card = {}
+    for route in export['routes']:
+        for card_id in {binding['card_id'] for binding in route['bindings']}:
+            routes_by_card.setdefault(card_id, []).append(route)
     for index, definition in enumerate(definitions):
-        routes = [route for route in export["routes"] if any(binding["card_id"] == definition["card_id"] for binding in route["bindings"])]
+        routes = routes_by_card.get(definition["card_id"], [])
         if not routes or definition["specification"]["type"] != "move_line":
             raise ExecutionScopeError("bridge_requires_bound_opening_move_lines")
         facts.append({"card_id": definition["card_id"], "content_type": "opening",
             "memberships": sorted({route["repertoire_id"] for route in routes}),
             "trained_color": routes[0]["learner_color"], "due_date": due_date, "route_order": index})
-    routes = [{key: value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key")} for route in export["routes"]]
+    routes = [{key: value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key","repertoire_title")} for route in export["routes"]]
     return {"schema_version": 2, "publication": export["publication"], "source_digest": export["source"]["source_digest"],
         "facts": facts, "routes": routes, "legacy_aliases": export["legacy_aliases"]}
 
@@ -323,7 +327,7 @@ class Operator:
             return prepared["snapshots"][key]
         snapshot = {"schema_version":2,"snapshot_id":snapshot_id,"revision":revision,
             "complete":export["complete"],"publication":export["publication"],"activation":prepared["receipt"]["acknowledgement"],
-            "routes":[{key:value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key")} for route in export["routes"]],
+            "routes":[{key:value for key,value in route.items() if key not in ("route_key","policy_key","repertoire_key","repertoire_title")} for route in export["routes"]],
             "content_export":export,"current_serving":current,"activation_origin":{"transport":"authenticated_learning_http","endpoint":self.endpoint}}
         snapshot['acceptance']=acceptance
         try:

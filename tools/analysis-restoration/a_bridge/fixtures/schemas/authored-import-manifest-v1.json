@@ -152,6 +152,14 @@
       "title": "Complete",
       "type": "boolean"
     },
+    "historical_mapping_unknown": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8192,
+      "title": "Historical Mapping Unknown",
+      "type": "array"
+    },
     "kind": {
       "const": "authored_import",
       "title": "Kind",
@@ -161,7 +169,7 @@
       "additionalProperties": {
         "type": "string"
       },
-      "maxProperties": 2048,
+      "maxProperties": 8192,
       "title": "Legacy Aliases",
       "type": "object"
     },

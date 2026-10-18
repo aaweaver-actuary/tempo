@@ -1,5 +1,11 @@
 # Intelligence local interface version 1
 
+Analysis v1 encounter/context route references retain up to 10,000 authored route
+IDs, matching the producer's complete route bound. A 1,032-route shared prefix
+must not be truncated to 256 or rejected solely for that cardinality. Existing
+page/input byte limits still apply, and this changes no classification, ranking,
+frequency or engine-quality policy. Older serialized inputs remain unchanged.
+
 This document describes the implemented component-local schemas and protocol.
 It does not extend shared Intelligence, Content or analysis-jobs wire v1. Unknown
 input fields are rejected. HTTP and CLI document bodies are bounded to 1 MiB;
@@ -535,3 +541,14 @@ corrected derivation. Legacy read contracts also accept the reviewed borrowed-
 lineage/null-ID engine shape, with the legacy warning; new derivation never emits
 that shape. The internal marker is exposed separately in run status, not injected
 into the public RunRequest scope or its immutable digest.
+
+## Accepted game inspection
+
+`GET /v1/analysis/runs/{run_id}/games` (caller scope) returns exact accepted input
+games independently of findings/engine progress. `limit` is 1–10, default10;
+`after` is an opaque cursor bound to workspace, run revision, input identity and
+input revision. A changed head rejects the old cursor explicitly. The response
+retains source metadata, legal move history, original comparison contexts and
+selected-policy titles. It does not refresh a provider, derive a report, enqueue
+work or mutate Learning. `tempo-intelligence analysis games RUN` provides the same
+read with `--after`/`--limit`. Old reports and input pages remain immutable.
