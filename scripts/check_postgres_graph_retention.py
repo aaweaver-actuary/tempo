@@ -843,6 +843,25 @@ def owned_admission_scope(owned_database_name):
 
 
 @contextmanager
+def owned_study_policy(owned_database_name):
+    """The private database owns its policy; stopped parent clients cannot renew it."""
+    from app.services import study_priority
+
+    policy_key = f'tempo:test:{owned_database_name}:study-policy'
+    generation_key = policy_key + ':generation'
+    server = study_priority.control_client()
+    if server.exists(policy_key, generation_key):
+        raise RuntimeError('Refusing to replace an existing fixture policy identity')
+    try:
+        with patch.object(study_priority, 'POLICY_KEY', policy_key), \
+                patch.object(study_priority, 'GENERATION_KEY', generation_key), \
+                study_priority.policy_publisher():
+            yield
+    finally:
+        server.delete(policy_key, generation_key)
+
+
+@contextmanager
 def owned_fixture_database():
     """Give real queue claims an empty, exclusively fixture-owned database."""
     global DATABASE_URL
@@ -871,7 +890,7 @@ def owned_fixture_database():
                                     "TEMPO_DATABASE_READ_URL": owned_read_database_url,
                                     "TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS": "250",
                                     "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS": "25"}), \
-                owned_admission_scope(owned_database_name):
+                owned_admission_scope(owned_database_name), owned_study_policy(owned_database_name):
             yield owned_database_name
     finally:
         postgres_store.close_pools()
