@@ -816,23 +816,82 @@ def proof():
             _proof_daily_queue_dispatch_and_sparse_unlock()
 
 
+def proof_sparse_unlock(identifier):
+    """Retain sparse eligibility and three write batches under bounded scanning."""
+    cursor = ''
+    slice_count = 0
+    rejected_pages = 0
+    maximum_examined_candidates = 0
+    maximum_transaction_seconds = 0.0
+    write_batches = []
+    written_card_ids = []
+
+    class ObservedUnlockConnection:
+        def __init__(self, connection):
+            self.connection = connection
+            self.examined_ids = []
+            self.written_ids = []
+
+        def execute_native(self, statement, parameters):
+            if statement.startswith('SELECT id FROM cards'):
+                assert parameters == (cursor, 17), parameters
+            else:
+                assert 'bounded_cards AS MATERIALIZED' in statement
+                self.examined_ids = list(parameters[0])
+                assert 0 < len(self.examined_ids) <= 16, self.examined_ids
+                assert self.examined_ids == sorted(set(self.examined_ids))
+                assert all(card_id > cursor for card_id in self.examined_ids)
+                assert parameters[1] == 8
+            return self.connection.execute_native(statement, parameters)
+
+        def execute(self, statement, parameters):
+            assert statement.startswith("UPDATE cards SET state='new'")
+            self.written_ids = list(parameters)
+            assert 0 < len(self.written_ids) <= 8, self.written_ids
+            assert set(self.written_ids) <= set(self.examined_ids)
+            result = self.connection.execute(statement, parameters)
+            assert result.rowcount == len(self.written_ids), result.rowcount
+            return result
+
+    while cursor is not None:
+        previous_cursor = cursor
+        started = time.perf_counter()
+        with postgres_store.connection(background=True) as connection:
+            observed = ObservedUnlockConnection(connection)
+            cursor = _unlock_eligible_opening_cards(observed, date.today().isoformat(), after_card_id=cursor, batch_size=8)
+        maximum_transaction_seconds = max(maximum_transaction_seconds, time.perf_counter()-started)
+        slice_count += 1
+        maximum_examined_candidates = max(maximum_examined_candidates, len(observed.examined_ids))
+        if observed.written_ids:
+            write_batches.append(len(observed.written_ids))
+            written_card_ids.extend(observed.written_ids)
+        else:
+            rejected_pages += 1
+        assert cursor is None or cursor > previous_cursor, (previous_cursor, cursor)
+    # The retired sparse selector counted only three eligible write pages.
+    # PostgreSQL now examines sixteen candidates at most: rejected pages are
+    # durable progress. Retain all three original writes (8 + 8 + 5) separately.
+    assert slice_count == 939, slice_count
+    assert rejected_pages == 936, rejected_pages
+    assert write_batches == [8, 8, 5], write_batches
+    expected_card_ids = [f'{identifier}-locked-{number:05}' for number in range(14979, 15000)]
+    assert written_card_ids == expected_card_ids, written_card_ids
+    with psycopg.connect(DSN) as connection:
+        unlocked = [row[0] for row in connection.execute(
+            "SELECT id FROM cards WHERE repertoire_id=%s AND state='new' ORDER BY id", (identifier,))]
+        assert unlocked == expected_card_ids, unlocked
+    measurements = dict(slice_count=slice_count, rejected_pages=rejected_pages,
+                        write_batches=write_batches, maximum_examined_candidates=maximum_examined_candidates,
+                        maximum_transaction_seconds=maximum_transaction_seconds)
+    print('PASS test_postgres_daily_queue_sparse_unlock: 15000 locked, 21 eligible '+json.dumps(measurements))
+    return measurements
+
+
 def _proof_daily_queue_dispatch_and_sparse_unlock():
     identifier = 'daily-study-proof-'+str(uuid.uuid4())
     try:
         seed(identifier, request_refresh=False)
-        cursor = ''
-        slice_count = 0
-        maximum_transaction_seconds = 0.0
-        while cursor is not None:
-            started = time.perf_counter()
-            with postgres_store.connection(background=True) as connection:
-                cursor = _unlock_eligible_opening_cards(connection, date.today().isoformat(), after_card_id=cursor, batch_size=8)
-            maximum_transaction_seconds = max(maximum_transaction_seconds, time.perf_counter()-started)
-            slice_count += 1
-        assert slice_count == 3, slice_count
-        with psycopg.connect(DSN) as connection:
-            assert connection.execute("SELECT count(*) FROM cards WHERE repertoire_id=%s AND state='new'", (identifier,)).fetchone()[0] == 21
-        print(f"PASS test_postgres_daily_queue_sparse_unlock: 15000 locked, 21 eligible, {slice_count} slices, max section {maximum_transaction_seconds:.3f}s")
+        proof_sparse_unlock(identifier)
         # Real PostgreSQL claims/commits and Redis admission; restrict selection
         # to a task owned by this proof while normal consumers are stopped.
         durable_task = durable_tasks.enqueue_task('daily_queue', identifier, {}, priority=1, foreground=False)
