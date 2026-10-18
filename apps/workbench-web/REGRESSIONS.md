@@ -75,3 +75,17 @@ remaining-work count rather than labeling the report complete from input scope.
 native fixture's a6 opponent reply directly in finding detail. The learner's
 played response remains separate. Display notation comes only from the supplied
 opponent FEN/move; it grants no new route authority or move-quality judgment.
+
+
+Connected navigation: `C_connected_fresh_navigation` verifies an unauthenticated
+main-document HTML response, no redirects/API calls, an empty credential form and
+API-address guidance. `C_connected_general_study` verifies a root-only, separate
+Study tab, no auth/referrer forwarding, no card claim for a gap and no API writes.
+`C_connected_session_scope` verifies same-tab reload recovery and a fresh tab's
+empty connection without localStorage or cross-window credential transfer.
+
+The regular public-client cases cover root-target validation and category-specific
+unverified authority wording. `tests/public-build-config.mjs` executes the owning
+Vite config against unsafe public settings before asset emission, without echoing
+rejected values. The qualifier includes this config input and checks source
+removal; no live/rehearsal Study authority is used by the browser fixture.

@@ -1,3 +1,4 @@
+import { WorkbenchLaunch } from "../components/workbench-launch";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, studyConnection } from "../lib/study-connection";
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
 import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../lib/study-intent-storage";
@@ -1777,6 +1778,7 @@ function StudyComposition() {
         <BrandButton setView={changeWorkspace} />
         <Navbar view={currentView} setView={changeWorkspace} />
         <div className="top-actions">
+          {!independentStudy && <WorkbenchLaunch />}
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           {!independentStudy && <SavedLocallyButton setShowImport={setShowImport} />}
           <NotificationCenter />

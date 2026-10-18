@@ -117,3 +117,14 @@ it("AS-16 wrong-response reveal remains revealed", async () => {
   act(() => useBoardShellStore.getState().board.onHintExposure?.(failed.currentFenString));
   expect(assistance).toHaveBeenLastCalledWith(0, "revealed");
 });
+
+
+it("connected full local Home exposes the configured Workbench independently of the Study shell", async () => {
+  vi.stubGlobal("__TEMPO_WORKBENCH_URL__", "https://analysis.example.test/?run=example-run");
+  vi.mocked(fetchAndInitializeQueue).mockResolvedValue("installed");
+  render(<Home />);
+  const link = await screen.findByRole("link", { name: "Open Workbench" });
+  expect(link.getAttribute("href")).toBe("https://analysis.example.test/?run=example-run");
+  expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(screen.queryByRole("heading", { name: "Connect Study to Learning" })).toBeNull();
+});

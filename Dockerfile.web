@@ -13,6 +13,7 @@ COPY packages/chess-line/package.json ./packages/chess-line/package.json
 RUN npm ci
 COPY . .
 COPY --from=core /app/public/tempo-core ./public/tempo-core
+ARG TEMPO_WORKBENCH_URL=""
 RUN npm run build:local
 
 FROM nginx:1.28-alpine

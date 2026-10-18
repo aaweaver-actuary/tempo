@@ -301,3 +301,36 @@ test('C3 game frames preserve real move order and reject illegal history', async
   assert.throws(()=>gameFrames(root,['e2e5']));
   assert.equal(gameFrames('8/P7/8/8/8/8/7p/K5k1 b - - 0 37',['h2h1q'])[1].label,'37… h1=Q');
 });
+
+
+test('connected Study build and runtime allow only a public root target',async()=>{
+  const {studyUrl,studyUrlForBuild}=await import('@tempo/workbench-web');
+  assert.equal(studyUrlForBuild(undefined),'');assert.equal(studyUrlForBuild(''),'');
+  assert.equal(studyUrlForBuild('http://127.0.0.1:3000'),'http://127.0.0.1:3000/');
+  assert.equal(studyUrl('https://study.example.test/'),'https://study.example.test/');
+  for(const value of ['javascript:alert(1)','data:text/plain,unsafe','/relative','https://user:synthetic-secret@study.example.test/',
+    'https://study.example.test/card/claimed-id','https://study.example.test/?card_id=claimed-id',
+    'https://study.example.test/?token=synthetic-secret','https://study.example.test/#synthetic-secret']){
+    assert.equal(studyUrl(value),null);
+    assert.throws(()=>studyUrlForBuild(value),error=>String(error).includes('TEMPO_STUDY_URL must be a public')&&!String(error).includes(value)&&!String(error).includes('synthetic-secret'));
+  }
+});
+
+test('connected Study notice never accepts a snapshot card or a gap as live authority',async()=>{
+  const {studyHandoffNotice}=await import('@tempo/workbench-web');
+  assert.match(studyHandoffNotice('repertoire_miss'),/has not been verified/);
+  assert.match(studyHandoffNotice('practical_gap'),/does not identify an existing Study card/);
+  assert.match(studyHandoffNotice('engine_opportunity'),/does not establish a matching Study card/);
+  for(const category of ['repertoire_miss','practical_gap','engine_opportunity'])assert.match(studyHandoffNotice(category),/^Study opens its normal queue\./);
+});
+
+
+test('connected Intelligence origin is a validated public form default with no misleading port',async()=>{
+  const {intelligenceOrigin,intelligenceOriginForBuild}=await import('@tempo/workbench-web');
+  assert.equal(intelligenceOrigin(undefined),null);assert.equal(intelligenceOriginForBuild(undefined),'');
+  assert.equal(intelligenceOriginForBuild('http://127.0.0.1:8149/'),'http://127.0.0.1:8149');
+  for(const value of ['https://user:synthetic-secret@api.example.test/','https://api.example.test/?token=synthetic-secret','javascript:alert(1)','https://api.example.test/card']){
+    assert.equal(intelligenceOrigin(value),null);
+    assert.throws(()=>intelligenceOriginForBuild(value),error=>String(error).includes('TEMPO_INTELLIGENCE_ORIGIN must be a public')&&!String(error).includes(value)&&!String(error).includes('synthetic-secret'));
+  }
+});

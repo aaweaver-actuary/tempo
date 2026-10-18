@@ -161,6 +161,7 @@
       "tests/unit/ui-focus-regressions.test.tsx",
       "tests/unit/ui-primitives.test.tsx",
       "tests/unit/validated-data-regressions.test.ts",
+      "tests/unit/workbench-launch-regressions.test.tsx",
       "tests/unit/workspace-performance-regressions.test.ts",
       "tests/unit/workspace-publication-regressions.test.ts",
       "tests/unit/workspace-timeout.test.ts"
