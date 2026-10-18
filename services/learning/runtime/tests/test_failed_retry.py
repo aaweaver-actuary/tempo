@@ -1,5 +1,5 @@
 """Native composition contracts for soft failed retries; owning runner only."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import tempo_learning_review as learning
@@ -61,14 +61,18 @@ def test_runtime_recovered_again_retains_current_canonical_miss_priority(case):
     accepted(case,evidence(definition))
     drain(case)
     card = head(case)
+    completed_at=datetime.now(timezone.utc).isoformat()
     # The retained issued origin remains valid although its projection vanished.
     case.query('DELETE FROM learning.daily_queue WHERE id=%s',(card['queue_entry_id'],))
-    response = submit(case,card,review_payload(card,outcome='again'))
+    response = submit(case,card,review_payload(card,outcome='again',recorded_at=completed_at))
     assert response.status_code==200,response.text
     result = response.json()
     row = case.query('SELECT attempt_state,gameplay_priority_reason FROM learning.daily_queue WHERE id=%s',
         (result['requeue_entry_id'],))[0]
     assert tuple(row)==('guided',MISS_REASON)
+    assert case.query('SELECT reviewed_at FROM learning.reviews WHERE id=%s',(result['review_id'],))[0][0]==completed_at
+    policy=case.query('SELECT ready_at,delay_seconds FROM learning.queue_retry_policies WHERE review_id=%s',(result['review_id'],))[0]
+    assert datetime.fromisoformat(policy[0])==datetime.fromisoformat(completed_at)+timedelta(seconds=policy[1])
     assert case.query('SELECT settled FROM learning.remediation_review_receipts WHERE review_id=%s',
         (str(result['review_id']),))[0][0] is False
 
