@@ -72,3 +72,93 @@ def test_study_priority_maintenance_setup_timeouts_and_closed_connections_back_o
     now[0] += 1
     assert owned_recovery_regression() == 'durable checkpoint resumed'
     assert 'owned_recovery_regression' not in tasks._maintenance_cooldowns
+
+
+def test_owned_fixture_database_renews_private_policy_without_touching_parent_control(monkeypatch):
+    import importlib
+    import json
+    from contextlib import nullcontext
+    from pathlib import Path
+    import threading
+    import time
+    from types import SimpleNamespace
+    from app import database
+    from app.services import study_priority
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
+    fixtures = importlib.import_module('check_postgres_graph_retention')
+    migrations = importlib.import_module('apply_postgres_migrations')
+    clock = [1000.0]
+    refreshed = threading.Event()
+    parent_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY
+    parent_policy = json.dumps({'generation': 41, 'study_only_mode': False,
+                                'expires_at_ms': 999000})
+
+    class SharedControl:
+        def __init__(self):
+            self.values = {parent_keys[0]: parent_policy, parent_keys[1]: '41'}
+
+        def incr(self, key):
+            self.values[key] = str(int(self.values.get(key, 0)) + 1)
+            return int(self.values[key])
+
+        def exists(self, *keys):
+            return sum(key in self.values for key in keys)
+
+        def eval(self, script, count, *arguments):
+            keys, values = arguments[:count], arguments[count:]
+            if script == study_priority._PUBLISH:
+                if int(self.values[keys[1]]) != int(values[0]):
+                    return 0
+                self.values[keys[0]] = values[1]
+                refreshed.set()
+                return 1
+            if script == study_priority._READ:
+                return [0, self.values.get(keys[1], ''), self.values.get(keys[2], '')]
+            return self.values.get(keys[0]) or self.incr(keys[0])
+
+        def delete(self, *keys):
+            for key in keys:
+                self.values.pop(key, None)
+
+    class FixtureDatabase:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def execute(self, statement, *_):
+            self.statement = statement.as_string() if hasattr(statement, 'as_string') else statement
+            return self
+        def fetchone(self):
+            if 'shobj_description' in self.statement:
+                return (fixtures.DISPOSABLE_DATABASE_MARKER + ':tempo_incident_' + 'f' * 32,)
+            if 'study_only_mode' in self.statement:
+                return (0,)
+            return None
+
+    control = SharedControl()
+    monkeypatch.setenv('TEMPO_REDIS_URL', 'redis://fixture.invalid/0')
+    monkeypatch.setattr(fixtures.uuid, 'uuid4', lambda: SimpleNamespace(hex='f' * 32))
+    monkeypatch.setattr(fixtures.psycopg, 'connect', lambda *_args, **_kwargs: FixtureDatabase())
+    monkeypatch.setattr(fixtures.postgres_store, 'close_pools', lambda: None)
+    monkeypatch.setattr(fixtures, 'owned_admission_scope', lambda _: nullcontext())
+    monkeypatch.setattr(migrations, 'apply_migrations', lambda _: None)
+    monkeypatch.setattr(database, 'background_read_connection', lambda **_: FixtureDatabase())
+    monkeypatch.setattr(study_priority, 'control_client', lambda: control)
+    monkeypatch.setattr(study_priority.time, 'time', lambda: clock[0])
+    monkeypatch.setattr(study_priority, 'REFRESH_SECONDS', 0.01)
+
+    with fixtures.owned_fixture_database() as owned_name:
+        current = study_priority.control_snapshot()
+        assert current['available'] is True, 'Private fixture cannot borrow an expired parent policy'
+        assert current['study_only_mode'] is False
+        assert study_priority.POLICY_KEY != parent_keys[0]
+        assert owned_name in study_priority.POLICY_KEY
+        generation = current['policy_generation']
+        clock[0] += study_priority.POLICY_SECONDS + 1
+        refreshed.clear()
+        deadline = time.monotonic() + 1
+        while not study_priority.control_snapshot()['available']:
+            assert time.monotonic() < deadline, 'Private policy producer did not renew its expiring lease'
+            refreshed.wait(0.01)
+        assert study_priority.control_snapshot()['policy_generation'] == generation
+    assert (study_priority.POLICY_KEY, study_priority.GENERATION_KEY) == parent_keys
+    assert control.values == {parent_keys[0]: parent_policy, parent_keys[1]: '41'}
