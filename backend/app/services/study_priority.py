@@ -50,13 +50,17 @@ def control_client():
 def refresh_policy(*, invalidate: bool = True) -> bool:
     """One bounded, independent read. Failure never authorizes optional work."""
     global _local_generation, _local_policy
+    # A private producer may finish an in-flight read after its owner restores
+    # module configuration. Publish only to the identity that reserved this
+    # generation; deleting that private generation must fence the late result.
+    policy_key, generation_key = POLICY_KEY, GENERATION_KEY
     from ..database import background_read_connection
     from .activity_gate import activity_gate
     try:
         shared = redis_admission_gate.configured()
         if shared:
-            generation = int(control_client().incr(GENERATION_KEY) if invalidate else
-                control_client().eval("return redis.call('GET',KEYS[1]) or redis.call('INCR',KEYS[1])", 1, GENERATION_KEY))
+            generation = int(control_client().incr(generation_key) if invalidate else
+                control_client().eval("return redis.call('GET',KEYS[1]) or redis.call('INCR',KEYS[1])", 1, generation_key))
         else:
             with _local_lock:
                 if invalidate or not _local_generation: _local_generation += 1
@@ -69,7 +73,7 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
         policy = {'generation': generation, 'study_only_mode': bool(row[0]),
                   'expires_at_ms': int((time.time() + POLICY_SECONDS) * 1000)}
         if shared:
-            return bool(control_client().eval(_PUBLISH, 2, POLICY_KEY, GENERATION_KEY,
+            return bool(control_client().eval(_PUBLISH, 2, policy_key, generation_key,
                                               generation, json.dumps(policy), POLICY_SECONDS))
         with _local_lock:
             if generation == _local_generation:
