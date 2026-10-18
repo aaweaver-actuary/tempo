@@ -94,6 +94,10 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery | v3.E
                         or proof.scope.content_hash != delivery.game_source.content_hash
                         or encounter.ply not in proof.scope.decision_plies):
                     raise RemediationError("stale_revision", "legacy_decision_scope_changed")
+                anchor = proof.authority_anchor(accepted.authority.repertoire_id)
+                if (anchor is None or anchor > encounter.ply
+                        or proof.prefix_policies[encounter.ply] != [accepted.authority.repertoire_id]):
+                    raise RemediationError("terminal_failure", "legacy_route_policy_ambiguous")
         if accepted is None or not accepted.active:
             raise RemediationError("stale_revision", "legacy_authority_not_current" if legacy else "publication_not_active")
         if accepted.workspace_id != context.workspace_id:

@@ -107,6 +107,27 @@ def test_competing_route_beyond_4096_is_retained_and_still_vetoes_acceptance(com
     with pytest.raises(RemediationError, match=reason): semantic_check(prepared(value, captured))
 
 
+@pytest.mark.parametrize("ended_ply", [4, 5])
+def test_forged_miss_cannot_drop_foreign_policy_ending_at_decision(ended_ply):
+    value, source = source_fixture()
+    # Italian shares the actual prefix through Bb5, then has no authored reply.
+    # It is absent from retained executable candidates, but still prevents an
+    # exclusive policy anchor. A producer's claimed miss is no permission.
+    source.rows["repertoire_lines"].append({**source.rows["repertoire_lines"][0],
+        "id": "ended-italian", "repertoire_id": "italian",
+        "moves_json": json.dumps(json.loads(source.captured.game["moves_json"])[:ended_ply])})
+    value, captured = captured_scope(value, source)
+    if ended_ply < 5:
+        assert captured.catalogue_proof.authority_anchor("ruy") == 5
+        assert len(semantic_check(prepared(value, captured))) == 1
+        return
+    assert captured.catalogue_proof.prefix_policies[5] == ["italian", "ruy"]
+    assert captured.catalogue_proof.authority_anchor("ruy") is None
+    assert captured.catalogue_proof.candidate_route_ids == ["ruy-route"]
+    with pytest.raises(RemediationError, match="legacy_route_policy_ambiguous"):
+        semantic_check(prepared(value, captured))
+
+
 def test_two_games_on_one_physical_card_share_reusable_authority_but_have_separate_decision_proofs():
     value, source = source_fixture()
     physical = json.loads(source.rows["cards"][0]["moves_json"]) + ["b5a4", "g8f6"]

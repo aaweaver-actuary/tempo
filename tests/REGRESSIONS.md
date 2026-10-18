@@ -4827,3 +4827,12 @@ The four `study_priority_test-postgres-docker_mjs_reserved_builder_cannot_overco
 
 
 The `native_startup_*`, `sqlite_actual_cleanup_*`, and `native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation` cases in `tests/runner/postgres-test-speedups.test.mjs` own synchronous inventory-to-start admission, additive one-off allocation, journal-before-mutation, partial/uncertain starts, preserved return/stdout/stderr, wrong/missing claim identities, and verified cleanup. Native and SQLite cleanup can stop their own resources without reacquiring retained admission. The standalone maintenance help container has an exact name plus owner/project labels; cleanup verifies both name and ID absent. Historical scanner baseline failures remain selected and reported.
+# Legacy bridge scoped policy anchor repair
+
+`backend/tests/test_legacy_scoped_capture.py::test_forged_miss_cannot_drop_foreign_policy_ending_at_decision`
+fails at `c2111aa5` for an Italian route ending after Bb5: the complete proof
+contains Italian and Ruy at black ply 5, but executable candidates contain only
+Ruy. Backend and shared remediation now require the owner-derived exclusive
+anchor. The paired route ending a ply earlier preserves later valid separation;
+Game Evidence independently keeps the incomplete overlap unknown.
+

@@ -90,3 +90,8 @@ column adapter while preserving current-game/frontier/settlement checks.
 is the owning PostgreSQL proof for alternate columns, receipt replay, stale card
 revision, prior-issued frontier, later settlement and invalidation. It remains
 unexecuted at the first bridge checkpoint; it is not legacy HTTP adoption proof.
+
+`test_scoped_policy_exclusivity_cannot_be_bypassed_by_a_forged_miss` requires the
+trusted complete prefix-policy proof's selected-policy anchor at or before the
+encounter. A foreign route ending exactly there vetoes acceptance even when
+absent from executable candidates. Ending earlier permits later separation.

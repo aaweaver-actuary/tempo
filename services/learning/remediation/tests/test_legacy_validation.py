@@ -118,3 +118,17 @@ def test_scoped_proof_for_another_game_cannot_be_retained_as_this_accepted_incid
     wrong = proof.model_copy(update={"scope": proof.scope.model_copy(update={"game_id": "other-game"})})
     with pytest.raises(RemediationError, match="legacy_decision_scope_changed"):
         validate_delivery(value, context(value, replace(decision(value), scope_proof=wrong)))
+
+
+@pytest.mark.parametrize("ended_ply", [4, 5])
+def test_scoped_policy_exclusivity_cannot_be_bypassed_by_a_forged_miss(ended_ply):
+    value, proof = scoped_facts()
+    policies = [list(items) for items in proof.prefix_policies]
+    for ply in range(ended_ply + 1): policies[ply] = ["italian", "ruy"]
+    proof = type(proof).model_validate({**proof.model_dump(mode="json"), "prefix_policies": policies})
+    current = context(value, replace(decision(value), scope_proof=proof))
+    if ended_ply < 5:
+        assert len(validate_delivery(value, current)) == 1
+    else:
+        with pytest.raises(RemediationError, match="legacy_route_policy_ambiguous"):
+            validate_delivery(value, current)

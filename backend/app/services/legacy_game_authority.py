@@ -213,6 +213,22 @@ def prepare_decisions(delivery, captured):
         if (ply >= len(game_moves) or encounter.observed_move != game_moves[ply]
                 or ("white" if game_boards[ply].turn else "black") != game["color"]):
             raise RemediationError("terminal_failure", "legacy_encounter_not_in_current_game")
+        if captured.catalogue_proof is not None:
+            # The bounded candidate list omits routes with no executable move
+            # at this ply. Its complete prefix proof still includes their
+            # policy, exactly as the read-only comparator's authority anchor.
+            anchor = proof.authority_anchor(token.repertoire_id)
+            exclusive = (anchor is not None and anchor <= ply
+                and proof.prefix_policies[ply] == [token.repertoire_id])
+        else:
+            exclusive = {row["repertoire_id"] for row in lines
+                if row["trained_color"] == game["color"]
+                and len(json.loads(row["moves_json"])) >= ply
+                and json.loads(row["moves_json"])[:ply] == game_moves[:ply]
+                and comparison_key(chess.Board(row["start_fen"])) == comparison_key(game_boards[0])
+            } == {token.repertoire_id}
+        if not exclusive:
+            raise RemediationError("terminal_failure", "legacy_route_policy_ambiguous")
         matching = []
         for row in lines:
             moves = json.loads(row["moves_json"])

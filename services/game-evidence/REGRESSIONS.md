@@ -175,3 +175,8 @@ branch must veto a physical `...a6` miss. A different played move also stays
 unknown when physical coverage is incomplete; the exact `...a6` match remains
 mapped. Authored move authority is retained separately from card eligibility.
 The regression fails with `missed == unknown` against checkpoint `88a1fdf`.
+
+`test_ended_foreign_route_requires_later_exclusive_policy_anchor` pairs an
+Italian route ending at the proposed miss with one ending a ply earlier. The
+first stays unknown without an exclusive anchor; later genuine separation can
+still produce the original physical-card miss.

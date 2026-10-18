@@ -52,6 +52,19 @@ def test_scoped_competitors_after_4096_veto_false_physical_misses(kind):
     assert result[-1]["status"] == "unknown" and result[-1]["card_id"] is None
 
 
+@pytest.mark.parametrize("ended_ply,status", [(4, "missed"), (5, "unknown")])
+def test_ended_foreign_route_requires_later_exclusive_policy_anchor(ended_ply, status):
+    value = document()
+    for ply in range(ended_ply + 1):
+        value["catalogue_scope"]["prefix_policies"][ply] = ["italian", "ruy"]
+    value["routes"][0]["authority_start_ply"] = 5 if ended_ply == 4 else None
+    snapshot = LegacyScopedComparisonSnapshot.model_validate(seal(value))
+    game = observed()
+    result = compare_game(game, replay_positions(game), snapshot)
+    assert result[-1]["status"] == status
+    if status == "unknown": assert result[-1]["card_id"] is None
+
+
 @pytest.mark.parametrize("fault,reason", [("eof", "stream_not_exhausted"), ("identity", "authority_digest"),
     ("candidate", "candidate_inventory"), ("policy", "policy_anchor"), ("global_complete", "Extra inputs"),
     ("integrity", "integrity_status"), ("graph", "authority_digest")])
