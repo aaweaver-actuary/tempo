@@ -18,6 +18,19 @@ class AcceptedDecision:
     aliases: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class CurrentMissProjection:
+    """Owner-provided current physical-card/authority columns, not SQL text.
+
+    The owner must project a coherent, rechecked authority identity. This only
+    adapts a read shape; it grants no acceptance or settlement permission.
+    """
+    card_id_column: str = "id"
+    card_revision_column: str = "revision"
+    authority_id_column: str = "publication_id"
+    authority_generation_column: str = "publication_generation"
+
+
 class ContentAuthority(Protocol):
     """Caller loads/fences these facts in the same Learning transaction."""
     def decision(self, card_id: str, decision_id: str, publication_id: str,

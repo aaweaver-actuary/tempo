@@ -29,6 +29,13 @@ Evidence independently validates the projected legal position and alternatives;
 the physical card and publication remain unchanged. This does not authorize
 transposition re-entry or historical aliases. Prior bindings omit these fields.
 
+`LegacyComparisonSnapshot` is a separate read-only observed-graph input for the
+legacy-authority bridge checkpoint. It retains original physical execution and
+explicit interior decisions without creating a Content publication/activation.
+It shares comparison/projection logic and rejects incoherent authority. The
+publication loader, store and v1/v2 delivery wire do not accept it. See the
+[checkpoint and pending backend seams](../../docs/analysis-restoration/legacy-game-study-checkpoint.md).
+
 Independently installed repertoire review, source/index storage, read API and durable
 Learning delivery intent. A repertoire miss is an authored move not played; it is
 not an engine judgment. This increment supports completed standard/from-position

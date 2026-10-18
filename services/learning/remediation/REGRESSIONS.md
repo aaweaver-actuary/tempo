@@ -65,3 +65,13 @@ outcomes and now explicitly proves zero evidence, contributions and workspace
 authority. Its previous zero-receipt assertion is superseded for stale rejection
 by the required durable transport receipt; terminal identity failures still write
 no receipt. No acceptance assertion is removed.
+
+## Legacy owner read projection checkpoint
+
+`test_owner_projection_uses_legacy_columns_without_forking_qualifying_review_predicate`
+and `test_owner_current_miss_projection_rejects_sql_fragments` own the typed
+column adapter while preserving current-game/frontier/settlement checks.
+`test_native_owner_projection_keeps_replay_prior_attempt_fence_and_invalidation`
+is the owning PostgreSQL proof for alternate columns, receipt replay, stale card
+revision, prior-issued frontier, later settlement and invalidation. It remains
+unexecuted at the first bridge checkpoint; it is not legacy HTTP adoption proof.

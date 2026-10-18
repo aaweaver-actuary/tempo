@@ -1,0 +1,11 @@
+[Event "Synthetic legacy physical-card mapping"]
+[Site "Synthetic fixture"]
+[Date "2026.10.17"]
+[UTCDate "2026.10.17"]
+[UTCTime "12:00:00"]
+[Round "-"]
+[White "Opponent"]
+[Black "Learner"]
+[Result "1/2-1/2"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 1/2-1/2

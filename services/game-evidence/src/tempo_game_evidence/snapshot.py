@@ -97,6 +97,27 @@ class ComparisonSnapshot(StrictModel):
     def serving_current(self):
         return self.activation is not None
 
+    def comparison_definitions(self):
+        return {item.card_id: item.model_dump(mode="json") for item in self.publication.definitions}
+
+    def applicability_reason(self):
+        if not self.serving_current():
+            return "publication_acceptance_unknown" if self.activation is None else "publication_not_current"
+        return None
+
+    def definition_unavailable_reason(self, card_id):
+        if card_id in getattr(self, "content_export", {}).get("historical_mapping_unknown", []):
+            return "historical_identity_unresolved"
+        return None
+
+    def finding_authority(self, card_id):
+        if self.schema_version == 2:
+            return {"learning_card_id": self.content_export.get("legacy_aliases", {}).get(card_id, card_id)}
+        return {}
+
+    def finding_context(self, game):
+        return {}
+
     @model_validator(mode="after")
     def verified_routes(self):
         publication = self.publication
@@ -106,61 +127,67 @@ class ComparisonSnapshot(StrictModel):
             != (publication.workspace_id, publication.publication_id, publication.publication_generation)
         ):
             raise ValueError("snapshot_activation_does_not_match_publication")
-        definitions = {item.card_id: item for item in publication.definitions}
-        seen_routes = set()
-        projections={}
-        for route in self.routes:
-            route_key = self.route_identity(route)
-            if route_key in seen_routes:
-                raise ValueError("duplicate_route_identity")
-            seen_routes.add(route_key)
-            if len({item.ply for item in route.bindings}) != len(route.bindings):
-                raise ValueError("ambiguous_route_binding")
-            board = chess.Board(route.starting_fen)
-            if not board.is_valid():
-                raise ValueError("invalid_route_board")
-            bindings = {item.ply: item for item in route.bindings}
-            for ply in range(len(route.moves) + 1):
-                if ply in bindings:
-                    binding=bindings[ply]
-                    original=definitions.get(binding.card_id)
-                    if original is None:raise ValueError('binding_missing_definition_or_wrong_position')
-                    definition=projected_definition(original.model_dump(mode='json'),binding.model_dump(mode='json'))
-                    key=(binding.card_id,definition['decision_id'])
-                    projected=(binding.exercise_ply,definition['starting_fen'],definition['specification'])
-                    if key in projections and projections[key]!=projected:
-                        raise ValueError('ambiguous_projected_decision_identity')
-                    projections[key]=projected
-                    if canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition['starting_fen']).fen()):
-                        raise ValueError("binding_missing_definition_or_wrong_position")
-                    if board.turn != (route.learner_color == "white"):
-                        raise ValueError("binding_is_opponent_move")
-                    spec = definition['specification']
-                    if spec['type'] == "move_line":
-                        if (spec['grading_policy'] == "reference" and ply<len(route.moves)
-                                and route.moves[ply] not in {line[0] for line in spec['accepted_lines']}):
-                            raise ValueError("route_conflicts_with_accepted_policy")
-                        for line in spec['accepted_lines']:
-                            alternative_board = board.copy()
-                            for uci in line:
-                                alternative_board.push_uci(uci)
-                if ply < len(route.moves):
-                    board.push_uci(route.moves[ply])
-            if any(binding.ply > len(route.moves) for binding in route.bindings):
-                raise ValueError("binding_outside_route")
+        verify_route_definitions(self.routes, self.comparison_definitions(), self.route_identity)
         return self
 
     def compiled_routes(self):
-        compiled = []
-        for route in self.routes:
-            board = chess.Board(route.starting_fen)
-            keys = [canonical_fen_key(board.fen(en_passant="legal"))]
-            for uci in route.moves:
-                board.push_uci(uci)
-                keys.append(canonical_fen_key(board.fen(en_passant="legal")))
-            compiled.append((route, keys, {item.ply: item for item in route.bindings}))
-        return compiled
+        return compile_routes(self.routes)
 
+
+def verify_route_definitions(routes, definitions, route_identity):
+    """Validate exact legal decision projections for either authority adapter."""
+    seen_routes = set()
+    projections={}
+    for route in routes:
+        route_key = route_identity(route)
+        if route_key in seen_routes:
+            raise ValueError("duplicate_route_identity")
+        seen_routes.add(route_key)
+        if len({item.ply for item in route.bindings}) != len(route.bindings):
+            raise ValueError("ambiguous_route_binding")
+        board = chess.Board(route.starting_fen)
+        if not board.is_valid():
+            raise ValueError("invalid_route_board")
+        bindings = {item.ply: item for item in route.bindings}
+        for ply in range(len(route.moves) + 1):
+            if ply in bindings:
+                binding=bindings[ply]
+                original=definitions.get(binding.card_id)
+                if original is None:raise ValueError('binding_missing_definition_or_wrong_position')
+                definition=projected_definition(original,binding.model_dump(mode='json'))
+                key=(binding.card_id,definition['decision_id'])
+                projected=(binding.exercise_ply,definition['starting_fen'],definition['specification'])
+                if key in projections and projections[key]!=projected:
+                    raise ValueError('ambiguous_projected_decision_identity')
+                projections[key]=projected
+                if canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition['starting_fen']).fen()):
+                    raise ValueError("binding_missing_definition_or_wrong_position")
+                if board.turn != (route.learner_color == "white"):
+                    raise ValueError("binding_is_opponent_move")
+                spec = definition['specification']
+                if spec['type'] == "move_line":
+                    if (spec['grading_policy'] == "reference" and ply<len(route.moves)
+                            and route.moves[ply] not in {line[0] for line in spec['accepted_lines']}):
+                        raise ValueError("route_conflicts_with_accepted_policy")
+                    for line in spec['accepted_lines']:
+                        alternative_board = board.copy()
+                        for uci in line:
+                            alternative_board.push_uci(uci)
+            if ply < len(route.moves):
+                board.push_uci(route.moves[ply])
+        if any(binding.ply > len(route.moves) for binding in route.bindings):
+            raise ValueError("binding_outside_route")
+
+def compile_routes(routes):
+    compiled = []
+    for route in routes:
+        board = chess.Board(route.starting_fen)
+        keys = [canonical_fen_key(board.fen(en_passant="legal"))]
+        for uci in route.moves:
+            board.push_uci(uci)
+            keys.append(canonical_fen_key(board.fen(en_passant="legal")))
+        compiled.append((route, keys, {item.ply: item for item in route.bindings}))
+    return compiled
 
 class RouteV2(Route):
     policy_id: str = Field(min_length=1)

@@ -64,3 +64,10 @@ the schema parity/bounds cases retain their shared projection fields and strict
 bounds. Fixtures are copied into source-removed consumers and jsonschema is a
 dev-only dependency. Regenerate full schemas using the owning public commands in
 `docs/analysis-restoration/a-bridge.md`, not an older installed service artifact.
+
+## Observed legacy authority checkpoint
+
+`tests/test_legacy_observation.py` owns deterministic read-only translation into
+the separate legacy comparison input, unchanged physical execution and interior
+binding, input nonmutation, and source/graph/generation/catalogue token rejection.
+It reuses the existing translator and creates no publication or activation.

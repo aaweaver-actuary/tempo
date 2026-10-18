@@ -5,7 +5,7 @@ import re
 
 from tempo_game_evidence_contracts import v1, v2
 
-from .models import (AcceptedDecision, AdmissionResult, AttemptAuthority, ReceiveContext,
+from .models import (AcceptedDecision, AdmissionResult, AttemptAuthority, CurrentMissProjection, ReceiveContext,
                      RemediationError, ReviewOutcome, WorkItem, WorkPage)
 from .policy import PAGE_SIZE
 from .validation import canonical, digest, instant, logical_hash, validate_delivery
@@ -42,20 +42,24 @@ _OUTSTANDING = """
 # An ordinary flattened anti-join can scan historical review pairs per incident.
 
 
-def current_miss_sql(card_alias: str = "card") -> str:
+def current_miss_sql(card_alias: str = "card", *, projection: CurrentMissProjection | None = None) -> str:
     """Correlated read predicate for Learning's existing queue/frozen readers.
 
     The one parameter is the authenticated workspace. Only a SQL identifier,
     never request text, may select the caller's accepted-card row alias.
     The frontier/settlement query remains owned here, including its plan fence.
     """
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", card_alias):
-        raise ValueError("card alias must be an SQL identifier")
-    outstanding = _OUTSTANDING.replace("head.card_id=%s", f"head.card_id={card_alias}.id")
+    projection = projection if projection is not None else CurrentMissProjection()
+    if not isinstance(projection, CurrentMissProjection):
+        raise TypeError("current miss projection must be typed owner columns")
+    for identifier in (card_alias, *asdict(projection).values()):
+        if not isinstance(identifier, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", identifier):
+            raise ValueError("current miss projection requires SQL identifiers")
+    outstanding = _OUTSTANDING.replace("head.card_id=%s", f"head.card_id={card_alias}.{projection.card_id_column}")
     return "EXISTS(SELECT 1" + outstanding + f"""
-        AND contribution.card_revision={card_alias}.revision
-        AND contribution.publication_id={card_alias}.publication_id
-        AND contribution.publication_generation={card_alias}.publication_generation
+        AND contribution.card_revision={card_alias}.{projection.card_revision_column}
+        AND contribution.publication_id={card_alias}.{projection.authority_id_column}
+        AND contribution.publication_generation={card_alias}.{projection.authority_generation_column}
         AND EXISTS(SELECT 1 FROM remediation_game_heads game
             WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
               AND game.game_revision=contribution.game_revision))"""

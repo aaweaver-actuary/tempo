@@ -1,0 +1,87 @@
+{
+  "authority": {
+    "canonical_prefix_revision": 0,
+    "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+    "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
+    "graph_generation": 7,
+    "graph_state": "ready",
+    "kind": "legacy_graph",
+    "repertoire_id": "ruy",
+    "scope_source_revision": 2,
+    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "target_id": "synthetic-target",
+    "workspace_id": "fixture"
+  },
+  "captured_at": "2026-10-18T18:13:07Z",
+  "graphs": [
+    {
+      "card_id": "physical-black",
+      "generation": 7,
+      "line_id": "ruy-route",
+      "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\"]",
+      "repertoire_id": "ruy",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "trained_color": "black"
+    }
+  ],
+  "observed_after": {
+    "canonical_prefix_revision": 0,
+    "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+    "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
+    "graph_generation": 7,
+    "graph_state": "ready",
+    "kind": "legacy_graph",
+    "repertoire_id": "ruy",
+    "scope_source_revision": 2,
+    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "target_id": "synthetic-target",
+    "workspace_id": "fixture"
+  },
+  "provenance": "synthetic; no live export or game data",
+  "tables": {
+    "cards": [
+      {
+        "archived": 0,
+        "id": "physical-black",
+        "introduced_at": "2026-10-01",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\"]",
+        "pending_validation": 0,
+        "revision": 1,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "black"
+      }
+    ],
+    "repertoire_cards": [
+      {
+        "card_id": "physical-black",
+        "repertoire_id": "ruy"
+      }
+    ],
+    "repertoire_lines": [
+      {
+        "id": "ruy-route",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\"]",
+        "repertoire_id": "ruy",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "black"
+      },
+      {
+        "id": "italian-route",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1c4\", \"f8c5\"]",
+        "repertoire_id": "italian",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "black"
+      }
+    ],
+    "repertoires": [
+      {
+        "id": "ruy",
+        "name": "Synthetic Ruy"
+      },
+      {
+        "id": "italian",
+        "name": "Synthetic Italian"
+      }
+    ]
+  }
+}

@@ -634,3 +634,37 @@ def test_native_correlated_queue_predicate_matches_repository_and_settlement(wor
         repository.bind_attempt(bound, DECISION)
         assert repository.settle(review(bound), DECISION)
         assert queued_miss() is False
+
+
+def test_native_owner_projection_keeps_replay_prior_attempt_fence_and_invalidation(workspace):
+    """Alternate owner row shape; not legacy delivery/HTTP adoption proof."""
+    from tempo_learning_remediation import CurrentMissProjection, current_miss_sql
+
+    projection = CurrentMissProjection("physical_id", "physical_revision", "authority_id", "graph_generation")
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        old = attempt("previously-issued", issued_at=NOW - timedelta(seconds=1))
+        assert repository.bind_attempt(old, DECISION) == 0
+        value = scoped(delivery(), workspace)
+        receipt = accept(repository, value)
+        assert accept(repository, value) == receipt
+        assert count(connection, "remediation_contributions", workspace) == 1
+
+        def current_miss(revision=1):
+            return connection.execute("SELECT " + current_miss_sql("legacy", projection=projection)
+                + " FROM (VALUES(%s::text,%s::bigint,%s::text,%s::bigint)) "
+                  "legacy(physical_id,physical_revision,authority_id,graph_generation)",
+                (workspace, "card", revision, "publication", 1)).fetchone()[0]
+
+        assert current_miss() is True and current_miss(2) is False
+        assert repository.settle(review(old, "old-review"), DECISION) is False
+        assert current_miss() is True
+        later = attempt("actually-issued-later")
+        assert repository.bind_attempt(later, DECISION) == 1
+        outcome = review(later, "qualifying-review")
+        assert repository.settle(outcome, DECISION) is True
+        assert repository.settle(outcome, DECISION) is True
+        assert count(connection, "remediation_settlements", workspace) == 2
+        assert current_miss() is False
+        repository.invalidate_settlement(outcome.review_id, "synthetic correction")
+        assert current_miss() is True

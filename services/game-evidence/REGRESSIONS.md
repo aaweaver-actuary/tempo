@@ -150,3 +150,14 @@ chess traversal. Derivation 3 exports only inventories for opponent positions
 actually encountered in the selected games; every scope and reply at those
 positions is retained. Definitions, routes, games and observations are retained.
 Previously reserved exports keep their original bytes and identity.
+
+## Observed legacy authority checkpoint
+
+`tests/test_legacy_authority.py` owns the synthetic physical black-card mapping
+with opponent prelude, exact executable/revision and interior offsets. The
+competing Italian catalogue keeps the shared prefix unknown. Controls cover
+stale/incomplete/unready/unintroduced observations, early policy anchors,
+re-entry, mixed offsets/color/executable/target, shared/duplicate cards, missing
+routes, digest/workspace mismatch and no-miss/unknown games. The publication
+loader must reject this separate comparison input; there is no delivery or
+activation assertion. Existing v1/v2 comparison/fixture tests retain their owner.

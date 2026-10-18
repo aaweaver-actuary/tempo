@@ -5,7 +5,10 @@ from .snapshot import projected_definition
 
 
 def compare_game(game, positions, snapshot):
-    definitions = {item.card_id: item for item in snapshot.publication.definitions}
+    # Both accepted Content publications and observed legacy graphs normalize
+    # here. Neither adapter can replace route matching or decision projection.
+    definitions = snapshot.comparison_definitions()
+    context = snapshot.finding_context(game)
     routes = [item for item in snapshot.compiled_routes() if item[0].learner_color == game["observed_color"]]
     active = {(index, 0) for index, (_, keys, _) in enumerate(routes)
               if keys[0] == positions[0]["comparison_key"]}
@@ -33,26 +36,26 @@ def compare_game(game, positions, snapshot):
                 if binding is None:
                     continue
                 definition = definitions[binding.card_id]
-                spec = definition.specification
-                if spec.type != "move_line" or spec.grading_policy != "reference":
+                spec = definition['specification']
+                if spec['type'] != "move_line" or spec['grading_policy'] != "reference":
                     continue
                 projection_key=(binding.card_id,binding.exercise_ply,binding.decision_id)
                 if projection_key not in projections:
-                    projections[projection_key]=projected_definition(definition.model_dump(mode='json'),binding.model_dump(mode='json'))
+                    projections[projection_key]=projected_definition(definition,binding.model_dump(mode='json'))
                 projected=projections[projection_key]
                 expected = sorted({line[0] for line in projected['specification']['accepted_lines']})
-                key = (definition.policy_id, projected['decision_id'], definition.card_id, tuple(expected))
+                key = (definition['policy_id'], projected['decision_id'], definition['card_id'], tuple(expected))
                 decision_positions[key]=projected['starting_fen']
                 groups.setdefault(key, set()).add((route.repertoire_id,route.route_id))
             accepted = [key for key in groups if position["move"] in key[3]]
             selected = accepted[0] if len(accepted) == 1 else next(iter(groups)) if len(groups) == 1 else None
             finding = {**position, "status": "unknown", "expected_moves": [], "memberships": [],
                        "card_id": None, "decision_id": None, "policy_id": None,
-                       "explanation": "missing_or_ambiguous_route_policy"}
-            if not snapshot.serving_current():
-                finding["explanation"] = "publication_acceptance_unknown" if snapshot.activation is None else "publication_not_current"
-            elif selected and selected[2] in getattr(snapshot, "content_export", {}).get("historical_mapping_unknown", []):
-                finding["explanation"] = "historical_identity_unresolved"
+                       "explanation": "missing_or_ambiguous_route_policy", **context}
+            if reason := snapshot.applicability_reason():
+                finding["explanation"] = reason
+            elif selected and (reason := snapshot.definition_unavailable_reason(selected[2])):
+                finding["explanation"] = reason
             elif selected:
                 policy_id, decision_id, card_id, expected = selected
                 matched = position["move"] in expected
@@ -61,8 +64,7 @@ def compare_game(game, positions, snapshot):
                                memberships=[{"repertoire_id":repertoire_id,"route_id":route_id} for repertoire_id,route_id in sorted(groups[selected])],
                                card_id=card_id, decision_id=decision_id, policy_id=policy_id,
                                explanation="accepted_repertoire_move" if matched else "defined_repertoire_move_not_played")
-                if getattr(snapshot,'schema_version',1)==2:
-                    finding['learning_card_id']=snapshot.content_export.get('legacy_aliases',{}).get(card_id,card_id)
+                finding.update(snapshot.finding_authority(card_id))
             finding["encounter_id"] = identity(game["workspace_id"], game["game_id"], game["player"],
                                                 position["ply"], finding["decision_id"])
             findings.append(finding)

@@ -6,6 +6,13 @@ the caller's psycopg connection (3.3.6 in native qualification). Existing Learni
 review 0.1.0, scheduling 0.2.0 and chess-core 0.1.0
 remain the owners of their existing behavior; no scheduler is copied here.
 
+`current_miss_sql(alias, projection=CurrentMissProjection(...))` can read an
+owner's coherent physical-card/authority columns. The default remains the
+existing accepted-publication shape. Only validated column identifiers are
+accepted; all current-source/frontier/qualifying-settlement predicates stay
+owned by the module. This does not yet admit legacy-authority deliveries. See
+the [legacy bridge checkpoint](../../../docs/analysis-restoration/legacy-game-study-checkpoint.md).
+
 ## A / C / F handoff
 
 C produces `tempo_game_evidence_contracts.v2` using the committed fixtures.

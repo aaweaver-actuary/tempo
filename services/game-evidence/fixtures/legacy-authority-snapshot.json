@@ -1,0 +1,128 @@
+{
+  "authority": {
+    "canonical_prefix_revision": 0,
+    "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+    "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
+    "graph_generation": 7,
+    "graph_state": "ready",
+    "kind": "legacy_graph",
+    "repertoire_id": "ruy",
+    "scope_source_revision": 2,
+    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "target_id": "synthetic-target",
+    "workspace_id": "fixture"
+  },
+  "capture_digest": "8fdb2374d0240826df0518a57c02f20921549d5958e70fd9e1f6fb226fe9df9b",
+  "captured_at": "2026-10-18T18:13:07Z",
+  "cards": [
+    {
+      "card_id": "physical-black",
+      "card_revision": 1,
+      "decision_id": "legacy-decision:2b0eb05ff3b4217b52ed4da01e17d8b2e7d204abe774901f703438d7e72a0923",
+      "introduced": true,
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_ids": [
+        "ruy"
+      ],
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "trained_color": "black"
+    }
+  ],
+  "catalogue": [
+    {
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1c4",
+        "f8c5"
+      ],
+      "policy_id": "italian",
+      "repertoire_id": "italian",
+      "route_id": "italian-route",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    },
+    {
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_id": "ruy",
+      "route_id": "ruy-route",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    }
+  ],
+  "catalogue_complete": true,
+  "kind": "legacy_authority_snapshot",
+  "observed_after": {
+    "canonical_prefix_revision": 0,
+    "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+    "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
+    "graph_generation": 7,
+    "graph_state": "ready",
+    "kind": "legacy_graph",
+    "repertoire_id": "ruy",
+    "scope_source_revision": 2,
+    "source_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+    "target_id": "synthetic-target",
+    "workspace_id": "fixture"
+  },
+  "routes": [
+    {
+      "authority_start_ply": 5,
+      "bindings": [
+        {
+          "card_id": "physical-black",
+          "decision_id": "legacy-decision:263b0ee99200bc3411457004bf0f5820af41fe617dbc8822de8fdf039205ada1",
+          "exercise_ply": 1,
+          "ply": 1,
+          "reentry": false
+        },
+        {
+          "card_id": "physical-black",
+          "decision_id": "legacy-decision:13c80fb6dffe916de2daba2838e573d2d49d72f39be64b7f07f622f132918320",
+          "exercise_ply": 3,
+          "ply": 3,
+          "reentry": false
+        },
+        {
+          "card_id": "physical-black",
+          "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+          "exercise_ply": 5,
+          "ply": 5,
+          "reentry": false
+        }
+      ],
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_id": "ruy",
+      "route_id": "ruy-route",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    }
+  ],
+  "schema_version": 1
+}
