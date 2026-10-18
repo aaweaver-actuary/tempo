@@ -15,6 +15,12 @@
 - Every user-reported defect needs a named regression in its regular owning suite. Follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction). Never hide a failure by skipping, deleting, or weakening a selected check.
 - Foreground study and authoring work takes priority over derived-data work. Background jobs must be durable, idempotent, bounded, and yield between short database sections.
 
+## Discover shared components before building
+
+- Before adding or replacing a reusable component, inspect the [component discovery guide](docs/architecture/component-reconstruction.md#discover-before-building), `components.json`, the owning package README/public exports, and existing consumer adapters. Search current source as well as the registry: a planned registration can coexist with a merged implementation.
+- Record which existing API or wrapper you will reuse and any concrete capability gap. Justify a replacement or extension explicitly, preserve useful regressions, and keep independent package/service boundaries intact; do not copy a renderer or import another application's stores to avoid an adapter.
+- For board work, start with [Board UI](packages/board-ui/README.md) and the [legacy interaction wrappers](app/components/README.md). The package renders supplied state and emits input intents; callers own keyboard policy, legality, engine data and study effects. Implementation, qualification and adoption are separate claims.
+
 ## Authoritative guidance
 
 - [Contribution and handoff workflow](CONTRIBUTING.md)

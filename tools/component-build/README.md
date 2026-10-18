@@ -7,6 +7,13 @@ The five merged contracts are implemented artifacts; `catalog` references their
 existing contract catalog, which remains the authority for models, wire versions,
 schemas and owners. Registration does not establish production adoption.
 
+For implementation discovery, also inspect current package READMEs, public APIs
+and consumers using the [discovery guide](../../docs/architecture/component-reconstruction.md#discover-before-building).
+For example, `packages/board-ui` is a merged standalone package although its
+shared registry target remains planned; use its package-local instructions until
+registration is reconciled. Do not treat that status as permission to duplicate
+the implementation, or change it merely to make an executable selection pass.
+
 ## Setup and commands
 
 From the repository root:
