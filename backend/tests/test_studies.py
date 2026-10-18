@@ -403,15 +403,19 @@ def test_study_new_exercise_allowance_is_independent_and_due_reviews_remain(tmp_
 
 def test_stalemate_history_protection_fixture_seeds_authored_and_standard_review_owners(tmp_path, monkeypatch):
     """Both real review owners protect nonempty history during portable reimport."""
-    from app import queue_commands, review_commands
+    from app import queue_commands
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "stalemate-history.db")
     proof = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/check_postgres_stalemate_swindles.py"))
-    handlers = {"queue.issue_head": queue_commands.issue_queue_head, "cards.review": review_commands.submit_review}
-
-    def execute_owned_command(_operation_id, name, payload):
+    def execute_owned_command(operation_id, name, payload):
+        if name == "cards.review":
+            response = client.post(f"/api/cards/{payload['card_id']}/review", json=payload["review"],
+                                   headers={"Idempotency-Key": operation_id})
+            assert response.status_code == 200, response.text
+            return response.json()
+        assert name == "queue.issue_head"
         with database.connection() as connection:
-            return handlers[name](connection, payload)
+            return queue_commands.issue_queue_head(connection, payload)
 
     with TestClient(app) as client:
         study_id, _, position_id = make_study(client)
