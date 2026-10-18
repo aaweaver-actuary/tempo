@@ -63,6 +63,30 @@ def test_deadline_terminates_the_host_process_group_inside_the_work_budget(monke
     assert calls == [("wait", 30.0), (41234, signal.SIGTERM), ("wait", 5)]
 
 
+def test_failed_wrapper_reaps_its_orphan_process_group_before_cleanup(monkeypatch):
+    calls = []
+    child = SimpleNamespace(pid=41234, wait=lambda timeout: 1)
+    monkeypatch.setattr(qualification.subprocess, "Popen", lambda *a, **k: child)
+    monkeypatch.setattr(qualification.os, "killpg", lambda pid, sig: calls.append((pid, sig)))
+    report = {}
+    with pytest.raises(RuntimeError, match="Qualification command failed"):
+        qualification.Deadline(40, report).run(["synthetic-wrapper"])
+    assert calls == [(41234, signal.SIGKILL)]
+    assert report['commands'][0]['process_group'] == 41234
+
+
+@pytest.mark.parametrize("diagnostic,identity,expected", [
+    ("error: no such object: owned-helper", "owned-helper", True),
+    ("Error response from daemon: No such container: owned-helper", "owned-helper", True),
+    ("No such network: owned-network", "owned-network", True),
+    ("No such container: another-helper", "owned-helper", False),
+    ("No such container: another-owned-helper", "owned-helper", False),
+    ("connection refused for owned-helper", "owned-helper", False),
+])
+def test_absence_requires_the_exact_identity_but_not_diagnostic_case(diagnostic, identity, expected):
+    assert qualification.verified_absence(SimpleNamespace(returncode=1, stderr=diagnostic), identity) is expected
+
+
 def test_native_controller_requires_explicit_window_and_managed_budget_before_any_docker(monkeypatch):
     monkeypatch.delenv("TEMPO_DEVELOPMENT_BUDGET_TOKEN", raising=False)
     monkeypatch.setattr(qualification.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("subprocess started"))

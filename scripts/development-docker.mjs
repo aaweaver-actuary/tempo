@@ -90,12 +90,17 @@ export async function runManagedDocker(args) {
   }
   const result=spawnSync(executable,args,{stdio:'inherit'});
   if(result.error) throw result.error;
-  if((args[0]==='rm'||args[0]==='container'&&args[1]==='rm')&&result.status===0){
+  if(args[0]==='rm'||args[0]==='container'&&args[1]==='rm'){
     const directory=process.env.TEMPO_DEVELOPMENT_BUDGET_DIRECTORY??join(tmpdir(),'tempo-development-resource-budget-v1.lock');
     for(const filename of await readdir(join(directory,'resources'))){
       const resource=JSON.parse(await readFile(join(directory,'resources',filename),'utf8'));
-      if(resource.token===token&&resource.key.startsWith('container:')&&!inspectManagedContainer(resource.key.slice('container:'.length),inspect,token))
-        await recordBudgetResource(resource.key,false);
+      if(resource.token===token&&resource.key.startsWith('container:')){
+        const name=resource.key.slice('container:'.length);
+        // A failed startup can leave only its journal. A nonzero rm is then
+        // expected, but only this explicitly requested identity may reconcile.
+        if((result.status===0||args.includes(name))&&!inspectManagedContainer(name,inspect,token))
+          await recordBudgetResource(resource.key,false);
+      }
     }
   }
   return result.status ?? 1;

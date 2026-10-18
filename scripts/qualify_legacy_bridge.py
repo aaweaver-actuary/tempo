@@ -155,7 +155,14 @@ class Deadline:
                     seconds=round(time.monotonic() - started, 3)))
                 raise
         self.report.setdefault("commands", []).append(dict(argv=command, exit_code=code,
+            process_group=process.pid,
             seconds=round(time.monotonic() - started, 3)))
+        if code:
+            # The managed CLI wrapper may fail while its Docker child survives.
+            # wait() only reaps the wrapper, not that pending create/run request.
+            # This session was created by us and contains only this command.
+            try: os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
         if check and code: raise RuntimeError("Qualification command failed; see its stage log")
         return code
 
@@ -178,6 +185,13 @@ class Deadline:
         result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         if check: result.check_returncode()
         return result
+
+
+def verified_absence(result, identity):
+    """Only an identity-specific daemon absence diagnostic is proof."""
+    return (result.returncode != 0 and re.search(r"(?<![A-Za-z0-9_.-])" + re.escape(identity) +
+                r"(?![A-Za-z0-9_.-])", result.stderr) is not None
+            and re.search(r"\bno such (?:object|container|network)\b", result.stderr, re.IGNORECASE) is not None)
 
 
 def verify_helper_caps():
@@ -381,7 +395,11 @@ def controller(args):
                 if json.loads(probe.stdout).get("tempo.legacy-bridge-owner") != helper: raise RuntimeError("Helper ownership mismatch")
                 cleanup.run(["docker", "stop", "--time", "10", helper], check=False, maximum=20)
                 cleanup.run(["docker", "rm", "--force", helper], maximum=20)
-            elif "No such" not in probe.stderr: raise RuntimeError("Helper absence unverified")
+            elif verified_absence(probe, helper):
+                # Reconcile the exact owned journal even if a failed startup
+                # created no container. The managed adapter rechecks absence.
+                cleanup.run(["docker", "rm", "--force", helper], check=False, maximum=20)
+            else: raise RuntimeError("Helper absence unverified")
             if fixture is not None:
                 fixture_module.docker = lambda *items, check=True: cleanup.capture(["docker", *items], check=check)
                 probe = fixture_module.docker("container", "ls", "--all", "--filter", "name=^/" + fixture.container + "$", "--format", "{{.ID}}")
@@ -391,7 +409,7 @@ def controller(args):
                 if probe.returncode == 0:
                     if json.loads(probe.stdout)[0]["Labels"].get("tempo.legacy-bridge-owner") != identity: raise RuntimeError("Network ownership mismatch")
                     cleanup.run(["docker", "network", "rm", network], maximum=20)
-                elif "No such" not in probe.stderr: raise RuntimeError("Network absence unverified")
+                elif not verified_absence(probe, network): raise RuntimeError("Network absence unverified")
                 probe = cleanup.capture(["docker", "network", "ls", "--filter", "label=tempo.legacy-bridge-owner=" + identity, "--format", "{{.ID}}"])
                 if probe.stdout.strip(): raise RuntimeError("Owned network remains")
             probe = cleanup.capture(["docker", "container", "ls", "--all", "--filter", "label=tempo.legacy-bridge-owner=" + helper, "--format", "{{.ID}}"])

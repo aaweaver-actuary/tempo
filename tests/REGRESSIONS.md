@@ -1,5 +1,17 @@
 ## Legacy game evidence receiver checkpoint
 
+`test_frozen_introduction_legacy_fence_does_not_retire_introduced_review_card`
+reproduces P2 at6c2eb502: an active frozen run and old completed migrated origin
+must not permanently veto a current introduced review. Its issued-today control
+preserves the protected attempt; the activation-change control still defers.
+Frozen introduction selection retains its own legacy-history validity checks.
+
+`test_failed_wrapper_reaps_its_orphan_process_group_before_cleanup` and the
+identity/case absence controls own the failed artifact runner lifecycle repair.
+The Node `failed startup journal reconciles only an explicitly removed absent
+container` test uses a fake Docker executable and preserves another owned journal.
+No native/container qualification result is implied.
+
 `backend/tests/test_legacy_scoped_capture.py` owns complete global exhaustion
 past4,096 with bounded retention, late foreign/unbound/revision2 vetoes, unchanged
 authority across two games or unrelated card eligibility, no FEN reentry, explicit
