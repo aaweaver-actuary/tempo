@@ -1,5 +1,10 @@
 # Game Evidence regression ownership
 
+`tests/test_decision_projection.py` owns a learner miss inside an unchanged
+physical executable, exact expected move/position, conflicting projected identity
+and incorrect offset rejection. `tests/test_analysis_deviations.py` also requires
+existing projected content to remain unknown without proven re-entry authority.
+
 `tests/test_analysis_schema.py` owns offline immutable manifest/page integrity,
 replay, mixed input/workspace/version rejection, missing pages/counts, corruption
 and non-overwriting output. Learning's regular `test_authoritative_bridge.py`
@@ -101,3 +106,47 @@ installed CLI -> authenticated Learning HTTP -> independent databases.
 `integration/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.
 
 `test_A_post_retirement_snapshot_cannot_claim_current_serving` installs a genuine retired observation, recomputes comparison readiness and preserves the original snapshot and delivery records.
+
+## C3 mapping uncertainty
+
+`tests/test_bridge_snapshot.py::test_C3_unknown_historical_mapping_cannot_become_a_repertoire_miss`
+requires historical uncertainty to remain unknown even for an otherwise valid
+activated publication. Unbound authored replies also make response scope
+incomplete during the independent v2 snapshot reconstruction.
+
+C3 native rerun also executes the existing provider replay, cooldown, malformed
+source, custom FEN, authority, durable delivery and immutable export regressions.
+The private cohort is separate from these constructed edge cases. A reconstructed
+PGN digest identifies the supplied local source bytes, not unavailable original
+provider PGN bytes.
+`test_C3_worker_reuses_only_byte_identical_validated_snapshot` bounds the worker
+cache to one validated snapshot and invalidates it on either identity or byte
+change. Publication still rechecks workspace epoch, game revision and lease.
+The real cohort exposed repeated full-snapshot validation near the 30-second
+lease bound; no lease or timeout was increased.
+
+C3 existing-position/re-entry uncertainty:
+`test_C3_existing_authored_position_does_not_become_a_new_content_gap` reproduces
+an uncovered ordered path arriving at an existing same-policy authored position.
+That is unknown re-entry authority, not evidence for a new card. Other policies
+cannot suppress a genuine selected-policy gap. The observation retains existing
+Content definition IDs and normalizes legal en-passant identity without granting
+re-entry. The independent real cohort audit exposed this case before report
+acceptance.
+
+`test_C3_export_derivation_upgrade_preserves_reserved_original_bytes` owns the
+export identity transition: new exports use the current derivation (schema remains v1), while
+existing directory reservations retain their original immutable manifest/pages.
+A correctness repair never rewrites an accepted input under its old identity.
+
+`tests/test_analysis_packing.py` owns C3 byte-aware immutable page packing:
+64 remains the item ceiling, 8 MiB remains the page ceiling, and 64 MiB remains
+the complete-export ceiling. UTF-8 payloads split without losing observations;
+individual oversized records and oversized complete exports remain errors.
+`test_C3_dense_80_game_export_keeps_scope_and_closes_source_transaction` owns the
+native 80-game traversal, complete encountered reply inventories, exact selected
+scope, offline verification, and release of the source read transaction before
+chess traversal. Derivation 3 exports only inventories for opponent positions
+actually encountered in the selected games; every scope and reply at those
+positions is retained. Definitions, routes, games and observations are retained.
+Previously reserved exports keep their original bytes and identity.

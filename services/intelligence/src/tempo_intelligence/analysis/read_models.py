@@ -1,10 +1,18 @@
 """Versioned, packaged read contracts; evidence/user/training states stay separate."""
 from typing import Literal
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, model_serializer
 from ..models import StrictModel,Identifier,Digest,Revision,UciMove
 from .models import Lineage
 
 class Representative(StrictModel):
+    @model_serializer(mode='wrap')
+    def preserve_prior_metadata(self, handler):
+        value=handler(self)
+        if self.game_url is None:
+            value.pop('game_url',None)
+        return value
+
+    game_url: str | None = Field(default=None, max_length=2048)
     game_id: Identifier | None
     learner_id: Identifier | None = None
     provider: Identifier | None = None
@@ -26,6 +34,17 @@ class Action(StrictModel):
     reason: str | None = None
 
 class Finding(StrictModel):
+    @model_serializer(mode='wrap')
+    def preserve_prior_metadata(self, handler):
+        value=handler(self)
+        if self.repertoire_title is None:
+            value.pop('repertoire_title',None)
+        if self.learning_card_id is None:
+            value.pop('learning_card_id',None)
+        return value
+
+    learning_card_id: Identifier | None = None
+    repertoire_title: str | None = Field(default=None, max_length=2000)
     finding_id: Digest
     finding_revision: Revision
     evidence_revision: Digest

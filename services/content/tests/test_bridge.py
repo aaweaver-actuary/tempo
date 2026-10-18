@@ -200,3 +200,103 @@ def test_A_completion_receipt_requires_exact_original_authority(monkeypatch, ret
             receipt_transport.verified_receipt(operation, proposed, delivery['endpoint'], '/unused/token')
     else:
         assert receipt_transport.verified_receipt(operation, proposed, delivery['endpoint'], '/unused/token') == proposed
+
+"""An authored continuation without identity authority is not a content gap."""
+from datetime import datetime, timezone
+from types import SimpleNamespace
+import json
+
+from tempo_content.bridge import Bridge, map_import, digest
+from tempo_content.domain import build_publication, stable_id
+
+
+def test_C3_authored_reply_without_executable_binding_remains_unknown():
+    raw = authored_pgn()
+    description = manifest(raw)
+    import chess
+    description['route_assignments'] = [{'fingerprint': digest([chess.STARTING_FEN, ['e2e4','e7e5','g1f3']]), 'route_key':'route', 'policy_key':'main'}]
+    source, _ = map_import(raw, description)
+    source.bindings = [binding for binding in source.bindings if binding.ply == 0]
+    used = {binding.exercise_key for binding in source.bindings}
+    source.exercises = [exercise for exercise in source.exercises if exercise.key in used]
+    publication = build_publication(source, 1, 1, datetime.now(timezone.utc).isoformat(), {exercise.key:1 for exercise in source.exercises})
+    row = {'payload':publication.model_dump_json(), 'digest':'unused', 'provenance':{
+        'snapshot':source.model_dump(mode='json'), 'source_id':'source', 'source_key':'opening',
+        'source_digest':'a'*64, 'source_revision':1, 'inventory_version':'test'}}
+    service = SimpleNamespace(_one=lambda *args: row)
+    exported = Bridge(service).export(publication.publication_id, 1, description)
+    scope = next(scope for inventory in exported['legal_replies'] for scope in inventory['scopes'] if scope['history'] == ['e2e4'])
+    reply = next(reply for reply in scope['replies'] if reply['move_uci'] == 'e7e5')
+    assert reply['status'] == 'unknown'
+    assert scope['complete'] is False
+
+
+def test_C3_complete_source_capacity_is_finite_without_truncation():
+    from tempo_content.bridge import validate_bridge_execution_scope
+    from tempo_content.models import SourceSnapshot
+    raw=authored_pgn();description=manifest(raw)
+    import chess
+    description['route_assignments']=[{'fingerprint':digest([chess.STARTING_FEN,['e2e4','e7e5','g1f3']]),'route_key':'route','policy_key':'main'}]
+    source,_=map_import(raw,description)
+    document=source.model_dump(mode='json')
+    base=document['exercises'][0]
+    document['exercises']=[{**base,'key':f'exercise-{number}'} for number in range(8193)]
+    document['bindings']=[]
+    with pytest.raises(ContentError,match='8192'):
+        validate_bridge_execution_scope(SourceSnapshot.model_validate(document),description)
+
+
+def test_C3_expanded_export_budget_rejects_before_retaining_oversized_scope():
+    from tempo_content.bridge import append_export_scope
+    inventory={'scopes':[]};budget={'bytes':10,'maximum':20}
+    with pytest.raises(ContentError,match='64 MiB'):
+        append_export_scope(inventory,{'response':'x'*100},budget)
+    assert inventory['scopes']==[] and budget['bytes']==10
+    budget['maximum']=200
+    append_export_scope(inventory,{'response':'legal'},budget)
+    assert inventory['scopes']==[{'response':'legal'}]
+
+
+def test_C3_export_computes_each_definition_identity_at_most_once(monkeypatch):
+    from tempo_content import bridge as module
+    from tempo_content.domain import build_publication
+    from types import SimpleNamespace
+    import chess
+    raw=authored_pgn();description=manifest(raw)
+    description['route_assignments']=[{'fingerprint':digest([chess.STARTING_FEN,['e2e4','e7e5','g1f3']]),'route_key':'route','policy_key':'main'}]
+    source,_=map_import(raw,description)
+    publication=build_publication(source,1,1,'2026-10-16T00:00:00+00:00',{item.key:1 for item in source.exercises})
+    row={'payload':publication.model_dump_json(),'digest':'test','provenance':{'snapshot':source.model_dump(mode='json'),'source_id':'source','source_key':'opening','source_digest':'a'*64,'source_revision':1,'inventory_version':'test'}}
+    calls=[];original=module.stable_id
+    def counted(workspace,source_key,kind,key):
+        if kind=='card':calls.append(key)
+        return original(workspace,source_key,kind,key)
+    monkeypatch.setattr(module,'stable_id',counted)
+    exported=module.Bridge(SimpleNamespace(_one=lambda *args:row)).export(publication.publication_id,1,description)
+    assert len(exported['publication']['definitions'])==len(source.exercises)
+    assert len(calls)<=len(source.exercises)
+
+
+def test_C3_packed_bridge_document_retains_exact_types_and_rejects_corruption(monkeypatch):
+    from tempo_content import bridge as module
+    original={'schema_version':1,'flag':True,'source':['a'*10000], 'revision':2}
+    packed=module.pack_bridge_document(original)
+    assert len(packed['data']) < len(json.dumps(original))
+    assert module.unpack_bridge_document(packed)==original
+    with pytest.raises(ContentError,match='corrupt'):
+        module.unpack_bridge_document({**packed,'sha256':'0'*64})
+    monkeypatch.setattr(module,'MAX_BRIDGE_DOCUMENT_BYTES',8)
+    with pytest.raises(ContentError,match='corrupt'):
+        module.unpack_bridge_document(packed)
+
+
+def test_C3_policy_authority_anchor_is_part_of_canonical_authored_source():
+    from tempo_content.domain import canonical_source
+    raw=authored_pgn();description=manifest(raw)
+    description['route_assignments']=[{'fingerprint':digest([chess.STARTING_FEN,['e2e4','e7e5','g1f3']]),'route_key':'route','policy_key':'main'}]
+    source,_=map_import(raw,description)
+    before=canonical_source(source)
+    assert 'authority_start_ply' not in before
+    source.routes[0].authority_start_ply=3
+    assert canonical_source(source)!=before
+    assert source.model_dump(mode='json')['routes'][0]['authority_start_ply']==3

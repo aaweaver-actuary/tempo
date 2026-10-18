@@ -42,3 +42,25 @@ receipt workspace/family/request/ID mismatches and JSON integer/boolean substitu
 before any POST. Every operation read, including recovery and fence reads, uses
 that validator. The installed conflicting-authority cases seed genuine complete
 and queued retirements for another publication and preserve both authorities.
+
+## C3 real repertoire translation
+
+`tests/test_legacy.py` owns deterministic read-only capture translation, exact
+physical executable mapping, policy/color/revision exclusions, stable identity
+through renames, and denial of FEN-only re-entry. The translator emits existing A
+input documents; it does not restore history, approve content or activate Learning.
+
+
+C3 review regressions: `test_C3_policy_authority_uses_canonical_start_position`
+and `test_C3_identical_canonical_routes_do_not_choose_an_arbitrary_policy`
+keep equivalent legal roots in the same policy-prefix inventory, including
+excluded policies. Move counters and nonlegal en-passant targets cannot establish
+authority. Turn, castling, legal en-passant, original route bytes and ordered
+continuations remain distinct. No transposition re-entry is inferred.
+
+`test_C3_documented_schema_accepts_nonzero_projected_binding` validates an
+explicit interior physical decision through both documented v2 Binding schemas;
+the schema parity/bounds cases retain their shared projection fields and strict
+bounds. Fixtures are copied into source-removed consumers and jsonschema is a
+dev-only dependency. Regenerate full schemas using the owning public commands in
+`docs/analysis-restoration/a-bridge.md`, not an older installed service artifact.

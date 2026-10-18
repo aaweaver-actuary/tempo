@@ -165,6 +165,19 @@
           ],
           "title": "Game Id"
         },
+        "game_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Game Url"
+        },
         "history": {
           "items": {
             "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
@@ -522,6 +535,20 @@
       "title": "Learner Color",
       "type": "string"
     },
+    "learning_card_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Learning Card Id"
+    },
     "learning_settlement": {
       "const": "unknown",
       "title": "Learning Settlement",
@@ -651,6 +678,19 @@
         }
       ],
       "title": "Repertoire Id"
+    },
+    "repertoire_title": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repertoire Title"
     },
     "representative": {
       "$ref": "#/$defs/Representative"

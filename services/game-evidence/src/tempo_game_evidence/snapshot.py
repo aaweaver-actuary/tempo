@@ -1,10 +1,12 @@
 """Explicit local snapshot adapter; this is not an extension of shared wire v1."""
 from typing import Literal
 import hashlib
+import base64
+import zlib
 import json
 
 import chess
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
 from tempo_chess_core import canonical_fen_key
 from tempo_content_publication_contracts.v1 import Publication, ActivationAcknowledgement
 
@@ -21,12 +23,57 @@ class StrictModel(BaseModel):
 
 
 class Binding(StrictModel):
+    exercise_ply: int = Field(default=0,ge=0,le=39)
+    decision_id: str | None = Field(default=None,min_length=1,max_length=200)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_binding_bytes(self,handler):
+        value=handler(self)
+        if self.exercise_ply==0:value.pop('exercise_ply',None)
+        if self.decision_id is None:value.pop('decision_id',None)
+        return value
+
+    @model_validator(mode='after')
+    def explicit_projection(self):
+        if self.exercise_ply and self.decision_id is None:
+            raise ValueError('projected_binding_requires_decision_identity')
+        return self
+
     ply: int = Field(ge=0, le=1000)
     card_id: str = Field(min_length=1)
     reentry: bool = False
 
 
+def projected_definition(definition,binding):
+    offset=binding.get('exercise_ply',0)
+    identity=binding.get('decision_id') or definition['decision_id']
+    if not offset:
+        if identity!=definition['decision_id']:raise ValueError('root_decision_relabelled')
+        return definition
+    if type(offset) is not int or not 0<offset<40 or not binding.get('decision_id') or definition['specification']['type']!='move_line':
+        raise ValueError('invalid_decision_projection')
+    positions=set();remaining=[]
+    for line in definition['specification']['accepted_lines']:
+        if offset>=len(line):raise ValueError('projection_outside_accepted_line')
+        board=chess.Board(definition['starting_fen'])
+        for move in line[:offset]:board.push_uci(move)
+        positions.add(board.fen(en_passant='fen'));remaining.append(line[offset:])
+    if len(positions)!=1:raise ValueError('ambiguous_decision_projection')
+    return {**definition,'decision_id':identity,'starting_fen':next(iter(positions)),
+        'specification':{**definition['specification'],'accepted_lines':remaining,
+            'mode':'single' if all(len(line)==1 for line in remaining) else 'stepwise_line'}}
+
+
 class Route(StrictModel):
+    authority_start_ply: int | None = Field(default=0, ge=0, le=1000)
+
+    @model_serializer(mode='wrap')
+    def preserve_prior_routes(self, handler):
+        value=handler(self)
+        if self.authority_start_ply == 0:
+            value.pop('authority_start_ply',None)
+        return value
+
     repertoire_id: str = Field(min_length=1)
     route_id: str = Field(min_length=1)
     learner_color: Literal["white", "black"]
@@ -61,6 +108,7 @@ class ComparisonSnapshot(StrictModel):
             raise ValueError("snapshot_activation_does_not_match_publication")
         definitions = {item.card_id: item for item in publication.definitions}
         seen_routes = set()
+        projections={}
         for route in self.routes:
             route_key = self.route_identity(route)
             if route_key in seen_routes:
@@ -74,17 +122,25 @@ class ComparisonSnapshot(StrictModel):
             bindings = {item.ply: item for item in route.bindings}
             for ply in range(len(route.moves) + 1):
                 if ply in bindings:
-                    definition = definitions.get(bindings[ply].card_id)
-                    if definition is None or canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition.starting_fen).fen()):
+                    binding=bindings[ply]
+                    original=definitions.get(binding.card_id)
+                    if original is None:raise ValueError('binding_missing_definition_or_wrong_position')
+                    definition=projected_definition(original.model_dump(mode='json'),binding.model_dump(mode='json'))
+                    key=(binding.card_id,definition['decision_id'])
+                    projected=(binding.exercise_ply,definition['starting_fen'],definition['specification'])
+                    if key in projections and projections[key]!=projected:
+                        raise ValueError('ambiguous_projected_decision_identity')
+                    projections[key]=projected
+                    if canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition['starting_fen']).fen()):
                         raise ValueError("binding_missing_definition_or_wrong_position")
                     if board.turn != (route.learner_color == "white"):
                         raise ValueError("binding_is_opponent_move")
-                    spec = definition.specification
-                    if spec.type == "move_line":
-                        if (spec.grading_policy == "reference" and ply<len(route.moves)
-                                and route.moves[ply] not in {line[0] for line in spec.accepted_lines}):
+                    spec = definition['specification']
+                    if spec['type'] == "move_line":
+                        if (spec['grading_policy'] == "reference" and ply<len(route.moves)
+                                and route.moves[ply] not in {line[0] for line in spec['accepted_lines']}):
                             raise ValueError("route_conflicts_with_accepted_policy")
-                        for line in spec.accepted_lines:
+                        for line in spec['accepted_lines']:
                             alternative_board = board.copy()
                             for uci in line:
                                 alternative_board.push_uci(uci)
@@ -191,7 +247,9 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
                 seen.add(identity)
                 if scope.get('digest') != canonical_digest({key:value for key,value in scope.items() if key != 'digest'}):
                     raise ValueError('response_scope_digest_mismatch')
-                complete = self.complete and all(ply < len(route.moves) for route,ply,_ in occurrences)
+                complete = self.complete and all(
+                    route.authority_start_ply is not None and ply >= route.authority_start_ply and ply < len(route.moves) and any(binding.ply == ply + 1 for binding in route.bindings)
+                    for route, ply, _ in occurrences)
                 actual_nodes = [(item.get('route_id'),item.get('ply')) for item in scope.get('route_contexts', [])]
                 expected_nodes = [(route.route_id,ply) for route,ply,_ in occurrences]
                 board = occurrences[0][2]
@@ -206,7 +264,7 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
                     raise ValueError('response_scope_replies_incomplete')
                 for reply in replies:
                     move = reply['move_uci']
-                    accepted = {binding.card_id:definitions[binding.card_id]
+                    accepted = {binding.card_id:projected_definition(definitions[binding.card_id],binding.model_dump(mode='json'))
                                 for route,ply,_ in occurrences if ply < len(route.moves) and route.moves[ply] == move
                                 for binding in route.bindings if binding.ply == ply + 1}
                     decision_ids = {item['decision_id'] for item in accepted.values()}
@@ -222,7 +280,36 @@ class ComparisonSnapshotV2(ComparisonSnapshot):
             raise ValueError('response_scope_inventory_incomplete')
 
 
+MAX_STORED_SNAPSHOT_BYTES = 128 * 1024 * 1024
+
+
+def snapshot_storage(document):
+    raw=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+    if len(raw)>MAX_STORED_SNAPSHOT_BYTES:
+        raise ValueError('snapshot_byte_bound')
+    if len(raw)<=1024*1024:
+        return document
+    return {'_tempo_snapshot_storage':1,'sha256':hashlib.sha256(raw).hexdigest(),
+            'data':base64.b64encode(zlib.compress(raw)).decode('ascii')}
+
+
+def snapshot_document(value):
+    if not isinstance(value,dict) or '_tempo_snapshot_storage' not in value:
+        return value
+    try:
+        if type(value['_tempo_snapshot_storage']) is not int or value['_tempo_snapshot_storage']!=1 or len(value['data'])>2*MAX_STORED_SNAPSHOT_BYTES:
+            raise ValueError()
+        decoder=zlib.decompressobj()
+        raw=decoder.decompress(base64.b64decode(value['data'],validate=True),MAX_STORED_SNAPSHOT_BYTES+1)
+        if len(raw)>MAX_STORED_SNAPSHOT_BYTES or decoder.unconsumed_tail or not decoder.eof or decoder.unused_data or hashlib.sha256(raw).hexdigest()!=value['sha256']:
+            raise ValueError()
+        return json.loads(raw)
+    except (KeyError,ValueError,TypeError,zlib.error):
+        raise ValueError('snapshot_storage_corrupt') from None
+
+
 def parse_snapshot(value):
+    value = snapshot_document(value)
     if not isinstance(value, dict):
         return value
     version = value.get("schema_version")

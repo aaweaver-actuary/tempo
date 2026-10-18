@@ -9,7 +9,7 @@ def positions(game):
     board = chess.Board(game["starting_fen"])
     for ply, move in enumerate(game["moves"]):
         if board.turn == (game["learner_color"] == "white"):
-            yield {"game_id": game["game_id"], "learner_id":game.get("learner_id"),"provider":game.get("provider"),"provider_game_id":game.get("provider_game_id"), "source_revision": game["source_revision"],
+            yield {**({"game_url":game["game_url"]} if game.get("game_url") else {}),"game_id": game["game_id"], "learner_id":game.get("learner_id"),"provider":game.get("provider"),"provider_game_id":game.get("provider_game_id"), "source_revision": game["source_revision"],
                    "source_digest": game["source_digest"], "ply": ply, "fen": board.fen(en_passant="fen"),
                    "actual_move": move, "learner_color": game["learner_color"],
                    "played_at":game.get("played_at"),"starting_fen": game["starting_fen"], "history": game["moves"][:ply]}
@@ -38,7 +38,7 @@ def base_finding(kind, selection, position, target, reason):
                 "color": position["learner_color"], "position": " ".join(chess.Board(position["fen"]).fen(en_passant="legal").split()[:4]), "target": target}
     return {"finding_id": digest(identity), "category": kind, "policy_version": POLICY,
             "workspace_id": selection["workspace_id"], "repertoire_id": selection["repertoire_id"],
-            "policy_id": selection["policy_id"], "learner_color": position["learner_color"],
+            "policy_id": selection["policy_id"], **({"repertoire_title":selection["repertoire_title"]} if selection.get("repertoire_title") else {}), "learner_color": position["learner_color"],
             "lineage": selection["lineage"], "representative": position,
             "incident_id": digest({"workspace":selection["workspace_id"],"game":position["game_id"],"ply":position["ply"],"policy":selection["policy_id"],"position":position["fen"]}),
             "supporting_games": [position["game_id"]], "supporting_game_count": 1,
@@ -111,6 +111,8 @@ def source_findings(manifest, games):
             if context["status"] == "missed" and position["actual_move"] not in context["expected_moves"] and context["expected_moves"] and context["card_id"] and context["decision_id"]:
                 item = base_finding("repertoire_miss",selection,position,context["decision_id"],"accepted_response_not_played")
                 item.update(expected_moves=sorted(set(context["expected_moves"])),card_id=context["card_id"],decision_id=context["decision_id"],delivery_status=context["delivery_status"],delivery=context.get("delivery"),evidence_ids=[context["evidence_id"]])
+                if context.get('learning_card_id'):
+                    item['learning_card_id']=context['learning_card_id']
                 incidents.append(item)
             supported_gap = (context["coverage"] == "uncovered" and context["route_established"] and context["scope_complete"] and context["scope_revision"] is not None and context["opponent_ply"] is not None and bool(context["route_ids"]) and not context["expected_moves"])
             if supported_gap and key not in diverged and (not context["after_divergence"] or context["reentry_authorized"]):

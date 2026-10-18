@@ -1,5 +1,11 @@
 # Content regression ownership
 
+`tests/test_execution_projection.py` owns original full-executable preservation
+with an explicit opponent prelude, invalid prelude rejection, exact interior
+decision reconstruction and absent-field byte compatibility. The installed
+cross-component owner is Learning's
+`test_C3_original_opponent_prelude_card_receives_interior_miss_and_settles_once`.
+
 ## A bridge
 
 `tests/test_bridge.py` owns source/rename/permutation mapping, explicit provenance
@@ -134,3 +140,14 @@ workspace/family/request/publication/generation binding. The real installed
 `test_A_installed_completion_cannot_substitute_checkpointed_request` completes a
 different publication's retirement under the same remote ID and proves that both
 reconcile and abandon retain the original Content reservation and serving content.
+
+## C3 authored scope and historical uncertainty
+
+Regular `tests/test_bridge.py::test_C3_authored_reply_without_executable_binding_remains_unknown`
+reproduces an authored reply incorrectly exported as uncovered and requires an
+unknown, incomplete scope. Game Evidence independently reconstructs this rule.
+The import manifest can explicitly mark normalized exercises with unresolved
+historical mapping; these definitions cannot establish existing-card misses.
+`test_C3_preparation_persists_packed_export_and_public_operation_rehydrates` is the
+native storage regression: it failed on the original inline checkpoint and proves
+both actual packed persistence and exact public export/replay after the repair.
