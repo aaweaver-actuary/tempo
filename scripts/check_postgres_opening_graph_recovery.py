@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import chess
 import psycopg
+from psycopg import sql
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
@@ -64,6 +65,7 @@ def disposable_postgres():
         spec.loader.exec_module(migrations)
         migrations.apply_migrations(url)
         environment = {'TEMPO_DATABASE_READ_URL': url, 'TEMPO_DATABASE_WRITE_URL': url,
+                       'TEMPO_TEST_INSTANCE': 'disposable',
                        'TEMPO_REDIS_URL': f'redis://127.0.0.1:{redis_port}/0'}
         with patch.dict(os.environ, environment):
             postgres_store.close_pools()
@@ -341,6 +343,38 @@ def test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint(d
     assert recovery.read_rows('SELECT * FROM repertoire_integrity_state WHERE repertoire_id=%s', (prepared['repertoire_id'],)) == before_state
 
 
+def _apply_scenario_migrations(url):
+    spec = importlib.util.spec_from_file_location('recovery_scenario_migrations', ROOT / 'scripts/apply_postgres_migrations.py')
+    migrations = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migrations)
+    migrations.apply_migrations(url)
+
+
+@contextmanager
+def isolated_scenario_database(admin_url):
+    """Identical fixture lines retain real card IDs; isolate their durable state."""
+    if os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise ValueError('Native recovery scenarios require the owned disposable fixture')
+    database_name = 'tempo_caro_recovery_scenario_' + secrets.token_hex(6)
+    options = psycopg.conninfo.conninfo_to_dict(admin_url)
+    options['dbname'] = database_name
+    scenario_url = psycopg.conninfo.make_conninfo(**options)
+    postgres_store.close_pools()
+    with psycopg.connect(admin_url, autocommit=True) as administrator:
+        administrator.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
+    try:
+        _apply_scenario_migrations(scenario_url)
+        with patch.dict(os.environ, {'TEMPO_DATABASE_READ_URL': scenario_url,
+                                     'TEMPO_DATABASE_WRITE_URL': scenario_url}):
+            try:
+                yield scenario_url
+            finally:
+                postgres_store.close_pools()
+    finally:
+        with psycopg.connect(admin_url, autocommit=True) as administrator:
+            administrator.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(database_name)))
+
+
 def run_cases(url):
     for case in (test_failed_first_publication_recovery_unlocks_practiced_parent_and_admits_maia_rank,
                  test_recovery_refuses_mismatched_source_and_target,
@@ -348,7 +382,8 @@ def run_cases(url):
                  test_selected_queued_rebuild_restart_matches_scan_segmentation_and_preserves_protected_data,
                  test_selected_rebuild_rejects_replacement_generation_source_day_and_unrelated_claim,
                  test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint):
-        case(url)
+        with isolated_scenario_database(url) as scenario_url:
+            case(scenario_url)
         print('PASS ' + case.__name__, flush=True)
 
 

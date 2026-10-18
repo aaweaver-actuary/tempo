@@ -514,3 +514,94 @@ def test_selected_execution_baseline_requires_an_authoritatively_unstarted_graph
     else:
         with pytest.raises(ValueError, match='baseline is missing after maintenance started'):
             recovery.assert_selected_execution_not_started(prepared)
+
+
+def native_recovery_fixture_module():
+    path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_graph_recovery.py'
+    spec = importlib.util.spec_from_file_location('native_recovery_fixture_isolation', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_native_recovery_fixture_isolates_reused_physical_cards_per_scenario(monkeypatch):
+    native = native_recovery_fixture_module()
+    moves = ['e2e4', 'c7c6', 'd2d4', 'd7d5', 'e4e5', 'c8f5', 'g1f3']
+    line = {'id': 'line', 'start_fen': native.chess.STARTING_FEN,
+            'moves_json': json.dumps(moves), 'trained_color': 'white'}
+    first = native.build_graph(native.GraphInput('scenario-one', (line,), 3))
+    second = native.build_graph(native.GraphInput('scenario-two', ({**line, 'id': 'other-line'},), 3))
+    assert first[0].card_id == second[0].card_id  # A repertoire UUID is not card isolation.
+    administrator = Mock()
+    monkeypatch.setattr(native.psycopg, 'connect', lambda *args, **kwargs: nullcontext(administrator))
+    migrations = Mock();monkeypatch.setattr(native, '_apply_scenario_migrations', migrations)
+    close_pools = Mock();monkeypatch.setattr(native.postgres_store, 'close_pools', close_pools)
+    tokens = iter(['a' * 12, 'b' * 12]);monkeypatch.setattr(native.secrets, 'token_hex', lambda count: next(tokens))
+    monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
+    monkeypatch.setenv('TEMPO_DATABASE_READ_URL', 'original-reader')
+    monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', 'original-writer')
+    urls = []
+    for _ in range(2):
+        with native.isolated_scenario_database('postgresql://postgres@fixture/postgres') as url:
+            urls.append(url)
+            assert native.os.environ['TEMPO_DATABASE_READ_URL'] == url
+            assert native.os.environ['TEMPO_DATABASE_WRITE_URL'] == url
+    assert urls[0] != urls[1]
+    assert [call.args for call in migrations.call_args_list] == [(urls[0],), (urls[1],)]
+    statements = [call.args[0].as_string() for call in administrator.execute.call_args_list]
+    for token in ['a' * 12, 'b' * 12]:
+        name = 'tempo_caro_recovery_scenario_' + token
+        assert statements.count('CREATE DATABASE "' + name + '"') == 1
+        assert statements.count('DROP DATABASE "' + name + '"') == 1
+    assert close_pools.call_count == 4
+    assert native.os.environ['TEMPO_DATABASE_READ_URL'] == 'original-reader'
+    assert native.os.environ['TEMPO_DATABASE_WRITE_URL'] == 'original-writer'
+
+
+def test_native_recovery_fixture_drops_only_its_owned_database_after_case_failure(monkeypatch):
+    native = native_recovery_fixture_module()
+    administrator = Mock()
+    monkeypatch.setattr(native.psycopg, 'connect', lambda *args, **kwargs: nullcontext(administrator))
+    monkeypatch.setattr(native, '_apply_scenario_migrations', Mock())
+    monkeypatch.setattr(native.postgres_store, 'close_pools', Mock())
+    monkeypatch.setattr(native.secrets, 'token_hex', lambda count: 'c' * 12)
+    monkeypatch.delenv('TEMPO_TEST_INSTANCE', raising=False)
+    with pytest.raises(ValueError, match='owned disposable fixture'):
+        with native.isolated_scenario_database('postgresql://postgres@fixture/postgres'):
+            raise AssertionError('Unowned fixture entered')
+    administrator.execute.assert_not_called()
+    monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
+    monkeypatch.setenv('TEMPO_DATABASE_READ_URL', 'original-reader')
+    with pytest.raises(RuntimeError, match='original case failure'):
+        with native.isolated_scenario_database('postgresql://postgres@fixture/postgres'):
+            raise RuntimeError('original case failure')
+    statements = [call.args[0].as_string() for call in administrator.execute.call_args_list]
+    assert statements == ['CREATE DATABASE "tempo_caro_recovery_scenario_' + 'c' * 12 + '"',
+                          'DROP DATABASE "tempo_caro_recovery_scenario_' + 'c' * 12 + '"']
+    assert native.os.environ['TEMPO_DATABASE_READ_URL'] == 'original-reader'
+
+
+def test_native_recovery_runner_enters_a_fresh_scenario_scope_before_each_case(monkeypatch):
+    from contextlib import contextmanager
+    native = native_recovery_fixture_module()
+    names = ('test_failed_first_publication_recovery_unlocks_practiced_parent_and_admits_maia_rank',
+             'test_recovery_refuses_mismatched_source_and_target',
+             'test_scoped_recovery_claim_preserves_publish_and_fences_other_tasks',
+             'test_selected_queued_rebuild_restart_matches_scan_segmentation_and_preserves_protected_data',
+             'test_selected_rebuild_rejects_replacement_generation_source_day_and_unrelated_claim',
+             'test_selected_slice_source_postcondition_rolls_back_staging_and_checkpoint')
+    scopes, calls, closed = [], [], []
+    @contextmanager
+    def scope(url):
+        current = url + '-scenario-' + str(len(scopes));scopes.append(current)
+        try: yield current
+        finally: closed.append(current)
+    monkeypatch.setattr(native, 'isolated_scenario_database', scope)
+    for name in names:
+        def case(url, identity=name): calls.append((identity, url))
+        case.__name__ = name
+        monkeypatch.setattr(native, name, case)
+    native.run_cases('owned-fixture')
+    assert [name for name, _ in calls] == list(names)
+    assert [url for _, url in calls] == scopes == closed
+    assert len(set(scopes)) == 6
