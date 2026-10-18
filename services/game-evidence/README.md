@@ -43,6 +43,14 @@ comparison/physical projection and accepts only the named game/time/decisions;
 introduction chronology remains an applicability guard. Activated-publication
 v1/v2 remain unchanged. See the [scoped checkpoint](../../docs/analysis-restoration/legacy-game-study-scoped-checkpoint.md).
 
+`legacy-preview --observation FILE --output NEW_FILE` is the offline initial-v3
+producer over that same scoped comparison. It opens no GE store, performs no
+delivery and preserves unknown/no-miss without an envelope. The explicit
+[one-game operating procedure](../../docs/analysis-restoration/legacy-game-study-one-game.md)
+keeps backend capture, A projection, GE production and HTTP command writes under
+their existing owners. It supports one physical miss target and no inferred
+correction/activation lineage; v2 payload construction remains unchanged.
+
 Independently installed repertoire review, source/index storage, read API and durable
 Learning delivery intent. A repertoire miss is an authored move not played; it is
 not an engine judgment. This increment supports completed standard/from-position

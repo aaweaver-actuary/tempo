@@ -35,9 +35,9 @@ NATIVE_NAMES = (
 ARTIFACT_CASES = (
     ("wire-v3", "contracts/game-evidence", ("tests/test_v3.py",), 17, True),
     ("remediation", "services/learning/remediation", ("tests",), 85, True),
-    ("game-evidence", "services/game-evidence", ("tests",), 115, True),
+    ("game-evidence", "services/game-evidence", ("tests",), 125, True),
     ("bridge", "tools/analysis-restoration/a_bridge", ("tests/test_legacy.py", "tests/test_legacy_observation.py",
-      "tests/test_operator.py::test_installed_operator_is_independent_of_all_domain_services"), 38, False),
+      "tests/test_legacy_study.py", "tests/test_operator.py::test_installed_operator_is_independent_of_all_domain_services"), 57, False),
 )
 WORK_SECONDS = {"artifacts": 900, "native": 600}
 CLEANUP_SECONDS = 300

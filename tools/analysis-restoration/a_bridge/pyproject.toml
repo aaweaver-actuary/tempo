@@ -14,6 +14,8 @@ dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0", "jsonschema==4.25.1
 [project.scripts]
 tempo-a-bridge = "tempo_a_bridge.cli:main"
 tempo-a-legacy-export = "tempo_a_bridge.legacy:main"
+tempo-a-legacy-observe = "tempo_a_bridge.legacy_observation:main"
+tempo-a-legacy-study = "tempo_a_bridge.legacy_study:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tempo_a_bridge"]

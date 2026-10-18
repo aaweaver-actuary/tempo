@@ -1,5 +1,11 @@
 # Game Evidence regression ownership
 
+`tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
+legacy observation: exact original physical card/interior offset, played/expected
+move, deterministic immutable identity, unknown/no-miss without an envelope,
+mixed source rejection and a no-store/non-overwriting CLI. Existing v2 payload
+and correction/withdrawal tests in `test_comparison.py` retain their owner.
+
 `tests/test_legacy_scoped_authority.py` owns the schema2 legacy-local proof:
 complete 4,102-row traversal with one retained candidate and preserved prior
 policy anchor; foreign/unbound competitors after4,096; incomplete/mixed authority

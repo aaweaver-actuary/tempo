@@ -90,3 +90,43 @@ def comparison_snapshot(tables, graphs, *, authority, observed_after, captured_a
         report["policy_authority_anchors"] = {route["route_id"]: route.get("authority_start_ply", 0) for route in routes}
     document["capture_digest"] = fingerprint(document)
     return document, report
+
+
+def observe_capture(capture):
+    """File-only projection of one backend-owned read capture; no service import."""
+    from tempo_game_evidence_contracts import v3
+    if (capture.get('kind') != 'legacy_game_capture' or type(capture.get('schema_version')) is not int
+            or capture['schema_version'] != 1):
+        raise ValueError('legacy_game_capture_required')
+    if capture.get('export_digest') != fingerprint({key: value for key, value in capture.items() if key != 'export_digest'}):
+        raise ValueError('legacy_capture_file_changed')
+    snapshot, mapping = comparison_snapshot(**{key: capture[key] for key in
+        ('tables', 'graphs', 'authority', 'observed_after', 'captured_at', 'catalogue_scope')})
+    raw = capture['game']
+    source = v3.LegacyGameSource(provider=raw['provider'], provider_game_id=raw['provider_game_id'],
+        content_hash=raw['content_hash'], raw_source_digest=fingerprint(raw))
+    game = dict(workspace_id=capture['authority']['workspace_id'], game_id=raw['id'], revision=1,
+        starting_fen=raw['start_fen'], moves=json.loads(raw['moves_json']), observed_color=raw['color'],
+        player='legacy-import:' + raw['provider'] + ':' + raw['color'], played_at=raw['played_at'],
+        source_digest=source.raw_source_digest)
+    return dict(kind='legacy_game_observation', schema_version=1, game=game,
+                game_source=source.model_dump(mode='json'), snapshot=snapshot, mapping=mapping,
+                input_digest=capture['export_digest'])
+
+
+def main(arguments=None):
+    import argparse
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description='Project one retained read-only legacy game capture')
+    parser.add_argument('--capture', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    options = parser.parse_args(arguments)
+    if options.capture.stat().st_size > 8 * 1024 * 1024: raise ValueError('legacy_capture_file_exceeds_bound')
+    result = observe_capture(json.loads(options.capture.read_bytes()))
+    with options.output.open('x') as output: json.dump(result, output, indent=2)
+    print(json.dumps(dict(output=str(options.output), read_only=True)))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

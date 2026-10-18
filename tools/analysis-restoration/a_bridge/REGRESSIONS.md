@@ -1,5 +1,14 @@
 # A operator regression ownership
 
+`tests/test_legacy_study.py` owns file-only capture projection and explicit
+loopback HTTP accept/receipt/queue/status intents: immutable replay, response-loss
+receipt recovery, no automatic polling/queueing, no-obligation zero-I/O behavior,
+actual target/card revision fences and foreign receipt rejection. These imports
+depend on contracts only. `integration/test_legacy_pipeline.py` is a separately
+selected cross-component SOURCE fixture connecting the public producer to shared
+acceptance and actual SQLite Study writers. Its HTTP/Celery transport and module
+PostgreSQL rows are scripted; it does not qualify installed/native behavior.
+
 Legacy observation identity now uses the shared game-evidence contract artifact,
 not service code. The installed boundary case in `tests/test_operator.py` permits
 that declared dependency only; its new artifact combination is unqualified.

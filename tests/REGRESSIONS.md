@@ -4857,6 +4857,21 @@ Its module SQL effects are scripted; it is explicitly not native durability or
 locking proof. HTTP cases verify immutable command dispatch, exact cutover
 matching, background admission and retained GET query-only scope.
 
+`backend/tests/test_legacy_game_observation.py` owns one explicit completed-game
+read-only export, complete learner decision scope, bounded refusal and rejection
+of recapture after accepted lineage. `test_legacy_intake_study_mode.py` executes
+the actual background task wrapper: only exact `game_evidence.receive_legacy`
+passes study-only classification; prefix lookalikes and ordinary analysis defer.
+Its foreground-race control proves capture/handler execution remains outside the
+receipt-only control bypass. Existing task-kind/restart/receipt owners remain.
+
+`tools/analysis-restoration/a_bridge/integration/test_legacy_pipeline.py` owns
+generated one-game capture → public projection/GE v3 producer → independent
+receiver preparation → shared accept/replay → explicit queue → normal head,
+review/replay/invalidation, with a paired prior-issued attempt fence. PostgreSQL
+rows and HTTP/Celery/operation transport are scripted; actual backend native
+durability and locking remain a separate, unexecuted qualification gate.
+
 `test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline`
 uses a synthetic wheel and mocked version command. Qualification-plan tests
 cover hash refusal, no native download fallback and first pytest failure with

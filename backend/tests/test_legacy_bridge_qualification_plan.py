@@ -19,7 +19,7 @@ spec.loader.exec_module(qualification)
 
 def test_finite_plan_pins_six_artifacts_exact_test_counts_caps_and_five_minute_cleanup():
     plan = qualification.describe()
-    assert plan["artifact_test_total"] == 255 and plan["native_test_total"] == 5
+    assert plan["artifact_test_total"] == 284 and plan["native_test_total"] == 5
     assert plan["cleanup_reserve_seconds"] == 300
     assert plan["work_seconds"] == {"artifacts": 900, "native": 600}
     assert plan["native_total"] == dict(containers=2, cpus=2, memory_mib=1024, pids=384, owned_internal_networks=1)

@@ -143,6 +143,7 @@ class OwnerFixture(PostgresConnection):
         if "SELECT target_id,workspace_id FROM legacy_learning_identity" in statement:
             return Cursor([("synthetic-target", "legacy")])
         if "SELECT sequence,work_state,reason,queue_entry_id FROM remediation_cards" in statement:
+            if not self.module.sequence: return Cursor()
             admission = self.module.admission or ("pending", None, None)
             return Cursor([TempoRow(("sequence", "work_state", "reason", "queue_entry_id"),
                                    (self.module.sequence, *admission))])
@@ -154,20 +155,48 @@ class OwnerFixture(PostgresConnection):
 
 
 @pytest.fixture
-def vertical(tmp_path, monkeypatch):
+def vertical(tmp_path, monkeypatch, request):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "synthetic-study.db")
     database.initialize()
     value, source = source_fixture()
-    value, captured = captured_scope(value, source)
-    accepted = semantic_check(prepared(value, captured))[0]
+    generated_preview = None
+    if getattr(request, 'param', None) == 'producer':
+        # Opt-in cross-component source integration only. Backend unit tests and
+        # production modules do not depend on GE/A bridge implementation imports.
+        from app.legacy_game_observation import capture_game
+        from app import game_evidence_commands as commands
+        from app.services import legacy_game_authority as owner
+        from tempo_a_bridge.legacy_observation import observe_capture
+        from tempo_game_evidence import preview_legacy_observation
+        def reader(statement, parameters=()):
+            if 'FROM remediation_game_heads' in statement or 'FROM remediation_deliveries' in statement: return []
+            return source.read(statement, parameters)
+        exported = capture_game('ruy', value.game_id, reader=reader, metadata=source.metadata)
+        observation = observe_capture(exported)
+        generated_preview = preview_legacy_observation(observation)
+        for filename, document in [('capture', exported), ('observation', observation), ('preview', generated_preview)]:
+            (tmp_path / ('one-game.' + filename + '.json')).write_text(json.dumps(document, indent=2))
+        assert generated_preview['result'] == 'miss_obligation'
+        monkeypatch.setattr(owner, 'read_rows', reader)
+        monkeypatch.setattr(owner, 'metadata', source.metadata)
+        preparation = commands.prepare_legacy_delivery({'delivery': generated_preview['delivery']})
+        assert preparation.error is None
+        value, captured = preparation.delivery, preparation.captured
+        assert exported['catalogue_scope']['scope']['decision_plies'] == [1, 3, 5]
+        assert captured.catalogue_proof.scope.decision_plies == [5]  # Receiver independently recaptures exact encounters.
+    else:
+        value, captured = captured_scope(value, source)
+        preparation = prepared(value, captured)
+    accepted = semantic_check(preparation)[0]
     module = ModuleScript()
     context = ReceiveContext("legacy", value.game_id, value.game_revision, value.evidence_id,
-        value.evidence_revision, datetime.now(timezone.utc), CurrentLegacyAuthority(prepared(value, captured)))
+        value.evidence_revision, datetime.now(timezone.utc), CurrentLegacyAuthority(preparation))
     owned = PostgresRepository(module, "legacy")
-    first = owned.receive(value, context)
-    assert first.status == "completed" and owned.receive(value, context) == first
-    assert module.sequence == module.workspace_revision == len(module.contributions) == len(module.deliveries) == 1
-    assert next(iter(module.contributions.values())) == accepted.payload_json
+    if generated_preview is None:
+        first = owned.receive(value, context)
+        assert first.status == "completed" and owned.receive(value, context) == first
+        assert module.sequence == module.workspace_revision == len(module.contributions) == len(module.deliveries) == 1
+        assert next(iter(module.contributions.values())) == accepted.payload_json
     monkeypatch.setattr(bridge, "repository", lambda _database: PostgresRepository(module, "legacy"))
     # Task wakeups are outside this source fixture; no worker/service is started.
     monkeypatch.setattr(LearningReviewAdapter, "refresh_progression", lambda *a, **k: None)
@@ -184,7 +213,9 @@ def vertical(tmp_path, monkeypatch):
             sqlite.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",
                            (date.today().isoformat(), card_id, position))
         sqlite.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='protected'")
-        yield OwnerFixture(sqlite, accepted.payload_json, module), value, accepted, module
+        fixture = OwnerFixture(sqlite, accepted.payload_json, module)
+        fixture.generated_preview, fixture.receive_context = generated_preview, context
+        yield fixture, value, accepted, module
 
 
 def issue(database, card_id, entry):

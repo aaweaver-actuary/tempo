@@ -41,16 +41,20 @@ Python with installed-origin boundary tests. Exact collect→execute inventories
 | --- | ---: |
 | Game Evidence contract `tests/test_v3.py` | 17 |
 | Remediation `tests` | 85 |
-| Game Evidence `tests` | 115 |
-| A bridge `test_legacy.py`, `test_legacy_observation.py`, installed independence case | 38 |
-| Total | **255** |
+| Game Evidence `tests` | 125 |
+| A bridge `test_legacy.py`, `test_legacy_observation.py`, `test_legacy_study.py`, installed independence case | 57 |
+| Total | **284** |
 
 Four collection and four execution commands use the existing Learning inventory
 checker. Zero, duplicate, deselected, skipped, missing or extra cases fail. Count
 changes require review rather than silently updating the expected inventory.
 Every pytest command carries `--maxfail=1`: first failure stops the window, keeps
 `complete=false`, and an incomplete inventory is a failure. The +4 reviewed
-cases are the paired ended-foreign-policy controls in GE and remediation.
+cases at the previous255-case checkpoint were the paired ended-foreign-policy
+controls in GE and remediation. The new29 are10 offline-v3 producer and19
+explicit operator cases. This revised inventory is a proposal for fresh review
+and authorization; the earlier failed255-case grant cannot be reused. The
+cross-component SQLite/source integration is separate from this installed suite.
 Full v1/v2 contract exchange is explicitly outside this bounded selection.
 
 ### Pinned tool setup inside the same artifact command

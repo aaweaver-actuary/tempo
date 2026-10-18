@@ -22,6 +22,9 @@ def main(arguments=None):
     commands = parser.add_subparsers(dest="command",required=True)
     commands.add_parser("migrate")
     commands.add_parser('snapshot-schema')
+    legacy_preview = commands.add_parser('legacy-preview')
+    legacy_preview.add_argument('--observation', type=Path, required=True)
+    legacy_preview.add_argument('--output', type=Path, required=True)
     exports = commands.add_parser("analysis-export").add_subparsers(dest="export_command",required=True)
     exports.add_parser('schema')
     exports.add_parser('verify').add_argument('directory',type=Path)
@@ -69,6 +72,15 @@ def main(arguments=None):
     serve.add_argument("--port",type=int,default=8041)
     options = parser.parse_args(arguments)
     try:
+        if options.command == 'legacy-preview':
+            from .legacy_payloads import preview_legacy_observation
+            if options.observation.stat().st_size > MAX_SOURCE_BYTES:
+                raise ValueError('legacy_observation_exceeds_bound')
+            result = preview_legacy_observation(json.loads(options.observation.read_bytes()))
+            with options.output.open('x') as output: json.dump(result, output, indent=2)
+            print(json.dumps(dict(output=str(options.output), result=result['result'],
+                preview_digest=result['preview_digest'], read_only=True)))
+            return 0
         if options.command=='snapshot-schema':
             print(json.dumps(ComparisonSnapshotV2.model_json_schema(),sort_keys=True))
             return 0
