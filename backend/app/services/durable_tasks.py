@@ -373,6 +373,11 @@ def lock_current_slice(database, task: dict) -> bool:
     )
     if not current:
         increment(database, task.get("kind", "other"), task["id"], stale_results=1)
+    elif 'maintenance_scope' in task:
+        # Only explicit selected-rebuild deliveries carry this process-local pin.
+        # The check and source/policy locks belong inside the owner's transaction.
+        from .opening_graph_recovery import validate_selected_delivery
+        validate_selected_delivery(database, task)
     return current
 
 
@@ -395,6 +400,11 @@ def advance_task_slice_in_transaction(
         clear_queue_refresh_error_in_transaction(database, task["id"], kind=task.get("kind"),
                                                 payload=task.get("payload"))
         _record_event(database, task["id"], task["generation"], "slice_complete", next_phase, kind=task.get("kind"))
+        if 'maintenance_scope' in task:
+            from .opening_graph_recovery import validate_selected_delivery
+            # Generated provenance is excluded by the existing source triggers.
+            # Any authoritative source increment must roll this whole slice back.
+            validate_selected_delivery(database, task)
     return bool(changed)
 
 
@@ -410,6 +420,9 @@ def complete_task_slice_in_transaction(database, task: dict) -> bool:
         clear_queue_refresh_error_in_transaction(database, task["id"], kind=task.get("kind"),
                                                 payload=task.get("payload"))
         _record_event(database, task["id"], task["generation"], "published", "published", kind=task.get("kind"))
+        if 'maintenance_scope' in task:
+            from .opening_graph_recovery import validate_selected_delivery
+            validate_selected_delivery(database, task)
     else:
         _record_stale_result(database, task["id"], task["generation"], task.get("kind", "other"))
     return bool(changed)

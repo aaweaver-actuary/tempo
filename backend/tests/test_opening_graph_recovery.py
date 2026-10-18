@@ -1,6 +1,12 @@
 """Maintenance claim guards; end-to-end proof lives in the regular PostgreSQL suite."""
 import json
+from contextlib import nullcontext
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
+from pathlib import Path
+from types import SimpleNamespace
+import importlib.util
 import pytest
 from app.services.opening_graph_recovery import claim_exact_task
 
@@ -36,3 +42,296 @@ def test_maintenance_preflight_and_release_yield_to_foreground(monkeypatch):
     monkeypatch.setattr(recovery.time, 'sleep', lambda _seconds: None)
     assert recovery.wait_for_admission(denied_then_ready) == 'ready'
     assert len(calls) == 2
+
+
+@pytest.fixture
+def selected(monkeypatch):
+    from app.services import opening_graph_recovery as recovery
+    day = recovery.local_study_day()
+    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'target': 'target-hash', 'task_id': 'target',
+                'generation': 2, 'repertoire_id': 'caro', 'day': day, 'previous_graph_generation': 1,
+                'scope_token': {'scope_source_revision': 197, 'canonical_prefix_revision': 0,
+                                'initial_depth': 3, 'study_only_mode': 1, 'run_id': 'ranks', 'epoch': 1},
+                'tasks': {'opening_graph_rebuild': {'id': 'target', 'generation': 2},
+                          'integrity_scan': {'id': 'scan', 'generation': 3},
+                          'opening_segmentation': {'id': 'segments', 'generation': 2}}}
+    row = task_row(generation=2, state='queued', phase='queued', attempt_count=0,
+                   lease_expires_at=None, next_attempt_at=datetime.now(timezone.utc).isoformat())
+    database = Mock()
+    def execute(statement, parameters=()):
+        cursor = Mock()
+        if statement.startswith('UPDATE background_tasks'):
+            row.update(lease_token=parameters[0], lease_expires_at=parameters[1], payload_json=parameters[2], state='leased')
+        cursor.fetchone.return_value = dict(row)
+        return cursor
+    database.execute_native.side_effect = execute
+    monkeypatch.setattr(recovery, 'validate_selected_scope', Mock())
+    return recovery, prepared, row, database
+
+
+def claim_selected(selected):
+    recovery, prepared, row, database = selected
+    return recovery.claim_exact_task(database, 'target', 'opening_graph_rebuild', 'caro', 2,
+                                     day=prepared['day'], selected_rebuild=prepared)
+
+
+def test_selected_queued_claim_is_exact_and_retains_checkpoint_and_scope_marker(selected):
+    recovery, prepared, row, database = selected
+    claimed = claim_selected(selected)
+    assert claimed['phase'] == 'queued'
+    assert claimed['maintenance_scope'] == prepared
+    assert claimed['payload']['maintenance_recovery_scope'] == recovery._selected_scope_key(prepared)
+    assert recovery.validate_selected_scope.call_count == 1
+    assert all('WHERE id=%s' in call.args[0] for call in database.execute_native.call_args_list
+               if call.args[0].startswith('UPDATE background_tasks'))
+
+
+@pytest.mark.parametrize('changes', [
+    {'id': 'unrelated', 'deduplication_key': 'other'}, {'generation': 3}, {'kind': 'daily_queue'},
+    {'state': 'failed', 'phase': 'publish'}, {'state': 'leased', 'lease_expires_at': '2999-01-01T00:00:00+00:00'},
+    {'phase': 'stage'}, {'next_attempt_at': '2999-01-01T00:00:00+00:00'},
+    {'payload_json': '{"repertoire_id":"other"}'},
+    {'payload_json': '{"repertoire_id":"caro","maintenance_recovery_scope":"another-plan"}'},
+])
+def test_selected_queued_claim_excludes_unrelated_replacement_active_lease_and_unsafe_restart(selected, changes):
+    recovery, prepared, row, database = selected
+    row.update(changes)
+    with pytest.raises(ValueError):
+        claim_selected(selected)
+    assert not any(call.args[0].startswith('UPDATE') for call in database.execute_native.call_args_list)
+
+
+def test_selected_interruption_reclaims_only_expired_own_lease_and_rejects_old_delivery(selected, monkeypatch):
+    from app.services import durable_tasks
+    recovery, prepared, row, database = selected
+    first = claim_selected(selected)
+    with pytest.raises(ValueError, match='leased'):
+        claim_selected(selected)
+    row.update(phase='stage', lease_expires_at=(datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat())
+    resumed = claim_selected(selected)
+    assert resumed['phase'] == 'stage'
+    assert resumed['lease_token'] != first['lease_token']
+    database.execute.return_value.fetchone.return_value = row
+    monkeypatch.setattr(durable_tasks, 'increment', Mock())
+    assert not durable_tasks.lock_current_slice(database, first)
+    assert durable_tasks.lock_current_slice(database, resumed)
+
+
+def test_selected_owner_transaction_rechecks_scope_and_rolls_back_on_source_change(selected, monkeypatch):
+    from app.services import durable_tasks
+    recovery, prepared, row, database = selected
+    task = claim_selected(selected)
+    database.execute.return_value.fetchone.return_value = row
+    recovery.validate_selected_scope.side_effect = ValueError('Source changed')
+    with pytest.raises(ValueError, match='Source changed'):
+        durable_tasks.lock_current_slice(database, task)
+    assert recovery.validate_selected_scope.call_count == 2
+
+
+@pytest.mark.parametrize('changed', ['day', 'source', 'study_only', 'depth', 'activation', 'target', 'graph', 'publication', 'transition'])
+def test_selected_transaction_scope_rejects_identity_source_day_policy_and_generation_changes(monkeypatch, changed):
+    from app.services import opening_graph_recovery as recovery
+    identity = {'cluster_id': 'cluster', 'database_oid': '1', 'database': 'tempo', 'schema': 'public'}
+    token = {'scope_source_revision': 197, 'canonical_prefix_revision': 0, 'initial_depth': 3,
+             'study_only_mode': 1, 'run_id': 'ranks', 'epoch': 1}
+    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'day': recovery.local_study_day(), 'repertoire_id': 'caro',
+                'target': recovery.stable_key(*identity.values()), 'scope_token': deepcopy(token),
+                'task_id': 'target', 'generation': 2, 'previous_graph_generation': 1}
+    graph = {'id': 'target', 'generation': 2, 'state': 'queued', 'phase': 'queued'}
+    publication = {'generation': 1, 'state': 'ready'}
+    transition = None
+    if changed == 'day': prepared['day'] = '2000-01-01'
+    if changed == 'source': token['scope_source_revision'] += 1
+    if changed == 'study_only': token['study_only_mode'] = 0
+    if changed == 'depth': token['initial_depth'] += 1
+    if changed == 'activation': token['epoch'] += 1
+    if changed == 'target': identity['database_oid'] = 'other'
+    if changed == 'graph': graph['generation'] += 1
+    if changed == 'publication': publication['generation'] = 9
+    if changed == 'transition': transition = {'exists': 1}
+    database = Mock()
+    database.execute_native.return_value.fetchone.side_effect = [identity, token, graph, publication, transition]
+    with pytest.raises(ValueError):
+        recovery.validate_selected_scope(database, prepared)
+    assert all(not call.args[0].startswith(('UPDATE', 'INSERT', 'DELETE'))
+               for call in database.execute_native.call_args_list)
+
+
+@pytest.mark.parametrize('phase', ['queued', 'stage', 'link', 'publish', 'classify', 'integrity', 'cleanup', 'finalize', 'published'])
+def test_selected_scope_publication_follows_the_owner_checkpoint_and_keeps_policy_locks(phase):
+    from app.services import opening_graph_recovery as recovery
+    identity = {'cluster_id': 'cluster', 'database_oid': '1', 'database': 'tempo', 'schema': 'public'}
+    token = {'scope_source_revision': 197, 'canonical_prefix_revision': 0, 'initial_depth': 3,
+             'study_only_mode': 1, 'run_id': 'ranks', 'epoch': 1}
+    prepared = {'mode': recovery.QUEUED_REBUILD_MODE, 'day': recovery.local_study_day(), 'repertoire_id': 'caro',
+                'target': recovery.stable_key(*identity.values()), 'scope_token': token,
+                'task_id': 'target', 'generation': 2, 'previous_graph_generation': 1}
+    published = phase in {'classify', 'integrity', 'cleanup', 'finalize', 'published'}
+    database = Mock()
+    database.execute_native.return_value.fetchone.side_effect = [identity, token,
+        {'id': 'target', 'generation': 2, 'state': 'complete' if phase == 'published' else 'queued', 'phase': phase},
+        {'generation': 2 if published else 1, 'state': 'ready'}, None]
+    recovery.validate_selected_scope(database, prepared)
+    assert 'FOR SHARE OF r,s,a' in database.execute_native.call_args_list[1].args[0]
+    assert 'FOR SHARE' in database.execute_native.call_args_list[2].args[0]
+
+
+def test_selected_pipeline_runs_only_pinned_graph_scan_segmentation_and_retains_checkpoint_budget(selected, monkeypatch):
+    from app.services import postgres_opening_segmentation
+    recovery, prepared, row, database = selected
+    monkeypatch.setattr(recovery, 'background_lease', nullcontext)
+    monkeypatch.setattr(recovery.postgres_store, 'connection', lambda **kwargs: nullcontext(database))
+    monkeypatch.setattr(recovery, 'warm_completion_sql', lambda: None)
+    calls = []
+    def claim(_database, task_id, kind, _repertoire, generation, **kwargs):
+        calls.append((kind, task_id, generation))
+        if len(calls) % 2 == 0:
+            return None
+        return {'id': task_id, 'kind': kind, 'generation': generation, 'phase': 'queued',
+                'lease_token': 'lease', 'lease_expires_at': 'later'}
+    monkeypatch.setattr(recovery, 'claim_exact_task', claim)
+    handled = []
+    for module, name in ((recovery, 'execute_postgres_opening_graph_slice'), (recovery, 'execute_postgres_integrity_slice'),
+                          (postgres_opening_segmentation, 'execute_segmentation_slice')):
+        monkeypatch.setattr(module, name, lambda task: handled.append(task['kind']))
+    monkeypatch.setattr(recovery, 'read_rows', lambda statement, parameters: [{**prepared['tasks'][parameters[0]],
+                         'payload_json': json.dumps({'repertoire_id': 'caro', 'graph_generation': 2})}])
+    database.execute_native.side_effect = None
+    database.execute_native.return_value.fetchone.side_effect = [
+        {'status': 'needs_repair', 'scan_status': 'idle', 'checked_at': 'now', 'scan_generation': 'scan:3'},
+        {'state': 'ready', 'graph_generation': 2, 'run_id': 'segments:2'},
+    ]
+    assert recovery.finish_queued_rebuild(prepared)['state'] == 'complete'
+    assert handled == ['opening_graph_rebuild', 'integrity_scan', 'opening_segmentation']
+    assert {kind for kind, *_ in calls} == set(prepared['tasks'])
+    calls.clear()
+    with pytest.raises(RuntimeError, match='budget'):
+        recovery.finish_queued_rebuild(prepared, max_slices=1)
+    assert len(calls) == 1
+    with pytest.raises(RuntimeError, match='budget'):
+        recovery.finish_queued_rebuild(prepared, stop_requested=lambda: True)
+
+
+def test_selected_integrity_publication_caps_remain_32_issues_64_card_source_blocks(monkeypatch):
+    from app.services import postgres_integrity as integrity
+    monkeypatch.setattr(integrity, 'lock_current_slice', lambda *args: True)
+    monkeypatch.setattr(integrity, '_graph_generation_is_current', lambda *args: True)
+    task = {'id': 'scan', 'generation': 3, 'payload': {'repertoire_id': 'caro', 'graph_generation': 2}}
+    for counts, message in (([33], 'publication exceeds'), ([32, 65], 'card blocks exceed')):
+        database = Mock()
+        database.execute_native.return_value.fetchone.side_effect = [(count,) for count in counts]
+        with pytest.raises(RuntimeError, match=message):
+            integrity.publish_integrity_issues_in_transaction(database, task)
+        assert not any(call.args[0].startswith(('UPDATE', 'INSERT', 'DELETE')) for call in database.execute_native.call_args_list)
+
+
+@pytest.mark.parametrize('completion', [False, True])
+def test_selected_checkpoint_postcondition_rejects_own_authoritative_source_change(selected, monkeypatch, completion):
+    from app.services import durable_tasks
+    recovery, prepared, row, database = selected
+    task = claim_selected(selected)
+    monkeypatch.setattr(durable_tasks, 'clear_queue_refresh_error_in_transaction', Mock())
+    monkeypatch.setattr(durable_tasks, '_record_event', Mock())
+    database.execute.return_value.rowcount = 1
+    recovery.validate_selected_scope.side_effect = ValueError('Source changed during slice')
+    with pytest.raises(ValueError, match='during slice'):
+        if completion:
+            durable_tasks.complete_task_slice_in_transaction(database, task)
+        else:
+            durable_tasks.advance_task_slice_in_transaction(database, task, next_phase='stage', next_payload=task['payload'])
+
+
+def test_selected_cleanup_refuses_issued_or_head_entry_before_owner_removal(monkeypatch):
+    from app.services import postgres_opening_graph as graph
+    monkeypatch.setattr(graph, 'lock_current_slice', lambda *args: True)
+    remove = Mock()
+    monkeypatch.setattr(graph, 'remove_obsolete_graph_memberships', remove)
+    database = Mock()
+    database.execute_native.return_value.fetchone.return_value = {'protected': 1}
+    task = {'generation': 2, 'maintenance_scope': {}, 'payload': {'repertoire_id': 'caro', 'local_day': '2026-10-18'}}
+    with pytest.raises(ValueError, match='protected queue'):
+        graph.cleanup_graph_cards_in_transaction(database, task, graph.PreparedGraphCleanupSlice(('obsolete',), 'obsolete'))
+    remove.assert_not_called()
+
+
+def test_selected_preservation_allows_generated_memberships_and_rejects_schedule_history_head_or_frozen_changes():
+    from app.services import opening_graph_recovery as recovery
+    before = {'mode': recovery.QUEUED_REBUILD_MODE, 'target': 'database', 'settings': [{'study_only_mode': 1}],
+              'sources': [{'id': 'line'}], 'memberships': [{'card_id': 'old', 'canonical_route_source': 0}],
+              'cards': [{'id': 'old', 'revision': 1}], 'reviews': [{'id': 1, 'rating': 'again'}],
+              'issued_origins': [{'queue_entry_id': 7, 'card_id': 'old', 'revision': 1},
+                                 {'queue_entry_id': 7, 'card_id': 'old', 'revision': 2}],
+              'activation': {'run_id': 'ranks', 'epoch': 1}, 'frozen_ranks': [{'card_id': 'old', 'ordinal': 1}],
+              'protected_schedules': [{'id': 'old', 'fsrs_card_json': 'unchanged'}],
+              'protected_queue': [{'id': 7, 'position': 0, 'status': 'queued'}]}
+    after = deepcopy(before)
+    after['memberships'] = [{'card_id': 'new', 'canonical_route_source': 0}]
+    after['cards'].append({'id': 'new', 'revision': 1})
+    assert recovery.verify_preservation(before, after)['passed']
+    for component in ('protected_schedules', 'reviews', 'protected_queue', 'frozen_ranks'):
+        changed = deepcopy(after)
+        changed[component][0]['changed'] = True
+        assert not recovery.verify_preservation(before, changed)['passed'], component
+
+
+def test_selected_queued_preflight_is_read_only_pins_followup_generations_and_rejects_newer_staging(selected, monkeypatch):
+    recovery, prepared, row, database = selected
+    monkeypatch.setattr(recovery, 'target_id', lambda: prepared['target'])
+    monkeypatch.setattr(recovery, 'scope_token', lambda repertoire: prepared['scope_token'])
+    monkeypatch.setattr(recovery, 'background_lease', nullcontext)
+    connections = []
+    def connection(**kwargs):
+        connections.append(kwargs)
+        return nullcontext(database)
+    monkeypatch.setattr(recovery.postgres_store, 'connection', connection)
+    staging = []
+    def read(statement, parameters=()):
+        if 'WHERE id=%s' in statement:
+            return [dict(row)]
+        if 'opening_graph_publications' in statement:
+            return [{'generation': 1, 'state': 'ready'}]
+        if 'opening_graph_steps' in statement:
+            return staging
+        kind = parameters[0]
+        return [{'id': prepared['tasks'][kind]['id'], 'generation': 2 if kind == 'integrity_scan' else 1, 'state': 'complete'}]
+    monkeypatch.setattr(recovery, 'read_rows', read)
+    arguments = ('target', 'caro', 2, 'target-hash')
+    keywords = {'source_revision': 197, 'prefix_revision': 0, 'day': prepared['day']}
+    plan = recovery.preflight_queued_rebuild(*arguments, **keywords)
+    assert plan['tasks']['integrity_scan'] == {'id': 'scan', 'generation': 3}
+    assert plan['tasks']['opening_segmentation'] == {'id': 'segments', 'generation': 2}
+    assert connections == [{'read_only': True, 'authoritative': True, 'background': True}]
+    assert database.execute_native.call_count == 0
+    staging.append({'exists': 1})
+    with pytest.raises(ValueError, match='newer staging'):
+        recovery.preflight_queued_rebuild(*arguments, **keywords)
+
+
+def test_selected_cli_defaults_to_dry_run_and_resume_cannot_change_pins(selected, monkeypatch, tmp_path):
+    recovery, prepared, row, database = selected
+    path = Path(__file__).resolve().parents[2] / 'scripts/recover-opening-publication.py'
+    spec = importlib.util.spec_from_file_location('selected_rebuild_cli', path)
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(cli, 'preflight_queued_rebuild', Mock(return_value=prepared))
+    monkeypatch.setattr(cli, 'capture_evidence', Mock(return_value={'private': 'evidence'}))
+    execute = Mock()
+    monkeypatch.setattr(cli, 'finish_queued_rebuild', execute)
+    monkeypatch.setattr(recovery, 'background_lease', nullcontext)
+    connections = []
+    def connection(**kwargs):
+        connections.append(kwargs)
+        return nullcontext(database)
+    monkeypatch.setattr(recovery.postgres_store, 'connection', connection)
+    args = SimpleNamespace(mode=recovery.QUEUED_REBUILD_MODE, task_id='target', repertoire_id='caro', generation=2,
+                           target='target-hash', day=prepared['day'], source_revision=197, prefix_revision=0,
+                           output=str(tmp_path / 'private'), resume=False, apply=False, max_seconds=1200, max_slices=5)
+    cli.selected_rebuild_main(args)
+    execute.assert_not_called()
+    assert connections == [{'read_only': True, 'authoritative': True, 'background': True}]
+    assert json.loads((Path(args.output) / 'preflight.json').read_text()) == prepared
+    args.resume = True
+    args.source_revision = 198
+    with pytest.raises(ValueError, match='differs from command'):
+        cli.selected_rebuild_main(args)
+    execute.assert_not_called()
