@@ -327,6 +327,13 @@ def classify_graph_cards_in_transaction(
             raise RuntimeError("Published graph card disappeared before classification")
         kind = "prefix" if classification[0] else "response"
         next_state = "new" if classification[1] else "locked"
+        if 'maintenance_scope' in task and database.execute_native(
+            "SELECT 1 FROM cards WHERE id=%s AND kind<>%s AND (introduced_at IS NOT NULL "
+            "OR EXISTS(SELECT 1 FROM reviews WHERE card_id=cards.id) "
+            "OR EXISTS(SELECT 1 FROM queue_attempt_origins WHERE card_id=cards.id AND issued_as_head=1))",
+            (card_id, kind),
+        ).fetchone():
+            raise ValueError('Selected rebuild would reclassify a protected card; stop for diagnosis')
         database.execute_native(
             "UPDATE cards SET archived=0,kind=%s,"
             "state=CASE WHEN state IN ('new','locked') AND introduced_at IS NULL "
@@ -530,6 +537,17 @@ def cleanup_graph_cards_in_transaction(
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
+    if 'maintenance_scope' in task and prepared.obsolete_card_ids:
+        protected = database.execute_native(
+            "SELECT 1 FROM daily_queue queue WHERE queue.card_id=ANY(%s::text[]) "
+            "AND (EXISTS(SELECT 1 FROM queue_attempt_origins origin "
+            "WHERE origin.queue_entry_id=queue.id AND origin.issued_as_head=1) "
+            "OR queue.id=(SELECT head.id FROM daily_queue head WHERE head.queue_date=%s "
+            "AND head.status='queued' ORDER BY head.position,head.id LIMIT 1)) LIMIT 1",
+            (list(prepared.obsolete_card_ids), payload['local_day']),
+        ).fetchone()
+        if protected:
+            raise ValueError('Selected rebuild would retire a protected queue entry; stop for diagnosis')
     remove_obsolete_graph_memberships(database, repertoire_id, generation, prepared.obsolete_card_ids)
     return advance_task_slice_in_transaction(
         database, task, next_phase="cleanup",
