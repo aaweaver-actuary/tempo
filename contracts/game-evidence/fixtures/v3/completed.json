@@ -1,0 +1,16 @@
+{
+  "model": "EvidenceAcknowledgement",
+  "payload": {
+    "accepted_obligation_ids": [
+      "legacy-obligation"
+    ],
+    "contract_version": 3,
+    "delivery_id": "legacy-delivery",
+    "evidence_id": "legacy-evidence",
+    "evidence_revision": 1,
+    "learning_revision": 2,
+    "reason": null,
+    "status": "completed",
+    "workspace_id": "fixture"
+  }
+}

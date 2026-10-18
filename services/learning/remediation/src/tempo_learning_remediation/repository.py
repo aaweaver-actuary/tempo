@@ -3,10 +3,10 @@ from dataclasses import asdict
 import json
 import re
 
-from tempo_game_evidence_contracts import v1, v2
+from tempo_game_evidence_contracts import v1, v2, v3
 
 from .models import (AcceptedDecision, AdmissionResult, AttemptAuthority, CurrentMissProjection, ReceiveContext,
-                     RemediationError, ReviewOutcome, WorkItem, WorkPage)
+                     RemediationError, ReviewOutcome, WorkItem, WorkPage, accepted_storage_identity)
 from .policy import PAGE_SIZE
 from .validation import canonical, digest, instant, logical_hash, validate_delivery
 
@@ -96,7 +96,7 @@ class PostgresRepository:
                       ("tempo:learning-remediation:" + self.workspace_id,))
 
     def _ack(self, delivery, status, *, reason=None, revision=None):
-        module = v2 if isinstance(delivery, v2.EvidenceDelivery) else v1
+        module = {1: v1, 2: v2, 3: v3}[delivery.contract_version]
         return module.EvidenceAcknowledgement(contract_version=delivery.contract_version,
             workspace_id=self.workspace_id, delivery_id=delivery.delivery_id,
             evidence_id=delivery.evidence_id, evidence_revision=delivery.evidence_revision,
@@ -109,7 +109,7 @@ class PostgresRepository:
                             (self.workspace_id, delivery_id)).fetchone()
         if row is None:
             return None
-        module = v2 if row[0]["contract_version"] == 2 else v1
+        module = {1: v1, 2: v2, 3: v3}[row[0]["contract_version"]]
         return module.EvidenceAcknowledgement.model_validate(row[0])
 
     def _existing_delivery(self, delivery):
@@ -312,7 +312,7 @@ class PostgresRepository:
         if current.workspace_id != self.workspace_id:
             raise RemediationError("terminal_failure", "accepted_workspace_mismatch")
         if not current.active or (attempt.card_id, attempt.card_revision, attempt.publication_id, attempt.publication_generation) != (
-                current.card_id, current.card_revision, current.publication_id, current.publication_generation):
+                current.card_id, current.card_revision, *accepted_storage_identity(current)):
             raise RemediationError("stale_revision", "attempt_authority_changed")
 
     def bind_attempt(self, attempt: AttemptAuthority, current: AcceptedDecision) -> int:

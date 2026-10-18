@@ -1,0 +1,83 @@
+{
+  "model": "EvidenceDelivery",
+  "payload": {
+    "authority": {
+      "canonical_prefix_revision": 0,
+      "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+      "catalogue_generation": 3,
+      "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
+      "graph_generation": 7,
+      "graph_state": "ready",
+      "kind": "legacy_graph",
+      "repertoire_id": "ruy",
+      "scope_source_revision": 2,
+      "source_digest": "8f1821009b9f97e7295156a4e417c04573850e57a1a28d499f64a4acfa7840ce",
+      "target_id": "synthetic-target",
+      "workspace_id": "fixture"
+    },
+    "capture_digest": "57a7d6404b14b72ba423923beade74f1224e6de8b7c97a2a8596873276b81bac",
+    "captured_at": "2026-10-18T18:13:07Z",
+    "comparisons": [
+      {
+        "card_id": "physical-black",
+        "card_revision": 1,
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "executable_digest": "dd4be15d71735dbc668d2da969a0325ab958778e600c0a843c09962ce9237732",
+        "exercise_ply": 5,
+        "expected_moves": [
+          "a7a6"
+        ],
+        "route_id": "ruy-route",
+        "route_ply": 5,
+        "status": "missed"
+      }
+    ],
+    "contract_version": 3,
+    "delivery_id": "legacy-delivery",
+    "encounters": [
+      {
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "observed_move": "g8f6",
+        "ply": 5,
+        "position_key": "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq -"
+      }
+    ],
+    "evidence_id": "legacy-evidence",
+    "evidence_revision": 1,
+    "game_id": "lichess:synthetic-game",
+    "game_revision": 1,
+    "game_source": {
+      "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "provider": "lichess",
+      "provider_game_id": "synthetic-game",
+      "raw_source_digest": "c96eec2fe838c37e148ef32f1ae6e3b89cdebc2fe76aa9e10aa5ec597005813e"
+    },
+    "misses": [
+      {
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "miss_id": "legacy-miss",
+        "reason": "outside_repertoire"
+      }
+    ],
+    "obligations": [
+      {
+        "card_id": "physical-black",
+        "card_revision": 1,
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "kind": "real_game_miss",
+        "miss_id": "legacy-miss",
+        "obligation_id": "legacy-obligation",
+        "obligation_revision": 1,
+        "source_evidence_id": "legacy-evidence",
+        "source_revision": 1
+      }
+    ],
+    "occurred_at": "2026-10-17T12:00:00Z",
+    "withdrawals": [],
+    "workspace_id": "fixture"
+  }
+}

@@ -10,11 +10,12 @@ from tempo_a_bridge.cli import Operator,execution_bundle
 
 def test_installed_operator_is_independent_of_all_domain_services():
     assert 'site-packages' in Path(tempo_a_bridge.__file__).parts
-    assert metadata.requires('tempo-a-bridge') == ['chess==1.11.2']
+    assert set(metadata.requires('tempo-a-bridge')) == {'chess==1.11.2', 'tempo-game-evidence-contracts==3.0.0'}
     for path in Path(tempo_a_bridge.__file__).parent.glob('*.py'):
         tree=ast.parse(path.read_text())
         imports=[node.module for node in ast.walk(tree) if isinstance(node,ast.ImportFrom) and node.level==0]
-        assert not any(name.startswith(('tempo_content','tempo_learning','tempo_game_evidence')) for name in imports)
+        assert not any(name.startswith(('tempo_content','tempo_learning')) or
+                       name == 'tempo_game_evidence' or name.startswith('tempo_game_evidence.') for name in imports)
 
 
 def test_operator_requires_private_explicit_credential_and_safe_origin(tmp_path):

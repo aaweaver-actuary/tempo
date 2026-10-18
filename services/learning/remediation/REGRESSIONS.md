@@ -1,5 +1,16 @@
 # Remediation owning regressions
 
+## Typed legacy authority intake
+
+`tests/test_legacy_validation.py` owns separate typed authority, no fake Content
+facts, exact physical/route/executable binding, complete authored alternatives,
+introduction chronology, withdrawal-only source fencing and capture UTC overflow.
+The normal module suite discovers it. The native owning case
+`test_native_legacy_variant_reuses_receipt_frontier_settlement_and_outer_transaction`
+adds outer rollback, response replay, a pre-acceptance attempt fence, shared
+qualifying module settlement and invalidation using v3. It is collected but
+unexecuted at this checkpoint and does not prove actual normal Study adoption.
+
 The installed package suite owns semantic linkage, validity, explicit gameplay
 priority, cap/progression exceptions, alias deduplication, protected heads and
 ordinary frozen order. `tests/test_validation.py`, `test_policy.py`, and

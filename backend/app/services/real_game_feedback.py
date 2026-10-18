@@ -34,6 +34,11 @@ def outstanding_miss_sql(*, postgres: bool = False, columns: str = "DISTINCT eve
     """
     study_instant = "CAST(review.reviewed_at AS TIMESTAMPTZ)" if postgres else "real_game_instant(review.reviewed_at)"
     miss_instant = "CAST(event.played_at AS TIMESTAMPTZ)" if postgres else "real_game_instant(event.played_at)"
+    if postgres:
+        from .legacy_game_evidence_scope import owned_legacy_scope_sql
+        bridge_exclusion = "AND NOT " + owned_legacy_scope_sql()
+    else:
+        bridge_exclusion = ""
     return f"""SELECT {columns}
         FROM current_repertoire_decision_events event
         JOIN imported_games game ON game.id=event.game_id
@@ -48,6 +53,7 @@ def outstanding_miss_sql(*, postgres: bool = False, columns: str = "DISTINCT eve
               WHERE link.card_id=card.id AND link.repertoire_id=event.repertoire_id))
           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                          WHERE block.card_id=card.id AND block.repertoire_id=event.repertoire_id)
+          {bridge_exclusion}
           AND NOT EXISTS(SELECT 1 FROM reviews review
                          WHERE review.card_id=card.id AND review.source_kind='study'
                            AND review.invalidated_at IS NULL AND {study_instant}>={miss_instant})

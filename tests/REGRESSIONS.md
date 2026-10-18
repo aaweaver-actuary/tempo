@@ -1,3 +1,16 @@
+## Legacy game evidence receiver checkpoint
+
+`backend/tests/test_remediation_migration_registration.py` owns migration 050's
+exact installed 12-table schema/checksum registration, backend target identity,
+failure before database connection for changed inputs, and partial-apply guard.
+`backend/tests/test_legacy_game_evidence_commands.py` owns exact physical-card
+source projection, complete alternative coverage, stable identity across Study,
+known introduction chronology, source/route/prefix refusal, bounded read pages,
+capture revision coherence, worker preparation/replay, card-before-module lock
+order, acceptance rechecks, foreground deferral, immutable read guards and
+disjoint legacy scope ownership. These are source/fake-writer checks, not native
+migration, operation durability, actual queue issuance or normal review proof.
+
 ## Study Priority v1 diagnostic native allocation
 
 - `tests/runner/postgres-test-speedups.test.mjs` owns `study_priority_diagnostic_native_allocation_retains_essential_clients_and_original_read_deadline`: the original segmentation replay and 50 ms read assertions remain unchanged. A 0.95 CPU / 1,024 MiB helper plus PostgreSQL, Redis, API, foreground writer and web totals exactly 2 CPU / 1,888 MiB. Actual generated Python checks CPU and memory limits before running the unchanged proof; an extra allocation or active Maia must fail admission.

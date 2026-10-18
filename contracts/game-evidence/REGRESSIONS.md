@@ -1,5 +1,13 @@
 # game-evidence contract regressions (#264)
 
+## Explicit legacy authority v3
+
+`tests/test_v3.py` owns independent fixture/schema parity, mixed-authority
+rejection, exact observation/physical-revision linkage, bounds, known timestamps,
+explicit withdrawals and stable authority identity. Existing v1/v2 exports remain
+unchanged. Source model cases pass at this checkpoint; JSON Schema, installed
+artifact and complete exchange qualification remain pending dependencies/window.
+
 Owning suite: `tests/test_wire.py` plus the subsystem reference test file.
 Exact collected identities are reported by pytest; empty selection fails.
 

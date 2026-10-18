@@ -1,5 +1,12 @@
 # A operator regression ownership
 
+Legacy observation identity now uses the shared game-evidence contract artifact,
+not service code. The installed boundary case in `tests/test_operator.py` permits
+that declared dependency only; its new artifact combination is unqualified.
+`tests/test_legacy_observation.py` additionally owns full authored alternatives
+with missing/revision-2 bindings, unchanged identity across ordinary Study and
+introduction/recapture, and explicit nonempty-prefix refusal.
+
 `tests/test_operator.py` owns installed independence, private operator credential
 and origin validation, and serialized Content-to-Learning identity/alternative
 mapping. The normal component suite rejects zero selection.

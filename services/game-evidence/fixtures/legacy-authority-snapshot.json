@@ -2,17 +2,18 @@
   "authority": {
     "canonical_prefix_revision": 0,
     "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+    "catalogue_generation": 3,
     "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
     "graph_generation": 7,
     "graph_state": "ready",
     "kind": "legacy_graph",
     "repertoire_id": "ruy",
     "scope_source_revision": 2,
-    "source_digest": "ac9044a925f52dbfe940ebfc67d2989af23a9f1b2ea945bbefc50e9463dcf745",
+    "source_digest": "8f1821009b9f97e7295156a4e417c04573850e57a1a28d499f64a4acfa7840ce",
     "target_id": "synthetic-target",
     "workspace_id": "fixture"
   },
-  "capture_digest": "04d601966a5eb1d90cddc227bfd109db480aa473e88dde77556a9d4f2e3d565c",
+  "capture_digest": "57a7d6404b14b72ba423923beade74f1224e6de8b7c97a2a8596873276b81bac",
   "captured_at": "2026-10-18T18:13:07Z",
   "cards": [
     {
@@ -73,13 +74,14 @@
   "observed_after": {
     "canonical_prefix_revision": 0,
     "catalogue_digest": "eeb9c53d831cac5c04c0b3a12b594123dae23aec12b9b17dd1db0f6d3d68b178",
+    "catalogue_generation": 3,
     "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
     "graph_generation": 7,
     "graph_state": "ready",
     "kind": "legacy_graph",
     "repertoire_id": "ruy",
     "scope_source_revision": 2,
-    "source_digest": "ac9044a925f52dbfe940ebfc67d2989af23a9f1b2ea945bbefc50e9463dcf745",
+    "source_digest": "8f1821009b9f97e7295156a4e417c04573850e57a1a28d499f64a4acfa7840ce",
     "target_id": "synthetic-target",
     "workspace_id": "fixture"
   },

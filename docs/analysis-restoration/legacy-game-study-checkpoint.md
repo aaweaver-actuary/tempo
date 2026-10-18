@@ -158,7 +158,12 @@ is in task-3/evidence.
 
 Before freezing a storage key, capture hashing now uses a fixed source-field
 projection. Card scheduling state, FSRS values, review/queue rows, display names,
-and capture/review timestamps are excluded. Introduction is a boolean marker,
-not its date. Source revisions, executable/revision/color, memberships and
+and capture/review timestamps are excluded. Introduction markers and dates are
+also excluded; introduction eligibility/chronology is checked separately. Source revisions, executable/revision/color, memberships and
 availability remain included. Ordinary Study or harmless recapture therefore
 does not change source identity; true authority edits still invalidate it.
+
+The next [receiver checkpoint](legacy-game-study-receiver-checkpoint.md) records
+the explicit v3 wire, typed accepted decision, backend migration/command adoption
+and remaining installed/native/Study gates. It supersedes the earlier pending
+implementation inventory where specifically described.

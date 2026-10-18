@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 import chess
 from pydantic import Field, model_validator
 from tempo_chess_core import canonical_fen_key
+from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken
 
 from .snapshot import StrictModel, RouteV2, compile_routes, verify_route_definitions
 
@@ -24,20 +25,6 @@ Move = Annotated[str, Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")]
 def authority_digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
                                      ensure_ascii=False, allow_nan=False).encode()).hexdigest()
-
-
-class LegacyAuthorityToken(StrictModel):
-    kind: Literal["legacy_graph"]
-    target_id: Identifier
-    workspace_id: Identifier
-    repertoire_id: Identifier
-    scope_source_revision: int = Field(ge=0)
-    canonical_prefix_revision: int = Field(ge=0)
-    source_digest: Digest
-    catalogue_digest: Digest
-    graph_digest: Digest
-    graph_generation: int = Field(ge=1)
-    graph_state: Literal["ready", "building", "failed"]
 
 
 class PhysicalCard(StrictModel):

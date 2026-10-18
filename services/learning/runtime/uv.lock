@@ -433,7 +433,7 @@ requires-dist = [{ name = "pydantic", specifier = "==2.12.5" }]
 
 [[package]]
 name = "tempo-game-evidence-contracts"
-version = "2.0.0"
+version = "3.0.0"
 source = { directory = "../../../contracts/game-evidence" }
 dependencies = [
     { name = "pydantic" },

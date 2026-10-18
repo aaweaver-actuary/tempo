@@ -8,7 +8,9 @@ dependencies = [
     "python-chess>=1.999",
     "tempo-scheduling==0.2.0",
     "tempo-chess-core==0.1.0",
+    "tempo-game-evidence-contracts==3.0.0",
     "tempo-learning-review==0.1.0",
+    "tempo-learning-remediation==0.1.0",
     "tempo-learning-runtime==0.1.0",
 ]
 
@@ -23,4 +25,6 @@ dev = [
 tempo-scheduling = { path = "../packages/scheduling" }
 tempo-chess-core = { path = "../packages/chess-core" }
 tempo-learning-review = { path = "../services/learning/application" }
+tempo-learning-remediation = { path = "../services/learning/remediation" }
 tempo-learning-runtime = { path = "../services/learning/runtime" }
+tempo-game-evidence-contracts = { path = "../contracts/game-evidence" }

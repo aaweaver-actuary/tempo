@@ -1,0 +1,532 @@
+{
+  "$defs": {
+    "Comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "card_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "card_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Card Revision",
+          "type": "integer"
+        },
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "encounter_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Encounter Id",
+          "type": "string"
+        },
+        "executable_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Executable Digest",
+          "type": "string"
+        },
+        "exercise_ply": {
+          "maximum": 39,
+          "minimum": 0,
+          "title": "Exercise Ply",
+          "type": "integer"
+        },
+        "expected_moves": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Expected Moves",
+          "type": "array"
+        },
+        "route_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Route Id",
+          "type": "string"
+        },
+        "route_ply": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Route Ply",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "matched",
+            "missed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encounter_id",
+        "card_id",
+        "card_revision",
+        "decision_id",
+        "expected_moves",
+        "status",
+        "route_id",
+        "route_ply",
+        "exercise_ply",
+        "executable_digest"
+      ],
+      "title": "Comparison",
+      "type": "object"
+    },
+    "Encounter": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "encounter_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Encounter Id",
+          "type": "string"
+        },
+        "observed_move": {
+          "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+          "title": "Observed Move",
+          "type": "string"
+        },
+        "ply": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Ply",
+          "type": "integer"
+        },
+        "position_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Position Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encounter_id",
+        "ply",
+        "position_key",
+        "decision_id",
+        "observed_move"
+      ],
+      "title": "Encounter",
+      "type": "object"
+    },
+    "EvidenceObligation": {
+      "additionalProperties": false,
+      "properties": {
+        "card_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "card_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Card Revision",
+          "type": "integer"
+        },
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "encounter_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Encounter Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "real_game_miss",
+          "title": "Kind",
+          "type": "string"
+        },
+        "miss_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Miss Id",
+          "type": "string"
+        },
+        "obligation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Obligation Id",
+          "type": "string"
+        },
+        "obligation_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Obligation Revision",
+          "type": "integer"
+        },
+        "source_evidence_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Evidence Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "obligation_id",
+        "obligation_revision",
+        "source_evidence_id",
+        "source_revision",
+        "card_id",
+        "card_revision",
+        "decision_id",
+        "encounter_id",
+        "miss_id",
+        "kind"
+      ],
+      "title": "EvidenceObligation",
+      "type": "object"
+    },
+    "EvidenceWithdrawal": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_obligation_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Expected Obligation Revision",
+          "type": "integer"
+        },
+        "obligation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Obligation Id",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "source_corrected",
+            "source_excluded",
+            "source_deleted",
+            "reanalysis"
+          ],
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "obligation_id",
+        "expected_obligation_revision",
+        "reason"
+      ],
+      "title": "EvidenceWithdrawal",
+      "type": "object"
+    },
+    "LegacyAuthorityToken": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_prefix_revision": {
+          "minimum": 0,
+          "title": "Canonical Prefix Revision",
+          "type": "integer"
+        },
+        "catalogue_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Catalogue Digest",
+          "type": "string"
+        },
+        "catalogue_generation": {
+          "minimum": 0,
+          "title": "Catalogue Generation",
+          "type": "integer"
+        },
+        "graph_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Graph Digest",
+          "type": "string"
+        },
+        "graph_generation": {
+          "minimum": 1,
+          "title": "Graph Generation",
+          "type": "integer"
+        },
+        "graph_state": {
+          "enum": [
+            "ready",
+            "building",
+            "failed"
+          ],
+          "title": "Graph State",
+          "type": "string"
+        },
+        "kind": {
+          "const": "legacy_graph",
+          "title": "Kind",
+          "type": "string"
+        },
+        "repertoire_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Repertoire Id",
+          "type": "string"
+        },
+        "scope_source_revision": {
+          "minimum": 0,
+          "title": "Scope Source Revision",
+          "type": "integer"
+        },
+        "source_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "workspace_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target_id",
+        "workspace_id",
+        "repertoire_id",
+        "scope_source_revision",
+        "canonical_prefix_revision",
+        "source_digest",
+        "catalogue_digest",
+        "catalogue_generation",
+        "graph_digest",
+        "graph_generation",
+        "graph_state"
+      ],
+      "title": "LegacyAuthorityToken",
+      "type": "object"
+    },
+    "LegacyGameSource": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "provider": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_game_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Provider Game Id",
+          "type": "string"
+        },
+        "raw_source_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Raw Source Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "provider_game_id",
+        "content_hash",
+        "raw_source_digest"
+      ],
+      "title": "LegacyGameSource",
+      "type": "object"
+    },
+    "RealGameMiss": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "encounter_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Encounter Id",
+          "type": "string"
+        },
+        "miss_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Miss Id",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "miss_id",
+        "encounter_id",
+        "decision_id",
+        "reason"
+      ],
+      "title": "RealGameMiss",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/game-evidence/v3/EvidenceDelivery.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authority": {
+      "$ref": "#/$defs/LegacyAuthorityToken"
+    },
+    "capture_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capture Digest",
+      "type": "string"
+    },
+    "captured_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+      "title": "Captured At",
+      "type": "string"
+    },
+    "comparisons": {
+      "items": {
+        "$ref": "#/$defs/Comparison"
+      },
+      "maxItems": 128,
+      "title": "Comparisons",
+      "type": "array"
+    },
+    "contract_version": {
+      "const": 3,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "delivery_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Delivery Id",
+      "type": "string"
+    },
+    "encounters": {
+      "items": {
+        "$ref": "#/$defs/Encounter"
+      },
+      "maxItems": 128,
+      "title": "Encounters",
+      "type": "array"
+    },
+    "evidence_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "evidence_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Evidence Revision",
+      "type": "integer"
+    },
+    "game_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Game Id",
+      "type": "string"
+    },
+    "game_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Game Revision",
+      "type": "integer"
+    },
+    "game_source": {
+      "$ref": "#/$defs/LegacyGameSource"
+    },
+    "misses": {
+      "items": {
+        "$ref": "#/$defs/RealGameMiss"
+      },
+      "maxItems": 128,
+      "title": "Misses",
+      "type": "array"
+    },
+    "obligations": {
+      "items": {
+        "$ref": "#/$defs/EvidenceObligation"
+      },
+      "maxItems": 128,
+      "title": "Obligations",
+      "type": "array"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "withdrawals": {
+      "items": {
+        "$ref": "#/$defs/EvidenceWithdrawal"
+      },
+      "maxItems": 128,
+      "title": "Withdrawals",
+      "type": "array"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "delivery_id",
+    "evidence_id",
+    "evidence_revision",
+    "game_id",
+    "game_revision",
+    "occurred_at",
+    "authority",
+    "capture_digest",
+    "captured_at",
+    "game_source",
+    "encounters",
+    "comparisons",
+    "misses",
+    "obligations",
+    "withdrawals"
+  ],
+  "title": "EvidenceDelivery",
+  "type": "object"
+}

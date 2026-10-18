@@ -18,7 +18,8 @@ def inputs():
         "moves": json.loads(tables["repertoire_lines"][0]["moves_json"])}]
     token = dict(kind="legacy_graph", target_id="synthetic", workspace_id="test", repertoire_id="italian",
         scope_source_revision=0, canonical_prefix_revision=0, source_digest=authority_source_digest(tables),
-        catalogue_digest=fingerprint(catalogue), graph_generation=7, graph_digest=authority_graph_digest(graph), graph_state="ready")
+        catalogue_digest=fingerprint(catalogue), catalogue_generation=3,
+        graph_generation=7, graph_digest=authority_graph_digest(graph), graph_state="ready")
     return dict(tables=tables, graphs=graph, authority=token, observed_after=deepcopy(token),
                 captured_at="2026-10-18T18:13:07Z")
 
@@ -119,9 +120,25 @@ def test_authority_source_identity_survives_ordinary_study_and_harmless_recaptur
 
 @pytest.mark.parametrize("field,value", [("revision", 2), ("moves_json", '["d2d4"]'),
     ("trained_color", "black"), ("archived", 1), ("pending_validation", 1),
-    ("superseded_by", "successor"), ("introduced_at", None)])
+    ("superseded_by", "successor")])
 def test_authority_source_identity_still_fences_true_content_or_eligibility_changes(field, value):
     arguments = inputs()
     before = authority_source_digest(arguments["tables"])
     arguments["tables"]["cards"][0][field] = value
     assert authority_source_digest(arguments["tables"]) != before
+
+
+def test_ordinary_introduction_changes_eligibility_without_changing_source_identity():
+    arguments = inputs()
+    before = authority_source_digest(arguments["tables"])
+    arguments["tables"]["cards"][0]["introduced_at"] = None
+    assert authority_source_digest(arguments["tables"]) == before
+    snapshot, _ = comparison_snapshot(**arguments)
+    assert snapshot["cards"][0]["introduced"] is False
+
+
+def test_nonempty_canonical_prefix_is_an_explicit_unsupported_boundary():
+    arguments = inputs()
+    arguments["tables"]["repertoires"][0]["canonical_prefix_moves_json"] = '["e2e4"]'
+    with pytest.raises(ValueError, match="canonical_prefix_adapter_unsupported"):
+        comparison_snapshot(**arguments)

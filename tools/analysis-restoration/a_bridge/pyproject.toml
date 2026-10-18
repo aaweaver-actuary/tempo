@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "tempo-a-bridge"
 version = "0.1.0"
 requires-python = ">=3.12,<3.15"
-dependencies = ["chess==1.11.2"]
+dependencies = ["chess==1.11.2", "tempo-game-evidence-contracts==3.0.0"]
 
 [dependency-groups]
 dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0", "jsonschema==4.25.1"]
@@ -17,3 +17,6 @@ tempo-a-legacy-export = "tempo_a_bridge.legacy:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tempo_a_bridge"]
+
+[tool.uv.sources]
+tempo-game-evidence-contracts = { path = "../../../contracts/game-evidence" }
