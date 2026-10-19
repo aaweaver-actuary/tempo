@@ -47,7 +47,7 @@ POSTGRES_IMAGE_ID = "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b45225
 UV_VERSION = "0.9.3"
 UV_WHEELS = {
     "aarch64": ("https://files.pythonhosted.org/packages/07/19/bb8aa38b4441e03c742e71a31779f91b42d9db255ede66f80cdfdb672618/uv-0.9.3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", "406ab1a8b313b4b3cf67ad747fb8713a0c0cf3d3daf11942b5a4e49f60882339"),
-    "x86_64": ("https://files.pythonhosted.org/packages/82/45/488417c6c0127c00bcdfac3556ae2ea0597df8245fe5f9bcfda35ebdbe85/uv-0.9.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.musllinux_1_1_x86_64.whl", "73ae4bbc7d555ba1738da08c64b55f21ab0ea0ff85636708cebaf460d98a440d"),
+    "x86_64": ("https://files.pythonhosted.org/packages/82/45/488417c6c0127c00bcdfac3556ae2ea0597df8245fe5f9bcfda35ebdbe85/uv-0.9.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "73ae4bbc7d555ba1738da08c64b55f21ab0ea0ff85636708cebaf460d98a440d"),
 }
 
 
@@ -233,6 +233,17 @@ def run_suite(timer, python, directory, name, project, nodes, expected, importli
     return checker.validate_inventory(receipts["collection"], receipts["execution"], directory / (name + ".xml"))
 
 
+def copy_artifact_source(source_root, restricted):
+    """Use the same package boundary for private staging and artifact builds."""
+    for package in PACKAGES:
+        target = restricted / package
+        target.mkdir(parents=True)
+        for item in sorted(staging.PACKAGE_PARTS):
+            source = source_root / package / item
+            if source.is_dir(): shutil.copytree(source, target / item, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+            elif source.is_file(): shutil.copy2(source, target / item)
+
+
 def inside(mode, relative):
     staging.verify_source(ROOT, os.environ.get("TEMPO_QUALIFICATION_SOURCE_SHA256"))
     verify_helper_caps()
@@ -251,15 +262,7 @@ def inside(mode, relative):
             work = root / "work"
             work.mkdir()
             restricted = work / "source"
-            allowed = ("src", "schemas", "fixtures", "examples", "tests", "integration", "run_suite.py",
-                       "pyproject.toml", "uv.lock", "README.md", "REGRESSIONS.md")
-            for package in PACKAGES:
-                target = restricted / package
-                target.mkdir(parents=True)
-                for item in allowed:
-                    source = ROOT / package / item
-                    if source.is_dir(): shutil.copytree(source, target / item, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
-                    elif source.is_file(): shutil.copy2(source, target / item)
+            copy_artifact_source(ROOT, restricted)
             def stage(command, label, cwd=None):
                 timer.run(command, cwd=cwd, log=destination / (label + ".log"))
             environment = work / "environment"

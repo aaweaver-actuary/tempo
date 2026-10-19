@@ -335,3 +335,101 @@ def test_controller_mounts_only_owned_tmp_then_copies_receipts_before_removal(tm
     assert host['staging']['receipts_copied'] and host['staging']['removed']
     assert (receipts[0].parent / 'inside.json').is_file()
     assert not mounts['/source'].parent.exists()
+
+
+def test_native_role_provisioning_dependency_is_required_and_hash_verified(tmp_path):
+    module = qualification.staging
+    provision = 'scripts/provision_postgres_roles.py'
+    assert provision in module.SOURCE_FILES
+    stage = module.OwnedStaging('required-native-source', 'head', base=tmp_path)
+    with pytest.raises(ValueError, match='Required runner source inputs missing'):
+        stage.stage_source(ROOT, module.SOURCE_FILES - {provision}, qualification.PACKAGES)
+    stage.stage_source(ROOT, module.SOURCE_FILES, qualification.PACKAGES)
+    assert (stage.source / provision).read_bytes() == (ROOT / provision).read_bytes()
+    manifest = module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+    assert manifest['files'][provision]['sha256'] == module.digest(ROOT / provision)
+    (stage.source / provision).write_text('changed provision implementation')
+    with pytest.raises(ValueError, match='Staged source bytes changed'):
+        module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+
+
+def test_remediation_migrations_survive_both_source_allowlists(tmp_path):
+    module = qualification.staging
+    package = 'services/learning/remediation'
+    names = [*module.SOURCE_FILES, *[path.relative_to(ROOT).as_posix()
+        for path in (ROOT / package / 'migrations').rglob('*') if path.is_file()]]
+    assert any(name.endswith('.sql') for name in names)
+    stage = module.OwnedStaging('required-migrations', 'head', base=tmp_path)
+    stage.stage_source(ROOT, names, qualification.PACKAGES)
+    restricted = tmp_path / 'artifact-source'
+    qualification.copy_artifact_source(stage.source, restricted)
+    for name in names:
+        if name.startswith(package + '/migrations/'):
+            assert (restricted / name).read_bytes() == (ROOT / name).read_bytes()
+    assert not module.source_allowed(package + '/unreviewed/config.json', qualification.PACKAGES)
+    assert not module.source_allowed(package + '/migrations/private/password', qualification.PACKAGES)
+    changed = next((stage.source / package / 'migrations').glob('*.sql'))
+    changed.write_text('changed migration')
+    with pytest.raises(ValueError, match='Staged source bytes changed'):
+        module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+
+
+@pytest.mark.parametrize('complete', [True, False])
+def test_native_case_receipts_survive_durable_copyback_and_stage_removal(tmp_path, complete):
+    module, stage, _ = staged_fixture(tmp_path)
+    (stage.output / 'inside.json').write_text(json.dumps({'complete': complete}))
+    case = stage.output / 'pytest/test_native_generated_accept_r0'; case.mkdir(parents=True)
+    names = ['process-cleanup.json', 'capture.json', 'capture.log', 'observation.json',
+             'preview.json', 'api-2.log', 'background-1.log', 'foreground-0.log', 'background-3.log']
+    if complete: names.append('native-trace.json')
+    for name in names: (case / name).write_text('receipt: ' + name)
+    (case / 'unknown.json').write_text('not a receipt')
+    (case / 'api-private.log').write_text('not a process log')
+    (case / 'secret.env').write_text('credential')
+    private = case / 'private'; private.mkdir(); (private / 'tempo_reader.password').write_text('credential')
+    (case.parent / 'test_native_generated_accept_rcurrent').symlink_to(case, target_is_directory=True)
+    destination = tmp_path / 'durable'; destination.mkdir()
+    stage.copy_back(stage.output, destination)
+    expected = {'inside.json', *(str(Path('pytest') / case.name / name) for name in names)}
+    assert set(stage.record['copied_files']) == expected
+    assert set(module.inventory(destination)) == expected
+    for name in names: assert (destination / 'pytest' / case.name / name).read_text() == 'receipt: ' + name
+    stage.remove(resources_absent=True)
+    assert stage.record['removed'] and not stage.root.exists()
+    assert set(module.inventory(destination)) == expected
+
+
+@pytest.mark.parametrize('fault', ['symlink', 'changed_during_copy'])
+def test_native_receipt_tampering_prevents_stage_removal(tmp_path, monkeypatch, fault):
+    module, stage, _ = staged_fixture(tmp_path)
+    receipt = stage.output / 'pytest/test_native_failure0/process-cleanup.json'
+    receipt.parent.mkdir(parents=True); receipt.write_text('original receipt')
+    if fault == 'symlink':
+        receipt.unlink(); receipt.symlink_to('/etc/hosts')
+    else:
+        original_copy = module.copy_entries
+        def changed_copy(source, destination, expected, **options):
+            receipt.write_text('tampered receipt')
+            original_copy(source, destination, expected, **options)
+        monkeypatch.setattr(module, 'copy_entries', changed_copy)
+    destination = tmp_path / 'durable'; destination.mkdir()
+    with pytest.raises(ValueError): stage.copy_back(stage.output, destination)
+    with pytest.raises(ValueError): stage.remove(resources_absent=True)
+    assert stage.root.exists() and not stage.record['receipts_copied']
+    assert not list(destination.rglob('*'))
+
+
+def test_pytest_shaped_unknown_source_cannot_escape_manifest_verification(tmp_path):
+    module, stage, _ = staged_fixture(tmp_path)
+    unknown = stage.source / 'pytest/test_native_failure0/unknown.py'
+    unknown.parent.mkdir(parents=True); unknown.write_text('unreviewed source')
+    with pytest.raises(ValueError, match='Staged source bytes changed'):
+        module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+
+
+def test_pinned_x86_uv_url_matches_published_093_wheel_identity():
+    url, checksum = qualification.UV_WHEELS['x86_64']
+    assert url == ('https://files.pythonhosted.org/packages/82/45/'
+        '488417c6c0127c00bcdfac3556ae2ea0597df8245fe5f9bcfda35ebdbe85/'
+        'uv-0.9.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl')
+    assert checksum == '73ae4bbc7d555ba1738da08c64b55f21ab0ea0ff85636708cebaf460d98a440d'

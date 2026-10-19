@@ -4,16 +4,18 @@ import json
 import os
 from pathlib import Path
 import posixpath
+import re
 import shutil
 import stat
 import tempfile
 import uuid
 import zipfile
 
-PACKAGE_PARTS = {'src', 'schemas', 'fixtures', 'examples', 'tests', 'integration',
+PACKAGE_PARTS = {'src', 'schemas', 'fixtures', 'examples', 'tests', 'integration', 'migrations',
                  'run_suite.py', 'pyproject.toml', 'uv.lock', 'README.md', 'REGRESSIONS.md'}
 SOURCE_FILES = {'scripts/qualify_legacy_bridge.py', 'scripts/qualify_legacy_backend.py',
                 'scripts/legacy_qualification_staging.py', 'scripts/apply_postgres_migrations.py',
+                'scripts/provision_postgres_roles.py',
                 'contracts/requirements-test.lock', 'services/learning/application/qualification.py',
                 'backend/pyproject.toml'}
 SOURCE_TREES = ('contracts/database-ownership/', 'backend/app/', 'backend/migrations/',
@@ -67,11 +69,22 @@ def entry(root, path):
             'executable': bool(path.stat().st_mode & 0o111)}
 
 
-def inventory(root, *, retained=False):
+def native_receipt_allowed(relative):
+    # pytest creates "current" directory symlinks and arbitrary scratch files.
+    # Retain only the native fixture's explicit, non-secret case outputs.
+    if len(relative.parts) != 3 or relative.parts[0] != 'pytest': return False
+    if not re.fullmatch(r'test_[A-Za-z0-9_]+[0-9]+', relative.parts[1]): return False
+    return (relative.name in {'native-trace.json', 'process-cleanup.json', 'capture.json',
+                              'observation.json', 'preview.json', 'capture.log'}
+            or re.fullmatch(r'(api|foreground|background)-[0-9]+\.log', relative.name) is not None)
+
+
+def inventory(root, *, retained=False, receipts=False):
     result, total = {}, 0
     for path in sorted(root.rglob('*')):
         relative = path.relative_to(root)
-        if private_path(relative) or relative.parts[0] == 'pytest': continue
+        if private_path(relative): continue
+        if receipts and relative.parts[0] == 'pytest' and not native_receipt_allowed(relative): continue
         if path.is_dir() and not path.is_symlink(): continue
         if retained and not retained_allowed(relative): continue
         result[relative.as_posix()] = value = entry(root, path)
@@ -181,7 +194,7 @@ class OwnedStaging:
 
     def copy_back(self, source, destination):
         self.check()
-        expected = inventory(source)
+        expected = inventory(source, receipts=True)
         if 'host.json' in expected: raise ValueError('Helper cannot replace the host control receipt')
         copy_entries(source, destination, expected, durable=True)
         self.record.update(receipts_copied=True, copied_files=expected)

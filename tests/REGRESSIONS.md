@@ -30,6 +30,14 @@ The same regular runner suite also owns private tmp staging, tracked source/hash
 artifact/native inventories, hard helper caps/no socket mount, immutable-image
 refusal, approved managed-window guard and process-group timeout behavior. It
 does not start Docker, build packages, install dependencies or run native tests.
+Its `test_native_role_provisioning_dependency_is_required_and_hash_verified` and
+`test_remediation_migrations_survive_both_source_allowlists` regressions preserve
+required native fixture code and installed migration inputs. The native receipt
+copy-back regressions retain success/failure traces, capture evidence and process
+logs before stage removal, while excluding private credentials, pytest current
+links and unknown scratch files; tampered receipts prevent removal. Unknown
+pytest-shaped source remains manifest-checked. The pinned x86 uv URL regression
+records the published 0.9.3 wheel identity without changing its checksum/version.
 
 `backend/tests/test_remediation_migration_registration.py` owns migration 050's
 exact installed 12-table schema/checksum registration, backend target identity,
