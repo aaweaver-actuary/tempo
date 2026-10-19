@@ -107,20 +107,32 @@ def load(name, path):
     return module
 
 
+staging = load("legacy_qualification_staging", ROOT / "scripts/legacy_qualification_staging.py")
+
+
 def write(path, value):
-    path.write_text(json.dumps(value, indent=2) + "\n")
+    temporary = path.with_name(path.name + '.writing-' + uuid.uuid4().hex)
+    with temporary.open('x') as stream:
+        stream.write(json.dumps(value, indent=2) + '\n')
+        stream.flush(); os.fsync(stream.fileno())
+    temporary.replace(path)
+    descriptor = os.open(path.parent, os.O_RDONLY)
+    try: os.fsync(descriptor)
+    finally: os.close(descriptor)
 
 
-def helper_arguments(image, name, evidence, mode, *, network=None, env_file=None, report_relative=""):
+def helper_arguments(image, name, evidence, mode, *, source, source_sha256, network=None, env_file=None, report_relative=""):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise ValueError("An explicitly approved local immutable helper image ID is required")
     args = ["run", "--name", name, "--label", "tempo.legacy-bridge-owner=" + name,
         "--label", "tempo.disposable=true", "--cpus", "1", "--memory", "768m", "--memory-swap", "768m",
         "--pids-limit", "128", "--tmpfs", "/tmp:rw,size=256m", "--init",
-        "--mount", f"type=bind,source={ROOT},target=/source,readonly",
+        "--mount", f"type=bind,source={source},target=/source,readonly",
         "--mount", f"type=bind,source={evidence},target=/evidence",
-        "--network", network or "bridge", "--env", "PYTHONDONTWRITEBYTECODE=1",
-        "--env", "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", "--env", "UV_CONCURRENT_BUILDS=1",
+        "--network", network or "bridge", "--env", "TEMPO_QUALIFICATION_SOURCE_SHA256=" + source_sha256,
+        "--env", "PYTHONDONTWRITEBYTECODE=1",
+        "--env", "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", "--env", "PYTHONPYCACHEPREFIX=/tmp/legacy-qualified-bytecode",
+        "--env", "UV_CONCURRENT_BUILDS=1",
         "--env", "CARGO_BUILD_JOBS=1", "--env", "RAYON_NUM_THREADS=1", "--env", "OMP_NUM_THREADS=1"]
     if env_file: args += ["--env-file", str(env_file)]
     python = "python" if mode == "artifacts" else "/evidence/work/environment/bin/python"
@@ -222,6 +234,7 @@ def run_suite(timer, python, directory, name, project, nodes, expected, importli
 
 
 def inside(mode, relative):
+    staging.verify_source(ROOT, os.environ.get("TEMPO_QUALIFICATION_SOURCE_SHA256"))
     verify_helper_caps()
     if sys.version_info[:2] not in {(3, 12), (3, 14)}:
         raise RuntimeError("The selected helper must use the supported qualification runtime 3.12 or 3.14")
@@ -276,6 +289,8 @@ def inside(mode, relative):
             report["source_removed"] = True
             report["tests"] = {name: run_suite(timer, python, destination, name, restricted / package, nodes, count, mode)
                 for name, package, nodes, count, mode in ARTIFACT_CASES}
+            report["installed_wheels"] = staging.verify_owned_environment(root)
+            report["qualified_manifest_sha256"] = staging.record_qualified_inputs(root)
             report["artifacts"] = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in wheels.iterdir()}
         else:
             from psycopg.conninfo import conninfo_to_dict
@@ -283,8 +298,9 @@ def inside(mode, relative):
             if (settings.get("host"), settings.get("dbname"), settings.get("user")) != ("native-db", "learning", "learning_runtime"):
                 raise RuntimeError("Only the generated owned internal fixture is accepted")
             python = "/evidence/work/environment/bin/python"
-            timer.run([uv, "pip", "install", "--python", python, "--reinstall", "--no-deps",
-                *map(str, sorted((root / "wheels").glob("*.whl")))], log=destination / "native-wheel-reinstall.log")
+            sys.dont_write_bytecode = True
+            sys.pycache_prefix = '/tmp/legacy-module-native-verified-bytecode'
+            report['installed_wheels'] = staging.verify_owned_environment(root)
             nodes = tuple("integration/test_postgres.py::" + name for name in NATIVE_NAMES)
             report["tests"] = run_suite(timer, python, destination, "native", root / "work/source/services/learning/remediation",
                                          nodes, 5, True)
@@ -316,25 +332,36 @@ def controller(args):
     signal.signal(signal.SIGALRM, phase_expired)
     signal.setitimer(signal.ITIMER_REAL, WORK_SECONDS[args.mode])
     cleanup_error = None
+    stage = None
     fixture = fixture_module = None
     network = None
-    env_file = directory / "private-native.env"
+    env_file = None
     helper = identity + "-helper"
     report["helper"] = helper
     write(directory / "host.json", report)
     try:
+        stage = staging.OwnedStaging(identity, report['source_head'])
+        report['staging'] = stage.record
+        write(directory / 'host.json', report)
+        tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT, text=True).split('\0')
+        stage.stage_source(ROOT, filter(None, tracked), PACKAGES)
+        relative = str(directory.relative_to(root)) if directory != root else ''
+        env_file = stage.output / relative / 'private-native.env'
+        env_file.parent.mkdir(parents=True, exist_ok=True)
         timer.run(["docker", "image", "inspect", args.helper_image_id], log=directory / "helper-image.log", maximum=15)
         if args.mode == "native":
             prior = json.loads((root / "host.json").read_text())
-            if (not prior["complete"] or prior["image"] != args.helper_image_id or prior["source_head"] != report["source_head"]):
+            if (not prior["complete"] or not prior.get("cleanup_verified") or prior["image"] != args.helper_image_id or prior["source_head"] != report["source_head"]):
                 raise RuntimeError("Native window requires the exact qualified artifact/image/head")
             artifact_report = json.loads((root / "inside.json").read_text())
             artifacts = artifact_report["artifacts"]
             if not artifact_report["complete"] or len(artifacts) != 12:
                 raise RuntimeError("Artifact inventory is incomplete")
             for name, digest in artifacts.items():
+                if Path(name).name != name: raise ValueError("Unsafe qualified artifact name")
                 if hashlib.sha256((root / "wheels" / name).read_bytes()).hexdigest() != digest:
                     raise RuntimeError("Qualified artifact bytes changed")
+            stage.stage_qualified(root, staging.qualified_inputs(root, prior), destination=stage.output)
             fixture_module = load("legacy_bridge_fixture", ROOT / "contracts/database-ownership/fixture.py")
             fixture_module.IMAGE = POSTGRES_IMAGE_ID
             def bounded_docker(*arguments, check=True):
@@ -376,11 +403,14 @@ def controller(args):
             env_file.write_text("TEMPO_REMEDIATION_OWNED=" + fixture.identity + "\nTEMPO_REMEDIATION_DATABASE=" + dsn +
                 "\nTEMPO_REMEDIATION_PLAN_DIR=/evidence/" + relative + "\n")
             env_file.chmod(0o600)
-        command = ["docker", *helper_arguments(args.helper_image_id, helper, root, args.mode,
+        command = ["docker", *helper_arguments(args.helper_image_id, helper, stage.output, args.mode,
+            source=stage.source, source_sha256=stage.record["source_manifest_sha256"],
             network=network, env_file=env_file if args.mode == "native" else None, report_relative=relative)]
         timer.run(command, log=directory / "helper.log")
-        if not json.loads((directory / "inside.json").read_text())["complete"]:
+        if not json.loads((stage.output / relative / "inside.json").read_text())["complete"]:
             raise RuntimeError("Helper qualification was incomplete")
+        if args.mode == 'artifacts':
+            report['qualified_manifest_sha256'] = json.loads((stage.output / 'inside.json').read_text())['qualified_manifest_sha256']
         report["complete"] = True
     except BaseException as error:
         report["error"] = type(error).__name__ + ": " + str(error)
@@ -417,7 +447,15 @@ def controller(args):
             report["cleanup_verified"] = True
         except BaseException as error:
             cleanup_error = type(error).__name__ + ": " + str(error)
-        env_file.unlink(missing_ok=True)
+        if env_file is not None: env_file.unlink(missing_ok=True)
+        if stage is not None:
+            try:
+                stage.copy_back(stage.output, root)
+                stage.remove(resources_absent=report['cleanup_verified'])
+            except BaseException as error:
+                report['complete'] = False
+                report['staging_error'] = type(error).__name__ + ': ' + str(error)
+                report['staging_retained'] = str(stage.root)
         report["cleanup_error"] = cleanup_error
         report["complete"] = report["complete"] and report["cleanup_verified"]
         write(directory / "host.json", report)

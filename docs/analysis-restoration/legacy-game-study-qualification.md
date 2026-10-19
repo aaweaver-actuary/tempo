@@ -111,7 +111,8 @@ loopback setup port and one owned internal network. The helper joins that networ
 without a Docker socket and accepts only generated `native-db/learning_runtime`
 fixture settings. No external database URL option exists. Total container caps:
 **2CPU,1,024MiB,384PIDs**, two containers and one owned internal network; the host
-only supervises/provisions. Installed wheel bytes are rechecked/reinstalled offline.
+only supervises/provisions. Installed wheel bytes and the retained environment manifest are rechecked offline;
+no native reinstallation repairs or hides a changed environment.
 
 Exactly five cases, each collected then executed once, in
 `services/learning/remediation/integration/test_postgres.py`:
@@ -147,3 +148,32 @@ removed only after the parent finishes that reuse and verifies preservation.
 
 Runner guard/unit tests and syntax checks are source evidence only. This new
 runner, its containers, package builds/locks and native paths have not executed.
+
+
+## Private tmp inputs and durable receipt copy-back
+
+The runner mounts only its own mode-0700 `/private/tmp/tempo-bridge-*` stage,
+not the development checkout or durable evidence directory. It copies only
+tracked allowlisted runner/backend/package inputs and hashes each file into a
+source manifest, verified again inside the read-only source mount. Other package
+sources, ignored files and private credential paths are excluded. The existing
+six installed-wheel byte comparisons share one implementation. A successful
+artifact run additionally binds retained tools, twelve artifacts, source-removed
+test inputs and the installed environment/dependencies to a hash manifest; native
+windows refuse drift rather than reinstalling over it. Earlier receipts lacking
+this installed-input manifest cannot authorize these new native runners.
+
+Fresh disposable fixture passfiles are created directly in the owned tmp stage.
+Live credentials are never copied, and fixture private paths, env files and pytest
+scratch are excluded from durable output. On exit, regular receipts/logs and
+qualified inputs are atomically copied back with per-file hash checks and fsync.
+The stage is removed only after resource absence and durable copy-back both
+succeed. Failure retains the owned stage path in `host.json`; it never silently
+loses evidence or claims verified cleanup. Work/cleanup deadlines, exact selected
+cases, image pins and kernel caps are unchanged. No product, migration or Study
+behavior is changed by this amendment.
+
+Focused regular runner tests cover these filesystem/provenance boundaries and
+a mocked controller transfer. They do not establish Docker bind availability,
+artifact builds, installed test execution, PostgreSQL/Redis or native success.
+The parent must grant each of those actual gates separately.

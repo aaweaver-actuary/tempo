@@ -66,6 +66,7 @@ def qualified_artifacts(directory, head, helper_image):
     for name, expected in inside['artifacts'].items():
         if Path(name).name != name or hashlib.sha256((directory / 'wheels' / name).read_bytes()).hexdigest() != expected:
             raise ValueError('Qualified artifact bytes changed')
+    shared.staging.qualified_inputs(directory, host)
     return inside['artifacts']
 
 
@@ -139,37 +140,11 @@ def verify_case_inventory(receipt):
         raise RuntimeError('Exact native node IDs changed; stop and rescope')
 
 
-def verify_installed_wheel(wheel, site):
-    """Compare only these six installed distributions with their verified wheels.
-
-    Installer-rewritten RECORD is excluded; generated __pycache__ is ignored
-    only because every native process uses a fresh cache prefix and -B.
-    """
-    site = site.resolve()
-    with zipfile.ZipFile(wheel) as archive:
-        expected, roots = {}, set()
-        for entry in archive.infolist():
-            if entry.is_dir(): continue
-            path = Path(entry.filename)
-            if path.is_absolute() or '..' in path.parts or '.data' in path.parts[0]:
-                raise ValueError('Unsupported/unsafe native wheel layout')
-            if path.name == 'RECORD' and path.parts[0].endswith('.dist-info'): continue
-            expected[path.as_posix()] = hashlib.sha256(archive.read(entry)).hexdigest()
-            if not path.parts[0].endswith('.dist-info'): roots.add(path.parts[0])
-        if not roots: raise ValueError('Wheel has no owned package files')
-        for name, digest in expected.items():
-            installed = site / name
-            if (not installed.is_file() or not installed.resolve().is_relative_to(site)
-                    or hashlib.sha256(installed.read_bytes()).hexdigest() != digest):
-                raise ValueError('Installed artifact differs from verified wheel: ' + name)
-        actual = {path.relative_to(site).as_posix() for root in roots for path in (site / root).rglob('*')
-                  if path.is_file() and '__pycache__' not in path.parts}
-        owned = {name for name in expected if name.split('/')[0] in roots}
-        if actual != owned: raise ValueError('Installed artifact file inventory differs from verified wheel')
-    return dict(wheel=wheel.name, verified_files=len(expected), owned_package_files=len(owned))
+verify_installed_wheel = shared.staging.verify_installed_wheel
 
 
 def inside():
+    shared.staging.verify_source(ROOT, os.environ.get('TEMPO_QUALIFICATION_SOURCE_SHA256'))
     shared.verify_helper_caps()
     root, qualified = Path('/evidence'), Path('/qualified')
     manifest = json.loads((root / 'native-manifest.json').read_text())
@@ -262,17 +237,26 @@ def host(options):
         report['observed_volume_names'] = sorted(observed_volumes)
         shared.write(directory / 'host.json', report)
     timer = shared.Deadline(WORK_SECONDS - (time.monotonic() - started), report)
-    private = directory / 'private'; private.mkdir(mode=0o700)
-    password = secrets.token_urlsafe(24)
-    (private / 'postgres.env').write_text('POSTGRES_PASSWORD=' + password + '\n')
-    (private / 'pgpass').write_text('bridge-postgres:5432:*:postgres:' + password + '\n')
-    for path in private.iterdir(): path.chmod(0o600)
-    manifest = dict(identity=identity, source_head=head, artifact_hashes=artifacts,
-        postgres_host='bridge-postgres', redis_host='bridge-redis',
-        admin_dsn='postgresql://postgres@bridge-postgres:5432/postgres', pgpass='/evidence/private/pgpass')
-    shared.write(directory / 'native-manifest.json', manifest)
-    shared.write(directory / 'host.json', report)
+    stage = None
+    private = None
     try:
+        stage = shared.staging.OwnedStaging(identity, head)
+        report['staging'] = stage.record
+        shared.write(directory / 'host.json', report)
+        tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT, text=True).split('\0')
+        stage.stage_source(ROOT, filter(None, tracked), shared.PACKAGES)
+        prior = json.loads((options.artifact_run / 'host.json').read_text())
+        stage.stage_qualified(options.artifact_run.resolve(), shared.staging.qualified_inputs(options.artifact_run.resolve(), prior))
+        private = stage.output / 'private'; private.mkdir(mode=0o700)
+        password = secrets.token_urlsafe(24)
+        (private / 'postgres.env').write_text('POSTGRES_PASSWORD=' + password + '\n')
+        (private / 'pgpass').write_text('bridge-postgres:5432:*:postgres:' + password + '\n')
+        for path in private.iterdir(): path.chmod(0o600)
+        manifest = dict(identity=identity, source_head=head, artifact_hashes=artifacts,
+            postgres_host='bridge-postgres', redis_host='bridge-redis',
+            admin_dsn='postgresql://postgres@bridge-postgres:5432/postgres', pgpass='/evidence/private/pgpass')
+        shared.write(stage.output / 'native-manifest.json', manifest)
+        shared.write(directory / 'host.json', report)
         for kind, image in report['images'].items():
             images = json.loads(timer.capture(['docker', 'image', 'inspect', image]).stdout)
             shared.write(directory / (kind + '-image.json'), images)
@@ -301,9 +285,10 @@ def host(options):
                 raise RuntimeError('Observed native service kernel caps differ: ' + kind)
             report.setdefault('observed_service_caps', {})[kind] = config
         arguments = docker_arguments('helper', names['helper'], options.helper_image_id, network)
-        arguments += ['--init', '--mount', f'type=bind,source={ROOT},target=/source,readonly',
-            '--mount', f'type=bind,source={options.artifact_run.resolve()},target=/qualified,readonly',
-            '--mount', f'type=bind,source={directory},target=/evidence', '--workdir', '/evidence',
+        arguments += ['--init', '--mount', f'type=bind,source={stage.source},target=/source,readonly',
+            '--mount', f'type=bind,source={stage.qualified},target=/qualified,readonly',
+            '--mount', f'type=bind,source={stage.output},target=/evidence', '--workdir', '/evidence',
+            '--env', 'TEMPO_QUALIFICATION_SOURCE_SHA256=' + stage.record['source_manifest_sha256'],
             '--env', 'TEMPO_BRIDGE_NATIVE_OWNED=' + identity, '--env', 'PYTHONDONTWRITEBYTECODE=1',
             '--env', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD=1', '--entrypoint', 'python', options.helper_image_id,
             '/source/scripts/qualify_legacy_backend.py', '--inside']
@@ -311,9 +296,9 @@ def host(options):
         container = json.loads(timer.capture(['docker', 'inspect', names['helper']]).stdout)[0]
         observe_container('helper', container, 'containers')
         if container['Image'] != options.helper_image_id: raise RuntimeError('Native helper image changed')
-        verify_container_mounts('helper', container, {'/source': (str(ROOT), False),
-            '/qualified': (str(options.artifact_run.resolve()), False), '/evidence': (str(directory), True)})
-        if not json.loads((directory / 'inside.json').read_text())['complete']: raise RuntimeError('Incomplete native proof')
+        verify_container_mounts('helper', container, {'/source': (str(stage.source), False),
+            '/qualified': (str(stage.qualified), False), '/evidence': (str(stage.output), True)})
+        if not json.loads((stage.output / 'inside.json').read_text())['complete']: raise RuntimeError('Incomplete native proof')
         report['complete'] = True
     except BaseException as error:
         report['error'] = type(error).__name__ + ': ' + str(error)
@@ -349,14 +334,22 @@ def host(options):
             # Remove only private directories under this freshly owned run,
             # after all its cgroups and network are independently absent.
             try:
-                for path in [private, *(directory / 'pytest').glob('*/private')]:
-                    if path.exists():
-                        if path.is_symlink() or not path.resolve().is_relative_to(directory):
+                for path in ([private, *(stage.output / 'pytest').glob('*/private')] if stage is not None else []):
+                    if path is not None and path.exists():
+                        if path.is_symlink() or not path.resolve().is_relative_to(stage.output):
                             raise RuntimeError('Private cleanup escaped the owned run')
                         shutil.rmtree(path)
             except BaseException as error:
                 report['cleanup_verified'] = False
                 report['cleanup_error'] = type(error).__name__ + ': ' + str(error)
+        if stage is not None:
+            try:
+                stage.copy_back(stage.output, directory)
+                stage.remove(resources_absent=report['cleanup_verified'])
+            except BaseException as error:
+                report['complete'] = False
+                report['staging_error'] = type(error).__name__ + ': ' + str(error)
+                report['staging_retained'] = str(stage.root)
         report['finished_utc'] = datetime.now(timezone.utc).isoformat()
         shared.write(directory / 'host.json', report)
         signal.setitimer(signal.ITIMER_REAL, 0)

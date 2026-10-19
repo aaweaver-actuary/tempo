@@ -29,19 +29,22 @@ def test_finite_plan_pins_six_artifacts_exact_test_counts_caps_and_five_minute_c
 
 @pytest.mark.parametrize("image", ["python:3.12-slim", "latest", "sha256:wrong"])
 def test_helper_rejects_mutable_or_unknown_images_before_any_resource_call(image):
-    with pytest.raises(ValueError): qualification.helper_arguments(image, "owned", Path("/tmp/owned"), "artifacts")
+    with pytest.raises(ValueError): qualification.helper_arguments(image, "owned", Path("/tmp/owned"), "artifacts", source=Path("/tmp/owned/source"), source_sha256="a" * 64)
 
 
 def test_helper_caps_cover_all_descendants_and_mount_only_source_and_owned_evidence():
     args = qualification.helper_arguments("sha256:" + "a" * 64, "owned-helper", Path("/tmp/owned-evidence"), "native",
-        network="owned-internal-network", env_file=Path("/tmp/owned.env"))
+        source=Path("/private/tmp/owned/source"), source_sha256="b" * 64,
+        network="owned-internal-network", env_file=Path("/private/tmp/owned/output/private-native.env"))
     assert args[args.index("--cpus") + 1] == "1"
     assert args[args.index("--memory") + 1] == args[args.index("--memory-swap") + 1] == "768m"
     assert args[args.index("--pids-limit") + 1] == "128"
     assert args[args.index("--network") + 1] == "owned-internal-network"
     assert not any("docker.sock" in value for value in args)
     assert len([value for value in args if value.startswith("type=bind")]) == 2
-    assert any("target=/source,readonly" in value for value in args)
+    assert "type=bind,source=/private/tmp/owned/source,target=/source,readonly" in args
+    assert "TEMPO_QUALIFICATION_SOURCE_SHA256=" + "b" * 64 in args
+    assert "PYTHONPYCACHEPREFIX=/tmp/legacy-qualified-bytecode" in args
 
 
 def test_deadline_terminates_the_host_process_group_inside_the_work_budget(monkeypatch):
@@ -164,3 +167,171 @@ def test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline(
     assert not (Path(binary).parent / "uvx").exists()
     monkeypatch.setattr(qualification.urllib.request, "urlopen", lambda *a, **k: pytest.fail("native network"))
     assert qualification.pinned_uv(tmp_path, "native", timer, tmp_path) == binary
+
+
+# Tmp staging is part of the same regular runner suite, not a native qualification.
+def staged_fixture(tmp_path):
+    module = qualification.staging
+    source = tmp_path / 'repository'; source.mkdir()
+    names = [*module.SOURCE_FILES, 'backend/app/owned.py',
+             'services/game-evidence/src/owned/__init__.py', 'unrelated/secret.txt',
+             'backend/app/private/pgpass', 'backend/app/secret.env']
+    for name in names:
+        path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('tracked fixture ' + name)
+    stage = module.OwnedStaging('owned-test', 'test-head', base=tmp_path)
+    stage.stage_source(source, names, qualification.PACKAGES)
+    return module, stage, source
+
+
+def test_qualification_stages_only_tracked_allowlisted_source_and_verifies_manifest(tmp_path):
+    module, stage, source = staged_fixture(tmp_path)
+    assert stage.root.stat().st_mode & 0o777 == 0o700
+    manifest = module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+    assert manifest['head'] == 'test-head'
+    assert 'backend/app/owned.py' in manifest['files']
+    assert not any('secret' in name or 'unrelated' in name or 'pgpass' in name for name in manifest['files'])
+    (source / 'backend/app/owned.py').write_text('later checkout edit')
+    module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+
+
+@pytest.mark.parametrize('fault', ['source', 'manifest', 'extra', 'symlink'])
+def test_changed_staged_source_is_refused_before_helper_work(tmp_path, fault):
+    module, stage, _ = staged_fixture(tmp_path)
+    if fault == 'source': (stage.source / 'backend/app/owned.py').write_text('changed')
+    if fault == 'manifest': (stage.source / '.qualification-source.json').write_text('{}')
+    if fault == 'extra': (stage.source / 'extra.py').write_text('unreviewed')
+    if fault == 'symlink':
+        path = stage.source / 'backend/app/owned.py'; path.unlink(); path.symlink_to('/etc/hosts')
+    with pytest.raises(ValueError): module.verify_source(stage.source, stage.record['source_manifest_sha256'])
+
+
+def test_qualified_installed_environment_dependency_and_tool_bytes_are_bound(tmp_path):
+    module = qualification.staging
+    root = tmp_path / 'qualified'; root.mkdir()
+    for name in ['wheels/owned.whl', 'wheels/owned.tar.gz', 'tools/uv-0.9.3/uv',
+                 'work/environment/lib/python3.12/site-packages/dependency/__init__.py',
+                 'work/environment/lib/python3.12/site-packages/pytest/__init__.py']:
+        path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('qualified')
+    expected = module.inventory(root, retained=True)
+    manifest = root / 'qualified-inputs.json'; manifest.write_text(json.dumps(expected))
+    host = dict(qualified_manifest_sha256=module.digest(manifest))
+    assert 'work/environment/lib/python3.12/site-packages/pytest/__init__.py' in expected
+    assert module.qualified_inputs(root, host) == expected
+    stage = module.OwnedStaging('owned-test', 'head', base=tmp_path)
+    stage.stage_qualified(root, expected)
+    (root / 'work/environment/lib/python3.12/site-packages/dependency/__init__.py').write_text('changed')
+    with pytest.raises(ValueError, match='inventory changed'): module.qualified_inputs(root, host)
+    # The staged input remains exactly the accepted immutable copy.
+    module.verify_inventory(stage.qualified, expected, retained=True)
+
+
+@pytest.mark.parametrize('fault', ['wheel', 'tool', 'manifest', 'extra_dependency'])
+def test_native_rejects_changed_qualified_inputs_without_reinstalling(tmp_path, fault):
+    module = qualification.staging
+    root = tmp_path / 'qualified'; root.mkdir()
+    for name in ['wheels/owned.whl', 'tools/uv-0.9.3/uv', 'work/environment/pyvenv.cfg']:
+        path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('accepted')
+    manifest = root / 'qualified-inputs.json'; manifest.write_text(json.dumps(module.inventory(root, retained=True)))
+    host = dict(qualified_manifest_sha256=module.digest(manifest))
+    name = {'wheel': 'wheels/owned.whl', 'tool': 'tools/uv-0.9.3/uv',
+            'manifest': 'qualified-inputs.json', 'extra_dependency': 'work/environment/unexpected.py'}[fault]
+    (root / name).write_text('different')
+    with pytest.raises(ValueError): module.qualified_inputs(root, host)
+
+
+def test_durable_copyback_excludes_fixture_credentials_and_requires_verified_absence(tmp_path, monkeypatch):
+    module, stage, _ = staged_fixture(tmp_path)
+    (stage.output / 'inside.json').write_text('{"complete": true}')
+    private = stage.output / 'private'; private.mkdir(); (private / 'pgpass').write_text('fixture credential')
+    (stage.output / 'private-native.env').write_text('fixture credential')
+    scratch = stage.output / 'pytest'; scratch.mkdir(); (scratch / 'scratch').write_text('not a receipt')
+    destination = tmp_path / 'durable'; destination.mkdir()
+    calls = []; real_fsync = module.os.fsync
+    def fsync(fd): calls.append(fd); real_fsync(fd)
+    monkeypatch.setattr(module.os, 'fsync', fsync)
+    stage.copy_back(stage.output, destination)
+    assert calls and (destination / 'inside.json').read_bytes() == (stage.output / 'inside.json').read_bytes()
+    assert sorted(path.name for path in destination.iterdir()) == ['inside.json']
+    with pytest.raises(ValueError): stage.remove(resources_absent=False)
+    assert stage.root.exists()
+    stage.remove(resources_absent=True)
+    assert stage.record['removed'] and not stage.root.exists()
+
+
+def test_copyback_failure_preserves_stage_and_durable_previous_receipt(tmp_path, monkeypatch):
+    module, stage, _ = staged_fixture(tmp_path)
+    (stage.output / 'inside.json').write_text('new receipt')
+    destination = tmp_path / 'durable'; destination.mkdir(); (destination / 'inside.json').write_text('old receipt')
+    monkeypatch.setattr(module.os, 'fsync', lambda _fd: (_ for _ in ()).throw(OSError('copy interrupted')))
+    with pytest.raises(OSError): stage.copy_back(stage.output, destination)
+    assert (destination / 'inside.json').read_text() == 'old receipt'
+    with pytest.raises(ValueError): stage.remove(resources_absent=True)
+    assert stage.root.exists() and not stage.record['receipts_copied']
+
+
+def test_qualification_refuses_changed_stage_ownership_and_output_symlinks(tmp_path):
+    module, stage, _ = staged_fixture(tmp_path)
+    (stage.output / 'leak.json').symlink_to('/etc/hosts')
+    destination = tmp_path / 'durable'; destination.mkdir()
+    with pytest.raises(ValueError): stage.copy_back(stage.output, destination)
+    (stage.root / 'owner.json').write_text('{}')
+    with pytest.raises(ValueError): stage.remove(resources_absent=True)
+    assert stage.root.exists()
+
+
+def test_qualified_environment_links_remain_inside_tree_and_copy_back_idempotently(tmp_path):
+    module = qualification.staging
+    source = tmp_path / 'qualified'; directory = source / 'work/environment/bin'; directory.mkdir(parents=True)
+    (directory / 'python').symlink_to('/usr/local/bin/python3.12')
+    (directory / 'python3').symlink_to('python')
+    expected = module.inventory(source, retained=True)
+    destination = tmp_path / 'copied'; destination.mkdir()
+    module.copy_entries(source, destination, expected, durable=True)
+    module.copy_entries(source, destination, expected, durable=True)
+    assert module.inventory(destination, retained=True) == expected
+    (directory / 'escape').symlink_to('../../../../outside')
+    with pytest.raises(ValueError): module.inventory(source, retained=True)
+
+
+
+def test_controller_mounts_only_owned_tmp_then_copies_receipts_before_removal(tmp_path, monkeypatch):
+    module, unused_stage, source = staged_fixture(tmp_path)
+    monkeypatch.setattr(qualification, 'ROOT', source)
+    names = [str(path.relative_to(source)) for path in source.rglob('*') if path.is_file()]
+    def git(command, **_options):
+        if command[1] == 'status': return ''
+        if command[1] == 'rev-parse': return 'test-head\n'
+        if command[1] == 'ls-files': return '\0'.join(names) + '\0'
+        pytest.fail('unexpected command')
+    monkeypatch.setattr(qualification.subprocess, 'check_output', git)
+    monkeypatch.setenv('TEMPO_DEVELOPMENT_BUDGET_TOKEN', 'synthetic-test-owner')
+    real_staging = module.OwnedStaging
+    monkeypatch.setattr(module, 'OwnedStaging', lambda identity, head: real_staging(identity, head, base=tmp_path))
+    mounts = {}
+    class Timer:
+        def __init__(self, *_args): pass
+        def run(self, command, **_options):
+            if command[:2] == ['docker', 'run']:
+                for value in command:
+                    if value.startswith('type=bind,'):
+                        parts = dict(item.split('=', 1) for item in value.split(',') if '=' in item)
+                        mounts[parts['target']] = Path(parts['source'])
+                assert mounts['/source'] != source
+                assert mounts['/source'].parent == mounts['/evidence'].parent
+                module.verify_source(mounts['/source'], module.digest(mounts['/source'] / '.qualification-source.json'))
+                (mounts['/evidence'] / 'inside.json').write_text(json.dumps(dict(complete=True, qualified_manifest_sha256='synthetic')))
+        def capture(self, command, **_options):
+            if command[1] == 'inspect':
+                return subprocess.CompletedProcess(command, 1, '', 'no such object: ' + command[2])
+            return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(qualification, 'Deadline', Timer)
+    evidence = tmp_path / 'durable'
+    args = SimpleNamespace(approved_window=True, helper_image_id='sha256:' + 'a' * 64,
+                           mode='artifacts', evidence=evidence)
+    assert qualification.controller(args) == 0
+    receipts = list(evidence.glob('*/host.json')); assert len(receipts) == 1
+    host = json.loads(receipts[0].read_text())
+    assert host['complete'] and host['cleanup_verified']
+    assert host['staging']['receipts_copied'] and host['staging']['removed']
+    assert (receipts[0].parent / 'inside.json').is_file()
+    assert not mounts['/source'].parent.exists()
