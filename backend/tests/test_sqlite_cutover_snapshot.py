@@ -11,7 +11,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from create_sqlite_cutover_snapshot import create_snapshot, verify_snapshot
+from database.tooling.create_sqlite_cutover_snapshot import create_snapshot, verify_snapshot
 
 
 def test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_manifest(tmp_path):

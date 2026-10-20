@@ -217,7 +217,7 @@ def test_canonical_prefix_retention_limits_victims_even_when_children_are_empty(
 def test_canonical_retention_keeps_admission_deferral_evidence_without_spending_three_admitted_slices(retention_fixture, monkeypatch):
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
-    import postgres_rehearsal_admission
+    import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
     original = previews.execute_prefix_preview_slice
     denied, claimed = [], []
 

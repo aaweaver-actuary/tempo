@@ -5003,6 +5003,8 @@ retained incomplete inventory. They do not execute a real tool, build or Docker.
 
 - `backend/tests/test_database_cli_bootstrap.py::test_database_relocation_direct_cli_resolves_owner_without_pythonpath` runs seven actual entrypoint bootstraps in isolated interpreters from an unrelated working directory. It resolves the centralized database and backend roots before stopping at application import; socket, SQLite and child-process effects are rejected. No live database, application startup or benchmark runs.
 
+- `backend/tests/test_database_cli_bootstrap.py::test_database_snapshot_cli_help_needs_no_pythonpath_or_storage` runs relocated snapshot CLI help from an unrelated working directory under `python -I`, rejecting storage/network/process effects. Existing tactic-import repair, graph/canonical admission, private-policy, snapshot and native-control helper cases now resolve their relocated tooling/proof source by the actual package/path, preserving all behavior assertions.
+
 
 ## Database mixed-file extraction — frozen Study preference
 

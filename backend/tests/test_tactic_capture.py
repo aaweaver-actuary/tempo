@@ -212,8 +212,7 @@ def test_capture_api_uses_foreground_receipt_and_rejects_mismatched_key(monkeypa
 
 def test_game_tactic_import_repair_verifies_original_before_recorded_destination_changes(tmp_path, monkeypatch):
     from pathlib import Path
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
-    import repair_verified_game_tactics as repair
+    from database.tooling import repair_verified_game_tactics as repair
     source = tmp_path / "original.db"
     original_bytes = b"unchanged historical source snapshot"
     source.write_bytes(original_bytes)
@@ -252,8 +251,7 @@ def test_game_tactic_import_repair_verifies_original_before_recorded_destination
 
 def test_game_tactic_import_repair_never_mutates_after_failed_exact_verification(tmp_path, monkeypatch):
     from pathlib import Path
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
-    import repair_verified_game_tactics as repair
+    from database.tooling import repair_verified_game_tactics as repair
     source = tmp_path / "original.db"
     source.write_bytes(b"original")
     class Destination:
