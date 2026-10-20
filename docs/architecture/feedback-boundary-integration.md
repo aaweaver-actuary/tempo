@@ -3,9 +3,10 @@
 This is an isolated integration branch, not a merge/deployment authorization.
 Inputs are pinned: feedback PR316 `1a7a8bd88404f77b9a4923b72ef96b75167de8ff`,
 Discovery PR313 `215f8a27132ad2ad4e2efe46109eb6a5b687e7d1`, and queue PR314
-`269ce9e1e78e9fa1f66758c04bf581658031a12f`. Feedback depends on PR311's
+`bd672bd6f8e34026270775e0010323e46d8f9005`. Feedback depends on PR311's
 accepted legacy scope contract at `501f25e`; merged AGENTS guidance from main
-`45aeb03` is included. Independent reviewed/source trees remain unchanged.
+`45aeb03` is included. Independent reviewed/source trees remain unchanged. The queue fixture-only
+native SAVEPOINT correction is incorporated; it changes no production algorithm.
 
 ## Actual joins and ownership
 
