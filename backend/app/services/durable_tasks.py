@@ -46,6 +46,10 @@ _TASK_UPSERT_SQL = """INSERT INTO background_tasks(
                    lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                    completed_at=NULL,updated_at=excluded.updated_at"""
 _TASK_BY_ID_SQL = "SELECT * FROM background_tasks WHERE id=?"
+_SELECTED_REBUILD_UPSERT_FENCE = (
+    " WHERE background_tasks.id=? AND background_tasks.generation=? AND background_tasks.state=? "
+    "AND background_tasks.phase=? AND background_tasks.lease_token IS NULL AND background_tasks.lease_expires_at IS NULL"
+)
 _COMPLETE_SLICE_SQL = """UPDATE background_tasks SET state='complete',phase='published',
                lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
@@ -63,6 +67,7 @@ def warm_completion_sql() -> None:
 
     for statement in (
         _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL,
+        _TASK_UPSERT_SQL + _SELECTED_REBUILD_UPSERT_FENCE, _TASK_UPSERT_SQL + ' WHERE FALSE',
         _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _COMPLETE_SLICE_SQL,
         _QUEUE_REFRESH_STATUS_SQL, _QUEUE_REFRESH_PROGRESS_SQL,
     ):
@@ -167,6 +172,15 @@ def enqueue_task_in_transaction(
             _TASK_BY_KIND_SQL,
             (kind, deduplication_key),
     ).fetchone()
+    handoff = getattr(database, '_selected_rebuild_handoff', None)
+    selected = isinstance(handoff, dict) and kind == handoff['kind']
+    fence, fence_parameters = '', ()
+    if selected:
+        from .opening_graph_recovery import validate_selected_enqueue
+        validate_selected_enqueue(handoff, kind, deduplication_key, existing, payload)
+        prior = handoff['pin']['prior']
+        fence = _SELECTED_REBUILD_UPSERT_FENCE if prior else ' WHERE FALSE'
+        fence_parameters = tuple(prior[field] for field in ('id', 'generation', 'state', 'phase')) if prior else ()
     now = _now()
     task_id = existing["id"] if existing else str(uuid.uuid4())
     generation = max(
@@ -176,7 +190,7 @@ def enqueue_task_in_transaction(
     next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
     created_at = existing["created_at"] if existing else _iso(now)
     authoritative = database.execute(
-            _TASK_UPSERT_SQL + " RETURNING *",
+            _TASK_UPSERT_SQL + fence + " RETURNING *",
             (
                 task_id,
                 kind,
@@ -188,8 +202,11 @@ def enqueue_task_in_transaction(
                 next_attempt_at,
                 created_at,
                 _iso(now),
+                *fence_parameters,
             ),
     ).fetchone()
+    if selected:
+        validate_selected_enqueue(handoff, kind, deduplication_key, authoritative, payload, after=True)
     task_id = authoritative["id"]
     generation = authoritative["generation"]
     _record_event(database, task_id, generation, "enqueued", "queued", kind=kind)
@@ -373,6 +390,11 @@ def lock_current_slice(database, task: dict) -> bool:
     )
     if not current:
         increment(database, task.get("kind", "other"), task["id"], stale_results=1)
+    elif 'maintenance_scope' in task:
+        # Only explicit selected-rebuild deliveries carry this process-local pin.
+        # The check and source/policy locks belong inside the owner's transaction.
+        from .opening_graph_recovery import validate_selected_delivery
+        validate_selected_delivery(database, task)
     return current
 
 
@@ -395,6 +417,11 @@ def advance_task_slice_in_transaction(
         clear_queue_refresh_error_in_transaction(database, task["id"], kind=task.get("kind"),
                                                 payload=task.get("payload"))
         _record_event(database, task["id"], task["generation"], "slice_complete", next_phase, kind=task.get("kind"))
+        if 'maintenance_scope' in task:
+            from .opening_graph_recovery import validate_selected_delivery
+            # Generated provenance is excluded by the existing source triggers.
+            # Any authoritative source increment must roll this whole slice back.
+            validate_selected_delivery(database, task, after_checkpoint=True)
     return bool(changed)
 
 
@@ -410,6 +437,9 @@ def complete_task_slice_in_transaction(database, task: dict) -> bool:
         clear_queue_refresh_error_in_transaction(database, task["id"], kind=task.get("kind"),
                                                 payload=task.get("payload"))
         _record_event(database, task["id"], task["generation"], "published", "published", kind=task.get("kind"))
+        if 'maintenance_scope' in task:
+            from .opening_graph_recovery import validate_selected_delivery
+            validate_selected_delivery(database, task, after_checkpoint=True)
     else:
         _record_stale_result(database, task["id"], task["generation"], task.get("kind", "other"))
     return bool(changed)
