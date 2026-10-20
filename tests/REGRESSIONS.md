@@ -32,6 +32,17 @@ See [boundary ownership](../docs/architecture/feedback-storage.md).
 
 ## Legacy game evidence receiver checkpoint
 
+Equivalent-position binding is owned by
+`test_scoped_physical_capture_compares_legal_positions_and_preserves_source_bytes`
+and `test_backend_equivalent_physical_root_keeps_exact_digest_and_historical_gate`.
+They distinguish legal execution-position comparison from persisted card/source
+identity: non-capturable en-passant and counters do not drop an interior card;
+turn, castling, capturable en-passant, invalid positions and exact executable
+authority still fence binding. The cross-component source integration
+`test_equivalent_ep_capture_to_preview_preserves_later_introduction_unknown`
+retains the October9-before-October15/18 chronology and produces no recall-miss
+delivery. It uses read-only synthetic capture ports; no native/live claim.
+
 `backend/tests/test_legacy_game_evidence_scope.py` owns
 `test_bridge_owned_scope_survives_real_psycopg_parameter_binding_during_review`.
 The pinned driver's real parameter converter reproduces the literal-percent

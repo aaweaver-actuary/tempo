@@ -166,6 +166,15 @@ Previously reserved exports keep their original bytes and identity.
 
 ## Observed legacy authority checkpoint
 
+`test_legacy_validator_accepts_equivalent_execution_root_with_original_card_bytes`
+and `test_legacy_execution_equivalence_cannot_relax_source_or_binding_authority`
+separate legal execution equivalence from exact route/catalogue source equality.
+Original physical FEN/moves/ID/revision remain the comparison evidence; meaningful
+rights, wrong offsets/executables and route source changes fail closed.
+`test_legacy_validator_rejects_counter_selected_root_on_repeated_position`
+requires a unique ordered executable root across the route. Introduction-time
+eligibility is unchanged and remains independent of current authored conformance.
+
 `tests/test_legacy_authority.py` owns the synthetic physical black-card mapping
 with opponent prelude, exact executable/revision and interior offsets. The
 competing Italian catalogue keeps the shared prefix unknown. Controls cover

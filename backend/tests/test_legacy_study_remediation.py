@@ -171,7 +171,8 @@ def vertical(tmp_path, monkeypatch, request):
         def reader(statement, parameters=()):
             if 'FROM remediation_game_heads' in statement or 'FROM remediation_deliveries' in statement: return []
             return source.read(statement, parameters)
-        exported = capture_game('ruy', value.game_id, reader=reader, metadata=source.metadata)
+        exported = capture_game('ruy', value.game_id, reader=reader, metadata=source.metadata,
+            now=datetime(2026, 10, 18, tzinfo=timezone.utc))
         observation = observe_capture(exported)
         generated_preview = preview_legacy_observation(observation)
         for filename, document in [('capture', exported), ('observation', observation), ('preview', generated_preview)]:

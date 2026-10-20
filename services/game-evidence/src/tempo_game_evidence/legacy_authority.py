@@ -201,17 +201,21 @@ def verify_legacy_physical_routes(snapshot, anchors):
         if route.authority_start_ply != anchors[identity]:
             raise ValueError("legacy_policy_anchor_mismatch")
         board = chess.Board(route.starting_fen)
-        fens = [board.fen(en_passant="fen")]
+        positions = [canonical_fen_key(board.fen(en_passant="legal"))]
         for move in route.moves:
             board.push_uci(move)
-            fens.append(board.fen(en_passant="fen"))
+            positions.append(canonical_fen_key(board.fen(en_passant="legal")))
+        physical_roots = {}
         for binding in route.bindings:
             card = cards.get(binding.card_id)
             root = binding.ply - binding.exercise_ply
-            if (card is None or binding.reentry or root < 0 or root >= len(fens)
+            if card is not None and card.card_id not in physical_roots:
+                physical_position = canonical_fen_key(chess.Board(card.starting_fen).fen(en_passant="legal"))
+                physical_roots[card.card_id] = [index for index, position in enumerate(positions)
+                    if position == physical_position and route.moves[index:index + len(card.moves)] == card.moves]
+            if (card is None or binding.reentry or root < 0 or root >= len(positions)
                     or card.policy_id != route.policy_id or card.trained_color != route.learner_color
-                    or fens[root] != card.starting_fen
-                    or route.moves[root:root + len(card.moves)] != card.moves):
+                    or physical_roots[card.card_id] != [root]):
                 raise ValueError("legacy_exact_physical_route_binding_required")
     verify_route_definitions(snapshot.routes, snapshot.comparison_definitions(), route_identity)
     return snapshot
