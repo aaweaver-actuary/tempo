@@ -380,7 +380,7 @@ def test_native_case_receipts_survive_durable_copyback_and_stage_removal(tmp_pat
     (stage.output / 'inside.json').write_text(json.dumps({'complete': complete}))
     case = stage.output / 'pytest/test_native_generated_accept_r0'; case.mkdir(parents=True)
     names = ['process-cleanup.json', 'capture.json', 'capture.log', 'observation.json',
-             'preview.json', 'api-2.log', 'background-1.log', 'foreground-0.log', 'background-3.log']
+             'preview.json', 'api-2.log', 'background-1.log', 'foreground-0.log', 'background-3.log', 'recovery-4.log']
     if complete: names.append('native-trace.json')
     for name in names: (case / name).write_text('receipt: ' + name)
     (case / 'unknown.json').write_text('not a receipt')

@@ -105,6 +105,21 @@ class NativeBackend:
             'worker', '--pool=solo', '--concurrency=1', '--queues=' + queue,
             '--hostname=' + queue + '@' + self.case_id, '--without-gossip', '--without-mingle', '--loglevel=WARNING']) + ')', 'tempo_writer')
 
+    def recover_operations(self):
+        """Publish one real maintenance wake, as the local scheduler does.
+
+        The existing worker/receipt owner claims and redelivers the due command;
+        this fixture never calls its handler or changes its durable retry state.
+        """
+        self.start('recovery', 'from app.celery_app import celery_app;celery_app.send_task('
+            '"app.tasks.recover_operations",queue="background")', 'tempo_writer')
+        try:
+            if self.processes['recovery'].wait(timeout=5) != 0:
+                raise RuntimeError('Owned recovery publication failed; see recovery process log')
+        finally:
+            self.stop('recovery')
+        self.calls.append(dict(method='CELERY', task='app.tasks.recover_operations', queue='background'))
+
     def request(self, method, path, document=None, headers=None):
         from tempo_a_bridge.cli import NoRedirect
         body = json.dumps(document).encode() if document is not None else None
@@ -135,7 +150,8 @@ class NativeBackend:
 
     def operation(self, operation):
         from urllib.parse import quote
-        code, result = self.request('GET', '/api/operations/' + quote(operation, safe=''))
+        code, result = self.request('GET', '/api/operations/' + quote(operation, safe=''),
+                                    headers={'X-Tempo-Work-Class': 'background'})
         assert code == 200
         return result
 
@@ -269,7 +285,7 @@ class NativeBackend:
         assert self.queue(1)['cards'][0]['id'] == expected_head
 
     def close(self):
-        for key in ('api', 'background', 'foreground'): self.stop(key)
+        for key in ('recovery', 'api', 'background', 'foreground'): self.stop(key)
         for handle in self.handles: handle.close()
         if self.created:
             with psycopg.connect(self.manifest['admin_dsn'], passfile=self.manifest['pgpass'], autocommit=True, connect_timeout=2) as raw:

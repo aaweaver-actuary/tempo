@@ -79,7 +79,7 @@ def native_receipt_allowed(relative):
     if not re.fullmatch(r'test_[A-Za-z0-9_]+[0-9]+', relative.parts[1]): return False
     return (relative.name in {'native-trace.json', 'process-cleanup.json', 'capture.json',
                               'observation.json', 'preview.json', 'capture.log'}
-            or re.fullmatch(r'(api|foreground|background)-[0-9]+\.log', relative.name) is not None)
+            or re.fullmatch(r'(api|foreground|background|recovery)-[0-9]+\.log', relative.name) is not None)
 
 
 def inventory(root, *, retained=False, receipts=False):

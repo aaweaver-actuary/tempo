@@ -210,3 +210,16 @@ Cleanup accepts Docker's identity-specific `network NAME not found` response in
 addition to `no such network`. Unknown daemon errors and different network names
 still retain the cleanup claim. Earlier failed receipts remain historical
 failures even when an independent cleanup reconciliation proves absence later.
+
+## Native retry composition
+
+The local runtime schedules `app.tasks.recover_operations` every five seconds.
+The native rollback case publishes one such task through the real configured
+Celery app after the retained retry becomes due. A short owned publisher process
+uses the same isolated broker namespace and is stopped on success or failure;
+the existing worker claims and redelivers the original durable envelope. No
+module handler is called directly and no retry state/deadline is rewritten.
+The case awaits completion before replaying intake and retains all rollback,
+receipt-identity, attempt-count and exactly-once assertions. Status polling uses
+the supported background work-class header so monitoring does not impersonate
+foreground Study activity. No scheduler or admission policy changes are made.

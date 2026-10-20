@@ -45,6 +45,11 @@ The same suite's `NativePrerequisiteTests` binds three current backend dependenc
 wheels to tracked source and installed bytes, refuses a same-version older
 runtime or missing proof, and recognizes Docker's exact `network NAME not found`
 absence while retaining wrong-identity and connection-error refusals.
+The backend native plan's recovery-publication and operation-monitoring tests
+verify the existing scheduler task, bounded publisher process and background
+read classification. The three real native cases retain the forced rollback,
+original due time/envelope and exactly-once assertions; the retry case supplies
+one actual maintenance wake rather than relying on another intake POST.
 
 `backend/tests/test_legacy_bridge_qualification_plan.py` owns the finite fixed
 artifact/native inventories, hard helper caps/no socket mount, immutable-image

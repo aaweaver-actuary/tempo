@@ -171,10 +171,16 @@ def test_native_module_effect_and_complete_operation_receipt_roll_back_together(
         with native.connection() as raw:
             return raw.execute('SELECT next_retry_at<=NOW() FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()[0]
     native.wait(retry_due, seconds=10)
+    # The production scheduler supplies this maintenance wake. Retain the
+    # actual recovery owner rather than relying on another intake POST to
+    # supply the scheduler's responsibility for a due durable retry.
+    native.recover_operations()
+    native.completed(operation)
     receipt = accepted(native, operator, preview)
     counts = native.counts()
     assert counts['frontier'] == counts['remediation_contributions'] == counts['remediation_deliveries'] == counts['remediation_evidence'] == 1
     with native.connection() as raw:
         state, attempts = raw.execute('SELECT state,attempt_count FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()
         assert state == 'complete' and attempts >= 2
-    write_trace(native, acknowledgement=receipt, retained_retry=retry, injected_fault_marker=marker, rollback_before_retry=True)
+    write_trace(native, acknowledgement=receipt, retained_retry=retry, injected_fault_marker=marker,
+                rollback_before_retry=True, recovery_task='app.tasks.recover_operations')

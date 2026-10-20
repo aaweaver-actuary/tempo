@@ -100,6 +100,49 @@ def test_exact_native_node_inventory_accepts_required_parameterized_identity():
     assert plan.CASES[1].endswith('[prior]') and all('test_native.py::' in node for node in plan.CASES)
 
 
+@pytest.mark.parametrize('result', [0, 1, 'timeout'])
+def test_native_recovery_publishes_the_supported_task_in_a_bounded_owned_process(result):
+    fixture = plan.shared.load('native_fixture_unit_recovery', ROOT / 'backend/integration/legacy_bridge/conftest.py')
+    native = fixture.NativeBackend.__new__(fixture.NativeBackend)
+    native.processes, native.calls = {}, []
+    started, stopped, waits = [], [], []
+    def start(key, source, role):
+        started.append((key, source, role))
+        def wait(timeout):
+            waits.append(timeout)
+            if result == 'timeout': raise subprocess.TimeoutExpired('owned-recovery', timeout)
+            return result
+        native.processes[key] = SimpleNamespace(wait=wait)
+    native.start, native.stop = start, stopped.append
+    if result == 0:
+        native.recover_operations()
+        assert native.calls == [dict(method='CELERY', task='app.tasks.recover_operations', queue='background')]
+    else:
+        with pytest.raises(subprocess.TimeoutExpired if result == 'timeout' else RuntimeError):
+            native.recover_operations()
+        assert native.calls == []
+    assert waits == [5] and stopped == ['recovery']
+    key, source, role = started[0]
+    assert key == 'recovery' and role == 'tempo_writer'
+    assert 'from app.celery_app import celery_app' in source
+    assert 'celery_app.send_task("app.tasks.recover_operations",queue="background")' in source
+    assert 'execute_command' not in source and 'recover_operations()' not in source
+
+
+def test_native_operation_monitoring_is_background_without_changing_operation_identity():
+    fixture = plan.shared.load('native_fixture_unit_monitor', ROOT / 'backend/integration/legacy_bridge/conftest.py')
+    native = fixture.NativeBackend.__new__(fixture.NativeBackend)
+    calls = []
+    original = dict(operation_id='original:operation', state='complete', response=dict(saved=True))
+    def request(*args, **kwargs):
+        calls.append((args, kwargs))
+        return 200, original
+    native.request = request
+    assert native.operation('original:operation') is original
+    assert calls == [(('GET', '/api/operations/original%3Aoperation'),
+                      dict(headers={'X-Tempo-Work-Class': 'background'}))]
+
+
 @pytest.mark.parametrize('fault', ['other_same_count', 'missing_prior', 'duplicate'])
 def test_exact_native_node_inventory_rejects_same_count_substitution(fault):
     nodes = list(plan.CASES)
