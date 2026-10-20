@@ -14,9 +14,9 @@ spec = importlib.util.spec_from_file_location('legacy_backend_native_plan', ROOT
 plan = importlib.util.module_from_spec(spec); spec.loader.exec_module(plan)
 
 
-def test_prepared_native_plan_has_six_exact_cases_under_existing_budget():
+def test_native_plan_has_nine_exact_cases_under_existing_budget():
     value = plan.describe()
-    assert len(set(value['cases'])) == 6
+    assert len(set(value['cases'])) == 9
     assert value['work_seconds'] == 900 and value['cleanup_seconds'] == 300
     assert value['total'] == dict(containers=3, cpus=1.85, memory_mib=1216, pids=288,
         extra_swap_mib=0, owned_internal_networks=1, published_ports=0)
@@ -211,7 +211,7 @@ def test_native_gate_refuses_incomplete_foreign_or_changed_artifacts(tmp_path, f
         name = str(index) + '.fixture'
         (tmp_path / 'wheels' / name).write_bytes(b'owned synthetic fixture')
         artifacts[name] = hashlib.sha256(b'owned synthetic fixture').hexdigest()
-    host = dict(complete=True, cleanup_verified=True, source_head='head', image='image', plan=dict(artifact_test_total=284))
+    host = dict(complete=True, cleanup_verified=True, source_head='head', image='image', plan=dict(artifact_test_total=373))
     inside = dict(complete=True, artifacts=artifacts)
     if fault == 'unqualified': host['cleanup_verified'] = False
     if fault == 'head': host['source_head'] = 'other'
@@ -260,3 +260,19 @@ def test_native_feedback_fixture_publishes_through_writable_storage_not_read_onl
         assert first == 'fixture-weak' and second == 'fixture-other'
         assert database.execute('SELECT game_id,derivation_version,published_repertoire_version FROM game_derivation_jobs').fetchall() == [('game', 1, 1)]
         assert database.execute('SELECT id,repertoire_id FROM current_repertoire_decision_events ORDER BY ply').fetchall() == [(first, 'ruy'), (second, 'italian')]
+
+
+def test_artifact_evidence_reuse_requires_complete_unchanged_package_and_tool_inputs(tmp_path,monkeypatch):
+    paths=['services/learning/application/src/tempo_learning_review/owned.py','scripts/qualify_legacy_bridge.py']
+    for name in paths:
+        path=tmp_path/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('unchanged')
+    monkeypatch.setattr(plan.subprocess,'check_output',lambda *args,**kwargs:'\0'.join(paths)+'\0')
+    previous={name:plan.shared.staging.entry(tmp_path,tmp_path/name) for name in paths}
+    assert plan.unchanged_artifact_inputs(previous,tmp_path)
+    (tmp_path/paths[0]).write_text('changed')
+    assert not plan.unchanged_artifact_inputs(previous,tmp_path)
+    (tmp_path/paths[0]).write_text('unchanged')
+    assert not plan.unchanged_artifact_inputs({paths[0]:previous[paths[0]]},tmp_path)
+    paths.append('services/learning/application/tests/test_added.py')
+    path=tmp_path/paths[-1];path.parent.mkdir(parents=True,exist_ok=True);path.write_text('new case')
+    assert not plan.unchanged_artifact_inputs(previous,tmp_path)

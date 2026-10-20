@@ -122,3 +122,63 @@ separate from the qualification `exit_code`; pytest success with a skip, invento
 error or failed cleanup is a failed qualification. `complete` becomes true only
 after the complete test inventory and required resource cleanup both succeed.
 Primary and cleanup errors are retained together.
+
+
+## Verified encountered-card practice request (MVP)
+
+The historical-exposure module represents one explicit request to practice a
+verified encountered card. It does not label the encounter as forgotten recall,
+create a review or remediation obligation, or promise permanent exact rank. The first safe admission gets best-effort front
+placement; ordinary placement is the fallback for a recognized layout limitation.
+The backend captures and verifies exact scope, source, executable, revision and
+ordered routes before a request can be saved. Unknown/ambiguous mapping fails
+safely. Unknown introduction chronology needs explicit confirmation.
+
+One request table retains pending intent because the existing daily queue is a
+replaceable, day-scoped projection. Idempotent operation receipts, current source
+facts, card-before-day locks and ordinary admission share the caller transaction.
+The narrow QueueWriter port delegates to the canonical introduced-review owner:
+it reuses existing work or appends an ordinary review, then makes one best-effort
+move into the earliest movable slot after existing priority work. Protected slots
+and other entries' relative order remain fixed. The operation never changes the
+introduction date, FSRS state or reviews. Buried, completed-today or otherwise
+ineligible work remains deferred. A failed eligibility postcondition rolls back
+the proposed entry; a database error propagates instead of becoming fake fallback
+success. Replay and refresh do not repeatedly reshuffle the same entry; a new
+eligible daily admission gets another placement attempt. No persistent exposure
+reason, priority overlay or foreground freshness projection remains. The optional
+move reads at most 129 entries and declines ranking when the complete queue exceeds
+128 entries; ordinary eligible admission still succeeds. No partial queue is ranked
+and no unbounded position-update pass is introduced.
+
+The existing durable per-card task retries while pending and yields to foreground
+Study. Ordinary review only checkpoints a wake, not source verification. A request
+is served by any later canonical, non-invalidated normal Study receipt for the
+same target/workspace/card/revision on a genuinely post-request issued attempt.
+This intentionally replaces the former exact exposure-entry binding rule: normal
+Study owns practice, and admission alone is not fulfillment. There is no custom
+attempt ledger or settlement history. The canonical issuance owner stamps a
+nullable first-issued time once in the same transaction; replay neither refreshes
+that timestamp nor fabricates old unknown issuance. Request cancellation stops
+future admissions and leaves already-admitted ordinary work to its normal owner.
+
+Operator-authenticated request/cancel/refresh/status routes remain disabled without
+an explicit private token-file configuration. No token file was provisioned.
+Status distinguishes pending/served/cancelled intent from operational retry state;
+terminal task failure retains pending intent, reports retry required, and supports
+explicit retry. The response's last-admission field is historical, not a claim
+that a replaceable queue entry still exists today.
+
+Source schema 51 adds one request table and the nullable issuance timestamp on the
+existing retained-origin table. It has not been applied to a live installation.
+Source-only tests are not installed/native qualification. Required native proof
+still includes actual migration, receipt joins, rollback/replay, lock ownership,
+worker recovery and ordinary Study completion through the public composition.
+
+Non-blocking refinements are tracked centrally: [#321](https://github.com/aaweaver-actuary/tempo/issues/321)
+for exact ordering and cancellation of already-admitted work;
+[#267](https://github.com/aaweaver-actuary/tempo/issues/267) for unknown historical
+issuance recovery without invented backfill; and
+[#194](https://github.com/aaweaver-actuary/tempo/issues/194) for automatic repair of
+terminal retries. The MVP uses one-time best-effort priority with ordinary fallback, keeps unknown issuance
+unserved and makes failed pending work visible for manual retry.

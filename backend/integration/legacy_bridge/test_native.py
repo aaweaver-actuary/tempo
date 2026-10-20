@@ -301,3 +301,152 @@ def test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire
         assert store.outstanding_card(card_id) is None
     write_trace(native, feedback_contract='native accepted scope and combined queue projection with different-repertoire controls',
                 acknowledgement=receipt)
+
+
+def exposure_control(selection, result):
+    return {name: selection[name] for name in ('target_id','workspace_id','card_id')} | {'encounter_key': result['encounter_key']}
+
+
+def exposure_queue(native):
+    with native.connection() as raw:
+        return raw.execute("SELECT id,card_id,position,status,gameplay_priority_reason FROM daily_queue ORDER BY position,id").fetchall()
+
+
+def poll_exposure(native, control, state):
+    # The real scheduler wake runs in the separate background Celery process.
+    def read():
+        value=native.exposure('/status',control)
+        if value['state']==state:return value
+        native.start('recovery','from app.celery_app import celery_app;celery_app.send_task("app.tasks.poll_background_tasks",queue="background")','tempo_writer')
+        try:assert native.processes['recovery'].wait(timeout=5)==0
+        finally:native.stop('recovery')
+        return None
+    return native.wait(read)
+
+
+def test_native_historical_practice_priority_replay_and_actual_normal_completion(native):
+    from datetime import datetime,timedelta,timezone,date
+    # Historical encounter precedes introduction. All data and owner facts are synthetic.
+    with native.connection() as raw:
+        raw.execute('UPDATE cards SET introduced_at=%s WHERE id=%s',
+            ((datetime.now(timezone.utc)-timedelta(hours=12)).isoformat(),native.identities['physical']))
+        raw.execute('UPDATE daily_queue SET position=2 WHERE card_id=%s',(native.identities['ordinary'],))
+        recall=native.case_id+'-recall'
+        raw.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,content_type) SELECT %s,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,content_type FROM cards WHERE id=%s",(recall,native.identities['ordinary']))
+        raw.execute("INSERT INTO daily_queue(queue_date,card_id,position,gameplay_priority_reason,admission_kind) VALUES(%s,%s,1,'Priority review · missed in a recent game','review')",(date.today().isoformat(),recall))
+    selection=native.exposure_selection()
+    denied,denial=native.request('POST','/api/learning/historical-exposure',selection,{'Idempotency-Key':native.case_id+'-unauthorized'})
+    assert denied==401,denial
+    before=exposure_queue(native)
+    result=native.exposure('',selection,native.case_id+'-practice')
+    assert result['state']=='pending' and result['placement_mode']=='best_effort_front'
+    control=exposure_control(selection,result)
+    placed=exposure_queue(native)
+    assert [row[1] for row in placed]==[native.identities['protected'],recall,native.identities['physical'],native.identities['ordinary']]
+    assert placed[0]==before[0] and placed[1]==before[1]
+    assert native.exposure('',selection,native.case_id+'-practice')==result
+    assert native.exposure('',selection,native.case_id+'-semantic-replay')==result
+    assert exposure_queue(native)==placed
+    # Genuine queue issuance, normal reviews, and exact receipt replay.
+    review(native,native.queue(1)['cards'][0],native.case_id+'-head-review')
+    card=native.queue(1)['cards'][0];assert card['id']==recall
+    review(native,card,native.case_id+'-recall-review')
+    target=native.queue(1)['cards'][0];assert target['id']==native.identities['physical']
+    with native.connection() as raw:
+        issued=raw.execute('SELECT first_issued_at FROM queue_attempt_origins WHERE queue_entry_id=%s AND revision=1',(target['queue_entry_id'],)).fetchone()[0]
+        accepted_at=raw.execute("SELECT record_json->>'accepted_at' FROM historical_exposure_intents").fetchone()[0]
+        assert datetime.fromisoformat(issued)>=datetime.fromisoformat(accepted_at)
+    assert native.queue(1)['cards'][0]['queue_entry_id']==target['queue_entry_id']
+    saved,body=review(native,target,native.case_id+'-practice-review')
+    assert saved['persisted']
+    assert native.post('/api/cards/'+target['id']+'/review',body,native.case_id+'-review-replay')['review_id']==saved['review_id']
+    served=poll_exposure(native,control,'served')
+    assert served['completion_review_id']==str(saved['review_id'])
+    with native.connection() as raw:
+        assert raw.execute('SELECT first_issued_at FROM queue_attempt_origins WHERE queue_entry_id=%s AND revision=1',(target['queue_entry_id'],)).fetchone()[0]==issued
+        assert raw.execute('SELECT COUNT(*) FROM historical_exposure_intents').fetchone()[0]==1
+    assert native.counts()['target_reviews']==1 and native.counts()['remediation_contributions']==0
+    write_trace(native,practice=result,served=served,first_issued_at=issued,priority_replay=True)
+
+
+@pytest.mark.parametrize('native',['prior'],indirect=True)
+def test_native_historical_practice_protected_fallback_old_issuance_and_cancel(native):
+    from datetime import datetime,timedelta,timezone
+    with native.connection() as raw:
+        raw.execute('UPDATE cards SET introduced_at=%s WHERE id=%s',
+            ((datetime.now(timezone.utc)-timedelta(hours=12)).isoformat(),native.identities['physical']))
+    selection=native.exposure_selection();before=exposure_queue(native)
+    result=native.exposure('',selection,native.case_id+'-practice')
+    assert result['state']=='pending' and result['placement_mode']=='ordinary_queue'
+    assert result['last_admission']['reason']=='existing_protected_or_priority_work'
+    assert exposure_queue(native)==before
+    control=exposure_control(selection,result);target=native.queue(1)['cards'][0]
+    review(native,target,native.case_id+'-old-issued-review')
+    # A real pre-request issuance, then unknown old issuance, cannot fulfill it.
+    native.exposure('/refresh',control,native.case_id+'-refresh')
+    def refreshed():
+        with native.connection() as raw:
+            row=raw.execute("SELECT state,generation FROM background_tasks WHERE kind='historical_exposure_refresh'").fetchone()
+            return row and row[1]>=3
+    native.start('recovery','from app.celery_app import celery_app;celery_app.send_task("app.tasks.poll_background_tasks",queue="background")','tempo_writer')
+    try:assert native.processes['recovery'].wait(timeout=5)==0
+    finally:native.stop('recovery')
+    native.wait(refreshed)
+    assert native.exposure('/status',control)['state']=='pending'
+    from app.postgres_store import PostgresConnection,tempo_row_factory
+    from app.storage.historical_exposure import BorrowedExposureStore
+    from app.storage.historical_exposure_practice import completed_practices
+    from tempo_learning_review.historical_exposure import CardScope
+    with native.connection() as raw:
+        raw.row_factory=tempo_row_factory;db=PostgresConnection(raw);scope=CardScope(selection['target_id'],'legacy',selection['card_id'])
+        records=BorrowedExposureStore(db,scope).pending_for_card(scope)
+        assert completed_practices(db,scope,records,datetime.now(timezone.utc))==()
+        raw.execute('UPDATE queue_attempt_origins SET first_issued_at=NULL WHERE queue_entry_id=%s',(target['queue_entry_id'],))
+        assert completed_practices(db,scope,records,datetime.now(timezone.utc))==()
+    cancelled=native.exposure('/cancel',control,native.case_id+'-cancel')
+    assert cancelled['state']=='cancelled'
+    assert native.exposure('/cancel',control,native.case_id+'-cancel')==cancelled
+    assert native.counts()['target_reviews']==1
+    write_trace(native,practice=result,cancelled=cancelled,old_and_null_issuance_unserved=True)
+
+
+def test_native_historical_practice_position_fault_rolls_back_intent_admission_and_receipt(native):
+    from datetime import datetime,timedelta,timezone
+    with native.connection() as raw:
+        raw.execute('UPDATE cards SET introduced_at=%s WHERE id=%s',
+            ((datetime.now(timezone.utc)-timedelta(hours=12)).isoformat(),native.identities['physical']))
+    selection=native.exposure_selection();before=exposure_queue(native);marker='historical-placement-fault'
+    with native.connection() as raw:
+        # Fire only after a real position write and after intent + admission exist.
+        raw.execute("""CREATE FUNCTION exposure_fail_position() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN IF OLD.position IS DISTINCT FROM NEW.position THEN
+          IF NOT EXISTS(SELECT 1 FROM historical_exposure_intents WHERE card_id=TG_ARGV[0])
+             OR NOT EXISTS(SELECT 1 FROM daily_queue WHERE card_id=TG_ARGV[0]) THEN
+             RAISE EXCEPTION 'native placement prerequisite missing'; END IF;
+          RAISE EXCEPTION 'historical-placement-fault'; END IF; RETURN NEW; END $$""")
+        raw.execute(sql.SQL('CREATE TRIGGER exposure_fail_position AFTER UPDATE OF position ON daily_queue FOR EACH ROW EXECUTE FUNCTION exposure_fail_position({})').format(sql.Literal(native.identities['physical'])))
+    operation=native.case_id+'-fault'
+    code,response=native.request('POST','/api/learning/historical-exposure',selection,
+        {'Authorization':'Bearer '+(native.private/'exposure-token').read_text(),'Idempotency-Key':operation})
+    # A completed failing command truthfully returns HTTP500; a slower one is202.
+    assert code in (202,500),(code,response)
+    failed=native.wait(lambda:(row if (row:=native.operation(operation))['state']=='failed' else None))
+    assert marker in str(failed.get('error',failed))
+    assert exposure_queue(native)==before
+    with native.connection() as raw:
+        assert raw.execute('SELECT COUNT(*) FROM historical_exposure_intents').fetchone()[0]==0
+        assert raw.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s',(native.identities['physical'],)).fetchone()[0]==0
+        assert raw.execute('SELECT response_json FROM operation_receipts WHERE operation_id=%s',(operation,)).fetchone()[0] is None
+        raw.execute('DROP TRIGGER exposure_fail_position ON daily_queue');raw.execute('DROP FUNCTION exposure_fail_position()')
+    result=native.exposure('',selection,native.case_id+'-recovered')
+    control=exposure_control(selection,result)
+    with native.connection() as raw:
+        raw.execute("UPDATE background_tasks SET state='failed',last_error='synthetic terminal retry' WHERE kind='historical_exposure_refresh'")
+    status=native.exposure('/status',control)
+    assert status['state']=='pending' and status['retry_required']
+    refresh=native.exposure('/refresh',control,native.case_id+'-manual-retry')
+    assert refresh['refresh_requested']
+    with native.connection() as raw:
+        assert raw.execute("SELECT state FROM background_tasks WHERE kind='historical_exposure_refresh'").fetchone()[0]=='queued'
+    assert native.counts()['target_reviews']==0
+    write_trace(native,rollback_failure=failed,recovered=result,visible_failed_pending=status,manual_retry=refresh)

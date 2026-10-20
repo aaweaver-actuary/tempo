@@ -36,6 +36,7 @@ from . import account_commands  # noqa: F401 - registers foreground account comm
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
+from . import historical_exposure_commands  # registers explicit exposure request/control commands
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
 from . import guided_review_commands  # noqa: F401 - registers foreground guided review changes
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
@@ -72,6 +73,7 @@ from .services.durable_tasks import claim_task, complete_task, defer_task_for_co
 from .services.durable_tasks import defer_task_for_foreground
 from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refresh_after_foreground_denial
 from .services.priority_retention import execute_priority_retention_slice
+from .services.historical_exposure_refresh import execute_exposure_refresh_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import (
@@ -130,6 +132,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_threat_backfill",
     "defensive_threat_validate",
     "priority_retention",
+    "historical_exposure_refresh",
     "next_opponent_profile",
     "game_sync_record",
     "game_derivation_positions",
@@ -380,6 +383,7 @@ def _execute_claimed_background_slice(
         "defensive_threat_backfill": execute_threat_backfill_slice,
         "defensive_threat_validate": execute_threat_validation,
         "priority_retention": execute_priority_retention_slice,
+        "historical_exposure_refresh": execute_exposure_refresh_slice,
         "next_opponent_profile": execute_profile_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_derivation_positions": execute_game_position_index_slice,
@@ -428,6 +432,7 @@ def _execute_claimed_background_slice(
                 "game_derivation_events",
                 "game_derivation_features", "game_derivation_priorities",
                 "repertoire_priority",
+                "historical_exposure_refresh",
                 "daily_statistics",
                 "opening_graph_rebuild",
                 prefix_transition_application.TASK_KIND,

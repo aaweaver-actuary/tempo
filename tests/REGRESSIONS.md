@@ -1,3 +1,38 @@
+## Verified encountered-card practice request (MVP)
+
+`backend/tests/test_historical_exposure_source.py` owns exact current ordered-route
+and physical binding plus UTC date-only chronology. The command suite owns real
+SQLite gateway receipt/savepoint rollback and replay with semantic fake practice
+ports. Malformed physical/route FEN preparation returns controlled rejection,
+never a partial accepted comparison; the existing legacy caller's typed no-effect
+rejection is also retained in `test_legacy_game_evidence_commands.py`.
+
+`test_historical_exposure_adapters.py` owns current-fact/codec/scope/inventory
+refusal and actual canonical SQLite admission with scripted eligibility: append
+or reuse once, preserve the head/other reasons, no introduction or review changes,
+try one-time front placement after recall while preserving protected slots and
+other relative order, keep ordinary admission for recognized layout limits,
+roll back unavailable placement and propagate database failure. A real SQLite
+position-write fault also rolls back request, admission and positions through
+the existing gateway savepoint with a semantic fake request store. The adapter
+also requires PostgreSQL savepoint/rollback/release to bypass SQL translation,
+while SQLite retains its supported transaction route. The lifecycle
+suite owns first-issued timestamp immutability/rollback, trusted receipt checks,
+per-card retry and cancellation with no admission effect. Route tests own operator
+auth, strict control payloads and visible failed-pending/manual retry status.
+Learning's regular historical-exposure application suite owns the pure request
+policy. The separate native fixture adds exact historical-practice HTTP/auth,
+priority/replay, protected fallback/old issuance/cancellation, real Study receipt
+completion and after-position fault rollback cases. Their presence is not an
+execution claim; consult the pinned native receipt. No live acceptance is implied.
+
+The abandoned persistent-priority overlay, label freshness projection, display
+pill and exposure-specific attempt ledger were removed under the approved MVP
+scope. Their tests are superseded with the corresponding ordinary-admission and
+normal-Study safeguards, not skipped to hide failures. Exact ordering/cancellation
+after admission is deferred in #321; unknown old issuance in #267; automatic
+terminal-task repair in #194. See the Learning application README for safe behavior.
+
 ## Combined feedback / queue / Discovery boundary
 
 `backend/tests/test_feedback_boundary_integration.py` owns the real composition

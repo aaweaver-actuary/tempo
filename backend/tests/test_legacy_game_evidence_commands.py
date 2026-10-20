@@ -465,3 +465,14 @@ def test_backend_withdrawal_requires_the_exact_retained_current_obligation_revis
     result = commands.receive_legacy_delivery(writer, commands.prepare_legacy_delivery({"delivery": value}))
     assert result["status"] == "stale_revision"
     assert result["reason"] == "legacy_withdrawal_revision_superseded"
+
+
+def test_malformed_physical_fen_preparation_returns_typed_terminal_rejection_without_effects(monkeypatch):
+    value,captured=fixture();captured.tables['cards'][0]['start_fen']='not a valid FEN'
+    before=deepcopy(captured);reads=[]
+    monkeypatch.setattr(owner,'read_rows',lambda statement,parameters:reads.append(statement) or [])
+    monkeypatch.setattr(owner,'capture',lambda *args:captured)
+    result=commands.prepare_legacy_delivery({'delivery':value.model_dump(mode='json')})
+    assert result.error.status=='terminal_failure' and result.error.reason=='legacy_capture_invalid'
+    assert result.captured is None and result.decisions=={} and captured==before
+    assert reads and all(statement.startswith('SELECT ') for statement in reads)

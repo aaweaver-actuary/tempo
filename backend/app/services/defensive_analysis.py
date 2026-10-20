@@ -17,7 +17,7 @@ def analysis_enabled(database) -> bool:
 
 def task_admission_sql(kind_expression: str) -> str:
     kinds = ','.join("'" + kind + "'" for kind in DEFENSIVE_TASK_KINDS)
-    return (f"(({kind_expression}='daily_queue' OR (SELECT study_only_mode FROM settings WHERE id=1)=0) AND "
+    return (f"(({kind_expression} IN ('daily_queue','historical_exposure_refresh') OR (SELECT study_only_mode FROM settings WHERE id=1)=0) AND "
             f"({kind_expression} NOT IN ({kinds}) OR "
             "(SELECT defensive_analysis_enabled FROM settings WHERE id=1)=1))")
 

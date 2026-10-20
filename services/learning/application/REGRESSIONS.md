@@ -79,3 +79,16 @@ responses exercise failure paths without provisioning extra native clusters.
   previous evidence and a nonzero qualification exit even when pytest returns zero.
 - `test_atomic_summary_replacement_never_exposes_partial_json`: replacement
   failure preserves parseable prior bytes and removes the incomplete temporary file.
+
+
+## Verified encountered-card practice request
+
+`tests/test_historical_exposure.py` owns the MVP semantic policy: exact current
+source/scope, explicit intent and chronology confirmation; ordinary admission;
+pending intent across rollover; cancellation without queue effects; and serving
+from any qualifying post-request normal practice of the same scoped revision.
+Old, unknown-issued, foreign-scope and other-revision evidence cannot serve it.
+The previous persistent-priority/contributor/attempt-ledger policy was retired by
+the approved MVP scope change, not hidden behind skips. Its prior source and red
+proofs remain on the published feature history. Canonical queue, receipt, scope
+and retry safeguards now have the smaller corresponding source tests.

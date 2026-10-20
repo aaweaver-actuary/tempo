@@ -254,6 +254,8 @@ app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
+from .historical_exposure_routes import router as historical_exposure_router
+app.include_router(historical_exposure_router)
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -452,6 +454,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 "/api/repertoire/paste/preview",
                 "/api/endgames/probe",
                 "/api/cards/validate",
+                "/api/learning/historical-exposure/status",
             }
             or (len(request_path_parts) == 5
                 and request_path_parts[:2] == ["api", "studies"]
@@ -654,6 +657,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
                                    and path_parts[3] == "retry" and request.method == "POST")
+        historical_practice_command = request.method == 'POST' and request.url.path in {
+            '/api/learning/historical-exposure','/api/learning/historical-exposure/cancel',
+            '/api/learning/historical-exposure/refresh',
+        }
         legacy_evidence_command = request.method == "POST" and (
             path_parts == ["api", "game-evidence", "legacy", "deliveries"]
             or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
@@ -729,7 +736,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command,
+                    legacy_evidence_command, historical_practice_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -754,7 +761,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
-        or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path in {
+            "/api/game-evidence/legacy/deliveries", "/api/learning/historical-exposure",
+            "/api/learning/historical-exposure/status"})
     )
     guided_review_reconciliation_read = (
         request.method == "GET" and len(request_path_parts) == 3
@@ -1262,6 +1271,8 @@ register_durable_task_handler("opening_segmentation", execute_segmentation_slice
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
+from .services.historical_exposure_refresh import execute_exposure_refresh_slice
+register_durable_task_handler("historical_exposure_refresh", execute_exposure_refresh_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
 register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
