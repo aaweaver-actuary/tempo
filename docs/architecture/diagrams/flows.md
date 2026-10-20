@@ -29,7 +29,7 @@ sequenceDiagram
     B-->>S: pending intent committed<br/>locally
     S->>A: POST card review with same<br/>Idempotency-Key
     Note over A: Authenticate workspace/origin before<br/>DB access
-    Note over A: Essential middleware also awaits<br/>HostActivity context entry / exit
+    Note over A: PROPOSED host repair: bounded memory<br/>request entry / exit; daemon owns I/O
     A->>D: record_intent in its own<br/>transaction
     D-->>A: queued intent committed (or<br/>matching identity found)
     Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
@@ -92,6 +92,15 @@ Ordinary queue reads are not necessarily side-effect free: the
 dispatches `queue.ensure_current`, runs at most two foreground maintenance assists,
 and [queue command handlers](../../../services/learning/runtime/src/tempo_learning_runtime/queue_commands.py)
 own attempt issuance. None of those operations calls the game producer.
+
+
+HostActivity note source: proposed checkpoint
+[`09cb4eef`](https://github.com/aaweaver-actuary/tempo/blob/09cb4eef027666aaa3e728660b9e7ca39eb36091/services/learning/runtime/src/tempo_learning_runtime/host_activity.py).
+The request-accounting note is source repair only; deployment is unverified.
+A last healthy idle snapshot remains valid for its existing 15-second lease;
+[the host execution view](study-games.md#shared-learning-request-execution-gaps-main)
+describes stale/missing expected-source admission and asynchronous cleanup.
+
 
 ## Observed game evidence to Learning (MAIN)
 
