@@ -105,11 +105,15 @@ three passed, including the legacy-versus-paged PostgreSQL shared-membership
 comparison. The requeue case reached its cycle assertions, then failed because
 the test sent SAVEPOINT through the compatibility translator, which produced
 `SAVEPOINT AS caller_repeat`. The fixture now uses `execute_native` for transaction
-control; that correction awaits a coordinated rerun. The original failure receipt
-is preserved. Exact container/process-group/staging/volume absence was verified
-before releasing the slot. This is not a passing native qualification. No installed
-artifact build, merge, deployment or live write was performed. Accepted-scope and
-PR311 hook qualification still belong to the combined-tree owners.
+control. The corrected parent-coordinated rerun at `bd672bd6` passed all four native
+cases at 11:18:23–11:18:27 UTC, including PostgreSQL shared-membership parity and
+the requeue rollback proof. Collection, execution phases and JUnit agree with no
+skips/deselections. The original failure receipt is separately preserved. Actual
+resource caps, cgroup enforcement, bounded tmpfs and loopback binding were verified;
+exact container/process-group/staging/volume absence was verified before releasing
+the slot. This qualifies the scoped source/native adapter proof, not the installed
+artifact, complete queue, accepted-scope or PR311 hooks. No merge, deployment or
+live write was performed; combined-tree qualification remains with its owners.
 
 ## Broader SQL-fixture retirement map
 

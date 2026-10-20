@@ -1,4 +1,4 @@
-# Queue adapter native window: awaiting explicit parent go
+# Queue adapter native proof and window contract
 
 This is a four-case source-adapter proof on actual PostgreSQL. It is not an
 installed-artifact, full durable-worker, PR311-hook or full-system qualification.
@@ -7,14 +7,18 @@ controller. One explicitly approved window on `269ce9e1` ran on 2026-10-20 from
 11:14:06 to 11:14:10 UTC: three cases passed, including shared-membership parity;
 the requeue case failed at fixture transaction control (`SAVEPOINT AS caller_repeat`
 from the legacy translator). It now uses native savepoint/rollback/release calls.
-That harness correction still needs a coordinated rerun. Container, process group,
-staging and volume absence were verified before releasing the slot. The failed
-window is retained and is not native qualification.
+The parent-coordinated corrected rerun at `bd672bd6` passed all four cases from
+11:18:23 to 11:18:27 UTC, including the PostgreSQL parity comparison and the
+requeue rollback proof. Independent collection/execution/JUnit inventories agree;
+all setup/call/teardown phases passed with no skips or deselections. Actual caps,
+cgroup limits, tmpfs and loopback binding were verified. Exact container, process
+group, staging and volume absence was verified before slot release. The first
+failed window remains separately preserved and does not contribute passing credit.
 
 ## Safety prerequisites before any fixture write
 
-1. Parent grants the reserved serial slot after inspecting the guard repairs and
-   source rejection regressions. Discovery has released its earlier slot.
+1. For any future run, parent grants a fresh serial slot after inspecting the guard
+   and source rejection evidence. The successful run above has released its slot.
 2. Use one fresh coordinator-owned PostgreSQL container and a fresh database named
    `tempo_queue_admission_<32 lowercase hex digits>`. Existing live/task databases
    are forbidden. Pin the already-present `postgres:18.6-trixie` image by observed
