@@ -1,5 +1,11 @@
 ## Legacy game evidence receiver checkpoint
 
+`backend/tests/test_legacy_game_evidence_scope.py` owns
+`test_bridge_owned_scope_survives_real_psycopg_parameter_binding_during_review`.
+The pinned driver's real parameter converter reproduces the literal-percent
+failure without a database. The native normal-Study case retains the owning
+SQL translation/execution, protected-head review and settlement assertions.
+
 `test_frozen_introduction_legacy_fence_does_not_retire_introduced_review_card`
 reproduces P2 at6c2eb502: an active frozen run and old completed migrated origin
 must not permanently veto a current introduced review. Its issued-today control

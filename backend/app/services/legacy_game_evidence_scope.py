@@ -10,10 +10,12 @@ def owned_legacy_scope_sql(event_alias="event"):
         raise ValueError("event alias must be an SQL identifier")
     # Retained accepted contributions own the scope even after withdrawal or a
     # source correction. This is an ownership fence, never settlement policy.
+    # A prefix equality survives both SQL translation and psycopg binding;
+    # a raw LIKE wildcard is interpreted as a driver placeholder first.
     return f"""EXISTS(SELECT 1 FROM remediation_contributions bridge_scope
         WHERE bridge_scope.workspace_id='legacy'
           AND bridge_scope.game_id={event_alias}.game_id
-          AND bridge_scope.publication_id LIKE 'legacy-graph:%'
+          AND LEFT(bridge_scope.publication_id,13)='legacy-graph:'
           AND bridge_scope.payload_json::jsonb->'authority'->>'kind'='legacy_graph'
           AND bridge_scope.payload_json::jsonb->'authority'->>'workspace_id'='legacy'
           AND bridge_scope.payload_json::jsonb->'authority'->>'repertoire_id'={event_alias}.repertoire_id)"""
