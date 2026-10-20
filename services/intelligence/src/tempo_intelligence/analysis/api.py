@@ -11,7 +11,17 @@ def register(app):
 
     @router.get("/bootstrap")
     def bootstrap():
-        return {"schema_version":1,"workspace_id":app.state.store.workspace_id,"capabilities":["analysis-v1","informational-export","selected-games-v1"],"policy_version":"c-analysis-v1"}
+        return {"schema_version":1,"workspace_id":app.state.store.workspace_id,"capabilities":["analysis-v1","informational-export","selected-games-v1", *(["games-readonly-v1"] if app.state.read_only else [])],"policy_version":"c-analysis-v1"}
+
+    @router.get('/game-scopes')
+    def game_scopes():
+        from .games_reader import GamesReader
+        return GamesReader(app.state.store).scopes()
+
+    @router.get('/game-scopes/{run_id}')
+    def game_scope(run_id:str):
+        from .games_reader import GamesReader
+        return GamesReader(app.state.store).scope(run_id)
 
     @router.get("/inputs")
     def inputs():

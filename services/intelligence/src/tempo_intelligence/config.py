@@ -63,8 +63,8 @@ class Configuration:
     workspace_id: str
     database_url: str = field(repr=False)
     caller_token: str = field(repr=False)
-    operator_token: str = field(repr=False)
-    worker_token: str = field(repr=False)
+    operator_token: str | None = field(default=None, repr=False)
+    worker_token: str | None = field(default=None, repr=False)
     credential_file: Path | None = field(default=None, repr=False)
     provider_base_url: str = "https://explorer.lichess.org"
     model_profiles: tuple[dict, ...] = ()
@@ -72,6 +72,7 @@ class Configuration:
     background_pool_size: int = 1
     poll_interval: float = 1.0
     worker_enabled: bool = True
+    read_only: bool = False
     origins: tuple[str, ...] = ()
     hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]", "testserver")
 
@@ -80,8 +81,8 @@ class Configuration:
             raise ValueError("explicit_workspace_required")
         if not self.database_url:
             raise ValueError("explicit_intelligence_database_required")
-        tokens = (self.caller_token, self.operator_token, self.worker_token)
-        if any(not isinstance(token, str) or not 32 <= len(token) <= 4096 or any(not 33 <= ord(character) <= 126 for character in token) for token in tokens) or len(set(tokens)) != 3:
+        tokens = (self.caller_token,) if self.read_only else (self.caller_token, self.operator_token, self.worker_token)
+        if any(not isinstance(token, str) or not 32 <= len(token) <= 4096 or any(not 33 <= ord(character) <= 126 for character in token) for token in tokens) or len(set(tokens)) != len(tokens):
             raise ValueError("distinct_scoped_credentials_required")
         if self.credential_file is not None:
             credential_file = Path(self.credential_file)
@@ -94,6 +95,12 @@ class Configuration:
             raise ValueError("invalid_background_pool_size")
         if type(self.poll_interval) not in (float, int) or not math.isfinite(self.poll_interval) or not 0.05 <= self.poll_interval <= 60:
             raise ValueError("invalid_poll_interval")
+        if type(self.read_only) is not bool:
+            raise ValueError('invalid_read_only')
+        if self.read_only and self.worker_enabled:
+            raise ValueError('read_only_workers_disabled')
+        if self.read_only and self.model_profiles:
+            raise ValueError('read_only_profiles_unavailable')
         if type(self.worker_enabled) is not bool:
             raise ValueError("invalid_worker_enabled")
         if not self.hosts or any(not isinstance(host, str) or not host or "*" in host or "/" in host for host in self.hosts):
@@ -148,26 +155,32 @@ class Configuration:
     def environment(cls):
         try:
             configured = lambda name: os.environ["TEMPO_INTELLIGENCE_" + name]
+            read_only = os.environ.get("TEMPO_INTELLIGENCE_READ_ONLY", "0")
+            if read_only not in {"0", "1"}:
+                raise ValueError("invalid_read_only")
             profiles_file = os.environ.get("TEMPO_INTELLIGENCE_MODEL_PROFILES_FILE")
+            if read_only=="1" and profiles_file:
+                raise ValueError("read_only_profiles_unavailable")
             profiles = json.loads(private_text(Path(profiles_file))) if profiles_file else []
             if not isinstance(profiles, list):
                 raise ValueError("invalid_model_profiles")
-            enabled = os.environ.get("TEMPO_INTELLIGENCE_WORKER_ENABLED", "1")
+            enabled = os.environ.get("TEMPO_INTELLIGENCE_WORKER_ENABLED", "0" if read_only=="1" else "1")
             if enabled not in {"0", "1"}:
                 raise ValueError("invalid_worker_enabled")
             return cls(
                 workspace_id=configured("WORKSPACE"),
                 database_url=private_text(Path(configured("DATABASE_URL_FILE"))),
                 caller_token=private_text(Path(configured("CALLER_TOKEN_FILE"))),
-                operator_token=private_text(Path(configured("OPERATOR_TOKEN_FILE"))),
-                worker_token=private_text(Path(configured("WORKER_TOKEN_FILE"))),
-                credential_file=Path(configured("CREDENTIAL_FILE")) if os.environ.get("TEMPO_INTELLIGENCE_CREDENTIAL_FILE") else None,
+                operator_token=None if read_only=="1" else private_text(Path(configured("OPERATOR_TOKEN_FILE"))),
+                worker_token=None if read_only=="1" else private_text(Path(configured("WORKER_TOKEN_FILE"))),
+                credential_file=Path(configured("CREDENTIAL_FILE")) if read_only!="1" and os.environ.get("TEMPO_INTELLIGENCE_CREDENTIAL_FILE") else None,
                 provider_base_url=os.environ.get("TEMPO_INTELLIGENCE_PROVIDER_BASE_URL", "https://explorer.lichess.org"),
                 model_profiles=tuple(profiles),
                 pool_size=int(os.environ.get("TEMPO_INTELLIGENCE_POOL_SIZE", "4")),
                 background_pool_size=int(os.environ.get("TEMPO_INTELLIGENCE_BACKGROUND_POOL_SIZE", "1")),
                 poll_interval=float(os.environ.get("TEMPO_INTELLIGENCE_POLL_INTERVAL", "1")),
                 worker_enabled=enabled == "1",
+                read_only=read_only == "1",
                 origins=tuple(filter(None, os.environ.get("TEMPO_INTELLIGENCE_ORIGINS", "").split(","))),
                 hosts=tuple(os.environ.get("TEMPO_INTELLIGENCE_HOSTS", "localhost,127.0.0.1,[::1]").split(",")),
             )

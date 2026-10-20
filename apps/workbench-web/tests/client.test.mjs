@@ -334,3 +334,26 @@ test('connected Intelligence origin is a validated public form default with no m
     assert.throws(()=>intelligenceOriginForBuild(value),error=>String(error).includes('TEMPO_INTELLIGENCE_ORIGIN must be a public')&&!String(error).includes(value)&&!String(error).includes('synthetic-secret'));
   }
 });
+
+test('Games read-only capability prevents mutation delivery while retaining reads',async()=>{
+  const calls=[];const client=new IntelligenceClient(connection,async(url,options)=>{calls.push({url,method:options.method});return Response.json({...bootstrap,capabilities:['analysis-v1','selected-games-v1','games-readonly-v1']});});
+  assert.equal(client.readOnly,false);await client.bootstrap();assert.equal(client.readOnly,true);
+  await assert.rejects(()=>client.request('/v1/analysis/runs',bootstrapSchema,{run_id:'new'}),/read-only/);
+  await assert.rejects(()=>client.requestSerialized('/v1/analysis/runs/run/commands',bootstrapSchema,'{}'),/read-only/);
+  await client.request('/v1/analysis/bootstrap',bootstrapSchema);
+  assert.deepEqual(calls.map(item=>item.method),['GET','GET']);
+});
+
+test('Games semantic reader resolves scope without engine progress and checks identity',async()=>{
+  let wrong=false;const calls=[];
+  const scope={run_id:'run',revision:1,input_id:'accepted',input_revision:2};
+  const client=new IntelligenceClient(connection,async(url,options)=>{
+    calls.push({url,method:options.method});
+    const envelope={schema_version:1,workspace_id:'fixture'};
+    return Response.json(url.endsWith('/game-scopes')?{...envelope,items:[scope]}:{...envelope,...scope,run_id:wrong?'other':'run'});
+  });
+  assert.deepEqual(await client.listScopes(),[scope]);
+  assert.deepEqual(await client.readScope('run'),scope);
+  wrong=true;await assert.rejects(()=>client.readScope('run'),/identity mismatch/);
+  assert.ok(calls.every(call=>call.method==='GET'&&call.url.includes('/game-scopes')));
+});

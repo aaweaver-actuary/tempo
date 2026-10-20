@@ -223,10 +223,11 @@ historical evidence, not proof that its generation remains current forever.
 An Analysis response proposal is a draft input to this explicit approval path,
 never automatic Content approval or Learning admission.
 
-## Games read, failure and disposal (PROPOSED PR322)
+## Games read, failure and disposal (MAIN, merged PR322)
 
-Pinned to unmerged `653a85bb5f5b3e520c0eda0c36234d3b416708b4`; see the
-[source-linked component view](study-games.md#proposed-pr322-games-reader).
+PR322 implementation `653a85bb5f5b3e520c0eda0c36234d3b416708b4` merged as
+`bc746728ca1967cc8ad9991cbe8c12099a01a3ae`; see the
+[source-linked component view](study-games.md#merged-pr322-games-reader).
 
 ```mermaid
 sequenceDiagram

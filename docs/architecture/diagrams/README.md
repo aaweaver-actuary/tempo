@@ -11,21 +11,24 @@ drawing and disclose the discrepancy.
 ## Source and status
 
 Baseline reviewed: `main` at
-[`4fc2eb8c6b534345b25668761b3746c91be08cf0`](https://github.com/aaweaver-actuary/tempo/commit/4fc2eb8c6b534345b25668761b3746c91be08cf0),
-verified October 20, 2026. Relative source links describe that baseline and should
+[`bc746728ca1967cc8ad9991cbe8c12099a01a3ae`](https://github.com/aaweaver-actuary/tempo/commit/bc746728ca1967cc8ad9991cbe8c12099a01a3ae),
+verified October 20, 2026 after PR322 merged at 17:47:50 UTC. The initial review
+used `4fc2eb8c`; the affected Games views were refreshed against the merge.
+Relative source links describe the merged baseline and should
 track later changes in the same PR as the affected code.
 
 | Label | Meaning and limits |
 | --- | --- |
 | **MAIN** | Implemented source at the baseline; independent installation, consumer adoption and live deployment are separate claims. |
 | **LEGACY / GAP** | Actual shared source, persistence or lifecycle coupling. A scoped observation, not acceptance of that coupling for new paths. |
-| **PROPOSED PR322** | Open draft [Games-only viewing PR322](https://github.com/aaweaver-actuary/tempo/pull/322), pinned to [`653a85bb5f5b3e520c0eda0c36234d3b416708b4`](https://github.com/aaweaver-actuary/tempo/commit/653a85bb5f5b3e520c0eda0c36234d3b416708b4). Unmerged when reviewed; all its new-file links use that SHA. Recheck before treating it as main. |
+| **MERGED PR322** | [Games-only viewing PR322](https://github.com/aaweaver-actuary/tempo/pull/322), implementation [`653a85bb5f5b3e520c0eda0c36234d3b416708b4`](https://github.com/aaweaver-actuary/tempo/commit/653a85bb5f5b3e520c0eda0c36234d3b416708b4), is now included in the MAIN baseline above. Source availability does not establish deployment or exact live read grants. |
+| **PROPOSED** | Use this label and pinned PR source links for future unmerged changes; do not silently include them in MAIN. |
 | **TARGET** | Adopted direction without an implementation claim. |
 | **DEPLOYMENT UNVERIFIED** | No live process, configuration, resource allocation, credential, database or deployment was inspected or changed for these drawings. |
 
 PR319's encountered-card practice proposal is paused and excluded from these
-implemented views; it supplies no current API/behavior claim. PR322 is source
-context only, not a dependency of this documentation PR. The user-identified live
+implemented views; it supplies no current API/behavior claim. The Games reader
+views now describe merged PR322 source, while operational activation is unverified. The user-identified live
 Study revision `86d11afe` is outside this inspection and was not touched.
 
 ## Views and maintenance owners
@@ -42,11 +45,11 @@ ownership; its status alone does not prove adoption.
 | [Legacy assembly](system.md#legacy-assembly-and-existing-coupling) | System: where do current full-app dependencies cross those target boundaries? | Legacy app/backend owners; [Home](../../../app/views/home_view.tsx), [backend root](../../../backend/app/main.py), [Compose](../../../docker-compose.yml). |
 | [Data, resource and lifecycle ownership](system.md#data-resource-and-lifecycle-owners) | Component: migrations, pools, shutdown and shared failure domains | Each state/resource owner; source links in the table. |
 | [Study dependency detail](study-games.md#main-study-path-and-source-gap) | Component: which adapters and semantic ports serve Study, and where is Games still in shared source? | Study browser/session and Learning owners; [connection](../../../app/lib/study-connection.ts), [ReviewStore](../../../services/learning/application/src/tempo_learning_review/ports.py). |
-| [Games reader proposal](study-games.md#proposed-pr322-games-reader) | Component: UI capability, read projection, grants, lifecycle and resource budget | Workbench and Intelligence read owner; PR322 source links in the view. |
+| [Games reader](study-games.md#merged-pr322-games-reader) | Component: UI capability, read projection, grants, lifecycle and resource budget | Workbench and Intelligence read owner; PR322 source links in the view. |
 | [Review and lost-response recovery](flows.md#review-commit-and-recovery-main) | Sequence: durable browser intent, transaction owner, logical settlement, next load | Study session, Learning review and queue owners. |
 | [Evidence and asynchronous admission](flows.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |
 | [Publication and activation](flows.md#content-publication-and-serving-activation-main) | Data flow: immutable definitions versus serving authority | Content, bridge operator and Learning publication owners. |
-| [Games read and failure](flows.md#games-read-failure-and-disposal-proposed-pr322) | Sequence: accepted snapshot read, unavailable state, cleanup | Workbench Games reader and Intelligence transaction/lifespan owners; proposed PR322. |
+| [Games read and failure](flows.md#games-read-failure-and-disposal-main-merged-pr322) | Sequence: accepted snapshot read, unavailable state, cleanup | Workbench Games reader and Intelligence transaction/lifespan owners; merged PR322 source, deployment unverified. |
 
 ## Drawing conventions
 
