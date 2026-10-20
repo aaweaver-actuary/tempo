@@ -428,7 +428,8 @@ def test_native_historical_practice_position_fault_rolls_back_intent_admission_a
     operation=native.case_id+'-fault'
     code,response=native.request('POST','/api/learning/historical-exposure',selection,
         {'Authorization':'Bearer '+(native.private/'exposure-token').read_text(),'Idempotency-Key':operation})
-    assert code in (200,202),(code,response)
+    # A completed failing command truthfully returns HTTP500; a slower one is202.
+    assert code in (202,500),(code,response)
     failed=native.wait(lambda:(row if (row:=native.operation(operation))['state']=='failed' else None))
     assert marker in str(failed.get('error',failed))
     assert exposure_queue(native)==before
