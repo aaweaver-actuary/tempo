@@ -1,7 +1,7 @@
 import { studyIntentStore } from "../../app/lib/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import Home from "../../app/views/home_view";
+import Home from "../../app/views/legacy-home";
 import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";

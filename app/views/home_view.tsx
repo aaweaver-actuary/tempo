@@ -1,6 +1,6 @@
-import type { OptionalWorkspace } from '../components/optional-workspace';
+import type { LegacyWorkspace, LegacyWorkspaceController, LegacyWorkspaceSlots } from '../components/optional-workspace';
+import StudySettingsView from './study-settings-view';
 import { canOpenWorkspace } from '../lib/study-workspace-policy';
-import { WorkbenchLaunch } from "../components/workbench-launch";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, studyConnection } from "../lib/study-connection";
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
 import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../lib/study-intent-storage";
@@ -10,14 +10,10 @@ import { studyInteractionActive } from "../lib/study-priority";
 import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
 import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
 import { PendingOperationError } from "../lib/operation-status";
-import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
-import { backgroundFetch } from "../lib/background-fetch";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
 import { acceptPrefixSplitCommand, rejectPrefixSplitCommand } from "../lib/prefix-split-command";
-import { trainingBuilderSession, type TrainingPositionContext } from "../lib/training-builder-route";
-import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import {
   readJsonResponse,
   readStoredValue,
@@ -28,7 +24,7 @@ import { localRepertoireSchema } from "../domain/schemas";
 import { measureTempoOperation, measureTempoDragPhase } from "../lib/performance";
 import { isCurrentAttempt } from "../domain/attempt";
 import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
-import { lazy, Suspense, useState, useCallback, useEffect, useRef } from "react";
+import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../lib/teaching-state-outbox";
 import {
@@ -36,9 +32,6 @@ import {
   preloadView,
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
-const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
-import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
-const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 import {
   cancelMoveSounds,
   moveSoundEnabled,
@@ -49,10 +42,8 @@ import {
 import { bundledRepertoires, demoCards } from "../samples";
 import {
   View,
-  BuilderSession,
   LocalRepertoire,
   CardId,
-  asRepertoireId,
   asFenString,
   asTeachingCardKey,
   asTeachingMoveKey,
@@ -66,14 +57,7 @@ import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
 import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
-const BuilderView = lazy(() => import("./analysis_view"));
-const ComparisonView = lazy(() => import("./comparison_view"));
-import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
-const CardEditor = lazy(() => import("./card_editor"));
 import EndgamesView from "./endgames_view";
-const InsightsView = lazy(() => import("./insights_view"));
-const RepertoireView = lazy(() => import("./repertoire_view"));
-const SettingsView = lazy(() => import("./settings_view"));
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { Chess, Move, Square } from "chess.js";
@@ -87,10 +71,8 @@ import Navbar from "../components/Navbar";
 import { BoardWorkspace } from "../components/board/board-workspace";
 import BrandButton from "../components/buttons/BrandButton";
 import SoundToggleButton from "../components/buttons/SoundToggleButton";
-import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
-const StudiesView = lazy(() => import("./studies_view"));
 import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQueueCache, rememberConfirmedQueueEntry, QueueProcessingError } from "./fetchAndInitializeQueue";
 import { capturePreparedNext, advancePreparedContinuation, type PreparedContinuation } from "../lib/prepared-review-continuation";
 import type { PracticeCard } from "../domain/cards";
@@ -111,74 +93,23 @@ import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-f
 import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt } from "../lib/opening-evidence-journal";
 import { useOpeningEvidenceRecovery } from "../hooks/use-opening-evidence-recovery";
 import type { AssistanceKind } from "../domain/opening-evidence";
-import { Settings } from "../utils/settings";
-import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
-const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
-const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
-import { repertoiresResponseSchema } from "../domain/schemas";
 import { NotificationCenter } from "../components/notification-center";
 import { OfflineReviewConflicts } from "../components/offline-review-conflicts";
 import { notifications, publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
-const ServiceStatusPanel = lazy(() => import("../components/service-status-panel").then(module => ({ default: module.ServiceStatusPanel })));
-import type { DiscoveryItem } from "../components/discoveries-tray";
-const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then(module => ({ default: module.DiscoveriesTray })));
 import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
-export default function Home({ optionalWorkspace }: { optionalWorkspace?: OptionalWorkspace } = {}) { return <Suspense fallback={<p role="status">Loading workspace…</p>}><StudyStorageBoundary><StudyComposition optionalWorkspace={optionalWorkspace} /></StudyStorageBoundary></Suspense>; }
+export default function Home({ optionalWorkspace }: { optionalWorkspace?: LegacyWorkspace } = {}) { return <Suspense fallback={<p role="status">Loading workspace…</p>}><StudyStorageBoundary><StudyComposition optionalWorkspace={optionalWorkspace} /></StudyStorageBoundary></Suspense>; }
 
-function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalWorkspace }) {
-  const OptionalWorkspaceView = optionalWorkspace?.View;
+function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWorkspace }) {
+  const OptionalComposition = optionalWorkspace;
+  const optionalController = useRef<LegacyWorkspaceController | null>(null);
   const studyOnlyMode = useStudyOnlyMode();
   useEffect(() => prepareMoveSounds(), []);
   const [currentView, setCurrentView] = useState<View>("train");
-  const [comparisonLaunch, setComparisonLaunch] = useState<ComparisonLaunch>();
-  const [comparisonOpenError, setComparisonOpenError] = useState("");
-  const [discoveryReturn, setDiscoveryReturn] = useState<{
-    view: View;
-    id: string;
-  }>();
-  const [discoveryOpenRequest, setDiscoveryOpenRequest] = useState<{
-    id: string;
-    token: number;
-  }>();
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);
-  const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
-  const [pasteContext, setPasteContext] = useState<AnalysisPasteContext | null>(
-    null,
-  );
-  const [pasteRevision, setPasteRevision] = useState(0);
-  const [pausedIntegrity, setPausedIntegrity] = useState<{
-    id: string;
-    issueCount: number;
-    blockedDue: number;
-  }>();
-  const deferredRepairIds = useRef(new Set<string>());
-  const nextIntegrityRequestSequence = useRef(0);
-  const lastAcceptedIntegritySnapshotSequence = useRef(0);
-  const pendingPreferredRepairIntent = useRef<{ repertoireId: string; minimumRequestSequence: number } | undefined>(undefined);
-  const openRepairRepertoireId = useRef<string | undefined>(undefined);
-  // Update dialog intent before React commits so an in-flight read observes direct actions.
-  const openRepairDialog = useCallback((repertoireId: string) => {
-    pendingPreferredRepairIntent.current = undefined;
-    deferredRepairIds.current.delete(repertoireId);
-    openRepairRepertoireId.current = repertoireId;
-    setRepairRepertoireId(repertoireId);
-  }, []);
-  const deferRepairDialog = useCallback(() => {
-    pendingPreferredRepairIntent.current = undefined;
-    const currentRepairRepertoireId = openRepairRepertoireId.current;
-    if (currentRepairRepertoireId) deferredRepairIds.current.add(currentRepairRepertoireId);
-    openRepairRepertoireId.current = undefined;
-    setRepairRepertoireId(undefined);
-  }, []);
-  const [insightsTab, setInsightsTab] = useState<"training" | "games">(
-    "training",
-  );
-  const [gamesFenFilter, setGamesFenFilter] = useState("");
-  const [gamesRepertoireFilter, setGamesRepertoireFilter] = useState("");
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
     | "idle"
     | "saving"
@@ -204,15 +135,10 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
   const changeWorkspace = useCallback((view: View) => {
     if (!canOpenWorkspace(view, independentStudy)) return;
     const finished = measureTempoOperation("view-switch");
-    deferRepairDialog();
-    if (view === "progress" || view === "statistics") {
-      setInsightsTab(view === "statistics" ? "games" : "training");
-      setCurrentView("insights");
-    } else {
-      setCurrentView(view);
-    }
+    optionalController.current?.deferRepair();
+    setCurrentView(optionalController.current?.prepareNavigation(view) ?? view);
     requestAnimationFrame(() => requestAnimationFrame(finished));
-  }, [deferRepairDialog]);
+  }, []);
   const repertoireAlternativeSnapshot = useRef<RepertoireAlternativeSnapshot | null>(null);
   const repertoirePositionGeneration = useRef(0);
   const pendingMoveVerification = useRef<AbortController | null>(null);
@@ -235,9 +161,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
     attempt,
     cardsLeft,
     reviewed,
-    showImport,
-    showTree,
-    editorCard,
     seenMoves,
     teachingEncounterKey,
     teachingReadyCard,
@@ -269,9 +192,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
     setShowHint,
     setCardsLeft,
     setReviewed,
-    setShowImport,
-    setShowTree,
-    setEditorCard,
     setSuggestShorter,
     setSeenMoves,
     setTeachingEncounterKey,
@@ -394,63 +314,8 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
   }, [currentView]);
 
   const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
-    if (!usesLocalApi() || independentStudy) return;
-    const integrityRequestSequence = ++nextIntegrityRequestSequence.current;
-    if (preferred && !passive) {
-      deferredRepairIds.current.delete(preferred);
-      pendingPreferredRepairIntent.current = { repertoireId: preferred, minimumRequestSequence: integrityRequestSequence };
-    }
-    try {
-      const response = await (passive ? backgroundFetch : fetch)(`${API_URL}/api/repertoires`);
-      if (!response.ok) return;
-      const data = await response.json();
-      const parsed = repertoiresResponseSchema.parse(data);
-      // Only a validated newer snapshot fences an older response; a started or failed read has no authority.
-      if (integrityRequestSequence <= lastAcceptedIntegritySnapshotSequence.current) return;
-      lastAcceptedIntegritySnapshotSequence.current = integrityRequestSequence;
-      const candidate = parsed.repertoires.find(
-        (item) =>
-          item.integrity_status === "needs_repair" &&
-          !deferredRepairIds.current.has(item.id),
-      );
-      const currentPreferredRepairIntent = pendingPreferredRepairIntent.current;
-      const preferredRepairIntent = currentPreferredRepairIntent
-        && integrityRequestSequence >= currentPreferredRepairIntent.minimumRequestSequence
-        ? currentPreferredRepairIntent : undefined;
-      const preferredCandidate = preferredRepairIntent
-        ? parsed.repertoires.find(
-            (item) =>
-              item.id === preferredRepairIntent.repertoireId && item.integrity_status === "needs_repair",
-          )
-        : undefined;
-      // Accepted reads settle current intent only when they began with or after that intent.
-      if (preferredRepairIntent) {
-        pendingPreferredRepairIntent.current = undefined;
-        if (preferredCandidate && !openRepairRepertoireId.current) openRepairDialog(preferredCandidate.id);
-      }
-      const paused = preferredCandidate ?? candidate;
-      const repairItems = parsed.repertoires.filter(
-        (item) => item.integrity_status === "needs_repair",
-      );
-      setPausedIntegrity(
-        paused
-          ? {
-              id: paused.id,
-              issueCount: repairItems.reduce(
-                (total, item) => total + (item.integrity_issue_count ?? 0),
-                0,
-              ),
-              blockedDue: repairItems.reduce(
-                (total, item) => total + (item.blocked_due_count ?? 0),
-                0,
-              ),
-            }
-          : undefined,
-      );
-    } catch {
-      // The normal workspace refresh path reports the service error.
-    }
-  }, [openRepairDialog]);
+    await optionalController.current?.checkIntegrity(preferred, passive);
+  }, []);
 
   const refreshDatabaseQueue = useCallback(
     async (advance = false, replaySavedReviews = true) => {
@@ -551,8 +416,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
         message: "Result saved; the next card could not be loaded. Retry loading the queue." });
     }
   });
-  const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
-  const deletionRecoveryStarted = useRef(false);
   const finishPermanentDeletion = useCallback(async (cardId: string) => {
     invalidateBranchEvidence();
     const training = useTrainingStore.getState();
@@ -561,7 +424,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
     const remainingCards = cachedCards.filter(item => item.backendId !== cardId);
     training.hydrateLocalQueue(remainingCards, deletesActiveCard,
       Math.max(0, training.cardsLeft - Number(remainingCards.length !== cachedCards.length)));
-    if (training.editorCard?.backendId === cardId) training.setEditorCard(null);
     if (deletesActiveCard) {
       activeQueueEntry.current = undefined;
       setSafeBreakCounter(count => count + 1);
@@ -572,21 +434,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
       useTrainingStore.getState().setServiceError("Card deleted. Training queue refresh failed; retry loading the queue.");
     }
   }, [refreshDatabaseQueue, invalidateBranchEvidence]);
-  const recoverCardDeletion = useCallback(async () => {
-    if (independentStudy) return;
-    try {
-      const pending = pendingCardDeletion();
-      if (!pending) { setDeletionRecoveryError(""); return; }
-      await deleteCardCommand(pending.cardId, pending.expectedRevision);
-      await finishPermanentDeletion(pending.cardId);
-      setDeletionRecoveryError("");
-    } catch (failure) { setDeletionRecoveryError(failure instanceof Error ? failure.message : "Could not confirm the earlier card deletion."); }
-  }, [finishPermanentDeletion]);
-  useEffect(() => {
-    if (independentStudy || !databaseQueue || offlineQueue || deletionRecoveryStarted.current) return;
-    deletionRecoveryStarted.current = true;
-    void recoverCardDeletion();
-  }, [databaseQueue, offlineQueue, recoverCardDeletion]);
   useEffect(() => {
     if (!databaseQueue || offlineQueue || burialRecoveryStarted.current) return;
     burialRecoveryStarted.current = true;
@@ -617,18 +464,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
     invalidateBranchEvidence();
     await refreshDatabaseQueue();
   }, [invalidateBranchEvidence, refreshDatabaseQueue]);
-
-  useEffect(() => {
-    const onIntegrity = (event: Event) => {
-      const detail = (event as CustomEvent<{ repertoireId?: string }>).detail;
-      if (detail?.repertoireId) {
-        void checkPendingIntegrity(detail.repertoireId);
-      } else void checkPendingIntegrity();
-    };
-    window.addEventListener("tempo:integrity", onIntegrity);
-    queueMicrotask(() => void checkPendingIntegrity());
-    return () => window.removeEventListener("tempo:integrity", onIntegrity);
-  }, [checkPendingIntegrity]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1665,98 +1500,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
     persistExplicitAttemptFailure();
   }
 
-  function openReviewPosition(target: "analysis" | "builder" | "games" | "compare", displayed: TrainingPositionContext = { fen: currentFenString, cursor: step }) {
-    if (target === "compare") {
-      try {
-        const session = trainingBuilderSession(card, displayed, false);
-        const source: ComparisonBoard = {
-          id: "source", label: card.title || "Training card", cardId: card.backendId ?? card.id,
-          orientation: trainedColor(card), startingFen: card.startingFen,
-          history: session.history, cursor: session.cursor,
-        };
-        setComparisonOpenError("");
-        setComparisonLaunch({
-          source, sourceKey: `${source.cardId}:${card.revision ?? 1}:${source.cursor}:${displayed.fen}`,
-          repertoireId: card.repertoireId, returnView: "train",
-        });
-        changeWorkspace("compare");
-      } catch (error) {
-        setComparisonOpenError(`Cannot compare this card until its move route is repaired. ${String(error)}`);
-      }
-      return;
-    }
-    if (target === "games") {
-      setGamesFenFilter(canonicalFenKey(displayed.fen));
-      setGamesRepertoireFilter("");
-      changeWorkspace("games");
-      return;
-    }
-    let session: BuilderSession;
-    try {
-      session = trainingBuilderSession(card, displayed, target === "builder");
-      setComparisonOpenError("");
-    } catch (error) {
-      setComparisonOpenError(`Cannot open this card's route. ${String(error)}`);
-      return;
-    }
-    localStorage.setItem("tempo-builder-session", JSON.stringify(session));
-    sessionStorage.setItem(
-      "tempo-builder-tools",
-      target === "analysis" ? "Compare" : "Repertoire",
-    );
-    changeWorkspace("builder");
-  }
-
-  function openDiscoveryInBuilder(
-    discovery: DiscoveryItem,
-    selectedMove: string | null,
-  ) {
-    const positionFen = discovery.decision_fen ?? discovery.fen;
-    const routeStartFen = discovery.decision_start_fen ?? positionFen;
-    const routeBoard = new Chess(routeStartFen);
-    const routeHistory: BuilderSession["history"] = [];
-    try {
-      for (const moveUci of discovery.decision_route_uci ?? []) {
-        const played = routeBoard.move({
-          from: moveUci.slice(0, 2),
-          to: moveUci.slice(2, 4),
-          promotion: moveUci[4],
-        });
-        routeHistory.push({
-          san: asSanMove(played.san),
-          uci: asUciMove(moveUci),
-          fen: asFenString(routeBoard.fen()),
-        });
-      }
-      if (
-        canonicalFenKey(routeBoard.fen()) !==
-        canonicalFenKey(new Chess(positionFen).fen())
-      )
-        throw new Error("Route does not reach the decision");
-    } catch {
-      routeHistory.length = 0;
-    }
-    const repertoireId = asRepertoireId(discovery.repertoire_id);
-    const session: BuilderSession = {
-      version: 1,
-      activeRepertoireByColor: { [discovery.trained_color]: repertoireId },
-      activeRepertoireId: repertoireId,
-      orientation: discovery.trained_color,
-      startingFen: asFenString(
-        routeHistory.length ? routeStartFen : positionFen,
-      ),
-      history: routeHistory,
-      cursor: routeHistory.length,
-      branchStart: routeHistory.length,
-      selectedMoveUci: selectedMove ? asUciMove(selectedMove) : undefined,
-    };
-    localStorage.setItem("tempo-builder-session", JSON.stringify(session));
-    sessionStorage.setItem("tempo-builder-tools", "Compare");
-    setDiscoveryReturn({ view: currentView, id: discovery.id });
-    changeWorkspace("builder");
-  }
-
-  return (
+  const renderWorkspace = (slots: LegacyWorkspaceSlots = {}) => (
     <main
       className={`app-shell${boardWorkspace ? " board-workspace-shell" : ""}`}
     >
@@ -1764,65 +1508,17 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
         <BrandButton setView={changeWorkspace} />
         <Navbar view={currentView} setView={changeWorkspace} />
         <div className="top-actions">
-          {!independentStudy && <WorkbenchLaunch />}
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
-          {!independentStudy && <SavedLocallyButton setShowImport={setShowImport} />}
           <NotificationCenter />
-          {!independentStudy && <ServiceStatusPanel studyOnlyMode={studyOnlyMode} />}
-          {!independentStudy && <DiscoveriesTray
-            safeToOpen={
-              !(["train", "tactics", "endgames", "builder"] as View[]).includes(
-                currentView,
-              )
-            }
-            interactionBlocked={Boolean(
-              editorCard || showImport || pasteContext || repairRepertoireId,
-            )}
-            speculativePreparationPaused={
-              (currentView === "train" && !["feedbackPause", "complete"].includes(attempt.phase)) ||
-              (["tactics", "endgames", "builder"] as View[]).includes(currentView)
-            }
-            safeBreakCounter={safeBreakCounter}
-            onOpenRepertoire={() => changeWorkspace("repertoire")}
-            onOpenBuilder={openDiscoveryInBuilder}
-            boardTheme={boardTheme}
-            pieceSet={pieceSet}
-            openRequest={discoveryOpenRequest}
-            onQueueChanged={() => refreshDatabaseQueue()}
-          />}
+          {slots.topActions}
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
       <WorkspaceRefreshStatus />
-      {currentView === "builder" && discoveryReturn && (
-        <div className="discovery-builder-return" role="status">
-          <span>Investigating a discovery in Builder.</span>
-          <Button
-            onClick={() => {
-              changeWorkspace(discoveryReturn.view);
-              setDiscoveryOpenRequest((previous) => ({
-                id: discoveryReturn.id,
-                token: (previous?.token ?? 0) + 1,
-              }));
-              setDiscoveryReturn(undefined);
-            }}
-          >
-            Return to discovery
-          </Button>
-          <Button
-            onClick={() => {
-              changeWorkspace(discoveryReturn.view);
-              setDiscoveryReturn(undefined);
-            }}
-          >
-            Back to work
-          </Button>
-        </div>
-      )}
+      {slots.banner}
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
-        {comparisonOpenError && currentView === "train" && <div className="ui-notice error" role="alert">{comparisonOpenError}</div>}
-        {deletionRecoveryError && <div className="ui-notice error" role="alert">{deletionRecoveryError} <Button onClick={() => void recoverCardDeletion()}>Check card deletion</Button></div>}
+        {slots.trainingNotice}
         {currentView === "train" && (
           <>
             {studyOnlyMode === true && <div className="ui-notice" role="status">Study-only mode is on. Optional analysis and imports are paused. Review saves and the daily queue remain available.</div>}
@@ -1869,11 +1565,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
               </div>
             )}
             <TrainingView
-              repairNotice={pausedIntegrity && <TrainingRepairNotice
-                blockedDue={pausedIntegrity.blockedDue}
-                issueCount={pausedIntegrity.issueCount}
-                onResume={() => openRepairDialog(pausedIntegrity.id)}
-              />}
+              repairNotice={slots.repairNotice}
               dateLabel={new Date().toLocaleDateString(undefined, independentStudy ? { timeZone: studyConnection()?.bootstrap?.timezone } : undefined)}
               serviceError={serviceError}
               offlineQueue={offlineQueue}
@@ -1904,7 +1596,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
               }}
               handleAttemptFailure={handleAttemptFailure}
               resetCardAttempt={resetCardAttempt}
-              setEditorCard={setEditorCard}
+              setEditorCard={slots.onEditCard}
               onAcceptPrefixSplit={async (prefixCard) => {
                 if (!prefixCard.backendId)
                   throw new Error("The card is missing its local database ID. Refresh the queue.");
@@ -1940,7 +1632,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
               }}
               onOpeningAssistance={observeAssistance}
               onMove={tryMove}
-              onOpenPosition={openReviewPosition}
+              onOpenPosition={slots.onOpenPosition}
               useSharedBoard
             />
           </>
@@ -1965,263 +1657,48 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalW
             />
           </>
         )}
-        {currentView === "repertoire" && (
-          <RepertoireView
-            theme={boardTheme}
-            pieceSet={pieceSet}
-            imported={importedRepertoires}
-            refreshRevision={pasteRevision}
-            onImport={() => setShowImport(true)}
-            onPaste={() => setPasteContext({})}
-            onPasteGap={(_repertoireId, gap) =>
-              setPasteContext({
-                startingFen: gap.fen,
-                sourceGapId: gap.gap_id,
-              })
-            }
-            onBrowse={(id) => {
-              const existing = JSON.parse(
-                localStorage.getItem("tempo-builder-session") ?? "null",
-              );
-              if (existing)
-                localStorage.setItem(
-                  "tempo-builder-session",
-                  JSON.stringify({ ...existing, activeRepertoireId: id }),
-                );
-              else localStorage.setItem("tempo-active-repertoire-white", id);
-              changeWorkspace("builder");
-            }}
-            onRepair={openRepairDialog}
-            onResolveGap={(repertoireId, gap) => {
-              const position = new Chess(gap.fen);
-              const played = position.move({
-                from: gap.move_uci.slice(0, 2) as Square,
-                to: gap.move_uci.slice(2, 4) as Square,
-                promotion: gap.move_uci[4],
-              });
-              const session: BuilderSession = {
-                version: 1,
-                activeRepertoireByColor: {
-                  [gap.trained_color]: asRepertoireId(repertoireId),
-                },
-                activeRepertoireId: asRepertoireId(repertoireId),
-                orientation: gap.trained_color,
-                startingFen: asFenString(gap.fen),
-                history: [
-                  {
-                    san: asSanMove(played.san),
-                    uci: asUciMove(gap.move_uci),
-                    fen: asFenString(position.fen()),
-                  },
-                ],
-                cursor: 1,
-                branchStart: 0,
-                sourceGapId: gap.gap_id,
-              };
-              localStorage.setItem(
-                "tempo-builder-session",
-                JSON.stringify(session),
-              );
-              changeWorkspace("builder");
-            }}
-            onDeleteLocal={deleteLocalRepertoire}
-            onShowGamesAtPosition={(fen, repertoireId) => {
-              setGamesFenFilter(fen);
-              setGamesRepertoireFilter(repertoireId ?? "");
-              changeWorkspace("games");
-            }}
-            onRenameLocal={renameLocalRepertoire}
-            onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
-            onTrain={() => changeWorkspace("train")}
-          />
-        )}
-        {currentView === "builder" && (
-          <>
-            <BuilderView
-              theme={boardTheme}
-              pieceSet={pieceSet}
-              imported={importedRepertoires}
-              settings={new Settings()}
-              onPasteAnalysis={setPasteContext}
-              onCompare={(source, repertoireId) => {
-                setComparisonLaunch({
-                  source,
-                  sourceKey: `${source.startingFen}:${source.cursor}:${source.history.map((move) => move.uci).join(" ")}`,
-                  repertoireId,
-                  returnView: "builder",
-                });
-                changeWorkspace("compare");
-              }}
-              useSharedBoard
-            />
-          </>
-        )}
-        {currentView === "compare" && comparisonLaunch && (
-          <ComparisonView
-            key={comparisonLaunch.sourceKey}
-            launch={comparisonLaunch}
-            theme={boardTheme}
-            pieceSet={pieceSet}
-            onReturn={() => changeWorkspace(comparisonLaunch.returnView)}
-          />
-        )}
-        {currentView === "studies" && (
-          <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
-        )}
-        {OptionalWorkspaceView && optionalWorkspace?.views.includes(currentView) && <OptionalWorkspaceView
-          view={currentView} theme={boardTheme} pieceSet={pieceSet}
-          positionFilter={gamesFenFilter} repertoireFilter={gamesRepertoireFilter}
-          onClearFilter={() => { setGamesFenFilter(""); setGamesRepertoireFilter(""); }}
-          onQueueUpdated={refreshQueueOnly} onNavigate={changeWorkspace}
+        {slots.content}
+        {!OptionalComposition && currentView === "settings" && <StudySettingsView
+          theme={boardTheme} pieceSet={pieceSet} sound={soundOn}
+          onTheme={changeBoardTheme} onPieces={changePieceSet} onSound={changeSound}
         />}
-        {currentView === "insights" && (
-          <InsightsView
-            initialTab={insightsTab}
-            onTabChange={setInsightsTab}
-            reviewed={reviewed}
-            cardsLeft={cardsLeft}
-            totalCards={practiceCards.length}
-          />
-        )}
-        {currentView === "settings" && (
-          <SettingsView
-            theme={boardTheme}
-            pieceSet={pieceSet}
-            sound={soundOn}
-            onTheme={changeBoardTheme}
-            onPieces={changePieceSet}
-            onSound={changeSound}
-          />
-        )}
       </BoardWorkspaceContainer>
-      {showImport && (
-        <ImportDialogBox
-          onClose={() => {
-            setShowImport(false);
-            setSafeBreakCounter((count) => count + 1);
-          }}
-          onImported={addImportedRepertoire}
-          onDatabaseUpdated={refreshQueueAfterRepertoireChange}
-          onViewRepertoire={() => changeWorkspace("repertoire")}
-        />
-      )}
-      {pasteContext && (
-        <AnalysisPasteDialog
-          context={pasteContext}
-          onClose={() => {
-            setPasteContext(null);
-            setSafeBreakCounter((count) => count + 1);
-          }}
-          onSaved={(affectedRepertoireIds, conflictingRepertoireIds) => {
-            invalidateBranchEvidence();
-            setPasteRevision((revision) => revision + 1);
-            void refreshQueueOnly();
-            setPasteContext(null);
-            if (conflictingRepertoireIds.length)
-              openRepairDialog(conflictingRepertoireIds[0]);
-            for (const repertoireId of affectedRepertoireIds) {
-              window.dispatchEvent(
-                new CustomEvent("tempo:integrity", {
-                  detail: { repertoireId },
-                }),
-              );
-            }
-          }}
-        />
-      )}
-      {showTree && (
-        <TreeBrowser
-          onClose={() => setShowTree(false)}
-          theme={boardTheme}
-          pieceSet={pieceSet}
-        />
-      )}
-      {editorCard && (
-        <CardEditor
-          practiceCard={editorCard}
-          boardTheme={boardTheme}
-          pieceSet={pieceSet}
-          onClose={() => {
-            setEditorCard(null);
-            setSafeBreakCounter((count) => count + 1);
-          }}
-          onOpenBuilderForLineRemoval={(sessionFromEditor: BuilderSession) => {
-            const existingSession = JSON.parse(
-              localStorage.getItem("tempo-builder-session") ?? "null",
-            ) as BuilderSession | null;
-            const mergedSession: BuilderSession = {
-              ...sessionFromEditor,
-              activeRepertoireByColor:
-                sessionFromEditor.activeRepertoireByColor,
-              activeRepertoireId:
-                sessionFromEditor.activeRepertoireId ??
-                existingSession?.activeRepertoireId,
-            };
-            if (!mergedSession.activeRepertoireId) {
-              const savedWhiteRepertoire = localStorage.getItem(
-                "tempo-active-repertoire-white",
-              );
-              if (savedWhiteRepertoire)
-                mergedSession.activeRepertoireId =
-                  asRepertoireId(savedWhiteRepertoire);
-            }
-            localStorage.setItem(
-              "tempo-builder-session",
-              JSON.stringify(mergedSession),
-            );
-            setEditorCard(null);
-            changeWorkspace("builder");
-          }}
-          onSave={(updated) => {
-            invalidateBranchEvidence();
-            setPracticeCards((current) =>
-              current.map((item) => (item.id === updated.id ? updated : item)),
-            );
-            resetLine(updated);
-            setSuggestShorter(false);
-            activeQueueEntry.current = undefined;
-            if (usesLocalApi()) {
-              void refreshDatabaseQueue().catch(() => undefined);
-              if (updated.repertoireId)
-                window.dispatchEvent(
-                  new CustomEvent("tempo:integrity", {
-                    detail: { repertoireId: updated.repertoireId },
-                  }),
-                );
-            }
-          }}
-          onDelete={async deleted => {
-            if (!deleted.backendId) throw new Error("The card has no database identity. Refresh training.");
-            await finishPermanentDeletion(deleted.backendId);
-          }}
-        />
-      )}
-      {!independentStudy && <IntegrityRepairStatus
-        onReconcile={(repertoireId) => {
-          invalidateBranchEvidence();
-          deferredRepairIds.current.delete(repertoireId);
-          invalidateWorkspaceData();
-          invalidateTrainingQueueCache();
-          void checkPendingIntegrity(undefined, true);
-          const currentTrainingState = useTrainingStore.getState();
-          const hasPlayableTrainingCard = currentTrainingState.cardsLeft > 0
-            && Boolean(currentTrainingState.practiceCards[currentTrainingState.activeCardIndex]);
-          if (!hasPlayableTrainingCard) void refreshDatabaseQueue(false).catch(() => undefined);
-        }}
-        onResume={openRepairDialog}
-      />}
-      {repairRepertoireId && (
-        <RepertoireIntegrityDialog
-          repertoireId={repairRepertoireId}
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          onClose={deferRepairDialog}
-        />
-      )}
+      {slots.dialogs}
       <DataDiagnosticsNotice />
       {!boardWorkspace && <Footer />}
     </main>
   );
+  if (!OptionalComposition) return renderWorkspace();
+  return <OptionalComposition
+    controllerRef={optionalController}
+    currentView={currentView} changeWorkspace={changeWorkspace}
+    boardTheme={boardTheme} pieceSet={pieceSet} soundOn={soundOn}
+    changeBoardTheme={changeBoardTheme} changePieceSet={changePieceSet} changeSound={changeSound}
+    studyOnlyMode={studyOnlyMode} safeBreakCounter={safeBreakCounter}
+    incrementSafeBreak={() => setSafeBreakCounter(count => count + 1)}
+    card={card} currentFenString={currentFenString} step={step} attemptPhase={attempt.phase}
+    reviewed={reviewed} cardsLeft={cardsLeft} totalCards={practiceCards.length}
+    refreshDatabaseQueue={refreshDatabaseQueue} refreshQueueOnly={refreshQueueOnly}
+    invalidateBranchEvidence={invalidateBranchEvidence}
+    refreshQueueAfterRepertoireChange={refreshQueueAfterRepertoireChange}
+    refreshDatabaseQueueAfterRepertoireChange={refreshDatabaseQueueAfterRepertoireChange}
+    addImportedRepertoire={addImportedRepertoire} renameLocalRepertoire={renameLocalRepertoire}
+    deleteLocalRepertoire={deleteLocalRepertoire} finishPermanentDeletion={finishPermanentDeletion}
+    onCardSaved={updated => {
+      invalidateBranchEvidence();
+      setPracticeCards(current => current.map(item => item.id === updated.id ? updated : item));
+      resetLine(updated);
+      setSuggestShorter(false);
+      activeQueueEntry.current = undefined;
+      if (usesLocalApi()) {
+        void refreshDatabaseQueue().catch(() => undefined);
+        if (updated.repertoireId) window.dispatchEvent(new CustomEvent("tempo:integrity", {
+          detail: { repertoireId: updated.repertoireId },
+        }));
+      }
+    }}
+  >{renderWorkspace}</OptionalComposition>;
+
 }
 
 function BoardWorkspaceContainer({

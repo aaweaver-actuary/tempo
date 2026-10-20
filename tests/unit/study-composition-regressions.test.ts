@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
-import { studyComposition } from '../../scripts/study-composition';
+import { studyComposition, optionalStudyImplementations } from '../../scripts/study-composition';
 import { canOpenWorkspace } from '../../app/lib/study-workspace-policy';
 import type { View } from '../../app/types';
 
 it('independent Study rejects direct optional-workspace intents while legacy navigation remains', () => {
-  const supported: View[] = ['train', 'tactics', 'endgames'];
-  const optional: View[] = ['games', 'builder', 'repertoire', 'studies', 'insights', 'settings', 'compare', 'progress', 'statistics'];
+  const supported: View[] = ['train', 'tactics', 'endgames', 'settings'];
+  const optional: View[] = ['games', 'builder', 'repertoire', 'studies', 'insights', 'compare', 'progress', 'statistics'];
   for (const view of supported) expect(canOpenWorkspace(view, true)).toBe(true);
   for (const view of optional) expect(canOpenWorkspace(view, true)).toBe(false);
   for (const view of [...supported, ...optional]) expect(canOpenWorkspace(view, false)).toBe(true);
@@ -20,15 +20,11 @@ it('Study selects a physical entry with no legacy conditional import', () => {
   expect(() => handler.call({} as never, '<p>missing entry</p>', {} as never)).toThrow('Study entry marker missing');
 });
 
-it.each([
-  'app/views/games_view.tsx', 'app/components/workbench-game-sync.tsx',
-  'app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts',
-  'app/views/legacy-home.tsx', 'app/views/legacy-games-workspace.tsx',
-])('Study build rejects loaded optional implementation even before emitting it: %s', path => {
+it.each(Object.values(optionalStudyImplementations).flat())('Study build rejects loaded optional implementation even before emitting it: %s', path => {
   const hook = studyComposition('/repo').generateBundle!;
   const handler = typeof hook === 'function' ? hook : hook.handler;
   const context = { getModuleIds: () => [`/repo/${path}`][Symbol.iterator](), emitFile: () => undefined };
-  expect(() => handler.call(context as never, {} as never, {} as never, false)).toThrow('Study imports optional Games implementation');
+  expect(() => handler.call(context as never, {} as never, {} as never, false)).toThrow('Study imports optional workspace implementation');
 });
 
 it('Study composition emits an inspectable source/chunk inventory without private paths', () => {
