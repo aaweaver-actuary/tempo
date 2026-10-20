@@ -2,6 +2,132 @@
 
 `tempo-learning-runtime` 0.1.0 serves Learning from one dedicated PostgreSQL 18 database and one configured workspace. Its installed closure contains Learning review and remediation 0.1.0, scheduling 0.2.0, chess-core 0.1.0 and the Content/Game Evidence contract packages. Redis, Celery, engines, model runtimes and the legacy backend are absent. No live database import, deployment, installer change or cutover is provided here.
 
+## Architecture drawings
+
+These are the canonical drawings for the views below. Edit the blocks here;
+peer documents link to them instead of maintaining copies. See the
+[diagram index and source/status baseline](../../../docs/architecture/diagrams/README.md) and
+[maintenance procedure](../../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
+
+### Shared Learning request execution gaps (MAIN)
+
+**MAIN / OPEN SOURCE GAPS:** the source has two request-progress dependencies
+that the separation target does not permit us to hide. They concern awaited
+host-reporting I/O and shared event-loop execution, not Games service calls.
+
+```mermaid
+flowchart TB
+  Study["Essential Study HTTP request"] -->|"dispatch / response progress"| Loop["Learning ASGI event loop"]
+  Loop -->|"essential middleware awaits<br/>context entry and exit"| Activity["request_activity<br/>asyncio.to_thread + shield"]
+  Activity -->|"wait for threading.Lock<br/>and synchronous _publish"| Files[("HostActivity filesystem<br/>mkdir / write / replace")]
+  Endgame["Async tablebase probe /<br/>endgame attempt handlers"] -->|"synchronous DB phases<br/>within async handlers"| Sync["connection / execute / fetch<br/>and gateway dispatch"]
+  Sync -->|"pool / queries / transactions"| DB[("Learning PostgreSQL")]
+  Sync -.->|"occupies the same event loop<br/>during synchronous phases"| Loop
+  Endgame -->|"cache miss: awaited HTTP<br/>outside DB transactions"| Provider["Optional tablebase provider"]
+  classDef gap fill:#fff1f0,stroke:#c53030,color:#7f1d1d
+  class Activity,Sync gap
+```
+
+| Actual dependency | Source and ownership |
+| --- | --- |
+| Essential requests await host publication | [Learning API](src/tempo_learning_runtime/api.py): `authority` wraps essential `/api/` requests (excluding activity/OPTIONS) in `request_activity`. It awaits the thread running `context.__enter__` before `call_next`, and awaits entry/exit completion in cleanup, including cancellation. [`HostActivity.request`](src/tempo_learning_runtime/host_activity.py) takes `threading.Lock` and synchronously calls `_publish`, which creates directories, writes JSON and replaces its file. Moving that work to a thread frees the event loop while awaiting it, but does not remove the request's wait. |
+| Reporting configuration and failure limit | [`Configuration.environment`](src/tempo_learning_runtime/config.py) sets the activity directory; `HostActivity.request` is a no-op only when its directory is `None`. Publication catches/logs `OSError`, but a slow lock/filesystem operation can still delay the awaited path. It does not wait for a Games consumer acknowledgement. Database timeout settings do not establish a bound on this filesystem wait. |
+| Optional endgame work can occupy the shared ASGI loop | [Learning API](src/tempo_learning_runtime/api.py): async `tablebase` performs synchronous cache reads before awaited provider HTTP and synchronous cache writes afterward; async `endgame_attempt` also performs synchronous receipt/template reads and `gateway.dispatch`. Those synchronous connection/query/dispatch phases run on the shared event loop and can delay unrelated Study request progress. The provider HTTP itself is awaited outside a database transaction; that fact does not isolate the synchronous phases. |
+
+**Verification status:** these are source-supported open architecture gaps. No
+contention, latency or live failure was reproduced here. Transaction/pool budgets
+remain useful bounds at their own boundaries; they are not proof that optional
+work cannot delay Study through the shared event loop or awaited filesystem path.
+The target is essential Study progress independent of optional host reporting and
+optional workload execution. Coordinator-owned code repairs are separate work,
+not completed by or incorporated into this documentation view.
+
+### Review commit and recovery (MAIN)
+
+Scope: Learning-connected aggregate review through the installed review
+application. Typed Study/tactics/defense attempts retain their own handlers and
+identity rules; they are not silently folded into `cards.review`.
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant S as Study session /<br/>review-outbox
+  participant B as Browser IntentStore
+  participant A as Learning HTTP and<br/>gateway
+  participant R as Review application +<br/>borrowed adapter
+  participant D as Learning PostgreSQL
+  User->>S: Complete issued attempt with<br/>stable logical ID
+  S->>B: Retain immutable payload,<br/>authority and request ID
+  alt Browser retention fails
+    B-->>S: storage-failed, no new<br/>unretained dispatch
+  else Retained
+    B-->>S: pending intent committed<br/>locally
+    S->>A: POST card review with same<br/>Idempotency-Key
+    Note over A: Authenticate workspace/origin before<br/>DB access
+    Note over A: Essential middleware also awaits<br/>HostActivity context entry / exit
+    A->>D: record_intent in its own<br/>transaction
+    D-->>A: queued intent committed (or<br/>matching identity found)
+    Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
+    A->>R: submit_review using caller<br/>connection / handler<br/>savepoint
+    R->>D: Lock cards then queue date,<br/>validate attempt, revision,<br/>receipt
+    Note over R,D: Optional successor uses nonblocking<br/>locks, never delays current review
+    R->>D: Required evidence +<br/>review/history/schedule +<br/>attempt completion
+    R->>D: Required local obligation<br/>settlement, logical receipt,<br/>queue effects
+    alt Valid execution
+      R-->>A: Persisted result (or<br/>original idempotent result)
+      A->>D: Complete operation receipt,<br/>commit with all handler<br/>effects
+      A-->>S: Authoritative result<br/>(response may be lost)
+    else Terminal domain conflict
+      A->>D: Roll back handler savepoint,<br/>commit failed operation<br/>receipt
+      A-->>S: Conflict / failure, no<br/>partial handler effects
+    else Transient DB contention or timeout
+      A->>D: Roll back execution,<br/>original queued intent<br/>remains
+      A-->>S: Unavailable, retain identity<br/>for retry
+    end
+    opt Response lost or acceptance still unconfirmed
+      S->>A: Read original operation<br/>receipt / replay same<br/>request
+      A-->>S: Original result, pending<br/>state, or explicit conflict
+      Note over S,A: Unknown/pending is not committed,<br/>changed payload under same ID<br/>conflicts
+    end
+    S->>B: Persist authoritative<br/>settlement before projecting<br/>it
+    opt Settled review may advance
+      S->>A: Load issued next attempt /<br/>validate prepared<br/>continuation
+      A-->>S: Next attempt or explicit<br/>load failure
+      Note over S,B: Next-load retry uses progression<br/>checkpoint, never resubmits grade
+    end
+  end
+```
+
+Source owners: [`review-outbox`](../../../app/lib/review-outbox.ts) retains immutable
+aggregate intent and adapts receipts;
+[`createStudySession`](../../../packages/study-session/src/index.ts) claims delivery,
+persists settlement, fences presentation generations and bounds next acquisition;
+[`IntentStore`](../../../packages/browser-intents/src/index.ts) owns browser
+transactions. [`learningFetch`](../../../app/lib/study-connection.ts) restricts
+authority; the [HTTP review handler](src/tempo_learning_runtime/api.py)
+dispatches to [`gateway`](src/tempo_learning_runtime/gateway.py).
+[`submit_review`](../application/src/tempo_learning_review/application.py)
+uses [`ReviewSubmissionStore`](../application/src/tempo_learning_review/ports.py),
+implemented by [`LearningReviewAdapter`](src/tempo_learning_runtime/review_adapter.py).
+[Scheduling/review effects](src/tempo_learning_runtime/review_service.py)
+and [required settlement](src/tempo_learning_runtime/remediation_adapter.py)
+remain Learning-local under the borrowed transaction. The
+[`Database`](src/tempo_learning_runtime/database.py)
+context commits/rolls back, not the application port.
+
+Transport idempotency and logical attempt identity are separate protections.
+Reconciliation may use a new transport operation while retaining the original
+logical attempt. A rejected/discarded attempt must not advance as a successful
+review. Browser disposal preserves retained work; a late response may settle its
+original record but cannot overwrite a newer session snapshot. Auth rejection,
+storage failure, pending save and failed next load remain different states.
+
+Ordinary queue reads are not necessarily side-effect free: the
+[queue payload handler](src/tempo_learning_runtime/api.py)
+dispatches `queue.ensure_current`, runs at most two foreground maintenance assists,
+and [queue command handlers](src/tempo_learning_runtime/queue_commands.py)
+own attempt issuance. None of those operations calls the game producer.
+
 ## Install and run
 
 From the repository root:

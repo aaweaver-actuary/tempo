@@ -18,6 +18,82 @@ legacy backend, Learning, Game Evidence, Intelligence, Redis, Celery, Stockfish,
 or Maia. A publication is an immutable definition set; Learning acceptance and
 serving activation remain external operations owned by #193.
 
+## Architecture drawings
+
+These are the canonical drawings for the views below. Edit the blocks here;
+peer documents link to them instead of maintaining copies. See the
+[diagram index and source/status baseline](../../docs/architecture/diagrams/README.md) and
+[maintenance procedure](../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
+
+### Content publication and serving activation (MAIN)
+
+The explicit bridge operator talks to owners' public boundaries; it is not part
+of an ordinary Study request. Arrows show data/command flow, not shared database
+connections or atomic commits across services.
+
+```mermaid
+sequenceDiagram
+  actor Operator
+  participant B as A bridge operator<br/>tool
+  participant C as Content CLI / store
+  participant L as Learning publication<br/>API
+  participant D as Learning database
+  Operator->>B: Explicit import/proposal,<br/>exact approval and chosen<br/>authority
+  B->>C: Prepare / approve durable<br/>source operation
+  C-->>B: Immutable publication /<br/>routes and operation identity
+  Note over C: Content owns source, inventory<br/>and publication transactions only
+  B->>L: Read original publication<br/>operation receipt
+  alt Original intent not yet accepted
+    B->>B: execution_bundle(export,<br/>due_date) builds Learning<br/>execution facts / bundle
+    B->>L: Explicit v2 stage with<br/>operator credential
+    L->>D: Store inactive validated<br/>bundle
+    B->>L: Activate same immutable<br/>identity / request
+    Note over L,D: Learning rechecks generation,<br/>complete definitions, ownership and<br/>revisions
+    L->>D: Own transaction: serving<br/>switch + stale-attempt<br/>fences + queue effects +<br/>receipt
+    L-->>B: Complete receipt or explicit<br/>pending/conflict/unavailable
+  else Receipt already exists
+    L-->>B: Original<br/>complete/failed/queued state<br/>bound to request
+  end
+  opt Lost response or still queued
+    B->>L: Recover original receipt /<br/>retry original operation
+    L-->>B: Authoritative state (never<br/>infer failure from missing<br/>response)
+  end
+  B->>C: Propose completion receipt<br/>or request failure recording
+  C->>L: Content's own authenticated<br/>GET of original operation<br/>through receipt_transport
+  L-->>C: Original bound terminal<br/>receipt or unconfirmed state
+  alt Content verifies matching terminal result
+    C->>C: Validate original binding,<br/>matching receipt / terminal state<br/>then commit own record
+    C-->>Operator: Durable bridge status /<br/>point-in-time activation<br/>evidence
+  else Unavailable, pending or mismatched receipt
+    C-->>B: Refuse final recording,<br/>retain original operation
+  end
+```
+
+Source anchors: Content [`bridge`](src/tempo_content/bridge.py)
+and [`CLI`](src/tempo_content/cli.py), external
+[`Operator` receipt/retry workflow and `execution_bundle`](../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py),
+Learning [publication routes](../learning/runtime/src/tempo_learning_runtime/api.py),
+[`publication_bridge`](../learning/runtime/src/tempo_learning_runtime/publication_bridge.py),
+[`publications`](../learning/runtime/src/tempo_learning_runtime/publications.py)
+and [`gateway`](../learning/runtime/src/tempo_learning_runtime/gateway.py).
+Content exports serialized publication/routes; the external bridge constructs
+Learning execution facts/bundle. Content's supported CLI then independently calls
+[`receipt_transport.authenticated_operation` / `verified_receipt` / `verified_terminal_failure`](src/tempo_content/receipt_transport.py)
+before its local `record` / `record_terminal_failure` write. That verification
+uses Content's configured original Learning authority and operator credential,
+checks the original request binding and terminal state, and for completion checks
+that the proposed receipt matches the authenticated response. It is not merely
+trusting the bridge's earlier receipt read. Failure/unavailability retains the
+operation rather than recording an unverified result. Content's CLI therefore has
+this explicit operator-invoked Learning HTTP dependency; it is not startup or
+ordinary Study work.
+Retirement is a separate command; it locks/fences affected definitions and attempts.
+Failed activation must preserve the previous serving generation. Staging or a
+Content publication alone supplies no serving authority. An activation receipt is
+historical evidence, not proof that its generation remains current forever.
+An Analysis response proposal is a draft input to this explicit approval path,
+never automatic Content approval or Learning admission.
+
 ## Installation
 
 Python `>=3.12,<3.15` is supported. From a repository checkout, install only this

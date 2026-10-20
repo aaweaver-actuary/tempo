@@ -58,6 +58,104 @@ provider links are supplied provenance, never guessed IDs. The native producer
 fixture now includes the actual games read response for browser qualification.
 
 
+## Architecture drawings
+
+These are the canonical drawings for the views below. Edit the blocks here;
+peer documents link to them instead of maintaining copies. See the
+[diagram index and source/status baseline](../../docs/architecture/diagrams/README.md) and
+[maintenance procedure](../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
+
+### Merged PR322 Games reader
+
+**MAIN / MERGED PR322:** implementation
+`653a85bb5f5b3e520c0eda0c36234d3b416708b4` merged as
+`bc746728ca1967cc8ad9991cbe8c12099a01a3ae`. It restores frozen accepted
+input viewing through an enforced read composition. It does not restore live
+sync, fresh repertoire comparison, analysis creation or practice commands.
+
+```mermaid
+flowchart TB
+  subgraph Browser["PR322 browser"]
+    Composition["Workbench<br/>connection/bootstrap owner"] -->|"games-readonly-v1 before<br/>pending command recovery"| View["mountGamesView /<br/>mountGameBrowser"]
+    View -->|"GamesReader: listScopes,<br/>readScope, readGames"| Client["IntelligenceClient<br/>implements GamesReader"]
+    View -->|"supplied legal replay /<br/>rendering"| Board["Chess / Chessground<br/>libraries"]
+  end
+  subgraph Server["PR322 server"]
+    Client -->|"authenticated GET;<br/>workspace/origin checks"| API["games_api read routes only"]
+    API -->|"scope / accepted games<br/>projection"| Reader["GamesReader - complete<br/>parameter-bound queries"]
+    Reader -->|"borrow read-only transaction"| Store["Store - pools, readiness,<br/>transactions, close"]
+    Store -->|"SELECT only for this path"| Data[("Intelligence: heads, runs,<br/>inputs, pages")]
+  end
+```
+
+Source links below follow the merged implementation. The index retains the exact
+implementation and merge SHAs; no deployed process or effective grant is inferred.
+
+| Boundary | Merged PR322 concrete source |
+| --- | --- |
+| Typed view port | [`GamesReader`](src/games-reader.ts): three typed read methods; [`games-view.ts`](src/games-view.ts) and [`game-browser.ts`](src/game-browser.ts) receive it. [`client.ts`](src/client.ts) adapts HTTP and fences connection generations. |
+| Shared Workbench composition | [`workbench.ts`](src/workbench.ts) still imports its ordinary Analysis controller/commands. It selects Games mode after bootstrap, before mutation recovery. Games view modules do not import that controller. The whole Workbench artifact is not claimed to contain only read code. |
+| Server composition / enforcement | [`api.py`](../../services/intelligence/src/tempo_intelligence/api.py) returns after registering [`games_api.py`](../../services/intelligence/src/tempo_intelligence/analysis/games_api.py), rejects unsafe methods, and starts no worker/provider in read-only mode. Health, bootstrap, scope and game reads are registered; mutation/job/report-progress routes are absent. |
+| Query / cursor owner | [`games_reader.py`](../../services/intelligence/src/tempo_intelligence/analysis/games_reader.py) queries only `analysis_heads`, `analysis_runs`, `analysis_inputs`, `analysis_pages`. Cursor binds workspace/run/revision/input/ordering. Scope and page share one transaction. Ordinary Analysis delegates the same game reader. |
+| Database and lifecycle | [`Store`](../../services/intelligence/src/tempo_intelligence/store.py) forces read-only transactions even when a caller omits the flag. Startup checks SELECT access for these tables plus metadata, without requiring engine/write grants. [`Configuration`](../../services/intelligence/src/tempo_intelligence/config.py) rejects worker/model configuration in read-only mode and needs caller/read configuration rather than operator/worker secrets. This is not a claim that live grants were provisioned or every possible write privilege is audited away. |
+
+**Before PR322 (historical `4fc2eb8c`):** the earlier
+[Workbench](https://github.com/aaweaver-actuary/tempo/blob/4fc2eb8c6b534345b25668761b3746c91be08cf0/apps/workbench-web/src/workbench.ts)
+browsed selected games inside ordinary Analysis. The earlier
+[`AnalysisStore.runs` / `games`](https://github.com/aaweaver-actuary/tempo/blob/4fc2eb8c6b534345b25668761b3746c91be08cf0/services/intelligence/src/tempo_intelligence/analysis/store.py)
+used engine-position aggregates for run listing and loaded accepted input through
+`_input` before paging games in memory. The earlier
+[API composition](https://github.com/aaweaver-actuary/tempo/blob/4fc2eb8c6b534345b25668761b3746c91be08cf0/services/intelligence/src/tempo_intelligence/api.py)
+registered mutation/provider/job routes and could start a background worker.
+The mutable mode still has those capabilities; merged PR322 adds the separate
+read-only composition, narrow view port and bounded game projection above.
+
+### Games read, failure and disposal (MAIN, merged PR322)
+
+PR322 implementation `653a85bb5f5b3e520c0eda0c36234d3b416708b4` merged as
+`bc746728ca1967cc8ad9991cbe8c12099a01a3ae`; see the
+[source-linked component view](#merged-pr322-games-reader).
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant V as Workbench Games view
+  participant H as GamesReader HTTP<br/>adapter / connection<br/>owner
+  participant A as Games-only API
+  participant R as GamesReader query<br/>projection
+  participant D as Intelligence<br/>database
+  User->>V: Connect and choose existing<br/>game scope
+  V->>H: listScopes / readScope /<br/>readGames
+  H->>A: Authenticated GET only
+  Note over A: Check caller credential, workspace<br/>and origin, unsafe methods rejected
+  A->>R: Read accepted scope and<br/>bounded game page
+  R->>D: One owner read-only<br/>transaction, bind<br/>run/input/revision/cursor
+  alt Valid accepted scope
+    D-->>R: At most 10 game payloads +<br/>one lookahead
+    R-->>A: Page and next cursor, frozen<br/>comparison provenance
+    A-->>H: Validated workspace / scope<br/>response
+    H-->>V: Result only if connection<br/>generation still current
+    V-->>User: Legal replay and original<br/>matched/missed/unknown<br/>context
+  else Auth, schema, missing scope, stale cursor or database failure
+    A-->>H: Explicit<br/>unavailable/reconnect/error<br/>result
+    H-->>V: Error retained within Games
+    V-->>User: No hidden import, run<br/>creation, provider refresh<br/>or Study repair
+  end
+  opt View or connection is disposed while request is in flight
+    V->>V: Invalidate view generation,<br/>destroy owned board
+    H->>H: Disconnect invalidates<br/>connection generation
+    Note over V,H: Late response cannot mutate<br/>replacement view, no Study lifecycle<br/>action
+  end
+  Note over A,D: Service shutdown closes owned<br/>pools/executor, starts no optional<br/>worker
+```
+
+The query reader does not use engine-position progress, change accepted inputs,
+write a command, contact a provider or query Study/Learning. Repertoire conformance
+is frozen to the accepted input; a current-repertoire comparison would require a
+separate explicit operation. Failure/shutdown isolation is a source boundary;
+[shared host/database budgets remain deployment-unverified](../../docs/architecture/diagrams/study-games.md#failure-lifecycle-and-resource-acceptance).
+Parsing this sequence or passing component tests cannot certify a live allocation.
+
 ## Connected navigation
 
 `TEMPO_STUDY_URL` is an optional, public **build-time** setting for the general

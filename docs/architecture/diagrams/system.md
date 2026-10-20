@@ -5,102 +5,13 @@
 
 ## Implemented component increments
 
-**MAIN:** these implementations coexist with the legacy assembly below. This
-view shows source interfaces available for explicit composition, not a claim that
-all users or live data have moved to them. `apps/study-web` remains a planned
-independent artifact; the Learning-connected Study build reuses `static`/`app`.
-`R/W` storage edges mean reads/writes by that state's owning component.
-
-```mermaid
-flowchart TB
-  Study["Study browser<br/>static / app"] -->|"queue / review HTTP"| Learning["Learning runtime<br/>Queue / settlement owner"]
-  Learning -->|"R/W"| LDB[("Learning PostgreSQL")]
-  Bridge["A bridge operator<br/>Public CLI/HTTP adapters"] -->|"prepare / approve / export"| Content["Content<br/>Sources / publications"]
-  Content -->|"R/W"| CDB[("Content PostgreSQL")]
-  Bridge -->|"stage / activate / retire"| Learning
-  Content -.->|"record CLI: authenticated<br/>original receipt GET"| Learning
-  GE["Game Evidence<br/>Sources / comparisons / outbox"] -->|"R/W"| GDB[("Game Evidence PostgreSQL")]
-  Bridge -.->|"explicit snapshot load"| GE
-  GE -->|"EvidenceDelivery HTTP"| Learning
-  WB["Workbench<br/>Analysis / selected games"] -->|"reads / explicit commands"| Intel["Intelligence<br/>Inputs / reports / jobs"]
-  Intel -->|"R/W"| IDB[("Intelligence PostgreSQL")]
-  GE -.->|"explicit export via C pilot"| Intel
-```
-
-The bridge is an explicit operator tool, not an automatically invoked Learning
-dependency. Content's explicit record CLI also makes its own authenticated
-Learning receipt read before recording a result; see the
-[publication sequence](flows.md#content-publication-and-serving-activation-main).
-Likewise the pilot supplies the Stockfish client; merely serving an
-accepted report does not start that worker. Intelligence also implements Explorer
-source work and Maia job/result APIs, omitted here to bound the graph: its
-[provider worker](../../../services/intelligence/src/tempo_intelligence/worker.py)
-owns HTTP source calls, [Maia validation](../../../services/intelligence/src/tempo_intelligence/maia.py)
-binds registered jobs/results, and the [independent Maia worker](../../../workers/maia/README.md)
-owns model execution. These APIs do not grant Learning admission authority or
-establish a deployed worker connection.
-
-| Edge / boundary | Concrete source and interface |
-| --- | --- |
-| Study build and connection | [Vite target](../../../vite.static.config.ts), [static entry](../../../static/src/main.tsx), [Study connection](../../../app/lib/study-connection.ts) (`learningFetch`, origin/path allowlist). [Study artifact status](../../../apps/study-web/README.md) is still planned. |
-| Learning HTTP, transaction and install closure | [`create_app`](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [`Database`](../../../services/learning/runtime/src/tempo_learning_runtime/database.py), [installed dependencies](../../../services/learning/runtime/pyproject.toml). Game Evidence **contracts**, not its service implementation, are installed. |
-| Content/bridge and activation | [Content `Store`](../../../services/content/src/tempo_content/store.py), [bridge domain](../../../services/content/src/tempo_content/bridge.py), [operator](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py), [Learning publication bridge](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py). See [activation flow](flows.md#content-publication-and-serving-activation-main). |
-| Game Evidence output and delivery | [`Store`](../../../services/game-evidence/src/tempo_game_evidence/store.py), [`deliver_one`](../../../services/game-evidence/src/tempo_game_evidence/delivery.py), [analysis export](../../../services/game-evidence/src/tempo_game_evidence/analysis_export.py), [Learning receiver](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py). |
-| Workbench / Intelligence | [`IntelligenceClient`](../../../apps/workbench-web/src/client.ts), [`PendingCommands`](../../../apps/workbench-web/src/commands.ts), [HTTP composition](../../../services/intelligence/src/tempo_intelligence/api.py), [Analysis routes](../../../services/intelligence/src/tempo_intelligence/analysis/api.py), [`AnalysisStore`](../../../services/intelligence/src/tempo_intelligence/analysis/store.py). |
-| Engine dispatch | [pilot CLI](../../../tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/cli.py), [public-client adapter](../../../tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/stockfish_client.py), [bounded dispatcher](../../../services/intelligence/src/tempo_intelligence/analysis/worker.py), [worker API](../../../workers/stockfish/index.mjs), [job/result contracts](../../../contracts/analysis-jobs/README.md). |
-| Shared libraries | [scheduling](../../../packages/scheduling/README.md), [chess identity](../../../packages/chess-core/README.md), [browser intents](../../../packages/browser-intents/README.md), [Study session](../../../packages/study-session/README.md), [board renderer](../../../packages/board-ui/README.md), [contract index](../../../contracts/README.md). Package existence is not proof of every consumer's adoption. |
+The canonical drawing and source notes render directly in
+[docs/architecture/diagrams/README.md](README.md#implemented-component-increments).
 
 ## Legacy assembly and existing coupling
 
-**MAIN / LEGACY:** the full app and legacy backend still combine domain concerns.
-This is a separate assembly from the independent Learning runtime. The declared
-PostgreSQL Compose stack below is source configuration, **deployment unverified**.
-SQLite compatibility paths also exist; see [storage](../../STORAGE.md).
-
-```mermaid
-flowchart TB
-  Home["Shared Home - training,<br/>authoring, Games"] -->|"feature imports / shared<br/>browser state"| Views["Legacy Games and other<br/>workspaces"]
-  Home -->|"queue/review and feature<br/>HTTP"| API["backend/app/main.py -<br/>all-domain composition"]
-  Views -->|"legacy Games HTTP"| API
-  API -->|"durable command dispatch"| Broker["Redis / Celery"]
-  Broker -->|"foreground and background<br/>workers"| Commands["Legacy command gateway and<br/>handlers"]
-  Commands -->|"borrow caller transaction"| Policy["Queue/review/feedback<br/>policies and storage<br/>adapters"]
-  Policy -->|"same database: game<br/>projections and Study state"| DB[("Legacy tempo PostgreSQL<br/>database")]
-  API -->|"reader projection queries"| DB
-  Compose["docker-compose.yml"] -->|"declares startup health<br/>dependencies"| API
-  Compose -->|"declares shared<br/>infrastructure"| Broker
-```
-
-The extracted feedback/queue ports improve local decision/effect ownership; they
-do not split this database, broker or application root. The legacy
-[`QueueAdmissionAdapter`](../../../backend/app/services/queue_admission_adapter.py)
-still joins gameplay priorities, opportunities and miss projections while preparing
-ordinary queue candidates. Its
-[feedback composition](../../../backend/app/services/real_game_feedback_adapter.py)
-wraps the caller connection with
-[`BorrowedFeedbackStore`](../../../backend/app/storage/real_game_feedback.py);
-the [miss projection](../../../backend/app/storage/real_game_miss_projection.py)
-and [accepted-scope storage](../../../backend/app/storage/legacy_game_evidence_scope.py)
-own those queries. Queue policies must not acquire a second writer.
-
-The legacy [evidence command](../../../backend/app/game_evidence_commands.py)
-also borrows the existing [command gateway](../../../backend/app/command_gateway.py)
-transaction. This legacy-local bridge is not the independent Learning receiver
-and must not be mistaken for permission for another service to write these tables.
-[Games view](../../../app/views/games_view.tsx),
-[legacy root](../../../backend/app/main.py), [command dispatch](../../../backend/app/command_dispatch.py),
-[Celery root](../../../backend/app/celery_app.py) and
-[Compose](../../../docker-compose.yml) are the source anchors for the graph.
-
-These are scoped legacy gaps for architecture review, not a claim that Games can
-fail independently throughout the full app. The [Study detail](study-games.md#main-study-path-and-source-gap)
-also exposes shared browser imports; lazy declarations alone do not execute those
-features. Its [conditional build/offline view](study-games.md#conditional-study-build-and-offline-assets-main)
-shows how optional chunks, **if emitted**, can enter the shared required shell
-inventory and affect offline readiness. Artifact presence and live failure are
-unverified. Changes claiming isolation must satisfy the
-new rule at the affected boundary; this documentation does not repair the legacy
-assembly or authorize a live cutover.
+The canonical drawing and source notes render directly in
+[backend/README.md](../../../backend/README.md#legacy-assembly-and-existing-coupling).
 
 ## Data, resource and lifecycle owners
 
@@ -130,7 +41,7 @@ wait. It does not contact Games or await a consumer acknowledgement.
 The same API's async tablebase/endgame handlers perform synchronous database
 phases on the shared ASGI event loop, which can delay unrelated Study progress.
 Awaiting provider HTTP outside transactions does not isolate those synchronous
-phases. The [request-execution view](study-games.md#shared-learning-request-execution-gaps-main)
+phases. The [request-execution view](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
 shows both **source-supported open gaps**. Neither is a reproduced live failure
 or a completed repair; declared pool/transaction bounds do not prove independent
 request progress across these execution/resource boundaries.
