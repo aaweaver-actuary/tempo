@@ -110,6 +110,39 @@ Its owning change must inspect the actual output/inventory and verify the affect
 offline boundary before claiming the gap removed. This documentation correction
 does not require a full-stack suite or change runtime source.
 
+## Shared Learning request execution gaps (MAIN)
+
+**MAIN / OPEN SOURCE GAPS:** the source has two request-progress dependencies
+that the separation target does not permit us to hide. They concern awaited
+host-reporting I/O and shared event-loop execution, not Games service calls.
+
+```mermaid
+flowchart TB
+  Study["Essential Study HTTP request"] -->|"dispatch / response progress"| Loop["Learning ASGI event loop"]
+  Loop -->|"essential middleware awaits<br/>context entry and exit"| Activity["request_activity<br/>asyncio.to_thread + shield"]
+  Activity -->|"wait for threading.Lock<br/>and synchronous _publish"| Files[("HostActivity filesystem<br/>mkdir / write / replace")]
+  Endgame["Async tablebase probe /<br/>endgame attempt handlers"] -->|"synchronous DB phases<br/>within async handlers"| Sync["connection / execute / fetch<br/>and gateway dispatch"]
+  Sync -->|"pool / queries / transactions"| DB[("Learning PostgreSQL")]
+  Sync -.->|"occupies the same event loop<br/>during synchronous phases"| Loop
+  Endgame -->|"cache miss: awaited HTTP<br/>outside DB transactions"| Provider["Optional tablebase provider"]
+  classDef gap fill:#fff1f0,stroke:#c53030,color:#7f1d1d
+  class Activity,Sync gap
+```
+
+| Actual dependency | Source and ownership |
+| --- | --- |
+| Essential requests await host publication | [Learning API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py): `authority` wraps essential `/api/` requests (excluding activity/OPTIONS) in `request_activity`. It awaits the thread running `context.__enter__` before `call_next`, and awaits entry/exit completion in cleanup, including cancellation. [`HostActivity.request`](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py) takes `threading.Lock` and synchronously calls `_publish`, which creates directories, writes JSON and replaces its file. Moving that work to a thread frees the event loop while awaiting it, but does not remove the request's wait. |
+| Reporting configuration and failure limit | [`Configuration.environment`](../../../services/learning/runtime/src/tempo_learning_runtime/config.py) sets the activity directory; `HostActivity.request` is a no-op only when its directory is `None`. Publication catches/logs `OSError`, but a slow lock/filesystem operation can still delay the awaited path. It does not wait for a Games consumer acknowledgement. Database timeout settings do not establish a bound on this filesystem wait. |
+| Optional endgame work can occupy the shared ASGI loop | [Learning API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py): async `tablebase` performs synchronous cache reads before awaited provider HTTP and synchronous cache writes afterward; async `endgame_attempt` also performs synchronous receipt/template reads and `gateway.dispatch`. Those synchronous connection/query/dispatch phases run on the shared event loop and can delay unrelated Study request progress. The provider HTTP itself is awaited outside a database transaction; that fact does not isolate the synchronous phases. |
+
+**Verification status:** these are source-supported open architecture gaps. No
+contention, latency or live failure was reproduced here. Transaction/pool budgets
+remain useful bounds at their own boundaries; they are not proof that optional
+work cannot delay Study through the shared event loop or awaited filesystem path.
+The target is essential Study progress independent of optional host reporting and
+optional workload execution. Coordinator-owned code repairs are separate work,
+not completed by or incorporated into this documentation view.
+
 ## Merged PR322 Games reader
 
 **MAIN / MERGED PR322:** implementation
@@ -161,6 +194,7 @@ read-only composition, narrow view port and bounded game projection above.
 | --- | --- | --- |
 | Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. Shared Home remains a source gap. |
 | Conditional Study offline assets | The shared build inventories all emitted JS/MJS/CSS; worker installation/cache status can depend on optional chunks **if** they remain in that output. Lazy declarations alone do not execute those features. | [Source-backed conditional view](#conditional-study-build-and-offline-assets-main); emitted artifact and failure scenario unverified, no observed live failure. |
+| Shared Learning request execution | Essential middleware awaits HostActivity lock/filesystem publication. Optional async endgame handlers contain synchronous DB phases on the shared ASGI loop. | [Source-supported open gaps](#shared-learning-request-execution-gaps-main); no reproduced contention or live failure, no repair-completion claim. |
 | Games read (MAIN) | Invalid auth/schema/scope/cursor or DB failure returns Games error; missing scopes remain missing. No hidden run creation, import, analysis, Study call or repair. View disposal destroys its own board and ignores late responses; server lifespan closes only its pools/executor. | See [read/failure sequence](flows.md#games-read-failure-and-disposal-main-merged-pr322). No Study/worker shutdown is part of this path. |
 | Games DB work (MAIN) | Scope listing ≤100 rows; accepted scope metadata ≤1000 games; page ≤10 games plus one lookahead. Existing 1500 ms statement, 250 ms lock, 3000 ms transaction bounds and configured pool maxima apply. | PostgreSQL may scan/order accepted JSON pages within that budget; no indexed/precomputed projection or host latency guarantee is claimed. |
 | Navigation | Optional public Workbench launch and general Open Study root link are user navigation with no credentials/card authority transfer or service readiness check. | A link is not a required Study API dependency. Reuse existing [navigation contracts](../../../apps/workbench-web/src/public-navigation.ts), [launch URL validation](../../../app/lib/workbench-navigation.ts); do not add a wait. |

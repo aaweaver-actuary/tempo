@@ -18,6 +18,7 @@ flowchart TB
   Bridge["A bridge operator<br/>Public CLI/HTTP adapters"] -->|"prepare / approve / export"| Content["Content<br/>Sources / publications"]
   Content -->|"R/W"| CDB[("Content PostgreSQL")]
   Bridge -->|"stage / activate / retire"| Learning
+  Content -.->|"record CLI: authenticated<br/>original receipt GET"| Learning
   GE["Game Evidence<br/>Sources / comparisons / outbox"] -->|"R/W"| GDB[("Game Evidence PostgreSQL")]
   Bridge -.->|"explicit snapshot load"| GE
   GE -->|"EvidenceDelivery HTTP"| Learning
@@ -27,7 +28,10 @@ flowchart TB
 ```
 
 The bridge is an explicit operator tool, not an automatically invoked Learning
-dependency. Likewise the pilot supplies the Stockfish client; merely serving an
+dependency. Content's explicit record CLI also makes its own authenticated
+Learning receipt read before recording a result; see the
+[publication sequence](flows.md#content-publication-and-serving-activation-main).
+Likewise the pilot supplies the Stockfish client; merely serving an
 accepted report does not start that worker. Intelligence also implements Explorer
 source work and Maia job/result APIs, omitted here to bound the graph: its
 [provider worker](../../../services/intelligence/src/tempo_intelligence/worker.py)
@@ -115,10 +119,18 @@ infrastructure can still fail or contend. Effective deployment budgets and
 shutdown under load require their own relevant evidence before claiming
 operational independence; none is established by this documentation.
 
-Learning also has an optional
+Learning's optional
 [`HostActivity`](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py)
-file publisher for same-host admission control. It does not contact Games and
-does not wait for a consumer acknowledgement. Publication I/O is still a local
-resource operation; errors are logged and retained control expires closed for
-managed work. This is an optional advisory resource signal, not proof of host
-isolation or a substitute for separate workload budgets.
+file publisher is currently an **awaited essential-request dependency when
+configured**: the [API middleware](../../../services/learning/runtime/src/tempo_learning_runtime/api.py)
+awaits its thread-based context entry/exit, including the publisher's lock and
+filesystem operations. Catching publication errors does not remove a slow-I/O
+wait. It does not contact Games or await a consumer acknowledgement.
+
+The same API's async tablebase/endgame handlers perform synchronous database
+phases on the shared ASGI event loop, which can delay unrelated Study progress.
+Awaiting provider HTTP outside transactions does not isolate those synchronous
+phases. The [request-execution view](study-games.md#shared-learning-request-execution-gaps-main)
+shows both **source-supported open gaps**. Neither is a reproduced live failure
+or a completed repair; declared pool/transaction bounds do not prove independent
+request progress across these execution/resource boundaries.

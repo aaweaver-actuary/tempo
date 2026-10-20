@@ -29,6 +29,7 @@ sequenceDiagram
     B-->>S: pending intent committed<br/>locally
     S->>A: POST card review with same<br/>Idempotency-Key
     Note over A: Authenticate workspace/origin before<br/>DB access
+    Note over A: Essential middleware also awaits<br/>HostActivity context entry / exit
     A->>D: record_intent in its own<br/>transaction
     D-->>A: queued intent committed (or<br/>matching identity found)
     Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
@@ -188,10 +189,11 @@ sequenceDiagram
   participant D as Learning database
   Operator->>B: Explicit import/proposal,<br/>exact approval and chosen<br/>authority
   B->>C: Prepare / approve durable<br/>source operation
-  C-->>B: Immutable complete<br/>publication, execution<br/>bundle and operation<br/>identity
+  C-->>B: Immutable publication /<br/>routes and operation identity
   Note over C: Content owns source, inventory<br/>and publication transactions only
   B->>L: Read original publication<br/>operation receipt
   alt Original intent not yet accepted
+    B->>B: execution_bundle(export,<br/>due_date) builds Learning<br/>execution facts / bundle
     B->>L: Explicit v2 stage with<br/>operator credential
     L->>D: Store inactive validated<br/>bundle
     B->>L: Activate same immutable<br/>identity / request
@@ -205,17 +207,35 @@ sequenceDiagram
     B->>L: Recover original receipt /<br/>retry original operation
     L-->>B: Authoritative state (never<br/>infer failure from missing<br/>response)
   end
-  B->>C: Record only verified<br/>matching completion/failure
-  C-->>Operator: Durable bridge status /<br/>point-in-time activation<br/>evidence
+  B->>C: Propose completion receipt<br/>or request failure recording
+  C->>L: Content's own authenticated<br/>GET of original operation<br/>through receipt_transport
+  L-->>C: Original bound terminal<br/>receipt or unconfirmed state
+  alt Content verifies matching terminal result
+    C->>C: Validate original binding,<br/>matching receipt / terminal state<br/>then commit own record
+    C-->>Operator: Durable bridge status /<br/>point-in-time activation<br/>evidence
+  else Unavailable, pending or mismatched receipt
+    C-->>B: Refuse final recording,<br/>retain original operation
+  end
 ```
 
 Source anchors: Content [`bridge`](../../../services/content/src/tempo_content/bridge.py)
 and [`CLI`](../../../services/content/src/tempo_content/cli.py), external
-[`Operator` receipt/retry workflow](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py),
+[`Operator` receipt/retry workflow and `execution_bundle`](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py),
 Learning [publication routes](../../../services/learning/runtime/src/tempo_learning_runtime/api.py),
 [`publication_bridge`](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py),
 [`publications`](../../../services/learning/runtime/src/tempo_learning_runtime/publications.py)
 and [`gateway`](../../../services/learning/runtime/src/tempo_learning_runtime/gateway.py).
+Content exports serialized publication/routes; the external bridge constructs
+Learning execution facts/bundle. Content's supported CLI then independently calls
+[`receipt_transport.authenticated_operation` / `verified_receipt` / `verified_terminal_failure`](../../../services/content/src/tempo_content/receipt_transport.py)
+before its local `record` / `record_terminal_failure` write. That verification
+uses Content's configured original Learning authority and operator credential,
+checks the original request binding and terminal state, and for completion checks
+that the proposed receipt matches the authenticated response. It is not merely
+trusting the bridge's earlier receipt read. Failure/unavailability retains the
+operation rather than recording an unverified result. Content's CLI therefore has
+this explicit operator-invoked Learning HTTP dependency; it is not startup or
+ordinary Study work.
 Retirement is a separate command; it locks/fences affected definitions and attempts.
 Failed activation must preserve the previous serving generation. Staging or a
 Content publication alone supplies no serving authority. An activation receipt is
