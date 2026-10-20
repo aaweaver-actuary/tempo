@@ -12,10 +12,12 @@ def owned_legacy_scope_sql(event_alias="event"):
     # source correction. This is an ownership fence, never settlement policy.
     # A prefix equality survives both SQL translation and psycopg binding;
     # a raw LIKE wildcard is interpreted as a driver placeholder first.
+    # Explicit JSONB extraction also keeps the compatibility compiler from
+    # selecting PostgreSQL's JSON-only extraction overload for a JSONB value.
     return f"""EXISTS(SELECT 1 FROM remediation_contributions bridge_scope
         WHERE bridge_scope.workspace_id='legacy'
           AND bridge_scope.game_id={event_alias}.game_id
           AND LEFT(bridge_scope.publication_id,13)='legacy-graph:'
-          AND bridge_scope.payload_json::jsonb->'authority'->>'kind'='legacy_graph'
-          AND bridge_scope.payload_json::jsonb->'authority'->>'workspace_id'='legacy'
-          AND bridge_scope.payload_json::jsonb->'authority'->>'repertoire_id'={event_alias}.repertoire_id)"""
+          AND jsonb_extract_path_text(bridge_scope.payload_json::jsonb,'authority','kind')='legacy_graph'
+          AND jsonb_extract_path_text(bridge_scope.payload_json::jsonb,'authority','workspace_id')='legacy'
+          AND jsonb_extract_path_text(bridge_scope.payload_json::jsonb,'authority','repertoire_id')={event_alias}.repertoire_id)"""

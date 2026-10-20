@@ -5,6 +5,9 @@
 The pinned driver's real parameter converter reproduces the literal-percent
 failure without a database. The native normal-Study case retains the owning
 SQL translation/execution, protected-head review and settlement assertions.
+`test_bridge_scope_preserves_jsonb_extraction_through_sqlite_translation` also
+exercises the real SQLGlot compiler, rejecting its JSON-only overload for JSONB
+while preserving the same kind, workspace and repertoire ownership comparisons.
 
 `test_frozen_introduction_legacy_fence_does_not_retire_introduced_review_card`
 reproduces P2 at6c2eb502: an active frozen run and old completed migrated origin

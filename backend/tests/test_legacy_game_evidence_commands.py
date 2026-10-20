@@ -282,7 +282,8 @@ def test_legacy_scope_ownership_and_priority_reason_are_disjoint_from_weaker_pat
     native, sqlite = outstanding_miss_sql(postgres=True), outstanding_miss_sql(postgres=False)
     assert "AND NOT " + owned_legacy_scope_sql() in native
     assert "remediation_" not in sqlite
-    assert "workspace_id='legacy'" in native and "->>'repertoire_id'=event.repertoire_id" in native
+    assert "workspace_id='legacy'" in native
+    assert "jsonb_extract_path_text(bridge_scope.payload_json::jsonb,'authority','repertoire_id')=event.repertoire_id" in native
     assert "head.active" not in owned_legacy_scope_sql()  # Withdrawn accepted scopes stay owned.
     assert BRIDGE_MISS_REASON != MISS_REASON
 

@@ -18,3 +18,13 @@ def test_bridge_owned_scope_survives_real_psycopg_parameter_binding_during_revie
     query.convert(statement, ('synthetic-protected-card',))
     assert query.query.count(b'$1') == 1 and len(query.params) == 1
     assert b'remediation_contributions' in query.query
+
+
+def test_bridge_scope_preserves_jsonb_extraction_through_sqlite_translation():
+    import sqlglot
+    statement = 'SELECT 1 WHERE ' + owner.owned_legacy_scope_sql() + ' AND event.card_id=?'
+    translated = sqlglot.transpile(statement, read='sqlite', write='postgres')[0]
+    # PostgreSQL's json_extract_path accepts JSON, not JSONB. Preserve the
+    # JSONB function family through the actual compatibility compiler.
+    assert 'JSON_EXTRACT_PATH(' not in translated.upper()
+    assert translated.upper().count('JSONB_EXTRACT_PATH_TEXT(') == 3
