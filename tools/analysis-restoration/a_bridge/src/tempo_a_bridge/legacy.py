@@ -21,8 +21,9 @@ def fingerprint(document):
 
 
 def policy_root_key(starting_fen):
-    # Same legal-position identity used by the downstream comparison owner:
+    # Same legal-position comparison used by the downstream comparison owner:
     # clocks cannot distinguish policy, while turn/castling/legal EP can.
+    # Reuse for executable alignment; never rewrite stored card/route identity.
     return ' '.join(chess.Board(starting_fen).fen(en_passant='legal').split()[:4])
 
 
@@ -70,6 +71,7 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
         for move in moves:
             fens.append(board.fen(en_passant='fen'))
             board.push_uci(move)
+        comparison_positions = [policy_root_key(fen) for fen in fens]
         positions[identifier] = fens
         node=catalog[(color,policy_root_key(line['start_fen']))]
         authority=0 if node['policies']=={line['repertoire_id']} else None
@@ -91,10 +93,13 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
                 reason = 'historical_color_unresolved'
             elif card['revision'] != 1:
                 reason = 'historical_revision_requires_explicit_successor'
-            elif card['start_fen'] != graph['starting_fen'] or json.loads(card['moves_json']) != json.loads(graph['moves_json']):
+            elif (not chess.Board(card['start_fen']).is_valid() or not chess.Board(graph['starting_fen']).is_valid()
+                    or policy_root_key(card['start_fen']) != policy_root_key(graph['starting_fen'])
+                    or json.loads(card['moves_json']) != json.loads(graph['moves_json'])):
                 reason = 'historical_executable_changed'
             else:
-                possible = [ply for ply, fen in enumerate(fens) if fen == card['start_fen'] and moves[ply:ply+len(json.loads(card['moves_json']))] == json.loads(card['moves_json'])]
+                physical_position = policy_root_key(card['start_fen'])
+                possible = [ply for ply, position in enumerate(comparison_positions) if position == physical_position and moves[ply:ply+len(json.loads(card['moves_json']))] == json.loads(card['moves_json'])]
                 if len(possible) != 1:
                     reason = 'exact_route_binding_unresolved'
                 elif len(json.loads(card['moves_json'])) == 0 or len(json.loads(card['moves_json'])) > 40:

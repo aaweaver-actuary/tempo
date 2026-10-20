@@ -80,3 +80,51 @@ def test_generated_one_game_preview_explicit_accept_queue_and_normal_study(verti
                              for key, item in module.settlements.items()],
         outstanding_after_control=module.outstanding, calls=calls)
     (tmp_path / 'one-game-pipeline-trace.json').write_text(json.dumps(trace, indent=2))
+
+
+def test_equivalent_ep_capture_to_preview_preserves_later_introduction_unknown():
+    """Current repertoire conformance must never manufacture historical recall."""
+    from copy import deepcopy
+    from datetime import datetime, timezone
+    import chess
+    from app.legacy_game_observation import capture_game
+    from tempo_a_bridge.legacy_observation import observe_capture
+    from tempo_game_evidence.legacy_payloads import preview_legacy_observation
+    from test_legacy_scoped_capture import source_fixture
+    from test_legacy_game_observation import reader_for
+
+    value, source = source_fixture()
+    route_moves = ['e2e4','d7d5','e4d5','d8d5','b1c3','d5a5','d2d4','c8f5','d1f3']
+    game_moves = route_moves[:-1]+['g1f3']
+    route = source.rows['repertoire_lines'][0]
+    route.update(trained_color='white', moves_json=json.dumps(route_moves))
+    source.rows['repertoire_lines'] = [route]
+    original_card, original_graph = source.rows['cards'][0], source.rows['graphs'][0]
+    source.rows['cards'], source.rows['graphs'], source.rows['repertoire_cards'] = [], [], []
+    for root, introduced, card_id in [(5,'2026-10-15','synthetic-d4'), (7,'2026-10-18','synthetic-qf3')]:
+        board = chess.Board()
+        for move in route_moves[:root]: board.push_uci(move)
+        start_fen = board.fen(en_passant='legal')
+        executable = json.dumps(route_moves[root:root+2])
+        source.rows['cards'].append({**original_card, 'id':card_id, 'trained_color':'white',
+            'start_fen':start_fen, 'moves_json':executable, 'introduced_at':introduced})
+        source.rows['graphs'].append({**original_graph, 'card_id':card_id, 'trained_color':'white',
+            'starting_fen':start_fen, 'moves_json':executable, 'decision_index':root})
+        source.rows['repertoire_cards'].append(dict(repertoire_id='ruy',card_id=card_id))
+    source.captured.game.update(color='white', moves_json=json.dumps(game_moves), played_at='2026-10-09T12:00:00Z')
+    before = deepcopy(source.rows)
+    capture = capture_game('ruy', value.game_id, [6,8], reader=reader_for(source), metadata=source.metadata,
+        now=datetime(2026,10,20,tzinfo=timezone.utc))
+    observation = observe_capture(capture)
+    preview = preview_legacy_observation(observation)
+    assert source.rows == before and len(capture['graphs']) == len(capture['tables']['cards']) == 2
+    assert observation['mapping']['mapped_identities'] == ['synthetic-d4','synthetic-qf3']
+    assert all(not card['introduced_before_game'] for card in observation['snapshot']['cards'])
+    assert {binding['card_id'] for route in observation['snapshot']['routes']
+            for binding in route['bindings']} == {'synthetic-d4','synthetic-qf3'}
+    assert preview['result'] == 'unknown' and preview['delivery'] is None
+    scoped = [finding for finding in preview['findings'] if finding['ply'] in (6,8)]
+    assert [finding['authored_expected_moves'] for finding in scoped] == [['d2d4'],['d1f3']]
+    assert all(finding['physical_binding_complete'] for finding in scoped)
+    assert all(finding['status']=='unknown' and finding['explanation']=='legacy_introduction_chronology_unknown'
+               for finding in scoped)

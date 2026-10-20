@@ -143,3 +143,73 @@ def test_C3_identical_canonical_routes_do_not_choose_an_arbitrary_policy():
     tables['repertoire_lines'].append(other)
     raw,_,_=run(tables)
     assert json.loads(raw)['routes'][0]['authority_start_ply'] is None
+
+
+def interior_capture(prefix=None, continuation=None):
+    prefix = prefix or ['e2e4','d7d5','e4d5','d8d5','b1c3','d5a5','d2d4']
+    continuation = continuation or ['c8f5','d1f3']
+    board = chess.Board()
+    for move in prefix:
+        board.push_uci(move)
+    tables, authority = captured(), graphs()
+    tables['repertoire_lines'][0]['moves_json'] = json.dumps(prefix + continuation)
+    for row in (tables['cards'][0], authority[0]):
+        row['moves_json'] = json.dumps(continuation)
+    tables['cards'][0]['start_fen'] = authority[0]['starting_fen'] = board.fen(en_passant='legal')
+    return tables, authority
+
+
+@pytest.mark.parametrize('variant', ['noncapturable_ep', 'counters', 'graph_encoding'])
+def test_physical_interior_binding_uses_legal_position_without_rewriting_identity(variant):
+    tables, authority = interior_capture()
+    if variant == 'counters':
+        tables['cards'][0]['start_fen'] = authority[0]['starting_fen'] = (
+            tables['cards'][0]['start_fen'].rsplit(' ',2)[0] + ' 17 42')
+    if variant == 'graph_encoding':
+        authority[0]['starting_fen'] = authority[0]['starting_fen'].replace(' - ', ' d3 ')
+    original = deepcopy(tables['cards'][0])
+    raw, manifest, report = translate(tables, authority, workspace='test', repertoire_ids=['italian'],
+        source_key='captured', preserve_physical_execution=True)
+    assert report['mapped_identities'] == ['physical']
+    assert manifest['legacy_aliases'] == {'physical':'physical'}
+    source = json.loads(raw)
+    assert next(item for item in source['bindings'] if item['exercise_key']=='physical')['ply'] == 8
+    exercise = next(item for item in source['exercises'] if item['key']=='physical')
+    assert exercise['execution_prelude'] == {'starting_fen':original['start_fen'], 'moves':['c8f5']}
+    assert exercise['specification']['accepted_lines'] == [['d1f3']]
+    assert tables['cards'][0] == original
+
+
+@pytest.mark.parametrize('fault', ['capturable_ep', 'turn', 'castling', 'executable', 'revision'])
+def test_physical_position_equivalence_retains_rights_and_executable_authority(fault):
+    tables, authority = interior_capture(['e2e4','a7a6','e4e5','d7d5'], ['e5e6'])
+    card = tables['cards'][0]
+    if fault == 'capturable_ep':
+        card['start_fen'] = authority[0]['starting_fen'] = card['start_fen'].replace(' d6 ', ' - ')
+    if fault == 'turn':
+        card['start_fen'] = authority[0]['starting_fen'] = card['start_fen'].replace(' w ', ' b ')
+    if fault == 'castling':
+        card['start_fen'] = authority[0]['starting_fen'] = card['start_fen'].replace(' KQkq ', ' - ')
+    if fault == 'executable': authority[0]['moves_json'] = '["e5d6"]'
+    if fault == 'revision': card['revision'] = 2
+    _, manifest, report = run(tables, authority)
+    assert manifest['legacy_aliases'] == {} and report['mapped_identities'] == []
+
+
+def test_equivalent_repeated_route_positions_cannot_choose_a_physical_root():
+    tables, authority = captured(), graphs()
+    tables['repertoire_lines'][0]['moves_json'] = '["g1f3","g8f6","f3g1","f6g8","g1f3"]'
+    tables['cards'][0]['moves_json'] = authority[0]['moves_json'] = '["g1f3"]'
+    _, manifest, report = run(tables, authority)
+    assert manifest['legacy_aliases'] == {}
+    assert report['diagnostics'][0]['reason'] == 'exact_route_binding_unresolved'
+
+
+@pytest.mark.parametrize('source', ['card','graph'])
+def test_invalid_physical_fen_is_not_repaired_into_execution_equivalence(source):
+    tables, authority = interior_capture()
+    row, key = (tables['cards'][0], 'start_fen') if source=='card' else (authority[0], 'starting_fen')
+    row[key] = row[key].replace(' - ', ' e3 ')
+    assert not chess.Board(row[key]).is_valid()
+    _, manifest, report = run(tables, authority)
+    assert manifest['legacy_aliases'] == {} and report['mapped_identities'] == []

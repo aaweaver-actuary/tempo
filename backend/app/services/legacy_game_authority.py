@@ -244,6 +244,7 @@ def prepare_decisions(delivery, captured):
         selected_binding = None
         for row, moves in matching:
             route_boards = positions(row["start_fen"], moves)
+            route_positions = [comparison_key(board) for board in route_boards]
             candidates = set()
             for graph in captured.graphs:
                 if graph["line_id"] != row["id"]:
@@ -253,7 +254,8 @@ def prepare_decisions(delivery, captured):
                         or card.get("content_type", "opening") != "opening"
                         or card["archived"] or card["pending_validation"] or card.get("deleted")
                         or card.get("integrity_blocked") or card.get("superseded_by")
-                        or card["start_fen"] != graph["starting_fen"]
+                        or not chess.Board(card["start_fen"]).is_valid() or not chess.Board(graph["starting_fen"]).is_valid()
+                        or comparison_key(chess.Board(card["start_fen"])) != comparison_key(chess.Board(graph["starting_fen"]))
                         or json.loads(card["moves_json"]) != json.loads(graph["moves_json"])):
                     continue
                 memberships = {link["repertoire_id"] for link in captured.tables["repertoire_cards"]
@@ -261,8 +263,9 @@ def prepare_decisions(delivery, captured):
                 physical_moves = json.loads(card["moves_json"])
                 if memberships != {token.repertoire_id} or not 1 <= len(physical_moves) <= 40:
                     continue
-                roots = [root for root in range(ply + 1) if
-                    route_boards[root].fen(en_passant="fen") == card["start_fen"]
+                physical_position = comparison_key(chess.Board(card["start_fen"]))
+                roots = [root for root, position in enumerate(route_positions) if
+                    position == physical_position
                     and moves[root:root + len(physical_moves)] == physical_moves]
                 if len(roots) != 1 or not 0 <= ply - roots[0] < len(physical_moves):
                     continue

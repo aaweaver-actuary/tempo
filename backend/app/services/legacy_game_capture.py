@@ -159,7 +159,7 @@ def capture_scope(delivery, reader, metadata, *, budget=DEFAULT_BUDGET, clock=ti
 
 def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DEFAULT_BUDGET, clock=time.monotonic):
     """Read-only inspection port; no obligation/delivery/attempt is constructed."""
-    from .legacy_game_authority import (Capture, current_token, completed_game_time, introduced_before_game,
+    from .legacy_game_authority import (Capture, current_token, completed_game_time, introduced_before_game, comparison_key,
                                        _CARD_COLUMNS, _GAME_COLUMNS, _REPERTOIRE_COLUMNS)
     from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
     repertoire_id = request.repertoire_id
@@ -227,10 +227,10 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
                     while compatible and common < min(len(moves), len(route_moves)) and moves[common] == route_moves[common]:
                         common += 1
                     retain = compatible and any(ply <= common and ply < len(route_moves) for ply in scope.decision_plies)
-                    frames = [route_board.fen(en_passant="fen")] if retain else None
+                    frames = [comparison_key(route_board)] if retain else None
                     for move in route_moves:
                         route_board.push_uci(move)
-                        if frames is not None: frames.append(route_board.fen(en_passant="fen"))
+                        if frames is not None: frames.append(comparison_key(route_board))
                 except (ValueError, TypeError, KeyError, AttributeError) as error:
                     raise RemediationError("stale_revision", "legacy_catalogue_uncertain_source") from error
                 if not compatible:
@@ -254,8 +254,14 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
                         executable = json.loads(row["moves_json"])
                         if not isinstance(executable, list) or not 1 <= len(executable) <= 1000 or any(not isinstance(move, str) for move in executable):
                             raise ValueError("uncertain graph executable")
-                        roots = [index for index, fen in enumerate(frames)
-                            if fen == row["starting_fen"] and route_moves[index:index + len(executable)] == executable]
+                        graph_board = chess.Board(row["starting_fen"])
+                        if not graph_board.is_valid():
+                            raise ValueError("invalid graph position")
+                        graph_position = comparison_key(graph_board)
+                        # Execution equivalence is separate from the raw source
+                        # bytes retained and hashed by the traversal owner.
+                        roots = [index for index, position in enumerate(frames)
+                            if position == graph_position and route_moves[index:index + len(executable)] == executable]
                         relevant = any(ply <= len(route_moves) and route_moves[:ply] == moves[:ply]
                             and root <= ply < root + len(executable) for root in roots for ply in scope.decision_plies)
                     except (ValueError, TypeError, KeyError):

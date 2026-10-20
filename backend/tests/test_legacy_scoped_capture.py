@@ -73,6 +73,41 @@ def source_fixture(filler=0, competitor=None):
     return value, source
 
 
+@pytest.mark.parametrize('variant', ['noncapturable_ep', 'counters', 'capturable_ep', 'turn', 'castling'])
+def test_scoped_physical_capture_compares_legal_positions_and_preserves_source_bytes(variant):
+    import chess
+    from app.services.legacy_game_capture import capture_source_scope, CaptureRequest
+    value, source = source_fixture()
+    prefix = ['e2e4','d7d5','e4d5','d8d5','b1c3','d5a5','d2d4']
+    continuation = ['c8f5','d1f3']
+    if variant == 'capturable_ep':
+        prefix, continuation = ['e2e4','a7a6','e4e5','d7d5'], ['e5e6']
+    board = chess.Board()
+    for move in prefix: board.push_uci(move)
+    physical_fen = board.fen(en_passant='legal')
+    if variant == 'counters': physical_fen = physical_fen.rsplit(' ',2)[0]+' 17 42'
+    if variant == 'capturable_ep': physical_fen = physical_fen.replace(' d6 ', ' - ')
+    if variant == 'turn': physical_fen = physical_fen.replace(' b ', ' w ')
+    if variant == 'castling': physical_fen = physical_fen.replace(' KQkq ', ' - ')
+    route = source.rows['repertoire_lines'][0]
+    route.update(trained_color='white', moves_json=json.dumps(prefix+continuation))
+    source.rows['repertoire_lines'] = [route]
+    card, graph = source.rows['cards'][0], source.rows['graphs'][0]
+    card.update(start_fen=physical_fen, trained_color='white', moves_json=json.dumps(continuation))
+    graph.update(starting_fen=physical_fen, trained_color='white', moves_json=json.dumps(continuation))
+    source.captured.game.update(color='white', moves_json=route['moves_json'])
+    before = deepcopy(source.rows)
+    scope = CaptureRequest('ruy', value.game_id, (len(prefix)+len(continuation)-1,))
+    actual = capture_source_scope(scope, source.read, source.metadata)
+    assert source.rows == before
+    if variant in {'noncapturable_ep', 'counters'}:
+        assert actual.graphs == [graph]
+        assert actual.tables['cards'][0]['start_fen'] == physical_fen
+        assert actual.tables['cards'][0]['id'] == card['id']
+    else:
+        assert actual.graphs == [] and actual.tables['cards'] == []
+
+
 def captured_scope(value, source, **options):
     captured = capture_scope(value, source.read, source.metadata, **options)
     data = value.model_dump(mode="json")

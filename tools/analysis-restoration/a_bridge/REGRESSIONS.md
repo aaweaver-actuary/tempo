@@ -89,6 +89,14 @@ dev-only dependency. Regenerate full schemas using the owning public commands in
 
 ## Observed legacy authority checkpoint
 
+`test_physical_interior_binding_uses_legal_position_without_rewriting_identity`
+preserves original physical IDs, FEN/executable bytes and opponent prelude when
+aligning non-capturable EP/counter variants. The paired rights/executable and
+invalid-FEN controls reject capturable EP, turn/castling, revision and move
+changes. `test_equivalent_repeated_route_positions_cannot_choose_a_physical_root`
+keeps repeated legal-position roots unresolved instead of using counters as
+ordered authority. Stored source/graph digests and card identity remain raw.
+
 `tests/test_legacy_observation.py` owns deterministic read-only translation into
 the separate legacy comparison input, unchanged physical execution and interior
 binding, input nonmutation, and source/graph/generation/catalogue token rejection.

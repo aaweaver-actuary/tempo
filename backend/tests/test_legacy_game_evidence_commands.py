@@ -78,6 +78,34 @@ def test_backend_exact_source_projection_keeps_original_physical_card_and_comple
     assert payload["comparison"]["exercise_ply"] == 5
 
 
+@pytest.mark.parametrize('graph_variant', [False, True])
+def test_backend_equivalent_physical_root_keeps_exact_digest_and_historical_gate(graph_variant):
+    value, captured = fixture()
+    card = captured.tables['cards'][0]
+    # Equivalent execution position, distinct persisted card bytes/identity.
+    card['start_fen'] = card['start_fen'].rsplit(' ',2)[0]+' 9 23'
+    if not graph_variant: captured.graphs[0]['starting_fen'] = card['start_fen']
+    raw = value.model_dump(mode='json')
+    raw['comparisons'][0]['executable_digest'] = owner.fingerprint(dict(starting_fen=card['start_fen'],
+        moves=json.loads(card['moves_json']), trained_color=card['trained_color']))
+    value = refresh(raw, captured)
+    assert semantic_check(prepared(value, captured))[0].card_id == card['id']
+    card['introduced_at'] = '2026-10-18'  # Later than this synthetic October17 game.
+    value = refresh(value.model_dump(mode='json'), captured)
+    with pytest.raises(RemediationError, match='chronology'):
+        semantic_check(prepared(value, captured))
+
+
+def test_backend_invalid_physical_position_cannot_gain_a_binding_by_normalization():
+    value, captured = fixture()
+    card = captured.tables['cards'][0]
+    card['start_fen'] = card['start_fen'].replace(' - ', ' e3 ')
+    captured.graphs[0]['starting_fen'] = card['start_fen']
+    value = refresh(value.model_dump(mode='json'), captured)
+    with pytest.raises(RemediationError, match='physical_binding_unavailable'):
+        prepared(value, captured)
+
+
 @pytest.mark.parametrize("mapping", ["missing", "unsupported_revision"])
 def test_backend_unmapped_authored_alternative_vetoes_even_a_forged_miss_delivery(mapping):
     value, captured = fixture()
