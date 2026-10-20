@@ -147,7 +147,7 @@ flowchart TB
 | PROPOSED cancellation/shutdown ownership | Main shutdown signals the daemon without joining and closes only foreground/maintenance pools; it never takes the optional pool lock. The daemon closes only its own pools after actual phase completion. A stalled phase can remain allocated until process exit without holding the caller's cancellation or Study shutdown. An unconfirmed attempt response includes the operation ID and `state: unknown`; the canonical gateway receipt decides eventual commit/replay. No thread kill or transaction-abandonment claim. |
 
 **Verification status:** the endgame proposal has a retained failing baseline
-and thirteen focused fake/unit tests, including actual ASGI requests and real
+and fourteen focused fake/unit tests, including actual ASGI requests and real
 `Database` routing with finite fake pool leases. A delayed optional read leaves
 ordinary Study bootstrap usable even at foreground pool size 1. Actual ASGI
 cancellation/shutdown finishes before optional release; canonical gateway timeout

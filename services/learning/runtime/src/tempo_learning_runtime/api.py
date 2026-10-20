@@ -130,7 +130,7 @@ def register_handlers():
 def create_app(configuration: Configuration):
     register_handlers()
     database = Database(configuration)
-    endgame_io = EndgameIO(database.close_endgames)
+    endgame_io = EndgameIO(lambda: database.close_endgames())
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
     @asynccontextmanager

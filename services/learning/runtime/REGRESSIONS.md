@@ -281,7 +281,8 @@ completion. Actual-ASGI regressions prove cancellation and service shutdown
 return before a held optional connection is released. A fresh-process regression
 proves a never-returning daemon cannot hold interpreter exit. Late exceptions
 after event-loop exit retain their cleanup owner. Main close never takes the
-optional lock/pools; the optional lane rejects maintenance escapes.
+optional lock/pools; the optional lane rejects maintenance escapes. Cleanup
+capability lookup stays lazy for focused API compositions without optional work.
 
 The attempt composition verifies one-worker phase ownership, provider calls
 outside transactions and immutable replay/conflict behavior. The real gateway

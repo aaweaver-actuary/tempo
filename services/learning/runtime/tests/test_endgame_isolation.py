@@ -699,3 +699,11 @@ def test_asgi_cancelled_probe_does_not_wait_for_optional_connection(monkeypatch)
         assert await asyncio.to_thread(cleaned.wait, 1)
 
     asyncio.run(exercise())
+
+
+def test_endgame_cleanup_capability_is_lazy_for_compositions_without_optional_work(monkeypatch):
+    monkeypatch.setattr(api, "Database", lambda configuration: object())
+    monkeypatch.setattr(api, "HostActivity", QuietActivity)
+    app = api.create_app(Configuration("composition", "unused", "unused", "x" * 40,
+                                       maintenance=False))
+    assert any(route.path == "/api/study/bootstrap" for route in app.routes)
