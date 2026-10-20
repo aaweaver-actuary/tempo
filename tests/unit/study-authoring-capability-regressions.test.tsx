@@ -25,18 +25,11 @@ it("pr291 R3 read-only catalog preserves pack selection without activation actio
   fireEvent.click(screen.getByRole("button", { name: /Easy.*Pack 1/ })); expect(select).toHaveBeenCalledWith(pack);
 });
 
-it("pr291 R3 independent Endgames reads accepted templates and permits local exploration without admission", async () => {
-  const bootstrap = { schema_version: 1, workspace_id: "workspace-a", timezone: "America/New_York", local_date: "2026-10-16", settings: { study_only_mode: false, new_cards_per_day: 10, study_new_per_day: 10, tactics_new_per_day: 5, include_defensive_cards_in_daily_stack: true, light_first_interval_days: 7 } };
-  const fetcher = vi.fn(async (url: URL | string) => {
-    if (String(url).endsWith("/api/study/bootstrap")) return Response.json(bootstrap);
-    if (String(url).endsWith("/api/endgames/templates")) return Response.json({ templates: [{ id: "accepted-template", card_id: "accepted-card", name: "Accepted material", white_material: "KBNN", black_material: "K", trained_color: "white", goal_mix: "both", enabled: 1, created_at: "2026-10-16T12:00:00Z" }] });
-    throw new Error(`Unexpected request: ${url}`);
-  }); vi.stubGlobal("fetch", fetcher);
-  const client = await import("../../app/lib/study-connection"); await client.connectStudy("http://learning.test", "workspace-a", "synthetic-credential-" + "x".repeat(32));
-  const { default: Endgames } = await import("../../app/views/endgames_view"); render(<Endgames theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
-  fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: /KBNN vs K/ })).toBeTruthy());
-  expect(screen.queryByRole("button", { name: /Add to daily training/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Edit material/ })); fireEvent.click(screen.getByRole("button", { name: "Practice material" }));
-  expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/api/endgames/templates"))).toHaveLength(1);
+it("independent Endgames preserves saved practice without calculation or authoring requests", async () => {
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  const { default: Endgames } = await import("../../app/views/endgames_view");
+  render(<Endgames theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  expect(screen.getByRole("status").textContent).toContain("calculation has been removed");
+  expect(screen.queryByRole("button", { name: /Add to daily training|Edit material|Practice material/ })).toBeNull();
+  expect(fetcher).not.toHaveBeenCalled();
 });

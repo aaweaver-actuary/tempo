@@ -114,3 +114,32 @@ it("Training shared board publishes shell ownership and hides local board instan
   view.unmount();
   expect(useBoardShellStore.getState().board.owner).toBe("train");
 });
+
+
+it("saved endgame legal lines keep ordinary board practice and review without calculation", async () => {
+  const fen = "8/8/8/8/8/2k5/R7/1K6 w - - 0 1";
+  useTrainingStore.setState({ currentFenString: asFenString(fen) });
+  const onMove = vi.fn();
+  const rateCard = vi.fn(async () => undefined);
+  render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={vi.fn()} cardsLeft={1}
+    card={{ id: asCardId("saved-endgame-line"), kind: "endgame", title: "Saved line", subtitle: "",
+      startingFen: asFenString(fen), moves: [asSanMove("Ra3+")], userMoveTarget: 1, orientation: "white" }}
+    boardTheme="brown" pieceSet="cburnett" rateCard={rateCard} handleAttemptFailure={vi.fn()}
+    resetCardAttempt={vi.fn()} setEditorCard={vi.fn()} onMove={onMove} useSharedBoard />);
+  expect(useBoardShellStore.getState().board.owner).toBe("train");
+  expect(useBoardShellStore.getState().board.fen).toBe(fen);
+  expect(screen.queryByText(/no playable stored solution/)).toBeNull();
+  useBoardShellStore.getState().board.onMove?.("a2", "a3");
+  expect(onMove).toHaveBeenCalledWith("a2", "a3");
+  fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+  await waitFor(() => expect(rateCard).toHaveBeenCalledWith("correct"));
+});
+
+it("material placeholders and illegal stored lines never masquerade as playable endgames", async () => {
+  const { hasSavedEndgameLine } = await import("../../app/lib/saved-endgame-practice");
+  const card = { id: asCardId("material"), kind: "endgame" as const, title: "Material", subtitle: "",
+    startingFen: asFenString(STANDARD_FEN), moves: [], userMoveTarget: 0 };
+  expect(hasSavedEndgameLine(card)).toBe(false);
+  expect(hasSavedEndgameLine({ ...card, moves: [asSanMove("template:KR:K:white:both")] })).toBe(false);
+  expect(hasSavedEndgameLine({ ...card, startingFen: asFenString("invalid"), moves: [asSanMove("e4")] })).toBe(false);
+});

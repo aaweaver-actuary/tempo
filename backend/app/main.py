@@ -7,7 +7,6 @@ import sqlite3
 import os
 import random
 from redis import RedisError
-from redis.asyncio import Redis as AsyncRedis
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -101,11 +100,6 @@ from .services.review_reconciliation import card_schedule_state, save_schedule_s
 from .services.real_game_feedback import MISS_REASON
 from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
 from .storage.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
-from .services.endgames import (
-    category_for_player,
-    generate_position,
-    normalized_material,
-)
 from .services.game_analysis import classify_swings
 from .services.game_analysis_worker import (
     EVIDENCE_VERSION as GAME_WORKER_EVIDENCE_VERSION,
@@ -3837,60 +3831,9 @@ def tactic_progress():
     return data
 
 
-async def tablebase(fen: str):
-    key = " ".join(fen.split()[:4])
-    redis_cache_key = "tempo:tablebase:" + hashlib.sha256(key.encode()).hexdigest()
-    redis_url = os.getenv("TEMPO_REDIS_URL") if postgres_store.configured() else None
-    if redis_url:
-        redis_cache = AsyncRedis.from_url(redis_url)
-        try:
-            cached_response = await redis_cache.get(redis_cache_key)
-            if cached_response is not None:
-                try:
-                    return json.loads(cached_response)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    pass
-        except RedisError:
-            pass
-        finally:
-            await redis_cache.aclose()
-    with read_connection() as db:
-        row = db.execute(
-            "SELECT response_json FROM tablebase_cache WHERE fen_key=?", (key,)
-        ).fetchone()
-    if row:
-        return json.loads(row[0])
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(
-            "https://tablebase.lichess.ovh/standard", params={"fen": fen}
-        )
-    if response.status_code == 429:
-        raise HTTPException(429, "Tablebase rate limit reached")
-    if not response.is_success:
-        raise HTTPException(
-            response.status_code, "Position is outside complete tablebase coverage"
-        )
-    data = response.json()
-    if redis_url:
-        redis_cache = AsyncRedis.from_url(redis_url)
-        try:
-            await redis_cache.setex(redis_cache_key, 30 * 24 * 60 * 60, json.dumps(data))
-        except RedisError:
-            pass
-        finally:
-            await redis_cache.aclose()
-    elif not postgres_store.configured():
-        with connection() as db:
-            db.execute(
-                "INSERT OR REPLACE INTO tablebase_cache VALUES(?,?,?)",
-                (key, json.dumps(data), datetime.now(timezone.utc).isoformat()),
-            )
-    return data
-
-
 @app.post("/api/endgames/probe")
 async def probe_endgame(request: EndgameProbeRequest):
-    return await tablebase(request.fen)
+    raise HTTPException(410, "On-demand endgame calculation has been removed")
 
 
 @app.get("/api/endgames/templates")
@@ -3905,67 +3848,7 @@ def list_endgames():
 @app.post("/api/endgames/templates")
 def create_endgame(request: EndgameTemplateRequest,
                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command("endgames.template.create", request.model_dump(mode="json"),
-                                idempotency_key=idempotency_key)
-    try:
-        white = normalized_material(request.white_material)
-        black = normalized_material(request.black_material)
-        sample = generate_position(white, black, request.trained_color)
-    except ValueError as error:
-        raise HTTPException(422, str(error))
-    cid = card_id(
-        chess.STARTING_FEN,
-        [f"template:{white}:{black}:{request.trained_color}:{request.goal_mix}"],
-    )
-    now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
-        db.execute(
-            "INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__endgames__','Endgames','Generated material templates',?)",
-            (now,),
-        )
-        existing = db.execute(
-            "SELECT id,card_id FROM endgame_templates WHERE white_material=? AND black_material=? AND trained_color=? AND goal_mix=? AND enabled=1",
-            (white, black, request.trained_color, request.goal_mix),
-        ).fetchone()
-        if existing:
-            return {
-                "id": existing["id"],
-                "card_id": existing["card_id"],
-                "sample_fen": sample,
-                "already_exists": True,
-            }
-        identifier = str(uuid.uuid4())
-        db.execute(
-            "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES(?,'__endgames__','checkpoint',?,'[]',?,'endgame')",
-            (cid, sample, date.today().isoformat()),
-        )
-        db.execute(
-            "INSERT INTO endgame_templates VALUES(?,?,?,?,?,?,?,?,?)",
-            (
-                identifier,
-                cid,
-                request.name,
-                white,
-                black,
-                request.trained_color,
-                request.goal_mix,
-                1,
-                now,
-            ),
-        )
-        db.execute(
-            "UPDATE cards SET state='learning',introduced_at=? WHERE id=?",
-            (date.today().isoformat(), cid),
-        )
-    enqueue_daily_queue_refresh()
-    return {
-        "id": identifier,
-        "card_id": cid,
-        "sample_fen": sample,
-        "already_exists": False,
-    }
+    raise HTTPException(410, "On-demand endgame calculation has been removed")
 
 
 @app.post("/api/endgames/templates/{identifier}/attempt")
@@ -3973,83 +3856,29 @@ async def create_endgame_attempt(
     identifier: str,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
+    if idempotency_key and postgres_store.configured():
         from .command_gateway import CommandConflict
-
-        operation_id = idempotency_key or uuid.uuid4().hex
         try:
-            receipt = read_operation(operation_id, command_name="endgames.attempt.create")
+            receipt = read_operation(idempotency_key, command_name="endgames.attempt.create")
         except CommandConflict as error:
             raise HTTPException(409, str(error)) from error
-        if receipt["state"] == "complete":
+        if receipt["state"] != "unknown":
             with read_connection() as db:
-                saved_attempt = db.execute(
-                    "SELECT template_id FROM endgame_attempts WHERE id=?",
-                    (receipt["response"]["id"],),
-                ).fetchone()
-            if saved_attempt is None or saved_attempt["template_id"] != identifier:
+                saved = db.execute("SELECT payload_json FROM operation_receipts WHERE operation_id=?",
+                                   (idempotency_key,)).fetchone()
+            if not saved or json.loads(saved["payload_json"]).get("template_id") != identifier:
                 raise HTTPException(409, "Operation ID was already used for another template")
+        if receipt["state"] == "complete":
             return receipt["response"]
         if receipt["state"] == "failed":
             failure = receipt["error"]
             raise HTTPException(failure.get("status_code", 500), failure.get("message", "Save failed"))
-        with read_connection() as db:
-            template = db.execute(
-                "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (identifier,),
-            ).fetchone()
-        if not template:
-            raise HTTPException(404, "Endgame template not found")
-        for candidate_index in range(80):
-            candidate_seed = int.from_bytes(hashlib.sha256(
-                f"{operation_id}:{candidate_index}".encode(),
-            ).digest()[:8], "big")
-            fen = generate_position(
-                template["white_material"], template["black_material"],
-                template["trained_color"], seed=candidate_seed,
-            )
-            data = await tablebase(fen)
-            target = category_for_player(data.get("category", "unknown"))
-            if target != "loss" and (
-                template["goal_mix"] == "both" or target == template["goal_mix"]
-            ):
-                break
-        else:
-            raise HTTPException(422, "Could not find a supported win/draw position")
-        return dispatch_command(
-            "endgames.attempt.create",
-            {"template_id": identifier, "fen": fen, "target": target,
-             "moves": data.get("moves", [])},
-            idempotency_key=operation_id,
-        )
-    with connection() as db:
-        template = db.execute(
-            "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (identifier,)
-        ).fetchone()
-    if not template:
-        raise HTTPException(404, "Endgame template not found")
-    for _ in range(80):
-        fen = generate_position(
-            template["white_material"],
-            template["black_material"],
-            template["trained_color"],
-        )
-        data = await tablebase(fen)
-        target = category_for_player(data.get("category", "unknown"))
-        if target != "loss" and (
-            template["goal_mix"] == "both" or target == template["goal_mix"]
-        ):
-            break
-    else:
-        raise HTTPException(422, "Could not find a supported win/draw position")
-    attempt = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
-        db.execute(
-            "INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES(?,?,?,?,?)",
-            (attempt, identifier, fen, target, now),
-        )
-    return {"id": attempt, "fen": fen, "target": target, "moves": data.get("moves", [])}
+        if receipt["state"] != "unknown":
+            # Existing command recovery remains with its canonical operation
+            # endpoint/worker. Never regenerate its immutable input here.
+            return JSONResponse(status_code=202, content=receipt,
+                                headers={"Location": "/api/operations/" + idempotency_key})
+    raise HTTPException(410, "On-demand endgame calculation has been removed; saved attempts remain available")
 
 
 @app.put("/api/games/accounts")

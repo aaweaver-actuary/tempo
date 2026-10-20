@@ -246,16 +246,15 @@ try {
     await page.locator('.tactic-pack-select').first().click();
     await page.getByRole('button',{name:'Endgames',exact:true}).click();
     assert.equal(await page.getByRole('button',{name:/Add to daily training/}).count(),0);
-    await page.getByRole('button',{name:'Edit material'}).click();
-    await expect(page.getByRole('button',{name:'Practice material',exact:true})).toBeVisible();
-    await page.getByRole('button',{name:'Practice material',exact:true}).click();
+    await expect(page.getByText(/On-demand endgame calculation has been removed/)).toBeVisible();
+    assert.equal(await page.getByRole('button',{name:'Edit material'}).count(),0);
     assert.equal(traffic.filter(item=>['POST','PUT','PATCH','DELETE'].includes(item.method)&&(/captures|activation/.test(item.path)||item.path==='/api/endgames/templates')).length,0);
   } else if (['storage-denied','origin-transition','wrong-credential','wrong-workspace','disallowed-origin','incompatible-storage'].includes(scenario)) {
     await expect(page.getByRole('alert')).toBeVisible();
     assert.equal(traffic.filter(item=>item.path==='/api/queue/window').length,0);
     if (scenario==='origin-transition') assert.equal((await records(page))[0].endpoint,'/api/cards/original/review');
   } else {
-    if (scenario !== 'endgame-unavailable') await expect(page.locator('cg-board:visible')).toBeVisible();
+    if (scenario !== 'endgame-material-unavailable') await expect(page.locator('cg-board:visible')).toBeVisible();
     assert.equal(await page.getByRole('button',{name:'Builder',exact:true}).count(),0);
     if (scenario==='teaching') {
       await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='teaching'&&item.state==='committed').length).toBe(1);
@@ -395,13 +394,11 @@ try {
       if (scenario==='defense') await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeVisible();
       else await expect(page.getByText('Analyzing this legal defense. Your study result has not been recorded yet.',{exact:true})).toBeVisible();
     } else if (scenario.startsWith('endgame')) {
-      if (scenario==='endgame-cached') {
-        await expect(page.getByRole('button',{name:'Win',exact:true})).toBeEnabled();
-        await page.getByRole('button',{name:'Win',exact:true}).click();
-        await move(page,mate.slice(0,2),mate.slice(2,4));
+      if (scenario==='endgame-saved-line') {
+        await move(page);
         await expect.poll(async()=> (await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length,{timeout:20000}).toBe(1);
       } else {
-        await expect(page.getByText(/No local tablebase answer/).first()).toBeVisible();
+        await expect(page.getByText(/no playable stored solution/).first()).toBeVisible();
         assert.equal(traffic.filter(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path)).length,0);
       }
     } else {

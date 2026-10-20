@@ -16,7 +16,7 @@ class Configuration:
     timezone: str = "America/New_York"
     pool_size: int = 4
     maintenance: bool = True
-    tablebase_url: str | None = "https://tablebase.lichess.ovh/standard"
+    tablebase_url: str | None = None  # Accepted for configuration compatibility; unused.
 
     operator_token: str | None = field(default=None, repr=False)
     evidence_token: str | None = field(default=None, repr=False)
@@ -78,10 +78,6 @@ class Configuration:
             timezone=os.environ.get("TEMPO_LEARNING_TIMEZONE", "America/New_York"),
             pool_size=int(os.environ.get("TEMPO_LEARNING_POOL_SIZE", "4")),
             maintenance=os.environ.get("TEMPO_LEARNING_MAINTENANCE", "1") == "1",
-            tablebase_url=os.environ.get(
-                "TEMPO_LEARNING_TABLEBASE_URL", "https://tablebase.lichess.ovh/standard"
-            )
-            or None,
             operator_token=Path(os.environ["TEMPO_LEARNING_OPERATOR_TOKEN_FILE"])
             .read_text()
             .strip()
