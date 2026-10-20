@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
-import Home from "../../app/views/home_view";
+import Home from "../../app/views/legacy-home";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
