@@ -32,6 +32,14 @@ Scheduling, eligibility, ordering, admission, chess logic, and evidence mathemat
 
 ## Current implementation and migration
 
+The [maintained architecture drawings](diagrams/README.md) trace concrete source
+interfaces, ownership, dependencies, transactions and failure paths at several
+levels. They distinguish implemented increments and legacy coupling from this
+target, unmerged proposals and deployment evidence. Architecture-changing PRs
+must update the relevant views (or explain no impact) under the
+[repository acceptance rule](../../AGENTS.md#maintain-architecture-drawings-as-an-acceptance-criterion)
+and [contributor procedure](../../CONTRIBUTING.md#architecture-impact-and-drawings).
+
 The repository is still an evolving monolithic checkout with existing UI, backend, worker, persistence, and test infrastructure. Current directories and runner jobs do not by themselves establish independent package, release, database, or deployment boundaries. Treat the table above as the adopted target, not a description of already completed extractions.
 
 Apply the project-wide [single-user MVP delivery policy](../../AGENTS.md#deliver-a-usable-single-user-mvp) when choosing each increment. Preserve clear interfaces, ownership and essential safeguards, but let present workflows drive implementation. The target map is not a requirement to complete every extraction, add distributed or multi-user hardening, or close every edge case before delivering a usable MVP; keep improvements small and replaceable, and track safe deferrals in issues.

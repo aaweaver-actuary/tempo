@@ -19,6 +19,33 @@ Start with the adopted [component architecture](docs/architecture/component-reco
 - A draft state, issue status, or unrelated advancement of `main` alone does not establish that tests must be repeated. Reuse prior evidence only when the relevant source, dependencies, fixtures, commands, and toolchain inputs are unchanged. Failed, missing, cancelled, or zero-selected required checks never pass.
 - Distinguish implementation completion from hosted merge qualification. Documentation does not change workflows, required checks, or branch protection. Never claim a merge, deployment, or runtime activation that did not occur.
 
+### Architecture impact and drawings
+
+Architecture-changing PR acceptance includes updating the affected source-truth
+[architecture drawings](docs/architecture/diagrams/README.md), with source links,
+ownership and failure boundaries. Cover the changed abstraction levels and key
+flows; do not regenerate unaffected views. Use the index's review procedure to
+check interfaces, dependency direction, data/transaction/effect ownership,
+asynchronous receipt semantics, shutdown and resource limits. Keep proposed work
+and unverified deployment claims separate from implemented source.
+
+Include an `Architecture impact:` statement in the PR: link the updated views and
+summarize the changed boundary, or write `Architecture impact: none` with a
+specific reason. A documentation correction can update a drawing without changing
+runtime architecture. Review real coupling, including named legacy exceptions;
+do not certify isolation from hidden controls or diagrams alone. In particular,
+Study must not call, import or wait for Games or share its lifecycle. Optional
+influence belongs at the Learning/queue owner's semantic interface, with no
+cross-component writes. Shared pure libraries are permitted.
+
+For documentation-only changes, follow the documentation row in
+[test selection](docs/testing.md#select-the-smallest-relevant-proof), validate
+links/source correspondence and Mermaid syntax using existing lightweight tooling
+when available, and inspect the GitHub rendering. Record unavailable tooling or
+rendering checks honestly; do not install a new toolchain or run full-system tests
+merely to edit drawings. Existing required checks, permissions and the single-user
+MVP policy still apply.
+
 ## Task resources and cleanup
 
 - The implementing agent owns cleanup of its disposable resources and eligible development checkout. An open or unmerged PR, pending review, or inconclusive audit is not by itself a reason to retain a redundant checkout.
