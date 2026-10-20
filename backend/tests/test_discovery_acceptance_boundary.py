@@ -1,6 +1,7 @@
 """Keep Discovery acceptance policy free of SQL, drivers and service startup."""
 
 import ast
+import json
 import os
 from pathlib import Path
 import re
@@ -12,7 +13,7 @@ import pytest
 REPOSITORY = Path(__file__).resolve().parents[2]
 POLICY = REPOSITORY / "backend/app/services/discovery_acceptance_application.py"
 CONTRACT = POLICY.with_name("discovery_acceptance_contracts.py")
-ALLOWED_IMPORTS = {"datetime", "hashlib", "typing", "dataclasses", "tempo_chess_core",
+ALLOWED_IMPORTS = {"datetime", "hashlib", "typing", "dataclasses", "enum", "tempo_chess_core",
                    "discovery_acceptance_contracts"}
 
 
@@ -68,8 +69,12 @@ import sys
 from importlib.abc import MetaPathFinder
 from pathlib import Path
 import pytest
+import json
+from collections import Counter
 root = Path(sys.argv[1])
-sys.path[:0] = [str(root / 'backend'), str(root / 'packages/chess-core/src')]
+sys.path[:0] = [str(root / 'backend'), str(root / 'packages/chess-core/src'),
+                str(root / 'services/learning/application')]
+from qualification import Inventory
 class RejectInfrastructure(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname.startswith('app.') and fullname not in {
@@ -83,13 +88,27 @@ def reject_connections(event, arguments):
     if event in {'socket.connect', 'socket.bind', 'sqlite3.connect'}:
         raise AssertionError('Service initialization: ' + event)
 sys.addaudithook(reject_connections)
-raise SystemExit(pytest.main([str(root / 'backend/tests/test_postgres_discovery_acceptance.py'),
+inventory = Inventory()
+code = int(pytest.main([str(root / 'backend/tests/test_postgres_discovery_acceptance.py'),
     '-q', '-p', 'no:cacheprovider', '--rootdir=' + str(root),
-    '-k', 'not route and not command_composes and not preparation']))
+    '-k', 'not route and not command_composes and not preparation and not freshness_parity'],
+    plugins=[inventory]))
+assert code == 0 and inventory.collected and not inventory.collection_errors
+assert all(report['outcome'] == 'passed' for report in inventory.reports)
+assert Counter((report['nodeid'], report['phase']) for report in inventory.reports) == Counter(
+    (identity, phase) for identity in inventory.collected for phase in ('setup', 'call', 'teardown'))
+allowed_exclusions = ('test_postgres_discovery_acceptance_route_', 'test_discovery_command_composes_',
+                      'test_discovery_preparation_', 'test_discovery_freshness_parity_')
+assert all(identity.split('::')[-1].startswith(allowed_exclusions) for identity in inventory.deselected)
+print('POLICY_INVENTORY ' + json.dumps({'passed': len(inventory.collected),
+    'failed_or_skipped': sum(report['outcome'] != 'passed' for report in inventory.reports)}))
+raise SystemExit(code)
 '''
     result = subprocess.run([sys.executable, "-I", "-B", "-c", source, str(REPOSITORY)],
                             env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
                                  "PYTHONDONTWRITEBYTECODE": "1"},
                             capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "29 passed" in result.stdout
+    summary = json.loads(next(line.removeprefix("POLICY_INVENTORY ") for line in result.stdout.splitlines()
+                              if line.startswith("POLICY_INVENTORY ")))
+    assert summary["passed"] > 0 and summary["failed_or_skipped"] == 0

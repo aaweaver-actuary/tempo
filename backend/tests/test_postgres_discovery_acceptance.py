@@ -7,7 +7,7 @@ import pytest
 
 from app.services.discovery_acceptance_application import DiscoveryAcceptanceError, accept_discovery
 from app.services.discovery_acceptance_contracts import (
-    DiscoveryChoice, DiscoveryOpportunity, DiscoveryScope, LockedDiscoveryOpportunity,
+    DiscoveryAcceptanceReason, DiscoveryChoice, DiscoveryOpportunity, DiscoveryScope, LockedDiscoveryOpportunity,
     MatchingDiscoveryIntent,
 )
 from tempo_chess_core import card_id
@@ -140,24 +140,24 @@ def test_postgres_discovery_acceptance_rechecks_duplicate_after_parent_lock():
     assert store.calls[-1] == ("matching_intent", choice())
 
 
-@pytest.mark.parametrize("changes,status,detail", [
-    ({"status": "dismissed"}, 404, "Active discovery not found"),
-    ({"card_id": "saved-card"}, 409, "This discovery already has a saved decision card"),
-    ({"evidence_fingerprint": "revision-two"}, 409, "Discovery evidence changed; refresh the preview"),
-    ({"repertoire_id": "other"}, 409, "Discovery evidence changed; refresh the preview"),
+@pytest.mark.parametrize("changes,reason", [
+    ({"status": "dismissed"}, DiscoveryAcceptanceReason.UNAVAILABLE),
+    ({"card_id": "saved-card"}, DiscoveryAcceptanceReason.ALREADY_SAVED),
+    ({"evidence_fingerprint": "revision-two"}, DiscoveryAcceptanceReason.EVIDENCE_CHANGED),
+    ({"repertoire_id": "other"}, DiscoveryAcceptanceReason.EVIDENCE_CHANGED),
 ])
-def test_postgres_discovery_acceptance_rejects_changed_opportunity_before_write(changes, status, detail):
+def test_postgres_discovery_acceptance_rejects_changed_opportunity_before_write(changes, reason):
     store = active_store(**changes)
     with pytest.raises(DiscoveryAcceptanceError) as error:
         accept(store)
-    assert (error.value.status_code, error.value.detail) == (status, detail)
+    assert error.value.reason == reason
     assert store.persisted == store.enqueued == []
 
 
 def test_discovery_acceptance_rejects_missing_opportunity():
-    with pytest.raises(DiscoveryAcceptanceError, match="Active discovery not found") as error:
+    with pytest.raises(DiscoveryAcceptanceError) as error:
         accept(AcceptanceStore())
-    assert error.value.status_code == 404
+    assert error.value.reason == DiscoveryAcceptanceReason.UNAVAILABLE
 
 
 @pytest.mark.parametrize("field,current,observed,restricted,accepted", [
@@ -182,7 +182,7 @@ def test_canonical_prefix_discovery_acceptance_requires_current_scope_revision(
     else:
         with pytest.raises(DiscoveryAcceptanceError) as error:
             accept(store)
-        assert error.value.status_code == 404
+        assert error.value.reason == DiscoveryAcceptanceReason.UNAVAILABLE
         assert store.persisted == store.enqueued == []
 
 
@@ -194,8 +194,7 @@ def test_discovery_acceptance_rejects_unvalidated_choice(changes):
     store = active_store()
     with pytest.raises(DiscoveryAcceptanceError) as error:
         accept(store, {**prepared(), **changes})
-    assert error.value.status_code == 409
-    assert error.value.detail == "The chosen move is not a validated recommendation"
+    assert error.value.reason == DiscoveryAcceptanceReason.INVALID_CHOICE
     assert store.persisted == store.enqueued == []
 
 
@@ -229,19 +228,25 @@ def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
     assert request_digest("discovery.accept", prepared()) == request_digest("discovery.accept", changed)
 
 
-def test_discovery_command_composes_borrowed_store_and_preserves_http_error(monkeypatch):
+@pytest.mark.parametrize("changes,expected_status,expected_detail", [
+    ({"status": "dismissed"}, 404, "Active discovery not found"),
+    ({"card_id": "saved"}, 409, "This discovery already has a saved decision card"),
+    ({"evidence_fingerprint": "other"}, 409, "Discovery evidence changed; refresh the preview"),
+    ({"repertoire_id": "other"}, 409, "Discovery evidence changed; refresh the preview"),
+])
+def test_discovery_command_composes_borrowed_store_and_preserves_http_error(
+        monkeypatch, changes, expected_status, expected_detail):
     from fastapi import HTTPException
     from app import discovery_commands
     database = object()
-    store = active_store(card_id="saved")
+    store = active_store(**changes)
     received = []
     monkeypatch.setattr(discovery_commands, "PostgresDiscoveryAcceptanceStore",
                         lambda connection: received.append(connection) or store)
     with pytest.raises(HTTPException) as error:
         discovery_commands.accept_discovery(database, prepared())
     assert received == [database]
-    assert (error.value.status_code, error.value.detail) == (
-        409, "This discovery already has a saved decision card")
+    assert (error.value.status_code, error.value.detail) == (expected_status, expected_detail)
 
 
 @pytest.mark.parametrize("replay", [True, False])
@@ -272,3 +277,34 @@ def test_discovery_preparation_closes_read_before_recommendation(monkeypatch, re
     assert result == ({key: prepared()[key] for key in (
         "opportunity_id", "selected_move_uci", "evidence_fingerprint")} if replay else prepared())
     assert not inside_read
+
+
+def test_discovery_freshness_parity_with_existing_canonical_reader(monkeypatch):
+    # The existing SQL-bearing module stays outside the extracted policy. This
+    # parity matrix protects the duplicated predicate until its shared owner can
+    # move it to a pure public helper without adding cross-feature imports.
+    from dataclasses import asdict
+    from itertools import product
+    from app.services import canonical_scope_freshness
+    from app.services.discovery_acceptance_application import opportunity_is_current
+    for restricted, revision, source, preview, generation in product(
+            (False, True), (0, 1), (None, 0, 2), (None, "current", "other"), (0, 1)):
+        prefix = dict(moves=["e2e4"] if restricted else [], revision=1,
+                      source_revision=2, preview_id="current")
+        monkeypatch.setattr(canonical_scope_freshness, "read_prefix", lambda *_args, **_kwargs: prefix)
+        monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args: 1)
+        scope = DiscoveryScope(revision, source, preview, generation)
+        observed = DiscoveryOpportunity("white-openings", "active", None, "revision-one", scope)
+        locked = LockedDiscoveryOpportunity(observed, DiscoveryScope(1, 2, "current", 1), restricted)
+        row = dict(repertoire_id="white-openings", **asdict(scope))
+        assert opportunity_is_current(locked) == canonical_scope_freshness.opportunity_is_current(None, row)
+    # Missing canonical fields retain the legacy defaults in unrestricted scope.
+    prefix = dict(moves=[], revision=0, source_revision=0, preview_id=None)
+    monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args: 0)
+    assert canonical_scope_freshness.opportunity_is_current(None, {"repertoire_id": "white-openings"})
+    # A restricted prefix with no current preview always fails, even if the
+    # observed source/preview identities otherwise agree.
+    prefix = dict(moves=["e2e4"], revision=1, source_revision=2, preview_id=None)
+    observed = DiscoveryOpportunity("white-openings", "active", None, "revision-one", DiscoveryScope(1, 2, None, 0))
+    assert not opportunity_is_current(LockedDiscoveryOpportunity(observed, observed.scope, True))
+    assert not canonical_scope_freshness.opportunity_is_current(None, dict(repertoire_id="white-openings", **asdict(observed.scope)))

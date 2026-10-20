@@ -12,7 +12,7 @@ from .postgres_store import PostgresConnection
 from .services.discovery_acceptance_application import (
     DiscoveryAcceptanceError, accept_discovery as apply_discovery_acceptance,
 )
-from .services.discovery_acceptance_contracts import DiscoveryChoice
+from .services.discovery_acceptance_contracts import DiscoveryAcceptanceReason, DiscoveryChoice
 from .services.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
 from .services.discovery_admission import (
     admission_intent_id, recommend_missing_continuations,
@@ -54,7 +54,13 @@ def accept_discovery(database: PostgresConnection, payload: dict[str, Any]) -> d
                                           payload["evidence_fingerprint"]),
         )
     except DiscoveryAcceptanceError as error:
-        raise HTTPException(error.status_code, error.detail) from error
+        status_code, detail = {
+            DiscoveryAcceptanceReason.UNAVAILABLE: (404, "Active discovery not found"),
+            DiscoveryAcceptanceReason.ALREADY_SAVED: (409, "This discovery already has a saved decision card"),
+            DiscoveryAcceptanceReason.EVIDENCE_CHANGED: (409, "Discovery evidence changed; refresh the preview"),
+            DiscoveryAcceptanceReason.INVALID_CHOICE: (409, "The chosen move is not a validated recommendation"),
+        }[error.reason]
+        raise HTTPException(status_code, detail) from error
 
 
 register_command("discovery.accept", accept_discovery)

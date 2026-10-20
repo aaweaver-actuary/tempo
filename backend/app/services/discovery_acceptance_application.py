@@ -7,16 +7,15 @@ from typing import Any
 from tempo_chess_core import card_id
 
 from .discovery_acceptance_contracts import (
-    DiscoveryAcceptanceStore, DiscoveryChoice, LockedDiscoveryOpportunity,
+    DiscoveryAcceptanceReason, DiscoveryAcceptanceStore, DiscoveryChoice, LockedDiscoveryOpportunity,
     NewDiscoveryIntent,
 )
 
 
 class DiscoveryAcceptanceError(ValueError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+    def __init__(self, reason: DiscoveryAcceptanceReason):
+        super().__init__(reason.value)
+        self.reason = reason
 
 
 def opportunity_is_current(locked: LockedDiscoveryOpportunity) -> bool:
@@ -50,13 +49,13 @@ def accept_discovery(
     locked = store.lock_opportunity_scope(choice.opportunity_id)
     if (locked is None or locked.opportunity.status != "active"
             or not opportunity_is_current(locked)):
-        raise DiscoveryAcceptanceError(404, "Active discovery not found")
+        raise DiscoveryAcceptanceError(DiscoveryAcceptanceReason.UNAVAILABLE)
     opportunity = locked.opportunity
     if opportunity.card_id:
-        raise DiscoveryAcceptanceError(409, "This discovery already has a saved decision card")
+        raise DiscoveryAcceptanceError(DiscoveryAcceptanceReason.ALREADY_SAVED)
     if (opportunity.evidence_fingerprint != choice.evidence_fingerprint
             or opportunity.repertoire_id != payload.get("repertoire_id")):
-        raise DiscoveryAcceptanceError(409, "Discovery evidence changed; refresh the preview")
+        raise DiscoveryAcceptanceError(DiscoveryAcceptanceReason.EVIDENCE_CHANGED)
     # Different operation IDs can prepare one choice before either persists it.
     # Scope and parent opportunity locks precede the duplicate recheck.
     prior = store.lock_matching_intent(choice)
@@ -66,7 +65,7 @@ def accept_discovery(
     starting_fen = payload["starting_fen"]
     if (not preview_moves or preview_moves[0] != choice.selected_move_uci
             or payload["recommendation"]["move_uci"] != choice.selected_move_uci):
-        raise DiscoveryAcceptanceError(409, "The chosen move is not a validated recommendation")
+        raise DiscoveryAcceptanceError(DiscoveryAcceptanceReason.INVALID_CHOICE)
     line_id = hashlib.sha256(
         f"{opportunity.repertoire_id}\0{card_id(starting_fen, preview_moves)}".encode()
     ).hexdigest()

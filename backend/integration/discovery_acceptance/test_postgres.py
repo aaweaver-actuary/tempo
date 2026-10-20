@@ -278,3 +278,41 @@ def test_adapter_does_not_commit_or_rollback_the_callers_transaction(case):
         assert counts(case) == (0, 0, 0)
         database.rollback()
     assert counts(case) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("matching", [False, True])
+def test_reader_role_preparation_is_nonlocking_and_closes_before_recommendation(case, monkeypatch, matching):
+    result = execute_command(case["identity"] + "-seed", "discovery.accept", case["payload"])
+    fingerprint = "revision-one" if matching else "unaccepted-revision"
+    original_read = discovery_commands.read_connection
+    inside_read = False
+    @contextmanager
+    def observed_read():
+        nonlocal inside_read
+        with original_read() as database:
+            identity = database.execute_native("SELECT current_user,current_setting('transaction_read_only')").fetchone()
+            assert (identity[0], identity[1]) == ("tempo_reader", "on")
+            database.execute_native("SET LOCAL statement_timeout='1s'")
+            inside_read = True
+            try:
+                yield database
+            finally:
+                inside_read = False
+    recommended = []
+    def recommend(opportunity_id):
+        assert not inside_read and not matching and opportunity_id == case["identity"]
+        recommended.append(opportunity_id)
+        return dict(state="ready", evidence_fingerprint=fingerprint,
+                    repertoire_id=case["identity"], starting_fen=FEN,
+                    candidates=[case["payload"]["recommendation"]])
+    monkeypatch.setattr(discovery_commands, "read_connection", observed_read)
+    monkeypatch.setattr(discovery_commands, "recommend_missing_continuations", recommend)
+    # Keep a real writer lock on the existing intent. Reader hit/miss must neither
+    # request a write lock nor wait for this transaction to release it.
+    with postgres_store.connection() as writer:
+        writer.execute_native("SELECT id FROM discovery_admission_intents WHERE id=%s FOR UPDATE", (result["intent_id"],))
+        prepared = discovery_commands.prepare_discovery_acceptance(case["identity"], "e2e4", fingerprint)
+    assert prepared["evidence_fingerprint"] == fingerprint and not inside_read
+    assert recommended == ([] if matching else [case["identity"]])
+    assert ("recommendation" in prepared) is (not matching)
+    assert counts(case) == (1, 1, 1)

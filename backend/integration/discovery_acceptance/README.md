@@ -19,7 +19,7 @@ Its capabilities are:
 
 The adapter retains the existing canonical prefix/game-scope readers and compact
 durable-task writer. The command keeps the existing `admission_intent_id` helper,
-registration, HTTP error translation and costly preparation outside its write.
+registration, semantic-reason to HTTP error translation and costly preparation outside its write.
 The command gateway remains sole owner of the receipt/savepoint/transaction.
 The existing Discovery worker remains sole owner of downstream queue admission.
 No schema, queue, feedback, gateway or connection infrastructure changes.
@@ -43,10 +43,11 @@ Route/composition/preparation cases have their separate legacy assembly imports.
 
 ## Parent-owned serial PostgreSQL window required
 
-`test_postgres.py` contains 13 native cases: simultaneous distinct operation IDs,
+`test_postgres.py` contains 15 native cases: simultaneous distinct operation IDs,
 unique revision/choice enforcement, receipt/logical replay, terminal readmission,
 five independent stale-scope fences, failures after intent/task persistence and
-at completed-receipt persistence, two real lock-order probes, and caller rollback.
+at completed-receipt persistence, two real lock-order probes, caller rollback, and reader-role preparation hit/miss
+while another transaction holds the matching-intent lock.
 The receipt fault is a real fixture-only PostgreSQL trigger; policy tests do not
 emulate any SQL. The lock probes observe actual PostgreSQL blocking and NOWAIT
 behavior. SQL/binding/transaction claims remain unqualified until these cases run.
@@ -89,9 +90,20 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend \
   -v -p no:cacheprovider --rootdir=. --junitxml=/absolute/task-evidence/native.xml
 ```
 
-Require all 13 collected identities to execute and pass without skips. Retain
+Require all 15 collected identities to execute and pass without skips. Retain
 collection/execution output, JUnit, source revision and fixture identity, then
 close connections and destroy only the exact parent-owned disposable resource.
 Rows survive individual tests for failure inspection; the coordinator destroys
 the whole fixture. No native success or merge qualification is claimed by a
 successful collection alone.
+
+## Freshness follow-on ownership
+
+The extracted policy cannot import `canonical_scope_freshness`, whose readers
+contain SQL and infrastructure dependencies. The existing legacy public
+`opportunity_is_current` and this application's pure fact predicate are protected
+by an explicit parity matrix across restricted/unrestricted scope, revision,
+source, preview, missing defaults and game generation. A follow-on shared owner
+should extract a pure canonical-scope fact predicate and adopt it in both
+consumers together. This PR leaves the shared module unchanged and introduces
+no cross-feature private import. It does not claim that duplication is permanent.
