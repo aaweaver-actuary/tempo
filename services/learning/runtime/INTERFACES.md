@@ -19,7 +19,8 @@ holds and a 15-second producer lease renewed every five seconds. The directory
 must be shared by colocated processes using the same kernel clock; a VM with a
 different clock is unavailable control and must use its own colocated admission
 reader. One optional daemon owns publication and cleanup outside the bounded
-memory lock. Startup, essential request entry/exit, activity submissions and shutdown
+memory lock. This is bounded-memory synchronization, not lock-free, hard real-time
+or a scheduler latency guarantee. Startup, essential request entry/exit, activity submissions and shutdown
 never wait for its filesystem operations. Shutdown signals this daemon without
 joining it; when I/O resumes, cleanup removes only its producer record. An interrupted
 producer retains stale evidence, blocking admission until its exact ownership
@@ -27,16 +28,24 @@ and service absence are reconciled. Its recorded PID assists that inspection;
 missing PID alone is never permission to remove a source record. Essential
 Learning needs no Node or broker.
 
-Publication is asynchronous: a last healthy idle snapshot can remain readable until
-its existing 15-second lease expires while publication is stalled. This signal does
-not provide instantaneous stall detection or host resource isolation. Missing and
-stale evidence for `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` remains unavailable to
-the managed admission reader, including after clean removal. No lease protocol or
-reader policy changes accompany this repair.
+Publication is asynchronous and does not immediately exclude foreground overlap.
+If the last healthy snapshot is idle and publication stalls, a new essential
+request can proceed while managed work still reads that old snapshot as idle for
+up to the remaining 15-second producer lease. At expiry, the retained snapshot
+is unavailable. This tradeoff removes filesystem waits from essential progress;
+it does not provide immediate foreground exclusion or host resource isolation.
+
+**Deployment prerequisite:** configure each protected Learning workspace identity
+in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` JSON array before
+starting it. With that configuration, missing first publication and clean removal
+remain unavailable. The default `[]` accepts absent sources as idle, so a missing
+or never-published producer is not protected by default. A present stale snapshot
+is unavailable in either case. No live configuration, lease protocol or reader
+policy changes accompany this source repair.
 
 Programmatic `Configuration.host_activity_directory=None` disables this optional
-adapter; applications embedding Learning must configure the shared directory to
-claim host-level development protection. Browser-local priority remains separate.
+adapter; applications embedding Learning must configure both the shared directory
+and the managed runners' expected-source identities to claim missing-source protection. Browser-local priority remains separate.
 ## Content bridge v2
 
 `POST /internal/publications/v2/stage` accepts the service-local version-2 opening

@@ -97,7 +97,11 @@ own attempt issuance. None of those operations calls the game producer.
 HostActivity note source: proposed checkpoint
 [`09cb4eef`](https://github.com/aaweaver-actuary/tempo/blob/09cb4eef027666aaa3e728660b9e7ca39eb36091/services/learning/runtime/src/tempo_learning_runtime/host_activity.py).
 The request-accounting note is source repair only; deployment is unverified.
-A last healthy idle snapshot remains valid for its existing 15-second lease;
+Bounded-memory synchronization is not a hard real-time or lock-free guarantee.
+A last healthy idle snapshot remains valid for its existing 15-second lease,
+allowing new essential requests to overlap admitted managed work. Missing-source
+protection requires configured expected workspace identities; default `[]` accepts
+absence as idle.
 [the host execution view](study-games.md#shared-learning-request-execution-gaps-main)
 describes stale/missing expected-source admission and asynchronous cleanup.
 

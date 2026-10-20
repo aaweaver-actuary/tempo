@@ -295,3 +295,18 @@ Host activity filesystem independence (source repair; deployment unverified):
 
 These are injected source-level regressions, not evidence of a live incident or
 of deployment, host-resource isolation, or instantaneous detection of a stall.
+
+
+`healthy idle snapshot with stalled publisher allows a new essential request before the 15-second admission expiry`
+in `tests/runner/development-budget.test.mjs` runs a stdlib-only Python producer
+from the exact source path and verifies its SHA-256 against the native harness.
+After a healthy idle publication, it blocks actual `os.replace`, completes a new
+essential request and feeds the retained file to the actual Node host reader at
+deterministic clock values. The reader still reports idle until one nanosecond
+before the 15-second expiry, then unavailable at expiry. After owned cleanup,
+configured expected sources remain unavailable while explicit `[]` admits absence.
+This proves the foreground-overlap tradeoff, not immediate foreground exclusion.
+The fixture releases and joins only its own daemon; no database or server runs.
+The implementation uses bounded-memory synchronization, not hard real-time or
+lock-free progress. Configuring expected workspace identities is a deployment
+prerequisite for startup/missing-source protection; default `[]` provides none.
