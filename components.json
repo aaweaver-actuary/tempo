@@ -1992,7 +1992,9 @@
         "CurrentRepertoireComparer",
         "compare",
         "RouteFrontier",
-        "TraversalRoute"
+        "TraversalRoute",
+        "DepartureResult",
+        "first_departure"
       ],
       "dependencies": [
         "tempo_game_review_contracts"

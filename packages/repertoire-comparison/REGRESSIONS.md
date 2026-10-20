@@ -15,3 +15,5 @@ GE's existing `services/game-evidence/tests/test_comparison.py` retains historic
 classification/physical mapping, no inferred reentry and caller-specific adapter
 behavior after traversal extraction. Those consumer tests must run with the
 root-owned GE dependency update; comparer-only tests do not qualify GE adoption.
+
+`test_first_departure_normal_cases` demonstrates own departure, opponent departure and full coverage with one-based ply.

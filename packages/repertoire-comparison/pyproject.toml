@@ -10,6 +10,7 @@ requires-python = ">=3.12,<3.15"
 dependencies = ["tempo-game-review-contracts==0.1.0"]
 
 [project.scripts]
+tempo-first-departure = "tempo_repertoire_comparison.departure_cli:main"
 tempo-repertoire-compare = "tempo_repertoire_comparison.cli:main"
 
 [dependency-groups]

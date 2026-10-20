@@ -1,3 +1,22 @@
+# Repertoire membership: first departure
+
+The smallest entry is `first_departure(game, supplied_snapshot)`: it returns a
+**one-based** move ply and `learner`/`opponent`, or `ply: null` when the whole
+game is covered. Invalid or insufficient evidence is explicitly `unsupported`;
+it never silently means no departure. Any supplied authored alternative counts
+as membership, without granting policy, learning or action authority.
+
+```python
+from tempo_repertoire_comparison import first_departure
+result = first_departure(game, snapshot)
+# {"status": "compared", "ply": 2, "side": "opponent", "reason": None}
+```
+
+`tempo-first-departure --game game.json --snapshot repertoire.json` prints that
+small result. It has no provider, database or Study dependency. The existing
+Game Evidence route traversal is reused. Rich raw reports below remain optional;
+none of their future consumers is required to use this minimal entry.
+
 # Independent repertoire comparison 0.1
 
 `tempo_repertoire_comparison.compare(CanonicalGame, RepertoireSnapshot)` returns
