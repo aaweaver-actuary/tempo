@@ -23,7 +23,7 @@ from tempo_legacy_database.adapters import postgres_store
 from app import tactic_commands  # registers the production handler
 from app.command_gateway import execute_command, read_operation
 from app.services.postgres_queue_refresh import _publish_tactical_introduction
-from app.services.tactic_admission import count_daily_tactic_introductions
+from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions
 from app.services.cards import card_id
 
 

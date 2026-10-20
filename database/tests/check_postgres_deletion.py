@@ -80,7 +80,7 @@ def main_check():
         from app.services import postgres_queue_refresh
         from app.services.cards import card_id
         from app.services.puzzles import validate_puzzle_record
-        from app.services.tactic_admission import count_daily_tactic_introductions
+        from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions
 
         pack_id = f"{prefix}-tactics"
         records = tactical_deletion_fixture_records(pack_id)

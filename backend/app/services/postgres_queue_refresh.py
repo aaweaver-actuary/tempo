@@ -28,7 +28,7 @@ from .durable_tasks import (
 from .pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
 from .tactical_catalog import pack_records
-from .tactic_admission import DAILY_TACTIC_COUNT_SQL, count_daily_tactic_introductions, lock_daily_tactic_admission
+from tempo_legacy_database.adapters.tactic_admission import DAILY_TACTIC_COUNT_SQL, count_daily_tactic_introductions, lock_daily_tactic_admission
 
 
 _ELIGIBILITY_PHASES = (

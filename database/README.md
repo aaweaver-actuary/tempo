@@ -1,6 +1,6 @@
 # Database files and source schema
 
-This tree is the required single home for database operations. PR334 moves the dedicated database files here. A dependent frozen-order split closes one of its 156 mixed SQL/application files, but **complete centralization is unfinished: 155 baseline mixed files remain for extraction**. Their [inventory](INVENTORY.md) is the extraction checklist, not a permanent exception. Application/domain logic belongs in logical folders outside `database/`; database operations belong here, connected through explicit interfaces and outer composition.
+This tree is the required single home for database operations. PR334 moves the dedicated database files here. A dependent frozen-order split and two SQL-only helper moves close three of its 156 baseline paths, but **complete centralization is unfinished: 153 baseline files remain for extraction**. Their [inventory](INVENTORY.md) is the extraction checklist, not a permanent exception. Application/domain logic belongs in logical folders outside `database/`; database operations belong here, connected through explicit interfaces and outer composition.
 
 Physical colocation does not grant a component access to another owner's data and does not create a shared runtime module. Each owner retains its own package artifact, migration authority and transaction boundaries.
 

@@ -7,7 +7,7 @@ import hashlib
 import json
 import sqlite3
 
-from .opening_progression import unlock_legacy_children_after_review
+from tempo_legacy_database.adapters.opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
 
 

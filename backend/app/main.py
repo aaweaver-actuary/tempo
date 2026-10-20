@@ -94,7 +94,7 @@ from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, capture_daily_queue_order, ensure_card_queued_after, preserve_daily_queue_order
-from .services.opening_progression import PRACTICED_OPENING_PARENT_SQL
+from tempo_legacy_database.adapters.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .services.real_game_feedback import MISS_REASON
 from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority

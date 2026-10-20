@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL modules**. The frozen-order extraction closes one source file; **155 remain to be separated**. Complete centralization is unfinished while their database operations live outside the root `database/` tree. This is a starting checklist, not an accepted permanent exception. Extract application/domain logic into logically named folders outside `database/`, keep each database operation inside it, and connect the single implementations through explicit interfaces and outer composition. Application-facing tests and public wire JSON schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL modules**. The frozen-order split and two SQL-only helper moves close three source files; **153 remain to be separated**. Complete centralization is unfinished while their database operations live outside the root `database/` tree. This is a starting checklist, not an accepted permanent exception. Extract application/domain logic into logically named folders outside `database/`, keep each database operation inside it, and connect the single implementations through explicit interfaces and outer composition. Application-facing tests and public wire JSON schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -69,7 +69,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/opening_capacity_admission.py](../backend/app/services/opening_capacity_admission.py)
 - [backend/app/services/opening_graph.py](../backend/app/services/opening_graph.py)
 - [backend/app/services/opening_graph_recovery.py](../backend/app/services/opening_graph_recovery.py)
-- [backend/app/services/opening_progression.py](../backend/app/services/opening_progression.py)
+- Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/opening_progression.py](tempo_legacy_database/adapters/opening_progression.py).
 - [backend/app/services/opening_ranking_snapshot.py](../backend/app/services/opening_ranking_snapshot.py)
 - [backend/app/services/postgres_coverage_candidates.py](../backend/app/services/postgres_coverage_candidates.py)
 - [backend/app/services/postgres_coverage_explorer.py](../backend/app/services/postgres_coverage_explorer.py)
@@ -114,7 +114,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/study_mode.py](../backend/app/services/study_mode.py)
 - [backend/app/services/study_portable.py](../backend/app/services/study_portable.py)
 - [backend/app/services/study_priority.py](../backend/app/services/study_priority.py)
-- [backend/app/services/tactic_admission.py](../backend/app/services/tactic_admission.py)
+- Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/tactic_admission.py](tempo_legacy_database/adapters/tactic_admission.py).
 - [backend/app/services/tactic_capture.py](../backend/app/services/tactic_capture.py)
 - [backend/app/services/tactical_catalog.py](../backend/app/services/tactical_catalog.py)
 - [backend/app/services/tactical_opportunities.py](../backend/app/services/tactical_opportunities.py)
@@ -201,6 +201,6 @@ PR334 retains the physical moves, schema documentation and direct-run discovery 
 
 Completed first slice: `backend/app/services/frozen_opening_order.py` now contains legacy call-site composition only. Its six-entry SQLite `SCHEMA` list (five tables plus activation seed), 17 guarded table names and 51 generated trigger definitions moved unchanged to [database-owned DDL](tempo_legacy_database/ddl/frozen-opening/README.md). Both original initialization call sites import that DDL directly. All query/write operations moved to [the borrowed-transaction adapter](tempo_legacy_database/adapters/frozen_order.py); preference/eligibility/slot-order decisions moved to [the Study logical folder](../backend/app/study/frozen_order/README.md). Existing function signatures remain at the composition seam. There are no duplicated implementations or generic SQL execution ports.
 
-This removes 29 database-call sites from one 315-line application module. All SQL literals and the three DDL/guard assignment ASTs match the baseline exactly. PostgreSQL migration files, transaction authority, lock order and reader/fingerprint formats are unchanged. Existing legacy callers still import the composition seam: that dependency remains a next-phase domain move, not a claim of complete strict isolation. The 155 remaining baseline paths are still pending; false positives require inspection rather than blind movement.
+This removes 29 database-call sites from one 315-line application module. All SQL literals and the three DDL/guard assignment ASTs match the baseline exactly. PostgreSQL migration files, transaction authority, lock order and reader/fingerprint formats are unchanged. Existing legacy callers still import the composition seam: that dependency remains a next-phase domain move, not a claim of complete strict isolation. Two more baseline paths, `opening_progression.py` and `tactic_admission.py`, contain only persistence queries/locks. They moved intact into this owner’s `adapters/` directory; imports, native proof references and existing runner source maps follow their new paths. Their source bytes are unchanged and they add no application policy or shared runtime. The 153 remaining baseline paths are still pending; false positives require inspection rather than blind movement.
 
 Other checklist families include legacy queue/review/attempt commands, Games/analysis projections, authored Studies/PGN operations, Content bridge orchestration and Learning runtime application paths. Close and verify a bounded owning slice at a time. Inline SQL/DDL is not accepted as a permanent exception, and moving a whole mixed module into `database/` will not by itself separate application policy.
