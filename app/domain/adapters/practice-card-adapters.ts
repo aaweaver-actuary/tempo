@@ -98,10 +98,7 @@ export function mapQueueCardToPracticeCard(
           : card.repertoire_id === "__game_tactics__" ? "From an analyzed game" : "Captured tactic"
         : card.repertoire_source,
     startingFen,
-    moves:
-      card.content_type === "endgame"
-        ? []
-        : movesToSanFormat(startingFen, validatedLine.moves).map(asSanMove),
+    moves: movesToSanFormat(startingFen, validatedLine.moves).map(asSanMove),
     userMoveTarget: card.content_type === "defense" ? 1 : Math.ceil(card.moves.length / 2),
     sourceUrl: card.content_type === "tactic" && card.repertoire_id === "__tactics__" && card.source_ref
       ? `https://lichess.org/training/${card.source_ref}`

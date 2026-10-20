@@ -12,14 +12,8 @@ vi.mock("../../app/utils/local", () => ({
   usesLocalApi: () => false,
 }));
 
-vi.mock("../../app/lib/endgame-generator", () => ({
-  generateLegalEndgameFen: () =>
-    "rn1qkbnr/pppb1ppp/8/3pp3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 3",
-}));
-
 vi.mock("../../app/utils/tablebase", () => ({
   probeTablebase: vi.fn(async () => ({ category: "draw", moves: [] })),
-  tablebaseCategoryForWhite: vi.fn(() => "draw"),
 }));
 
 beforeEach(() => {

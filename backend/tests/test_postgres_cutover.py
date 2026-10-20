@@ -1447,23 +1447,13 @@ def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
     assert statements[2][1] == ("chess.com",)
 
 
-def test_postgres_endgame_probe_uses_read_only_tablebase_path(monkeypatch):
-    from fastapi.testclient import TestClient
+def test_removed_endgame_probe_rejects_without_provider_or_database(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
     from app import main
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-
-    async def fake_tablebase(fen):
-        assert fen == "8/8/8/8/8/8/4K3/7k w - - 0 1"
-        return {"category": "draw", "moves": []}
-
-    monkeypatch.setattr(main, "tablebase", fake_tablebase)
-    response = TestClient(main.app).post(
-        "/api/endgames/probe", json={"fen": "8/8/8/8/8/8/4K3/7k w - - 0 1"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {"category": "draw", "moves": []}
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(main.probe_endgame(object()))
+    assert error.value.status_code == 410
 
 
 def test_postgres_card_validation_remains_available_without_a_write_worker(monkeypatch):
@@ -2215,159 +2205,29 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
     assert events == ["line", "graph", "coverage"]
 
 
-def test_postgres_endgame_template_admission_dispatches_foreground_command(monkeypatch):
-    from fastapi.testclient import TestClient
+def test_removed_endgame_template_generation_rejects_before_dispatch(monkeypatch):
+    from fastapi import HTTPException
     from app import main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(command_dispatch, "dispatch_command",
-                        lambda name, payload, *, idempotency_key:
-                        dispatched.append((name, payload, idempotency_key)) or {
-                            "id": "template", "card_id": "card", "sample_fen": "fen",
-                            "already_exists": False,
-                        })
-    response = TestClient(main.app).post(
-        "/api/endgames/templates", headers={"Idempotency-Key": "endgame-1"},
-        json={"name": "King and rook", "white_material": "KR",
-              "black_material": "K", "trained_color": "white"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched[0][0] == "endgames.template.create"
-    assert dispatched[0][1]["name"] == "King and rook"
-    assert dispatched[0][2] == "endgame-1"
+    with pytest.raises(HTTPException) as error:
+        main.create_endgame(object())
+    assert error.value.status_code == 410
+    assert not hasattr(main, "tablebase")
+    assert not hasattr(main, "generate_position")
 
 
-def test_postgres_tablebase_probe_never_writes_from_read_only_api(monkeypatch):
+def test_saved_endgame_pending_receipt_recovers_without_preparation(monkeypatch):
     import asyncio
     from app import main
-
+    class Reader:
+        def execute(self, statement, parameters):
+            assert "payload_json FROM operation_receipts" in statement
+            return SimpleNamespace(fetchone=lambda: {"payload_json": json.dumps({"template_id": "template"})})
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main, "connection", lambda: (_ for _ in ()).throw(
-        AssertionError("API must not open a writable database connection")))
-
-    class CacheRead:
-        def execute(self, *_args):
-            return SimpleNamespace(fetchone=lambda: None)
-
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(CacheRead()))
-
-    class Response:
-        status_code = 200
-        is_success = True
-
-        def json(self):
-            return {"category": "win", "moves": []}
-
-    class Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        async def get(self, *_args, **_kwargs):
-            return Response()
-
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **_kwargs: Client())
-    assert asyncio.run(main.tablebase("8/8/8/8/8/8/4k3/4K3 w - - 0 1"))["category"] == "win"
-
-
-def test_postgres_tablebase_redis_cache_hit_and_failure_fallback(monkeypatch):
-    import asyncio
-    from redis import RedisError
-    from app import main
-
-    cached = []
-    fetches = []
-
-    class Cache:
-        async def get(self, _key):
-            if cached:
-                return cached[0]
-            raise RedisError("cache unavailable")
-
-        async def setex(self, _key, _ttl, value):
-            cached.append(value)
-
-        async def aclose(self):
-            return None
-
-    class Database:
-        def execute(self, *_args):
-            return SimpleNamespace(fetchone=lambda: None)
-
-    class Response:
-        status_code = 200
-        is_success = True
-
-        def json(self):
-            return {"category": "draw", "moves": []}
-
-    class Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        async def get(self, *_args, **_kwargs):
-            fetches.append(True)
-            return Response()
-
-    monkeypatch.setenv("TEMPO_REDIS_URL", "redis://rehearsal")
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.AsyncRedis, "from_url", lambda _url: Cache())
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Database()))
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **_kwargs: Client())
-    fen = "8/8/8/8/8/8/4k3/4K3 w - - 0 1"
-    assert asyncio.run(main.tablebase(fen))["category"] == "draw"
-    assert asyncio.run(main.tablebase(fen))["category"] == "draw"
-    assert len(fetches) == 1
-
-
-def test_postgres_endgame_attempt_prepares_outside_worker_and_dispatches_idempotently(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    dispatched = []
-    seeds = []
-
-    class TemplateRead:
-        def execute(self, *_args):
-            return SimpleNamespace(fetchone=lambda: {
-                "white_material": "KR", "black_material": "K",
-                "trained_color": "white", "goal_mix": "both",
-            })
-
-    async def tablebase(_fen):
-        return {"category": "win", "moves": []}
-
-    def position(*_args, seed):
-        seeds.append(seed)
-        return "8/8/8/8/8/8/4k3/4K3 w - - 0 1"
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "read_operation", lambda *_args, **_kwargs: {"state": "pending"})
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(TemplateRead()))
-    monkeypatch.setattr(main, "tablebase", tablebase)
-    monkeypatch.setattr(main, "generate_position", position)
-    monkeypatch.setattr(command_dispatch, "dispatch_command",
-                        lambda name, payload, *, idempotency_key:
-                        dispatched.append((name, payload, idempotency_key)) or {
-                            "id": "attempt", "fen": payload["fen"],
-                            "target": payload["target"], "moves": payload["moves"],
-                        })
-    client = TestClient(main.app)
-    for _ in range(2):
-        response = client.post("/api/endgames/templates/template/attempt",
-                               headers={"Idempotency-Key": "attempt-1"})
-        assert response.status_code == 200, response.text
-    assert len(set(seeds)) == 1
-    assert [item[0] for item in dispatched] == ["endgames.attempt.create"] * 2
-    assert [item[2] for item in dispatched] == ["attempt-1"] * 2
+    monkeypatch.setattr(main, "read_operation", lambda *args, **kwargs: {"operation_id": "saved", "state": "pending"})
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Reader()))
+    response = asyncio.run(main.create_endgame_attempt("template", "saved"))
+    assert response.status_code == 202
+    assert response.headers["location"] == "/api/operations/saved"
 
 
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):

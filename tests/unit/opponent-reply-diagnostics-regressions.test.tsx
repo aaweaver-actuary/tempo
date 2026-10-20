@@ -5,6 +5,7 @@ import type { Square } from "chess.js";
 import { Chess } from "chess.js";
 import Home from "../../app/views/home_view";
 import { useTrainingStore } from "../../app/state/training-store";
+import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { asSanMove } from "../../app/types";
 import {
   installTempoDragCapture, recordTempoDragPhase, resetTempoDragDiagnostics,
@@ -33,19 +34,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountTraining() {
+async function mountTraining(overrides: Record<string, unknown> = {}, reviewWrites?: unknown[]) {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   window.history.replaceState({}, "", "/?tempoPerformance=drag");
   const queueCard = {
     id: "reply-diagnostics", queue_entry_id: 731, start_fen: new Chess().fen(),
     moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"],
     content_type: "opening", repertoire_name: "Synthetic reply lifecycle",
-    repertoire_source: "PGN", cycle: 0,
+    repertoire_source: "PGN", cycle: 0, ...overrides,
   };
-  vi.stubGlobal("fetch", vi.fn(async input => {
+  vi.stubGlobal("fetch", vi.fn(async (input, options?: RequestInit) => {
     const url = String(input);
     if (url.includes("/api/queue/window"))
       return Response.json({ cards: [queueCard], count: 1 });
+    if (reviewWrites && url.endsWith("/review")) {
+      reviewWrites.push(JSON.parse(String(options?.body)));
+      return Response.json({ persisted: true, review_id: 1 });
+    }
     return Response.json({ providers: [], states: [], lines: [], repertoires: [], discoveries: [] });
   }));
   const mounted = render(<Home />);
@@ -219,4 +224,19 @@ it("opponent_reply_handled_failure_closes_its_diagnostic_phase", async () => {
   cleanup();
   expectTerminal(operationId, "error");
   expectOnlyUnrelatedOperation(unrelatedId);
+});
+
+
+it("real Home preserves saved endgame queue lines, plays them and submits the ordinary review", async () => {
+  const fen = "8/8/8/8/8/2k5/R7/1K6 w - - 0 1";
+  const reviews: unknown[] = [];
+  await mountTraining({ content_type: "endgame", start_fen: fen, moves: ["a2a3"] }, reviews);
+  vi.useRealTimers();
+  expect(useTrainingStore.getState().getCard().moves).toEqual(["Ra3+"]);
+  await act(async () => { await useBoardShellStore.getState().board.onMove?.("a2", "a3"); });
+  const played = new Chess(fen); played.move("Ra3+");
+  expect(useTrainingStore.getState().currentFenString).toBe(played.fen());
+  expect(useTrainingStore.getState().feedback).toBe("complete");
+  await waitFor(() => expect(reviews).toHaveLength(1), { timeout: 3000 });
+  expect(reviews[0]).toMatchObject({ outcome: "correct", queue_entry_id: 731 });
 });

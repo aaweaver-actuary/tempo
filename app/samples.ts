@@ -1,5 +1,4 @@
 import { STANDARD_FEN } from "./const";
-import type { EndgameMaterial } from "./lib/endgame-generator";
 import {
   GameViewRecord,
   LocalRepertoire,
@@ -326,10 +325,4 @@ export const alternateTactics: PracticeCard[] = [
     userMoveTarget: 1,
   },
   demoCards[2],
-];
-export const endgameTemplates: EndgameMaterial[] = [
-  { white: "KQ", black: "K", name: "Queen + king" },
-  { white: "KR", black: "K", name: "Rook + king" },
-  { white: "KQR", black: "K", name: "Queen + rook" },
-  { white: "KQQ", black: "K", name: "Two queens" },
 ];

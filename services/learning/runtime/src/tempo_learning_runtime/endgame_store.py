@@ -12,7 +12,6 @@ def prior_attempt(operation_id):
         return dict(row) if row else None
 
 
-
 def active_templates():
     with connection(read_only=True) as db:
         return [dict(row) for row in db.execute(

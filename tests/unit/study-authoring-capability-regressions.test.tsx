@@ -3,8 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { TacticalCatalogPanel } from "../../app/components/tactical-catalog";
 vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div data-testid="endgame-board" /> }));
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
-vi.mock("../../app/lib/endgame-generator", () => ({ generateLegalEndgameFen: () => "k7/8/8/8/8/8/5K2/7R w - - 0 1" }));
-vi.mock("../../app/utils/tablebase", () => ({ probeTablebase: vi.fn(async () => ({ category: "draw", moves: [] })), tablebaseCategoryForWhite: () => "draw" }));
+vi.mock("../../app/utils/tablebase", () => ({ probeTablebase: vi.fn(async () => ({ category: "draw", moves: [] })) }));
 beforeEach(() => { vi.resetModules(); vi.stubGlobal("__TEMPO_STUDY__", true); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it.each(["capture", "delete"])("pr291 R3 unsupported %s rejects before reading retained data, storage mutation or network", async kind => {

@@ -200,3 +200,12 @@ def test_legacy_saved_attempt_recovery_keeps_template_binding_without_generation
     with pytest.raises(HTTPException) as conflict:
         asyncio.run(recover("other-template", "saved-operation"))
     assert conflict.value.status_code == 409
+
+
+def test_saved_published_material_validation_remains_without_calculation():
+    from tempo_learning_runtime import endgames
+    assert endgames.normalized_material("Q & K") == "KQ"
+    with pytest.raises(ValueError):
+        endgames.normalized_material("KX")
+    assert not hasattr(endgames, "generate_position")
+    assert not hasattr(endgames, "category_for_player")

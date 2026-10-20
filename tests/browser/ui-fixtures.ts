@@ -66,10 +66,10 @@ export async function prepareUI(page: Page) {
       localStorage.setItem(key, "false");
   });
   await page.route("https://tablebase.lichess.ovh/**", (route) =>
-    route.fulfill({ json: { category: "win", moves: [] } }),
+    route.abort(),
   );
   await page.route("**/api/endgames/probe", (route) =>
-    route.fulfill({ json: { category: "win", moves: [] } }),
+    route.fulfill({ status: 410, json: { detail: "On-demand endgame calculation has been removed" } }),
   );
   await page.goto("/");
 }

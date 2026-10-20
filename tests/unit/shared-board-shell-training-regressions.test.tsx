@@ -141,5 +141,5 @@ it("material placeholders and illegal stored lines never masquerade as playable 
     startingFen: asFenString(STANDARD_FEN), moves: [], userMoveTarget: 0 };
   expect(hasSavedEndgameLine(card)).toBe(false);
   expect(hasSavedEndgameLine({ ...card, moves: [asSanMove("template:KR:K:white:both")] })).toBe(false);
-  expect(hasSavedEndgameLine({ ...card, startingFen: asFenString("invalid"), moves: [asSanMove("e4")] })).toBe(false);
+  expect(hasSavedEndgameLine({ ...card, startingFen: "invalid" as typeof card.startingFen, moves: [asSanMove("e4")] })).toBe(false);
 });

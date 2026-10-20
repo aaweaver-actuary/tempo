@@ -2,8 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { Chess } from "chess.js";
 import { expect, it, vi } from "vitest";
 import CardEditor from "../../app/views/card_editor";
-import { generateLegalEndgameFen } from "../../app/lib/endgame-generator";
-import { tablebaseCategoryForWhite } from "../../app/utils/tablebase";
+import { probeTablebase } from "../../app/utils/tablebase";
 import {
   asCardId,
   asFenString,
@@ -85,31 +84,12 @@ it("opening card editor can jump to Builder with line-removal context", () => {
   expect(openBuilder.mock.calls[0][0].history[1].uci).toBe("g8f6");
 });
 
-it("random endgames never leave the nonmoving king in check", () => {
-  for (const turn of ["w", "b"] as const)
-    for (let i = 0; i < 100; i++) {
-      const chess = new Chess(
-        generateLegalEndgameFen(
-          { white: "KR", black: "K", name: "Rook" },
-          turn,
-        ),
-      );
-      const king = chess
-        .board()
-        .flat()
-        .find((piece) => piece?.type === "k" && piece.color !== turn)!;
-      expect(chess.isAttacked(king.square, turn)).toBe(false);
-    }
+it("removed tablebase calculation rejects locally without external-provider fallback", async () => {
+  const request = vi.spyOn(globalThis, "fetch");
+  await expect(probeTablebase(new Chess().fen())).rejects.toThrow("calculation has been removed");
+  expect(request).not.toHaveBeenCalled();
+  request.mockRestore();
 });
-it("cursed wins and blessed losses respect the fifty-move draw rule", () => {
-  expect(tablebaseCategoryForWhite(new Chess().fen(), "cursed-win")).toBe(
-    "draw",
-  );
-  expect(tablebaseCategoryForWhite(new Chess().fen(), "blessed-loss")).toBe(
-    "draw",
-  );
-});
-
 
 it("card repair offers Lichess restoration only for explicitly packaged tactics", () => {
   const card = { id: asCardId("captured"), kind: "puzzle" as const, title: "Synthetic", subtitle: "Captured tactic",

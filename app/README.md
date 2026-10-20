@@ -71,9 +71,9 @@ libraries do not create a producer lifecycle dependency.
 
 **Acceptance invariant:** Study must have no Games call, import, wait,
 readiness, transaction or lifecycle dependency. Games must be able to fail
-completely while ordinary Study continues. This PR repairs the browser source and
-artifact boundary only; the merged host/endgame execution owners retain their scoped proof, and
-deployment resource isolation remains unverified.
+completely while ordinary Study continues. The physical Study composition repairs the browser source and artifact boundary.
+The proposed removal below retires optional endgame calculation; HostActivity
+ownership and deployment resource isolation retain their separate limits.
 
 Optional practice influence enters the **Learning/queue owner's semantic
 interface**, as the [existing evidence sequence](../services/game-evidence/README.md#observed-game-evidence-to-learning-main)
@@ -100,3 +100,37 @@ assumed here.
 Keep domain code independent of React. Validate external records at the
 boundary, preserve the local API error, and do not turn the static demo's
 sample data into an implicit fallback for a failed service.
+
+
+### Saved endgame practice after calculation removal
+
+**PROPOSED removal:** on-demand generation and tablebase calls are removed from
+both independent Study and the legacy Endgames screen. The canonical Learning
+[request/resource drawing](../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
+owns the server view; this browser view owns dispatch and user-visible behavior.
+
+```mermaid
+flowchart TB
+  Card["Persisted endgame card"] --> Gate["hasSavedEndgameLine: legal stored FEN and nonempty legal line"]
+  Gate -->|"yes"| Ordinary["Existing TrainingView board / move / review flow"]
+  Ordinary -->|"unchanged review intent and receipt"| Learning["Learning queue and review owner"]
+  Gate -->|"no"| Saved["Saved position + explicit unavailable notice / Bury"]
+  Standalone["Standalone Endgames"] --> Notice["Calculation removed notice; no request or automatic generation"]
+  Saved -->|"existing Bury command only"| Learning
+```
+
+[`saved-endgame-practice.ts`](lib/saved-endgame-practice.ts) rejects empty,
+placeholder and illegal lines. [`practice-card-adapters.ts`](domain/adapters/practice-card-adapters.ts) preserves
+the server-provided legal line; [`home_view.tsx`](views/home_view.tsx) and
+[`training_view.tsx`](views/training_view.tsx) use the same saved-line guard so
+valid saved endgames follow the actual ordinary move/review caller.
+[`endgames_view.tsx`](views/endgames_view.tsx) shows material-only saved cards
+without fabricating a solution, move defense or review; their saved state/history
+is retained and Bury remains available. The standalone view has no template
+admission, generation or provider request. The compatibility probe helper fails
+locally and never falls back to an external provider. Existing operation-ID
+recovery remains server-owned. No stored card, attempt, history or study is deleted.
+
+This preserves ordinary saved-line practice; a historical material-only template
+cannot provide calculated practice after the calculator is removed. Its explicit
+unavailable notice is the safe fallback, with no automatic grade or completion.

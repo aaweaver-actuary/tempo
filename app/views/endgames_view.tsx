@@ -47,7 +47,7 @@ export default function EndgamesView({ theme, pieceSet, scheduledCard, onBury,
     <h1>{scheduledCard?.title ?? "Endgames"}</h1>
     <p role="status">{notice}</p>
     {scheduledCard && savedFen && !useSharedBoard && <Chessboard fen={fen} locked showHint={false}
-      theme={theme} pieceSet={pieceSet} orientation={scheduledCard.orientation} />}
+      theme={theme} pieceSet={pieceSet} orientation={scheduledCard.orientation} onMove={() => undefined} />}
     {scheduledCard && onBury && <Button disabled={blocked || burying} onClick={() => void bury()}>
       {burying ? "Burying…" : "Bury"}
     </Button>}
