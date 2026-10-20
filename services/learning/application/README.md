@@ -122,3 +122,24 @@ separate from the qualification `exit_code`; pytest success with a skip, invento
 error or failed cleanup is a failed qualification. `complete` becomes true only
 after the complete test inventory and required resource cleanup both succeed.
 Primary and cleanup errors are retained together.
+
+
+## Historical-exposure boundary checkpoint (not adopted)
+
+`historical_exposure.py` proposes typed, single-user-request practice priority.
+It does not import a provider, chess engine, database, HTTP framework, backend or
+remediation application. The caller verifies the exact current encounter/card/
+revision/executable/ordered route identity and owns its transaction and locks.
+Semantic storage and canonical queue-writer ports are exercised only by fakes at
+this checkpoint; no public wire contract or backend/runtime adoption is claimed.
+
+One accepted intent has an immutable seven-day UTC lifetime. Unknown or ambiguous
+mapping, unavailable/unintroduced cards, missing current integrity, changed
+membership and burial cannot admit. Unknown chronology needs separate explicit
+confirmation. Protected attempts remain fixed. A verified subsequent normal Study
+completion on the bound queue entry serves the practice request at any grade;
+this does not assert mastery, forgotten recall or remediation settlement. Expiry,
+source revocation and completion clear only the exposure label, preserving other
+active exposure requests and unrelated priority. Replay never extends the clock
+or creates another placement. Native atomicity/locks and actual queue effects
+remain unverified until adapters and their bounded qualification are reviewed.

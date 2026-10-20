@@ -79,3 +79,17 @@ responses exercise failure paths without provisioning extra native clusters.
   previous evidence and a nonzero qualification exit even when pytest returns zero.
 - `test_atomic_summary_replacement_never_exposes_partial_json`: replacement
   failure preserves parseable prior bytes and removes the incomplete temporary file.
+
+
+## Historical-exposure source boundary (not adopted)
+
+`tests/test_historical_exposure.py` uses typed semantic fakes for explicit intent,
+exact encounter/revision/route/source/membership facts, unknown/ambiguous mapping,
+current integrity/availability/introduction and burial. It preserves protected
+attempts, quiet response-loss replay and the original deadline. Refresh retains
+finite intent without turning burial or incomplete integrity into admission;
+source changes revoke. Old/unverified/different-revision/attempt review events
+cannot complete priority. Normal bound practice completes once without producing
+reviews or remediation settlements; another active exposure retains its label.
+Equivalent timezone offsets retain one encounter key. No SQL/native/HTTP/queue
+adoption or infrastructure proof is implied by these source cases.
