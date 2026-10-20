@@ -3,9 +3,13 @@
 `POST /api/study/activity?session_id=<session>&expires_in_ms=<1..3000>` uses the
 existing Study authentication and Origin policy. It reports an optional host
 activity lease without opening PostgreSQL or creating a durable operation.
-Missing configuration or unavailable storage returns 503 without changing Study
-authority. Pending authenticated essential requests retain independent host holds
-until their handlers settle, including when browser timers are suspended.
+Missing configuration, no successful publication, a known publication failure, an
+expired producer lease, or the 1,024-session capacity limit returns 503 without
+changing Study authority. Accepted pulses update memory and wake the publisher;
+200 acknowledges that submission against the last healthy producer lease, not a
+synchronous disk write. Pending authenticated essential requests retain independent
+memory holds until their handlers settle, including cancellation and suspended
+browser timers. Their post-request quiet deadline is the maximum exit deadline.
 
 The CLI registers its native host signal in `TEMPO_STUDY_ACTIVITY_DIRECTORY`
 (default: the current user's temporary directory plus `tempo-study-activity-v1`).
@@ -14,15 +18,34 @@ snapshots carry monotonic nanosecond deadlines, separate sessions, pending-reque
 holds and a 15-second producer lease renewed every five seconds. The directory
 must be shared by colocated processes using the same kernel clock; a VM with a
 different clock is unavailable control and must use its own colocated admission
-reader. Clean service shutdown removes only its producer record. An interrupted
+reader. One optional daemon owns publication and cleanup outside the bounded
+memory lock. This is bounded-memory synchronization, not lock-free, hard real-time
+or a scheduler latency guarantee. Startup, essential request entry/exit, activity submissions and shutdown
+never wait for its filesystem operations. Shutdown signals this daemon without
+joining it; when I/O resumes, cleanup removes only its producer record. An interrupted
 producer retains stale evidence, blocking admission until its exact ownership
 and service absence are reconciled. Its recorded PID assists that inspection;
 missing PID alone is never permission to remove a source record. Essential
 Learning needs no Node or broker.
 
+Publication is asynchronous and does not immediately exclude foreground overlap.
+If the last healthy snapshot is idle and publication stalls, a new essential
+request can proceed while managed work still reads that old snapshot as idle for
+up to the remaining 15-second producer lease. At expiry, the retained snapshot
+is unavailable. This tradeoff removes filesystem waits from essential progress;
+it does not provide immediate foreground exclusion or host resource isolation.
+
+**Deployment prerequisite:** configure each protected Learning workspace identity
+in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` JSON array before
+starting it. With that configuration, missing first publication and clean removal
+remain unavailable. The default `[]` accepts absent sources as idle, so a missing
+or never-published producer is not protected by default. A present stale snapshot
+is unavailable in either case. No live configuration, lease protocol or reader
+policy changes accompany this source repair.
+
 Programmatic `Configuration.host_activity_directory=None` disables this optional
-adapter; applications embedding Learning must configure the shared directory to
-claim host-level development protection. Browser-local priority remains separate.
+adapter; applications embedding Learning must configure both the shared directory
+and the managed runners' expected-source identities to claim missing-source protection. Browser-local priority remains separate.
 ## Content bridge v2
 
 `POST /internal/publications/v2/stage` accepts the service-local version-2 opening
