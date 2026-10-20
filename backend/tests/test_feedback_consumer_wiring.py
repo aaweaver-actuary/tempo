@@ -1,5 +1,6 @@
 """Connection-facing consumers bind to composition, never policy with a cursor."""
 import ast
+import importlib.util
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -104,11 +105,44 @@ def test_batch_composition_closes_snapshot_before_short_individual_transactions(
                      ('yield',), ('open', second, True), ('apply', second, 'b'), ('close', second)]
 
 
+def backend_policy_import_errors(relative, source):
+    parts = Path(relative).parts
+    if parts[0] == 'backend':
+        package = '.'.join(parts[1:-1])
+    elif 'src' in parts:
+        package = '.'.join(parts[parts.index('src') + 1:-1])
+    else:
+        package = '.'.join(parts[:-1])
+    errors = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        module = node.module or ''
+        if node.level:
+            module = importlib.util.resolve_name('.' * node.level + module, package)
+        if module == 'app.services.real_game_feedback' and {name.name for name in node.names} - {'MISS_REASON'}:
+            errors.append((node.lineno, module))
+        if module == 'app.services' and any(name.name == 'real_game_feedback' for name in node.names):
+            if relative not in {'backend/tests/test_real_game_feedback_policy.py',
+                                'backend/app/services/real_game_feedback_adapter.py'}:
+                errors.append((node.lineno, module))
+    return errors
+
+
+@pytest.mark.parametrize('path,source,bad', [
+    ('backend/app/services/consumer.py', 'from .real_game_feedback import promote_real_game_card', True),
+    ('backend/app/services/consumer.py', 'from .real_game_feedback import MISS_REASON', False),
+    ('scripts/native.py', 'from app.services.real_game_feedback import has_outstanding_real_game_miss', True),
+    ('services/learning/runtime/src/tempo_learning_runtime/admission.py',
+     'from .real_game_feedback import has_outstanding_real_game_miss', False),
+])
+def test_consumer_guard_resolves_backend_relative_imports_without_conflating_runtime(path, source, bad):
+    assert bool(backend_policy_import_errors(path, source)) is bad
+
+
 def test_repository_connection_consumers_do_not_import_semantic_policy_operations():
-    # Audit all owning roots, including external native scripts/packages. The
-    # independent runtime's same-named module is not the backend policy module.
-    # New typed policy consumers need an explicit reviewed boundary, rather than
-    # inheriting the old assumption that a connection is the application port.
+    # Includes scripts/integration packages and resolves backend-relative imports;
+    # the independent runtime's same-named module remains a separate owner.
     for directory in ('backend', 'scripts', 'services', 'tools', 'packages', 'contracts'):
         for folder, children, filenames in os.walk(ROOT / directory):
             children[:] = [name for name in children if not name.startswith('.')
@@ -121,10 +155,4 @@ def test_repository_connection_consumers_do_not_import_semantic_policy_operation
                 if 'real_game_feedback' not in source:
                     continue
                 relative = path.relative_to(ROOT).as_posix()
-                for node in ast.walk(ast.parse(source)):
-                    if not isinstance(node, ast.ImportFrom):
-                        continue
-                    if node.module == 'app.services.real_game_feedback':
-                        assert {name.name for name in node.names} <= {'MISS_REASON'}, relative
-                    if node.module == 'app.services' and any(name.name == 'real_game_feedback' for name in node.names):
-                        assert relative == 'backend/tests/test_real_game_feedback_policy.py', relative
+                assert not backend_policy_import_errors(relative, source), relative

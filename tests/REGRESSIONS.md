@@ -1,3 +1,13 @@
+## Combined feedback / queue / Discovery boundary
+
+`backend/tests/test_feedback_boundary_integration.py` owns the real composition
+joins with semantic fakes: borrowed feedback facts from the queue adapter, queue
+root argument preservation and Discovery intent/store composition. The consumer
+guard resolves relative imports and retains the independent-runtime namespace
+control. The accepted-scope native case also checks the public combined queue
+projection; it is prepared, not executed. See
+[combined ownership and proof](../docs/architecture/feedback-boundary-integration.md).
+
 ## Feedback semantic storage boundary
 
 `backend/tests/test_real_game_feedback_policy.py` owns typed fake-store admission,

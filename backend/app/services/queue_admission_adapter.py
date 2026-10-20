@@ -9,7 +9,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from . import frozen_opening_order
-from .real_game_feedback import MISS_REASON, outstanding_miss_query, has_outstanding_real_game_miss
+from .real_game_feedback import MISS_REASON
+from ..storage.real_game_miss_projection import outstanding_miss_query
+from .real_game_feedback_adapter import has_outstanding_real_game_miss
 
 from .queue_admission import IntroductionCountPage, OpeningCandidatePage
 

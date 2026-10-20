@@ -257,23 +257,41 @@ def test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends(n
 
 
 def test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire(native):
-    card_id = native.identities['physical']
+    from datetime import date
+    from app.postgres_store import PostgresConnection
+    from app.services.queue_admission_adapter import QueueAdmissionAdapter
+    from app.services.real_game_feedback import MISS_REASON
+    card_id, day = native.identities['physical'], date.today().isoformat()
     with native.connection(role='tempo_writer') as raw:
         store = feedback_store(raw)
         insert_feedback_miss(raw, native)
         assert store.outstanding_card(card_id) is not None
+        assert QueueAdmissionAdapter(PostgresConnection(raw)).has_outstanding_miss(card_id)
     preview = native.preview()
     receipt = accepted(native, LegacyStudyOperator(native.endpoint, native.request), preview)
     with native.connection(role='tempo_writer') as raw:
         store = feedback_store(raw)
+        queue = QueueAdmissionAdapter(PostgresConnection(raw))
         assert store.outstanding_card(card_id) is None
+        assert queue.has_outstanding_miss(card_id) is False
         assert list(store.repertoire_miss_batches(native.identities['ruy'])) == []
+        raw.execute('SAVEPOINT combined_queue_projection')
+        # Exercise the actual combined queue projection using a temporary new
+        # admission state; restore the accepted physical card before leaving.
+        raw.execute("UPDATE cards SET state='locked',introduced_at=NULL WHERE id=%s", (card_id,))
+        assert queue.opening_candidate_page(day, '').candidates == ()
         raw.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)',
                     (native.identities['italian'], card_id))
         other_event = insert_feedback_miss(raw, native, repertoire='italian', suffix='other-scope', ply=6)
         assert store.outstanding_card(card_id) is not None
+        assert queue.has_outstanding_miss(card_id) is True
+        candidates = queue.opening_candidate_page(day, '').candidates
+        assert candidates and {row['id'] for row in candidates} == {card_id}
+        assert all(row['gameplay_priority_reason'] == MISS_REASON for row in candidates)
         assert [row.event_id for batch in store.repertoire_miss_batches(native.identities['italian']) for row in batch] == [other_event]
         raw.execute('UPDATE imported_games SET adaptive_excluded=1 WHERE id=%s', (native.identities['game'],))
+        assert store.outstanding_card(card_id) is None and queue.has_outstanding_miss(card_id) is False
+        raw.execute('ROLLBACK TO SAVEPOINT combined_queue_projection')
         assert store.outstanding_card(card_id) is None
-    write_trace(native, feedback_contract='native accepted scope exclusion with different-repertoire and exclusion controls',
+    write_trace(native, feedback_contract='native accepted scope and combined queue projection with different-repertoire controls',
                 acknowledgement=receipt)
