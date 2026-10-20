@@ -31,7 +31,7 @@ Configure these variables explicitly; store bearer credentials in permission-res
 | `TEMPO_LEARNING_ORIGINS` | Comma-separated exact browser origins, including scheme and port |
 | `TEMPO_LEARNING_HOSTS` | Exact hosts; defaults `localhost,127.0.0.1` |
 | `TEMPO_LEARNING_TIMEZONE` | Study-day zone; default `America/New_York` |
-| `TEMPO_LEARNING_POOL_SIZE` | Each foreground pool maximum, 1–16; default 4 |
+| `TEMPO_LEARNING_POOL_SIZE` | Each foreground pool maximum, 1–16; default 4; optional endgame pools are separate (see resource budget below) |
 | `TEMPO_LEARNING_MAINTENANCE` | `1` enables lifecycle-managed essential maintenance; default 1 |
 | `TEMPO_LEARNING_TABLEBASE_URL` | Optional HTTP provider; empty disables; default Lichess standard endpoint |
 | `TEMPO_LEARNING_OPERATOR_TOKEN_FILE` | Optional, distinct publication credential; omitted disables publication HTTP commands |
@@ -47,6 +47,28 @@ services/learning/runtime/.venv/bin/tempo-learning maintain --once
 A command first durably accepts its immutable intent, then executes its handler directly. The gateway owns commit/rollback and nested handler savepoints. Borrowed application transactions cannot commit. Exact transport retries return the recorded response; a different request under the same identity conflicts. Logical review, Study, tactical and defense identities retain their family-specific bindings. Reconciliation has its own savepoint, and optional successor locks use nonblocking acquisition.
 
 Essential queue work and cursors live in PostgreSQL. Maintenance commits one admission/cursor slice at a time and yields between sections. Its pool maximum is 1. Foreground acquisition/lock/statement/transaction budgets are 250/250/1500/2500 ms; maintenance uses 100/25/200/250 ms. Evidence intake uses the same background pool and 25 ms lock budget with a 1,000 ms transaction bound for an atomic maximum-128-item wire delivery; ordinary maintenance keeps its 250 ms bound. Intake transaction expiry returns 503/Retry-After with all acceptance effects rolled back. Transient failures retain the original intent for retry; a contended command backs off so queue maintenance can progress. Tablebase calls run outside database transactions, use a 3-second provider timeout, and endgame preparation checks a 5-second total budget between the retained maximum of 80 deterministic candidates.
+
+Optional endgame persistence uses one dedicated serial worker, separate from
+Study's request workers. Cache reads/writes, template/receipt reads, and the
+canonical attempt gateway each run as complete synchronous phases; their
+connections never cross a worker invocation. Lazy optional reader/writer pools
+each have maximum 1 and retain the ordinary acquisition/SQL/lock/transaction
+budgets above. The configured process connection maximum is therefore
+`2 * TEMPO_LEARNING_POOL_SIZE + 3`: the foreground pair, one maintenance
+connection, and at most two optional endgame connections. Optional phases do not
+occupy foreground leases even when the foreground pool size is 1. They still
+share PostgreSQL, the process and host; this is not deployment resource isolation.
+
+Request cancellation drains an already-started endgame phase before releasing
+its worker slot; application shutdown drains that worker before closing database
+pools. Waiting phases can be cancelled without starting work. PostgreSQL's
+configured SQL deadlines and the 3-second HTTP timeout cover their normal
+operations, but arbitrary OS/driver stalls are not bounded by those server-side
+deadlines. Such a stall can still delay cancellation and shared-process shutdown
+indefinitely. The focused fake-pool ASGI proofs establish ordinary Study progress
+during delayed optional DB work, not complete optional shutdown independence or
+production deployment qualification. No native PostgreSQL proof is added by
+these fake tests; existing endgame native contracts retain that ownership.
 
 ## Daily presentation
 

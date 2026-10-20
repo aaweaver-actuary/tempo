@@ -269,3 +269,17 @@ fence a genuinely queued retirement without changing the active predecessor.
 
 
 `test_host_activity_clock_retains_reader_domain_after_host_sleep` protects the shared-host clock contract. macOS Python uptime excludes sleep while the native Node reader includes it; the producer uses `CLOCK_MONOTONIC_RAW` on macOS and the ordinary monotonic clock elsewhere. The regression simulates a suspend offset without requiring Node, a broker, or a database for Learning progress. Real Python 3.12/3.14 and Node clock brackets are retained in the task's qualification evidence.
+
+
+`test_endgame_isolation.py` owns the optional endgame execution boundary:
+`test_delayed_endgame_cache_does_not_block_ordinary_study_request` retains the
+actual-ASGI delayed-cache regression; the separate pool-size-one composition
+uses real `Database` routing with bounded fake pool leases. The worker cases
+cover ContextVar preservation, serial capacity, waiting cancellation, repeated
+active cancellation and shutdown drain. The attempt composition verifies worker
+ownership of read/write/gateway phases, provider calls outside transactions and
+unchanged receipt replay/conflict behavior. These require no database or HTTP
+server. Existing `test_endgames.py` retains native PostgreSQL receipt, cache,
+provider-protocol and review proof; the fake suite does not replace it. An
+arbitrary stalled OS/database driver can still delay active cancellation and
+shared-process shutdown; this suite makes no bounded-shutdown claim.

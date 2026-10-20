@@ -37,6 +37,8 @@ from .defense import (
     submit_defense_recognition,
 )
 from .endgames import generate_position, category_for_player
+from .endgame_io import EndgameIO
+from . import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
 from . import study_bootstrap, teaching_commands
@@ -128,6 +130,7 @@ def register_handlers():
 def create_app(configuration: Configuration):
     register_handlers()
     database = Database(configuration)
+    endgame_io = EndgameIO()
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
     @asynccontextmanager
@@ -154,7 +157,10 @@ def create_app(configuration: Configuration):
             try:
                 await asyncio.to_thread(activity.close)
             finally:
-                database.close()
+                try:
+                    await endgame_io.aclose()
+                finally:
+                    database.close()
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
     app.state.database = database
@@ -757,12 +763,9 @@ def create_app(configuration: Configuration):
         if not position.is_valid() or len(position.piece_map()) > 7:
             raise HTTPException(422, "Unsupported endgame position")
         key = "tb-fen-v2:" + position.fen()
-        with connection(read_only=True) as db:
-            row = db.execute(
-                "SELECT response_json FROM tablebase_cache WHERE fen_key=?", (key,)
-            ).fetchone()
-        if row:
-            return json.loads(row[0])
+        cached = await endgame_io.run(endgame_store.cached_answer, key)
+        if cached is not None:
+            return cached
         if not configuration.tablebase_url:
             raise HTTPException(
                 503, "No local tablebase answer; optional provider disabled"
@@ -788,33 +791,19 @@ def create_app(configuration: Configuration):
             raise HTTPException(
                 503, "Optional tablebase unavailable; retry when online"
             ) from error
-        with connection() as db:
-            db.execute(
-                "INSERT INTO tablebase_cache VALUES(?,?,?) ON CONFLICT(fen_key) DO UPDATE SET response_json=excluded.response_json,fetched_at=excluded.fetched_at",
-                (key, json.dumps(data), datetime.now(timezone.utc).isoformat()),
-            )
+        await endgame_io.run(endgame_store.cache_answer, key, data)
         return data
 
     @app.get("/api/endgames/templates")
-    def templates():
-        with connection(read_only=True) as db:
-            return {"templates": [
-                dict(row)
-                for row in db.execute(
-                    "SELECT * FROM endgame_templates WHERE enabled=1"
-                ).fetchall()
-            ]}
+    async def templates():
+        return {"templates": await endgame_io.run(endgame_store.active_templates)}
 
     @app.post("/api/endgames/templates/{identifier}/attempt")
     async def endgame_attempt(
         identifier: str, idempotency_key: str | None = Header(None)
     ):
         operation_id = idempotency_key or uuid.uuid4().hex
-        with connection(read_only=True) as db:
-            prior = db.execute(
-                "SELECT command_name,payload_json FROM operation_receipts WHERE operation_id=?",
-                (operation_id,),
-            ).fetchone()
+        prior = await endgame_io.run(endgame_store.prior_attempt, operation_id)
         if prior:
             payload = json.loads(prior["payload_json"])
             if (
@@ -824,12 +813,10 @@ def create_app(configuration: Configuration):
                 raise HTTPException(
                     409, "Operation ID was already used for another request"
                 )
-            return gateway.dispatch("endgames.attempt.create", payload, operation_id)
-        with connection(read_only=True) as db:
-            template = db.execute(
-                "SELECT * FROM endgame_templates WHERE id=? AND enabled=1",
-                (identifier,),
-            ).fetchone()
+            return await endgame_io.run(
+                gateway.dispatch, "endgames.attempt.create", payload, operation_id
+            )
+        template = await endgame_io.run(endgame_store.active_template, identifier)
         if not template:
             raise HTTPException(404, "Endgame template not found")
         deadline = time.monotonic() + 5
@@ -855,7 +842,8 @@ def create_app(configuration: Configuration):
         else:
             raise HTTPException(422, "Could not find a supported win/draw position")
 
-        return gateway.dispatch(
+        return await endgame_io.run(
+            gateway.dispatch,
             "endgames.attempt.create",
             {
                 "template_id": identifier,

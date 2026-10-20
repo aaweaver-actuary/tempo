@@ -2,16 +2,20 @@
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+from threading import Lock
 from psycopg_pool import ConnectionPool
 from .postgres_store import PostgresConnection, tempo_row_factory
 from .clock import workspace_timezone
 
 current_database = ContextVar("learning_database")
+endgame_lane = ContextVar("learning_endgame_lane", default=False)
 
 
 class Database:
     def __init__(self, configuration):
         self.configuration = configuration
+        self._endgame_pools = {}
+        self._endgame_pool_lock = Lock()
         self.writer = ConnectionPool(
             configuration.database_url,
             min_size=0,
@@ -40,6 +44,19 @@ class Database:
             check=ConnectionPool.check_connection,
         )
 
+    def _endgame_pool(self, read_only):
+        # Construct only on first use. Optional requests have one serial worker,
+        # but the lock also protects direct adapter consumers and shutdown.
+        with self._endgame_pool_lock:
+            if read_only not in self._endgame_pools:
+                self._endgame_pools[read_only] = ConnectionPool(
+                    self.configuration.reader_url if read_only else self.configuration.database_url,
+                    min_size=0, max_size=1, timeout=0.25,
+                    kwargs={"row_factory": tempo_row_factory, "connect_timeout": 2},
+                    open=True, check=ConnectionPool.check_connection,
+                )
+            return self._endgame_pools[read_only]
+
     @contextmanager
     def scope(self):
         token = current_database.set(self)
@@ -55,7 +72,9 @@ class Database:
         if intake and (read_only or not background):
             raise ValueError("Evidence intake uses the bounded background writer pool")
         pool = (
-            self.reader
+            self._endgame_pool(read_only)
+            if endgame_lane.get() and not background
+            else self.reader
             if read_only
             else self.maintenance
             if background
@@ -95,7 +114,10 @@ class Database:
             yield PostgresConnection(raw, read_only=read_only)
 
     def close(self):
-        for pool in (self.writer, self.reader, self.maintenance):
+        # Composition drains the owning endgame worker before closing pools.
+        with self._endgame_pool_lock:
+            pools = (self.writer, self.reader, self.maintenance, *self._endgame_pools.values())
+        for pool in pools:
             pool.close()
 
 
