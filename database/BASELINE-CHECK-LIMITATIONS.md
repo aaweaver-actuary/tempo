@@ -1,6 +1,6 @@
 # Existing verification limitations (issue draft)
 
-The separate GitHub issue creation was denied by automatic approval review as an unapproved external commitment. No issue was created. This file preserves the reviewable draft; it does not waive any check.
+The separate GitHub issue creation was denied by automatic approval review as an unapproved external commitment. No issue was created. This file preserves the limitations in the existing PR handoff; it does not waive any check. The separate issue will remain unposted as directed; it is not needed to complete the authorized file-move work.
 
 At main `14ad5754`, focused checks during the database file reorganization found existing local verification metadata drift. Keep this separate from schema reduction and do not enable CI.
 

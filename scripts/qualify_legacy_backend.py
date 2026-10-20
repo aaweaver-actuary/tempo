@@ -161,7 +161,7 @@ def inside():
     sites = list((qualified / 'work/environment/lib').glob(f'python{sys.version_info.major}.{sys.version_info.minor}/site-packages'))
     if len(sites) != 1: raise RuntimeError('Qualified artifact Python ABI/environment missing')
     backend_dependencies = shared.staging.verify_backend_environment(qualified)
-    paths = [str(sites[0]), str(ROOT / 'backend'), str(ROOT / 'scripts')]
+    paths = [str(sites[0]), str(ROOT / 'backend'), str(ROOT / 'database'), str(ROOT / 'scripts')]
     sys.path[:0] = paths
     from importlib import metadata
     expected = dict(fsrs='6.3.2', celery='5.6.3', redis='6.4.0', psycopg='3.3.6',

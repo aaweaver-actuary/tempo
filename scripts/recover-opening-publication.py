@@ -11,6 +11,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'database'))
 from app.services.opening_graph_recovery import preflight, recover, capture_evidence, target_id, validate_staged_graph, scope_token, verify_preservation
 from app.services.opening_graph_recovery import QUEUED_REBUILD_MODE, preflight_queued_rebuild, finish_queued_rebuild
 from app.services.opening_graph_recovery import assert_selected_execution_not_started, _selected_scope_key

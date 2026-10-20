@@ -22,6 +22,7 @@ from time import monotonic
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "database"))
 from app.services.stalemate_swindles import (  # noqa: E402
     MiningFilters, build_bundle, json_bytes, mine_candidates, new_counts,
     select_candidates, selected_distribution, validate_month,

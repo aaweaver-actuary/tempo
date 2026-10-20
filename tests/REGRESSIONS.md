@@ -4997,3 +4997,8 @@ retained incomplete inventory. They do not execute a real tool, build or Docker.
 
 
 - Removed endgame calculation: `test_endgame_calculation_removed.py` is owned by Learning's local inventory. `shared-board-shell-endgames-regressions.test.tsx` retains saved-position/Bury and no-request notice behavior; `shared-board-shell-training-regressions.test.tsx` retains legal saved-line practice. `opponent-reply-diagnostics-regressions.test.tsx::real Home preserves saved endgame queue lines, plays them and submits the ordinary review` exercises the actual transport mapping → Home move handler → review caller; it must not be replaced with a mocked onMove assertion.
+
+
+## PR #334 direct CLI database discovery
+
+- `backend/tests/test_database_cli_bootstrap.py::test_database_relocation_direct_cli_resolves_owner_without_pythonpath` runs seven actual entrypoint bootstraps in isolated interpreters from an unrelated working directory. It resolves the centralized database and backend roots before stopping at application import; socket, SQLite and child-process effects are rejected. No live database, application startup or benchmark runs.

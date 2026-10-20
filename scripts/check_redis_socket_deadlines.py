@@ -13,6 +13,7 @@ import uuid
 import redis
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'database'))
 from app.celery_app import celery_app
 
 

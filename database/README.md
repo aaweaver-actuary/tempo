@@ -1,6 +1,8 @@
 # Database files and source schema
 
-All dedicated database implementation files live in this repository-root tree. Physical colocation does not grant a component access to another owner's data and does not create a shared runtime module. Each owner retains its own imports, package artifact, migration authority and transaction boundaries.
+This tree is the required single home for database operations. PR334 moves the dedicated database files here, but **complete centralization is unfinished: 156 mixed SQL/application modules still contain database operations outside this tree**. Their [inventory](INVENTORY.md) is the extraction checklist, not a permanent exception. Application/domain logic belongs in logical folders outside `database/`; database operations belong here, connected through explicit interfaces and outer composition.
+
+Physical colocation does not grant a component access to another owner's data and does not create a shared runtime module. Each owner retains its own package artifact, migration authority and transaction boundaries.
 
 **Current source schema; live schema/deployment unverified.** Inventory baseline: main `14ad5754` (October 20, 2026). This reorganization changes file paths and required build/discovery references only. No migrations, data changes, service restarts or deployment were performed. The proposed canonical lines/positions/presentation-history model remains planning-only.
 

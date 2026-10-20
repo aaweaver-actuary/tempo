@@ -52,3 +52,15 @@ No PostgreSQL server, Docker stack/image build, live database inspection, full-s
 Broader source checks hit existing main failures: missing local test registrations, Game Evidence public-export metadata mismatch, a source guard rejecting its own fixture text, and an old contract-version installation assertion. The unchanged HEAD guard/fixture failure was reproduced independently. Details and the separately denied issue draft are in [BASELINE-CHECK-LIMITATIONS.md](BASELINE-CHECK-LIMITATIONS.md). Those failures remain failures; no check was skipped, deleted or weakened. The overbroad simulated CLI runner was interrupted (exit 130); its completion is not claimed. Selected relevant parser/discovery checks above were then run explicitly.
 
 CI triggers/settings and branch protection were not changed or enabled; the existing migration-check command's file path was updated. This evidence does not confer hosted merge qualification.
+
+## PR334 review repair: direct-run source discovery
+
+Independent review found that direct scripts still bootstrapped only `backend/`, so the relocated `tempo_legacy_database` package could not resolve without an inherited `PYTHONPATH`. Seven analogous backend-bootstrapping scripts now add `database/` before importing application code. The sealed native helper's verified source path list and a benchmark command example were updated too. Existing npm benchmark wrappers already supplied both roots.
+
+`backend/tests/test_database_cli_bootstrap.py` failed in all seven isolated-interpreter cases before the fix. After the fix, it and the existing standard-library qualification timing/staging suite pass: **24 cases and 9 subtests**. The staging fixture now includes each centralized owner package and checks that those files survive artifact staging. No application, database connection, socket or native helper is started by this proof.
+
+```sh
+python -m pytest backend/tests/test_database_cli_bootstrap.py backend/tests/test_legacy_qualification_timing.py -q --rootdir=.
+```
+
+The first increment is not complete centralization: **156 mixed SQL/application modules remain outside `database/`**. Their database operations must be extracted, while application/domain logic belongs in logical folders outside it. This is unfinished work rather than a permanent exception. Extraction will proceed in separately reviewable dependent changes; no schema redesign, live operation, CI enablement or full-system campaign is authorized here.
