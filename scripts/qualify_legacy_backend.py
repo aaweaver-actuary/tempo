@@ -61,12 +61,26 @@ def image_id(value):
     return value
 
 
+def unchanged_artifact_inputs(previous, root=ROOT):
+    """Reuse a completed gate only when every staged package/tool input matches."""
+    names=subprocess.check_output(['git','ls-files','-z'],cwd=root,text=True).split('\0')
+    tools={'scripts/qualify_legacy_bridge.py','scripts/legacy_qualification_staging.py',
+        'contracts/requirements-test.lock','services/learning/application/qualification.py'}
+    def relevant(name):
+        return name in tools or any(name.startswith(package+'/') and
+            Path(name).relative_to(package).parts[0] in shared.staging.PACKAGE_PARTS
+            for package in shared.SOURCE_PACKAGES)
+    current={name:shared.staging.entry(root,root/name) for name in names if name and relevant(name)}
+    old={name:value for name,value in previous.items() if relevant(name)}
+    return bool(current) and current==old
+
+
 def qualified_artifacts(directory, head, helper_image):
     directory = directory.resolve()
     host, inside = (json.loads((directory / name).read_text()) for name in ('host.json', 'inside.json'))
-    if (not host.get('complete') or not host.get('cleanup_verified') or host['source_head'] != head
+    if (not host.get('complete') or not host.get('cleanup_verified') or (host['source_head'] != head and not unchanged_artifact_inputs(host.get('staging',{}).get('source_files',{})))
             or host['image'] != helper_image or not inside.get('complete')):
-        raise ValueError('Successful cleaned same-head artifact qualification is required')
+        raise ValueError('Successful cleaned artifact qualification with identical package/tool inputs is required')
     if len(inside['artifacts']) != 12 or host['plan']['artifact_test_total'] != 373:
         raise ValueError('The reviewed373-case/six-wheel/six-sdist qualification is required')
     for name, expected in inside['artifacts'].items():
@@ -232,7 +246,7 @@ def host(options):
     network, names = identity + '-network', {kind: identity + '-' + kind for kind in CAPS}
     report = dict(complete=False, cleanup_verified=False, identity=identity, source_head=head, plan=describe(),
         images=dict(helper=options.helper_image_id, postgres=options.postgres_image_id, redis=options.redis_image_id),
-        artifact_hashes=artifacts, started_utc=datetime.now(timezone.utc).isoformat(), commands=[], names=names, network=network,
+        artifact_hashes=artifacts, artifact_source_head=json.loads((options.artifact_run/'host.json').read_text())['source_head'], started_utc=datetime.now(timezone.utc).isoformat(), commands=[], names=names, network=network,
         mount_inventory=dict(images={}, containers={}, cleanup={}), container_ids={})
     observed_volumes = set()
     def observe_container(kind, container, phase):

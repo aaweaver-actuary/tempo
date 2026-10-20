@@ -133,7 +133,7 @@ class NativeBackend:
             code, data = error.code, error.read(8 * 1024 * 1024 + 1)
         if len(data) > 8 * 1024 * 1024: raise RuntimeError('Native HTTP response exceeds bound')
         value = json.loads(data)
-        self.calls.append(dict(method=method, path=path, status=code))
+        self.calls.append(dict(method=method, path=path, status=code, **({'error':value} if code>=400 else {})))
         return code, value
 
     def wait(self, function, *, seconds=20):

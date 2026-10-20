@@ -454,6 +454,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 "/api/repertoire/paste/preview",
                 "/api/endgames/probe",
                 "/api/cards/validate",
+                "/api/learning/historical-exposure/status",
             }
             or (len(request_path_parts) == 5
                 and request_path_parts[:2] == ["api", "studies"]
@@ -656,6 +657,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
                                    and path_parts[3] == "retry" and request.method == "POST")
+        historical_practice_command = request.method == 'POST' and request.url.path in {
+            '/api/learning/historical-exposure','/api/learning/historical-exposure/cancel',
+            '/api/learning/historical-exposure/refresh',
+        }
         legacy_evidence_command = request.method == "POST" and (
             path_parts == ["api", "game-evidence", "legacy", "deliveries"]
             or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
@@ -731,7 +736,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
-                    legacy_evidence_command,
+                    legacy_evidence_command, historical_practice_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -756,7 +761,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
-        or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
+        or (request.method == "POST" and request.url.path in {
+            "/api/game-evidence/legacy/deliveries", "/api/learning/historical-exposure",
+            "/api/learning/historical-exposure/status"})
     )
     guided_review_reconciliation_read = (
         request.method == "GET" and len(request_path_parts) == 3

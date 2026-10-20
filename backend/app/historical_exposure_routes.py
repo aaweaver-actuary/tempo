@@ -35,7 +35,7 @@ def request_historical_exposure(selection: ExposureSelection,
     if not postgres_store.configured():
         raise HTTPException(404,'Historical exposure requires the PostgreSQL owner')
     return dispatch_command('historical_exposure.request',{'selection':selection.model_dump(mode='json')},
-        idempotency_key=idempotency_key)
+        idempotency_key=idempotency_key,background=True)
 
 
 @router.post('/api/learning/historical-exposure/cancel',dependencies=[Depends(require_exposure_operator)])

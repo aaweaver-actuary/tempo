@@ -335,8 +335,8 @@ def test_native_historical_practice_priority_replay_and_actual_normal_completion
         raw.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,content_type) SELECT %s,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,content_type FROM cards WHERE id=%s",(recall,native.identities['ordinary']))
         raw.execute("INSERT INTO daily_queue(queue_date,card_id,position,gameplay_priority_reason,admission_kind) VALUES(%s,%s,1,'Priority review · missed in a recent game','review')",(date.today().isoformat(),recall))
     selection=native.exposure_selection()
-    denied,_=native.request('POST','/api/learning/historical-exposure',selection,{'Idempotency-Key':native.case_id+'-unauthorized'})
-    assert denied==401
+    denied,denial=native.request('POST','/api/learning/historical-exposure',selection,{'Idempotency-Key':native.case_id+'-unauthorized'})
+    assert denied==401,denial
     before=exposure_queue(native)
     result=native.exposure('',selection,native.case_id+'-practice')
     assert result['state']=='pending' and result['placement_mode']=='best_effort_front'

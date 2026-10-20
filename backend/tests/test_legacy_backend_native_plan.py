@@ -260,3 +260,19 @@ def test_native_feedback_fixture_publishes_through_writable_storage_not_read_onl
         assert first == 'fixture-weak' and second == 'fixture-other'
         assert database.execute('SELECT game_id,derivation_version,published_repertoire_version FROM game_derivation_jobs').fetchall() == [('game', 1, 1)]
         assert database.execute('SELECT id,repertoire_id FROM current_repertoire_decision_events ORDER BY ply').fetchall() == [(first, 'ruy'), (second, 'italian')]
+
+
+def test_artifact_evidence_reuse_requires_complete_unchanged_package_and_tool_inputs(tmp_path,monkeypatch):
+    paths=['services/learning/application/src/tempo_learning_review/owned.py','scripts/qualify_legacy_bridge.py']
+    for name in paths:
+        path=tmp_path/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('unchanged')
+    monkeypatch.setattr(plan.subprocess,'check_output',lambda *args,**kwargs:'\0'.join(paths)+'\0')
+    previous={name:plan.shared.staging.entry(tmp_path,tmp_path/name) for name in paths}
+    assert plan.unchanged_artifact_inputs(previous,tmp_path)
+    (tmp_path/paths[0]).write_text('changed')
+    assert not plan.unchanged_artifact_inputs(previous,tmp_path)
+    (tmp_path/paths[0]).write_text('unchanged')
+    assert not plan.unchanged_artifact_inputs({paths[0]:previous[paths[0]]},tmp_path)
+    paths.append('services/learning/application/tests/test_added.py')
+    path=tmp_path/paths[-1];path.parent.mkdir(parents=True,exist_ok=True);path.write_text('new case')
+    assert not plan.unchanged_artifact_inputs(previous,tmp_path)

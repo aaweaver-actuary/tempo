@@ -14,6 +14,7 @@ STUDY_BACKGROUND_COMMANDS = frozenset({
     # Explicit one-game v3 command only. It still yields to foreground admission;
     # this does not admit a recurring analysis/graph/provider task kind.
     'game_evidence.receive_legacy',
+    'historical_exposure.request',
     'coverage.maia.heartbeat', 'coverage.maia.release', 'coverage.maia.failure',
     'threat.analysis.failure', 'threat.analysis.release',
     'games.analysis.position.report',

@@ -26,7 +26,7 @@ def test_operator_authenticated_explicit_one_line_dispatch_contains_no_credentia
         headers={'Authorization':'Bearer '+'x'*40,'Idempotency-Key':'explicit-one-line'})
     assert response.status_code==200 and len(calls)==1
     assert calls[0][0][0]=='historical_exposure.request'
-    assert 'x'*40 not in str(calls) and calls[0][1]['idempotency_key']=='explicit-one-line'
+    assert 'x'*40 not in str(calls) and calls[0][1]['idempotency_key']=='explicit-one-line' and calls[0][1]['background'] is True
 
 
 @pytest.mark.parametrize('authorization',[None,'Bearer wrong','Basic '+'x'*40,'Bearer \u00e9'])
@@ -92,3 +92,20 @@ def test_failed_retry_status_is_visible_and_never_falsely_served(monkeypatch,tmp
     assert response.json()['retry_required'] and response.json()['retry_state']=='failed'
     assert response.json()['completion_review_id'] is None and not calls
     assert observed==[(record.card_scope(),record.request.encounter.key())]
+
+
+@pytest.mark.parametrize('suffix',['','/cancel','/refresh','/status'])
+def test_full_api_cutover_reaches_operator_authorization_for_exact_practice_routes(monkeypatch,tmp_path,suffix):
+    from app import main
+    token=tmp_path/'operator';token.write_text('x'*40);token.chmod(0o600)
+    monkeypatch.setenv('TEMPO_EXPOSURE_OPERATOR_TOKEN_FILE',str(token))
+    monkeypatch.setattr(main.postgres_store,'configured',lambda:True)
+    response=TestClient(main.app).post('/api/learning/historical-exposure'+suffix,
+        json=payload() if not suffix else dict(target_id='target',workspace_id='legacy',card_id='card',encounter_key='historical-exposure:'+'a'*64),
+        headers={'Idempotency-Key':'native-cutover'})
+    assert response.status_code==401,response.text
+
+
+def test_explicit_practice_request_is_allowed_in_study_only_background_commands():
+    from app.services.study_mode import STUDY_BACKGROUND_COMMANDS
+    assert 'historical_exposure.request' in STUDY_BACKGROUND_COMMANDS
