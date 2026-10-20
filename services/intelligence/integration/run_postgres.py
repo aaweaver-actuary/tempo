@@ -54,6 +54,12 @@ def main():
                 "--memory","384m","--memory-swap","384m","--cpus","1","--pids-limit","256","--mount",f"type=volume,source={volume},target=/var/lib/postgresql",
                 "--publish","127.0.0.1::5432","--env-file",str(secret_file),image,"postgres","-c","shared_buffers=32MB","-c","max_connections=40")
         created_container=True
+        observed=json.loads(docker("inspect",owner,"--format","{{json .HostConfig}}").stdout)
+        report["observed_limits"]={key:observed[key] for key in ("NanoCpus","Memory","MemorySwap","PidsLimit")}
+        if report["observed_limits"]!={"NanoCpus":1000000000,"Memory":402653184,"MemorySwap":402653184,"PidsLimit":256}:
+            raise RuntimeError("owned_postgres_limits_mismatch")
+        report.update(pid=os.getpid(),pgid=os.getpgid(0),volume=volume)
+        (destination/"native-start.json").write_text(json.dumps(report,indent=2)+"\n")
         port=docker("inspect",owner,"--format",'{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}').stdout.strip()
         admin=make_conninfo(host="127.0.0.1",port=port,dbname="postgres",user="postgres",password=administrator)
         deadline=time.monotonic()+30
