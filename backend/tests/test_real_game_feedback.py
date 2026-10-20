@@ -16,7 +16,7 @@ from app.services import repertoire_comparison
 from app.services.game_sync_coordinator import _execute_derivation
 from app.services.game_findings import refresh_game_findings
 from app.services.introduction_priorities import rebuild_introduction_priorities
-from app.services.real_game_feedback import apply_real_game_misses
+from app.services.real_game_feedback_adapter import apply_real_game_misses
 from app.services.repertoire_comparison import compare_games
 
 
@@ -580,7 +580,7 @@ def test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission(tm
 
 @pytest.mark.parametrize('source_kind,invalidated,expected', [('study', False, False), ('game', False, True), ('study', True, True)])
 def test_real_game_obligation_uses_valid_study_and_equivalent_timezone_instants(tmp_path, monkeypatch, source_kind, invalidated, expected):
-    from app.services.real_game_feedback import has_outstanding_real_game_miss
+    from app.services.real_game_feedback_adapter import has_outstanding_real_game_miss
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     database.initialize()
     with database.connection() as db:
@@ -593,7 +593,7 @@ def test_real_game_obligation_uses_valid_study_and_equivalent_timezone_instants(
 
 
 def test_real_game_misses_deduplicate_by_card_and_study_consumes_all(tmp_path, monkeypatch):
-    from app.services.real_game_feedback import has_outstanding_real_game_miss
+    from app.services.real_game_feedback_adapter import has_outstanding_real_game_miss
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     database.initialize()
     now = datetime.now(timezone.utc)
@@ -625,7 +625,7 @@ def test_real_game_misses_deduplicate_by_card_and_study_consumes_all(tmp_path, m
 
 
 def test_real_game_priority_retains_identified_active_attempt_and_burial_defers_obligation(tmp_path, monkeypatch):
-    from app.services.real_game_feedback import has_outstanding_real_game_miss
+    from app.services.real_game_feedback_adapter import has_outstanding_real_game_miss
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     database.initialize()
     with database.connection() as db:

@@ -17,8 +17,9 @@ from . import queue_application, queue_ordering, frozen_opening_order
 from .opening_capacity_frontier import plan_prioritized_opening_admissions
 from .queue_application import AdmittedOpeningProposal
 from .cards import card_id
-from .real_game_feedback import (MISS_REASON, outstanding_miss_sql, has_outstanding_real_game_miss,
-                                 promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses)
+from .real_game_feedback import MISS_REASON
+from ..storage.real_game_miss_projection import outstanding_miss_sql
+from .real_game_feedback_adapter import has_outstanding_real_game_miss, promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses
 from .activity_gate import activity_gate
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,

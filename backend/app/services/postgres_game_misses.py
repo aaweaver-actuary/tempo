@@ -11,7 +11,7 @@ from .durable_tasks import (
     enqueue_compact_postgres_task_in_transaction,
     lock_current_slice,
 )
-from .real_game_feedback import prioritize_real_game_miss
+from .real_game_feedback_adapter import prioritize_real_game_miss
 
 
 def execute_game_miss_slice(task: dict[str, Any]) -> bool:

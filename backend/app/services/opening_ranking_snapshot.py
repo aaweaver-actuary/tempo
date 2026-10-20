@@ -15,7 +15,8 @@ from .. import postgres_store
 from ..schema_version import POSTGRES_SCHEMA_VERSION
 from .activity_gate import activity_gate
 from .redis_admission_gate import BackgroundAdmissionDeferred, configured as shared_admission_configured
-from .real_game_feedback import MISS_REASON, outstanding_miss_sql
+from .real_game_feedback import MISS_REASON
+from ..storage.real_game_miss_projection import outstanding_miss_sql
 from .opening_ranking_evaluation import (
     OpeningRankingCandidate, OpeningRankingContext, OpeningRankingError,
     canonical_json, snapshot_document, validate_policy_id,

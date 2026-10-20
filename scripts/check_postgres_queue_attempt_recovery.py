@@ -410,7 +410,8 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Real-game obligation proof requires disposable PostgreSQL")
     from app.services import postgres_queue_refresh as refresh
-    from app.services.real_game_feedback import MISS_REASON, promote_real_game_card, has_outstanding_real_game_miss
+    from app.services.real_game_feedback import MISS_REASON
+    from app.services.real_game_feedback_adapter import promote_real_game_card, has_outstanding_real_game_miss
     from app.services.durable_tasks import claim_task, enqueue_task_in_transaction
     os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]

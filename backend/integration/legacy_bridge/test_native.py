@@ -1,4 +1,4 @@
-"""Prepared three-case real HTTP/Celery/Redis/PostgreSQL boundary proof.
+"""Finite command and feedback-store HTTP/Celery/Redis/PostgreSQL boundary proof.
 
 Never runs in regular source tests. Native fixture setup fails closed without
 the separately granted owned helper manifest. No mocks or eager Celery mode.
@@ -184,3 +184,102 @@ def test_native_module_effect_and_complete_operation_receipt_roll_back_together(
         assert state == 'complete' and attempts >= 2
     write_trace(native, acknowledgement=receipt, retained_retry=retry, injected_fault_marker=marker,
                 rollback_before_retry=True, recovery_task='app.tasks.recover_operations')
+
+
+def feedback_store(raw):
+    from app.postgres_store import PostgresConnection, tempo_row_factory
+    from app.storage.real_game_feedback import BorrowedFeedbackStore
+    raw.row_factory = tempo_row_factory
+    return BorrowedFeedbackStore(PostgresConnection(raw))
+
+
+def insert_feedback_miss(raw, native, *, repertoire='ruy', suffix='weak', ply=5):
+    """Publish synthetic evidence through the owned storage tables, not a view."""
+    event_id = native.case_id + '-' + suffix
+    raw.execute("""INSERT INTO game_derivation_jobs
+        (game_id,status,derivation_version,published_repertoire_version,updated_at)
+        SELECT id,'complete',1,1,played_at FROM imported_games WHERE id=%s
+        ON CONFLICT(game_id) DO NOTHING""", (native.identities['game'],))
+    raw.execute("""INSERT INTO repertoire_decision_events_staged
+        (id,game_id,derivation_version,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at)
+        SELECT %s,id,1,%s,%s,%s,'synthetic-feedback-root','a7a6','g8f6','miss',played_at,played_at
+        FROM imported_games WHERE id=%s""",
+        (event_id, native.identities[repertoire], native.identities['physical'], ply, native.identities['game']))
+    current = raw.execute('SELECT id FROM current_repertoire_decision_events WHERE id=%s', (event_id,)).fetchone()
+    assert current and current[0] == event_id, 'Owned staged fixture must be visible through the current publication'
+    return event_id
+
+
+def test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction(native):
+    from app.storage.real_game_feedback import BATCH_SIZE
+    card_id, game_id = native.identities['physical'], native.identities['game']
+    with pytest.raises(RuntimeError, match='caller rollback'):
+        with native.connection(role='tempo_writer') as raw:
+            store = feedback_store(raw)
+            event_id = insert_feedback_miss(raw, native)
+            assert [(row.card_id, row.state) for row in store.outstanding_cards((card_id, card_id, 'missing'))] == [(card_id, 'learning')]
+            assert store.outstanding_card('missing') is None and store.outstanding_cards(()) == ()
+            with pytest.raises(ValueError, match='128'):
+                store.outstanding_cards((card_id,) * (BATCH_SIZE + 1))
+            assert list(store.missed_event_batches(game_id)) == [(event_id,)]
+            evidence = [row for batch in store.repertoire_miss_batches(native.identities['ruy']) for row in batch]
+            assert [(row.event_id, row.card_id, row.game_id) for row in evidence] == [(event_id, card_id, game_id)]
+            raw.execute("UPDATE daily_queue SET gameplay_priority_reason='contract-original' WHERE card_id=%s", (native.identities['ordinary'],))
+            store.replace_miss_priority(native.identities['ordinary'], 'contract-original', 'contract-replacement')
+            assert raw.execute('SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s',
+                               (native.identities['ordinary'],)).fetchone()[0] == 'contract-replacement'
+            with native.connection(role='tempo_reader') as observer:
+                assert observer.execute('SELECT COUNT(*) FROM repertoire_decision_events WHERE game_id=%s', (game_id,)).fetchone()[0] == 0
+                assert observer.execute('SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s',
+                                        (native.identities['ordinary'],)).fetchone()[0] is None
+            raise RuntimeError('caller rollback')
+    with native.connection(role='tempo_reader') as observer:
+        assert observer.execute('SELECT COUNT(*) FROM repertoire_decision_events WHERE game_id=%s', (game_id,)).fetchone()[0] == 0
+        assert observer.execute('SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s',
+                                (native.identities['ordinary'],)).fetchone()[0] is None
+    write_trace(native, feedback_contract='typed projections and caller-owned rollback')
+
+
+def test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends(native):
+    from datetime import date
+    from psycopg.errors import LockNotAvailable
+    card_id, day = native.identities['physical'], date.today().isoformat()
+    card_key, day_key = 'tempo:card-edit:' + card_id, 'tempo:daily-queue-position:' + day
+    with native.connection(role='tempo_writer') as raw:
+        store = feedback_store(raw)
+        store.lock_card(card_id)
+        store.lock_queue_day(day)
+        with native.connection(role='tempo_writer') as observer:
+            for key in (card_key, day_key):
+                assert observer.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', (key,)).fetchone()[0] is False
+            with pytest.raises(LockNotAvailable):
+                with observer.transaction():
+                    observer.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_id,)).fetchone()
+    with native.connection(role='tempo_writer') as observer:
+        for key in (card_key, day_key):
+            assert observer.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', (key,)).fetchone()[0] is True
+        assert observer.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_id,)).fetchone()[0] == card_id
+    write_trace(native, feedback_contract='actual card/day advisory and row locks share caller lifetime')
+
+
+def test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire(native):
+    card_id = native.identities['physical']
+    with native.connection(role='tempo_writer') as raw:
+        store = feedback_store(raw)
+        insert_feedback_miss(raw, native)
+        assert store.outstanding_card(card_id) is not None
+    preview = native.preview()
+    receipt = accepted(native, LegacyStudyOperator(native.endpoint, native.request), preview)
+    with native.connection(role='tempo_writer') as raw:
+        store = feedback_store(raw)
+        assert store.outstanding_card(card_id) is None
+        assert list(store.repertoire_miss_batches(native.identities['ruy'])) == []
+        raw.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)',
+                    (native.identities['italian'], card_id))
+        other_event = insert_feedback_miss(raw, native, repertoire='italian', suffix='other-scope', ply=6)
+        assert store.outstanding_card(card_id) is not None
+        assert [row.event_id for batch in store.repertoire_miss_batches(native.identities['italian']) for row in batch] == [other_event]
+        raw.execute('UPDATE imported_games SET adaptive_excluded=1 WHERE id=%s', (native.identities['game'],))
+        assert store.outstanding_card(card_id) is None
+    write_trace(native, feedback_contract='native accepted scope exclusion with different-repertoire and exclusion controls',
+                acknowledgement=receipt)

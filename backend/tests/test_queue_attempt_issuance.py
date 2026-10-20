@@ -58,7 +58,7 @@ def _promote_real_game_miss():
     from datetime import datetime, timezone
     from test_real_game_feedback import _seed_game, _seed_repertoire
     from app.services.repertoire_comparison import compare_games
-    from app.services.real_game_feedback import apply_real_game_misses
+    from app.services.real_game_feedback_adapter import apply_real_game_misses
 
     with database.connection() as connection:
         _seed_repertoire(connection, studied_at='2026-01-01T00:00:00Z')

@@ -134,7 +134,7 @@ def test_proposal_rechecks_legacy_evidence_and_rejects_forged_miss_reason(databa
     old_proposal={**candidate('c'),'card_id':'c','reason':None,
                   'frozen_token':['run',1]}
     assert not order.proposal_valid(database,old_proposal)
-    from app.services import real_game_feedback
+    from app.services import real_game_feedback_adapter as real_game_feedback
     monkeypatch.setattr(real_game_feedback,'has_outstanding_real_game_miss',lambda database,card_id:False)
     forged={**old_proposal,'reason':order.MISS_REASON}
     assert not order.proposal_valid(database,forged)
@@ -240,6 +240,6 @@ def test_changed_captured_content_does_not_trust_a_forged_mandatory_reason(datab
     rows=order.annotate(database,[candidate('a'),candidate('b',gameplay_priority_reason=order.MISS_REASON)])
     selected=plan_prioritized_opening_admissions(rows,{},'today',0,miss_reason=order.MISS_REASON)
     assert [row['id'] for _,row in selected]==['b']
-    from app.services import real_game_feedback
+    from app.services import real_game_feedback_adapter as real_game_feedback
     monkeypatch.setattr(real_game_feedback,'has_outstanding_real_game_miss',lambda database,card_id:False)
     assert not order.proposal_valid(database,{'card_id':'b','reason':order.MISS_REASON,'frozen_token':['run',1]})

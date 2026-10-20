@@ -50,3 +50,9 @@ PYTHONPATH=backend backend/.venv/bin/python scripts/check_postgres_opening_graph
 
 The native proof is also registered in the regular PostgreSQL durability suite.
 No schema, public API, unlock-policy or normal scheduling change is required.
+
+The separate `--mode queued-rebuild` supports an untouched queued replacement
+of an older ready graph while Study-only stays enabled. See the
+[selected rebuild procedure](selected-opening-rebuild-maintenance.md) for its
+scope, qualification limits and future downtime plan. The failed-first-publication
+mode above remains the default with its original entry restrictions.
