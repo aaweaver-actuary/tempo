@@ -8,7 +8,7 @@
       "status": "implemented",
       "root": "tools/analysis-restoration/a_bridge",
       "publicExports": ["main"],
-      "dependencies": ["chess"],
+      "dependencies": ["chess", "tempo_game_evidence_contracts"],
       "buildInputs": ["pyproject.toml", "uv.lock", "src", "tests", "fixtures", "REGRESSIONS.md", "qualify.py"],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {"name": "tempo-a-bridge", "version": "0.1.0", "format": "wheel + sdist"},
