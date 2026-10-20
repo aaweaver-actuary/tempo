@@ -90,7 +90,11 @@ and must not be mistaken for permission for another service to write these table
 
 These are scoped legacy gaps for architecture review, not a claim that Games can
 fail independently throughout the full app. The [Study detail](study-games.md#main-study-path-and-source-gap)
-also exposes shared browser imports. Changes claiming isolation must satisfy the
+also exposes shared browser imports; lazy declarations alone do not execute those
+features. Its [conditional build/offline view](study-games.md#conditional-study-build-and-offline-assets-main)
+shows how optional chunks, **if emitted**, can enter the shared required shell
+inventory and affect offline readiness. Artifact presence and live failure are
+unverified. Changes claiming isolation must satisfy the
 new rule at the affected boundary; this documentation does not repair the legacy
 assembly or authorize a live cutover.
 

@@ -10,6 +10,13 @@ diagram separates its HTTP serving path from the shared browser source that it
 still loads. It does **not** certify that the whole Study artifact is free of
 Games imports.
 
+The `React.lazy` declarations shown as source gaps do **not** themselves execute
+Games or sync code during ordinary Study. They defer the import factory until the
+corresponding component is rendered; Home's Games subtree is conditional on
+`currentView === "games"`. Source reachability is distinct from execution and from
+the [conditional build/offline asset dependency](#conditional-study-build-and-offline-assets-main)
+below. No emitted Study artifact was inspected for these drawings.
+
 ```mermaid
 flowchart TB
   Entry["static/main +<br/>StudyConnectionBoundary"] -->|"connect/bootstrap, then lazy<br/>import"| Home["Shared home_view.tsx -<br/>legacy composition"]
@@ -59,6 +66,49 @@ shows. Learning owns validation, eligibility/admission, idempotency, transaction
 and ordinary queue consumption. Study must not learn how to contact the producer;
 the producer must not write Learning queue, review or scheduling tables. PR319 is
 paused; no proposed encountered-card API is assumed here.
+
+## Conditional Study build and offline assets (MAIN)
+
+**MAIN source checked; emitted-artifact verification pending.** The Study build
+uses the shared offline-shell inventory plugin. This is an asset-availability
+boundary beyond whether a lazy component executes. Arrows below label build data
+flow and readiness waits; dotted edges are explicitly conditional.
+
+```mermaid
+flowchart TB
+  Build["Study Vite build<br/>static/app source graph"] -->|"all emitted JS, MJS and CSS"| Inventory["offlineShellAssets<br/>BUILD_SHELL_ASSETS inventory"]
+  Build -.->|"IF optional chunks remain<br/>in emitted Study output"| Optional["Games / sync chunks<br/>Artifact presence unverified"]
+  Optional -.->|"IF emitted, included<br/>without feature filtering"| Inventory
+  Inventory -->|"inventory embedded in sw.js"| SW["Service worker<br/>requiredShellUrls / precacheShell"]
+  SW -->|"cache.addAll required URLs"| Cache[("Browser offline shell cache")]
+  Ready["Study offline queue readiness<br/>waitForOfflineShell"] -->|"wait for worker readiness<br/>and request shell status"| SW
+  SW -.->|"IF a required asset fails or<br/>is missing from the cache"| Failure["New shell install can reject<br/>or shell ready can be false"]
+```
+
+| Edge / owner | Concrete source and effect |
+| --- | --- |
+| Build composition → inventory | [Vite config](../../../vite.static.config.ts) installs [`offlineShellAssets`](../../../scripts/offline-shell-assets.ts). Its `writeBundle` inventories **all** emitted `.js`, `.mjs` and `.css` bundle keys, not only initial HTML references or a Study-only feature list, then replaces `BUILD_SHELL_ASSETS` in emitted `sw.js`. |
+| Inventory → install/cache | [`public/sw.js`](../../../public/sw.js): `requiredShellUrls` combines the base shell, HTML-referenced assets and build inventory. `precacheShell` uses `cache.addAll`; the install event waits for that promise before `skipWaiting`. A required fetch failure can reject installation of the new shell. This does not establish failure of an already active older shell. |
+| Cache → offline readiness | The same worker's `tempo:offline-shell-status` handler sets `ready` only when every required URL is cached. [`waitForOfflineShell`](../../../app/lib/offline-shell.ts) waits for service-worker readiness/control and validates the version/status reply. [Queue preparation and cached fallback](../../../app/views/fetchAndInitializeQueue.tsx) call it before reporting phone readiness or accepting that cached fallback. [Static startup](../../../static/src/main.tsx) registers the worker in production. |
+
+**Conditional consequence:** if Games/sync chunks remain in the emitted Study
+output, they enter this required inventory even without Games/sync execution.
+Unavailable optional assets can then affect Study's new offline-shell installation
+or offline-readiness check. The asset set is served from the Study build's own
+origin; this is not evidence of an API call or readiness wait on the independent
+Games service.
+
+**Verification status:** the inventory, install and status paths above were read
+in source. No Study build was produced; emitted chunks and the built inventory
+were not inspected. No asset-loss scenario was executed or live/offline failure
+observed here.
+Whether this conditional edge exists in a particular artifact remains unverified.
+The target is a Study composition/artifact whose required offline assets exclude
+optional feature implementations. A separate composition repair is in progress
+on another branch; it is not incorporated or claimed complete by this view.
+Its owning change must inspect the actual output/inventory and verify the affected
+offline boundary before claiming the gap removed. This documentation correction
+does not require a full-stack suite or change runtime source.
 
 ## Merged PR322 Games reader
 
@@ -110,6 +160,7 @@ read-only composition, narrow view port and bounded game projection above.
 | Path | Local ownership and failure result | Limit of claim |
 | --- | --- | --- |
 | Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. Shared Home remains a source gap. |
+| Conditional Study offline assets | The shared build inventories all emitted JS/MJS/CSS; worker installation/cache status can depend on optional chunks **if** they remain in that output. Lazy declarations alone do not execute those features. | [Source-backed conditional view](#conditional-study-build-and-offline-assets-main); emitted artifact and failure scenario unverified, no observed live failure. |
 | Games read (MAIN) | Invalid auth/schema/scope/cursor or DB failure returns Games error; missing scopes remain missing. No hidden run creation, import, analysis, Study call or repair. View disposal destroys its own board and ignores late responses; server lifespan closes only its pools/executor. | See [read/failure sequence](flows.md#games-read-failure-and-disposal-main-merged-pr322). No Study/worker shutdown is part of this path. |
 | Games DB work (MAIN) | Scope listing ≤100 rows; accepted scope metadata ≤1000 games; page ≤10 games plus one lookahead. Existing 1500 ms statement, 250 ms lock, 3000 ms transaction bounds and configured pool maxima apply. | PostgreSQL may scan/order accepted JSON pages within that budget; no indexed/precomputed projection or host latency guarantee is claimed. |
 | Navigation | Optional public Workbench launch and general Open Study root link are user navigation with no credentials/card authority transfer or service readiness check. | A link is not a required Study API dependency. Reuse existing [navigation contracts](../../../apps/workbench-web/src/public-navigation.ts), [launch URL validation](../../../app/lib/workbench-navigation.ts); do not add a wait. |
