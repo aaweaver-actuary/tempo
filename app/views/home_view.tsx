@@ -1,3 +1,5 @@
+import type { OptionalWorkspace } from '../components/optional-workspace';
+import { canOpenWorkspace } from '../lib/study-workspace-policy';
 import { WorkbenchLaunch } from "../components/workbench-launch";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, studyConnection } from "../lib/study-connection";
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
@@ -69,13 +71,11 @@ const ComparisonView = lazy(() => import("./comparison_view"));
 import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
 const CardEditor = lazy(() => import("./card_editor"));
 import EndgamesView from "./endgames_view";
-const GamesView = lazy(() => import("./games_view"));
 const InsightsView = lazy(() => import("./insights_view"));
 const RepertoireView = lazy(() => import("./repertoire_view"));
 const SettingsView = lazy(() => import("./settings_view"));
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
-const WorkbenchGameSync = lazy(() => import("../components/workbench-game-sync").then(module => ({ default: module.WorkbenchGameSync })));
 import { Chess, Move, Square } from "chess.js";
 import {
   useTrainingStore,
@@ -127,9 +127,10 @@ const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then
 import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
-export default function Home() { return <Suspense fallback={<p role="status">Loading workspace…</p>}><StudyStorageBoundary><StudyComposition /></StudyStorageBoundary></Suspense>; }
+export default function Home({ optionalWorkspace }: { optionalWorkspace?: OptionalWorkspace } = {}) { return <Suspense fallback={<p role="status">Loading workspace…</p>}><StudyStorageBoundary><StudyComposition optionalWorkspace={optionalWorkspace} /></StudyStorageBoundary></Suspense>; }
 
-function StudyComposition() {
+function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: OptionalWorkspace }) {
+  const OptionalWorkspaceView = optionalWorkspace?.View;
   const studyOnlyMode = useStudyOnlyMode();
   useEffect(() => prepareMoveSounds(), []);
   const [currentView, setCurrentView] = useState<View>("train");
@@ -201,6 +202,7 @@ function StudyComposition() {
     return () => window.removeEventListener("tempo:update-ready", showUpdate);
   }, []);
   const changeWorkspace = useCallback((view: View) => {
+    if (!canOpenWorkspace(view, independentStudy)) return;
     const finished = measureTempoOperation("view-switch");
     deferRepairDialog();
     if (view === "progress" || view === "statistics") {
@@ -2066,51 +2068,12 @@ function StudyComposition() {
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
         )}
-        {currentView === "games" && (
-          <WorkbenchGameSync>{gameSync => <>
-            <GamesView
-              initialFenFilter={gamesFenFilter}
-              initialRepertoireFilter={gamesRepertoireFilter}
-              onClearFenFilter={() => {
-                setGamesFenFilter("");
-                setGamesRepertoireFilter("");
-              }}
-              syncState={gameSync.state}
-              onSync={() => void gameSync.sync(true)}
-              onRepair={() => void gameSync.sync(true, true)}
-              onQueueUpdated={refreshQueueOnly}
-              onSettings={() => changeWorkspace("settings")}
-              onAnalyze={(game, gameCursor) => {
-                const position = new Chess(game.startFen);
-                const history = game.moves.slice(0, gameCursor).map((san) => {
-                  const move = position.move(san);
-                  return {
-                    san: move.san,
-                    uci: `${move.from}${move.to}${move.promotion ?? ""}`,
-                    fen: position.fen(),
-                  };
-                });
-                localStorage.setItem(
-                  "tempo-builder-session",
-                  JSON.stringify({
-                    version: 1,
-                    activeRepertoireId: game.repertoireId,
-                    activeRepertoireByColor: {},
-                    orientation: game.color,
-                    startingFen: game.startFen,
-                    history,
-                    cursor: history.length,
-                    branchStart: history.length,
-                  }),
-                );
-                changeWorkspace("builder");
-              }}
-              theme={boardTheme}
-              pieceSet={pieceSet}
-              useSharedBoard
-            />
-          </>}</WorkbenchGameSync>
-        )}
+        {OptionalWorkspaceView && optionalWorkspace?.views.includes(currentView) && <OptionalWorkspaceView
+          view={currentView} theme={boardTheme} pieceSet={pieceSet}
+          positionFilter={gamesFenFilter} repertoireFilter={gamesRepertoireFilter}
+          onClearFilter={() => { setGamesFenFilter(""); setGamesRepertoireFilter(""); }}
+          onQueueUpdated={refreshQueueOnly} onNavigate={changeWorkspace}
+        />}
         {currentView === "insights" && (
           <InsightsView
             initialTab={insightsTab}

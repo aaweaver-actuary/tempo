@@ -1,3 +1,4 @@
+import { canOpenWorkspace } from '../lib/study-workspace-policy';
 import { independentStudy } from "../lib/study-connection";
 import { Button } from "./buttons/BaseButton";
 import { useRef, useState } from "react";
@@ -17,8 +18,7 @@ export const WORKSPACES: { id: View; label: string }[] = [
   { id: "insights", label: "Insights" },
   { id: "settings", label: "Settings" },
 ];
-const studyWorkspaces = WORKSPACES.filter(item => ["train", "tactics", "endgames"].includes(item.id));
-const workspaces = independentStudy ? studyWorkspaces : WORKSPACES;
+const workspaces = WORKSPACES.filter(item => canOpenWorkspace(item.id, independentStudy));
 const PHONE_PRIMARY: View[] = ["train", "tactics", "endgames", "builder"];
 export default function Navbar({
   view,
