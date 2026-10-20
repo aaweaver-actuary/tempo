@@ -269,5 +269,3 @@ fence a genuinely queued retirement without changing the active predecessor.
 
 
 `test_host_activity_clock_retains_reader_domain_after_host_sleep` protects the shared-host clock contract. macOS Python uptime excludes sleep while the native Node reader includes it; the producer uses `CLOCK_MONOTONIC_RAW` on macOS and the ordinary monotonic clock elsewhere. The regression simulates a suspend offset without requiring Node, a broker, or a database for Learning progress. Real Python 3.12/3.14 and Node clock brackets are retained in the task's qualification evidence.
-
-Historical exposure lifecycle: the regular historical-exposure application and runtime queue-ordering suites cover batch served-contributor reconciliation, exact scope, recall precedence and unchanged protected/repeat positions. Backend SQL/locks and native compositions require separate proof.

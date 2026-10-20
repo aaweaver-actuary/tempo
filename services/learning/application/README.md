@@ -124,107 +124,54 @@ after the complete test inventory and required resource cleanup both succeed.
 Primary and cleanup errors are retained together.
 
 
-## Historical-exposure boundary checkpoint (not adopted)
+## Verified encountered-card practice request (MVP)
 
-`historical_exposure.py` proposes typed, single-user-request practice priority.
-It does not import a provider, chess engine, database, HTTP framework, backend or
-remediation application. The caller verifies the exact current encounter/card/
-revision/executable/ordered route identity. Store, FactReader and QueueWriter are
-separate semantic capabilities. The backend source adapters described below now
-implement these ports; runtime adoption remains pending.
+The historical-exposure module represents one explicit request to practice a
+verified encountered card. It does not label the encounter as forgotten recall,
+create a review or remediation obligation, or promise front-of-queue placement.
+The backend captures and verifies exact scope, source, executable, revision and
+ordered routes before a request can be saved. Unknown/ambiguous mapping fails
+safely. Unknown introduction chronology needs explicit confirmation.
 
-Training intent persists until served, explicitly cancelled, revoked from verified
-source/membership facts, or safely superseded by verified current source identity.
-It has **no age expiry**. Operational worker leases may expire and be retried;
-they must never expire the underlying training intent. Unknown/ambiguous mapping,
-burial, unavailable cards and stale integrity suspend contribution without silently
-discarding an already accepted intent. Initial admission still requires verified,
-current, eligible introduced review-card authority and explicit user intent.
-Unknown chronology needs separate explicit confirmation, never a fabricated recall
-claim.
+One request table retains pending intent because the existing daily queue is a
+replaceable, day-scoped projection. Idempotent operation receipts, current source
+facts, card-before-day locks and ordinary admission share the caller transaction.
+The narrow QueueWriter port delegates to the canonical introduced-review owner:
+it reuses existing work or appends an ordinary review without touching the active
+head, introduction date, FSRS state or reviews. Buried, completed-today or otherwise
+ineligible work remains deferred. A failed eligibility postcondition rolls back
+the proposed entry; a database error propagates instead of becoming fake fallback
+success. No persistent exposure reason, priority overlay or foreground freshness
+projection remains.
 
-Every effect is scoped by target, workspace and card. The backend adapter
-must serialize that entire card scope, its complete active request inventory,
-current source/eligibility facts and queue decision under the existing card-before-
-day locks in the same caller-owned command transaction. No per-request independent
-commit or partial/truncated contributor inventory is permitted. Any missing/failed
-complete projection must fail closed before effects. Concurrent request, refresh,
-completion and cancellation therefore cannot overwrite another valid contributor.
-Actual SQL/locking/rollback and concurrency remain unverified until native tests.
+The existing durable per-card task retries while pending and yields to foreground
+Study. Ordinary review only checkpoints a wake, not source verification. A request
+is served by any later canonical, non-invalidated normal Study receipt for the
+same target/workspace/card/revision on a genuinely post-request issued attempt.
+This intentionally replaces the former exact exposure-entry binding rule: normal
+Study owns practice, and admission alone is not fulfillment. There is no custom
+attempt ledger or settlement history. The canonical issuance owner stamps a
+nullable first-issued time once in the same transaction; replay neither refreshes
+that timestamp nor fabricates old unknown issuance. Request cancellation stops
+future admissions and leaves already-admitted ordinary work to its normal owner.
 
-`reconcile_card_priority` owns the one card-level rule used after request, refresh,
-completion and cancellation: only currently eligible active requests contribute.
-One stale request cannot erase another valid contributor, and a deferred request
-cannot keep a label alive on its own. Clearing affects only the exposure label;
-it never deletes, unburies or moves attempts. Recall or any unrelated existing
-priority wins and must not be overwritten. Protected attempts remain fixed.
-The writer still must atomically preserve these facts and precedence when calling
-the existing canonical protected-head queue writer; it cannot issue new work.
+Operator-authenticated request/cancel/refresh/status routes remain disabled without
+an explicit private token-file configuration. No token file was provisioned.
+Status distinguishes pending/served/cancelled intent from operational retry state;
+terminal task failure retains pending intent, reports retry required, and supports
+explicit retry. The response's last-admission field is historical, not a claim
+that a replaceable queue entry still exists today.
 
-A verified subsequent normal Study completion carries the exact `CardScope`
-(target, workspace, card), checked against the retained request before any
-mutation. Matching local card/revision/queue-entry/review IDs in another scope
-cannot retire intent. A completion on the bound queue entry serves
-this practice request at any grade. It means practice occurred, **not mastery**,
-forgotten recall or remediation settlement. No review, scheduling or settlement
-record is created here. Old/unverified answers and other revisions/attempts cannot
-serve the request. Response-loss replay stays quiet; duplicate completion or
-cancellation reads the retained terminal state instead of recreating placement.
+Source schema 51 adds one request table and the nullable issuance timestamp on the
+existing retained-origin table. It has not been applied to a live installation.
+Source-only tests are not installed/native qualification. Required native proof
+still includes actual migration, receipt joins, rollback/replay, lock ownership,
+worker recovery and ordinary Study completion through the public composition.
 
-
-### Backend lifecycle source increment (not native-qualified)
-
-The backend source now includes a strict single-encounter selection, authenticated
-request/cancel/refresh routes, borrowed intent storage and command receipts. The
-existing source projector verifies current ordered-route and physical-executable
-identity. The command gateway owns atomic effects and receipts. Card-before-day
-locks cover a complete contributor inventory; graph/source locks after the card
-are nonblocking. Retained-selection reads belong to exposure storage and return a
-typed Request after closing the normal gated reader. The queue adapter uses public
-protected-head facts and canonical queue writes; label clearing touches only
-matching queued entries in the already locked day, preserving other days, inactive
-attempts, positions and unrelated priority.
-
-`historical_exposure_refresh` is a yielding, durable, per-card task. Initial
-acceptance and actual Study completion enqueue a wake in the caller transaction.
-The foreground review does not verify repertoire sources or reconcile exposure.
-The worker validates canonical Study review receipts, their source references,
-issued revision-bound origins and actual review times. No transport flag can
-assert completion. It consumes all served contributors before one card-level
-reconciliation, avoiding transient re-admission of another already-served request.
-Unserved intent remains active; a 60-second follow-up is an operational refresh
-lease, not an intent expiry. Operational failures remain durable task failures and
-can be explicitly retried using the authenticated refresh control.
-
-The shared queue owner ranks recall before exposure, preserves the exposure reason
-without translating it to a miss, and retains issued/protected/failed/guided/
-reinforcement positions. Only already introduced learning/mature cards can be
-queued through this path; canonical insertion records review admission from the
-start and changes no card introduction, schedule or review. Frozen-content and
-base eligibility gates remain intact; unavailable placement is reported deferred.
-The frontend label is **Encountered line practice**, with explicit no-forgetting
-copy, while other priority labels retain their existing text.
-
-API, worker and durable-handler source compositions are wired. The operator route
-remains disabled without explicit private `TEMPO_EXPOSURE_OPERATOR_TOKEN_FILE`
-configuration; no token file was provisioned. Source schema readiness is now 51
-because the composition needs the new table. Migration 051 has **not** been applied
-anywhere, and no running service or installed artifact was changed. The narrow
-explicit-practice refresh joins Study-only task admission; no provider, import,
-analysis, engine or graph work is admitted by that exception.
-
-This is an incremental source review boundary, not deployment readiness. Known
-review items remain: freshness of a queued exposure label between source changes
-and asynchronous refresh; and how a valid late cross-day review should serve
-intent after its placement has been rebound to a newer entry. The current strict
-completion rule accepts only the retained bound entry and does not silently relax
-that rule. These cases must be resolved and tested before native/adoption claims.
-
-Source tests include actual SQLite gateway/savepoint rollback with semantic fake
-queue/store ports, actual canonical SQLite label removal/admission insertion,
-trusted receipt projection controls, lifecycle orchestration fakes, shared pure
-ordering and frontend copy checks. They do not prove PostgreSQL JSON/LATERAL SQL,
-migration, actual lock lifetime/concurrency, worker restart or normal foreground
-budgets. The owning native bridge suite includes a prepared concurrent other-day
-writer case; it has not been collected or executed in this phase. Installed
-application/runtime wheels and native composition still require qualification.
+Non-blocking refinements are tracked centrally: [#321](https://github.com/aaweaver-actuary/tempo/issues/321)
+for exact ordering and cancellation of already-admitted work;
+[#267](https://github.com/aaweaver-actuary/tempo/issues/267) for unknown historical
+issuance recovery without invented backfill; and
+[#194](https://github.com/aaweaver-actuary/tempo/issues/194) for automatic repair of
+terminal retries. The MVP safely uses ordinary placement, keeps unknown issuance
+unserved and makes failed pending work visible for manual retry.

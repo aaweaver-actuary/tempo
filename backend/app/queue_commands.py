@@ -95,11 +95,8 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
         return {"issued": False}
     from .services.legacy_study_remediation import bind_first_issuance
     bind_first_issuance(database, entry_id, payload["card_id"], payload["expected_revision"])
-    changed = database.execute(
-        "UPDATE queue_attempt_origins SET issued_as_head=1 "
-        "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-        (entry_id, payload["card_id"], payload["expected_revision"]),
-    ).rowcount
+    from .queue_attempt_origins import stamp_first_head_issuance
+    changed=stamp_first_head_issuance(database,entry_id,payload["card_id"],payload["expected_revision"])
     return {"issued": bool(changed)}
 
 

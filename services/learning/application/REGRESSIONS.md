@@ -81,35 +81,14 @@ responses exercise failure paths without provisioning extra native clusters.
   failure preserves parseable prior bytes and removes the incomplete temporary file.
 
 
-## Historical-exposure source boundary (not adopted)
+## Verified encountered-card practice request
 
-`tests/test_historical_exposure.py` uses typed semantic fakes for explicit intent,
-exact encounter/revision/route/source/membership facts, unknown/ambiguous mapping,
-current integrity/availability/introduction and burial. It preserves protected
-attempts and quiet response-loss replay. Unserved intent survives beyond seven
-days; no age-based expiry exists. Unknown mapping or temporary ineligibility
-suspends contribution without silently deleting accepted training intent.
-
-`test_refresh_stale_integrity_request_does_not_erase_valid_paired_contribution`
-reproduces the review blocker: a stale-integrity request must not clear a valid
-request's shared card label. The paired completion/cancellation cases exercise
-both directions: another eligible active request retains priority, while an
-active but ineligible request cannot retain it. One card-level reconciler owns
-all clearing/reapplication. Target/workspace scoping and recall/unrelated-priority
-precedence controls prevent cross-workspace effects and label overwrite.
-
-Normal bound Study practice completes once without producing reviews or
-remediation settlements and without claiming mastery. Old/unverified/different-
-revision/attempt events cannot complete intent. Verified source supersession,
-verified membership revocation and explicit cancellation are auditable terminal
-outcomes. Equivalent timezone offsets retain one encounter key. No SQL/native/
-HTTP/queue adoption or infrastructure proof is implied by these source cases.
-
-`test_completion_with_identical_local_ids_in_another_scope_cannot_retire_intent`
-owns cross-target and cross-workspace completion fencing: identical local card,
-revision, queue-entry and review IDs with a valid verification flag are not
-enough. The supplied `CardScope` must match; both negative controls leave records
-and queue-writer effects untouched. Positive completion and stale-object replay
-continue in the same regular source suite.
-
-Historical exposure lifecycle: the regular historical-exposure application and runtime queue-ordering suites cover batch served-contributor reconciliation, exact scope, recall precedence and unchanged protected/repeat positions. Backend SQL/locks and native compositions require separate proof.
+`tests/test_historical_exposure.py` owns the MVP semantic policy: exact current
+source/scope, explicit intent and chronology confirmation; ordinary admission;
+pending intent across rollover; cancellation without queue effects; and serving
+from any qualifying post-request normal practice of the same scoped revision.
+Old, unknown-issued, foreign-scope and other-revision evidence cannot serve it.
+The previous persistent-priority/contributor/attempt-ledger policy was retired by
+the approved MVP scope change, not hidden behind skips. Its prior source and red
+proofs remain on the published feature history. Canonical queue, receipt, scope
+and retry safeguards now have the smaller corresponding source tests.

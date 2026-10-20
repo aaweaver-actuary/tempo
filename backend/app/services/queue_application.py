@@ -30,12 +30,6 @@ from .queue_admission_adapter import QueueAdmissionAdapter, _PRIORITY_OPENING_CA
 from . import queue_admission
 
 
-def protected_queue_entry_ids(rows) -> frozenset[int]:
-    """Public queue-owner projection of existing issued/protected-head rules."""
-    from .queue_ordering import _protected_queue_ids
-    return frozenset(_protected_queue_ids(rows))
-
-
 def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     return queue_admission.reconcile_unseen_queue(QueueAdmissionAdapter(db), day, limit, repertoire_limits)
 
@@ -361,7 +355,7 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
                  if postgres_store.configured() else "0")
     statement = """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,
                   q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
-                  c.introduced_at, c.state AS card_state,
+                  c.introduced_at,c.state AS card_state,
                   (q.review_result_json IS NOT NULL) review_completed,c.revision,
                   EXISTS(SELECT 1 FROM queue_attempt_origins origin
                     WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
@@ -395,8 +389,7 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
             if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
         row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
                                  else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed
-                                 or (row['gameplay_priority_reason']=='historical_exposure'
-                                     and row.get('introduced_at') is not None
+                                 or (row['admission_kind']=='review' and row.get('introduced_at') is not None
                                      and row.get('card_state') in ('learning','mature')) else 'new')
         row['eligible'] = row['id'] in eligible
     return rows
@@ -632,9 +625,3 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
         (queue_date,),
     )
     return task
-
-
-
-def queued_entry_available(database,day: str,entry_id: int) -> bool:
-    """Public queue-owner availability, retaining frozen/integrity safety gates."""
-    return database.execute(available_attempt_sql()+' AND q.id=?',(day,entry_id)).fetchone() is not None

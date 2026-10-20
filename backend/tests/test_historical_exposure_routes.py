@@ -72,3 +72,23 @@ def test_retained_intent_controls_require_operator_idempotency_and_cannot_assert
     assert not calls
     assert session.post(url,json=body,headers=headers).status_code==200
     assert calls==[(('historical_exposure.'+action,body),dict(idempotency_key='control'))]
+
+
+def test_failed_retry_status_is_visible_and_never_falsely_served(monkeypatch,tmp_path):
+    from datetime import datetime,timezone
+    from tempo_learning_review import historical_exposure as practice
+    from app.storage import historical_exposure as storage
+    from app.services.historical_exposure_source import project_encounter
+    session,calls=client(monkeypatch,tmp_path)
+    selection,captured=fixture();verified=project_encounter(selection,captured)
+    record=practice.Record(verified.request,datetime(2026,10,20,tzinfo=timezone.utc),'pending',
+        practice.Placement('deferred','queue_eligibility_unavailable'),'2026-10-20')
+    observed=[]
+    monkeypatch.setattr(storage,'read_status',lambda scope,key:observed.append((scope,key)) or (record,'failed'))
+    body=dict(target_id=record.card_scope().target_id,workspace_id='legacy',card_id=record.card_scope().card_id,
+        encounter_key=record.request.encounter.key())
+    response=session.post('/api/learning/historical-exposure/status',json=body,headers={'Authorization':'Bearer '+'x'*40})
+    assert response.status_code==200 and response.json()['state']=='pending'
+    assert response.json()['retry_required'] and response.json()['retry_state']=='failed'
+    assert response.json()['completion_review_id'] is None and not calls
+    assert observed==[(record.card_scope(),record.request.encounter.key())]

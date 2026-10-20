@@ -1,13 +1,11 @@
 """One durable, yielding card-scope refresh; no reviews or generic queue rebuild."""
 from dataclasses import asdict
 from datetime import datetime,timezone
-import hashlib
-import json
 from psycopg.errors import LockNotAvailable,SerializationFailure
 from tempo_learning_review import historical_exposure as policy
 from ..database import connection
 from ..postgres_store import PostgresConnection
-from ..storage.historical_exposure import active_scope_for_card
+from ..storage.historical_exposure import pending_scope_for_card,retry_key
 from ..storage.historical_exposure_facts import lock_card_scope
 from ..storage.historical_exposure_practice import completed_practices
 from .historical_exposure_adapter import locked_ports
@@ -22,7 +20,7 @@ REFRESH_SECONDS=60
 
 def schedule_refresh(database,scope,*,delay_seconds=0):
     payload=asdict(scope)
-    key=hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
+    key=retry_key(scope)
     enqueue_compact_postgres_task_in_transaction(database,TASK_KIND,key,payload,
         priority=30,delay_seconds=delay_seconds)
 
@@ -30,17 +28,8 @@ def schedule_refresh(database,scope,*,delay_seconds=0):
 def after_study_review(database,card_id):
     """Only checkpoint a wake; foreground never runs exposure facts/completion."""
     if not isinstance(database,PostgresConnection):return
-    scope=active_scope_for_card(database,card_id)
+    scope=pending_scope_for_card(database,card_id)
     if scope is not None:schedule_refresh(database,scope)
-
-
-def refresh_locked_card(database,scope,*,now):
-    """Caller owns the card lock; finish all served intent before placement."""
-    store,writer,reader=locked_ports(database,scope)
-    records=store.active_for_card(scope)
-    events=completed_practices(database,scope,records,now)
-    policy.refresh_card_priority(store,writer,reader,scope,events,now)
-    return store,writer,reader
 
 
 def execute_exposure_refresh_slice(task):
@@ -53,10 +42,10 @@ def execute_exposure_refresh_slice(task):
             store,writer,reader=locked_ports(database,scope)
             if not lock_current_slice(database,task):return False
             now=datetime.now(timezone.utc)
-            records=store.active_for_card(scope)
+            records=store.pending_for_card(scope)
             events=completed_practices(database,scope,records,now)
-            policy.refresh_card_priority(store,writer,reader,scope,events,now)
-            if store.active_for_card(scope):
+            policy.process_card(store,writer,reader,scope,events,now)
+            if store.pending_for_card(scope):
                 # This lease is operational only. Unserved training intent has
                 # no age expiry, including when an operational retry fails.
                 schedule_refresh(database,scope,delay_seconds=REFRESH_SECONDS)

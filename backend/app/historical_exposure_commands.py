@@ -32,6 +32,8 @@ def prepare_request(payload):
     try:verified=prepare_selection(selection)
     except (policy.ExposureRejected,RemediationError) as error:
         raise HTTPException(409,str(error)) from error
+    except (ValueError,KeyError) as error:
+        raise HTTPException(409,'legacy_capture_invalid') from error
     return PreparedExposure(verified.request,verified)
 
 
@@ -54,7 +56,7 @@ def _request_exposure(database,prepared):
         return response(prior)
     if prepared.verified is None:raise SerializationFailure('Exposure intent changed during preparation')
     store,writer,reader=locked_ports(database,scope,prepared.verified)
-    try:record=policy.request_priority(store,writer,prepared.request,reader,datetime.now(timezone.utc))
+    try:record=policy.request_practice(store,writer,prepared.request,reader,datetime.now(timezone.utc))
     except policy.ExposureRejected as error:raise HTTPException(409,str(error)) from error
     schedule_refresh(database,scope)
     return response(record)
@@ -62,8 +64,9 @@ def _request_exposure(database,prepared):
 
 def response(record):
     return dict(encounter_key=record.request.encounter.key(),state=record.state,
-        reason=policy.REASON,explanation='Practice requested for an encountered authored line; this is not a forgotten-recall finding.',
-        placement=record_document(record)['placement'],completion_review_id=record.completion_review_id)
+        placement_mode='ordinary_queue',explanation='Practice requested for an encountered authored line; this is not a forgotten-recall finding.',
+        last_admission={**record_document(record)['placement'],'queue_day':record.queue_day},
+        completion_review_id=record.completion_review_id)
 
 
 register_command('historical_exposure.request',request_exposure,prepare=prepare_request)
@@ -81,13 +84,9 @@ def control_exposure(database,control,*,cancel):
         record=BorrowedExposureStore(database,scope).find(control.encounter_key)
         if record is None:raise HTTPException(404,'Retained exposure not found in this card scope')
         if not cancel:
-            if record.state=='active':schedule_refresh(database,scope)
-            return {**response(record),'refresh_requested':record.state=='active'}
-        if record.state=='active':
-            from .services.historical_exposure_refresh import refresh_locked_card
-            store,writer,reader=refresh_locked_card(database,scope,now=datetime.now(timezone.utc))
-            # Consume already committed practice before explicit cancellation.
-            record=policy.cancel_priority(store,writer,record,reader,datetime.now(timezone.utc))
+            if record.state=='pending':schedule_refresh(database,scope)
+            return {**response(record),'refresh_requested':record.state=='pending'}
+        record=policy.cancel_request(BorrowedExposureStore(database,scope),record,datetime.now(timezone.utc))
         return response(record)
     except (LockNotAvailable,SerializationFailure) as error:
         raise BackgroundAdmissionDeferred('Exposure source busy; retain control operation') from error

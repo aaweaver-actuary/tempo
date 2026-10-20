@@ -1,5 +1,7 @@
 """Durable admission proof; daily_queue is a replaceable projection, not a receipt."""
 
+from datetime import datetime, timezone
+
 
 def initialize_sqlite_origins(database) -> None:
     # Install the column and all triggers atomically, including direct callers
@@ -12,13 +14,15 @@ def initialize_sqlite_origins(database) -> None:
             admission_repertoire_id TEXT, attempt_failed INTEGER NOT NULL DEFAULT 0,
             last_status TEXT NOT NULL, review_result_json TEXT, legacy INTEGER NOT NULL DEFAULT 0,
             start_fen TEXT NOT NULL, moves_json TEXT NOT NULL, trained_color TEXT, content_type TEXT NOT NULL,
-            issued_as_head INTEGER NOT NULL DEFAULT 0,
+            issued_as_head INTEGER NOT NULL DEFAULT 0, first_issued_at TEXT,
             PRIMARY KEY(queue_entry_id,card_id,revision)
         )""")
         origin_columns = {column[1] for column in database.execute("PRAGMA table_info(queue_attempt_origins)")}
         if "issued_as_head" not in origin_columns:
             database.execute("ALTER TABLE queue_attempt_origins ADD COLUMN issued_as_head INTEGER NOT NULL DEFAULT 0")
         database.execute("CREATE INDEX IF NOT EXISTS idx_queue_attempt_origin_cycle ON queue_attempt_origins(queue_date,card_id,cycle)")
+        if "first_issued_at" not in origin_columns:
+            database.execute("ALTER TABLE queue_attempt_origins ADD COLUMN first_issued_at TEXT")
         # Backfill only surviving projection rows. Missing historical identities
         # cannot be inferred from a client's outbox and must remain explicit conflicts.
         if not database.execute("SELECT 1 FROM internal_migrations WHERE name='queue-attempt-origins-v1'").fetchone():
@@ -118,3 +122,12 @@ def validate_failure_marker(database, entry_id: int, card_id=None, expected_revi
         for column in ("revision", "start_fen", "moves_json", "trained_color", "content_type")
     ):
         raise ReviewConflict("queue_attempt_unprovable", "The guided attempt no longer matches this queue entry. Its completed review needs reconciliation.")
+
+
+def stamp_first_head_issuance(database,entry_id,card_id,revision):
+    """Canonical issuance transaction only; replay never timestamps old issuance."""
+    return database.execute(
+        "UPDATE queue_attempt_origins SET first_issued_at=CASE WHEN issued_as_head=0 AND first_issued_at IS NULL THEN ? ELSE first_issued_at END,"
+        "issued_as_head=1 WHERE queue_entry_id=? AND card_id=? AND revision=?",
+        (datetime.now(timezone.utc).isoformat(),entry_id,card_id,revision),
+    ).rowcount

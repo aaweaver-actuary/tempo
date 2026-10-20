@@ -1,46 +1,28 @@
-## Historical exposure lifecycle source increment
+## Verified encountered-card practice request (MVP)
 
-`backend/tests/test_historical_exposure_lifecycle.py` owns canonical receipt /
-issued-origin / revision / actual-time completion controls, complete projection
-refusal, worker lease fencing and completion-before-reconciliation ordering.
-Foreground wake tests forbid source verification or completion reconciliation in
-the review hook. Authenticated cancel/refresh transport controls are in
-`test_historical_exposure_routes.py`. These are source/fake lifecycle checks, not
-actual PostgreSQL, Celery restart or lock proofs.
+`backend/tests/test_historical_exposure_source.py` owns exact current ordered-route
+and physical binding plus UTC date-only chronology. The command suite owns real
+SQLite gateway receipt/savepoint rollback and replay with semantic fake practice
+ports. Malformed physical/route FEN preparation returns controlled rejection,
+never a partial accepted comparison; the existing legacy caller's typed no-effect
+rejection is also retained in `test_legacy_game_evidence_commands.py`.
 
-`services/learning/application/tests/test_historical_exposure.py` owns batch
-completion of all served contributors before placement, exact CardScope and
-unserved contributor preservation. Shared queue ordering regression
-`test_historical_exposure_is_urgent_without_becoming_a_miss_and_recall_wins` in
-Learning runtime's regular ordering suite preserves label semantics and recall
-precedence; its protected/repeat controls cover issued, presented, failed, guided,
-reinforcement and unavailable positions. Canonical insertion tests also retain
-review admission from the initial insert and refuse unintroduced/locked cards.
-`tests/unit/historical-exposure-priority-copy.test.ts` owns the no-forgetting
-priority copy and unchanged other labels in the regular frontend unit suite.
+`test_historical_exposure_adapters.py` owns current-fact/codec/scope/inventory
+refusal and actual canonical SQLite admission with scripted eligibility: append
+or reuse once, preserve the head/other reasons, no introduction or review changes,
+roll back unavailable placement and propagate database failure. The lifecycle
+suite owns first-issued timestamp immutability/rollback, trusted receipt checks,
+per-card retry and cancellation with no admission effect. Route tests own operator
+auth, strict control payloads and visible failed-pending/manual retry status.
+Learning's regular historical-exposure application suite owns the pure request
+policy. No PostgreSQL, real worker-restart or live acceptance pass is implied.
 
-## Historical exposure practice request (unadopted source)
-
-`backend/tests/test_historical_exposure_source.py` owns single-encounter authority,
-ordered route/physical binding and UTC day-bound chronology, including the named
-`test_date_only_introduction_uses_existing_utc_day_bounds_not_game_local_date`.
-`test_historical_exposure_routes.py` owns disabled-by-default operator auth and
-strict idempotent transport without credential dispatch. `test_historical_exposure_adapters.py`
-owns complete scoped inventory refusal, current fact fences, canonical protected-
-head writer delegation and nonblocking source-lock ordering contracts.
-`test_historical_exposure_commands.py` owns actual gateway receipt/savepoint replay
-and rollback with semantic fake queue/store ports, including failures after queue
-and intent effects. Learning's regular application suite owns contributor and
-completion policy. These source checks do not establish native PostgreSQL locking,
-migration, queue ordering or enabled API/worker composition; see the Learning
-application README for the pending adoption boundary. The adapter suite's named
-`test_clearing_exposure_preserves_other_days_completed_attempts_and_unrelated_priority`
-executes the canonical owner's scoped clear using SQLite. Semantic storage replay,
-locked-day mismatch and public queue-owner boundary controls accompany it. The
-native bridge suite's
-`test_native_exposure_clear_locks_only_its_day_and_preserves_concurrent_other_day_writer`
-is prepared but unexecuted: it requires the separately granted owned PostgreSQL
-fixture and checks that a concurrent other-day writer is neither locked nor changed.
+The abandoned persistent-priority overlay, label freshness projection, display
+pill and exposure-specific attempt ledger were removed under the approved MVP
+scope. Their tests are superseded with the corresponding ordinary-admission and
+normal-Study safeguards, not skipped to hide failures. Exact ordering/cancellation
+after admission is deferred in #321; unknown old issuance in #267; automatic
+terminal-task repair in #194. See the Learning application README for safe behavior.
 
 ## Combined feedback / queue / Discovery boundary
 

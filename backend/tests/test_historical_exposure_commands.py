@@ -33,6 +33,8 @@ class ReceiptDatabase:
             CREATE TABLE fake_intents(encounter_key TEXT PRIMARY KEY,record_json TEXT NOT NULL);
             CREATE TABLE fake_queue(card_id TEXT PRIMARY KEY,id INTEGER,position INTEGER,reason TEXT);
             CREATE TABLE fake_wakes(card_id TEXT PRIMARY KEY);
+            CREATE TABLE fake_bindings(encounter_key TEXT,queue_entry_id INTEGER,bound_at TEXT,
+                PRIMARY KEY(encounter_key,queue_entry_id));
             INSERT INTO fake_queue VALUES('protected-head',1,0,NULL);
         ''')
     def execute(self,statement,parameters=()):
@@ -52,10 +54,10 @@ class Store:
         assert record.card_scope()==self.scope
         self.database.connection.execute('INSERT INTO fake_intents VALUES(?,?) ON CONFLICT(encounter_key) DO UPDATE SET record_json=excluded.record_json',
             (record.request.encounter.key(),json.dumps(record_document(record))))
-    def active_for_card(self,scope):
+    def pending_for_card(self,scope):
         assert scope==self.scope
         return tuple(record for row in self.database.connection.execute('SELECT record_json FROM fake_intents')
-                     if (record:=read_record(row[0])).state=='active' and record.card_scope()==scope)
+                     if (record:=read_record(row[0])).state=='pending' and record.card_scope()==scope)
 
 
 class Reader:
@@ -65,20 +67,17 @@ class Reader:
         row=self.database.connection.execute('SELECT id,reason FROM fake_queue WHERE card_id=?',
             (request.encounter.card_id,)).fetchone()
         return policy.CurrentFacts(request.encounter,'verified',(request.encounter.repertoire_id,),True,True,True,
-            'introduced_after_game',False,False,'2026-10-20',row[0] if row else None,
-            'exposure' if row and row[1]==policy.REASON else 'none')
+            'introduced_after_game',False,'2026-10-20',request.encounter.card_revision)
+
 
 
 class Writer:
     def __init__(self,database,fail=False):self.database,self.fail=database,fail
-    def prioritize(self,identity,day,reason):
+    def admit(self,identity,day):
         self.database.events.append('queue_write')
-        self.database.connection.execute('INSERT INTO fake_queue VALUES(?,2,1,?) ON CONFLICT(card_id) DO UPDATE SET reason=excluded.reason',
-            (identity.card_id,reason))
-        if self.fail:raise ValueError('Controlled after-queue failure')
-        return policy.Placement('applied',queue_entry_id=2)
-    def clear_priority(self,scope,reason):
-        self.database.connection.execute('UPDATE fake_queue SET reason=NULL WHERE card_id=? AND reason=?',(scope.card_id,reason))
+        self.database.connection.execute('INSERT INTO fake_queue VALUES(?,2,1,NULL) ON CONFLICT DO NOTHING',(identity.card_id,))
+        if self.fail:raise RuntimeError('Controlled failure after queue')
+        return policy.Placement('queued',queue_entry_id=2)
 
 
 @pytest.fixture
@@ -115,7 +114,7 @@ def payload():return {'selection':{'synthetic':'stable immutable receipt payload
 def test_registered_prepare_closes_before_writer_and_receipt_replay_is_quiet(case):
     database,prepared=case
     result=gateway.execute_command('op',COMMAND,payload())
-    assert result['reason']=='historical_exposure' and result['placement']['queue_entry_id']==2
+    assert result['placement_mode']=='ordinary_queue' and result['last_admission']['queue_entry_id']==2
     assert database.events.index('prepare')<database.events.index('writer_open')<database.events.index('card_lock')
     assert database.events.index('card_lock')<database.events.index('current_facts')<database.events.index('queue_write')
     before=database.connection.execute('SELECT * FROM fake_queue ORDER BY position').fetchall()
@@ -171,7 +170,7 @@ def test_source_lock_contention_yields_retained_operation_without_false_receipt(
 
 def test_retained_selection_replay_preparation_does_not_recapture_changed_source(monkeypatch):
     verified,*_=inputs();record=policy.Record(verified.request,datetime.now(timezone.utc),
-        'completed',policy.Placement('applied',queue_entry_id=2),'2026-10-20','review-1','practice_served')
+        'served',policy.Placement('queued',queue_entry_id=2),'2026-10-20','review-1','practice_served')
     monkeypatch.setattr(commands,'retained_request_for_selection',lambda selection:record.request)
     monkeypatch.setattr(commands,'prepare_selection',lambda *args:pytest.fail('Retained immutable request must not recapture'))
     prepared=commands.prepare_request({'selection':verified.selection})
@@ -182,3 +181,18 @@ def test_preparation_invalid_selection_has_explicit_error_before_source_read(mon
     monkeypatch.setattr(commands,'retained_request_for_selection',lambda *args:pytest.fail('Invalid input must not read'))
     with pytest.raises(HTTPException) as error:commands.prepare_request({'selection':{}})
     assert error.value.status_code==422
+
+
+@pytest.mark.parametrize('source',['physical','route'])
+def test_malformed_fen_is_controlled_rejection_before_any_command_effect(monkeypatch,source):
+    from copy import deepcopy
+    from test_historical_exposure_source import fixture
+    from app.services.historical_exposure_source import project_encounter
+    selection,captured=fixture()
+    captured.tables['cards' if source=='physical' else 'repertoire_lines'][0]['start_fen']='not a valid FEN'
+    before=deepcopy(captured)
+    monkeypatch.setattr(commands,'retained_request_for_selection',lambda *args:None)
+    monkeypatch.setattr(commands,'prepare_selection',lambda value:project_encounter(value,captured))
+    with pytest.raises(HTTPException) as error:commands.prepare_request({'selection':selection.model_dump(mode='json')})
+    assert error.value.status_code==409 and error.value.detail=='legacy_capture_invalid'
+    assert captured==before

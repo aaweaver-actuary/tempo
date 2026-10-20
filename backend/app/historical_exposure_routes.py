@@ -50,3 +50,16 @@ def refresh_historical_exposure(control: ExposureControl,
     idempotency_key: str=Header(alias='Idempotency-Key',min_length=1,max_length=128)):
     if not postgres_store.configured():raise HTTPException(404,'Historical exposure requires the PostgreSQL owner')
     return dispatch_command('historical_exposure.refresh',control.model_dump(mode='json'),idempotency_key=idempotency_key)
+
+
+@router.post('/api/learning/historical-exposure/status',dependencies=[Depends(require_exposure_operator)])
+def historical_practice_status(control: ExposureControl):
+    if not postgres_store.configured():raise HTTPException(404,'Historical practice requires the PostgreSQL owner')
+    from tempo_learning_review.historical_exposure import CardScope
+    from .storage.historical_exposure import read_status
+    snapshot=read_status(CardScope(control.target_id,control.workspace_id,control.card_id),control.encounter_key)
+    if snapshot is None:raise HTTPException(404,'Retained practice request not found in this scope')
+    record,retry_state=snapshot
+    return dict(state=record.state,last_admission=dict(status=record.placement.status,reason=record.placement.reason,
+        queue_entry_id=record.placement.queue_entry_id,queue_day=record.queue_day),completion_review_id=record.completion_review_id,
+        retry_state=retry_state,retry_required=record.state=='pending' and retry_state in ('failed','not_scheduled'))

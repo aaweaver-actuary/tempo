@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 import json
 from tempo_learning_review import historical_exposure as policy
 
-MAX_CARD_CONTRIBUTORS=128
+MAX_PENDING_REQUESTS_PER_CARD=128
 
 
 def request_document(request):
@@ -30,14 +30,14 @@ def read_request(value):
 
 
 def record_document(record):
-    return dict(schema_version=1,request=request_document(record.request),accepted_at=record.accepted_at.isoformat(),
+    return dict(schema_version=2,request=request_document(record.request),accepted_at=record.accepted_at.isoformat(),
         state=record.state,placement=asdict(record.placement),queue_day=record.queue_day,
         completion_review_id=record.completion_review_id,terminal_reason=record.terminal_reason)
 
 
 def read_record(value):
     value=json.loads(value) if isinstance(value,str) else dict(value)
-    if value.pop('schema_version')!=1:raise policy.ExposureRejected('stored_exposure_version_unsupported')
+    if value.pop('schema_version')!=2:raise policy.ExposureRejected('stored_exposure_version_unsupported')
     value['request']=read_request(value['request'])
     value['accepted_at']=datetime.fromisoformat(value['accepted_at'])
     value['placement']=policy.Placement(**value['placement'])
@@ -90,13 +90,13 @@ class BorrowedExposureStore:
                  json.dumps(record_document(record)),json.dumps(proof))).fetchone()
         if row is None:raise policy.ExposureRejected('retained_exposure_required')
 
-    def active_for_card(self,scope):
+    def pending_for_card(self,scope):
         if scope!=self.scope:raise policy.ExposureRejected('exposure_store_scope_mismatch')
         rows=self.database.execute_native('''SELECT record_json FROM historical_exposure_intents
-            WHERE target_id=%s AND workspace_id=%s AND card_id=%s AND state='active'
+            WHERE target_id=%s AND workspace_id=%s AND card_id=%s AND state='pending'
             ORDER BY encounter_key LIMIT 129 FOR UPDATE''',
             (scope.target_id,scope.workspace_id,scope.card_id)).fetchall()
-        if len(rows)>MAX_CARD_CONTRIBUTORS:
+        if len(rows)>MAX_PENDING_REQUESTS_PER_CARD:
             raise policy.ExposureRejected('complete_exposure_inventory_exceeds_budget')
         return tuple(read_record(row['record_json']) for row in rows)
 
@@ -110,9 +110,28 @@ class BorrowedExposureStore:
         return json.loads(row['source_json']) if isinstance(row['source_json'],str) else row['source_json']
 
 
-def active_scope_for_card(database,card_id) -> policy.CardScope | None:
+def pending_scope_for_card(database,card_id) -> policy.CardScope | None:
     row=database.execute_native('''SELECT identity.target_id,identity.workspace_id FROM legacy_learning_identity identity
         WHERE identity.id=1 AND EXISTS(SELECT 1 FROM historical_exposure_intents intent
             WHERE intent.target_id=identity.target_id AND intent.workspace_id=identity.workspace_id
-                AND intent.card_id=%s AND intent.state='active')''',(card_id,)).fetchone()
+                AND intent.card_id=%s AND intent.state='pending')''',(card_id,)).fetchone()
     return policy.CardScope(row['target_id'],row['workspace_id'],card_id) if row else None
+
+
+
+def retry_key(scope):
+    import hashlib
+    return hashlib.sha256(json.dumps(asdict(scope),sort_keys=True).encode()).hexdigest()
+
+
+def read_status(scope,encounter_key):
+    """Read retained intent and operational state, never manufacture success."""
+    with background_read_connection() as database:
+        row=database.execute_native('''SELECT record_json FROM historical_exposure_intents
+            WHERE target_id=%s AND workspace_id=%s AND card_id=%s AND encounter_key=%s''',
+            (scope.target_id,scope.workspace_id,scope.card_id,encounter_key)).fetchone()
+        if row is None:return None
+        record=read_record(row['record_json'])
+        task=database.execute_native("SELECT state FROM background_tasks WHERE kind='historical_exposure_refresh' AND deduplication_key=%s",(retry_key(scope),)).fetchone()
+    state=task['state'] if task else 'not_scheduled'
+    return record,state

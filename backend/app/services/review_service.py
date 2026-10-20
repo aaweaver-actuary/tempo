@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from dataclasses import dataclass
 import hashlib
 import json
 import sqlite3
@@ -126,19 +127,6 @@ def apply_scheduling_review(
     return result
 
 
-def clear_queued_card_priority(database, card_id: str, *, queue_date: str, reason: str) -> None:
-    """Remove only this label from live entries in the caller-locked queue day.
-
-    Caller owns the card-before-day transaction. This does not reorder or delete
-    attempts, touch inactive history, or acquire locks for any other day.
-    """
-    database.execute(
-        """UPDATE daily_queue SET gameplay_priority_reason=NULL
-           WHERE card_id=? AND queue_date=? AND status='queued'
-             AND gameplay_priority_reason=?""", (card_id,queue_date,reason),
-    )
-
-
 def ensure_card_queued_after(
     database: sqlite3.Connection,
     card_id: str,
@@ -146,15 +134,9 @@ def ensure_card_queued_after(
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
     *, queue_date: str | None = None, protect_presented: bool = False,
-    preserve_order: bool = True,
+    preserve_order: bool = True, review_admission: bool = False,
 ) -> None:
     day = queue_date or date.today().isoformat()
-    exposure_review = priority_reason == 'historical_exposure'
-    if exposure_review and not database.execute(
-        "SELECT 1 FROM cards WHERE id=? AND introduced_at IS NOT NULL AND state IN ('learning','mature')",
-        (card_id,),
-    ).fetchone():
-        return
     previous_order = capture_daily_queue_order(database, day) if preserve_order else None
     entry = database.execute(
         "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",
@@ -170,7 +152,7 @@ def ensure_card_queued_after(
             (day, card_id, cycle,
              database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
              if protect_presented else 2_000_000_000, attempt_state, priority_reason,
-             "review" if exposure_review else "new"),
+             "review" if review_admission else "new"),
         ).fetchone()
     elif priority_reason:
         database.execute(
@@ -196,10 +178,7 @@ def ensure_card_queued_after(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
                admission_kind=CASE WHEN admission_kind='explicit' THEN 'explicit'
-                   WHEN (gameplay_priority_reason='historical_exposure'
-                       AND EXISTS(SELECT 1 FROM cards card WHERE card.id=daily_queue.card_id
-                           AND card.introduced_at IS NOT NULL AND card.state IN ('learning','mature')))
-                   OR EXISTS(SELECT 1 FROM reviews review
+                   WHEN admission_kind='review' OR EXISTS(SELECT 1 FROM reviews review
                    WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
                      AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
            WHERE id=?""",
@@ -207,3 +186,48 @@ def ensure_card_queued_after(
     )
     if preserve_order:
         preserve_daily_queue_order(database, day, previous=previous_order)
+
+
+@dataclass(frozen=True)
+class ReviewAdmission:
+    status: str
+    reason: str | None=None
+    entry_id: int | None=None
+
+
+def enqueue_introduced_review(database,card_id: str,revision: int,day: str) -> ReviewAdmission:
+    """Ordinary admission only, on the caller's locked card/day transaction.
+
+    Reuse queued work unchanged. Do not repeat a completed card merely because a
+    request is pending. A new entry is appended through the existing writer and
+    retained only if the ordinary eligibility owner permits it. Database errors
+    propagate; they are never downgraded to successful fallback placement.
+    """
+    from .queue_application import available_attempt_sql
+    valid=database.execute("""SELECT 1 FROM cards WHERE id=? AND revision=?
+        AND state IN ('learning','mature') AND introduced_at IS NOT NULL
+        AND archived=0 AND pending_validation=0 AND superseded_by IS NULL""",(card_id,revision)).fetchone()
+    if not valid:return ReviewAdmission('deferred','introduced_review_unavailable')
+    if database.execute("SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='buried' LIMIT 1",(day,card_id)).fetchone():
+        return ReviewAdmission('deferred','buried_today')
+    existing=database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",(day,card_id)).fetchone()
+    if existing:
+        allowed=database.execute(available_attempt_sql()+' AND q.id=?',(day,existing['id'])).fetchone()
+        return ReviewAdmission('queued',entry_id=existing['id']) if allowed else ReviewAdmission('deferred','queue_eligibility_unavailable')
+    if database.execute("SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='complete' LIMIT 1",(day,card_id)).fetchone():
+        return ReviewAdmission('deferred','already_practiced_today')
+    database.execute('SAVEPOINT ordinary_practice_admission')
+    try:
+        ensure_card_queued_after(database,card_id,attempt_state='clean',queue_date=day,
+            protect_presented=True,preserve_order=True,review_admission=True)
+        entry=database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",(day,card_id)).fetchone()
+        allowed=entry and database.execute(available_attempt_sql()+' AND q.id=?',(day,entry['id'])).fetchone()
+        if not allowed:
+            database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
+            return ReviewAdmission('deferred','queue_eligibility_unavailable')
+        return ReviewAdmission('queued',entry_id=entry['id'])
+    except Exception:
+        database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
+        raise
+    finally:
+        database.execute('RELEASE SAVEPOINT ordinary_practice_admission')
