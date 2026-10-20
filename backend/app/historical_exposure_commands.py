@@ -64,7 +64,7 @@ def _request_exposure(database,prepared):
 
 def response(record):
     return dict(encounter_key=record.request.encounter.key(),state=record.state,
-        placement_mode='ordinary_queue',explanation='Practice requested for an encountered authored line; this is not a forgotten-recall finding.',
+        placement_mode=record.placement.mode,explanation='Practice requested for an encountered authored line; this is not a forgotten-recall finding.',
         last_admission={**record_document(record)['placement'],'queue_day':record.queue_day},
         completion_review_id=record.completion_review_id)
 

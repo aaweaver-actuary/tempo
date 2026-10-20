@@ -60,6 +60,7 @@ class CurrentFacts:
     buried: bool
     queue_day: str
     current_revision: int | None=None
+    queue_entry_id: int | None=None
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class Placement:
     status: Literal['queued','deferred']
     reason: str | None=None
     queue_entry_id: int | None=None
+    mode: Literal['ordinary_queue','best_effort_front']='ordinary_queue'
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class Record:
     queue_day: str
     completion_review_id: str | None=None
     terminal_reason: str | None=None
+    positioned_entry_id: int | None=None
 
     def card_scope(self):
         value=self.request.encounter
@@ -108,7 +111,7 @@ class FactReader(Protocol):
 
 
 class QueueWriter(Protocol):
-    def admit(self,encounter: EncounterIdentity,queue_day: str) -> Placement:
+    def admit(self,encounter: EncounterIdentity,queue_day: str,*,prefer_front: bool) -> Placement:
         """Canonical ordinary admission; preserve existing work and active head."""
         ...
 
@@ -164,9 +167,12 @@ def process_card(store,writer,reader,scope,practices,now):
     if eligible:
         if len({facts.queue_day for _,facts in eligible})!=1:raise ExposureRejected('consistent_queue_day_required')
         selected,facts=eligible[0]
-        placement=writer.admit(selected.request.encounter,facts.queue_day)
+        placement=writer.admit(selected.request.encounter,facts.queue_day,
+            prefer_front=facts.queue_entry_id is None or any(
+                record.positioned_entry_id!=facts.queue_entry_id for record,_ in eligible))
         for record,_ in eligible:
-            updated=replace(record,placement=placement,queue_day=facts.queue_day)
+            updated=replace(record,placement=placement,queue_day=facts.queue_day,
+                positioned_entry_id=placement.queue_entry_id if placement.status=='queued' else record.positioned_entry_id)
             if updated!=record:store.save(updated)
     return tuple(store.find(record.request.encounter.key()) for record in records)
 

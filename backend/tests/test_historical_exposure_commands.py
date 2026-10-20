@@ -73,7 +73,7 @@ class Reader:
 
 class Writer:
     def __init__(self,database,fail=False):self.database,self.fail=database,fail
-    def admit(self,identity,day):
+    def admit(self,identity,day,*,prefer_front):
         self.database.events.append('queue_write')
         self.database.connection.execute('INSERT INTO fake_queue VALUES(?,2,1,NULL) ON CONFLICT DO NOTHING',(identity.card_id,))
         if self.fail:raise RuntimeError('Controlled failure after queue')

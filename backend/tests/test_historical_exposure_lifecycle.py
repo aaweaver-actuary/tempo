@@ -116,3 +116,17 @@ def test_cancel_yesterday_request_performs_no_admission_and_retains_other_pendin
     result=commands.cancel_exposure(object(),control)
     assert result['state']=='cancelled' and result['last_admission']['queue_entry_id']==42
     assert rows[other.request.encounter.key()]==other
+
+
+def test_pending_failure_status_uses_a_short_foreground_read_not_the_derived_work_gate(monkeypatch):
+    from app.storage import historical_exposure as storage
+    record=retained();calls=[]
+    class Read:
+        def execute_native(self,statement,parameters=()):calls.append(parameters);return self
+        def fetchone(self):return {'record_json':storage.record_document(record)} if len(calls)==1 else {'state':'failed'}
+    @contextmanager
+    def foreground():yield Read()
+    monkeypatch.setattr(storage,'read_connection',foreground)
+    monkeypatch.setattr(storage,'background_read_connection',lambda:pytest.fail('Status must not require closing Study tabs'))
+    assert storage.read_status(record.card_scope(),record.request.encounter.key())==(record,'failed')
+    assert calls[0]==(record.card_scope().target_id,'legacy',record.card_scope().card_id,record.request.encounter.key())

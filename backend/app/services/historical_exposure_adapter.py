@@ -4,7 +4,7 @@ from datetime import date
 import json
 from tempo_learning_review import historical_exposure as policy
 from ..storage.historical_exposure import BorrowedExposureStore
-from ..storage.historical_exposure_facts import current_source_rows,lock_source_inputs,buried_today
+from ..storage.historical_exposure_facts import current_source_rows,lock_source_inputs,buried_today,queued_entry
 from ..storage.legacy_game_source import CARD_SOURCE_FIELDS,GAME_SOURCE_FIELDS
 from .historical_exposure_source import chronology
 
@@ -36,12 +36,12 @@ class CurrentFactReader:
 
 class OrdinaryQueueWriter:
     def __init__(self,database,scope,day):self.database,self.scope,self.day=database,scope,day
-    def admit(self,identity,queue_day):
+    def admit(self,identity,queue_day,*,prefer_front):
         if policy.CardScope(identity.target_id,identity.workspace_id,identity.card_id)!=self.scope or queue_day!=self.day:
             raise policy.ExposureRejected('exposure_writer_scope_mismatch')
         from .review_service import enqueue_introduced_review
-        result=enqueue_introduced_review(self.database,identity.card_id,identity.card_revision,queue_day)
-        return policy.Placement(result.status,result.reason,result.entry_id)
+        result=enqueue_introduced_review(self.database,identity.card_id,identity.card_revision,queue_day,prefer_front=prefer_front)
+        return policy.Placement(result.status,result.reason,result.entry_id,result.mode)
 
 
 def locked_ports(database,scope,verified=None,day=None):
@@ -59,5 +59,7 @@ def locked_ports(database,scope,verified=None,day=None):
     rows=current_source_rows(database,scope,tuple(requests.values())) if requests else {}
     certificates={request.encounter.repertoire_id:current_integrity_certificate(database,
         request.encounter.repertoire_id,rows[key]['graph_generation']) for key,request in requests.items()}
-    queue=dict(buried=buried_today(database,scope.card_id,day),queue_day=day)
+    entry=queued_entry(database,scope.card_id,day)
+    queue=dict(buried=buried_today(database,scope.card_id,day),queue_day=day,
+        queue_entry_id=entry['id'] if entry else None)
     return store,OrdinaryQueueWriter(database,scope,day),CurrentFactReader(proofs,rows,queue,certificates)

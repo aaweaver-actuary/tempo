@@ -10,7 +10,11 @@ rejection is also retained in `test_legacy_game_evidence_commands.py`.
 `test_historical_exposure_adapters.py` owns current-fact/codec/scope/inventory
 refusal and actual canonical SQLite admission with scripted eligibility: append
 or reuse once, preserve the head/other reasons, no introduction or review changes,
-roll back unavailable placement and propagate database failure. The lifecycle
+try one-time front placement after recall while preserving protected slots and
+other relative order, keep ordinary admission for recognized layout limits,
+roll back unavailable placement and propagate database failure. A real SQLite
+position-write fault also rolls back request, admission and positions through
+the existing gateway savepoint with a semantic fake request store. The lifecycle
 suite owns first-issued timestamp immutability/rollback, trusted receipt checks,
 per-card retry and cancellation with no admission effect. Route tests own operator
 auth, strict control payloads and visible failed-pending/manual retry status.

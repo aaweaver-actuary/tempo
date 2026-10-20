@@ -134,7 +134,7 @@ def ensure_card_queued_after(
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
     *, queue_date: str | None = None, protect_presented: bool = False,
-    preserve_order: bool = True, review_admission: bool = False,
+    preserve_order: bool = True, _requested_review: bool = False,
 ) -> None:
     day = queue_date or date.today().isoformat()
     previous_order = capture_daily_queue_order(database, day) if preserve_order else None
@@ -152,7 +152,7 @@ def ensure_card_queued_after(
             (day, card_id, cycle,
              database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
              if protect_presented else 2_000_000_000, attempt_state, priority_reason,
-             "review" if review_admission else "new"),
+             "review" if _requested_review else "new"),
         ).fetchone()
     elif priority_reason:
         database.execute(
@@ -160,12 +160,13 @@ def ensure_card_queued_after(
             (priority_reason, entry["id"]),
         )
     if protect_presented:
-        from .queue_application import presentation_rows
-        from .queue_ordering import _priority_queue_order
-        rows = presentation_rows(database, day)
-        for slot, row in zip(sorted(rows, key=lambda row: (row['position'], row['id'])), _priority_queue_order(rows)):
-            if slot['position'] != row['position']:
-                database.execute("UPDATE daily_queue SET position=? WHERE id=?", (slot['position'], row['id']))
+        if not _requested_review:
+            from .queue_application import presentation_rows
+            from .queue_ordering import _priority_queue_order
+            rows = presentation_rows(database, day)
+            for slot, row in zip(sorted(rows, key=lambda row: (row['position'], row['id'])), _priority_queue_order(rows)):
+                if slot['position'] != row['position']:
+                    database.execute("UPDATE daily_queue SET position=? WHERE id=?", (slot['position'], row['id']))
     else:
         ordered_ids = [row[0] for row in database.execute(
             "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
@@ -188,20 +189,24 @@ def ensure_card_queued_after(
         preserve_daily_queue_order(database, day, previous=previous_order)
 
 
+MAX_REQUEST_PLACEMENT_ENTRIES=128
+
+
 @dataclass(frozen=True)
 class ReviewAdmission:
     status: str
     reason: str | None=None
     entry_id: int | None=None
+    mode: str='ordinary_queue'
 
 
-def enqueue_introduced_review(database,card_id: str,revision: int,day: str) -> ReviewAdmission:
-    """Ordinary admission only, on the caller's locked card/day transaction.
+def enqueue_introduced_review(database,card_id: str,revision: int,day: str,*,prefer_front: bool=True) -> ReviewAdmission:
+    """Canonical review admission with optional one-time best-effort placement.
 
-    Reuse queued work unchanged. Do not repeat a completed card merely because a
-    request is pending. A new entry is appended through the existing writer and
-    retained only if the ordinary eligibility owner permits it. Database errors
-    propagate; they are never downgraded to successful fallback placement.
+    Reuse queued work, preserving an already-issued head. Do not repeat a completed
+    card merely because a request is pending. A new entry uses the existing writer
+    and normal eligibility before any optional move. Known placement limitations
+    keep ordinary admission; database faults propagate instead of claiming success.
     """
     from .queue_application import available_attempt_sql
     valid=database.execute("""SELECT 1 FROM cards WHERE id=? AND revision=?
@@ -213,21 +218,63 @@ def enqueue_introduced_review(database,card_id: str,revision: int,day: str) -> R
     existing=database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",(day,card_id)).fetchone()
     if existing:
         allowed=database.execute(available_attempt_sql()+' AND q.id=?',(day,existing['id'])).fetchone()
-        return ReviewAdmission('queued',entry_id=existing['id']) if allowed else ReviewAdmission('deferred','queue_eligibility_unavailable')
+        return _place_requested_review_once(database,day,existing['id']) if allowed and prefer_front else (
+            ReviewAdmission('queued',entry_id=existing['id']) if allowed else ReviewAdmission('deferred','queue_eligibility_unavailable'))
     if database.execute("SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='complete' LIMIT 1",(day,card_id)).fetchone():
         return ReviewAdmission('deferred','already_practiced_today')
     database.execute('SAVEPOINT ordinary_practice_admission')
     try:
         ensure_card_queued_after(database,card_id,attempt_state='clean',queue_date=day,
-            protect_presented=True,preserve_order=True,review_admission=True)
+            protect_presented=True,preserve_order=True,_requested_review=True)
         entry=database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",(day,card_id)).fetchone()
         allowed=entry and database.execute(available_attempt_sql()+' AND q.id=?',(day,entry['id'])).fetchone()
         if not allowed:
             database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
             return ReviewAdmission('deferred','queue_eligibility_unavailable')
-        return ReviewAdmission('queued',entry_id=entry['id'])
+        result=_place_requested_review_once(database,day,entry['id'])
+        if result.status=='deferred':database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
+        return result
     except Exception:
         database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
         raise
     finally:
         database.execute('RELEASE SAVEPOINT ordinary_practice_admission')
+
+
+def _place_requested_review_once(database,day,entry_id):
+    """One controlled move in the existing queue owner, never a stored priority.
+
+    Keep every protected slot fixed and never jump over existing priority work.
+    Only recognized layout limitations return ordinary placement. Database faults
+    propagate to the caller transaction; ineligible work is not a fallback success.
+    """
+    from .queue_application import presentation_rows
+    from .queue_ordering import _protected_queue_ids
+    rows=sorted(presentation_rows(database,day,limit=MAX_REQUEST_PLACEMENT_ENTRIES+1),
+        key=lambda row:(row['position'],row['id']))
+    target=next((row for row in rows if row['id']==entry_id),None)
+    if target is not None and not target.get('eligible',True):
+        return ReviewAdmission('deferred','queue_eligibility_unavailable')
+    if len(rows)>MAX_REQUEST_PLACEMENT_ENTRIES:
+        return ReviewAdmission('queued','placement_budget_exceeded',entry_id)
+    if (target is None or any('eligible' not in row or 'issued' not in row for row in rows)
+            or len({row['id'] for row in rows})!=len(rows)
+            or len({row['position'] for row in rows})!=len(rows)):
+        return ReviewAdmission('queued','scheduling_projection_unavailable',entry_id)
+    protected=_protected_queue_ids(rows)
+    if entry_id in protected or target.get('gameplay_priority_reason'):
+        return ReviewAdmission('queued','existing_protected_or_priority_work',entry_id)
+    movable=[row for row in rows if row['id'] not in protected]
+    rest=[row for row in movable if row['id']!=entry_id]
+    priority_floor=max((row['position'] for row in rows if row['id']!=entry_id
+        and row.get('gameplay_priority_reason')),default=-1)
+    after=next((index for index,row in enumerate(movable) if row['position']>priority_floor),None)
+    if after is None:
+        return ReviewAdmission('queued','no_movable_slot_after_priority',entry_id)
+    placed=rest[:after]+[target]+rest[after:]
+    previous=capture_daily_queue_order(database,day)
+    for slot,row in zip(movable,placed):
+        if slot['position']!=row['position']:
+            database.execute('UPDATE daily_queue SET position=? WHERE id=?',(slot['position'],row['id']))
+    preserve_daily_queue_order(database,day,previous=previous)
+    return ReviewAdmission('queued',entry_id=entry_id,mode='best_effort_front')

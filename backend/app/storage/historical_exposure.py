@@ -6,7 +6,7 @@ adapter must hold the target/workspace/card lock for the complete active set.
 from dataclasses import asdict
 from datetime import datetime
 from typing import TYPE_CHECKING
-from ..database import background_read_connection
+from ..database import background_read_connection,read_connection
 
 if TYPE_CHECKING:
     from ..historical_exposure_contracts import ExposureSelection
@@ -32,7 +32,8 @@ def read_request(value):
 def record_document(record):
     return dict(schema_version=2,request=request_document(record.request),accepted_at=record.accepted_at.isoformat(),
         state=record.state,placement=asdict(record.placement),queue_day=record.queue_day,
-        completion_review_id=record.completion_review_id,terminal_reason=record.terminal_reason)
+        completion_review_id=record.completion_review_id,terminal_reason=record.terminal_reason,
+        positioned_entry_id=record.positioned_entry_id)
 
 
 def read_record(value):
@@ -126,7 +127,7 @@ def retry_key(scope):
 
 def read_status(scope,encounter_key):
     """Read retained intent and operational state, never manufacture success."""
-    with background_read_connection() as database:
+    with read_connection() as database:
         row=database.execute_native('''SELECT record_json FROM historical_exposure_intents
             WHERE target_id=%s AND workspace_id=%s AND card_id=%s AND encounter_key=%s''',
             (scope.target_id,scope.workspace_id,scope.card_id,encounter_key)).fetchone()

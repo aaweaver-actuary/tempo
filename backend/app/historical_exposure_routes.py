@@ -61,5 +61,5 @@ def historical_practice_status(control: ExposureControl):
     if snapshot is None:raise HTTPException(404,'Retained practice request not found in this scope')
     record,retry_state=snapshot
     return dict(state=record.state,last_admission=dict(status=record.placement.status,reason=record.placement.reason,
-        queue_entry_id=record.placement.queue_entry_id,queue_day=record.queue_day),completion_review_id=record.completion_review_id,
+        queue_entry_id=record.placement.queue_entry_id,queue_day=record.queue_day,mode=record.placement.mode),completion_review_id=record.completion_review_id,
         retry_state=retry_state,retry_required=record.state=='pending' and retry_state in ('failed','not_scheduled'))

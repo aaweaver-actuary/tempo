@@ -128,7 +128,8 @@ Primary and cleanup errors are retained together.
 
 The historical-exposure module represents one explicit request to practice a
 verified encountered card. It does not label the encounter as forgotten recall,
-create a review or remediation obligation, or promise front-of-queue placement.
+create a review or remediation obligation, or promise permanent exact rank. The first safe admission gets best-effort front
+placement; ordinary placement is the fallback for a recognized layout limitation.
 The backend captures and verifies exact scope, source, executable, revision and
 ordered routes before a request can be saved. Unknown/ambiguous mapping fails
 safely. Unknown introduction chronology needs explicit confirmation.
@@ -137,12 +138,18 @@ One request table retains pending intent because the existing daily queue is a
 replaceable, day-scoped projection. Idempotent operation receipts, current source
 facts, card-before-day locks and ordinary admission share the caller transaction.
 The narrow QueueWriter port delegates to the canonical introduced-review owner:
-it reuses existing work or appends an ordinary review without touching the active
-head, introduction date, FSRS state or reviews. Buried, completed-today or otherwise
+it reuses existing work or appends an ordinary review, then makes one best-effort
+move into the earliest movable slot after existing priority work. Protected slots
+and other entries' relative order remain fixed. The operation never changes the
+introduction date, FSRS state or reviews. Buried, completed-today or otherwise
 ineligible work remains deferred. A failed eligibility postcondition rolls back
 the proposed entry; a database error propagates instead of becoming fake fallback
-success. No persistent exposure reason, priority overlay or foreground freshness
-projection remains.
+success. Replay and refresh do not repeatedly reshuffle the same entry; a new
+eligible daily admission gets another placement attempt. No persistent exposure
+reason, priority overlay or foreground freshness projection remains. The optional
+move reads at most 129 entries and declines ranking when the complete queue exceeds
+128 entries; ordinary eligible admission still succeeds. No partial queue is ranked
+and no unbounded position-update pass is introduced.
 
 The existing durable per-card task retries while pending and yields to foreground
 Study. Ordinary review only checkpoints a wake, not source verification. A request

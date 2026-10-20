@@ -31,7 +31,7 @@ class Reader:
 
 class Writer:
     def __init__(self):self.calls=[]
-    def admit(self,encounter,day):self.calls.append((encounter,day));return practice.Placement('queued',queue_entry_id=42)
+    def admit(self,encounter,day,*,prefer_front):self.calls.append((encounter,day));return practice.Placement('queued',queue_entry_id=42)
 
 
 def accepted(current=None):
@@ -143,3 +143,20 @@ def test_known_revision_change_supersedes_without_admitting_new_content():
     reader.facts=facts(current_revision=2,mapping='unknown',encounter=None)
     practice.process_card(store,writer,reader,record.card_scope(),(),NOW)
     assert store.find(record.request.encounter.key()).state=='superseded' and len(writer.calls)==before
+
+
+def test_front_preference_is_once_per_admitted_entry_and_retries_on_new_daily_admission():
+    store,writer,reader,record=accepted();preferences=[]
+    def admit(encounter,day,*,prefer_front):
+        preferences.append(prefer_front)
+        return practice.Placement('queued',queue_entry_id=reader.facts.queue_entry_id or 42,
+            mode='best_effort_front' if prefer_front else 'ordinary_queue')
+    writer.admit=admit
+    reader.facts=facts(queue_entry_id=42)
+    practice.process_card(store,writer,reader,record.card_scope(),(),NOW)
+    assert preferences==[False]
+    reader.facts=facts(queue_day='2026-10-21',queue_entry_id=99)
+    practice.process_card(store,writer,reader,record.card_scope(),(),NOW+timedelta(days=1))
+    assert preferences==[False,True]
+    practice.process_card(store,writer,reader,record.card_scope(),(),NOW+timedelta(days=1))
+    assert preferences==[False,True,False]
