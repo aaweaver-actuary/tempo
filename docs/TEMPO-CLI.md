@@ -1,5 +1,9 @@
 # Managing local Tempo
 
+For optional local database browsing, see the [pgAdmin companion](../config/pgadmin/README.md).
+Its separate Compose project and Docker restart policy keep it independent of
+Study updates; activation requires approved authentication and reader access.
+
 After a merge, run:
 
 ```sh

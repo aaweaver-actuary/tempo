@@ -1,0 +1,20 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Tempo (read only)",
+      "Group": "Tempo",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "tempo",
+      "Username": "tempo_reader",
+      "DBRestriction": "tempo",
+      "ConnectionParameters": {
+        "sslmode": "prefer",
+        "connect_timeout": 5,
+        "passfile": ".pgpass",
+        "application_name": "tempo-pgadmin",
+        "options": "-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=100 -c idle_in_transaction_session_timeout=10000"
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+# Optional companion for the existing local Tempo installation.
+# Keep this separate from the product's migration/deployment Compose project.
+name: tempo-pgadmin
+
+services:
+  pgadmin:
+    image: dpage/pgadmin4:9.18@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de
+    # The official entrypoint reads private host secrets as root, initializes
+    # its own volume, then runs pgAdmin as PUID/PGID (5050), not as root.
+    user: "0:0"
+    environment:
+      PUID: "5050"
+      PGID: "5050"
+      PGADMIN_DEFAULT_EMAIL: ${TEMPO_PGADMIN_EMAIL:?Set the approved pgAdmin login email}
+      PGADMIN_DEFAULT_PASSWORD_FILE: /run/secrets/pgadmin_password
+      PGADMIN_DISABLE_POSTFIX: "1"
+      PGADMIN_LISTEN_PORT: "5050"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      GUNICORN_THREADS: "4"
+      PGPASS_FILE: /run/secrets/reader_pgpass
+    secrets:
+      - pgadmin_password
+      - reader_pgpass
+    ports:
+      - "127.0.0.1:5050:5050"
+    volumes:
+      - settings:/var/lib/pgadmin
+      - type: bind
+        source: ./servers.json
+        target: /pgadmin4/servers.json
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - tempo
+    cpus: 0.25
+    mem_limit: 384m
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/venv/bin/python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/misc/ping', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  settings:
+    name: tempo-pgadmin-settings
+
+networks:
+  tempo:
+    external: true
+    name: tempo_default
+
+secrets:
+  pgadmin_password:
+    file: ${TEMPO_PGADMIN_PASSWORD_FILE:?Set an approved private password file outside the checkout}
+  reader_pgpass:
+    file: ${TEMPO_POSTGRES_READER_PGPASS_FILE:?Set the approved existing read-only passfile}
