@@ -57,6 +57,35 @@ oversize input, `422` invalid or unsupported input, and `503` unavailable runtim
 Domain errors use `{"error":"fixed_code"}`; CLI failures emit that shape on stderr
 and exit nonzero. The health endpoint verifies database access/workspace binding.
 
+## Games-only viewing mode
+
+`Configuration(read_only=True, worker_enabled=False)` or
+`TEMPO_INTELLIGENCE_READ_ONLY=1` selects the same enforced server mode. The
+flag defaults workers off; explicitly enabled workers, injected workers or
+startup model-profile writes are rejected. Existing authentication, workspace
+binding, database role and host/origin restrictions remain in effect. No new
+authority is granted by selecting this mode.
+
+The analysis bootstrap adds `games-readonly-v1`. After authentication and scope
+checks, unsafe HTTP methods return `405 games_read_only` before route handlers.
+Every owning Store transaction, including internal/background calls that omit a
+read flag, starts PostgreSQL read-only. Existing statement, lock, transaction,
+pool and paginated-reader bounds apply. This is enforcement in the server and
+adapter; the UI capability is discovery, not the security boundary.
+
+Workbench's public `IntelligenceClient.gamesScope(runId)` resolves an existing
+run to its exact accepted input identity/revision. The Games composition uses
+that scope and the existing selected-games reader/browser. Reads never create
+inputs, runs, analysis jobs, Content or Study requests. An empty run list stays
+empty. Incomplete optional engine analysis does not prevent game replay.
+
+Comparisons describe the frozen accepted snapshot. A future **explicit**
+current-repertoire comparison operation must separately own capture, observation,
+input acceptance and run creation, with returned immutable provenance and visible
+pending/failure state. It is not implemented or triggered by opening, refreshing
+or navigating this viewer. Historical recall eligibility remains distinct from
+current conformance.
+
 ## Request and immutable position input
 
 `RequestInput` has exactly these fields:
