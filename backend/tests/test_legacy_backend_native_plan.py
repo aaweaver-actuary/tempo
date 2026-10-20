@@ -14,9 +14,9 @@ spec = importlib.util.spec_from_file_location('legacy_backend_native_plan', ROOT
 plan = importlib.util.module_from_spec(spec); spec.loader.exec_module(plan)
 
 
-def test_prepared_native_plan_has_three_exact_cases_under_existing_budget():
+def test_prepared_native_plan_has_six_exact_cases_under_existing_budget():
     value = plan.describe()
-    assert len(set(value['cases'])) == 3
+    assert len(set(value['cases'])) == 6
     assert value['work_seconds'] == 900 and value['cleanup_seconds'] == 300
     assert value['total'] == dict(containers=3, cpus=1.85, memory_mib=1216, pids=288,
         extra_swap_mib=0, owned_internal_networks=1, published_ports=0)

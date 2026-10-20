@@ -30,6 +30,9 @@ CASES = (
     'integration/legacy_bridge/test_native.py::test_native_generated_accept_replay_restart_and_normal_study',
     'integration/legacy_bridge/test_native.py::test_native_prior_issued_attempt_cannot_settle_later_acceptance[prior]',
     'integration/legacy_bridge/test_native.py::test_native_module_effect_and_complete_operation_receipt_roll_back_together',
+    'integration/legacy_bridge/test_native.py::test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction',
+    'integration/legacy_bridge/test_native.py::test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends',
+    'integration/legacy_bridge/test_native.py::test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire',
 )
 IMAGES = dict(helper='sha256:a095f09e905ecb00635b80387e17d195560a5752df83d970f94f1ada902ba3e2',
               postgres=shared.POSTGRES_IMAGE_ID,

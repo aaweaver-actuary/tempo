@@ -7,6 +7,11 @@ plus explicit no-SQL/driver/concrete-adapter guards for the extracted modules.
 queries, microsecond/timezone boundaries, unsafe/excluded facts, 128-row typed
 batches and caller rollback. Existing native command/Study/replay proofs remain
 required; source-only checks do not certify native PostgreSQL integration.
+Prepared owning PostgreSQL contracts in `backend/integration/legacy_bridge/test_native.py`
+cover borrowed rollback/typed projections, actual card/day lock lifetime and
+accepted-scope exclusion with a different-repertoire control. They join the three
+existing command/Study cases under the unchanged capped native runner; adding or
+collecting them does not establish a native pass.
 See [boundary ownership](../docs/architecture/feedback-storage.md).
 
 ## Legacy game evidence receiver checkpoint

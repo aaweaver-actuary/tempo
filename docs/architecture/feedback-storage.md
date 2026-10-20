@@ -48,3 +48,20 @@ cursor. Durable PostgreSQL worker slicing remains unchanged.
 The extraction is a follow-on stacked on PR311's accepted-scope contract. It does
 not change storage schema, scheduler policy, command transactions, live data or
 service deployment. Other queue/discovery storage boundaries are separate work.
+
+## Prepared native contract selection
+
+The existing bounded backend-native entry retains all three command/Study cases
+and additionally selects these actual PostgreSQL adapter contracts:
+
+- `test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction`
+- `test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends`
+- `test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire`
+
+They use the same owned fixture, schema migrations, restricted writer/reader roles
+and canonical generated acceptance. They check typed/bounded reads, observer
+isolation and caller rollback; actual advisory/row lock lifetime and release; and
+native accepted game/repertoire scope exclusion with a different-repertoire
+control. They are prepared tests, not evidence of execution. Independent
+collection/execution/JUnit inventories must contain all six native identities;
+first failure stops execution and cannot be reported as a complete pass.
