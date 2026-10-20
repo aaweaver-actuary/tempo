@@ -1,3 +1,5 @@
+import { readAuthorityRegistry, readRetainedStudyData, readSessionConnection, removeSessionConnection,
+  sessionConnectionAvailable, writeAuthorityRegistry, writeSessionConnection } from "../../database/browser/study-connection-storage";
 import { holdActiveStudyRequest } from "./study-priority";
 import { z } from "zod";
 import { API_URL } from "../const";
@@ -13,8 +15,6 @@ export const studyBootstrapSchema = z.strictObject({ schema_version: z.literal(1
   timezone: z.string().min(1), local_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), settings: studySettingsSchema });
 export type StudyBootstrap = z.infer<typeof studyBootstrapSchema>;
 type StudyConnection = { origin: string; workspace: string; credential: string; bootstrap?: StudyBootstrap };
-const connectionKey = "tempo-learning-connection-v1";
-const authoritiesKey = "tempo-learning-authorities-v1";
 export class StudyConnectionError extends Error {
   constructor(readonly kind: "transport" | "http" | "bootstrap" | "authority" | "storage" | "input" | "superseded", message: string,
     readonly cachedPracticeAvailable = false, readonly status?: number, options?: ErrorOptions) {
@@ -39,9 +39,9 @@ function validatedBootstrap(value: unknown, workspace: string) {
 }
 export let LEARNING_URL = API_URL;
 function restored() {
-  if (!independentStudy || current || typeof sessionStorage === "undefined") return;
+  if (!independentStudy || current || !sessionConnectionAvailable()) return;
   try {
-    const value = JSON.parse(sessionStorage.getItem(connectionKey) ?? "null");
+    const value = JSON.parse(readSessionConnection() ?? "null");
     if (value && typeof value.origin === "string" && typeof value.workspace === "string" && typeof value.credential === "string") {
       current = { ...value, bootstrap: value.bootstrap ? studyBootstrapSchema.parse(value.bootstrap) : undefined };
       LEARNING_URL = current!.origin;
@@ -62,7 +62,7 @@ export function studyOfflineDatabaseName() {
 type Authority = { origin: string; workspace: string; offlineDatabase: string };
 function authorities(): Record<string, Authority> {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(authoritiesKey) ?? "{}");
+    const value: unknown = JSON.parse(readAuthorityRegistry() ?? "{}");
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid registry");
     for (const [identity, entry] of Object.entries(value)) {
       const authority = entry as Authority;
@@ -119,54 +119,9 @@ async function authenticatedLearningFetch(input: RequestInfo | URL, options: Req
   return response;
 }
 
-/** Read existing stores without upgrading, rewriting or deleting retained data. */
+/** Composition supplies registered names; storage inspection owns its schema checks. */
 export async function retainedStudyData(validateStorage = false) {
-  if (!globalThis.indexedDB) throw new Error("Durable Study storage is unavailable. Enable browser storage and retry.");
-  const databases: Record<string, Record<string, unknown[]>> = {};
-  const registered = authorities();
-  const discovered = typeof indexedDB.databases === "function" ? (await indexedDB.databases()).map(database => database.name).filter((name): name is string => Boolean(name?.startsWith("tempo-offline-training:"))) : [];
-  for (const name of new Set(["tempo-study-intents", "tempo-offline-training", ...Object.values(registered).map(authority => authority.offlineDatabase), ...discovered])) {
-    databases[name] = await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name);
-      let absent = false;
-      request.onupgradeneeded = () => { absent = true; request.transaction!.abort(); };
-      request.onerror = () => absent ? resolve({}) : reject(request.error);
-      request.onblocked = () => reject(new Error("Close older Tempo tabs before inspecting saved Study work."));
-      request.onsuccess = async () => {
-        const database = request.result;
-        try {
-          const names = [...database.objectStoreNames];
-          if (validateStorage && name === "tempo-study-intents") {
-            if (database.version !== 1 || !["intents", "teaching", "metadata"].every(store => names.includes(store)))
-              throw new Error("Saved Study storage has an incompatible schema. Keep browser data.");
-            const inspection = database.transaction(names, "readonly");
-            for (const store of ["intents", "teaching", "metadata"]) {
-              if (JSON.stringify(inspection.objectStore(store).keyPath) !== '["workspace","key"]')
-                throw new Error("Saved Study storage has incompatible keys. Keep browser data.");
-            }
-            for (const [store, indexes] of [["intents", ["workspace", "state"]], ["teaching", ["workspace", "card"]]] as const)
-              if (!indexes.every(index => inspection.objectStore(store).indexNames.contains(index)))
-                throw new Error("Saved Study storage has incompatible indexes. Keep browser data.");
-          }
-          if (validateStorage && name.startsWith("tempo-offline-training:" ) &&
-              (database.version !== 2 || !["training", "opening_attempts", "opening_events"].every(store => names.includes(store))))
-            throw new Error("Saved offline Study storage has an incompatible schema. Keep browser data.");
-          if (!names.length) throw new Error("Saved Study storage has an incompatible schema. Keep browser data.");
-          const transaction = database.transaction(names, "readonly");
-          const values = await Promise.all(names.map(store => new Promise<[string, unknown[]]>((read, fail) => {
-            const result = transaction.objectStore(store).getAll();
-            result.onsuccess = () => read([store, result.result]); result.onerror = () => fail(result.error);
-          })));
-          transaction.oncomplete = () => resolve(Object.fromEntries(values));
-          transaction.onabort = () => reject(transaction.error ?? new Error("Saved Study inspection was aborted."));
-        } catch (error) { reject(error); } finally { database.close(); }
-      };
-    });
-  }
-  const legacy = Object.fromEntries(Object.keys(localStorage).filter(key =>
-    /^tempo-(?:pending-(?:training|teaching|endgame|burial|tactic-capture-v1$|card-delete-v1$)|bury-(?:operation|identity)|seen-moves|first-clean-passes)/.test(key))
-    .map(key => [key, localStorage.getItem(key)]).filter(([,value]) => value && value !== "[]"));
-  return { databases, legacy };
+  return readRetainedStudyData(() => Object.values(authorities()).map(authority => authority.offlineDatabase), validateStorage);
 }
 type AuthorityTransition = "resume" | "recover" | "cutover";
 export async function assertStudyAuthority(origin: string, workspace: string, transition: AuthorityTransition = "cutover") {
@@ -270,11 +225,11 @@ async function connectStudyWithAuthority(origin: string, workspace: string, cred
   requireCurrent();
   try {
     const registered = authorities();
-    localStorage.setItem(authoritiesKey, JSON.stringify({ ...registered, [identity]: {
+    writeAuthorityRegistry(JSON.stringify({ ...registered, [identity]: {
       origin: candidate.origin, workspace: candidate.workspace, offlineDatabase: offlineDatabaseFor(identity) } }));
-    sessionStorage.setItem(connectionKey, JSON.stringify({ ...candidate, bootstrap }));
+    writeSessionConnection(JSON.stringify({ ...candidate, bootstrap }));
   } catch (cause) { throw new StudyConnectionError("storage", "Could not save the Learning connection. Keep browser data and restore storage.", false, undefined, { cause }); }
   current = { ...candidate, bootstrap }; LEARNING_URL = candidate.origin;
   return bootstrap;
 }
-export function disconnectStudy() { connectionGeneration++; sessionStorage.removeItem(connectionKey); current = undefined; LEARNING_URL = API_URL; }
+export function disconnectStudy() { connectionGeneration++; removeSessionConnection(); current = undefined; LEARNING_URL = API_URL; }
