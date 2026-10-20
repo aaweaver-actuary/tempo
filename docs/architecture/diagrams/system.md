@@ -133,10 +133,12 @@ the default empty expected-source array accepts absence as idle.
 This source change is unmerged; deployment and host resource isolation remain
 unverified. No Games consumer acknowledgement is required.
 
-The same API's async tablebase/endgame handlers perform synchronous database
-phases on the shared ASGI event loop, which can delay unrelated Study progress.
-Awaiting provider HTTP outside transactions does not isolate those synchronous
-phases. The [request-execution view](study-games.md#shared-learning-request-execution-gaps-main)
-shows both **source-supported open gaps**. Neither is a reproduced live failure
-or a completed repair; declared pool/transaction bounds do not prove independent
-request progress across these execution/resource boundaries.
+The **PROPOSED** endgame repair at
+[`92edbc16`](https://github.com/aaweaver-actuary/tempo/commit/92edbc16) moves complete
+synchronous phases to one daemon owner with separate lazy max1 reader/writer
+pools. Result waits are bounded; cancellation/shutdown does not join optional
+I/O or close its active pools. Process connection maximum is `2 * pool_size + 3`.
+The [request-execution view](study-games.md#shared-learning-request-execution-gaps-main)
+distinguishes that scoped fake-ASGI/process-exit proof from the separately owned
+MAIN HostActivity gap. Native PostgreSQL and deployment allocation remain
+unverified; shared host/cluster failures still require their own evidence.

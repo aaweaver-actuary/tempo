@@ -113,43 +113,55 @@ does not require a full-stack suite or change runtime source.
 
 ## Shared Learning request execution gaps (MAIN)
 
-**PROPOSED HOST REPAIR / MAIN ENDGAME GAP:** HostActivity source checkpoint
-[`09cb4eef`](https://github.com/aaweaver-actuary/tempo/commit/09cb4eef027666aaa3e728660b9e7ca39eb36091) moves
-publication and cleanup to an optional daemon; the essential request path only
-updates bounded memory. This repair is unmerged and deployment unverified. The
-MAIN shared event-loop endgame gap below remains outside this host-only change.
+**MAIN HOST/POLICY REPAIRS / PROPOSED ENDGAME REPAIR:** HostActivity PR325 and
+borrowed review-policy PR327 are merged source. Host publication/cleanup belongs
+to its optional daemon; essential request accounting uses bounded memory.
+Endgame PR326 at
+[`72d5d9c7`](https://github.com/aaweaver-actuary/tempo/commit/72d5d9c7ab964d5fbbb10528d67ce6cb28e77a18)
+proposes complete optional persistence phases on a dedicated daemon with separate
+connection capacity. That endgame repair remains unmerged in this view. Source
+availability does not establish deployment or shared host/PostgreSQL isolation.
 
 ```mermaid
 flowchart TB
   Study["Essential Study HTTP request"] -->|"dispatch / response progress"| Loop["Learning ASGI event loop"]
-  Loop -->|"PROPOSED: short bounded memory<br/>entry / exit, including cancellation"| Activity["HostActivity request counter<br/>and maximum quiet deadline"]
-  Activity -->|"wake event; no I/O wait"| Publisher["Optional daemon publisher<br/>snapshot under memory lock"]
-  Publisher -->|"release memory lock, then<br/>mkdir / write / replace"| Files[("HostActivity filesystem")]
-  Lifecycle["Learning startup / close"] -->|"start / signal daemon<br/>no publication or cleanup join"| Publisher
-  Publisher -->|"on stop after I/O returns:<br/>remove only owned snapshot"| Files
-  Endgame["Async tablebase probe /<br/>endgame attempt handlers"] -->|"synchronous DB phases<br/>within async handlers"| Sync["connection / execute / fetch<br/>and gateway dispatch"]
-  Sync -->|"pool / queries / transactions"| DB[("Learning PostgreSQL")]
-  Sync -.->|"occupies the same event loop<br/>during synchronous phases"| Loop
-  Endgame -->|"cache miss: awaited HTTP<br/>outside DB transactions"| Provider["Optional tablebase provider"]
-  classDef gap fill:#fff1f0,stroke:#c53030,color:#7f1d1d
-  class Sync gap
+  Loop -->|"bounded-memory request entry / exit"| Activity["HostActivity request counter and maximum quiet deadline"]
+  Activity -->|"wake event; no publication I/O wait"| Publisher["Optional host daemon: snapshot under memory lock"]
+  Publisher -->|"release memory lock then mkdir / write / replace"| Files[("HostActivity filesystem")]
+  Endgame["PROPOSED: optional async endgame routes"] -->|"await admitted complete synchronous phase"| Worker["EndgameIO daemon: one phase; 5s confirmation wait"]
+  Worker -->|"cache / template / receipt or canonical gateway"| Store["endgame_store + gateway transaction owner"]
+  Store -->|"optional lane"| Optional[("Lazy optional reader / writer pools: max1 each")]
+  Loop -->|"ordinary Study transactions"| Foreground[("Foreground reader / writer pools")]
+  Foreground --> DB[("Shared Learning PostgreSQL")]
+  Optional --> DB
+  Endgame -->|"cache miss: awaited provider HTTP outside transaction"| Provider["Optional tablebase provider"]
+  Shutdown["Learning shutdown"] -->|"signal; no publication or cleanup join"| Publisher
+  Publisher -->|"after I/O returns: remove owned snapshot"| Files
+  Shutdown -->|"reject / signal; no active optional join"| Worker
+  Shutdown -->|"close foreground and maintenance only"| Foreground
+  Worker -->|"after actual phase leaves: close own optional pools"| Optional
 ```
 
-| Actual dependency | Source and ownership |
+| Interface / lifecycle owner | Actual assembled source and limit |
 | --- | --- |
-| PROPOSED: essential requests update memory only | [Learning API checkpoint](https://github.com/aaweaver-actuary/tempo/blob/09cb4eef027666aaa3e728660b9e7ca39eb36091/services/learning/runtime/src/tempo_learning_runtime/api.py): `authority` wraps essential `/api/` requests (excluding activity/OPTIONS) in `request_activity`. [`HostActivity.request`](https://github.com/aaweaver-actuary/tempo/blob/09cb4eef027666aaa3e728660b9e7ca39eb36091/services/learning/runtime/src/tempo_learning_runtime/host_activity.py) updates a counter and maximum exit quiet deadline with bounded-memory synchronization, not hard real-time or lock-free progress. At most 1,024 browser sessions bound snapshot memory work. No filesystem I/O occurs while this lock is held; cancellation settles the counter synchronously. |
-| PROPOSED: publisher owns I/O and cleanup | `HostActivity.start` starts a daemon without first publishing; `close` signals without joining. The daemon snapshots memory, releases its lock, then publishes; shutdown cleanup runs there after I/O returns. Stalled daemon filesystem I/O is not awaited by essential request entry/exit or Learning shutdown. Optional activity submissions return 503 until a successful healthy publication or following a known failure/staleness/capacity limit; a 200 acknowledges memory submission against the last healthy lease. |
-| Retained admission and failure limit | The unchanged [host reader](../../../scripts/host-study-activity.mjs) keeps a last healthy idle snapshot readable until its 15-second lease expires. A new essential request may overlap admitted managed work during that remaining healthy-idle lease; asynchronous publication provides no immediate foreground exclusion. Stale files remain unavailable. Missing/startup/removed-source denial requires configuring `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` with the protected workspace identities before deployment; default `[]` accepts absent sources as idle. No Games consumer acknowledgement, new protocol, deployment or host-resource isolation is claimed. |
-| Optional endgame work can occupy the shared ASGI loop | [Learning API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py): async `tablebase` performs synchronous cache reads before awaited provider HTTP and synchronous cache writes afterward; async `endgame_attempt` also performs synchronous receipt/template reads and `gateway.dispatch`. Those synchronous connection/query/dispatch phases run on the shared event loop and can delay unrelated Study request progress. The provider HTTP itself is awaited outside a database transaction; that fact does not isolate the synchronous phases. |
+| Essential request memory accounting | [`HostActivity.request`](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py) updates a counter and maximum quiet deadline. At most 1,024 browser sessions bound shared snapshot memory work. [`request_activity`](../../../services/learning/runtime/src/tempo_learning_runtime/api.py) has no filesystem or daemon-result await, including cancellation. This is bounded-memory synchronization, not hard real-time, lock-free progress or a scheduler latency guarantee. |
+| Optional publication and cleanup | `HostActivity.start` starts its daemon without initial file I/O. The daemon releases the memory lock before publishing; `close` signals without joining publication or cleanup. An optional activity 200 acknowledges memory submission against the last healthy lease; missing/known-failed/stale publication or browser capacity returns 503. |
+| Explicit admission tradeoff and deployment prerequisite | The unchanged [native reader](../../../scripts/host-study-activity.mjs) can retain an idle snapshot until its 15-second producer lease expires. A new essential request may overlap admitted managed work during that remaining lease; asynchronous publication provides no immediate foreground exclusion. Present stale evidence is unavailable. Missing/startup/removed-source denial requires configuring protected workspace identities in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` before deployment; default `[]` accepts absence as idle. No live configuration or lease protocol changed. |
+| PROPOSED optional complete database phases | [`EndgameIO`](../../../services/learning/runtime/src/tempo_learning_runtime/endgame_io.py) admits one phase to a dedicated daemon and preserves request database context. [`endgame_store`](../../../services/learning/runtime/src/tempo_learning_runtime/endgame_store.py) owns cache/template/receipt SQL; admitted command effects still use the canonical gateway. Each connection stays inside its complete worker phase. Busy requests return 503; result waits end at five seconds or immediately on cancellation/shutdown. Provider HTTP stays outside transactions, retaining its three-second timeout and the existing five-second/80-candidate preparation policy. |
+| PROPOSED separate connection capacity | [`Database`](../../../services/learning/runtime/src/tempo_learning_runtime/database.py) routes optional worker phases to lazy size-1 reader/writer pools. Foreground capacity is preserved even at configured pool size one. Total configured maximum is `2 * pool_size + 3`, including maintenance and both optional pools. Database/process/host resource and lock contention remain possible; separate pools do not establish deployment isolation. |
+| PROPOSED optional cancellation and shutdown authority | Main close never takes the optional pool lock or closes an active optional transaction. It signals the daemon and closes foreground/maintenance pools; the daemon closes its own pools after actual phase completion. A stalled phase may remain allocated until process exit. An unconfirmed attempt carries `state: unknown`, its same operation ID, `Location` and `Retry-After`; the canonical receipt determines eventual commit/replay. No thread kill, abandoned transaction, fabricated failure or duplicate logical effect is claimed. |
 
-**Verification status:** the host-only source repair has focused injected stall,
-recovery, cancellation, admission and shutdown regressions in the owning
-[Learning inventory](../../../services/learning/runtime/REGRESSIONS.md). They
-include authenticated middleware and lifespan progress while actual `mkdir` is
-blocked, with cleanup after release. Original-source stall reds are retained in
-task evidence. These do not establish a live incident, deployment, instant
-stall detection or global resource isolation. The MAIN optional endgame
-synchronous execution gap remains source-supported and unrepaired by this change.
+**Evidence and limits:** [owning regressions](../../../services/learning/runtime/REGRESSIONS.md) retain blocked
+HostActivity directory creation/cleanup, essential HTTP/lifespan progress,
+cancellation and recovery. The native reader case runs the exact Python source,
+verifies its hash and proves healthy idle persists through 15 seconds minus one
+nanosecond, then becomes unavailable. Endgame cases exercise actual ASGI requests,
+real `Database` routing with fake size-one pools, provider/transaction boundaries,
+canonical gateway timeout/replay and interpreter exit with a never-returning
+daemon. These component proofs are scoped and synthetic. The proposed endgame component evidence does not itself establish native
+PostgreSQL behavior or live latency/resource allocation. No live incident, deployment
+or whole-host resource independence is established by these drawings.
+
 
 ## Merged PR322 Games reader
 
@@ -202,7 +214,8 @@ read-only composition, narrow view port and bounded game projection above.
 | --- | --- | --- |
 | Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. Shared Home remains a source gap. |
 | Conditional Study offline assets | The shared build inventories all emitted JS/MJS/CSS; worker installation/cache status can depend on optional chunks **if** they remain in that output. Lazy declarations alone do not execute those features. | [Source-backed conditional view](#conditional-study-build-and-offline-assets-main); emitted artifact and failure scenario unverified, no observed live failure. |
-| Shared Learning request execution | PROPOSED HostActivity repair: essential memory updates, daemon-owned publication/cleanup, no filesystem wait or shutdown join. MAIN optional async endgame handlers still contain synchronous DB phases on the shared ASGI loop. | [Mixed source status](#shared-learning-request-execution-gaps-main); focused injected host regressions only. Last healthy idle evidence can persist for its 15-second lease; deployment/resource isolation unverified. |
+| Shared Learning host reporting (MAIN) | Essential accounting uses bounded-memory synchronization; daemon-owned publication and cleanup have no essential filesystem wait or shutdown join. | [Merged host source](#shared-learning-request-execution-gaps-main); last healthy idle evidence can permit foreground overlap for the remaining 15-second lease. Missing/startup/removed-source denial requires configured expected workspace identities; default `[]` accepts absence. Deployment/resource isolation unverified. |
+| Optional endgame execution (PROPOSED PR326) | One daemon admits complete synchronous phases; separate lazy reader/writer pools each max1 preserve foreground capacity. Main shutdown signals without joining active optional I/O or closing its transaction; the daemon owns late completion and cleanup. | [Proposed endgame source](#shared-learning-request-execution-gaps-main); canonical operation receipt owns unknown/late outcomes. Shared PostgreSQL/process/host allocation remains deployment-unverified. |
 | Games read (MAIN) | Invalid auth/schema/scope/cursor or DB failure returns Games error; missing scopes remain missing. No hidden run creation, import, analysis, Study call or repair. View disposal destroys its own board and ignores late responses; server lifespan closes only its pools/executor. | See [read/failure sequence](flows.md#games-read-failure-and-disposal-main-merged-pr322). No Study/worker shutdown is part of this path. |
 | Games DB work (MAIN) | Scope listing ≤100 rows; accepted scope metadata ≤1000 games; page ≤10 games plus one lookahead. Existing 1500 ms statement, 250 ms lock, 3000 ms transaction bounds and configured pool maxima apply. | PostgreSQL may scan/order accepted JSON pages within that budget; no indexed/precomputed projection or host latency guarantee is claimed. |
 | Navigation | Optional public Workbench launch and general Open Study root link are user navigation with no credentials/card authority transfer or service readiness check. | A link is not a required Study API dependency. Reuse existing [navigation contracts](../../../apps/workbench-web/src/public-navigation.ts), [launch URL validation](../../../app/lib/workbench-navigation.ts); do not add a wait. |

@@ -272,6 +272,27 @@ fence a genuinely queued retirement without changing the active predecessor.
 `test_host_activity_clock_retains_reader_domain_after_host_sleep` protects the shared-host clock contract. macOS Python uptime excludes sleep while the native Node reader includes it; the producer uses `CLOCK_MONOTONIC_RAW` on macOS and the ordinary monotonic clock elsewhere. The regression simulates a suspend offset without requiring Node, a broker, or a database for Learning progress. Real Python 3.12/3.14 and Node clock brackets are retained in the task's qualification evidence.
 
 
+`test_endgame_isolation.py` owns the optional endgame execution boundary:
+`test_delayed_endgame_cache_does_not_block_ordinary_study_request` retains the
+actual-ASGI delayed-cache regression; the separate pool-size-one composition
+uses real `Database` routing with bounded fake pool leases. Worker cases cover
+ContextVar preservation, serial admission, busy rejection, cancellation before
+admission, immediate active cancellation, and daemon-owned cleanup after actual
+completion. Actual-ASGI regressions prove cancellation and service shutdown
+return before a held optional connection is released. A fresh-process regression
+proves a never-returning daemon cannot hold interpreter exit. Late exceptions
+after event-loop exit retain their cleanup owner. Main close never takes the
+optional lock/pools; the optional lane rejects maintenance escapes. Cleanup
+capability lookup stays lazy for focused API compositions without optional work.
+
+The attempt composition verifies one-worker phase ownership, provider calls
+outside transactions and immutable replay/conflict behavior. The real gateway
+with fake receipt persistence proves an unconfirmed write returns its generated
+operation ID, can commit later and replay under that same ID without a second
+logical effect. These fake tests require no database or HTTP server and do not
+replace native PostgreSQL locking/rollback proof. Existing `test_endgames.py`
+retains native receipt, cache, provider-protocol and review proof. Host and
+PostgreSQL allocation/deployment isolation remain unverified.
 Host activity filesystem independence (source repair; deployment unverified):
 
 - `test_host_activity_stalled_publication_does_not_block_start_essential_request_or_shutdown`
