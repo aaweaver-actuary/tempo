@@ -33,6 +33,12 @@
 - Apply architecture review to cross-boundary changes before integration: review interface, dependency direction, decision/effect/lifecycle ownership and transaction authority, as well as behavior. In the handoff, explain actual cross-component dependencies, the minimal changed test scope, retained infrastructure proof and any unverified acceptance checks.
 - Enforce these rules incrementally with named boundary guards and explicit, scoped legacy exceptions that name the affected boundary and are reviewed when that boundary changes. Existing coupling is not evidence of compliance or permission to add debt to new/changed isolated paths. Keep unrelated legacy repairs separate; do not demand a whole-repository rewrite, maximal abstraction, microservices or a generic framework without a concrete need.
 
+## Maintain architecture drawings as an acceptance criterion
+
+- Architecture-changing PRs must update the relevant source-truth [Mermaid architecture drawings](docs/architecture/diagrams/README.md) in the same PR. This includes changes to public interfaces, dependency direction, state/database ownership, transactions, side effects, asynchronous commands, failure behavior, lifecycle or resource boundaries. Update only affected views at the appropriate levels; do not regenerate every drawing. Add a bounded view if the changed boundary is not represented. If no drawing is affected, state `Architecture impact: none` in the PR with a concrete reason.
+- Keep drawings navigable, bounded and linked to concrete source paths and interfaces. Label implemented source, proposed/unmerged changes, target architecture and deployment-unverified claims separately. Draw actual coupling and scoped legacy exceptions; a desired boundary or green test count is not proof that it exists. Follow the index's maintenance/review procedure and select the smallest relevant checks from [docs/testing.md](docs/testing.md); this adds no universal full-stack test gate and waives no required permissions or safeguards.
+- Study must have no Games call, import, wait, readiness, transaction or lifecycle dependency. Games must be able to fail completely while ordinary Study continues. Shared pure libraries are allowed. Optional practice influence must cross the Learning/queue owner's semantic interface; producers must not write another component's queue, review or scheduling state. Identify shared host/database resource limits and unverified deployment isolation. Existing legacy coupling must be disclosed and scoped, not presented as compliance or extended into an accepted isolated path.
+
 ## Discover shared components before building
 
 - Before adding or replacing a reusable component, inspect the [component discovery guide](docs/architecture/component-reconstruction.md#discover-before-building), `components.json`, the owning package README/public exports, and existing consumer adapters. Search current source as well as the registry: a planned registration can coexist with a merged implementation.
@@ -44,6 +50,7 @@
 - [Contribution and handoff workflow](CONTRIBUTING.md)
 - [Test selection, commands, and current runner behavior](docs/testing.md)
 - [Adopted component architecture and migration index](docs/architecture/component-reconstruction.md)
+- [Maintained architecture drawings and review procedure](docs/architecture/diagrams/README.md)
 - [12-phase index and component manifest (#192)](https://github.com/aaweaver-actuary/tempo/issues/192)
 
 Read `CONTRIBUTING.md` before behavior changes. The architecture guide distinguishes target boundaries from current implementation and migration work; do not infer that a planned package, service, database, release, or toolchain already exists.
