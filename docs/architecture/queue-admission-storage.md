@@ -100,9 +100,16 @@ actual engine. SQLite's opposed-insertion cross-page outcome is separately named
 in the adapter suite. Since the old query has no explicit order, any PostgreSQL
 ownership difference blocks parity and requires an explicit parent policy decision.
 See [the native command, target receipt, resource and cleanup plan](../../backend/integration/queue_admission/README.md).
-No Docker/native case, installed-artifact build, merge, deployment or live write
-has been performed by this task. SQLite/source passes do not qualify native locks,
-native query behavior or accepted-scope exclusion.
+The explicitly approved native window at source `269ce9e1` ran four cases:
+three passed, including the legacy-versus-paged PostgreSQL shared-membership
+comparison. The requeue case reached its cycle assertions, then failed because
+the test sent SAVEPOINT through the compatibility translator, which produced
+`SAVEPOINT AS caller_repeat`. The fixture now uses `execute_native` for transaction
+control; that correction awaits a coordinated rerun. The original failure receipt
+is preserved. Exact container/process-group/staging/volume absence was verified
+before releasing the slot. This is not a passing native qualification. No installed
+artifact build, merge, deployment or live write was performed. Accepted-scope and
+PR311 hook qualification still belong to the combined-tree owners.
 
 ## Broader SQL-fixture retirement map
 

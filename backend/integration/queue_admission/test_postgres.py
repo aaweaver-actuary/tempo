@@ -161,8 +161,11 @@ def test_native_requeue_retains_historical_origin_cycle_and_caller_rollback(case
         first = queue_application.requeue(database, day, card_id, None, 'failed')
         second = queue_application.requeue(database, day, card_id, None, 'fresh')
         assert tuple(database.execute('SELECT cycle,admission_kind FROM daily_queue WHERE id=?', (second,)).fetchone()) == (2, 'review')
-        database.execute('SAVEPOINT caller_repeat')
+        # Native transaction control belongs to the native fixture, not the
+        # legacy SQLite-statement translator (which rewrites SAVEPOINT as an alias).
+        database.execute_native('SAVEPOINT caller_repeat')
         rolled_back = queue_application.requeue(database, day, card_id, None, 'fresh')
-        database.execute('ROLLBACK TO caller_repeat')
+        database.execute_native('ROLLBACK TO SAVEPOINT caller_repeat')
+        database.execute_native('RELEASE SAVEPOINT caller_repeat')
         assert not database.execute('SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=?', (rolled_back,)).fetchone()
         assert [tuple(row) for row in database.execute('SELECT queue_entry_id,issued_as_head FROM queue_attempt_origins WHERE card_id=? ORDER BY cycle', (card_id,))] == [(case['head'], 1), (first, 0), (second, 0)]
