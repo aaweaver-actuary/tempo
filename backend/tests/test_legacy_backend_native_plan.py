@@ -221,3 +221,42 @@ def test_native_gate_refuses_incomplete_foreign_or_changed_artifacts(tmp_path, f
     for name, document in [('host.json', host), ('inside.json', inside)]:
         (tmp_path / name).write_text(json.dumps(document))
     with pytest.raises(ValueError): plan.qualified_artifacts(tmp_path, 'head', 'image')
+
+
+def test_native_feedback_fixture_publishes_through_writable_storage_not_read_only_view():
+    """Actual helper, actual SQLite read-only view; no SQL-prefix fake database.
+
+    This catches fixture topology before PostgreSQL admission. Native execution
+    separately owns actual PostgreSQL schema/types/roles and transaction proof.
+    """
+    import ast
+    import sqlite3
+    source = ast.parse((ROOT / 'backend/integration/legacy_bridge/test_native.py').read_text())
+    helper = next(node for node in source.body if isinstance(node, ast.FunctionDef) and node.name == 'insert_feedback_miss')
+    namespace = {}
+    exec(compile(ast.Module(body=[helper], type_ignores=[]), '<native-feedback-fixture>', 'exec'), namespace)
+    with sqlite3.connect(':memory:') as database:
+        database.executescript('''
+            CREATE TABLE imported_games(id TEXT PRIMARY KEY,played_at TEXT);
+            INSERT INTO imported_games VALUES('game','2026-10-19T10:00:00Z');
+            CREATE TABLE game_derivation_jobs(game_id TEXT PRIMARY KEY,status TEXT,
+                derivation_version INTEGER,published_repertoire_version INTEGER,updated_at TEXT);
+            CREATE TABLE repertoire_decision_events_staged(id TEXT,game_id TEXT,derivation_version INTEGER,
+                repertoire_id TEXT,card_id TEXT,ply INTEGER,fen_key TEXT,expected_uci TEXT,
+                actual_uci TEXT,outcome TEXT,played_at TEXT,updated_at TEXT);
+            CREATE VIEW repertoire_decision_events AS SELECT event.id,event.game_id,event.repertoire_id,
+                event.card_id,event.ply,event.fen_key,event.expected_uci,event.actual_uci,event.outcome,
+                event.played_at,event.updated_at FROM repertoire_decision_events_staged event
+                JOIN game_derivation_jobs job ON job.game_id=event.game_id
+                  AND job.published_repertoire_version=event.derivation_version;
+            CREATE VIEW current_repertoire_decision_events AS SELECT * FROM repertoire_decision_events;
+        ''')
+        class NativeParameters:
+            def execute(self, statement, parameters=()):
+                return database.execute(statement.replace('%s', '?'), parameters)
+        fixture = SimpleNamespace(case_id='fixture', identities=dict(game='game', ruy='ruy', italian='italian', physical='card'))
+        first = namespace['insert_feedback_miss'](NativeParameters(), fixture)
+        second = namespace['insert_feedback_miss'](NativeParameters(), fixture, repertoire='italian', suffix='other', ply=6)
+        assert first == 'fixture-weak' and second == 'fixture-other'
+        assert database.execute('SELECT game_id,derivation_version,published_repertoire_version FROM game_derivation_jobs').fetchall() == [('game', 1, 1)]
+        assert database.execute('SELECT id,repertoire_id FROM current_repertoire_decision_events ORDER BY ply').fetchall() == [(first, 'ruy'), (second, 'italian')]

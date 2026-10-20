@@ -194,13 +194,19 @@ def feedback_store(raw):
 
 
 def insert_feedback_miss(raw, native, *, repertoire='ruy', suffix='weak', ply=5):
-    """Synthetic legacy evidence in the owned fixture, never a live import."""
+    """Publish synthetic evidence through the owned storage tables, not a view."""
     event_id = native.case_id + '-' + suffix
-    raw.execute("""INSERT INTO repertoire_decision_events
-        (id,game_id,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at)
-        SELECT %s,id,%s,%s,%s,'synthetic-feedback-root','a7a6','g8f6','miss',played_at,played_at
+    raw.execute("""INSERT INTO game_derivation_jobs
+        (game_id,status,derivation_version,published_repertoire_version,updated_at)
+        SELECT id,'complete',1,1,played_at FROM imported_games WHERE id=%s
+        ON CONFLICT(game_id) DO NOTHING""", (native.identities['game'],))
+    raw.execute("""INSERT INTO repertoire_decision_events_staged
+        (id,game_id,derivation_version,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at)
+        SELECT %s,id,1,%s,%s,%s,'synthetic-feedback-root','a7a6','g8f6','miss',played_at,played_at
         FROM imported_games WHERE id=%s""",
         (event_id, native.identities[repertoire], native.identities['physical'], ply, native.identities['game']))
+    current = raw.execute('SELECT id FROM current_repertoire_decision_events WHERE id=%s', (event_id,)).fetchone()
+    assert current and current[0] == event_id, 'Owned staged fixture must be visible through the current publication'
     return event_id
 
 
