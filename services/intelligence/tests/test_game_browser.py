@@ -2,11 +2,11 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
 import pytest
-from tempo_intelligence.analysis.store import AnalysisStore
+from tempo_intelligence.analysis.games_reader import GamesReader
 from tempo_intelligence.errors import DomainError
 
 
-class Reader(AnalysisStore):
+class Reader(GamesReader):
     def __init__(self):
         self.reads=[]
         @contextmanager
@@ -14,11 +14,12 @@ class Reader(AnalysisStore):
             self.reads.append(options);yield None
         super().__init__(SimpleNamespace(workspace_id='workspace',transaction=transaction))
         self.revision=1
-    def _head(self,db,run_id,lock=False):
-        assert not lock
-        return {'revision':self.revision,'payload':{'input_id':'input','input_revision':1}}
-    def _input(self,input_id,revision):
-        return {'state':'accepted','input_id':input_id,'revision':revision,'payload':{'selections':[]}},[{'game_id':identifier,'moves':['e2e4']} for identifier in ['c','a','b']]
+    def _scope(self,database,run_id):
+        return {'run_id':run_id,'revision':self.revision,'input_id':'input','input_revision':1}
+    def _input_scope(self,database,scope):
+        return {'state':'accepted','game_ids':['c','a','b'],'selections':[]}
+    def _game_page(self,database,scope,after,limit):
+        return [{'game_id':identifier,'moves':['e2e4']} for identifier in ['a','b','c'] if identifier>after][:limit]
 
 
 def test_C3_selected_game_pages_are_read_only_complete_and_cursor_bound():

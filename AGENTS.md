@@ -33,6 +33,13 @@
 - Apply architecture review to cross-boundary changes before integration: review interface, dependency direction, decision/effect/lifecycle ownership and transaction authority, as well as behavior. In the handoff, explain actual cross-component dependencies, the minimal changed test scope, retained infrastructure proof and any unverified acceptance checks.
 - Enforce these rules incrementally with named boundary guards and explicit, scoped legacy exceptions that name the affected boundary and are reviewed when that boundary changes. Existing coupling is not evidence of compliance or permission to add debt to new/changed isolated paths. Keep unrelated legacy repairs separate; do not demand a whole-repository rewrite, maximal abstraction, microservices or a generic framework without a concrete need.
 
+## Optional features must fail independently of Study
+
+- Acceptance requires that an optional feature can fail or shut down without changing, restarting, blocking or requiring recovery of Study. Study must not import, call, wait for or share lifecycle ownership with Games or another optional producer. Study consumes its normal Learning-owned queue even when that producer is unavailable.
+- Practice influence crosses the Learning/queue owner's semantic command interface. Producers never write another component's queue, review or scheduling tables directly. The receiving owner owns validation, transactions, idempotency and ordinary queue consumption; producer availability is not a serving prerequisite.
+- Identify process, connection, transaction and resource owners. Bound optional host/database work so it cannot consume Study's resource allocation or hold its locks. State shared infrastructure and failure limits explicitly; a separate process or green tests alone do not establish resource independence.
+- Review the concrete dependency graph and failure/shutdown path before accepting the feature. Prove only the relevant boundaries, and label deployment/resource isolation unverified until checked. This is a scoped acceptance rule, not a requirement to rewrite unrelated legacy components or waive MVP/data-safety guidance.
+
 ## Discover shared components before building
 
 - Before adding or replacing a reusable component, inspect the [component discovery guide](docs/architecture/component-reconstruction.md#discover-before-building), `components.json`, the owning package README/public exports, and existing consumer adapters. Search current source as well as the registry: a planned registration can coexist with a merged implementation.

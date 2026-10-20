@@ -40,6 +40,10 @@ class Store:
             timeout=1, open=True, connection_class=BackgroundConnection,
             kwargs={"row_factory":dict_row,"connect_timeout":2,"application_name":"tempo-intelligence-worker"})
 
+    @property
+    def read_only(self):
+        return self.configuration.read_only
+
     @contextmanager
     def transaction(self, *, background=False, read_only=False):
         pool = self.background if background else self.foreground
@@ -48,7 +52,7 @@ class Store:
             token = background_deadline.set(time.monotonic() + BACKGROUND_OPERATION_SECONDS)
         try:
             with pool.connection() as database:
-                if read_only:
+                if read_only or self.configuration.read_only:
                     database.execute("SET TRANSACTION READ ONLY")
                 database.execute("SET LOCAL search_path=intelligence,pg_catalog")
                 database.execute("SELECT set_config('statement_timeout',%s,true)",("1500ms",))
@@ -70,17 +74,22 @@ class Store:
                     raise DomainError("workspace_mismatch",503)
                 role=database.execute("SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls OR rolinherit AS elevated FROM pg_roles WHERE rolname=current_user").fetchone()
                 privileges=database.execute("SELECT has_schema_privilege(current_user,'intelligence','CREATE') OR has_schema_privilege(current_user,'public','CREATE') OR has_database_privilege(current_user,current_database(),'CREATE,TEMP') OR has_table_privilege(current_user,'intelligence.migration_history','INSERT,UPDATE,DELETE') OR has_table_privilege(current_user,'intelligence.instance','INSERT,UPDATE,DELETE') OR has_table_privilege(current_user,'intelligence.evidence','UPDATE,DELETE') AS elevated").fetchone()
-                immutable_payload_tables=[*ANALYSIS_IMMUTABLE_TABLES,"analysis_inputs","analysis_runs","analysis_positions"]
-                integrity=database.execute("SELECT bool_or(has_column_privilege(current_user,'intelligence.'||name,'payload','UPDATE') OR has_table_privilege(current_user,'intelligence.'||name,'DELETE')) AS elevated FROM unnest(%s::text[]) AS table_names(name)",(immutable_payload_tables,)).fetchone()
-                tables=[*ANALYSIS_IMMUTABLE_TABLES,*ANALYSIS_MUTABLE_COLUMNS]
-                required=database.execute("SELECT bool_and(has_table_privilege(current_user,'intelligence.'||name,'SELECT') AND has_table_privilege(current_user,'intelligence.'||name,'INSERT')) AS available FROM unnest(%s::text[]) AS table_names(name)",(tables,)).fetchone()
-                column_tables=[table for table,columns in ANALYSIS_MUTABLE_COLUMNS.items() for column in columns]
-                columns=[column for table,columns in ANALYSIS_MUTABLE_COLUMNS.items() for column in columns]
-                updates=database.execute("SELECT bool_and(has_column_privilege(current_user,'intelligence.'||table_name,column_name,'UPDATE')) AS available FROM unnest(%s::text[],%s::text[]) AS permissions(table_name,column_name)",(column_tables,columns)).fetchone()
-                if integrity["elevated"]:
-                    raise DomainError("restricted_runtime_required",503)
-                if not required["available"] or not updates["available"]:
-                    raise DomainError("analysis_runtime_grants_missing",503)
+                if self.configuration.read_only:
+                    required=database.execute("SELECT bool_and(has_table_privilege(current_user,'intelligence.'||name,'SELECT')) AS available FROM unnest(%s::text[]) AS table_names(name)",(["analysis_heads","analysis_runs","analysis_inputs","analysis_pages"],)).fetchone()
+                    if not required["available"]:
+                        raise DomainError("games_reader_grants_missing",503)
+                else:
+                    immutable_payload_tables=[*ANALYSIS_IMMUTABLE_TABLES,"analysis_inputs","analysis_runs","analysis_positions"]
+                    integrity=database.execute("SELECT bool_or(has_column_privilege(current_user,'intelligence.'||name,'payload','UPDATE') OR has_table_privilege(current_user,'intelligence.'||name,'DELETE')) AS elevated FROM unnest(%s::text[]) AS table_names(name)",(immutable_payload_tables,)).fetchone()
+                    tables=[*ANALYSIS_IMMUTABLE_TABLES,*ANALYSIS_MUTABLE_COLUMNS]
+                    required=database.execute("SELECT bool_and(has_table_privilege(current_user,'intelligence.'||name,'SELECT') AND has_table_privilege(current_user,'intelligence.'||name,'INSERT')) AS available FROM unnest(%s::text[]) AS table_names(name)",(tables,)).fetchone()
+                    column_tables=[table for table,columns in ANALYSIS_MUTABLE_COLUMNS.items() for column in columns]
+                    columns=[column for table,columns in ANALYSIS_MUTABLE_COLUMNS.items() for column in columns]
+                    updates=database.execute("SELECT bool_and(has_column_privilege(current_user,'intelligence.'||table_name,column_name,'UPDATE')) AS available FROM unnest(%s::text[],%s::text[]) AS permissions(table_name,column_name)",(column_tables,columns)).fetchone()
+                    if integrity["elevated"]:
+                        raise DomainError("restricted_runtime_required",503)
+                    if not required["available"] or not updates["available"]:
+                        raise DomainError("analysis_runtime_grants_missing",503)
                 membership=database.execute("SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user) LIMIT 1").fetchone()
                 foreign=database.execute("SELECT 1 FROM pg_database WHERE datallowconn AND datname<>current_database() AND has_database_privilege(current_user,oid,'CONNECT') LIMIT 1").fetchone()
                 if role["elevated"] or privileges["elevated"] or membership or foreign:

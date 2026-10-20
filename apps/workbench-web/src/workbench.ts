@@ -7,6 +7,7 @@ import { mountGameBrowser, comparisonChronologyNotice } from "./game-browser.js"
 import { z } from "zod";
 import { IntelligenceClient, type Connection } from "./client.js";
 import { listSchema, reportSchema, detailSchema, type Finding, type Report } from "./contracts.js";
+import { mountGamesView } from "./games-view.js";
 import { PendingCommands } from "./commands.js";
 const key="tempo-analysis-connection-v1";
 const labels:Record<string,string>={repertoire_miss:"Repertoire miss",practical_gap:"Practical gap",engine_opportunity:"Engine opportunity"};
@@ -71,6 +72,12 @@ export function mountWorkbench(root:HTMLElement, options:WorkbenchOptions = {}){
   async function home(){
     const generation=++renderGeneration;closeGameBrowser?.();closeGameBrowser=undefined;board?.destroy();board=undefined;content.replaceChildren();
     const toolbar=node("section");toolbar.className="toolbar";toolbar.append(node("h2","Analysis runs"),button("Refresh",()=>home()),button("Disconnect",()=>{client?.disconnect();client=undefined;sessionStorage.removeItem(key);connectionForm();}));content.append(toolbar);
+    if(client!.readOnly){
+      closeGameBrowser=mountGamesView(content,client!,runId,value=>{runId=value;history();void home();},error);
+      // Keep only explicit refresh/disconnect; no saved mutation recovery/retry.
+      content.prepend(toolbar);toolbar.querySelector("h2")!.textContent="Games · read only";
+      return;
+    }
     try{
       await pendingCommand(toolbar);if(generation!==renderGeneration)return;
       const [runs,inputs]=await Promise.all([client!.request("/v1/analysis/runs",listSchema),client!.request("/v1/analysis/inputs",listSchema)]);

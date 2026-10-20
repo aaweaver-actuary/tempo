@@ -105,3 +105,29 @@ continues to use its saved origin. The owning build boundary rejects unsafe valu
 before embedding them. The qualifier uses `https://intelligence.example.test` as
 its explicit non-secret fixture form default, then fills the intercepted test API
 through the normal connection UI.
+
+## Games-only restoration
+
+An authenticated Intelligence bootstrap advertising `games-readonly-v1` opens a
+Games-only view automatically. It reuses `mountGameBrowser`, its board/navigation
+and accepted run/input reader. It shows existing scopes and frozen provenance,
+including games without positive findings; engine completion is unnecessary.
+No saved mutation recovery, import, run creation/continuation, dismissal, or
+training control is offered. The client refuses mutation delivery on that
+connection, while the server separately enforces read-only HTTP and PostgreSQL.
+The mode is not inferred from a URL or a hidden button.
+
+There is no implicit current-repertoire refresh. The snapshot identity/revision
+is displayed, and a fresh comparison is identified as a separate unavailable
+operation. A new accepted input without a run is not made viewable by silently
+creating one. Study opens separately using its existing general link; no Study
+credential, card identity, queue request or DB connection is transferred.
+
+The Games views depend on the public `GamesReader` semantic interface, not
+`IntelligenceClient`, fetch, URLs, request schemas or mutation storage. The
+existing HTTP client implements `listScopes/readScope/readGames`; another reader
+can substitute without changing game presentation. The composition root selects
+the mode after bootstrap and retains connection/session ownership. Shared pure
+chess/render libraries and navigation are acceptable; Study never imports, calls
+or waits for the Games reader. Its shutdown owns only its board and pending UI
+responses. Deployment/resource isolation is a separate unverified rollout gate.
