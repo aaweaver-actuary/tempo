@@ -16,12 +16,13 @@ from tempo_learning_remediation import LegacyAcceptedDecision, RemediationError
 from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
 from ..database import background_read_connection
+from ..storage.legacy_game_source import CARD_SOURCE_FIELDS,GAME_SOURCE_FIELDS
 from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
 
 MAX_DECISION_ROUTES = 64
 _REPERTOIRE_COLUMNS = "id,name,is_main,scope_source_revision,canonical_prefix_revision,canonical_prefix_moves_json,canonical_prefix_preview_id"
-_CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
-_GAME_COLUMNS = "id,provider,provider_game_id,content_hash,played_at,color,result,start_fen,moves_json,adaptive_excluded"
+_CARD_COLUMNS = ",".join(CARD_SOURCE_FIELDS)
+_GAME_COLUMNS = ",".join(GAME_SOURCE_FIELDS)
 _GAME_HEADER_COLUMNS = "id,provider,provider_game_id,content_hash"
 
 
@@ -213,63 +214,13 @@ def prepare_decisions(delivery, captured):
         if (ply >= len(game_moves) or encounter.observed_move != game_moves[ply]
                 or ("white" if game_boards[ply].turn else "black") != game["color"]):
             raise RemediationError("terminal_failure", "legacy_encounter_not_in_current_game")
-        if captured.catalogue_proof is not None:
-            # The bounded candidate list omits routes with no executable move
-            # at this ply. Its complete prefix proof still includes their
-            # policy, exactly as the read-only comparator's authority anchor.
-            anchor = proof.authority_anchor(token.repertoire_id)
-            exclusive = (anchor is not None and anchor <= ply
-                and proof.prefix_policies[ply] == [token.repertoire_id])
-        else:
-            exclusive = {row["repertoire_id"] for row in lines
-                if row["trained_color"] == game["color"]
-                and len(json.loads(row["moves_json"])) >= ply
-                and json.loads(row["moves_json"])[:ply] == game_moves[:ply]
-                and comparison_key(chess.Board(row["start_fen"])) == comparison_key(game_boards[0])
-            } == {token.repertoire_id}
-        if not exclusive:
-            raise RemediationError("terminal_failure", "legacy_route_policy_ambiguous")
-        matching = []
-        for row in lines:
-            moves = json.loads(row["moves_json"])
-            if (row["trained_color"] == game["color"] and ply < len(moves)
-                    and moves[:ply] == game_moves[:ply]
-                    and comparison_key(chess.Board(row["start_fen"])) == comparison_key(game_boards[0])):
-                matching.append((row, moves))
-        if not matching or len(matching) > MAX_DECISION_ROUTES or {
-                row["repertoire_id"] for row, _ in matching} != {token.repertoire_id}:
-            raise RemediationError("terminal_failure", "legacy_route_policy_ambiguous")
+        matching = matching_routes(captured, token.repertoire_id, ply, game_boards)
         all_mapped = True
         mapped_decisions = set()
         selected_binding = None
         for row, moves in matching:
             route_boards = positions(row["start_fen"], moves)
-            route_positions = [comparison_key(board) for board in route_boards]
-            candidates = set()
-            for graph in captured.graphs:
-                if graph["line_id"] != row["id"]:
-                    continue
-                card = cards.get(graph["card_id"])
-                if (card is None or card["revision"] != 1 or card["trained_color"] != game["color"]
-                        or card.get("content_type", "opening") != "opening"
-                        or card["archived"] or card["pending_validation"] or card.get("deleted")
-                        or card.get("integrity_blocked") or card.get("superseded_by")
-                        or not chess.Board(card["start_fen"]).is_valid() or not chess.Board(graph["starting_fen"]).is_valid()
-                        or comparison_key(chess.Board(card["start_fen"])) != comparison_key(chess.Board(graph["starting_fen"]))
-                        or json.loads(card["moves_json"]) != json.loads(graph["moves_json"])):
-                    continue
-                memberships = {link["repertoire_id"] for link in captured.tables["repertoire_cards"]
-                               if link["card_id"] == card["id"]}
-                physical_moves = json.loads(card["moves_json"])
-                if memberships != {token.repertoire_id} or not 1 <= len(physical_moves) <= 40:
-                    continue
-                physical_position = comparison_key(chess.Board(card["start_fen"]))
-                roots = [root for root, position in enumerate(route_positions) if
-                    position == physical_position
-                    and moves[root:root + len(physical_moves)] == physical_moves]
-                if len(roots) != 1 or not 0 <= ply - roots[0] < len(physical_moves):
-                    continue
-                candidates.add((card["id"], ply - roots[0]))
+            candidates = physical_route_candidates(captured, token.repertoire_id, row, moves, ply, route_boards)
             if len(candidates) != 1:
                 all_mapped = False
             mapped_decisions.update(candidates)
@@ -291,3 +242,68 @@ def prepare_decisions(delivery, captured):
             introduced_before_game(card.get("introduced_at"), actual_time),
             scope_proof=captured.catalogue_proof)
     return token, decisions
+
+
+def matching_routes(captured, repertoire_id, ply, game_boards):
+    """Complete ordered-policy candidates for one captured learner decision."""
+    game_moves = json.loads(captured.game["moves_json"])
+    if captured.catalogue_proof is not None:
+        # The bounded candidate list omits routes with no executable move
+        # at this ply. Its complete prefix proof still includes their
+        # policy, exactly as the read-only comparator's authority anchor.
+        proof = captured.catalogue_proof
+        anchor = proof.authority_anchor(repertoire_id)
+        exclusive = (anchor is not None and anchor <= ply
+            and proof.prefix_policies[ply] == [repertoire_id])
+    else:
+        exclusive = {row["repertoire_id"] for row in captured.tables["repertoire_lines"]
+            if row["trained_color"] == captured.game["color"]
+            and len(json.loads(row["moves_json"])) >= ply
+            and json.loads(row["moves_json"])[:ply] == game_moves[:ply]
+            and comparison_key(chess.Board(row["start_fen"])) == comparison_key(game_boards[0])
+        } == {repertoire_id}
+    if not exclusive:
+        raise RemediationError("terminal_failure", "legacy_route_policy_ambiguous")
+    matching = []
+    for row in captured.tables["repertoire_lines"]:
+        moves = json.loads(row["moves_json"])
+        if (row["trained_color"] == captured.game["color"] and ply < len(moves)
+                and moves[:ply] == game_moves[:ply]
+                and comparison_key(chess.Board(row["start_fen"])) == comparison_key(game_boards[0])):
+            matching.append((row, moves))
+    if not matching or len(matching) > MAX_DECISION_ROUTES or {
+            row["repertoire_id"] for row, _ in matching} != {repertoire_id}:
+        raise RemediationError("terminal_failure", "legacy_route_policy_ambiguous")
+    return matching
+
+
+def physical_route_candidates(captured, repertoire_id, row, moves, ply, route_boards):
+    """Unique physical executable roots, shared by recall and exposure readers."""
+    cards = {item["id"]: item for item in captured.tables["cards"]}
+    route_positions = [comparison_key(board) for board in route_boards]
+    candidates = set()
+    for graph in captured.graphs:
+        if graph["line_id"] != row["id"]:
+            continue
+        card = cards.get(graph["card_id"])
+        if (card is None or card["revision"] != 1 or card["trained_color"] != captured.game["color"]
+                or card.get("content_type", "opening") != "opening"
+                or card["archived"] or card["pending_validation"] or card.get("deleted")
+                or card.get("integrity_blocked") or card.get("superseded_by")
+                or not chess.Board(card["start_fen"]).is_valid() or not chess.Board(graph["starting_fen"]).is_valid()
+                or comparison_key(chess.Board(card["start_fen"])) != comparison_key(chess.Board(graph["starting_fen"]))
+                or json.loads(card["moves_json"]) != json.loads(graph["moves_json"])):
+            continue
+        memberships = {link["repertoire_id"] for link in captured.tables["repertoire_cards"]
+                       if link["card_id"] == card["id"]}
+        physical_moves = json.loads(card["moves_json"])
+        if memberships != {repertoire_id} or not 1 <= len(physical_moves) <= 40:
+            continue
+        physical_position = comparison_key(chess.Board(card["start_fen"]))
+        roots = [root for root, position in enumerate(route_positions) if
+            position == physical_position
+            and moves[root:root + len(physical_moves)] == physical_moves]
+        if len(roots) != 1 or not 0 <= ply - roots[0] < len(physical_moves):
+            continue
+        candidates.add((card["id"], ply - roots[0]))
+    return candidates

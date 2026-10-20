@@ -1,3 +1,19 @@
+## Historical exposure practice request (unadopted source)
+
+`backend/tests/test_historical_exposure_source.py` owns single-encounter authority,
+ordered route/physical binding and UTC day-bound chronology, including the named
+`test_date_only_introduction_uses_existing_utc_day_bounds_not_game_local_date`.
+`test_historical_exposure_routes.py` owns disabled-by-default operator auth and
+strict idempotent transport without credential dispatch. `test_historical_exposure_adapters.py`
+owns complete scoped inventory refusal, current fact fences, canonical protected-
+head writer delegation and nonblocking source-lock ordering contracts.
+`test_historical_exposure_commands.py` owns actual gateway receipt/savepoint replay
+and rollback with semantic fake queue/store ports, including failures after queue
+and intent effects. Learning's regular application suite owns contributor and
+completion policy. These source checks do not establish native PostgreSQL locking,
+migration, queue ordering or enabled API/worker composition; see the Learning
+application README for the pending adoption boundary.
+
 ## Combined feedback / queue / Discovery boundary
 
 `backend/tests/test_feedback_boundary_integration.py` owns the real composition

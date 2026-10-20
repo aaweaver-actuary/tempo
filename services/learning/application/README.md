@@ -130,8 +130,8 @@ Primary and cleanup errors are retained together.
 It does not import a provider, chess engine, database, HTTP framework, backend or
 remediation application. The caller verifies the exact current encounter/card/
 revision/executable/ordered route identity. Store, FactReader and QueueWriter are
-separate semantic capabilities; only fakes implement them at this checkpoint.
-No public wire contract or backend/runtime adoption is claimed.
+separate semantic capabilities. The backend source adapters described below now
+implement these ports; runtime adoption remains pending.
 
 Training intent persists until served, explicitly cancelled, revoked from verified
 source/membership facts, or safely superseded by verified current source identity.
@@ -143,7 +143,7 @@ current, eligible introduced review-card authority and explicit user intent.
 Unknown chronology needs separate explicit confirmation, never a fabricated recall
 claim.
 
-Every effect is scoped by target, workspace and card. The future backend adapter
+Every effect is scoped by target, workspace and card. The backend adapter
 must serialize that entire card scope, its complete active request inventory,
 current source/eligibility facts and queue decision under the existing card-before-
 day locks in the same caller-owned command transaction. No per-request independent
@@ -170,3 +170,37 @@ forgotten recall or remediation settlement. No review, scheduling or settlement
 record is created here. Old/unverified answers and other revisions/attempts cannot
 serve the request. Response-loss replay stays quiet; duplicate completion or
 cancellation reads the retained terminal state instead of recreating placement.
+
+
+### Backend receipt/card-lock source checkpoint
+
+The isolated backend source slice adds a strict one-line `ExposureSelection`, an
+operator-authenticated POST adapter, read-only encounter projection, borrowed
+intent storage, complete current-fact projection and command receipt orchestration.
+The source projector reuses the existing ordered route and physical-executable
+binding owner. It does not infer historical recall from current repertoire.
+Date-only introduction evidence uses the existing UTC day bounds, including games
+whose recorded timestamps have a non-UTC offset.
+
+The command gateway owns the transaction and receipt. The adapter locks the card
+scope before the day and refuses incomplete contributor inventories. Source locks
+after the card use nonblocking acquisition so contention yields the retained
+operation instead of publishing a false completion. Its queue port delegates to
+the existing canonical protected-head writer and independently preserves recall
+and unrelated priority. The transport is disabled unless an explicit private
+`TEMPO_EXPOSURE_OPERATOR_TOKEN_FILE` is configured; it never forwards that token
+into a command payload or receipt. No credential file was provisioned.
+
+This is **unadopted source**, not an enabled training path: neither the API nor
+worker composition imports these adapters, schema readiness remains version 50,
+and migration 051 is an unapplied draft. Refresh and normal-practice completion,
+priority ordering/classification, display and cancellation transport remain
+pending. No claim is made that a historical-exposure label currently moves a real
+card forward. Native migration, lock lifetime, concurrency, actual queue rollback
+and complete-inventory budgets require separate qualification before adoption.
+
+The focused backend tests include actual in-memory SQLite command-gateway
+savepoints and receipts with semantic fake queue/store ports. They establish
+rollback/replay at that boundary, not PostgreSQL or the concrete queue writer.
+The canonical-writer invocation and SQL lock protocol have source contract tests;
+actual infrastructure proof is still required.
