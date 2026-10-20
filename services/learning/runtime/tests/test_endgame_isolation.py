@@ -48,8 +48,10 @@ class FakeDatabase:
     def fetchone(self):
         return (json.dumps({"category": "draw", "moves": []}),)
 
-    def close(self):
+    def close_endgames(self):
         assert self.active == 0
+
+    def close(self):
         self.closed = True
 
 
@@ -107,14 +109,16 @@ def test_delayed_endgame_cache_does_not_block_ordinary_study_request(monkeypatch
     asyncio.run(exercise())
 
 
-def test_endgame_worker_preserves_database_context_and_bounds_capacity():
-    from tempo_learning_runtime.endgame_io import EndgameIO
+def test_endgame_worker_preserves_database_context_and_rejects_busy_capacity():
+    from tempo_learning_runtime.endgame_io import EndgameIO, EndgameUnavailable
     from contextvars import ContextVar
+    import pytest
 
     marker = ContextVar("endgame_test_marker")
 
     async def exercise():
-        worker = EndgameIO()
+        cleaned = Event()
+        worker = EndgameIO(cleaned.set)
         entered, release = Event(), Event()
         observed = []
 
@@ -127,24 +131,31 @@ def test_endgame_worker_preserves_database_context_and_bounds_capacity():
         first_task = asyncio.create_task(worker.run(first))
         assert await asyncio.to_thread(entered.wait, 1)
         marker.set("request-b")
-        second_task = asyncio.create_task(worker.run(lambda: observed.append(marker.get())))
-        await asyncio.sleep(.02)
+        with pytest.raises(EndgameUnavailable, match="busy"):
+            await worker.run(lambda: observed.append("must-not-start"))
         assert observed == ["request-a"]
         release.set()
-        await asyncio.gather(first_task, second_task)
+        await first_task
+        await worker.run(lambda: observed.append(marker.get()))
         await worker.aclose()
+        assert await asyncio.to_thread(cleaned.wait, 1)
         assert observed == ["request-a", "request-b"]
 
     asyncio.run(exercise())
 
 
-def test_endgame_worker_cancellation_drains_transaction_before_release_and_shutdown():
-    from tempo_learning_runtime.endgame_io import EndgameIO
+def test_endgame_cancellation_and_shutdown_leave_active_transaction_with_daemon_owner():
+    from tempo_learning_runtime.endgame_io import EndgameIO, EndgameUnavailable
     import pytest
 
     async def exercise():
-        worker = EndgameIO()
-        entered, release, left = Event(), Event(), Event()
+        entered, release, left, cleaned = Event(), Event(), Event(), Event()
+
+        def cleanup():
+            assert left.is_set()
+            cleaned.set()
+
+        worker = EndgameIO(cleanup)
 
         def transaction():
             entered.set()
@@ -156,49 +167,34 @@ def test_endgame_worker_cancellation_drains_transaction_before_release_and_shutd
         running = asyncio.create_task(worker.run(transaction))
         assert await asyncio.to_thread(entered.wait, 1)
         running.cancel()
-        await asyncio.sleep(.01)
-        running.cancel()
-        closing = asyncio.create_task(worker.aclose())
-        await asyncio.sleep(.01)
-        closing.cancel()
-        await asyncio.sleep(.01)
-        assert not running.done()
-        assert not closing.done()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(running, .2)
         assert not left.is_set()
-        release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await running
-        with pytest.raises(asyncio.CancelledError):
-            await closing
-        assert left.is_set()
-        with pytest.raises(RuntimeError, match="closed"):
+        with pytest.raises(EndgameUnavailable, match="busy"):
             await worker.run(lambda: None)
+        await asyncio.wait_for(worker.aclose(), .2)
+        assert worker._thread.daemon
+        assert not left.is_set()
+        assert not cleaned.is_set()
+        with pytest.raises(EndgameUnavailable, match="closed"):
+            await worker.run(lambda: None)
+        release.set()
+        assert await asyncio.to_thread(cleaned.wait, 1)
 
     asyncio.run(exercise())
 
 
-def test_cancelled_waiting_endgame_phase_never_enters_worker():
+def test_cancelled_unadmitted_endgame_phase_never_enters_worker():
     from tempo_learning_runtime.endgame_io import EndgameIO
     import pytest
 
     async def exercise():
         worker = EndgameIO()
-        entered, release = Event(), Event()
         observed = []
-
-        def active():
-            entered.set()
-            assert release.wait(2)
-
-        running = asyncio.create_task(worker.run(active))
-        assert await asyncio.to_thread(entered.wait, 1)
-        queued = asyncio.create_task(worker.run(lambda: observed.append("abandoned")))
-        await asyncio.sleep(0)
-        queued.cancel()
+        task = asyncio.create_task(worker.run(lambda: observed.append("abandoned")))
+        task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await queued
-        release.set()
-        await running
+            await task
         await worker.aclose()
         assert observed == []
 
@@ -425,3 +421,281 @@ def test_optional_endgame_writer_uses_separate_lazy_capacity_and_keeps_foregroun
     assert selected[1].options["max_size"] == 1
     assert selected[1].options["timeout"] == .25
     assert len(pools) == 4
+
+
+def test_asgi_shutdown_finishes_before_delayed_optional_connection_is_released(monkeypatch):
+    from tempo_learning_runtime.endgame_io import EndgameIO
+
+    cleaned = Event()
+
+    class OwnedDatabase(FakeDatabase):
+        def close_endgames(self):
+            assert self.active == 0
+            cleaned.set()
+
+        def close(self):
+            assert self.active == 1  # Main closes without touching optional I/O.
+            self.closed = True
+
+    database = OwnedDatabase(None)
+    monkeypatch.setattr(api, "Database", lambda configuration: database)
+    monkeypatch.setattr(api, "HostActivity", QuietActivity)
+    monkeypatch.setattr(api.study_bootstrap, "read_settings", lambda db: {})
+    configuration = Configuration("shutdown", "unused", "unused", "x" * 40,
+                                  maintenance=False, tablebase_url=None)
+    app = api.create_app(configuration)
+
+    async def exercise():
+        lifespan = app.router.lifespan_context(app)
+        await lifespan.__aenter__()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver",
+                                    headers={"Authorization": "Bearer " + configuration.token}) as client:
+            probe = asyncio.create_task(client.post("/api/endgames/probe", json={"fen": FEN}))
+            try:
+                assert await asyncio.to_thread(database.entered.wait, 1)
+                assert (await client.get("/api/study/bootstrap")).status_code == 200
+                await asyncio.wait_for(lifespan.__aexit__(None, None, None), .3)
+                assert database.closed
+                assert not cleaned.is_set()
+                assert not database.release.is_set()
+                response = await asyncio.wait_for(probe, .3)
+                assert response.status_code == 503
+                assert response.json()["detail"]["state"] == "unknown"
+            finally:
+                database.release.set()
+            assert await asyncio.to_thread(cleaned.wait, 1)
+
+    asyncio.run(exercise())
+
+
+def test_late_worker_exception_after_request_loop_exit_keeps_optional_cleanup_owner():
+    from tempo_learning_runtime.endgame_io import EndgameIO
+    import pytest
+
+    entered, release, cleaned = Event(), Event(), Event()
+    worker = EndgameIO(cleaned.set)
+
+    def phase():
+        entered.set()
+        assert release.wait(2)
+        raise ValueError("late optional failure")
+
+    async def exercise():
+        request = asyncio.create_task(worker.run(phase))
+        assert await asyncio.to_thread(entered.wait, 1)
+        request.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request
+        await worker.aclose()
+        assert not cleaned.is_set()
+
+    asyncio.run(exercise())
+    # The original event loop is gone; result delivery must not require it.
+    release.set()
+    assert cleaned.wait(1)
+
+
+def test_endgame_lane_rejects_maintenance_escape_and_main_close_never_takes_optional_lock(monkeypatch):
+    from tempo_learning_runtime import database as database_module
+    import pytest
+
+    closed = []
+
+    class Pool:
+        check_connection = staticmethod(lambda connection: None)
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def close(self):
+            closed.append(self)
+
+    monkeypatch.setattr(database_module, "ConnectionPool", Pool)
+    database = database_module.Database(Configuration("close", "unused", "unused", "x" * 40))
+    token = database_module.endgame_lane.set(True)
+    try:
+        with pytest.raises(RuntimeError, match="maintenance"):
+            with database.transaction(background=True):
+                raise AssertionError("must not start")
+    finally:
+        database_module.endgame_lane.reset(token)
+    # A stalled optional constructor/cleanup lock cannot become main-close work.
+    with database._endgame_pool_lock:
+        database.close()
+    assert closed == [database.writer, database.reader, database.maintenance]
+
+
+def test_timed_out_gateway_can_commit_then_replay_same_operation_without_duplicate(monkeypatch):
+    """Actual gateway authority; fake persistence does not replace native PG proof."""
+    from tempo_learning_runtime.endgame_io import EndgameIO
+
+    entered, release, committed, cleaned = Event(), Event(), Event(), Event()
+    receipts, effects = {}, []
+    template = {"white_material": "KQ", "black_material": "K", "trained_color": "white", "goal_mix": "both"}
+
+    class ReceiptDatabase(FakeDatabase):
+        def execute(self, statement, parameters=()):
+            if "operation_receipts" in statement:
+                self.row = receipts.get(parameters[0])
+            elif "endgame_templates" in statement:
+                self.row = template
+            elif "tablebase_cache" in statement:
+                self.row = (json.dumps({"category": "draw", "moves": []}),)
+            else:
+                raise AssertionError(statement)
+            return self
+
+        def execute_native(self, statement, parameters=()):
+            assert self.active == 1
+            if statement.startswith("INSERT INTO operation_receipts"):
+                operation_id, name, digest, payload = parameters
+                receipts.setdefault(operation_id, {"operation_id": operation_id, "command_name": name,
+                    "request_hash": digest, "payload_json": payload, "state": "pending", "response_json": None, "error_json": None})
+                self.row = None
+            elif statement.startswith("SELECT command_name,request_hash"):
+                receipt = receipts[parameters[0]]
+                self.row = (receipt["command_name"], receipt["request_hash"])
+            elif statement.startswith("SELECT * FROM operation_receipts"):
+                self.row = receipts.get(parameters[0])
+            elif statement.startswith("SELECT pg_advisory") or statement.startswith(("SAVEPOINT", "RELEASE SAVEPOINT")):
+                self.row = None
+            elif statement.startswith("UPDATE operation_receipts SET state='complete'"):
+                receipts[parameters[1]].update(state="complete", response_json=parameters[0])
+                committed.set()
+            else:
+                raise AssertionError(statement)
+            return self
+
+        def fetchone(self):
+            return self.row
+
+        def close_endgames(self):
+            assert self.active == 0
+            cleaned.set()
+
+    database = ReceiptDatabase(None)
+
+    def handler(db, payload):
+        entered.set()
+        assert release.wait(2)
+        effects.append(payload["template_id"])
+        return {"id": "one-attempt", **payload}
+
+    monkeypatch.setattr(api, "Database", lambda configuration: database)
+    monkeypatch.setattr(api, "HostActivity", QuietActivity)
+    monkeypatch.setattr(api, "EndgameIO", lambda close: EndgameIO(close, wait_seconds=.05))
+    monkeypatch.setattr(api, "generate_position", lambda *args, **kwargs: FEN)
+    monkeypatch.setitem(api.gateway._handlers, "endgames.attempt.create", handler)
+    app = api.create_app(Configuration("retry", "unused", "unused", "x" * 40,
+                                       maintenance=False, tablebase_url=None))
+
+    async def exercise():
+        async with app.router.lifespan_context(app), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver",
+            headers={"Authorization": "Bearer " + "x" * 40},
+        ) as client:
+            # No idempotency header: the server must reveal its generated ID
+            # rather than report that the admitted write failed or rolled back.
+            pending = await client.post("/api/endgames/templates/template-a/attempt")
+            assert entered.is_set()
+            assert pending.status_code == 503
+            detail = pending.json()["detail"]
+            operation_id = detail["operation_id"]
+            assert detail["state"] == "unknown"
+            assert pending.headers["location"] == "/api/operations/" + operation_id
+            assert receipts[operation_id]["state"] == "pending"
+            retry_headers = {"Idempotency-Key": operation_id}
+            busy = await client.post("/api/endgames/templates/template-a/attempt", headers=retry_headers)
+            assert busy.status_code == 503
+            assert busy.json()["detail"]["operation_id"] == operation_id
+            assert effects == []
+            release.set()
+            assert await asyncio.to_thread(committed.wait, 1)
+            for _ in range(50):
+                replay = await client.post("/api/endgames/templates/template-a/attempt", headers=retry_headers)
+                if replay.status_code == 200:
+                    break
+                assert replay.status_code == 503
+                await asyncio.sleep(.001)
+            assert replay.status_code == 200
+            assert replay.json()["id"] == "one-attempt"
+            assert len(receipts) == 1
+            assert effects == ["template-a"]
+            assert receipts[operation_id]["state"] == "complete"
+        assert await asyncio.to_thread(cleaned.wait, 1)
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        release.set()
+
+
+def test_daemon_endgame_phase_does_not_join_interpreter_shutdown():
+    """A fresh process exits even when its optional phase never returns."""
+    import subprocess
+    import sys
+    import textwrap
+
+    code = textwrap.dedent('''
+        import asyncio
+        from threading import Event
+        from tempo_learning_runtime.endgame_io import EndgameIO, EndgameUnavailable
+        entered = Event()
+        never = Event()
+        worker = EndgameIO()
+        def stalled():
+            entered.set()
+            never.wait()
+        async def main():
+            pending = asyncio.create_task(worker.run(stalled))
+            while not entered.is_set():
+                await asyncio.sleep(.001)
+            await worker.aclose()
+            try:
+                await pending
+            except EndgameUnavailable:
+                pass
+        asyncio.run(main())
+        print("optional phase detached; process exiting", flush=True)
+    ''')
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                            timeout=3, check=True)
+    assert "process exiting" in result.stdout
+
+
+def test_asgi_cancelled_probe_does_not_wait_for_optional_connection(monkeypatch):
+    import pytest
+
+    cleaned = Event()
+
+    class OwnedDatabase(FakeDatabase):
+        def close_endgames(self):
+            assert self.active == 0
+            cleaned.set()
+
+    database = OwnedDatabase(None)
+    monkeypatch.setattr(api, "Database", lambda configuration: database)
+    monkeypatch.setattr(api, "HostActivity", QuietActivity)
+    configuration = Configuration("cancel", "unused", "unused", "x" * 40,
+                                  maintenance=False, tablebase_url=None)
+    app = api.create_app(configuration)
+
+    async def exercise():
+        async with app.router.lifespan_context(app), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver",
+            headers={"Authorization": "Bearer " + configuration.token},
+        ) as client:
+            request = asyncio.create_task(client.post("/api/endgames/probe", json={"fen": FEN}))
+            try:
+                assert await asyncio.to_thread(database.entered.wait, 1)
+                request.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(request, .3)
+                assert database.active == 1
+                assert not database.release.is_set()
+                assert not cleaned.is_set()
+            finally:
+                database.release.set()
+        assert await asyncio.to_thread(cleaned.wait, 1)
+
+    asyncio.run(exercise())

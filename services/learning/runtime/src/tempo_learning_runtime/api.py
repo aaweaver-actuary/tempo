@@ -37,7 +37,7 @@ from .defense import (
     submit_defense_recognition,
 )
 from .endgames import generate_position, category_for_player
-from .endgame_io import EndgameIO
+from .endgame_io import EndgameIO, EndgameUnavailable
 from . import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
@@ -130,7 +130,7 @@ def register_handlers():
 def create_app(configuration: Configuration):
     register_handlers()
     database = Database(configuration)
-    endgame_io = EndgameIO()
+    endgame_io = EndgameIO(database.close_endgames)
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
     @asynccontextmanager
@@ -751,11 +751,22 @@ def create_app(configuration: Configuration):
             idempotency_key or "defense-attempt:" + request.attempt_id,
         )
 
+    async def endgame_phase(operation, *arguments, operation_id=None):
+        try:
+            return await endgame_io.run(operation, *arguments)
+        except EndgameUnavailable as error:
+            detail = {"message": str(error) + "; retry the same operation", "state": "unknown"}
+            headers = {"Retry-After": "1"}
+            if operation_id is not None:
+                detail["operation_id"] = operation_id
+                headers["Location"] = "/api/operations/" + operation_id
+            raise HTTPException(503, detail, headers=headers) from error
+
     @app.post("/api/endgames/probe")
     async def probe(request: EndgameProbeRequest):
         return await tablebase(request.fen)
 
-    async def tablebase(fen):
+    async def tablebase(fen, *, operation_id=None):
         try:
             position = chess.Board(fen)
         except ValueError as error:
@@ -763,7 +774,7 @@ def create_app(configuration: Configuration):
         if not position.is_valid() or len(position.piece_map()) > 7:
             raise HTTPException(422, "Unsupported endgame position")
         key = "tb-fen-v2:" + position.fen()
-        cached = await endgame_io.run(endgame_store.cached_answer, key)
+        cached = await endgame_phase(endgame_store.cached_answer, key, operation_id=operation_id)
         if cached is not None:
             return cached
         if not configuration.tablebase_url:
@@ -791,19 +802,19 @@ def create_app(configuration: Configuration):
             raise HTTPException(
                 503, "Optional tablebase unavailable; retry when online"
             ) from error
-        await endgame_io.run(endgame_store.cache_answer, key, data)
+        await endgame_phase(endgame_store.cache_answer, key, data, operation_id=operation_id)
         return data
 
     @app.get("/api/endgames/templates")
     async def templates():
-        return {"templates": await endgame_io.run(endgame_store.active_templates)}
+        return {"templates": await endgame_phase(endgame_store.active_templates)}
 
     @app.post("/api/endgames/templates/{identifier}/attempt")
     async def endgame_attempt(
         identifier: str, idempotency_key: str | None = Header(None)
     ):
         operation_id = idempotency_key or uuid.uuid4().hex
-        prior = await endgame_io.run(endgame_store.prior_attempt, operation_id)
+        prior = await endgame_phase(endgame_store.prior_attempt, operation_id, operation_id=operation_id)
         if prior:
             payload = json.loads(prior["payload_json"])
             if (
@@ -813,10 +824,11 @@ def create_app(configuration: Configuration):
                 raise HTTPException(
                     409, "Operation ID was already used for another request"
                 )
-            return await endgame_io.run(
-                gateway.dispatch, "endgames.attempt.create", payload, operation_id
+            return await endgame_phase(
+                gateway.dispatch, "endgames.attempt.create", payload, operation_id,
+                operation_id=operation_id,
             )
-        template = await endgame_io.run(endgame_store.active_template, identifier)
+        template = await endgame_phase(endgame_store.active_template, identifier, operation_id=operation_id)
         if not template:
             raise HTTPException(404, "Endgame template not found")
         deadline = time.monotonic() + 5
@@ -835,14 +847,14 @@ def create_app(configuration: Configuration):
                 template["trained_color"],
                 seed=seed,
             )
-            data = await tablebase(fen)
+            data = await tablebase(fen, operation_id=operation_id)
             target = category_for_player(data["category"])
             if target != "loss" and template["goal_mix"] in ("both", target):
                 break
         else:
             raise HTTPException(422, "Could not find a supported win/draw position")
 
-        return await endgame_io.run(
+        return await endgame_phase(
             gateway.dispatch,
             "endgames.attempt.create",
             {
@@ -852,6 +864,7 @@ def create_app(configuration: Configuration):
                 "moves": data.get("moves", []),
             },
             operation_id,
+            operation_id=operation_id,
         )
 
     @app.get("/internal/publications/operations/{operation_id}")

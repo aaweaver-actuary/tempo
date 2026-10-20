@@ -16,6 +16,7 @@ class Database:
         self.configuration = configuration
         self._endgame_pools = {}
         self._endgame_pool_lock = Lock()
+        self._endgame_closed = False
         self.writer = ConnectionPool(
             configuration.database_url,
             min_size=0,
@@ -48,6 +49,8 @@ class Database:
         # Construct only on first use. Optional requests have one serial worker,
         # but the lock also protects direct adapter consumers and shutdown.
         with self._endgame_pool_lock:
+            if self._endgame_closed:
+                raise RuntimeError("Optional endgame pools are closed")
             if read_only not in self._endgame_pools:
                 self._endgame_pools[read_only] = ConnectionPool(
                     self.configuration.reader_url if read_only else self.configuration.database_url,
@@ -69,6 +72,8 @@ class Database:
 
     @contextmanager
     def transaction(self, *, read_only=False, background=False, intake=False, **unused):
+        if endgame_lane.get() and background:
+            raise RuntimeError("Optional endgame work cannot use maintenance capacity")
         if intake and (read_only or not background):
             raise ValueError("Evidence intake uses the bounded background writer pool")
         pool = (
@@ -113,11 +118,17 @@ class Database:
                 )
             yield PostgresConnection(raw, read_only=read_only)
 
-    def close(self):
-        # Composition drains the owning endgame worker before closing pools.
+    def close_endgames(self):
+        """Called only by the optional worker after its active phase leaves."""
         with self._endgame_pool_lock:
-            pools = (self.writer, self.reader, self.maintenance, *self._endgame_pools.values())
+            self._endgame_closed = True
+            pools = tuple(self._endgame_pools.values())
         for pool in pools:
+            pool.close()
+
+    def close(self):
+        # Never acquire the optional lane lock or touch its active pools.
+        for pool in (self.writer, self.reader, self.maintenance):
             pool.close()
 
 
