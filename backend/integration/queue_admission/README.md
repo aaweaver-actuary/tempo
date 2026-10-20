@@ -3,7 +3,13 @@
 This is a four-case source-adapter proof on actual PostgreSQL. It is not an
 installed-artifact, full durable-worker, PR311-hook or full-system qualification.
 The coordinator owns the resource lifecycle. This directory contains no Docker
-controller, and no command below has been executed against PostgreSQL by this task.
+controller. One explicitly approved window on `269ce9e1` ran on 2026-10-20 from
+11:14:06 to 11:14:10 UTC: three cases passed, including shared-membership parity;
+the requeue case failed at fixture transaction control (`SAVEPOINT AS caller_repeat`
+from the legacy translator). It now uses native savepoint/rollback/release calls.
+That harness correction still needs a coordinated rerun. Container, process group,
+staging and volume absence were verified before releasing the slot. The failed
+window is retained and is not native qualification.
 
 ## Safety prerequisites before any fixture write
 
