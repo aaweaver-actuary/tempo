@@ -180,5 +180,5 @@ for exact ordering and cancellation of already-admitted work;
 [#267](https://github.com/aaweaver-actuary/tempo/issues/267) for unknown historical
 issuance recovery without invented backfill; and
 [#194](https://github.com/aaweaver-actuary/tempo/issues/194) for automatic repair of
-terminal retries. The MVP safely uses ordinary placement, keeps unknown issuance
+terminal retries. The MVP uses one-time best-effort priority with ordinary fallback, keeps unknown issuance
 unserved and makes failed pending work visible for manual retry.

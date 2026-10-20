@@ -112,7 +112,7 @@ class FactReader(Protocol):
 
 class QueueWriter(Protocol):
     def admit(self,encounter: EncounterIdentity,queue_day: str,*,prefer_front: bool) -> Placement:
-        """Canonical ordinary admission; preserve existing work and active head."""
+        """Canonical admission with one-time best effort; preserve the active head."""
         ...
 
 
