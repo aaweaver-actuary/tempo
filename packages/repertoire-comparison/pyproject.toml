@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-repertoire-comparison"
+version = "0.1.0"
+description = "Offline authored repertoire comparison over supplied game and snapshot values"
+requires-python = ">=3.12,<3.15"
+dependencies = ["tempo-game-review-contracts==0.1.0"]
+
+[project.scripts]
+tempo-first-departure = "tempo_repertoire_comparison.departure_cli:main"
+tempo-repertoire-compare = "tempo_repertoire_comparison.cli:main"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+
+[tool.uv.sources]
+tempo-game-review-contracts = { path = "../game-review-contracts" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_repertoire_comparison"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "REGRESSIONS.md", "pyproject.toml", "uv.lock"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

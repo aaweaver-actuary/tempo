@@ -287,6 +287,7 @@
         "EvidenceStore"
       ],
       "dependencies": [
+        "tempo_repertoire_comparison",
         "tempo_game_ingestion",
         "tempo_game_review_contracts",
         "chess",
@@ -1859,6 +1860,165 @@
           "owner": "game-ingestion",
           "kind": "python",
           "cwd": "packages/game-ingestion",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": [],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "game-classification",
+      "type": "library",
+      "maintainer": "Tempo / Games restoration",
+      "status": "implemented",
+      "root": "packages/game-classification",
+      "publicExports": [
+        "UnimplementedClassification"
+      ],
+      "dependencies": [
+        "tempo_game_review_contracts"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-game-classification",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "game-classification",
+          "kind": "python",
+          "cwd": "packages/game-classification",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": [],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "game-actions",
+      "type": "library",
+      "maintainer": "Tempo / Games restoration",
+      "status": "implemented",
+      "root": "packages/game-actions",
+      "publicExports": [
+        "UnimplementedActions"
+      ],
+      "dependencies": [
+        "tempo_game_review_contracts"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-game-actions",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "game-actions",
+          "kind": "python",
+          "cwd": "packages/game-actions",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": [],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "repertoire-comparison",
+      "type": "library",
+      "maintainer": "Tempo / Games restoration",
+      "status": "implemented",
+      "root": "packages/repertoire-comparison",
+      "publicExports": [
+        "CurrentRepertoireComparer",
+        "compare",
+        "RouteFrontier",
+        "TraversalRoute",
+        "DepartureResult",
+        "first_departure",
+        "first_departure_ply"
+      ],
+      "dependencies": [
+        "tempo_game_review_contracts"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-repertoire-comparison",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "repertoire-comparison",
+          "kind": "python",
+          "cwd": "packages/repertoire-comparison",
           "command": "python -m pytest tests --import-mode=importlib -q",
           "inputs": [
             "tests",

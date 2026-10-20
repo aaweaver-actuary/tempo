@@ -1,5 +1,6 @@
 """Policy-aware observations. A repertoire deviation is not an engine error."""
 from tempo_chess_core import canonical_fen_key
+from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 from .source import identity
 from .snapshot import projected_definition
 
@@ -10,22 +11,16 @@ def compare_game(game, positions, snapshot):
     definitions = snapshot.comparison_definitions()
     context = snapshot.finding_context(game)
     routes = [item for item in snapshot.compiled_routes() if item[0].learner_color == game["observed_color"]]
-    active = {(index, 0) for index, (_, keys, _) in enumerate(routes)
-              if keys[0] == positions[0]["comparison_key"]}
+    frontier = RouteFrontier((TraversalRoute(tuple(keys), tuple(route.moves),
+        tuple(ply for ply, binding in bindings.items() if binding.reentry))
+        for route, keys, bindings in routes), positions[0]["comparison_key"])
     findings = []
     projections={}
     decision_positions={}
     for position in positions:
         if position["move"] is None:
             break
-        candidates = set(active)
-        # FEN overlap alone never authorizes re-entry after divergence.
-        for index, (_, keys, bindings) in enumerate(routes):
-            for ply, binding in bindings.items():
-                if binding.reentry and keys[ply] == position["comparison_key"]:
-                    candidates.add((index, ply))
-        candidates = {(index, ply) for index, ply in candidates
-                      if routes[index][1][ply] == position["comparison_key"]}
+        candidates = frontier.candidates(position["comparison_key"])
         if position["turn"] == game["observed_color"]:
             groups = {}
             for index, route_ply in candidates:
@@ -75,6 +70,5 @@ def compare_game(game, positions, snapshot):
             finding["encounter_id"] = identity(game["workspace_id"], game["game_id"], game["player"],
                                                 position["ply"], finding["decision_id"])
             findings.append(finding)
-        active = {(index, ply + 1) for index, ply in candidates
-                  if ply < len(routes[index][0].moves) and routes[index][0].moves[ply] == position["move"]}
+        frontier.advance(candidates, position["move"])
     return findings

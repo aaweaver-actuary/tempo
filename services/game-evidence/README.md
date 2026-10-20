@@ -358,3 +358,18 @@ never advances accepted history or permits a correction to overtake that receipt
 ### Generation-aware operator snapshots
 
 The A operator's snapshot identity hashes the workspace, publication and represented generation; revision remains the observed serving activation revision. Historical activation and current-serving observation remain distinct. The store keeps immutable documents and rejects promotion of older publication generations. An offline observation is point-in-time evidence, not authorization for future Learning effects.
+
+## Independent ingestion and authored comparison owners
+
+The pure PGN parser/legal replay and ordered route frontier are extracted behind
+[shared game values](../../packages/game-review-contracts/README.md),
+[game ingestion](../../packages/game-ingestion/README.md) and
+[repertoire comparison](../../packages/repertoire-comparison/README.md). Game
+Evidence retains its storage, revision/receipt, historical applicability, mapping,
+reconciliation and delivery authority. Its compatibility facades consume those
+public pure owners; the independent components never import this service.
+
+The new supplied-current-snapshot comparer is read-only authored membership, not
+a replacement for Game Evidence's historical remediation eligibility guards. The
+canonical four-boundary drawing lives in the shared values README. No worker or
+live adoption is implied by extraction.
