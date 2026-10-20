@@ -34,6 +34,8 @@ Scheduling, eligibility, ordering, admission, chess logic, and evidence mathemat
 
 The repository is still an evolving monolithic checkout with existing UI, backend, worker, persistence, and test infrastructure. Current directories and runner jobs do not by themselves establish independent package, release, database, or deployment boundaries. Treat the table above as the adopted target, not a description of already completed extractions.
 
+Apply the project-wide [single-user MVP delivery policy](../../AGENTS.md#deliver-a-usable-single-user-mvp) when choosing each increment. Preserve clear interfaces, ownership and essential safeguards, but let present workflows drive implementation. The target map is not a requirement to complete every extraction, add distributed or multi-user hardening, or close every edge case before delivering a usable MVP; keep improvements small and replaceable, and track safe deferrals in issues.
+
 Follow the twelve phases and dependencies in #192. The initial package/build and harness work is tracked by [#263](https://github.com/aaweaver-actuary/tempo/issues/263), [#264](https://github.com/aaweaver-actuary/tempo/issues/264), and [#201](https://github.com/aaweaver-actuary/tempo/issues/201). Executable manifests, schemas, package artifacts, and toolchain changes belong to those implementation issues and later phases, not this documentation guide. Intermediate assemblies may be incomplete; each component's completion requires evidence for its own acceptance boundaries.
 
 Do not make global budgets, learning weights, probability-driven curriculum, or recurring-pattern features prerequisites for core reconstruction. Those remain later scoped work in the relevant #192 phases.
