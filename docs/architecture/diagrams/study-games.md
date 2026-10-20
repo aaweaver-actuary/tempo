@@ -5,121 +5,109 @@
 
 ## Main Study path and source gap
 
-**MAIN:** `TEMPO_TARGET=study` selects the Learning connection boundary. The
-diagram separates its HTTP serving path from the shared browser source that it
-still loads. It does **not** certify that the whole Study artifact is free of
-Games imports.
-
-The `React.lazy` declarations shown as source gaps do **not** themselves execute
-Games or sync code during ordinary Study. They defer the import factory until the
-corresponding component is rendered; Home's Games subtree is conditional on
-`currentView === "games"`. Source reachability is distinct from execution and from
-the [conditional build/offline asset dependency](#conditional-study-build-and-offline-assets-main)
-below. No emitted Study artifact was inspected for these drawings.
-
-The queue projection and refresh edges below are **PROPOSED PR329** at
-[`5f896cff`](https://github.com/aaweaver-actuary/tempo/commit/5f896cffdc29b228d36ea0b543c004100650b058).
-Merged borrowed policy PR327 keeps its same-transaction settings read and injected
-provider behavior. The proposed queue-owner change adds no commit authority;
-HTTP retains the canonical command for head issuance and its conflict behavior.
+**PR324 IMPLEMENTED SOURCE, UNMERGED:** the browser composition below describes
+`30191b9c026f27f3d816304c47e5b72e0ec390b0` on `codex/study-games-composition`, with PR323's documentation merged
+separately. It replaces the shared-Home Games import gap in this branch. MAIN at
+`fc92a4d9` and any deployed artifact are not claimed to contain this change.
+The Learning gateway retains serving and transaction authority. MAIN now includes
+HostActivity325, endgame326, borrowed review-policy327 and queue persistence329;
+this PR adds only the physical browser composition and its scoped proof.
 
 ```mermaid
 flowchart TB
-  Entry["static/main +<br/>StudyConnectionBoundary"] -->|"connect/bootstrap, then lazy<br/>import"| Home["Shared home_view.tsx -<br/>legacy composition"]
-  Home -->|"Study intents / review<br/>adapter registration"| Session["StudySession - durable<br/>submit, receipt recovery,<br/>next loading"]
-  Session -->|"IntentStore"| Browser[("Authority-scoped browser<br/>intents / checkpoints")]
-  Session -->|"LearningClient supplied by<br/>application adapters"| Adapter["review-outbox /<br/>study-command-client"]
-  Adapter -->|"learningFetch: exact origin<br/>and allowed Study paths"| HTTP["Learning HTTP API"]
-  HTTP -->|"record_intent / execute /<br/>read_operation"| Gateway["Learning gateway -<br/>transaction owner"]
+  Build["Study Vite composition"] -->|"select physical entry before graph discovery"| Entry["static/src/study-main.tsx"]
+  Entry -->|"connect/bootstrap, then lazy import"| Boundary["StudyConnectionBoundary"]
+  Boundary -->|"shared Study shell and training controller"| Home["home_view.tsx"]
+  Home -->|"Train / Tactics / Endgames / appearance"| StudyUI["Core Study views"]
+  Boundary -->|"Learning-owned settings"| Settings["study-settings-panel"]
+  Home -->|"Study intents / review adapter registration"| Session["StudySession - durable submit, receipt recovery, next loading"]
+  Session -->|"IntentStore"| Browser[("Authority-scoped browser intents / checkpoints")]
+  Session -->|"LearningClient supplied by application adapters"| Adapter["review-outbox / study-command-client"]
+  Adapter -->|"learningFetch: exact origin and allowed Study paths"| HTTP["Learning HTTP API"]
+  HTTP -->|"record_intent / execute / read_operation"| Gateway["Learning gateway - transaction owner"]
   Gateway -->|"borrowed connection"| Review["LearningReviewAdapter"]
-  Review -->|"ReviewSubmissionStore<br/>implementation supplied to<br/>submit_review"| App["Pure Learning review<br/>application"]
-  Gateway -->|"queue command handlers"| Queue["Learning queue / admission /<br/>first issuance"]
-  HTTP -->|"PROPOSED329: read_queue_window<br/>semantic read operation"| Projection["Learning queue<br/>read projection owner"]
-  Projection -->|"complete parameter-bound reads;<br/>borrowed read-only transaction"| DB
-  Review -->|"semantic required settlement<br/>in same transaction"| Remediation["Learning remediation adapter<br/>/ repository"]
-  Review -->|"history / scheduling /<br/>evidence / receipt effects"| DB[("Learning-owned PostgreSQL<br/>state")]
-  Review -->|"PROPOSED329: mark_queue_refresh_pending<br/>daily-all / remediation-all / projection-last"| Queue
-  Review -->|"policy settings read through<br/>borrowed transaction"| DB
-  Queue -->|"canonical writer and lock<br/>protocol"| DB
-  Remediation -->|"Learning-owned obligation<br/>settlement"| DB
-  Home -.->|"GAP: source declares lazy<br/>GamesView import"| LegacyGames["app/views/games_view.tsx"]
-  Home -.->|"GAP: source declares<br/>WorkbenchGameSync import"| LegacySync["legacy workbench-game-sync"]
-  Entry -.->|"optional user navigation<br/>only; no readiness wait"| WB["Independent Workbench URL"]
-  classDef gap fill:#fff1f0,stroke:#c53030,color:#7f1d1d
-  class LegacyGames,LegacySync gap
+  Review -->|"semantic ReviewSubmissionStore"| App["Pure Learning review application"]
+  Gateway -->|"queue command handlers"| Queue["Learning queue / admission / first issuance"]
+  Review -->|"same-transaction required settlement"| Remediation["Learning remediation adapter / repository"]
+  Review -->|"history / scheduling / evidence / receipt effects"| DB[("Learning-owned PostgreSQL state")]
+  HTTP -->|"read_queue_window semantic operation"| Projection["Learning queue read projection owner (MAIN)"]
+  Projection -->|"complete parameter-bound reads in borrowed transaction"| DB
+  Review -->|"policy settings via borrowed command transaction"| DB
+  Review -->|"daily-all / remediation-all / projection-last"| Queue
+  Queue -->|"canonical writer and lock protocol"| DB
+  Remediation -->|"Learning-owned obligation settlement"| DB
+  Full["static/src/main.tsx - full local/demo entry"] --> Legacy["legacy-home / legacy-workspace"]
+  Legacy -->|"same Home; narrow facts and callbacks"| Home
+  Legacy -->|"owns optional imports, state and handoffs"| Optional["Games/sync, Builder, comparison, repertoire, insights, studies, administration and dialogs"]
+  Boundary -.->|"optional user navigation only; no readiness wait"| WB["Independent Workbench URL"]
 ```
 
 | Interface / decision | Source correspondence |
 | --- | --- |
-| Connection, bootstrap, authority and allowed transport | [`study-connection.ts`](../../../app/lib/study-connection.ts): `connectStudy`, `studyWorkspace`, `learningPaths`, `authenticatedLearningFetch`. Only configured Learning origin/Study paths receive the credential; no fallback to Games. [Connection boundary](../../../app/components/study-connection-boundary.tsx) waits for Learning bootstrap or explicitly permitted cached practice. |
-| Browser composition and retained import gap | [`static/src/main.tsx`](../../../static/src/main.tsx) loads the boundary, which imports [`home_view.tsx`](../../../app/views/home_view.tsx). Home declares lazy `GamesView` and `WorkbenchGameSync` imports and contains Games-related navigation/state. [`Navbar`](../../../app/components/Navbar.tsx) filters Study navigation; that is not source/import separation. The [planned Study artifact](../../../apps/study-web/README.md) has no independent build claim. |
-| Session and browser data ownership | [`study-session-runtime.ts`](../../../app/lib/study-session-runtime.ts) composes adapters into [`createStudySession`](../../../packages/study-session/src/index.ts); [`study-intent-storage.ts`](../../../app/lib/study-intent-storage.ts) supplies the [`IntentStore`](../../../packages/browser-intents/src/index.ts). [`review-outbox.ts`](../../../app/lib/review-outbox.ts) and [`study-command-client.ts`](../../../app/lib/study-command-client.ts) preserve family-specific payloads/identities. |
-| PROPOSED PR329 queue read and refresh projection | [`queue_application.read_queue_window`](../../../services/learning/runtime/src/tempo_learning_runtime/queue_application.py) owns complete card/count/projection queries and the retained legacy card fields. The HTTP queue payload consumes `QueueWindowProjection` before commanding head issuance; it does not rewrite SQL. The same owner exposes `mark_queue_refresh_pending_in_transaction`; review flushes all daily tasks, then remediation tasks, then projection marks in its borrowed transaction. Existing entry-state/queue-command SQL helpers remain a scoped legacy boundary outside this queue-window repair. |
+| Physical entry and loaded graph guard | [`studyComposition`](../../../scripts/study-composition.ts) changes the HTML entry before graph discovery. Its semantic optional implementation list rejects loaded Games/sync, authoring, comparison, insights, administration, and legacy composition roots, even if later tree-shaken. [`study-main.tsx`](../../../static/src/study-main.tsx) has no legacy import. |
+| Optional state, presentation and handoff owner | [`LegacyHome`](../../../app/views/legacy-home.tsx) injects [`LegacyWorkspace`](../../../app/views/legacy-workspace.tsx). It owns Builder/comparison/discovery/filter/paste/repair state, repair race fencing, deletion recovery and optional views/dialogs. [`LegacyWorkspaceProps` / slots / controller](../../../app/components/optional-workspace.ts) expose selected card/position facts and explicit queue/card commands; they do not pass the Home store. Home owns one training controller and queue acquisition. Unsupported controls are omitted when their action capability is absent. |
+| Genuine Study settings and navigation | [`StudyConnectionBoundary`](../../../app/components/study-connection-boundary.tsx) retains [`StudySettingsPanel`](../../../app/components/study-settings-panel.tsx) for Learning settings. [`StudySettingsView`](../../../app/views/study-settings-view.tsx) changes browser appearance/shortcuts. [`canOpenWorkspace`](../../../app/lib/study-workspace-policy.ts) checks direct intents as well as Navbar visibility. |
+| Connection and allowed transport | [`study-connection.ts`](../../../app/lib/study-connection.ts): `connectStudy`, `studyWorkspace`, `learningPaths`, `authenticatedLearningFetch`. Only the configured Learning origin/Study paths receive the credential; no Games fallback. The boundary waits for Learning bootstrap or explicitly permitted cached practice. |
+| Session and browser data ownership | [`study-session-runtime.ts`](../../../app/lib/study-session-runtime.ts) composes adapters into [`createStudySession`](../../../packages/study-session/src/index.ts); [`study-intent-storage.ts`](../../../app/lib/study-intent-storage.ts) supplies [`IntentStore`](../../../packages/browser-intents/src/index.ts). [`review-outbox.ts`](../../../app/lib/review-outbox.ts) and [`study-command-client.ts`](../../../app/lib/study-command-client.ts) preserve family-specific payloads/identities. |
+| MAIN PR329 queue read and refresh projection | [`queue_application.read_queue_window`](../../../services/learning/runtime/src/tempo_learning_runtime/queue_application.py) owns complete card/count/projection queries and the retained legacy card fields. The HTTP queue payload consumes `QueueWindowProjection` before commanding head issuance; it does not rewrite SQL. The same owner exposes `mark_queue_refresh_pending_in_transaction`; review flushes all daily tasks, then remediation tasks, then projection marks in its borrowed transaction. Existing entry-state/queue-command SQL helpers remain a scoped legacy boundary outside this queue-window repair. |
 | Borrowed review capabilities | [`ReviewStore` / `ReviewSubmissionStore`](../../../services/learning/application/src/tempo_learning_review/ports.py), [`submit_review`](../../../services/learning/application/src/tempo_learning_review/application.py), [`LearningReviewAdapter`](../../../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py). The application receives semantic facts/operations; it does not acquire/commit a connection. The adapter reads policy settings through the same borrowed transaction after submission acquires card/queue locks; it does not acquire a nested reader connection. An injected policy provider remains supported. |
-| Serving and settlement | [API handler registration](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [gateway](../../../services/learning/runtime/src/tempo_learning_runtime/gateway.py), [queue application](../../../services/learning/runtime/src/tempo_learning_runtime/queue_application.py), [admission](../../../services/learning/runtime/src/tempo_learning_runtime/admission.py), [receivers/settlement](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py), [remediation adapter](../../../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py). Settlement uses accepted Learning-local facts, not an online Games call. |
+| Serving, borrowed review and settlement | [API registration](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [gateway](../../../services/learning/runtime/src/tempo_learning_runtime/gateway.py), [`submit_review` / ports](../../../services/learning/application/src/tempo_learning_review/application.py), [review adapter](../../../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py), [queue application](../../../services/learning/runtime/src/tempo_learning_runtime/queue_application.py), [admission](../../../services/learning/runtime/src/tempo_learning_runtime/admission.py), [receivers](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py), [remediation adapter](../../../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py). The review application receives semantic capabilities; gateway retains transaction authority. Settlement uses Learning-local facts, not an online Games call. |
 
 The independent Learning install closure contains no Game Evidence service,
 Intelligence service, legacy backend, Redis/Celery or engine/model runtime. Its
 [package definition](../../../services/learning/runtime/pyproject.toml) includes
-Game Evidence **contracts** and Learning's own remediation module. A contract or
-pure shared library is not a dependency on the producer lifecycle.
+Game Evidence **contracts** and Learning's own remediation module. Pure shared
+libraries do not create a producer lifecycle dependency.
 
 **Acceptance invariant:** Study must have no Games call, import, wait,
 readiness, transaction or lifecycle dependency. Games must be able to fail
-completely while ordinary Study continues. Existing shared Home imports are a
-named **legacy source gap**, not an exception permitting new coupling or evidence
-that the invariant is already met. This documentation makes no bundle-elimination
-claim and changes no runtime source. PR322 does not remove this gap.
+completely while ordinary Study continues. This PR repairs the browser source and
+artifact boundary only; merged host/endgame execution repairs below retain their own scoped proof,
+and deployment resource isolation remains unverified.
 
-Any optional practice influence enters the **Learning/queue owner's semantic
+Optional practice influence enters the **Learning/queue owner's semantic
 interface**, as the [existing evidence sequence](flows.md#observed-game-evidence-to-learning-main)
 shows. Learning owns validation, eligibility/admission, idempotency, transactions
-and ordinary queue consumption. Study must not learn how to contact the producer;
-the producer must not write Learning queue, review or scheduling tables. PR319 is
-paused; no proposed encountered-card API is assumed here.
+and ordinary queue consumption. Producers must not write Learning queue, review
+or scheduling tables. PR319 remains paused; no proposed encountered-card API is
+assumed here.
 
 ## Conditional Study build and offline assets (MAIN)
 
-**MAIN source checked; emitted-artifact verification pending.** The Study build
-uses the shared offline-shell inventory plugin. This is an asset-availability
-boundary beyond whether a lazy component executes. Arrows below label build data
-flow and readiness waits; dotted edges are explicitly conditional.
+**PR324 IMPLEMENTED SOURCE AND ACTUAL BUILD, UNMERGED:** the all-emitted-assets
+inventory rule remains intact. The physical Study composition removes optional
+implementations before emission. This changes the former conditional dependency;
+it does not filter required assets out of the worker to conceal coupling.
 
 ```mermaid
 flowchart TB
-  Build["Study Vite build<br/>static/app source graph"] -->|"all emitted JS, MJS and CSS"| Inventory["offlineShellAssets<br/>BUILD_SHELL_ASSETS inventory"]
-  Build -.->|"IF optional chunks remain<br/>in emitted Study output"| Optional["Games / sync chunks<br/>Artifact presence unverified"]
-  Optional -.->|"IF emitted, included<br/>without feature filtering"| Inventory
-  Inventory -->|"inventory embedded in sw.js"| SW["Service worker<br/>requiredShellUrls / precacheShell"]
-  SW -->|"cache.addAll required URLs"| Cache[("Browser offline shell cache")]
-  Ready["Study offline queue readiness<br/>waitForOfflineShell"] -->|"wait for worker readiness<br/>and request shell status"| SW
-  SW -.->|"IF a required asset fails or<br/>is missing from the cache"| Failure["New shell install can reject<br/>or shell ready can be false"]
+  Build["Physical Study source graph"] -->|"semantic implementation guard rejects optional roots"| Output["Study output: core shell, training, settings and worker"]
+  Legacy["Legacy optional implementations"] -.->|"excluded from loaded graph and emitted output"| Guard["Study composition guard"]
+  Output -->|"all emitted JS, MJS and CSS"| Inventory["offlineShellAssets / BUILD_SHELL_ASSETS"]
+  Inventory -->|"inventory embedded in emitted sw.js"| SW["Service worker / requiredShellUrls / precacheShell"]
+  SW -->|"cache.addAll required Study URLs"| Cache[("Browser offline shell cache")]
+  Ready["Study offline queue readiness / waitForOfflineShell"] -->|"worker readiness and shell status"| SW
+  SW -.->|"a missing required Study asset still fails install or readiness"| Failure["Truthful unavailable offline shell"]
 ```
 
 | Edge / owner | Concrete source and effect |
 | --- | --- |
-| Build composition → inventory | [Vite config](../../../vite.static.config.ts) installs [`offlineShellAssets`](../../../scripts/offline-shell-assets.ts). Its `writeBundle` inventories **all** emitted `.js`, `.mjs` and `.css` bundle keys, not only initial HTML references or a Study-only feature list, then replaces `BUILD_SHELL_ASSETS` in emitted `sw.js`. |
-| Inventory → install/cache | [`public/sw.js`](../../../public/sw.js): `requiredShellUrls` combines the base shell, HTML-referenced assets and build inventory. `precacheShell` uses `cache.addAll`; the install event waits for that promise before `skipWaiting`. A required fetch failure can reject installation of the new shell. This does not establish failure of an already active older shell. |
-| Cache → offline readiness | The same worker's `tempo:offline-shell-status` handler sets `ready` only when every required URL is cached. [`waitForOfflineShell`](../../../app/lib/offline-shell.ts) waits for service-worker readiness/control and validates the version/status reply. [Queue preparation and cached fallback](../../../app/views/fetchAndInitializeQueue.tsx) call it before reporting phone readiness or accepting that cached fallback. [Static startup](../../../static/src/main.tsx) registers the worker in production. |
+| Composition → actual output | [`studyComposition`](../../../scripts/study-composition.ts) emits `study-composition.json`, recording loaded application modules and each emitted chunk's modules. PR324's actual bounded Study build passed the expanded implementation guard. It emitted seven JS/CSS assets, including the Study worker, and no named optional implementations. |
+| Output → inventory | [Vite config](../../../vite.static.config.ts) installs [`offlineShellAssets`](../../../scripts/offline-shell-assets.ts). Its `writeBundle` inventories every emitted `.js`, `.mjs` and `.css` key and replaces `BUILD_SHELL_ASSETS` in `sw.js`. The actual emitted inventory equals that output set. |
+| Inventory → install/cache | [`public/sw.js`](../../../public/sw.js): `requiredShellUrls` combines base shell, HTML references and build inventory. `precacheShell` uses `cache.addAll`; installation waits for that promise before `skipWaiting`. Required fetch failures still reject new-shell installation. |
+| Cache → offline readiness | Worker `tempo:offline-shell-status` checks all required URLs. [`waitForOfflineShell`](../../../app/lib/offline-shell.ts) verifies worker version and readiness. [Queue preparation/fallback](../../../app/views/fetchAndInitializeQueue.tsx) calls it before claiming offline readiness. [`renderApplication`](../../../static/src/render-application.tsx) registers the production worker. |
 
-**Conditional consequence:** if Games/sync chunks remain in the emitted Study
-output, they enter this required inventory even without Games/sync execution.
-Unavailable optional assets can then affect Study's new offline-shell installation
-or offline-readiness check. The asset set is served from the Study build's own
-origin; this is not evidence of an API call or readiness wait on the independent
-Games service.
-
-**Verification status:** the inventory, install and status paths above were read
-in source. No Study build was produced; emitted chunks and the built inventory
-were not inspected. No asset-loss scenario was executed or live/offline failure
-observed here.
-Whether this conditional edge exists in a particular artifact remains unverified.
-The target is a Study composition/artifact whose required offline assets exclude
-optional feature implementations. A separate composition repair is in progress
-on another branch; it is not incorporated or claimed complete by this view.
-Its owning change must inspect the actual output/inventory and verify the affected
-offline boundary before claiming the gap removed. This documentation correction
-does not require a full-stack suite or change runtime source.
+**Verification status:** actual emitted modules, chunks and offline inventory were
+inspected for this branch: 157 application modules and seven emitted JS/CSS assets.
+One native Chromium context served the actual artifact and worker from a disposable
+loopback host with canonical synthetic Learning bootstrap/settings/queue/teaching
+fixtures. Optional asset URLs returned 404; worker status was ready before and after
+offline reload, the prepared opening queue remained usable, and browser appearance
+preferences persisted across settings/training navigation. Unknown API, external
+network and page-error counts were zero; the context, Chromium process and host
+were closed. The PR evidence retains the exact fixture script, screenshots and
+initial fixture/oracle failures. No live service, data, deployment, PostgreSQL
+behavior or whole-host resource independence is certified by this frontend proof.
 
 ## Shared Learning request execution gaps (MAIN)
 
@@ -129,7 +117,7 @@ Host publication/cleanup belongs to its optional daemon; essential request
 accounting uses bounded memory. Endgame persistence runs as complete phases on
 its dedicated daemon with separate connection capacity and late cleanup ownership.
 Source availability does not establish deployment or shared host/PostgreSQL
-isolation. The proposed PR329 queue persistence boundary is described above.
+isolation. The merged PR329 queue persistence boundary is described above.
 
 ```mermaid
 flowchart TB
@@ -221,8 +209,8 @@ read-only composition, narrow view port and bounded game projection above.
 
 | Path | Local ownership and failure result | Limit of claim |
 | --- | --- | --- |
-| Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. Shared Home remains a source gap. |
-| Conditional Study offline assets | The shared build inventories all emitted JS/MJS/CSS; worker installation/cache status can depend on optional chunks **if** they remain in that output. Lazy declarations alone do not execute those features. | [Source-backed conditional view](#conditional-study-build-and-offline-assets-main); emitted artifact and failure scenario unverified, no observed live failure. |
+| Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. PR324 provides a physical Study entry and optional composition boundary in this source; deployment remains unverified. |
+| Conditional Study offline assets | PR324 excludes named optional implementations before emission; the worker still requires every emitted JS/MJS/CSS asset and reports unavailable required assets honestly. | [Actual PR324 artifact and synthetic offline proof](#conditional-study-build-and-offline-assets-main): 157 application modules, seven emitted JS/CSS assets, ready worker before/after offline reload with optional URLs unavailable. This is component-scoped evidence, not a live incident or deployment claim. |
 | Shared Learning host reporting (MAIN) | Essential accounting uses bounded-memory synchronization; daemon-owned publication and cleanup have no essential filesystem wait or shutdown join. | [Merged host source](#shared-learning-request-execution-gaps-main); last healthy idle evidence can permit foreground overlap for the remaining 15-second lease. Missing/startup/removed-source denial requires configured expected workspace identities; default `[]` accepts absence. Deployment/resource isolation unverified. |
 | Optional endgame execution (MAIN) | One daemon admits complete synchronous phases; separate lazy reader/writer pools each max1 preserve foreground capacity. Main shutdown signals without joining active optional I/O or closing its transaction; the daemon owns late completion and cleanup. | [Merged endgame source](#shared-learning-request-execution-gaps-main); canonical operation receipt owns unknown/late outcomes. Shared PostgreSQL/process/host allocation remains deployment-unverified. |
 | Games read (MAIN) | Invalid auth/schema/scope/cursor or DB failure returns Games error; missing scopes remain missing. No hidden run creation, import, analysis, Study call or repair. View disposal destroys its own board and ignores late responses; server lifespan closes only its pools/executor. | See [read/failure sequence](flows.md#games-read-failure-and-disposal-main-merged-pr322). No Study/worker shutdown is part of this path. |

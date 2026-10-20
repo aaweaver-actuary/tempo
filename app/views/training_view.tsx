@@ -67,7 +67,7 @@ interface TrainingViewProps {
   retryQueueAfterReview?: () => void;
   handleAttemptFailure: () => void;
   resetCardAttempt: () => void;
-  setEditorCard: (card: PracticeCard | null) => void;
+  setEditorCard?: (card: PracticeCard | null) => void;
   onAcceptPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
@@ -103,7 +103,7 @@ function StandardTrainingView({
   onRejectPrefixSplit = async () => { throw new Error("Prefix splitting is unavailable. Reload training."); },
   onMove,
   onOpeningAssistance,
-  onOpenPosition = () => undefined,
+  onOpenPosition,
   onBury = async () => undefined,
   burialPending = false,
   useSharedBoard = false,
@@ -285,7 +285,7 @@ function StandardTrainingView({
       fen={card.startingFen}
       onClick={handleAnalyzeOnLichessClick}
     />
-    {!independentStudy && <EditCardButton
+    {!independentStudy && setEditorCard && <EditCardButton
       disabled={burialPending}
       card={card}
       setEditorCard={(value) => setEditorCard(value)}
@@ -342,7 +342,7 @@ function StandardTrainingView({
       )}
     </div>
   );
-  const positionActions = independentStudy ? null : (
+  const positionActions = independentStudy || !onOpenPosition ? null : (
     <div className="position-actions" aria-label="Open review position">
       {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
         <Button onClick={() => onOpenPosition("compare", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Compare positions</Button>
