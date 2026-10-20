@@ -431,7 +431,7 @@ class LearningReviewAdapter:
         for day in sorted(self.remediation_days):
             request_remediation(self.database, day)
         for day in sorted(self.queue_refreshes):
-            self.database.execute(queue_application._QUEUE_REFRESH_PROJECTION_SQL, (day,))
+            queue_application.mark_queue_refresh_pending_in_transaction(self.database, day)
 
     def lock_review_cards(self, command):
         return _lock_review_cards(self.database, command.card_id, command.prepared_next)

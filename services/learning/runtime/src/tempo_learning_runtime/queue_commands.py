@@ -17,9 +17,6 @@ from .durable_tasks import enqueue_task_in_transaction
 from .review_service import capture_daily_queue_order, preserve_daily_queue_order
 
 
-_QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL
-
-
 def _lock_attempt_card(database, entry_id: int) -> None:
     """Follow review's card-before-queue lock order for retained commands."""
     if not isinstance(database, PostgresConnection):
@@ -35,9 +32,6 @@ def _lock_attempt_card(database, entry_id: int) -> None:
         database.execute(
             "SELECT id FROM cards WHERE id=? FOR UPDATE", (entry["card_id"],)
         )
-
-
-_AVAILABLE_ATTEMPT_SQL = queue_application._AVAILABLE_ATTEMPT_SQL
 
 
 def available_attempt_sql() -> str:

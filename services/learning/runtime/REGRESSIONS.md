@@ -63,6 +63,7 @@ The complete native inventory is discovered by `integration/run_postgres.py` fro
 | `test_host_activity.py` | Independent session expiry and remaining quiet time; pending essential request holds; own-producer cleanup; authenticated/origin-scoped activity without PostgreSQL; optional filesystem failure retains evidence and no broker dependency |
 | `test_runtime.py` | Load/issue/review, immutable logical and transport replay, scope/origin/role denial, authoritative concurrent first enqueue |
 | `test_transactions.py` | Opening evidence atomicity; handler and handled-reconciliation rollback; competing payloads; bounded current-card contention; nonblocking optional successor; stale/deleted/retired definitions; retained quota; finite-contention maintenance; local-day boundary |
+| `test_queue_persistence.py` | Complete owner card/count/projection reads, legacy wire whitelist, review identities, defense/Study source facts, bounded windows, semantic HTTP adoption/head issuance conflicts and daily-all/remediation-all/projection-last review refresh ordering. These infrastructure-free checks do not establish native query/locking/rollback behavior; `test_queue_presentation.py` retains actual PostgreSQL ownership. |
 | `test_review_policy.py` | `test_review_policy_reads_borrowed_settings_without_nested_connection` forbids nested connection acquisition and proves settings come from the borrowed command transaction; `test_review_policy_preserves_injected_provider_without_database_read` retains injected policy semantics. These infrastructure-free adapter checks do not establish native locking/rollback behavior. |
 | `test_families.py` | All five typed specifications, practice/review/self-assessment/feedback; tactical discovery and binding; defense recognition, covered grading and uncovered durable intent |
 | `test_eligibility.py` | Parent exposure, integrity fences, competing issuance, middlegame review, guided typed attempts/sibling burial, local evidence promotion and required settlement |
@@ -293,6 +294,7 @@ logical effect. These fake tests require no database or HTTP server and do not
 replace native PostgreSQL locking/rollback proof. Existing `test_endgames.py`
 retains native receipt, cache, provider-protocol and review proof. Host and
 PostgreSQL allocation/deployment isolation remain unverified.
+
 Host activity filesystem independence (source repair; deployment unverified):
 
 - `test_host_activity_stalled_publication_does_not_block_start_essential_request_or_shutdown`
