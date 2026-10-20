@@ -58,7 +58,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
         publisher = executor.submit(publisher_read)
         assert entered.wait(2)
         try:
-            import postgres_rehearsal_admission
+            import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
             original_sleep = postgres_rehearsal_admission.time.sleep
 
             def yield_to_policy(_seconds):
@@ -88,7 +88,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
 
 @pytest.mark.parametrize('filename', ['check_postgres_graph_retention.py', 'check_postgres_canonical_freshness.py'])
 def test_native_graph_direct_entry_calls_use_shared_admission_protocol(filename):
-    path = Path(__file__).resolve().parents[2] / 'scripts' / filename
+    path = Path(__file__).resolve().parents[2] / 'database' / 'tests' / filename
     tree = ast.parse(path.read_text())
     targets = {'prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice', 'execute_priority_retention_slice'}
 

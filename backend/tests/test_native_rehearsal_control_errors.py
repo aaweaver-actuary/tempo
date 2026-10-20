@@ -18,7 +18,7 @@ from app.services import redis_admission_gate
 ])
 @pytest.mark.parametrize('with_cause', [False, True])
 def test_native_wait_helpers_preserve_unavailable_control_without_retry(monkeypatch, filename, function_name, with_cause):
-    path = Path(__file__).resolve().parents[2] / 'scripts' / filename
+    path = Path(__file__).resolve().parents[2] / 'database' / 'tests' / filename
     function = next(node for node in ast.parse(path.read_text()).body
                     if isinstance(node, ast.FunctionDef) and node.name == function_name)
     clock = SimpleNamespace(monotonic=Mock(side_effect=[0, 1, 11]),

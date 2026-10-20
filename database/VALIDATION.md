@@ -64,3 +64,10 @@ python -m pytest backend/tests/test_database_cli_bootstrap.py backend/tests/test
 ```
 
 The first increment is not complete centralization: **156 mixed SQL/application modules remain outside `database/`**. Their database operations must be extracted, while application/domain logic belongs in logical folders outside it. This is unfinished work rather than a permanent exception. Extraction will proceed in separately reviewable dependent changes; no schema redesign, live operation, CI enablement or full-system campaign is authorized here.
+
+
+## PR334 follow-up: direct snapshot and test-fixture discovery
+
+The focused tactic suite exposed two fixture imports still searching `scripts/` after tooling relocation. The analogous-import audit also corrected string-based rehearsal module imports and parameterized fixture paths to their existing `database.tests` / `database.tooling` owners. `create_sqlite_cutover_snapshot.py --help` needed the repository root on its direct-script path; its new isolated-interpreter regression failed before repair with `No module named database` and passes after repair without opening SQLite or a socket.
+
+Focused checks: 71 cases passed across CLI bootstrap (8), tactic capture (24), graph rehearsal admission (4), canonical rehearsal admission (7), Study priority maintenance (4), SQLite snapshot (3), admission proof ownership (14), native control-error helper (6), and the one affected canonical-retention fixture. The first combined pass had 60 passes and four old parameterized paths failing; the four were then repaired and passed separately. Existing assertions, fake controls and task-owned temporary/in-memory SQLite were retained. No native PostgreSQL fixture or live service ran. Full commands/logs are retained in the task evidence; these results supplement, not replace, the earlier 24-case/9-subtest CLI/staging repair evidence.

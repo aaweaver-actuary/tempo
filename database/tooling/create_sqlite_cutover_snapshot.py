@@ -15,7 +15,12 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import uuid
+
+# Preserve direct-script package discovery after relocation.
+_REPOSITORY = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPOSITORY))
 
 from database.tooling.reclaim_priority_storage import queue_order_checksum
 

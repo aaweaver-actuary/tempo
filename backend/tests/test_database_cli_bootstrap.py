@@ -18,6 +18,30 @@ ENTRYPOINTS = (
 )
 
 
+def test_database_snapshot_cli_help_needs_no_pythonpath_or_storage(tmp_path):
+    probe = r'''
+import runpy
+import sys
+def prohibit_effects(event, arguments):
+    if event in {'socket.connect', 'socket.bind', 'sqlite3.connect', 'subprocess.Popen'}:
+        raise AssertionError('CLI help attempted an external effect: ' + event)
+sys.addaudithook(prohibit_effects)
+sys.argv = [sys.argv[1], '--help']
+try:
+    runpy.run_path(sys.argv[0], run_name='__main__')
+except SystemExit as result:
+    assert result.code == 0
+else:
+    raise AssertionError('CLI help did not exit')
+'''
+    result = subprocess.run(
+        [sys.executable, '-I', '-c', probe, str(ROOT / 'database/tooling/create_sqlite_cutover_snapshot.py')],
+        cwd=tmp_path, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'usage:' in result.stdout
+
+
 @pytest.mark.parametrize("entrypoint", ENTRYPOINTS)
 def test_database_relocation_direct_cli_resolves_owner_without_pythonpath(entrypoint, tmp_path):
     probe = r'''

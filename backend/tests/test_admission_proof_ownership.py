@@ -193,7 +193,7 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
 def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foreground_denial(
     monkeypatch, fail_proof, proof_script, scope_name,
 ):
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / proof_script
+    script_path = Path(__file__).resolve().parents[2] / "database" / "tests" / proof_script
     specification = importlib.util.spec_from_file_location("queue_attempt_proof", script_path)
     proof = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(proof)
@@ -248,7 +248,7 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
 def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_registration(
     admission_proof, monkeypatch, proof_name, fail_proof,
 ):
-    import check_postgres_graph_retention
+    import database.tests.check_postgres_graph_retention as check_postgres_graph_retention
 
     proof, server = admission_proof
     parent_keys = redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY
