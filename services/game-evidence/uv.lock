@@ -413,6 +413,7 @@ dependencies = [
     { name = "tempo-game-evidence-contracts" },
     { name = "tempo-game-ingestion" },
     { name = "tempo-game-review-contracts" },
+    { name = "tempo-repertoire-comparison" },
     { name = "uvicorn" },
 ]
 
@@ -436,6 +437,7 @@ requires-dist = [
     { name = "tempo-game-evidence-contracts", directory = "../../contracts/game-evidence" },
     { name = "tempo-game-ingestion", directory = "../../packages/game-ingestion" },
     { name = "tempo-game-review-contracts", directory = "../../packages/game-review-contracts" },
+    { name = "tempo-repertoire-comparison", directory = "../../packages/repertoire-comparison" },
     { name = "uvicorn", specifier = "==0.35.0" },
 ]
 
@@ -519,6 +521,24 @@ dev = [
     { name = "build", specifier = "==1.4.0" },
     { name = "hatchling", specifier = "==1.27.0" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
+
+[[package]]
+name = "tempo-repertoire-comparison"
+version = "0.1.0"
+source = { directory = "../../packages/repertoire-comparison" }
+dependencies = [
+    { name = "tempo-game-review-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tempo-game-review-contracts", directory = "../../packages/game-review-contracts" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "hatchling", specifier = "==1.27.0" },
     { name = "pytest", specifier = "==9.1.1" },
 ]
 

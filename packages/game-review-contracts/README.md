@@ -47,7 +47,7 @@ flowchart LR
     Bytes["Injected PGN bytes / file"] --> I["Game ingester\nindependent implemented component"]
     I --> G["CanonicalGame\nsource identity + legal line"]
     Owner["External snapshot owner\nacquisition adapter not in this slice"] --> S["RepertoireSnapshot\nversion / capture / scope / completeness"]
-    G --> C["Repertoire comparer\ninterface; implementation in separate PR"]
+    G --> C["Repertoire comparer\nindependent offline component"]
     S --> C
     C --> R["ComparisonReport\nraw route facts + provenance"]
     R -. "future explicit handoff" .-> K["Classification stub\nnot_implemented"]
@@ -86,8 +86,8 @@ production scheduling/resource isolation and live acquisition remain unverified.
 
 ## Delivery boundary
 
-This ingester PR implements game ingestion. The independent comparer and executable
-classification/action stubs are a separate PR; this library defines their interfaces. It does not acquire today's live repertoire, add provider account sync,
+This increment implements strict local game ingestion and supplied-current-snapshot
+comparison. It does not acquire today's live repertoire, add provider account sync,
 connect the Games viewer, classify findings, execute practice commands or expand
 repertoire. Existing Game Evidence remediation consumers retain their historical
 eligibility guards through compatibility adapters; current authored membership
