@@ -26,6 +26,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ("contracts/content-publication", "contracts/game-evidence", "packages/chess-core",
             "services/learning/remediation", "services/game-evidence", "tools/analysis-restoration/a_bridge")
+BACKEND_DEPENDENCIES = ("packages/scheduling", "services/learning/application", "services/learning/runtime")
+SOURCE_PACKAGES = PACKAGES + BACKEND_DEPENDENCIES
 NATIVE_NAMES = (
     "test_native_outer_rollback_includes_obligation_and_completed_receipt",
     "test_native_response_loss_restart_and_new_transport_have_one_effect",
@@ -92,6 +94,7 @@ def describe():
         postgres=dict(cpus=1, memory_mib=256, pids=256, tmpfs_mib=256, image=POSTGRES_IMAGE_ID),
         native_total=dict(containers=2, cpus=2, memory_mib=1024, pids=384, owned_internal_networks=1),
         own_packages=list(PACKAGES), own_artifacts=dict(wheels=6, sdists=6),
+        backend_dependency_packages=list(BACKEND_DEPENDENCIES), backend_dependency_wheels=3,
         artifact_tests={name: count for name, _path, _tests, count, _mode in ARTIFACT_CASES},
         artifact_test_total=sum(item[3] for item in ARTIFACT_CASES), native_tests=list(NATIVE_NAMES),
         native_test_total=len(NATIVE_NAMES),
@@ -225,7 +228,9 @@ def verified_absence(result, identity):
     """Only an identity-specific daemon absence diagnostic is proof."""
     return (result.returncode != 0 and re.search(r"(?<![A-Za-z0-9_.-])" + re.escape(identity) +
                 r"(?![A-Za-z0-9_.-])", result.stderr) is not None
-            and re.search(r"\bno such (?:object|container|network|volume)\b", result.stderr, re.IGNORECASE) is not None)
+            and (re.search(r"\bno such (?:object|container|network|volume)\b", result.stderr, re.IGNORECASE) is not None
+                or re.search(r"^(?:Error response from daemon:\s*)?network " + re.escape(identity) +
+                    r" not found\s*$", result.stderr, re.IGNORECASE | re.MULTILINE) is not None))
 
 
 def verify_helper_caps():
@@ -257,7 +262,7 @@ def run_suite(timer, python, directory, name, project, nodes, expected, importli
 
 def copy_artifact_source(source_root, restricted):
     """Use the same package boundary for private staging and artifact builds."""
-    for package in PACKAGES:
+    for package in SOURCE_PACKAGES:
         target = restricted / package
         target.mkdir(parents=True)
         for item in sorted(staging.PACKAGE_PARTS):
@@ -310,12 +315,20 @@ def inside(mode, relative):
             captured = sorted(wheels.glob("*.whl"))
             if len(captured) != 6 or len(list(wheels.glob("*.tar.gz"))) != 6:
                 raise RuntimeError("Expected exactly six owned wheels and six source distributions")
-            stage([uv, "pip", "install", "--python", python, "--no-deps", *map(str, captured)], "install-owned-wheels")
-            for package in PACKAGES: shutil.rmtree(restricted / package / "src")
+            backend_wheels = restricted / "backend-wheels"
+            backend_wheels.mkdir()
+            for package in BACKEND_DEPENDENCIES:
+                stage([python, "-m", "build", "--no-isolation", "--wheel", "--outdir", str(backend_wheels)],
+                      package.replace("/", "-") + "-dependency-build", restricted / package)
+            dependencies = sorted(backend_wheels.glob("*.whl"))
+            if len(dependencies) != 3: raise RuntimeError("Exactly three current backend dependency wheels required")
+            stage([uv, "pip", "install", "--python", python, "--no-deps", *map(str, captured + dependencies)], "install-owned-wheels")
+            for package in SOURCE_PACKAGES: shutil.rmtree(restricted / package / "src")
             report["source_removed"] = True
             report["tests"] = {name: run_suite(timer, python, destination, name, restricted / package, nodes, count, mode)
                 for name, package, nodes, count, mode in ARTIFACT_CASES}
             report["installed_wheels"] = staging.verify_owned_environment(root)
+            report["backend_dependency_wheels"] = staging.verify_backend_environment(root)
             report["qualified_manifest_sha256"] = staging.record_qualified_inputs(root)
             report["artifacts"] = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in wheels.iterdir()}
         else:
@@ -370,7 +383,7 @@ def controller(args):
         report['staging'] = stage.record
         write(directory / 'host.json', report)
         tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT, text=True).split('\0')
-        stage.stage_source(ROOT, filter(None, tracked), PACKAGES)
+        stage.stage_source(ROOT, filter(None, tracked), SOURCE_PACKAGES)
         relative = str(directory.relative_to(root)) if directory != root else ''
         env_file = stage.output / relative / 'private-native.env'
         env_file.parent.mkdir(parents=True, exist_ok=True)

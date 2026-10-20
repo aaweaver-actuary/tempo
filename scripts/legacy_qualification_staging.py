@@ -17,10 +17,13 @@ SOURCE_FILES = {'scripts/qualify_legacy_bridge.py', 'scripts/qualify_legacy_back
                 'scripts/legacy_qualification_staging.py', 'scripts/apply_postgres_migrations.py',
                 'scripts/provision_postgres_roles.py',
                 'contracts/requirements-test.lock', 'services/learning/application/qualification.py',
+                'packages/scheduling/pyproject.toml', 'services/learning/application/pyproject.toml',
+                'services/learning/runtime/pyproject.toml',
                 'backend/pyproject.toml'}
 SOURCE_TREES = ('contracts/database-ownership/', 'backend/app/', 'backend/migrations/',
                 'backend/integration/legacy_bridge/', 'public/data/')
 MAX_BYTES, MAX_FILES = 2 * 1024**3, 100000
+BACKEND_WHEELS = {'tempo_scheduling': '0.2.0', 'tempo_learning_review': '0.1.0', 'tempo_learning_runtime': '0.1.0'}
 
 
 def digest(path):
@@ -245,6 +248,26 @@ def verify_owned_environment(root):
     return [verify_installed_wheel(wheel, sites[0]) for wheel in wheels]
 
 
+def verify_backend_environment(root):
+    """Bind the native backend's three dependencies to current built wheels.
+
+    Version strings alone cannot distinguish an older image's same-version code.
+    These prerequisite wheels are separate from the six component artifacts.
+    """
+    sites = list((root / 'work/environment/lib').glob('python*/site-packages'))
+    directory = root / 'work/source/backend-wheels'
+    wheels = sorted(directory.glob('*.whl'))
+    if len(sites) != 1 or len(wheels) != len(BACKEND_WHEELS):
+        raise ValueError('Exactly three installed current backend dependency wheels required')
+    result = {}
+    for package, version in BACKEND_WHEELS.items():
+        matches = list(directory.glob(package + '-' + version + '-*.whl'))
+        if len(matches) != 1: raise ValueError('Missing/different backend dependency wheel: ' + package)
+        wheel = matches[0]
+        result[wheel.name] = dict(sha256=digest(wheel), **verify_installed_wheel(wheel, sites[0]))
+    return result
+
+
 def qualified_inputs(root, host):
     manifest = root / 'qualified-inputs.json'
     if manifest.is_symlink() or not manifest.is_file(): raise ValueError('Regular qualified manifest required')
@@ -257,6 +280,7 @@ def qualified_inputs(root, host):
 
 def record_qualified_inputs(root):
     verify_owned_environment(root)
+    verify_backend_environment(root)
     expected = inventory(root, retained=True)
     path = root / 'qualified-inputs.json'
     path.write_text(json.dumps(expected, sort_keys=True))

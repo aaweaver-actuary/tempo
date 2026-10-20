@@ -32,6 +32,10 @@ and interruption reaping, spawn/receipt failures, unchanged cleanup independence
 and helper signal dispatch. Its standard-library tests mock every child process.
 Control captures remain unrecorded so private provisioning arguments are not
 added to receipts. Command progress never substitutes for a complete inventory.
+The same suite's `NativePrerequisiteTests` binds three current backend dependency
+wheels to tracked source and installed bytes, refuses a same-version older
+runtime or missing proof, and recognizes Docker's exact `network NAME not found`
+absence while retaining wrong-identity and connection-error refusals.
 
 `backend/tests/test_legacy_bridge_qualification_plan.py` owns the finite fixed
 artifact/native inventories, hard helper caps/no socket mount, immutable-image

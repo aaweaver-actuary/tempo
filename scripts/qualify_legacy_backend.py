@@ -67,6 +67,8 @@ def qualified_artifacts(directory, head, helper_image):
         if Path(name).name != name or hashlib.sha256((directory / 'wheels' / name).read_bytes()).hexdigest() != expected:
             raise ValueError('Qualified artifact bytes changed')
     shared.staging.qualified_inputs(directory, host)
+    if shared.staging.verify_backend_environment(directory) != inside.get('backend_dependency_wheels'):
+        raise ValueError('Current backend dependency wheel/install proof missing or changed')
     return inside['artifacts']
 
 
@@ -155,6 +157,7 @@ def inside():
     sys.pycache_prefix = '/tmp/' + manifest['identity'] + '-verified-bytecode'
     sites = list((qualified / 'work/environment/lib').glob(f'python{sys.version_info.major}.{sys.version_info.minor}/site-packages'))
     if len(sites) != 1: raise RuntimeError('Qualified artifact Python ABI/environment missing')
+    backend_dependencies = shared.staging.verify_backend_environment(qualified)
     paths = [str(sites[0]), str(ROOT / 'backend'), str(ROOT / 'scripts')]
     sys.path[:0] = paths
     from importlib import metadata
@@ -181,7 +184,8 @@ def inside():
     manifest['import_paths'] = paths
     manifest['bytecode_prefix'] = sys.pycache_prefix
     shared.write(root / 'native-manifest.json', manifest)
-    report = dict(complete=False, cases=list(CASES), artifact_origins=origins, dependencies=expected, commands=[])
+    report = dict(complete=False, cases=list(CASES), artifact_origins=origins, dependencies=expected,
+                  backend_dependency_wheels=backend_dependencies, commands=[])
     shared.write(root / 'inside.json', report)
     timer = shared.Deadline(840, report, receipt=root / 'inside.json')  # Same outer deadline.
     checker = ROOT / 'services/learning/application/qualification.py'
@@ -246,7 +250,7 @@ def host(options):
         report['staging'] = stage.record
         shared.write(directory / 'host.json', report)
         tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT, text=True).split('\0')
-        stage.stage_source(ROOT, filter(None, tracked), shared.PACKAGES)
+        stage.stage_source(ROOT, filter(None, tracked), shared.SOURCE_PACKAGES)
         prior = json.loads((options.artifact_run / 'host.json').read_text())
         stage.stage_qualified(options.artifact_run.resolve(), shared.staging.qualified_inputs(options.artifact_run.resolve(), prior))
         private = stage.output / 'private'; private.mkdir(mode=0o700)

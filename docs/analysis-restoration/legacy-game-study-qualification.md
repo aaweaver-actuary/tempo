@@ -194,3 +194,19 @@ on incremental receipt I/O; process-group TERM/KILL reserves, resource caps,
 inventories and source/artifact identity guards are unchanged. These diagnostic
 changes do not authorize a rerun or extend a window. Earlier partial artifacts
 remain unqualified and a future actual run requires a fresh explicit grant.
+
+## Current backend dependency prerequisites
+
+The artifact window additionally builds three prerequisite wheels from the same
+tracked head: Scheduling, Learning review application and Learning runtime. They
+are installed into the isolated environment before source removal and the
+unchanged 284 component tests. These are separate from the six component wheels
+and six sdists; their installed bytes and retained hashes are verified again
+before native reuse. They do not claim the complete owning dependency suites.
+A same-version package in an older helper image cannot substitute for these
+current wheels. Native windows still perform no build or dependency install.
+
+Cleanup accepts Docker's identity-specific `network NAME not found` response in
+addition to `no such network`. Unknown daemon errors and different network names
+still retain the cleanup claim. Earlier failed receipts remain historical
+failures even when an independent cleanup reconciliation proves absence later.
