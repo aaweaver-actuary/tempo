@@ -1,5 +1,18 @@
 # Game Evidence regression ownership
 
+`tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
+legacy observation: exact original physical card/interior offset, played/expected
+move, deterministic immutable identity, unknown/no-miss without an envelope,
+mixed source rejection and a no-store/non-overwriting CLI. Existing v2 payload
+and correction/withdrawal tests in `test_comparison.py` retain their owner.
+
+`tests/test_legacy_scoped_authority.py` owns the schema2 legacy-local proof:
+complete 4,102-row traversal with one retained candidate and preserved prior
+policy anchor; foreign/unbound competitors after4,096; incomplete/mixed authority
+rejection; no global-complete label; exact game/time/decision scope; unchanged
+physical execution and uncertain introduction chronology. It normalizes through
+the same comparison/projection as existing activated-publication v1/v2.
+
 `tests/test_decision_projection.py` owns a learner miss inside an unchanged
 physical executable, exact expected move/position, conflicting projected identity
 and incorrect offset rejection. `tests/test_analysis_deviations.py` also requires
@@ -150,3 +163,26 @@ chess traversal. Derivation 3 exports only inventories for opponent positions
 actually encountered in the selected games; every scope and reply at those
 positions is retained. Definitions, routes, games and observations are retained.
 Previously reserved exports keep their original bytes and identity.
+
+## Observed legacy authority checkpoint
+
+`tests/test_legacy_authority.py` owns the synthetic physical black-card mapping
+with opponent prelude, exact executable/revision and interior offsets. The
+competing Italian catalogue keeps the shared prefix unknown. Controls cover
+stale/incomplete/unready/unintroduced observations, early policy anchors,
+re-entry, mixed offsets/color/executable/target, shared/duplicate cards, missing
+routes, digest/workspace mismatch and no-miss/unknown games. The publication
+loader must reject this separate comparison input; there is no delivery or
+activation assertion. Existing v1/v2 comparison/fixture tests retain their owner.
+
+`test_legacy_unmapped_authored_alternative_cannot_become_a_physical_card_miss`
+owns the P1 shared-policy alternative regression: a valid unbound `...Nf6`
+branch must veto a physical `...a6` miss. A different played move also stays
+unknown when physical coverage is incomplete; the exact `...a6` match remains
+mapped. Authored move authority is retained separately from card eligibility.
+The regression fails with `missed == unknown` against checkpoint `88a1fdf`.
+
+`test_ended_foreign_route_requires_later_exclusive_policy_anchor` pairs an
+Italian route ending at the proposed miss with one ending a ply earlier. The
+first stays unknown without an exclusive anchor; later genuine separation can
+still produce the original physical-card miss.

@@ -1,5 +1,15 @@
 # Supported producer/consumer combinations
 
+## Game Evidence artifact 3.0.0 checkpoint
+
+Wire v3 explicitly represents observed legacy graph authority and exact physical
+card/route decisions. Existing v1/v2 schema exports are unchanged. Shared linkage
+validation is extracted without changing the v2 predicate. This branch's v3 model
+and semantic consumer checks ran from source; installed wheel/sdist, JSON Schema,
+complete contract exchange and native backend adoption remain unqualified. V3
+has no TypeScript or independent Learning runtime HTTP consumer. It is not an
+upgrade-window or production-adoption claim. See the [receiver checkpoint](../docs/analysis-restoration/legacy-game-study-receiver-checkpoint.md).
+
 ## A bridge local adapters
 
 The A bridge does not change shared Content Publication v1 or Game Evidence wire

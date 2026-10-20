@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
+from tempo_game_evidence_contracts.legacy import LegacyAuthorityToken
+from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,56 @@ class AcceptedDecision:
     aliases: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class LegacyAcceptedDecision:
+    """Owner-rechecked physical legacy facts, never an activated publication."""
+    card_id: str
+    card_revision: int
+    decision_id: str
+    authority: LegacyAuthorityToken
+    position_key: str
+    accepted_moves: tuple[str, ...]
+    workspace_id: str
+    route_id: str
+    route_ply: int
+    exercise_ply: int
+    executable_digest: str
+    authored_moves: tuple[str, ...]
+    physical_binding_complete: bool
+    introduced: bool
+    introduced_before_game: bool = False
+    active: bool = True
+    aliases: tuple[str, ...] = ()
+    scope_proof: LegacyScopedCatalogueProof | None = None
+
+
+def accepted_storage_identity(accepted: AcceptedDecision | LegacyAcceptedDecision) -> tuple[str, int]:
+    """Compatibility with the module's historical publication-named columns."""
+    if isinstance(accepted, LegacyAcceptedDecision):
+        return accepted.authority.storage_identity()
+    return accepted.publication_id, accepted.publication_generation
+
+
+class LegacyAuthority(Protocol):
+    """Backend supplies current facts under its source/card locks."""
+    def validate_legacy_source(self, delivery) -> None: ...
+    def legacy_decision(self, card_id: str, decision_id: str,
+                        authority: LegacyAuthorityToken, comparison) -> LegacyAcceptedDecision | None: ...
+
+
+@dataclass(frozen=True)
+class CurrentMissProjection:
+    """Owner-provided current physical-card/authority columns, not SQL text.
+
+    The owner must project a coherent, rechecked authority identity. This only
+    adapts a read shape; it grants no acceptance or settlement permission.
+    """
+    card_id_column: str = "id"
+    card_revision_column: str = "revision"
+    authority_id_column: str = "publication_id"
+    authority_generation_column: str = "publication_generation"
+
+
 class ContentAuthority(Protocol):
     """Caller loads/fences these facts in the same Learning transaction."""
     def decision(self, card_id: str, decision_id: str, publication_id: str,
@@ -32,7 +84,7 @@ class ReceiveContext:
     evidence_id: str
     evidence_revision: int
     received_at: datetime
-    content: ContentAuthority
+    content: ContentAuthority | LegacyAuthority
 
 
 @dataclass(frozen=True)

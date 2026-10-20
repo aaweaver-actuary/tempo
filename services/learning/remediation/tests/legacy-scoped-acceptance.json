@@ -1,0 +1,219 @@
+{
+  "delivery": {
+    "authority": {
+      "canonical_prefix_revision": 0,
+      "catalogue_digest": "d6ac4f42344985c4e58766b666aba144682427075be35c725a1e07dc6bc5e951",
+      "catalogue_generation": 3,
+      "graph_digest": "8803e4948c1553055561a079f9f08d972e0f1b0d8926f27c1cfa54f866c55afe",
+      "graph_generation": 7,
+      "graph_state": "ready",
+      "kind": "legacy_graph",
+      "repertoire_id": "ruy",
+      "scope_source_revision": 2,
+      "source_digest": "33a6bbeebbed06bc5e2963c59a394dfb41d3666b96e654c3695269362cb0f410",
+      "target_id": "synthetic-target",
+      "workspace_id": "legacy"
+    },
+    "capture_digest": "57a7d6404b14b72ba423923beade74f1224e6de8b7c97a2a8596873276b81bac",
+    "captured_at": "2026-10-18T18:13:07Z",
+    "comparisons": [
+      {
+        "card_id": "physical-black",
+        "card_revision": 1,
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "executable_digest": "dd4be15d71735dbc668d2da969a0325ab958778e600c0a843c09962ce9237732",
+        "exercise_ply": 5,
+        "expected_moves": [
+          "a7a6"
+        ],
+        "route_id": "ruy-route",
+        "route_ply": 5,
+        "status": "missed"
+      }
+    ],
+    "contract_version": 3,
+    "delivery_id": "legacy-delivery",
+    "encounters": [
+      {
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "observed_move": "g8f6",
+        "ply": 5,
+        "position_key": "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq -"
+      }
+    ],
+    "evidence_id": "legacy-evidence",
+    "evidence_revision": 1,
+    "game_id": "lichess:synthetic-game",
+    "game_revision": 1,
+    "game_source": {
+      "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "provider": "lichess",
+      "provider_game_id": "synthetic-game",
+      "raw_source_digest": "c96eec2fe838c37e148ef32f1ae6e3b89cdebc2fe76aa9e10aa5ec597005813e"
+    },
+    "misses": [
+      {
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "miss_id": "legacy-miss",
+        "reason": "outside_repertoire"
+      }
+    ],
+    "obligations": [
+      {
+        "card_id": "physical-black",
+        "card_revision": 1,
+        "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+        "encounter_id": "legacy-encounter",
+        "kind": "real_game_miss",
+        "miss_id": "legacy-miss",
+        "obligation_id": "legacy-obligation",
+        "obligation_revision": 1,
+        "source_evidence_id": "legacy-evidence",
+        "source_revision": 1
+      }
+    ],
+    "occurred_at": "2026-10-17T12:00:00Z",
+    "withdrawals": [],
+    "workspace_id": "legacy"
+  },
+  "proof": {
+    "authority_id": "legacy-graph:5981f53243078867aa7055f2efa1edc05e1190d78841170465fede5e97289c2e",
+    "candidate_route_ids": [
+      "ruy-route"
+    ],
+    "catalogue_generation": 3,
+    "digest_algorithm": "legacy-row-stream-v2",
+    "integrity_certificate": {
+      "checked_at": "2026-10-16T12:00:00Z",
+      "graph_task_generation": 7,
+      "graph_task_state": "complete",
+      "integrity_status": "clean",
+      "scan_completed_sources": 3,
+      "scan_error": null,
+      "scan_generation": "synthetic-scan:1",
+      "scan_status": "idle",
+      "scan_task_generation": 1,
+      "scan_task_id": "synthetic-scan",
+      "scan_task_state": "complete",
+      "scan_total_sources": 3
+    },
+    "prefix_policies": [
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "ruy"
+      ]
+    ],
+    "schema_version": 1,
+    "scope": {
+      "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "decision_plies": [
+        5
+      ],
+      "game_id": "lichess:synthetic-game",
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "g8f6"
+      ],
+      "occurred_at": "2026-10-17T12:00:00+00:00",
+      "starting_position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
+    },
+    "streams": [
+      {
+        "digest": "6a3ef790d8d8f780d9428a8ef808161a9e355d0789821c6745196e94c9dc4843",
+        "exhausted": true,
+        "expected_rows": 3,
+        "highwater": [
+          "ruy"
+        ],
+        "last_key": [
+          "ruy"
+        ],
+        "name": "repertoires",
+        "visited_rows": 3
+      },
+      {
+        "digest": "d6ac4f42344985c4e58766b666aba144682427075be35c725a1e07dc6bc5e951",
+        "exhausted": true,
+        "expected_rows": 4102,
+        "highwater": [
+          "ruy-route"
+        ],
+        "last_key": [
+          "ruy-route"
+        ],
+        "name": "repertoire_lines",
+        "visited_rows": 4102
+      },
+      {
+        "digest": "8803e4948c1553055561a079f9f08d972e0f1b0d8926f27c1cfa54f866c55afe",
+        "exhausted": true,
+        "expected_rows": 1,
+        "highwater": [
+          "ruy-route",
+          0
+        ],
+        "last_key": [
+          "ruy-route",
+          0
+        ],
+        "name": "graphs",
+        "visited_rows": 1
+      },
+      {
+        "digest": "8829c79ec34c2984adcc413a1c9268c1b49ba2bebde1b6fe6824e52ce6ed792b",
+        "exhausted": true,
+        "expected_rows": 1,
+        "highwater": [
+          "physical-black"
+        ],
+        "last_key": [
+          "physical-black"
+        ],
+        "name": "cards",
+        "visited_rows": 1
+      },
+      {
+        "digest": "22f93198bb5df99bf23bb2cabf1fffc58625989f4d859ceae1e2a585cee894d0",
+        "exhausted": true,
+        "expected_rows": 1,
+        "highwater": [
+          "ruy",
+          "physical-black"
+        ],
+        "last_key": [
+          "ruy",
+          "physical-black"
+        ],
+        "name": "repertoire_cards",
+        "visited_rows": 1
+      }
+    ]
+  }
+}

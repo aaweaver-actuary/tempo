@@ -81,16 +81,21 @@ def test_queue_presentation_matches_versioned_fixtures(fixture):
     )
 
 
-def test_queue_application_sql_matches_pinned_pre_extraction_literals():
-    frozen_sql = json.loads((FIXTURES / 'queue-extraction-220-sql.json').read_text())
-    found = {}
-    for node in ast.parse((APP_ROOT / 'services/queue_application.py').read_text()).body:
-        name = node.name if isinstance(node, ast.FunctionDef) else node.targets[0].id if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) else ''
-        if name in frozen_sql:
-            found[name] = [literal.value for literal in ast.walk(node)
-                           if isinstance(literal, ast.Constant) and isinstance(literal.value, str)
-                           and any(keyword in literal.value.upper() for keyword in ('SELECT ', 'INSERT ', 'UPDATE ', 'DELETE '))]
-    assert found == frozen_sql
+def test_queue_admission_application_has_no_sql_or_driver_dependencies():
+    # The replaced SQL-text pin made storage changes break an application test.
+    # Behavior now belongs to the semantic and real-adapter suites. This guard
+    # enforces the boundary on both the application and its pure planner.
+    for name in ('queue_admission', 'opening_capacity_frontier'):
+        tree = ast.parse((APP_ROOT / f'services/{name}.py').read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                assert {alias.name for alias in node.names} <= {'json'}, ast.unparse(node)
+            if isinstance(node, ast.ImportFrom):
+                assert node.module in {'__future__', 'dataclasses', 'typing', 'opening_capacity_frontier'}, ast.unparse(node)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                assert node.func.attr not in {'execute', 'executemany', 'execute_native', 'commit', 'rollback', 'connect', 'close'}, ast.unparse(node)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                assert not any(keyword in node.value.upper() for keyword in ('SELECT ', 'INSERT INTO ', 'UPDATE CARDS ', 'DELETE FROM '))
 
 
 @pytest.mark.parametrize('unmixed_append', [False, True])

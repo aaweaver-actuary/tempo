@@ -1,0 +1,285 @@
+{
+  "authority": {
+    "canonical_prefix_revision": 0,
+    "catalogue_digest": "35037f224b77413ce1220f79b4781fc50f4636077707eb9752595b779f5adcb4",
+    "catalogue_generation": 3,
+    "graph_digest": "8803e4948c1553055561a079f9f08d972e0f1b0d8926f27c1cfa54f866c55afe",
+    "graph_generation": 7,
+    "graph_state": "ready",
+    "kind": "legacy_graph",
+    "repertoire_id": "ruy",
+    "scope_source_revision": 2,
+    "source_digest": "35ef63e7edc2f7f51df2475cc7a8ba16c5cf74655b32b8f463f327d00dd110f1",
+    "target_id": "synthetic-target",
+    "workspace_id": "legacy"
+  },
+  "capture_digest": "29e91fa20999194fb415a45ed5524e634c5aa9a6630076883ba924b56d3f7f3b",
+  "captured_at": "2026-10-18T19:28:58Z",
+  "cards": [
+    {
+      "card_id": "physical-black",
+      "card_revision": 1,
+      "decision_id": "legacy-decision:2b0eb05ff3b4217b52ed4da01e17d8b2e7d204abe774901f703438d7e72a0923",
+      "introduced": true,
+      "introduced_before_game": true,
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_ids": [
+        "ruy"
+      ],
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "trained_color": "black"
+    }
+  ],
+  "catalogue": [
+    {
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_id": "ruy",
+      "route_id": "ruy-route",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    },
+    {
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "g8f6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_id": "ruy",
+      "route_id": "zz-competitor",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    }
+  ],
+  "catalogue_scope": {
+    "authority_id": "legacy-graph:3450524c24a7312a15666fd080c9ba71a2b12b178930a1ff7cb3a9f7dc5b8e1c",
+    "candidate_route_ids": [
+      "ruy-route",
+      "zz-competitor"
+    ],
+    "catalogue_generation": 3,
+    "digest_algorithm": "legacy-row-stream-v2",
+    "integrity_certificate": {
+      "checked_at": "2026-10-16T12:00:00Z",
+      "graph_task_generation": 7,
+      "graph_task_state": "complete",
+      "integrity_status": "clean",
+      "scan_completed_sources": 3,
+      "scan_error": null,
+      "scan_generation": "synthetic-scan:1",
+      "scan_status": "idle",
+      "scan_task_generation": 1,
+      "scan_task_id": "synthetic-scan",
+      "scan_task_state": "complete",
+      "scan_total_sources": 3
+    },
+    "prefix_policies": [
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "italian",
+        "ruy"
+      ],
+      [
+        "ruy"
+      ]
+    ],
+    "schema_version": 1,
+    "scope": {
+      "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "decision_plies": [
+        5
+      ],
+      "game_id": "lichess:synthetic-game",
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "g8f6"
+      ],
+      "occurred_at": "2026-10-17T12:00:00+00:00",
+      "starting_position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
+    },
+    "streams": [
+      {
+        "digest": "6a3ef790d8d8f780d9428a8ef808161a9e355d0789821c6745196e94c9dc4843",
+        "exhausted": true,
+        "expected_rows": 3,
+        "highwater": [
+          "ruy"
+        ],
+        "last_key": [
+          "ruy"
+        ],
+        "name": "repertoires",
+        "visited_rows": 3
+      },
+      {
+        "digest": "35037f224b77413ce1220f79b4781fc50f4636077707eb9752595b779f5adcb4",
+        "exhausted": true,
+        "expected_rows": 4103,
+        "highwater": [
+          "zz-competitor"
+        ],
+        "last_key": [
+          "zz-competitor"
+        ],
+        "name": "repertoire_lines",
+        "visited_rows": 4103
+      },
+      {
+        "digest": "8803e4948c1553055561a079f9f08d972e0f1b0d8926f27c1cfa54f866c55afe",
+        "exhausted": true,
+        "expected_rows": 1,
+        "highwater": [
+          "ruy-route",
+          0
+        ],
+        "last_key": [
+          "ruy-route",
+          0
+        ],
+        "name": "graphs",
+        "visited_rows": 1
+      },
+      {
+        "digest": "8829c79ec34c2984adcc413a1c9268c1b49ba2bebde1b6fe6824e52ce6ed792b",
+        "exhausted": true,
+        "expected_rows": 1,
+        "highwater": [
+          "physical-black"
+        ],
+        "last_key": [
+          "physical-black"
+        ],
+        "name": "cards",
+        "visited_rows": 1
+      },
+      {
+        "digest": "22f93198bb5df99bf23bb2cabf1fffc58625989f4d859ceae1e2a585cee894d0",
+        "exhausted": true,
+        "expected_rows": 1,
+        "highwater": [
+          "ruy",
+          "physical-black"
+        ],
+        "last_key": [
+          "ruy",
+          "physical-black"
+        ],
+        "name": "repertoire_cards",
+        "visited_rows": 1
+      }
+    ]
+  },
+  "kind": "legacy_authority_snapshot",
+  "observed_after": {
+    "canonical_prefix_revision": 0,
+    "catalogue_digest": "35037f224b77413ce1220f79b4781fc50f4636077707eb9752595b779f5adcb4",
+    "catalogue_generation": 3,
+    "graph_digest": "8803e4948c1553055561a079f9f08d972e0f1b0d8926f27c1cfa54f866c55afe",
+    "graph_generation": 7,
+    "graph_state": "ready",
+    "kind": "legacy_graph",
+    "repertoire_id": "ruy",
+    "scope_source_revision": 2,
+    "source_digest": "35ef63e7edc2f7f51df2475cc7a8ba16c5cf74655b32b8f463f327d00dd110f1",
+    "target_id": "synthetic-target",
+    "workspace_id": "legacy"
+  },
+  "routes": [
+    {
+      "authority_start_ply": 5,
+      "bindings": [
+        {
+          "card_id": "physical-black",
+          "decision_id": "legacy-decision:263b0ee99200bc3411457004bf0f5820af41fe617dbc8822de8fdf039205ada1",
+          "exercise_ply": 1,
+          "ply": 1,
+          "reentry": false
+        },
+        {
+          "card_id": "physical-black",
+          "decision_id": "legacy-decision:13c80fb6dffe916de2daba2838e573d2d49d72f39be64b7f07f622f132918320",
+          "exercise_ply": 3,
+          "ply": 3,
+          "reentry": false
+        },
+        {
+          "card_id": "physical-black",
+          "decision_id": "legacy-decision:bc2fb7f682a8509252e793e90ff85d58c290e355d0751e789adf90b96a84f34f",
+          "exercise_ply": 5,
+          "ply": 5,
+          "reentry": false
+        }
+      ],
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "a7a6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_id": "ruy",
+      "route_id": "ruy-route",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    },
+    {
+      "authority_start_ply": 5,
+      "bindings": [],
+      "learner_color": "black",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1b5",
+        "g8f6"
+      ],
+      "policy_id": "ruy",
+      "repertoire_id": "ruy",
+      "route_id": "zz-competitor",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    }
+  ],
+  "schema_version": 2
+}

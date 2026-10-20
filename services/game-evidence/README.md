@@ -29,6 +29,28 @@ Evidence independently validates the projected legal position and alternatives;
 the physical card and publication remain unchanged. This does not authorize
 transposition re-entry or historical aliases. Prior bindings omit these fields.
 
+`LegacyComparisonSnapshot` is a separate read-only observed-graph input for the
+legacy-authority bridge checkpoint. It retains original physical execution and
+explicit interior decisions without creating a Content publication/activation.
+It shares comparison/projection logic and rejects incoherent authority. The
+publication loader, store and v1/v2 delivery wire do not accept it. See the
+[checkpoint and pending backend seams](../../docs/analysis-restoration/legacy-game-study-checkpoint.md).
+
+`LegacyScopedComparisonSnapshot` is explicit legacy-local schema2. Its bounded
+candidate list is backed by complete owner traversal manifests and prefix policy
+context, not a globally complete selected-only catalogue. It shares the existing
+comparison/physical projection and accepts only the named game/time/decisions;
+introduction chronology remains an applicability guard. Activated-publication
+v1/v2 remain unchanged. See the [scoped checkpoint](../../docs/analysis-restoration/legacy-game-study-scoped-checkpoint.md).
+
+`legacy-preview --observation FILE --output NEW_FILE` is the offline initial-v3
+producer over that same scoped comparison. It opens no GE store, performs no
+delivery and preserves unknown/no-miss without an envelope. The explicit
+[one-game operating procedure](../../docs/analysis-restoration/legacy-game-study-one-game.md)
+keeps backend capture, A projection, GE production and HTTP command writes under
+their existing owners. It supports one physical miss target and no inferred
+correction/activation lineage; v2 payload construction remains unchanged.
+
 Independently installed repertoire review, source/index storage, read API and durable
 Learning delivery intent. A repertoire miss is an authored move not played; it is
 not an engine judgment. This increment supports completed standard/from-position

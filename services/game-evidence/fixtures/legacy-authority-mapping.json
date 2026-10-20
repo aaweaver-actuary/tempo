@@ -1,0 +1,40 @@
+{
+  "authored_route_count": 1,
+  "capture_digest": "236cdeb5660810456c74b84b27bc5d6075047e6ade07bc7c4c51eb713e5f061f",
+  "complete_scope": [
+    "ruy"
+  ],
+  "definition_count": 1,
+  "diagnostics": [
+    {
+      "card_id": "physical-black",
+      "normalized_key": "physical-black",
+      "reason": "opponent_prelude_preserved_in_executable",
+      "route_id": "ruy-route"
+    },
+    {
+      "card_id": "physical-black",
+      "reason": "opponent_prelude_preserved_in_executable",
+      "route_id": "ruy-route"
+    }
+  ],
+  "excluded_repertoires": [
+    "italian"
+  ],
+  "graph_digest": "271d0f1a5d6beed29834819cb44439adfff8a1f4f82bf887cd17b02543e23155",
+  "historical_interior_binding_count": 2,
+  "historical_prelude_count": 1,
+  "mapped_identities": [
+    "physical-black"
+  ],
+  "normalized_without_historical_adoption": {},
+  "physical_execution_preserved": true,
+  "policy_authority_anchors": {
+    "ruy-route": 5
+  },
+  "reentry": "not_authorized",
+  "schema_version": 1,
+  "source_repertoire_count": 1,
+  "source_sha256": "56d469a170381f8cff4193341658622bd31b366a82a1633056ad86e584e9a797",
+  "unmapped_authored_decisions": {}
+}

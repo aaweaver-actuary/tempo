@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -14,6 +16,36 @@ import psycopg
 MIGRATIONS = Path(__file__).resolve().parents[1] / "backend" / "migrations"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
+
+
+MODULE_MIGRATIONS = {
+    "050_learning_remediation.sql": (
+        "tempo-learning-remediation", "0.1.0",
+        "tempo_learning_remediation/migrations/001_remediation.sql",
+        "96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d",
+    ),
+}
+
+
+def migration_source(path: Path) -> str:
+    """Only this owner registers module schema; no runtime core or source fallback."""
+    local_source = path.read_text()
+    registration = MODULE_MIGRATIONS.get(path.name)
+    if registration is None:
+        if "tempo-module-schema:" in local_source:
+            raise RuntimeError("Unregistered module migration")
+        return local_source
+    distribution_name, version, resource, checksum = registration
+    if (f"-- tempo-module-schema: {resource}\n" not in local_source
+            or f"-- sha256: {checksum}\n" not in local_source):
+        raise RuntimeError("Module migration registration changed")
+    distribution = metadata.distribution(distribution_name)
+    if distribution.version != version:
+        raise RuntimeError("Module migration distribution version changed")
+    content = distribution.locate_file(resource).read_bytes()
+    if hashlib.sha256(content).hexdigest() != checksum:
+        raise RuntimeError("Module migration checksum changed")
+    return "SET LOCAL search_path=public,pg_catalog;\n" + content.decode("utf-8") + "\n" + local_source
 
 
 def validate_migration_history(
@@ -33,6 +65,8 @@ def apply_migrations(database_url: str) -> None:
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
     if not files:
         raise RuntimeError("No PostgreSQL migrations found")
+    # Resolve/check every registered resource before opening a database session.
+    sources = {path: migration_source(path) for path in files}
     with psycopg.connect(database_url) as database:
         exists = database.execute(
             "SELECT to_regclass('public.tempo_schema_migrations') IS NOT NULL"
@@ -51,7 +85,7 @@ def apply_migrations(database_url: str) -> None:
             if version != current_version + 1:
                 raise RuntimeError(f"Missing migration before {path.name}")
             with database.transaction():
-                database.execute(path.read_text(), prepare=False)
+                database.execute(sources[path], prepare=False)
                 applied_version = database.execute(
                     "SELECT COALESCE(MAX(version),0) FROM tempo_schema_migrations"
                 ).fetchone()[0]

@@ -432,3 +432,28 @@ test('qualification cleanup reaps a recorded owned process and refuses a foreign
     await rm(directory,{recursive:true,force:true});
   }
 });
+
+test('failed startup journal reconciles only an explicitly removed absent container',async()=>{
+  const {managedDockerEnvironment}=await import('../../scripts/development-docker.mjs');
+  const {recordBudgetResource}=await import('../../scripts/development-budget.mjs');
+  const {spawnSync}=await import('node:child_process');
+  const directory=await mkdtemp(join(tmpdir(),'tempo-absent-container-cleanup-'));
+  const lock=join(directory,'lease');let lease;
+  try{
+    lease=await acquireDevelopmentBudget({directory:lock});
+    const executable=join(directory,'fake-docker');
+    await writeFile(executable,`#!${process.execPath}\nconst args=process.argv.slice(2);if(args[0]==='container'&&args[1]==='inspect'){console.error('error: no such object: '+args.at(-1));process.exit(1);}if(args[0]==='rm'){console.error('No such container: '+args.at(-1));process.exit(1);}throw new Error('unexpected fake Docker call');\n`,{mode:0o700});
+    const environment=managedDockerEnvironment({...process.env,TEMPO_REAL_DOCKER:executable,
+      TEMPO_DEVELOPMENT_BUDGET_TOKEN:lease.token,TEMPO_DEVELOPMENT_BUDGET_DIRECTORY:lock},directory);
+    for(const name of ['absent-owned','other-owned'])await recordBudgetResource('container:'+name,true,lease.token,lock);
+    const wrapper=join(directory,'managed-bin/docker');
+    const result=spawnSync(wrapper,['rm','--force','absent-owned'],{env:environment,encoding:'utf8',timeout:3000});
+    assert.equal(result.status,1,'The raw failed rm remains visible to its caller');
+    assert.match(result.stderr,/No such container: absent-owned/);
+    const remaining=await readdir(join(lock,'resources'));
+    assert.deepEqual(remaining,[encodeURIComponent('container:other-owned')]);
+    const other=spawnSync(wrapper,['rm','--force','other-owned'],{env:environment,encoding:'utf8',timeout:3000});
+    assert.equal(other.status,1);assert.deepEqual(await readdir(join(lock,'resources')),[]);
+    await lease.release();lease=undefined;
+  }finally{await lease?.release();await rm(directory,{recursive:true,force:true});}
+});

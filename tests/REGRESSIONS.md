@@ -1,3 +1,119 @@
+## Combined feedback / queue / Discovery boundary
+
+`backend/tests/test_feedback_boundary_integration.py` owns the real composition
+joins with semantic fakes: borrowed feedback facts from the queue adapter, queue
+root argument preservation and Discovery intent/store composition. The consumer
+guard resolves relative imports and retains the independent-runtime namespace
+control. The accepted-scope native case also checks the public combined queue
+projection; it is prepared, not executed. See
+[combined ownership and proof](../docs/architecture/feedback-boundary-integration.md).
+
+## Feedback semantic storage boundary
+
+`backend/tests/test_real_game_feedback_policy.py` owns typed fake-store admission,
+review promotion, burial, lock/effect ordering and priority replacement decisions,
+plus explicit no-SQL/driver/concrete-adapter guards for the extracted modules.
+`backend/tests/test_feedback_storage_adapter.py` owns actual SQLite compatibility
+queries, microsecond/timezone boundaries, unsafe/excluded facts, 128-row typed
+batches and caller rollback. Existing native command/Study/replay proofs remain
+required; source-only checks do not certify native PostgreSQL integration.
+Prepared owning PostgreSQL contracts in `backend/integration/legacy_bridge/test_native.py`
+cover borrowed rollback/typed projections, actual card/day lock lifetime and
+accepted-scope exclusion with a different-repertoire control. They join the three
+existing command/Study cases under the unchanged capped native runner; adding or
+collecting them does not establish a native pass.
+`backend/tests/test_feedback_consumer_wiring.py` retains the native recovery-script,
+Learning integration and issuance-fixture import regressions. Its composition
+checks prove wrapping before policy, day ownership and closing the read snapshot
+before short per-event transactions; its repository-wide backend-policy import
+audit includes scripts and integration packages while leaving the independent
+runtime's same-named module alone. Actual native execution remains separate.
+See [boundary ownership](../docs/architecture/feedback-storage.md).
+
+## Legacy game evidence receiver checkpoint
+
+`backend/tests/test_legacy_game_evidence_scope.py` owns
+`test_bridge_owned_scope_survives_real_psycopg_parameter_binding_during_review`.
+The pinned driver's real parameter converter reproduces the literal-percent
+failure without a database. The native normal-Study case retains the owning
+SQL translation/execution, protected-head review and settlement assertions.
+`test_bridge_scope_preserves_jsonb_extraction_through_sqlite_translation` also
+exercises the real SQLGlot compiler, rejecting its JSON-only overload for JSONB
+while preserving the same kind, workspace and repertoire ownership comparisons.
+
+`test_frozen_introduction_legacy_fence_does_not_retire_introduced_review_card`
+reproduces P2 at6c2eb502: an active frozen run and old completed migrated origin
+must not permanently veto a current introduced review. Its issued-today control
+preserves the protected attempt; the activation-change control still defers.
+Frozen introduction selection retains its own legacy-history validity checks.
+
+`test_failed_wrapper_reaps_its_orphan_process_group_before_cleanup` and the
+identity/case absence controls own the failed artifact runner lifecycle repair.
+The Node `failed startup journal reconciles only an explicitly removed absent
+container` test uses a fake Docker executable and preserves another owned journal.
+No native/container qualification result is implied.
+
+`backend/tests/test_legacy_scoped_capture.py` owns complete global exhaustion
+past4,096 with bounded retention, late foreign/unbound/revision2 vetoes, unchanged
+authority across two games or unrelated card eligibility, no FEN reentry, explicit
+preflight/page/row/byte/deadline/EOF refusal, malformed/unknown-color uncertainty,
+completed current needs_repair per-card qualification and unchecked/newer queued
+generation refusal. It executes actual owner prepare/acceptance fences with
+synthetic SQL rows, including full-card blocks, membership changes and an inactive
+physical competitor becoming eligible. The read-only capture/certificate ports
+perform no readiness/obligation/queue/review operation. The historical bounded-page
+regression now exercises the same new Traversal rather than the retired4,096-row
+accumulation helper; partial capture remains rejected.
+
+The same regular runner suite also owns private tmp staging, tracked source/hash allowlists, retained installed dependency/tool provenance, credential exclusion, durable fsync/hash-verified copy-back and retention on failed copy or uncertain resource absence. These are source-only checks; the actual artifact/native gates still need separate grants.
+
+`backend/tests/test_legacy_qualification_timing.py` owns durable pending/running
+command receipts before spawn/wait, UTC completion and elapsed timing, timeout
+and interruption reaping, spawn/receipt failures, unchanged cleanup independence
+and helper signal dispatch. Its standard-library tests mock every child process.
+Control captures remain unrecorded so private provisioning arguments are not
+added to receipts. Command progress never substitutes for a complete inventory.
+The same suite's `NativePrerequisiteTests` binds three current backend dependency
+wheels to tracked source and installed bytes, refuses a same-version older
+runtime or missing proof, and recognizes Docker's exact `network NAME not found`
+absence while retaining wrong-identity and connection-error refusals.
+The backend native plan's recovery-publication and operation-monitoring tests
+verify the existing scheduler task, bounded publisher process and background
+read classification. The three real native cases retain the forced rollback,
+original due time/envelope and exactly-once assertions; the retry case supplies
+one actual maintenance wake rather than relying on another intake POST.
+
+`backend/tests/test_legacy_bridge_qualification_plan.py` owns the finite fixed
+artifact/native inventories, hard helper caps/no socket mount, immutable-image
+refusal, approved managed-window guard and process-group timeout behavior. It
+does not start Docker, build packages, install dependencies or run native tests.
+Its `test_native_role_provisioning_dependency_is_required_and_hash_verified` and
+`test_remediation_migrations_survive_both_source_allowlists` regressions preserve
+required native fixture code and installed migration inputs. The native receipt
+copy-back regressions retain success/failure traces, capture evidence and process
+logs before stage removal, while excluding private credentials, pytest current
+links and unknown scratch files; tampered receipts prevent removal. Unknown
+pytest-shaped source remains manifest-checked. The pinned x86 uv URL regression
+records the published 0.9.3 wheel identity without changing its checksum/version.
+
+`backend/tests/test_remediation_migration_registration.py` owns migration 050's
+exact installed 12-table schema/checksum registration, backend target identity,
+failure before database connection for changed inputs, and partial-apply guard.
+Its supported-image artifact-route and no-op-history regressions require the
+maintenance image to install the module/contract artifacts before migration
+discovery, even when no SQL migration remains. The backend image route is a
+control and remains unchanged; image build/install qualification is separate.
+`backend/tests/test_legacy_game_evidence_commands.py` owns exact physical-card
+source projection, complete alternative coverage, stable identity across Study,
+known introduction chronology, source/route/prefix refusal, bounded read pages,
+capture revision coherence, worker preparation/replay, card-before-module lock
+order, acceptance rechecks, foreground deferral, immutable read guards and
+disjoint legacy scope ownership. These are source/fake-writer checks, not native
+migration, operation durability, actual queue issuance or normal review proof.
+Withdrawal-specific cases execute the backend prepare/recheck/receiver path
+against synthetic SQL rows: retained canonical game/evidence/provider/content
+lineage, target identity and exact obligation revision are mandatory; removal
+of the graph/card/game remains allowed, and changes after preparation are fenced.
 ## Selected queued graph rebuild maintenance
 
 - Review repairs: `test_selected_followup_predecessor_is_locked_and_drift_refused_before_owner_mutation`, `test_selected_handoff_upsert_never_overwrites_a_changed_or_newly_arriving_lease`, and `test_selected_handoff_upsert_uses_prior_fence_and_checks_the_owner_result` fence downstream leases/generations before predecessor effects, including the absent-row race. The native rollback scenario now injects a committed competing lease from a real second fixture connection between the absence read and owner upsert.
@@ -4430,7 +4546,8 @@ Audit CI readiness evidence (existing named browser cases):
 ### Issue #220 — essential queue application ownership
 
 - `test_queue_application_import_does_not_load_http_or_worker_root` parses direct/deferred/dynamic imports of queue owners, their eager dependency closure, and imports in a fresh interpreter. The sole broker-publication adapter exception retains post-commit wakes.
-- `test_queue_presentation_matches_versioned_fixtures` retains the admitted inputs from main `3f7332399796366eb32f9fcb5e1b5c678a5b1562` and asserts the deliberately adopted policy-v3 presentation outputs. Pure Learning proportions and owning native queue publication replace the former v2 round-robin and fixed-other-slot presentation promises. `test_queue_application_sql_matches_pinned_pre_extraction_literals` retains the original SQL fixtures.
+- `test_queue_presentation_matches_versioned_fixtures` retains the admitted inputs from main `3f7332399796366eb32f9fcb5e1b5c678a5b1562` and asserts the deliberately adopted policy-v3 presentation outputs. Pure Learning proportions and owning native queue publication replace the former v2 round-robin and fixed-other-slot presentation promises. The permanent all-SQL-text pin is retired: `test_queue_admission_application_has_no_sql_or_driver_dependencies`, `backend/tests/test_queue_admission.py` and `backend/tests/test_queue_admission_adapter.py` own application isolation, semantic decisions, bounded adapter pages, historical shared-card charging, exact capacity witnesses and caller rollback. Existing protected-head, provenance, cycle and ordering tests remain. Four prepared PostgreSQL cases in `backend/integration/queue_admission/test_postgres.py` require the parent-owned serialized native window; collection is not native qualification. See `docs/architecture/queue-admission-storage.md`.
+- `backend/tests/test_queue_native_fixture_guard.py` rejects stale/live/indirect DSNs before connection, verifies the read-only database/cluster/OID probe, and rejects target changes before fixture writes. The parent-issued target receipt and exact native/resource/cleanup contract are in `backend/integration/queue_admission/README.md`. `test_cross_page_shared_card_preserves_legacy_admitting_membership_with_opposed_insertion` asserts actual SQLite membership/allowance consumption across pages; PostgreSQL parity remains an explicit prepared comparison, without inventing a deterministic ownership rule. The architecture document maps the retired fixture's unchanged unlock/restoration/quarantine/refresh/requeue areas to their retained behavioral owners.
 - `test_queue_application_requeue_preserves_origin_cycle_and_issuance` covers retained origins, insert position, caller rollback and unissued repeat identity.
 - `test_essential_queue_study_only_resumes_every_legacy_phase` and `test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint` preserve historical optional-phase skips and capacity checkpoint payloads.
 - `test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay` in the regular native queue-attempt proof exercises real foreground contention, interruption rollback, pool restart/persisted checkpoint reload, replay and generation/lease fencing. Existing native issuance/receipt and prepared-transition proofs remain required.
@@ -4803,3 +4920,61 @@ The four `study_priority_test-postgres-docker_mjs_reserved_builder_cannot_overco
 
 
 The `native_startup_*`, `sqlite_actual_cleanup_*`, and `native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation` cases in `tests/runner/postgres-test-speedups.test.mjs` own synchronous inventory-to-start admission, additive one-off allocation, journal-before-mutation, partial/uncertain starts, preserved return/stdout/stderr, wrong/missing claim identities, and verified cleanup. Native and SQLite cleanup can stop their own resources without reacquiring retained admission. The standalone maintenance help container has an exact name plus owner/project labels; cleanup verifies both name and ID absent. Historical scanner baseline failures remain selected and reported.
+# Legacy bridge scoped policy anchor repair
+
+`backend/tests/test_legacy_scoped_capture.py::test_forged_miss_cannot_drop_foreign_policy_ending_at_decision`
+fails at `c2111aa5` for an Italian route ending after Bb5: the complete proof
+contains Italian and Ruy at black ply 5, but executable candidates contain only
+Ruy. Backend and shared remediation now require the owner-derived exclusive
+anchor. The paired route ending a ply earlier preserves later valid separation;
+Game Evidence independently keeps the incomplete overlap unknown.
+
+`backend/tests/test_legacy_study_remediation.py` owns the synthetic source
+acceptance/replay → existing queue writer → first actual head issuance → normal
+and reconciled review → shared settlement/invalidation bridge. It preserves
+protected heads, prior-issued/prefetched/offline fences, guided/failed outcomes,
+burial, source correction, unrelated cards and disjoint old legacy clearing.
+Its module SQL effects are scripted; it is explicitly not native durability or
+locking proof. HTTP cases verify immutable command dispatch, exact cutover
+matching, background admission and retained GET query-only scope.
+
+`backend/tests/test_legacy_game_observation.py` owns one explicit completed-game
+read-only export, complete learner decision scope, bounded refusal and rejection
+of recapture after accepted lineage. `test_legacy_intake_study_mode.py` executes
+the actual background task wrapper: only exact `game_evidence.receive_legacy`
+passes study-only classification; prefix lookalikes and ordinary analysis defer.
+Its foreground-race control proves capture/handler execution remains outside the
+receipt-only control bypass. Existing task-kind/restart/receipt owners remain.
+
+`tools/analysis-restoration/a_bridge/integration/test_legacy_pipeline.py` owns
+generated one-game capture → public projection/GE v3 producer → independent
+receiver preparation → shared accept/replay → explicit queue → normal head,
+review/replay/invalidation, with a paired prior-issued attempt fence. PostgreSQL
+rows and HTTP/Celery/operation transport are scripted; actual backend native
+durability and locking remain a separate, unexecuted qualification gate.
+
+`backend/integration/legacy_bridge/test_native.py` prepares the actual installed
+producer/capture → HTTP/Celery/Redis → backend migration50/module PostgreSQL →
+normal Study boundary in three explicit cases: fresh/replayed/restarted normal
+Study, prior-issued attempt fencing, and module/completed-operation rollback.
+They are not executed by regular unit discovery and have not run yet. The pure
+`backend/tests/test_legacy_backend_native_plan.py` owns finite caps, fresh-grant,
+immutable-image and qualified-artifact refusal checks; those checks do not prove
+native startup, cleanup or application behavior.
+
+`test_redis_declared_data_volume_is_replaced_by_bounded_tmpfs` in the native-plan
+owner reproduces the missing `/data` tmpfs at `a342bdd1`. Image/container mount
+inventory controls reject uncovered declarations, anonymous/named mounts and
+unbounded tmpfs; exact recorded-volume absence is required for cleanup. Exact
+full node-ID controls reject same-count substitutions and a missing `[prior]`.
+Installed-file/wheel controls reject changed/missing/extra retained package
+content, and the fresh-bytecode-prefix control prevents cached unverified code
+from bypassing source verification. Native rollback additionally requires the
+persisted unique injected marker after in-transaction acceptance/frontier checks;
+an unrelated timeout cannot establish that unexecuted native proof.
+
+`test_pinned_tool_extracts_only_verified_binary_and_native_reuses_it_offline`
+uses a synthetic wheel and mocked version command. Qualification-plan tests
+cover hash refusal, no native download fallback and first pytest failure with
+retained incomplete inventory. They do not execute a real tool, build or Docker.
+

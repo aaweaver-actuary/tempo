@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from ._wire import Identifier, Model, Revision, Timestamp, UciMove, serialize_contract, validate_contract
 from .v1 import Comparison as V1Comparison, Encounter, GameProvenance, RealGameMiss
+from ._observations import coherent_observations
 
 MAX_BATCH_ITEMS = 128
 
@@ -66,45 +67,7 @@ class EvidenceDelivery(WireModel):
 
     @model_validator(mode="after")
     def coherent_observations(self):
-        encounters = {item.encounter_id: item for item in self.encounters}
-        misses = {item.miss_id: item for item in self.misses}
-        for items, identity in ((self.encounters, "encounter_id"), (self.misses, "miss_id"),
-                                (self.obligations, "obligation_id"), (self.withdrawals, "obligation_id")):
-            if len({getattr(item, identity) for item in items}) != len(items):
-                raise ValueError("duplicate evidence identity")
-        if not self.encounters and not self.withdrawals:
-            raise ValueError("empty delivery must explicitly withdraw a contribution")
-        if {item.obligation_id for item in self.obligations} & {item.obligation_id for item in self.withdrawals}:
-            raise ValueError("cannot add and withdraw the same obligation")
-        for comparison in self.comparisons:
-            encounter = encounters.get(comparison.encounter_id)
-            if encounter is None or comparison.decision_id != encounter.decision_id:
-                raise ValueError("comparison must identify its encounter decision")
-        for miss in self.misses:
-            encounter = encounters.get(miss.encounter_id)
-            if encounter is None or miss.decision_id != encounter.decision_id:
-                raise ValueError("miss must identify its encounter decision")
-        for obligation in self.obligations:
-            if (obligation.source_evidence_id, obligation.source_revision) != (self.evidence_id, self.evidence_revision):
-                raise ValueError("obligation must preserve evidence lineage")
-            encounter = encounters.get(obligation.encounter_id)
-            if encounter is None or encounter.decision_id != obligation.decision_id:
-                raise ValueError("obligation must identify its encounter decision")
-            comparisons = [item for item in self.comparisons if
-                          (item.encounter_id, item.card_id, item.decision_id, item.publication_id, item.publication_generation)
-                          == (obligation.encounter_id, obligation.card_id, obligation.decision_id,
-                              obligation.publication_id, obligation.publication_generation)]
-            if len(comparisons) != 1:
-                raise ValueError("obligation requires one explicit comparison")
-            if obligation.kind == "real_game_miss":
-                miss = misses.get(obligation.miss_id)
-                if (miss is None or (miss.encounter_id, miss.decision_id) !=
-                        (obligation.encounter_id, obligation.decision_id) or comparisons[0].status != "missed"):
-                    raise ValueError("miss obligation requires its missed comparison and miss")
-            elif obligation.miss_id is not None:
-                raise ValueError("observed encounter must not claim a miss")
-        return self
-
+        return coherent_observations(self, lambda item: (item.publication_id, item.publication_generation))
 
 class EvidenceAcknowledgement(WireModel):
     workspace_id: Identifier

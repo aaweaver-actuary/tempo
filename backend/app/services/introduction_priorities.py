@@ -284,20 +284,19 @@ def _personal_evidence_from_rows(
 
 def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -> dict[str, dict]:
     """Select one unstudied, non-excluded miss per card for a fixed bonus."""
-    from .real_game_feedback import outstanding_miss_query, _utc_instant
-    rows = database.execute(
-        outstanding_miss_query(database, columns="event.id,event.card_id,event.game_id,event.played_at",
-                   additional_where="AND event.repertoire_id=?"), (repertoire_id,),
-    ).fetchall()
-    rows = sorted(rows, key=lambda row: (_utc_instant(row["played_at"]), row["id"]), reverse=True)
+    from ..storage.real_game_feedback import BorrowedFeedbackStore
+    from .real_game_feedback_ports import utc_instant
+    rows = [row for batch in BorrowedFeedbackStore(database).repertoire_miss_batches(repertoire_id)
+            for row in batch]
+    rows.sort(key=lambda row: (utc_instant(row.played_at), row.event_id), reverse=True)
     misses: dict[str, dict] = {}
     for row in rows:
-        misses.setdefault(row["card_id"], {
+        misses.setdefault(row.card_id, {
             "kind": "real_game_repertoire_miss",
             "weight": REAL_GAME_MISS_WEIGHT,
-            "event_id": row["id"],
-            "game_id": row["game_id"],
-            "played_at": row["played_at"],
+            "event_id": row.event_id,
+            "game_id": row.game_id,
+            "played_at": row.played_at,
         })
     return misses
 

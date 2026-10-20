@@ -154,10 +154,12 @@ class LearningReviewAdapter:
             (card_id, context.reviewed_at.isoformat())).fetchone() is not None
 
     def reconcile_completed(self, command, attempt, context, *, guided, revision, competing_review=None):
-        return reconcile_completed_review(self.database, command.card_id, attempt.id,
+        result = reconcile_completed_review(self.database, command.card_id, attempt.id,
             attempt_id=command.attempt_id, outcome=command.outcome, guided=guided,
             completed_at=context.reviewed_at if command.recorded_at else None,
             expected_revision=revision, timezone_name=self.policy().timezone, competing_review=competing_review)
+        self.settle_remediation(command, result.get("review_id"), revision=revision)
+        return result
 
     def bind_receipt(self, command, request_json, *, restore_original=False):
         if restore_original:
@@ -174,6 +176,12 @@ class LearningReviewAdapter:
                 source_kind="study", source_ref=f"attempt:{command.attempt_id}" if command.attempt_id else None,
                 light_first_interval_days=policy.light_first_interval_days,
                 reviewed_at=context.reviewed_at, review_day=context.review_day)
+
+    def settle_remediation(self, command, review_id, *, revision):
+        if review_id is None: return
+        from .legacy_study_remediation import settle_review
+        settle_review(self.database, command.card_id, review_id, queue_entry_id=command.queue_entry_id,
+                      revision=revision, source_attempt_id=command.attempt_id)
 
     def complete_attempt(self, command, context, *, guided):
         queue_day = self.database.execute("SELECT queue_date FROM daily_queue WHERE id=?", (command.queue_entry_id,)).fetchone()
@@ -201,6 +209,7 @@ class LearningReviewAdapter:
             (command.attempt_id, command.card_id, result["queue_entry_id"], command.outcome, int(command.guided),
              context.reviewed_at.isoformat() if command.recorded_at else None,
              result["review_id"], "canonical", None, json.dumps(result)))
+        self.settle_remediation(command, result.get("review_id"), revision=self.current_revision(command.card_id))
 
     def retain_completion(self, command, attempt, result_json, *, origin_only=False):
         if not origin_only:

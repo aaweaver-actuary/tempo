@@ -903,7 +903,10 @@
         "tempo_game_evidence_contracts.v1",
         "schemas/v1/*.json",
         "tempo_game_evidence_contracts.v2",
-        "schemas/v2/*.json"
+        "schemas/v2/*.json",
+        "tempo_game_evidence_contracts.v3",
+        "tempo_game_evidence_contracts.legacy",
+        "schemas/v3/*.json"
       ],
       "dependencies": [
         "pydantic"
@@ -921,7 +924,7 @@
       "buildCommand": "python -m build --no-isolation",
       "artifact": {
         "name": "tempo-game-evidence-contracts",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "format": "wheel + sdist + packaged JSON schema"
       },
       "tests": [

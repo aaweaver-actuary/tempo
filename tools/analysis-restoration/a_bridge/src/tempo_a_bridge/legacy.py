@@ -85,7 +85,7 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
             reason = None
             if card is None or (line['repertoire_id'],graph['card_id']) not in links:
                 reason = 'historical_card_or_membership_missing'
-            elif card['archived'] or card['pending_validation']:
+            elif card['archived'] or card['pending_validation'] or card.get('integrity_blocked') or card.get('deleted'):
                 reason = 'historical_card_unavailable'
             elif card['trained_color'] != color or graph['trained_color'] != color:
                 reason = 'historical_color_unresolved'

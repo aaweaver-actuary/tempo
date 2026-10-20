@@ -1,5 +1,20 @@
 # Remediation owning regressions
 
+## Typed legacy authority intake
+
+`tests/test_legacy_validation.py` owns separate typed authority, no fake Content
+facts, exact physical/route/executable binding, complete authored alternatives,
+introduction chronology, withdrawal-only source fencing and capture UTC overflow.
+The normal module suite discovers it. The native owning case
+`test_native_legacy_variant_reuses_receipt_frontier_settlement_and_outer_transaction`
+adds outer rollback, response replay, a pre-acceptance attempt fence, shared
+qualifying module settlement and invalidation using v3. It is collected but
+unexecuted at this checkpoint and does not prove actual normal Study adoption.
+That case now also retains the owner scoped proof through actual module storage
+when run. `test_owner_scoped_proof_is_retained_without_changing_shared_incident_or_authority_identity`
+and `test_scoped_proof_for_another_game_cannot_be_retained_as_this_accepted_incident`
+own proof provenance and linkage without new admission/settlement policy.
+
 The installed package suite owns semantic linkage, validity, explicit gameplay
 priority, cap/progression exceptions, alias deduplication, protected heads and
 ordinary frozen order. `tests/test_validation.py`, `test_policy.py`, and
@@ -65,3 +80,18 @@ outcomes and now explicitly proves zero evidence, contributions and workspace
 authority. Its previous zero-receipt assertion is superseded for stale rejection
 by the required durable transport receipt; terminal identity failures still write
 no receipt. No acceptance assertion is removed.
+
+## Legacy owner read projection checkpoint
+
+`test_owner_projection_uses_legacy_columns_without_forking_qualifying_review_predicate`
+and `test_owner_current_miss_projection_rejects_sql_fragments` own the typed
+column adapter while preserving current-game/frontier/settlement checks.
+`test_native_owner_projection_keeps_replay_prior_attempt_fence_and_invalidation`
+is the owning PostgreSQL proof for alternate columns, receipt replay, stale card
+revision, prior-issued frontier, later settlement and invalidation. It remains
+unexecuted at the first bridge checkpoint; it is not legacy HTTP adoption proof.
+
+`test_scoped_policy_exclusivity_cannot_be_bypassed_by_a_forged_miss` requires the
+trusted complete prefix-policy proof's selected-policy anchor at or before the
+encounter. A foreign route ending exactly there vetoes acceptance even when
+absent from executable candidates. Ending earlier permits later separation.

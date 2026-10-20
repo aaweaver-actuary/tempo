@@ -1,10 +1,30 @@
 # Learning remediation 0.1.0
 
 An installable Learning library, not a service, queue writer, or production
-activation. It depends on the installed game-evidence 2.0.0 contract and borrows
+activation. It depends on the installed game-evidence 3.0.0 contract and borrows
 the caller's psycopg connection (3.3.6 in native qualification). Existing Learning
 review 0.1.0, scheduling 0.2.0 and chess-core 0.1.0
 remain the owners of their existing behavior; no scheduler is copied here.
+
+`current_miss_sql(alias, projection=CurrentMissProjection(...))` can read an
+owner's coherent physical-card/authority columns. The default remains the
+existing accepted-publication shape. Only validated column identifiers are
+accepted; all current-source/frontier/qualifying-settlement predicates stay
+owned by the module. V3 intake accepts a separate `LegacyAcceptedDecision` through
+an owner-provided `LegacyAuthority` port. It rechecks physical identity, current
+source/graph authority, complete authored alternatives and known introduction
+before game time. The typed legacy token uses a `legacy-graph:` storage namespace
+in existing internal authority columns; it never fabricates Content facts.
+Contribution/frontier/admission/settlement policy remains shared. See the
+[receiver checkpoint](../../../docs/analysis-restoration/legacy-game-study-receiver-checkpoint.md)
+for the unexposed backend adapter and pending installed/native/Study adoption.
+
+Legacy accepted facts may retain a typed owner `scope_proof`. It must identify
+the same current authority, canonical game/content and encounter scope. It is
+stored as contribution provenance, outside reusable authority and logical work
+identity; shared frontier and qualifying-review policy are unchanged. Producer
+v3 payloads do not gain a self-authorizing proof field. See the
+[scoped checkpoint](../../../docs/analysis-restoration/legacy-game-study-scoped-checkpoint.md).
 
 ## A / C / F handoff
 
@@ -29,8 +49,8 @@ game computation, and A for authentication/current source authority. These ports
 do not establish current production adoption of the Content contract.
 
 A owns connection/transaction lifetime. Construct `PostgresRepository` only
-inside an explicit outer PostgreSQL transaction, using the Learning runtime
-connection and trusted Learning schema search path. It never opens, commits,
+inside an explicit outer PostgreSQL transaction, using its owner's trusted
+connection and Learning schema search path. It never opens, commits,
 rolls back or closes connections. Exceptions after writes require the caller to
 roll back its transaction/savepoint; a healthy separate caller-owned transaction
 may record a truthful failure with `record_status`. `completed` acknowledges

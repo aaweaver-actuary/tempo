@@ -634,3 +634,112 @@ def test_native_correlated_queue_predicate_matches_repository_and_settlement(wor
         repository.bind_attempt(bound, DECISION)
         assert repository.settle(review(bound), DECISION)
         assert queued_miss() is False
+
+
+def test_native_owner_projection_keeps_replay_prior_attempt_fence_and_invalidation(workspace):
+    """Alternate owner row shape; not legacy delivery/HTTP adoption proof."""
+    from tempo_learning_remediation import CurrentMissProjection, current_miss_sql
+
+    projection = CurrentMissProjection("physical_id", "physical_revision", "authority_id", "graph_generation")
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        old = attempt("previously-issued", issued_at=NOW - timedelta(seconds=1))
+        assert repository.bind_attempt(old, DECISION) == 0
+        value = scoped(delivery(), workspace)
+        receipt = accept(repository, value)
+        assert accept(repository, value) == receipt
+        assert count(connection, "remediation_contributions", workspace) == 1
+
+        def current_miss(revision=1):
+            return connection.execute("SELECT " + current_miss_sql("legacy", projection=projection)
+                + " FROM (VALUES(%s::text,%s::bigint,%s::text,%s::bigint)) "
+                  "legacy(physical_id,physical_revision,authority_id,graph_generation)",
+                (workspace, "card", revision, "publication", 1)).fetchone()[0]
+
+        assert current_miss() is True and current_miss(2) is False
+        assert repository.settle(review(old, "old-review"), DECISION) is False
+        assert current_miss() is True
+        later = attempt("actually-issued-later")
+        assert repository.bind_attempt(later, DECISION) == 1
+        outcome = review(later, "qualifying-review")
+        assert repository.settle(outcome, DECISION) is True
+        assert repository.settle(outcome, DECISION) is True
+        assert count(connection, "remediation_settlements", workspace) == 2
+        assert current_miss() is False
+        repository.invalidate_settlement(outcome.review_id, "synthetic correction")
+        assert current_miss() is True
+
+
+def test_native_legacy_variant_reuses_receipt_frontier_settlement_and_outer_transaction(workspace):
+    """Synthetic module outcomes; not a normal Study or backend HTTP proof."""
+    from tempo_game_evidence_contracts import v3
+    from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
+    from tempo_learning_remediation import (LegacyAcceptedDecision, ReceiveContext, CurrentMissProjection,
+                                            current_miss_sql, accepted_storage_identity)
+
+    source = json.loads((Path(__file__).parents[1] / "tests/legacy-scoped-acceptance.json").read_text())
+    value = source["delivery"]
+    value["workspace_id"] = value["authority"]["workspace_id"] = workspace
+    value = v3.EvidenceDelivery.model_validate(value)
+    proof = LegacyScopedCatalogueProof.model_validate(source["proof"]).model_copy(update={
+        "authority_id": value.authority.storage_identity()[0]})
+    comparison = value.comparisons[0]
+    current = LegacyAcceptedDecision(comparison.card_id, comparison.card_revision, comparison.decision_id,
+        value.authority, value.encounters[0].position_key, ("a7a6",), workspace, comparison.route_id,
+        comparison.route_ply, comparison.exercise_ply, comparison.executable_digest, ("a7a6",), True, True, True,
+        scope_proof=proof)
+    local_time = NOW + timedelta(days=4)
+
+    class Authority:
+        def validate_legacy_source(self, delivery): pass
+        def legacy_decision(self, *args): return current
+
+    context = ReceiveContext(workspace, value.game_id, value.game_revision, value.evidence_id,
+        value.evidence_revision, local_time, Authority())
+    storage_id, generation = accepted_storage_identity(current)
+    prior = AttemptAuthority("legacy-prior", current.card_id, 1, storage_id, generation,
+                             local_time - timedelta(seconds=1))
+    with connect() as connection:
+        with connection.transaction():
+            assert PostgresRepository(connection, workspace).bind_attempt(prior, current) == 0
+        with pytest.raises(RuntimeError, match="injected"):
+            with connection.transaction():
+                repository = PostgresRepository(connection, workspace)
+                assert repository.receive(value, context).status == "completed"
+                raise RuntimeError("injected outer rollback")
+        assert count(connection, "remediation_deliveries", workspace) == 0
+        assert count(connection, "remediation_contributions", workspace) == 0
+        with connection.transaction():
+            receipt = PostgresRepository(connection, workspace).receive(value, context)
+            assert receipt.contract_version == 3 and receipt.status == "completed"
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert repository.receive(value, context) == receipt
+        assert repository.receipt(value.delivery_id) == receipt
+        assert count(connection, "remediation_contributions", workspace) == 1
+        assert json.loads(connection.execute("SELECT payload_json FROM remediation_contributions WHERE workspace_id=%s",
+            (workspace,)).fetchone()[0])["decision_scope_proof"] == proof.model_dump(mode="json")
+        assert repository.bind_attempt(prior, current) == 0
+
+        def outstanding():
+            return connection.execute("SELECT " + current_miss_sql("legacy", projection=CurrentMissProjection(
+                "physical_id", "physical_revision", "authority_id", "graph_generation")) +
+                " FROM (VALUES(%s::text,%s::bigint,%s::text,%s::bigint)) "
+                "legacy(physical_id,physical_revision,authority_id,graph_generation)",
+                (workspace, current.card_id, 1, storage_id, generation)).fetchone()[0]
+
+        assert outstanding()
+        old_review = ReviewOutcome("legacy-old-review", prior, local_time + timedelta(seconds=2), "correct")
+        assert repository.settle(old_review, current) is False and outstanding()
+        later = AttemptAuthority("legacy-later", current.card_id, 1, storage_id, generation,
+                                 local_time + timedelta(seconds=1))
+        assert repository.bind_attempt(later, current) == 1
+        outcome = ReviewOutcome("legacy-qualifying-module-review", later, local_time + timedelta(seconds=2), "correct")
+        assert repository.settle(outcome, current) is True
+        assert repository.settle(outcome, current) is True
+        assert not outstanding() and count(connection, "remediation_settlements", workspace) == 2
+        repository.invalidate_settlement(outcome.review_id, "synthetic invalidation")
+        assert outstanding()
+        assert repository.receive(value, context) == receipt
+        assert connection.execute("SELECT sequence FROM remediation_cards WHERE workspace_id=%s AND card_id=%s",
+            (workspace, current.card_id)).fetchone()[0] == 1

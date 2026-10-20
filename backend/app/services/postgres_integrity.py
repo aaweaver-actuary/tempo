@@ -39,6 +39,47 @@ class PreparedIntegrityPosition:
     issue: dict[str, Any] | None
 
 
+def current_integrity_certificate(database, repertoire_id: str, graph_generation: int) -> dict | None:
+    """Read the existing owner's fully published current scan, without work.
+
+    A ready retained publication is insufficient while a newer rebuild is queued.
+    This projection does not enqueue, validate, repair or duplicate scan analysis.
+    Callers fence source/publication/state and encompass card locks before writes.
+    """
+    row = database.execute_native("""SELECT state.status integrity_status,state.scan_status,
+        state.scan_generation,state.checked_at,state.scan_completed_sources,state.scan_total_sources,state.scan_error,
+        graph.generation graph_task_generation,graph.state graph_task_state,
+        scan.id scan_task_id,scan.generation scan_task_generation,scan.state scan_task_state,scan.payload_json
+        FROM repertoire_integrity_state state
+        JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=state.repertoire_id
+        JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=state.repertoire_id
+        WHERE state.repertoire_id=%s""", (repertoire_id,)).fetchone()
+    return integrity_certificate_from_row(dict(row), repertoire_id, graph_generation) if row else None
+
+
+def integrity_certificate_from_row(row: dict, repertoire_id: str, graph_generation: int) -> dict | None:
+    """The same publication predicate used by capture and its acceptance fence."""
+    try:
+        payload = json.loads(row["payload_json"])
+        checked = datetime.fromisoformat(row["checked_at"].replace("Z", "+00:00"))
+        if (row["integrity_status"] not in {"clean", "needs_repair"}
+                or row["scan_status"] != "idle" or not row["checked_at"] or row["scan_error"] is not None
+                or checked.tzinfo is None or checked.utcoffset() is None
+                or type(row["scan_completed_sources"]) is not int or type(row["scan_total_sources"]) is not int
+                or row["scan_total_sources"] < 0
+                or row["scan_completed_sources"] != row["scan_total_sources"]
+                or row["graph_task_generation"] != graph_generation or row["graph_task_state"] != "complete"
+                or row["scan_task_state"] != "complete"
+                or row["scan_generation"] != f"{row['scan_task_id']}:{row['scan_task_generation']}"
+                or payload.get("repertoire_id") != repertoire_id
+                or type(payload.get("graph_generation")) is not int
+                or payload["graph_generation"] != graph_generation):
+            return None
+        return {key: value for key, value in row.items() if key != "payload_json"}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 def request_integrity_scan_in_transaction(
     database: PostgresConnection, repertoire_id: str,
     graph_generation: int, local_day: str,

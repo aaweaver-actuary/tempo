@@ -98,11 +98,9 @@ from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_m
 from .services.review_service import apply_scheduling_review, capture_daily_queue_order, ensure_card_queued_after, preserve_daily_queue_order
 from .services.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
-from .services.real_game_feedback import (
-    MISS_REASON, prioritize_real_game_miss, outstanding_miss_query, outstanding_miss_sql,
-    has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses,
-    clear_satisfied_miss_priority,
-)
+from .services.real_game_feedback import MISS_REASON
+from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
+from .storage.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
 from .services.endgames import (
     category_for_player,
     generate_position,
@@ -254,6 +252,8 @@ app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
 from .services.background_runtime import StudyResponseTiming
 app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
+from .game_evidence_routes import router as game_evidence_router
+app.include_router(game_evidence_router)
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -654,6 +654,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
                                    and path_parts[3] == "retry" and request.method == "POST")
+        legacy_evidence_command = request.method == "POST" and (
+            path_parts == ["api", "game-evidence", "legacy", "deliveries"]
+            or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
+                and path_parts[5] == "queue"))
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
@@ -725,6 +729,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_parent_callback_command,
                     settings_command,
                     operation_retry_command,
+                    legacy_evidence_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,
@@ -749,6 +754,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
+        or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
     )
     guided_review_reconciliation_read = (
         request.method == "GET" and len(request_path_parts) == 3

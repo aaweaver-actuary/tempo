@@ -120,7 +120,7 @@ def apply_scheduling_review(
     if result["idempotent"]:
         return result
     if source_kind == "study":
-        from .real_game_feedback import clear_satisfied_miss_priority
+        from .real_game_feedback_adapter import clear_satisfied_miss_priority
         clear_satisfied_miss_priority(database, card_id)
     unlock_legacy_children_after_review(database, card_id, review_day.isoformat(), result["state"])
     return result

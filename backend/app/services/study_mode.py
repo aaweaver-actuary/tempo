@@ -10,6 +10,9 @@ STUDY_TASK_KINDS = ('daily_queue',)
 PAUSED_IMPORT_COMMANDS = frozenset({'imports.pgn.admit', 'studies.import.commit', 'studies.bundle.import'})
 STUDY_BACKGROUND_COMMANDS = frozenset({
     'opening_evidence.checkpoint',
+    # Explicit one-game v3 command only. It still yields to foreground admission;
+    # this does not admit a recurring analysis/graph/provider task kind.
+    'game_evidence.receive_legacy',
     'coverage.maia.heartbeat', 'coverage.maia.release', 'coverage.maia.failure',
     'threat.analysis.failure', 'threat.analysis.release',
     'games.analysis.position.report',

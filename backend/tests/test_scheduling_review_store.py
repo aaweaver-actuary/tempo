@@ -28,7 +28,7 @@ def scheduling_database(monkeypatch):
         INSERT INTO cards(id,due_date) VALUES('card','2026-01-01');
     ''')
     monkeypatch.setattr(review_service, 'unlock_legacy_children_after_review', lambda *args: None)
-    from app.services import real_game_feedback
+    from app.services import real_game_feedback_adapter as real_game_feedback
     monkeypatch.setattr(real_game_feedback, 'clear_satisfied_miss_priority', lambda *args: None)
     try:
         yield connection
@@ -70,7 +70,7 @@ def test_scheduling_wrapper_source_replay_reads_current_archived_card_without_fo
     def forbidden(*args):
         raise AssertionError('source replay ran a follow-up')
     monkeypatch.setattr(review_service, 'unlock_legacy_children_after_review', forbidden)
-    from app.services import real_game_feedback
+    from app.services import real_game_feedback_adapter as real_game_feedback
     monkeypatch.setattr(real_game_feedback, 'clear_satisfied_miss_priority', forbidden)
     assert apply_review(scheduling_database) == dict(card_id='card',next_due='2030-02-03',interval_days=88,state='mature',requeue_today=True,requeue_after_cards=4,stability=42.0,scheduling_mode='light',hard_correct_streak=3,suggest_shorter_prefix=False,idempotent=True)
     assert scheduling_database.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 1
@@ -128,7 +128,7 @@ def test_scheduling_wrapper_followups_borrow_same_connection_after_save(scheduli
         assert connection.execute('SELECT first_correct_at FROM cards').fetchone()[0] is not None
         events.append(args)
     monkeypatch.setattr(review_service,'unlock_legacy_children_after_review',followup)
-    from app.services import real_game_feedback
+    from app.services import real_game_feedback_adapter as real_game_feedback
     monkeypatch.setattr(real_game_feedback,'clear_satisfied_miss_priority',followup)
     apply_review(scheduling_database)
     assert events == [('card',),('card','2026-01-02','learning')]

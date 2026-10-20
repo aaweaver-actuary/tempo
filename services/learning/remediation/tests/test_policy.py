@@ -111,3 +111,25 @@ def test_correlated_current_miss_predicate_retains_frontier_fence_and_rejects_sq
     assert "head.card_id=accepted_card.id" in predicate and "OFFSET 0" in predicate
     assert "contribution.card_revision=accepted_card.revision" in predicate
     with pytest.raises(ValueError): current_miss_sql("card; DROP TABLE cards")
+
+
+def test_owner_projection_uses_legacy_columns_without_forking_qualifying_review_predicate():
+    from tempo_learning_remediation import CurrentMissProjection, current_miss_sql
+    projection = CurrentMissProjection("physical_id", "physical_revision", "authority_id", "graph_generation")
+    predicate = current_miss_sql("legacy", projection=projection)
+    assert predicate.count("%s") == 1 and "OFFSET 0" in predicate
+    assert "head.card_id=legacy.physical_id" in predicate
+    assert "contribution.card_revision=legacy.physical_revision" in predicate
+    assert "contribution.publication_id=legacy.authority_id" in predicate
+    assert "contribution.publication_generation=legacy.graph_generation" in predicate
+    assert "frontier_sequence>=incident.work_sequence" in predicate
+    assert "issued_at>=incident.accepted_at" in predicate
+    assert "NOT settlement.invalidated" in predicate
+    assert "legacy.publication_id" not in predicate
+
+
+@pytest.mark.parametrize("column", ["id; DROP TABLE cards", "card.id", "id OR true", "", None])
+def test_owner_current_miss_projection_rejects_sql_fragments(column):
+    from tempo_learning_remediation import CurrentMissProjection, current_miss_sql
+    with pytest.raises(ValueError, match="SQL identifiers"):
+        current_miss_sql(projection=CurrentMissProjection(authority_id_column=column))

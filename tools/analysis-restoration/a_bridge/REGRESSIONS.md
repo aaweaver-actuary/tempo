@@ -1,5 +1,27 @@
 # A operator regression ownership
 
+`tests/test_legacy_study.py` owns file-only capture projection and explicit
+loopback HTTP accept/receipt/queue/status intents: immutable replay, response-loss
+receipt recovery, no automatic polling/queueing, no-obligation zero-I/O behavior,
+actual target/card revision fences and foreign receipt rejection. These imports
+depend on contracts only. `integration/test_legacy_pipeline.py` is a separately
+selected cross-component SOURCE fixture connecting the public producer to shared
+acceptance and actual SQLite Study writers. Its HTTP/Celery transport and module
+PostgreSQL rows are scripted; it does not qualify installed/native behavior.
+
+Legacy observation identity now uses the shared game-evidence contract artifact,
+not service code. The installed boundary case in `tests/test_operator.py` permits
+that declared dependency only; its new artifact combination is unqualified.
+`tests/test_legacy_observation.py` additionally owns full authored alternatives
+with missing/revision-2 bindings, unchanged identity across ordinary Study and
+introduction/recapture, and explicit nonempty-prefix refusal.
+
+The same suite owns scoped capture conversion: complete EOF proof separated from
+bounded retained candidates, inherited prefix authority rather than recomputing
+from selected-only routes, identical full physical/interior projection, rejecting
+partial/mixed proof, and refusing an owner-blocked full card. No source capture,
+acceptance, queue issuance or review is performed by this translator.
+
 `tests/test_operator.py` owns installed independence, private operator credential
 and origin validation, and serialized Content-to-Learning identity/alternative
 mapping. The normal component suite rejects zero selection.
@@ -64,3 +86,17 @@ the schema parity/bounds cases retain their shared projection fields and strict
 bounds. Fixtures are copied into source-removed consumers and jsonschema is a
 dev-only dependency. Regenerate full schemas using the owning public commands in
 `docs/analysis-restoration/a-bridge.md`, not an older installed service artifact.
+
+## Observed legacy authority checkpoint
+
+`tests/test_legacy_observation.py` owns deterministic read-only translation into
+the separate legacy comparison input, unchanged physical execution and interior
+binding, input nonmutation, and source/graph/generation/catalogue token rejection.
+It reuses the existing translator and creates no publication or activation.
+
+`test_unmapped_same_policy_alternative_stays_in_complete_authored_inventory`
+covers both absent physical mapping and unsupported revision-2 mapping, retaining
+the authored alternative without creating a card. Source-identity controls keep
+ordinary reviews/scheduling, timestamps, names and harmless JSON recapture out
+of authority keys, while revision/executable/color/availability/introduction
+changes still fence stale authority. Raw capture provenance remains separate.

@@ -410,7 +410,10 @@ def test_native_prepared_presentation_rejects_changed_attempt_authority(case,cha
 
 @pytest.mark.parametrize('prior_cycle', [False, True])
 def test_native_priority_overlay_retains_issued_position_without_stamping_unmixed_day(case, prior_cycle):
-    from app.services import real_game_feedback, queue_application
+    from app.services import queue_application
+    from app.services.real_game_feedback import MISS_REASON
+    from app.services.real_game_feedback_adapter import prioritize_queued_misses
+    from app.services.review_service import ensure_card_queued_after
     from app.services.queue_ordering import PRESENTATION_VERSION
     with postgres_store.connection() as database:
         database.execute("DELETE FROM daily_queue_days WHERE queue_date=?",(case['day'],))
@@ -420,8 +423,8 @@ def test_native_priority_overlay_retains_issued_position_without_stamping_unmixe
             database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(?,'correct',?,0,1,'study')",(case['identity']+'-b',case['day']))
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'tactic')",(case['identity']+'-ordinary',case['identity'],FEN,case['day']))
             database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,0)',(case['day'],case['identity']+'-ordinary'))
-        real_game_feedback.ensure_card_queued_after(database,case['identity']+'-b',0,priority_reason=real_game_feedback.MISS_REASON,queue_date=case['day'],protect_presented=True,preserve_order=False)
-        real_game_feedback.prioritize_queued_misses(database,case['day'])
+        ensure_card_queued_after(database,case['identity']+'-b',0,priority_reason=MISS_REASON,queue_date=case['day'],protect_presented=True,preserve_order=False)
+        prioritize_queued_misses(database,case['day'])
         assert database.execute("SELECT position FROM daily_queue WHERE id=?",(case['entries'][0],)).fetchone()[0] == before
         assert [row[0] for row in database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id LIMIT 2",(case['day'],))] == [case['identity']+'-a',case['identity']+'-b']
         assert not database.execute("SELECT 1 FROM daily_queue_days WHERE queue_date=?",(case['day'],)).fetchone()
