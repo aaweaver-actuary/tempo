@@ -129,17 +129,41 @@ Primary and cleanup errors are retained together.
 `historical_exposure.py` proposes typed, single-user-request practice priority.
 It does not import a provider, chess engine, database, HTTP framework, backend or
 remediation application. The caller verifies the exact current encounter/card/
-revision/executable/ordered route identity and owns its transaction and locks.
-Semantic storage and canonical queue-writer ports are exercised only by fakes at
-this checkpoint; no public wire contract or backend/runtime adoption is claimed.
+revision/executable/ordered route identity. Store, FactReader and QueueWriter are
+separate semantic capabilities; only fakes implement them at this checkpoint.
+No public wire contract or backend/runtime adoption is claimed.
 
-One accepted intent has an immutable seven-day UTC lifetime. Unknown or ambiguous
-mapping, unavailable/unintroduced cards, missing current integrity, changed
-membership and burial cannot admit. Unknown chronology needs separate explicit
-confirmation. Protected attempts remain fixed. A verified subsequent normal Study
-completion on the bound queue entry serves the practice request at any grade;
-this does not assert mastery, forgotten recall or remediation settlement. Expiry,
-source revocation and completion clear only the exposure label, preserving other
-active exposure requests and unrelated priority. Replay never extends the clock
-or creates another placement. Native atomicity/locks and actual queue effects
-remain unverified until adapters and their bounded qualification are reviewed.
+Training intent persists until served, explicitly cancelled, revoked from verified
+source/membership facts, or safely superseded by verified current source identity.
+It has **no age expiry**. Operational worker leases may expire and be retried;
+they must never expire the underlying training intent. Unknown/ambiguous mapping,
+burial, unavailable cards and stale integrity suspend contribution without silently
+discarding an already accepted intent. Initial admission still requires verified,
+current, eligible introduced review-card authority and explicit user intent.
+Unknown chronology needs separate explicit confirmation, never a fabricated recall
+claim.
+
+Every effect is scoped by target, workspace and card. The future backend adapter
+must serialize that entire card scope, its complete active request inventory,
+current source/eligibility facts and queue decision under the existing card-before-
+day locks in the same caller-owned command transaction. No per-request independent
+commit or partial/truncated contributor inventory is permitted. Any missing/failed
+complete projection must fail closed before effects. Concurrent request, refresh,
+completion and cancellation therefore cannot overwrite another valid contributor.
+Actual SQL/locking/rollback and concurrency remain unverified until native tests.
+
+`reconcile_card_priority` owns the one card-level rule used after request, refresh,
+completion and cancellation: only currently eligible active requests contribute.
+One stale request cannot erase another valid contributor, and a deferred request
+cannot keep a label alive on its own. Clearing affects only the exposure label;
+it never deletes, unburies or moves attempts. Recall or any unrelated existing
+priority wins and must not be overwritten. Protected attempts remain fixed.
+The writer still must atomically preserve these facts and precedence when calling
+the existing canonical protected-head queue writer; it cannot issue new work.
+
+A verified subsequent normal Study completion on the bound queue entry serves
+this practice request at any grade. It means practice occurred, **not mastery**,
+forgotten recall or remediation settlement. No review, scheduling or settlement
+record is created here. Old/unverified answers and other revisions/attempts cannot
+serve the request. Response-loss replay stays quiet; duplicate completion or
+cancellation reads the retained terminal state instead of recreating placement.

@@ -86,10 +86,21 @@ responses exercise failure paths without provisioning extra native clusters.
 `tests/test_historical_exposure.py` uses typed semantic fakes for explicit intent,
 exact encounter/revision/route/source/membership facts, unknown/ambiguous mapping,
 current integrity/availability/introduction and burial. It preserves protected
-attempts, quiet response-loss replay and the original deadline. Refresh retains
-finite intent without turning burial or incomplete integrity into admission;
-source changes revoke. Old/unverified/different-revision/attempt review events
-cannot complete priority. Normal bound practice completes once without producing
-reviews or remediation settlements; another active exposure retains its label.
-Equivalent timezone offsets retain one encounter key. No SQL/native/HTTP/queue
-adoption or infrastructure proof is implied by these source cases.
+attempts and quiet response-loss replay. Unserved intent survives beyond seven
+days; no age-based expiry exists. Unknown mapping or temporary ineligibility
+suspends contribution without silently deleting accepted training intent.
+
+`test_refresh_stale_integrity_request_does_not_erase_valid_paired_contribution`
+reproduces the review blocker: a stale-integrity request must not clear a valid
+request's shared card label. The paired completion/cancellation cases exercise
+both directions: another eligible active request retains priority, while an
+active but ineligible request cannot retain it. One card-level reconciler owns
+all clearing/reapplication. Target/workspace scoping and recall/unrelated-priority
+precedence controls prevent cross-workspace effects and label overwrite.
+
+Normal bound Study practice completes once without producing reviews or
+remediation settlements and without claiming mastery. Old/unverified/different-
+revision/attempt events cannot complete intent. Verified source supersession,
+verified membership revocation and explicit cancellation are auditable terminal
+outcomes. Equivalent timezone offsets retain one encounter key. No SQL/native/
+HTTP/queue adoption or infrastructure proof is implied by these source cases.

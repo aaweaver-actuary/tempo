@@ -5,13 +5,12 @@ verification. These typed ports contain no SQL, transport or scheduling effects.
 Completion means practice served, never recall success or remediation settlement.
 """
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import hashlib
 import json
 from typing import Literal, Protocol
 
 REASON = 'historical_exposure'
-PRIORITY_LIFETIME = timedelta(days=7)
 
 
 @dataclass(frozen=True)
@@ -59,7 +58,7 @@ class CurrentFacts:
     protected: bool
     queue_day: str
     queue_entry_id: int | None = None
-    priority_present: bool = False
+    priority_class: Literal['none', 'exposure', 'recall', 'other'] = 'none'
 
 
 @dataclass(frozen=True)
@@ -73,15 +72,19 @@ class Placement:
 class Record:
     request: Request
     accepted_at: datetime
-    expires_at: datetime
-    state: Literal['active', 'completed', 'expired', 'revoked']
+    state: Literal['active', 'completed', 'cancelled', 'revoked', 'superseded']
     placement: Placement
     queue_day: str
     completion_review_id: str | None = None
+    terminal_reason: str | None = None
 
-    def priority_active(self, now: datetime) -> bool:
+    def intent_active(self, now: datetime) -> bool:
         _instant(now)
-        return self.state == 'active' and self.accepted_at <= now < self.expires_at
+        return self.state == 'active' and self.accepted_at <= now
+
+    def card_scope(self) -> 'CardScope':
+        identity = self.request.encounter
+        return CardScope(identity.target_id, identity.workspace_id, identity.card_id)
 
 
 @dataclass(frozen=True)
@@ -99,10 +102,25 @@ class ExposureRejected(ValueError):
     """Semantic refusal, translated by the caller's command adapter."""
 
 
+@dataclass(frozen=True)
+class CardScope:
+    target_id: str
+    workspace_id: str
+    card_id: str
+
+
+class FactReader(Protocol):
+    def current(self, request: Request) -> CurrentFacts:
+        """Fresh verified facts from the caller's locked, consistent card scope."""
+        ...
+
+
 class Store(Protocol):
     def find(self, encounter_key: str) -> Record | None: ...
     def save(self, record: Record) -> None: ...
-    def another_active(self, card_id: str, excluding: str, now: datetime) -> bool: ...
+    def active_for_card(self, scope: CardScope) -> tuple[Record, ...]:
+        """Complete active inventory; no silent truncation or other workspace."""
+        ...
 
 
 class QueueWriter(Protocol):
@@ -110,7 +128,7 @@ class QueueWriter(Protocol):
         """Canonical protected-head writer; idempotently reuse an existing row."""
         ...
 
-    def clear_priority(self, card_id: str, reason: str) -> None:
+    def clear_priority(self, scope: CardScope, reason: str) -> None:
         """Clear only this label; never delete/move an attempt or clear a miss."""
         ...
 
@@ -148,38 +166,6 @@ def _refusal(request: Request, facts: CurrentFacts, now: datetime) -> str | None
     return None
 
 
-def _place(request: Request, facts: CurrentFacts, writer: QueueWriter) -> Placement:
-    if facts.protected:
-        return Placement('deferred', 'protected_attempt_preserved', facts.queue_entry_id)
-    return writer.prioritize(request.encounter, facts.queue_day, REASON)
-
-
-def request_priority(store: Store, writer: QueueWriter, request: Request,
-                     facts: CurrentFacts, now: datetime) -> Record:
-    """Call under one caller-owned command/receipt transaction; replay is quiet."""
-    prior = store.find(request.encounter.key())
-    if prior is not None:
-        if prior.request != request:
-            raise ExposureRejected('exposure_intent_reused')
-        return prior  # Do not redraw/extend time, reprioritize or fabricate work.
-    refusal = _refusal(request, facts, now)
-    if refusal:
-        raise ExposureRejected(refusal)
-    record = Record(request, now, now + PRIORITY_LIFETIME, 'active',
-                    _place(request, facts, writer), facts.queue_day)
-    store.save(record)
-    return record
-
-
-def _finish(store: Store, writer: QueueWriter, record: Record, state: str,
-            now: datetime, review_id: str | None = None) -> Record:
-    result = replace(record, state=state, completion_review_id=review_id)
-    store.save(result)
-    identity = record.request.encounter
-    if not store.another_active(identity.card_id, identity.key(), now):
-        writer.clear_priority(identity.card_id, REASON)
-    return result
-
 
 def _current(store: Store, record: Record) -> Record:
     current = store.find(record.request.encounter.key())
@@ -188,44 +174,117 @@ def _current(store: Store, record: Record) -> Record:
     return current
 
 
-def refresh_priority(store: Store, writer: QueueWriter, record: Record,
-                     facts: CurrentFacts, now: datetime) -> Record:
-    """Retain finite intent across refresh; never unbury or move protected work."""
+def reconcile_card_priority(store: Store, writer: QueueWriter, reader: FactReader,
+                            scope: CardScope, now: datetime) -> None:
+    """One eligible-contributor rule for refresh, completion and cancellation.
+
+    The caller must serialize the entire target/workspace/card scope, including
+    its complete active inventory and current facts, in the same transaction as
+    the canonical protected-head writer. Leases may expire; training intent does
+    not. Read/decide before effects. No individual request clears a card's label.
+    """
     _instant(now)
-    record = _current(store, record)
-    if record.state != 'active':
-        return record
-    if now >= record.expires_at:
-        return _finish(store, writer, record, 'expired', now)
-    if now < record.accepted_at:
-        raise ExposureRejected('clock_before_acceptance')
-    refusal = _refusal(record.request, facts, now)
-    if refusal in {'current_integrity_required', 'buried_today'}:
-        result = replace(record, placement=Placement('deferred', refusal))
-        store.save(result)
-        writer.clear_priority(record.request.encounter.card_id, REASON)
-        return result
+    records = store.active_for_card(scope)
+    keys = [record.request.encounter.key() for record in records]
+    if len(set(keys)) != len(keys) or any(record.card_scope()!=scope or record.state!='active' for record in records):
+        raise ExposureRejected('complete_scoped_active_inventory_required')
+    updates, eligible = [], []
+    for record in records:
+        if now < record.accepted_at:
+            raise ExposureRejected('clock_before_acceptance')
+        facts = reader.current(record.request)
+        refusal = _refusal(record.request, facts, now)
+        if refusal is None:
+            eligible.append((record, facts))
+        elif facts.mapping == 'verified' and facts.encounter != record.request.encounter:
+            updates.append(replace(record, state='superseded', terminal_reason='verified_source_changed'))
+        elif refusal in {'exclusive_current_membership_required', 'outside_historical_exposure_scope'}:
+            updates.append(replace(record, state='revoked', terminal_reason=refusal))
+        else:
+            # Unknown mapping, burial, unavailable cards or stale integrity are
+            # not a reason to silently discard unserved user intent.
+            updates.append(replace(record, placement=Placement('deferred', refusal, record.placement.queue_entry_id)))
+    if eligible:
+        queue_facts = {(facts.queue_day, facts.queue_entry_id, facts.protected, facts.priority_class)
+                       for _,facts in eligible}
+        if len(queue_facts) != 1:
+            raise ExposureRejected('consistent_card_queue_facts_required')
+    for updated in updates:
+        if updated != store.find(updated.request.encounter.key()):
+            store.save(updated)
+    if not eligible:
+        writer.clear_priority(scope, REASON)
+        return
+    selected, facts = min(eligible, key=lambda item: item[0].request.encounter.key())
+    if facts.priority_class in {'recall','other'}:
+        placement = Placement('deferred', 'unrelated_priority_preserved', facts.queue_entry_id)
+    elif facts.protected:
+        placement = Placement('deferred', 'protected_attempt_preserved', facts.queue_entry_id)
+    elif facts.priority_class == 'exposure' and facts.queue_entry_id is not None:
+        placement = Placement('applied', queue_entry_id=facts.queue_entry_id)
+    else:
+        placement = writer.prioritize(selected.request.encounter, facts.queue_day, REASON)
+    for record,_ in eligible:
+        updated = replace(record, placement=placement, queue_day=facts.queue_day)
+        if updated != record:
+            store.save(updated)
+
+
+def request_priority(store: Store, writer: QueueWriter, request: Request,
+                     reader: FactReader, now: datetime) -> Record:
+    """One caller-owned command/receipt transaction; duplicate intent is quiet."""
+    prior = store.find(request.encounter.key())
+    if prior is not None:
+        if prior.request != request:
+            raise ExposureRejected('exposure_intent_reused')
+        return prior
+    facts = reader.current(request)
+    refusal = _refusal(request, facts, now)
     if refusal:
-        return _finish(store, writer, record, 'revoked', now)
-    if (facts.priority_present and facts.queue_entry_id == record.placement.queue_entry_id
-            and facts.queue_day == record.queue_day):
-        return record
-    result = replace(record, placement=_place(record.request, facts, writer), queue_day=facts.queue_day)
+        raise ExposureRejected(refusal)
+    record = Record(request, now, 'active', Placement('deferred','pending_reconciliation'), facts.queue_day)
+    store.save(record)
+    reconcile_card_priority(store, writer, reader, record.card_scope(), now)
+    return _current(store, record)
+
+
+def refresh_priority(store: Store, writer: QueueWriter, record: Record,
+                     reader: FactReader, now: datetime) -> Record:
+    record = _current(store, record)
+    if record.state == 'active':
+        reconcile_card_priority(store, writer, reader, record.card_scope(), now)
+    return _current(store, record)
+
+
+def _finish(store: Store, writer: QueueWriter, reader: FactReader, record: Record,
+            state: Literal['completed', 'cancelled'], reason: str, now: datetime, review_id: str | None = None) -> Record:
+    result = replace(record, state=state, terminal_reason=reason, completion_review_id=review_id)
     store.save(result)
+    reconcile_card_priority(store, writer, reader, record.card_scope(), now)
     return result
 
 
-def complete_practice(store: Store, writer: QueueWriter, record: Record,
-                      completion: PracticeCompletion, now: datetime) -> Record:
-    """An actual normal Study completion serves this practice request, any grade.
+def cancel_priority(store: Store, writer: QueueWriter, record: Record,
+                    reader: FactReader, now: datetime) -> Record:
+    """Explicit cancellation by the authenticated request owner; never age-out."""
+    _instant(now)
+    record = _current(store, record)
+    if not record.intent_active(now):
+        return record
+    return _finish(store, writer, reader, record, 'cancelled','user_cancelled',now)
 
-    Old offline answers, other revisions/attempts, source-game imports and
-    fabricated/unverified completions cannot retire priority. No review is made.
+
+def complete_practice(store: Store, writer: QueueWriter, record: Record,
+                      completion: PracticeCompletion, reader: FactReader, now: datetime) -> Record:
+    """Actual normal Study practice serves the request, any grade, not mastery.
+
+    Old offline answers, other revisions/attempts, game imports and unverified
+    completions cannot retire intent. No review or remediation settlement is made.
     """
     _instant(now)
     _instant(completion.reviewed_at)
     record = _current(store, record)
-    if not record.priority_active(now):
+    if not record.intent_active(now):
         return record
     identity = record.request.encounter
     if (completion.card_id != identity.card_id or completion.card_revision != identity.card_revision
@@ -234,4 +293,4 @@ def complete_practice(store: Store, writer: QueueWriter, record: Record,
             or not completion.verified_normal_attempt
             or not record.accepted_at <= completion.reviewed_at <= now):
         return record
-    return _finish(store, writer, record, 'completed', now, completion.review_id)
+    return _finish(store, writer, reader, record, 'completed','practice_served',now,completion.review_id)
