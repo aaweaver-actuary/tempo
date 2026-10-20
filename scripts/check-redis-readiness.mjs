@@ -119,7 +119,7 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
       const journal = JSON.parse(readFileSync(join(loadingStateDirectory, "operation.json"), "utf8"));
       assert.equal(journal.phase, "checking_redis");
       assert(!(await loadingRuntime.runningServices()).some(service => [...applicationServices, "postgres-backup"].includes(service)));
-      assert(!commandLog.slice(firstCommand).some(call => call.args.includes("scripts/apply_postgres_migrations.py")
+      assert(!commandLog.slice(firstCommand).some(call => call.args.includes("database/tooling/apply_postgres_migrations.py")
         || (call.args.includes("up") && call.args.includes("foreground-worker"))), "no schema or application work before PONG");
     } catch (error) { fixtureFailure = error; }
     finally {

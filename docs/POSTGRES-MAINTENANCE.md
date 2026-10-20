@@ -27,7 +27,7 @@ From the approved candidate checkout, build the migration and application
 images from the same revision. Record `git rev-parse HEAD` and the resulting
 image IDs. Then stop application writers and readers before the backup:
 
-First run `scripts/upgrade-postgres-schema.sh --plan`. This read-only option
+First run `database/tooling/upgrade-postgres-schema.sh --plan`. This read-only option
 validates the Compose project and external volume identities, then prints the
 sequence without building images, stopping services, backing up, or migrating.
 The `--apply` option delegates to the CLI's checked migration workflow and exits before dependent startup
@@ -59,7 +59,7 @@ a stop condition rather than silently replacing it:
 backup_name="tempo-upgrade-$(date -u +%Y%m%dT%H%M%SZ).dump"
 docker compose exec -T postgres-backup sh -ec 'test ! -e "/backups/$1" && pg_dump -h postgres -U tempo -d tempo -Fc -f "/backups/$1" && pg_restore -l "/backups/$1" >/dev/null && sha256sum "/backups/$1" > "/backups/$1.sha256" && cd /backups && sha256sum -c "$1.sha256"' sh "$backup_name"
 docker compose exec -T postgres-backup sh -ec 'createdb -h postgres -U tempo tempo_upgrade_restore && pg_restore -h postgres -U tempo -d tempo_upgrade_restore --no-owner --no-privileges "/backups/$1"' sh "$backup_name"
-docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration scripts/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_upgrade_restore
+docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration database/tooling/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_upgrade_restore
 docker compose exec -T postgres-backup dropdb -h postgres -U tempo tempo_upgrade_restore
 ```
 
@@ -68,7 +68,7 @@ only the checked-in ordered migrations; the runner rejects newer, gapped, or
 malformed history and is safe to re-run after success:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration scripts/apply_postgres_migrations.py
+docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration database/tooling/apply_postgres_migrations.py
 ```
 
 **Stop if any command fails.** Do not start dependent application services.
@@ -122,15 +122,15 @@ in Compose variables, command arguments, or the repository.
 ## Rehearsal before the live window
 
 1. Stop all SQLite writers in a planned rehearsal window and create a fresh
-   snapshot with `scripts/create_sqlite_cutover_snapshot.py create`. For the
+   snapshot with `database/tooling/create_sqlite_cutover_snapshot.py create`. For the
    Docker volume, mount `tempo-data` and an external backup directory into a
    short-lived Python container with this checkout's `scripts` directory at
    `/scripts`. For example, from this checkout after setting
    `TEMPO_BACKUP_DIRECTORY` to an absolute shared path outside the checkout:
 
    ```sh
-   docker run --rm -v tempo-data:/data -v "$TEMPO_BACKUP_DIRECTORY:/backup" -v "$PWD/scripts:/scripts:ro" python:3.12-slim python /scripts/create_sqlite_cutover_snapshot.py create /data/tempo.db /backup/tempo-rehearsal.db
-   docker run --rm -v "$TEMPO_BACKUP_DIRECTORY:/backup:ro" -v "$PWD/scripts:/scripts:ro" python:3.12-slim python /scripts/create_sqlite_cutover_snapshot.py verify /backup/tempo-rehearsal.db /backup/tempo-rehearsal.db.manifest.json
+   docker run --rm -v tempo-data:/data -v "$TEMPO_BACKUP_DIRECTORY:/backup" -v "$PWD/scripts:/scripts:ro" python:3.12-slim python /database/tooling/create_sqlite_cutover_snapshot.py create /data/tempo.db /backup/tempo-rehearsal.db
+   docker run --rm -v "$TEMPO_BACKUP_DIRECTORY:/backup:ro" -v "$PWD/scripts:/scripts:ro" python:3.12-slim python /database/tooling/create_sqlite_cutover_snapshot.py verify /backup/tempo-rehearsal.db /backup/tempo-rehearsal.db.manifest.json
    ```
 
    Keep the snapshot outside the source volume and checkout.
@@ -140,8 +140,8 @@ in Compose variables, command arguments, or the repository.
 2. Use distinct disposable volume names and a disposable database. Apply all
    versioned PostgreSQL migrations, stream the SQLite data, run `--verify-only`, reseed sequences,
    then restore a PostgreSQL custom-format backup into another disposable
-   database. Use `scripts/verify_postgres_restore.py` for all migrated SQLite
-   tables and `scripts/verify_postgres_backup.py` for every PostgreSQL table,
+   database. Use `database/tooling/verify_postgres_restore.py` for all migrated SQLite
+   tables and `database/tooling/verify_postgres_backup.py` for every PostgreSQL table,
    including operation receipts and publication generations.
 3. Run the API, Celery, browser, and load tests against that disposable stack.
    Keep the production `tempo-data` volume untouched.
@@ -163,10 +163,10 @@ in Compose variables, command arguments, or the repository.
    maintenance image contains the exact checked-in migration files:
 
    ```sh
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/apply_postgres_migrations.py
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/migrate_sqlite_to_postgres.py /source/tempo.db
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/migrate_sqlite_to_postgres.py /source/tempo.db --verify-only
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/provision_postgres_roles.py --reader-password-file /run/secrets/reader_password --writer-password-file /run/secrets/writer_password
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration database/tooling/apply_postgres_migrations.py
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration database/tooling/migrate_sqlite_to_postgres.py /source/tempo.db
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration database/tooling/migrate_sqlite_to_postgres.py /source/tempo.db --verify-only
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration database/tooling/provision_postgres_roles.py --reader-password-file /run/secrets/reader_password --writer-password-file /run/secrets/writer_password
    ```
 
 4. Compare row counts, primary-key digests, active queue order, review IDs,
@@ -185,8 +185,8 @@ in Compose variables, command arguments, or the repository.
 
    ```sh
    docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'createdb -h postgres -U tempo tempo_restore_check && pg_restore -h postgres -U tempo -d tempo_restore_check --no-owner --no-privileges /backups/tempo-cutover.dump'
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/verify_postgres_restore.py /source/tempo.db postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration database/tooling/verify_postgres_restore.py /source/tempo.db postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration database/tooling/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
    docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'dropdb -h postgres -U tempo tempo_restore_check'
    ```
 
@@ -215,7 +215,7 @@ verification above before applying the destination-only repair. While writers
 remain stopped, run:
 
 ```sh
-docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/repair_verified_game_tactics.py /source/tempo.db
+docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration database/tooling/repair_verified_game_tactics.py /source/tempo.db
 ```
 
 The repair repeats exact verification before its first change, records the

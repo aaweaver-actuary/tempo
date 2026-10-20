@@ -1,5 +1,5 @@
 import { withMissingReceipts, resetStudyStorage, interceptIntentWrites } from "./support/study-intent-fixtures";
-import { initializeStudyIntentStorage, closeStudyIntentStorage } from "../../app/lib/study-intent-storage";
+import { initializeStudyIntentStorage, closeStudyIntentStorage } from "../../database/browser/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { conflictedReviews, enqueuePendingReview, flushPendingReviews, pendingReviews, retryReviewConflict, ReviewReplayError } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
@@ -1306,7 +1306,7 @@ it("PR105 guided recovery consumes a complete review receipt despite an unavaila
 
 it("pr285_discarded_review_race_never_reports_a_saved_grade_or_clears_failure_evidence", async () => {
   const { reviewStudySession } = await import("../../app/lib/review-outbox");
-  const { studyIntentStore } = await import("../../app/lib/study-intent-storage");
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
   const { enqueueTrainingFailure, pendingTrainingFailures } = await import("../../app/lib/training-failure-outbox");
   const original = { ...auditReview("discard-race", 777, "race-card"), expectedRevision: 1 };
   await enqueueTrainingFailure(777, "race-card", 1); await enqueuePendingReview(original);

@@ -169,7 +169,7 @@ def test_prefix_diagnostics_connection_is_authoritative_bounded_and_admitted(mon
 
 def test_prefix_diagnostics_index_migration_only_adds_read_indexes():
     from pathlib import Path
-    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     migrations = sorted((Path(__file__).resolve().parents[1]/'migrations').glob('[0-9][0-9][0-9]_*.sql'))
     assert [int(path.name[:3]) for path in migrations] == list(range(1, POSTGRES_SCHEMA_VERSION+1))
     source = next(path for path in migrations if path.name.endswith('_prefix_diagnostics_indexes.sql')).read_text()

@@ -174,6 +174,8 @@
         "tempo_learning_remediation"
       ],
       "buildInputs": [
+        "../../../database/tempo_learning_database",
+        "hatch_build.py",
         "pyproject.toml",
         "uv.lock",
         "src",
@@ -230,7 +232,7 @@
           "dedicated workspace Learning database"
         ],
         "migrations": [
-          "src/tempo_learning_runtime/migrations/manifest.json"
+          "../../../database/tempo_learning_database/ddl/migrations/manifest.json"
         ],
         "productionAdoption": false
       },
@@ -244,7 +246,9 @@
       "root": "services/content",
       "publicExports": ["SourceSnapshot", "ContentService", "ContentError", "stable_id", "canonical_source", "canonical_position", "inventory_segment", "validate_exercise_step", "build_publication"],
       "dependencies": ["chess", "tempo_chess_core", "tempo_content_publication_contracts", "pydantic", "psycopg", "psycopg_pool"],
-      "buildInputs": ["pyproject.toml", "uv.lock", "src", "fixtures", "tests", "integration", "run_suite.py", "README.md", "INTERFACES.md", "REGRESSIONS.md", "VALIDATION.md"],
+      "buildInputs": [
+        "../../database/tempo_content_database",
+        "hatch_build.py","pyproject.toml", "uv.lock", "src", "fixtures", "tests", "integration", "run_suite.py", "README.md", "INTERFACES.md", "REGRESSIONS.md", "VALIDATION.md"],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {"name": "tempo-content", "version": "0.1.0", "format": "wheel + sdist"},
       "tests": [
@@ -267,7 +271,7 @@
       "dataOwnership": {
         "authority": "#108 / #264",
         "databases": ["dedicated workspace Content database"],
-        "migrations": ["src/tempo_content/migrations/manifest.json"],
+        "migrations": ["../../database/tempo_content_database/ddl/migrations/manifest.json"],
         "documents": ["contracts/OWNERSHIP.md", "services/content/INTERFACES.md"],
         "productionAdoption": false
       },
@@ -301,6 +305,8 @@
         "pydantic"
       ],
       "buildInputs": [
+        "../../database/tempo_game_evidence_database",
+        "hatch_build.py",
         "pyproject.toml",
         "uv.lock",
         "src",
@@ -343,7 +349,7 @@
             "services/game-evidence/pyproject.toml",
             "services/game-evidence/uv.lock",
             "services/learning/remediation/src",
-            "services/learning/remediation/migrations",
+            "database/tempo_remediation_database/ddl/migrations",
             "services/learning/remediation/pyproject.toml"
           ]
         }
@@ -361,7 +367,7 @@
           "game_evidence"
         ],
         "migrations": [
-          "src/tempo_game_evidence/migrations"
+          "../../database/tempo_game_evidence_database/ddl/migrations"
         ],
         "documents": [
           "contracts/OWNERSHIP.md",
@@ -396,6 +402,8 @@
         "pydantic"
       ],
       "buildInputs": [
+        "../../database/tempo_intelligence_database",
+        "hatch_build.py",
         "pyproject.toml",
         "uv.lock",
         "src",
@@ -454,7 +462,7 @@
           "dedicated workspace Intelligence database"
         ],
         "migrations": [
-          "src/tempo_intelligence/migrations/manifest.json"
+          "../../database/tempo_intelligence_database/ddl/migrations/manifest.json"
         ],
         "productionAdoption": false
       },
@@ -1266,7 +1274,7 @@
       "type": "library",
       "maintainer": "Tempo / #221",
       "status": "implemented",
-      "root": "packages/browser-intents",
+      "root": "database/browser-intents",
       "publicExports": [
         "IntentEnvelope",
         "IntentPutOptions",
@@ -1302,7 +1310,7 @@
             "test.mjs",
             "tests"
           ],
-          "cwd": "packages/browser-intents"
+          "cwd": "database/browser-intents"
         }
       ],
       "toolchain": {
@@ -1524,12 +1532,12 @@
           "inputs": [
             "services/learning/application/integration",
             "backend/app",
-            "backend/migrations",
+            "database/tempo_legacy_database/ddl/migrations",
             "backend/requirements.txt",
-            "scripts/apply_postgres_migrations.py",
-            "scripts/provision_postgres_roles.py",
-            "scripts/check_postgres_training_transition.py",
-            "scripts/check_postgres_daily_study_dispatch.py",
+            "database/tooling/apply_postgres_migrations.py",
+            "database/tooling/provision_postgres_roles.py",
+            "database/tests/check_postgres_training_transition.py",
+            "database/tests/check_postgres_daily_study_dispatch.py",
             "packages/scheduling",
             "services/learning/application/qualification.py",
             "packages/chess-core"
@@ -1587,6 +1595,8 @@
         "tempo_game_evidence_contracts"
       ],
       "buildInputs": [
+        "../../../database/tempo_remediation_database",
+        "hatch_build.py",
         "pyproject.toml",
         "uv.lock",
         "src",
@@ -1616,7 +1626,7 @@
             "services/learning/remediation/src",
             "services/learning/remediation/pyproject.toml",
             "services/learning/remediation/uv.lock",
-            "services/learning/remediation/migrations",
+            "database/tempo_remediation_database/ddl/migrations",
             "contracts/game-evidence/src",
             "contracts/game-evidence/pyproject.toml"
           ]
@@ -1630,11 +1640,11 @@
             "services/learning/remediation/integration",
             "services/learning/remediation/run_suite.py",
             "services/learning/application/qualification.py",
-            "contracts/database-ownership/fixture.py",
+            "database/ownership/fixture.py",
             "services/learning/remediation/src",
             "services/learning/remediation/pyproject.toml",
             "services/learning/remediation/uv.lock",
-            "services/learning/remediation/migrations",
+            "database/tempo_remediation_database/ddl/migrations",
             "contracts/game-evidence/src",
             "contracts/game-evidence/pyproject.toml",
             "services/learning/remediation/tests"
@@ -1647,10 +1657,10 @@
           "command": "python services/learning/remediation/integration/run_postgres.py",
           "inputs": [
             "services/learning/remediation/integration",
-            "services/learning/remediation/migrations",
+            "database/tempo_remediation_database/ddl/migrations",
             "services/learning/remediation/tests/support.py",
             "services/learning/application/qualification.py",
-            "contracts/database-ownership/fixture.py",
+            "database/ownership/fixture.py",
             "services/learning/remediation/src",
             "services/learning/remediation/pyproject.toml",
             "services/learning/remediation/uv.lock",
@@ -1672,7 +1682,7 @@
           "Learning (module-local ownership; no cutover)"
         ],
         "migrations": [
-          "services/learning/remediation/migrations/001_remediation.sql"
+          "database/tempo_remediation_database/ddl/migrations/001_remediation.sql"
         ],
         "productionAdoption": false
       },
@@ -2077,13 +2087,13 @@
       "id": "contract-ownership",
       "owner": "#264",
       "kind": "postgres",
-      "cwd": "contracts",
-      "command": "python database-ownership/run.py",
+      "cwd": "database",
+      "command": "python ownership/run.py",
       "inputs": [
-        "database-ownership/run.py",
-        "database-ownership/fixture.py",
-        "database-ownership/tests",
-        "database-ownership/requirements-test.txt"
+        "ownership/run.py",
+        "ownership/fixture.py",
+        "ownership/tests",
+        "ownership/requirements-test.txt"
       ]
     },
     {
@@ -2107,7 +2117,7 @@
         "module-resolution.ts",
         "package.json",
         "package-lock.json",
-        "packages/browser-intents",
+        "database/browser-intents",
         "packages/study-session",
         "packages/chess-line"
       ]

@@ -2,7 +2,7 @@
 
 from . import scheduling_review_application
 from . import scheduling_review_contracts
-from . import scheduling_review_store
+from tempo_learning_database.adapters import scheduling_review_store
 from . import study_grading
 from . import opening_decision_evidence
 from . import threat_models

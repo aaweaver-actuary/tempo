@@ -5,6 +5,7 @@ from pathlib import Path
 import json, subprocess, sys
 import pytest
 import tempo_learning_runtime
+import tempo_learning_database
 
 
 def test_installed_artifact_has_migrations_and_no_optional_services():
@@ -14,9 +15,9 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
     for distribution in ("celery", "redis", "torch", "onnxruntime", "transformers"):
         with pytest.raises(metadata.PackageNotFoundError):
             metadata.distribution(distribution)
-    package = Path(tempo_learning_runtime.__file__).parent
-    assert (package / "migrations/manifest.json").is_file()
-    migrations = json.loads((package / "migrations/manifest.json").read_text())
+    package = Path(tempo_learning_database.__file__).parent
+    assert (package / "ddl/migrations/manifest.json").is_file()
+    migrations = json.loads((package / "ddl/migrations/manifest.json").read_text())
     assert [entry["id"] for entry in migrations] == [
         "learning.runtime/0001",
         "learning.runtime/0002",
@@ -25,14 +26,14 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
     ]
     assert migrations[1]["depends_on"] == ["learning.runtime/0001"]
     assert all(
-        __import__("tempo_learning_runtime.migrate", fromlist=["migration_source"]).migration_source(entry)
+        __import__("tempo_learning_database.ddl.migrate", fromlist=["migration_source"]).migration_source(entry)
         for entry in migrations
     )
     assert (
-        json.loads((package / "fixtures/legacy-protocol.json").read_text())["protocol"]
+        json.loads((Path(tempo_learning_runtime.__file__).parent / "fixtures/legacy-protocol.json").read_text())["protocol"]
         == "legacy-learning-http"
     )
-    from tempo_learning_runtime.postgres_store import PostgresConnection
+    from tempo_learning_database.adapters.postgres_store import PostgresConnection
 
     assert not hasattr(PostgresConnection, "commit") and not hasattr(
         PostgresConnection, "rollback"

@@ -8,7 +8,7 @@ import json
 
 import chess
 
-from ..database import background_read_connection, connection
+from tempo_legacy_database.connections import background_read_connection, connection
 from .activity_gate import activity_gate
 from .motif_detectors import classify_candidate_lines, select_primary_motif
 

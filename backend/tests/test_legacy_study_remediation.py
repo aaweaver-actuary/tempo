@@ -13,8 +13,9 @@ from types import SimpleNamespace
 import pytest
 from tempo_learning_remediation import PostgresRepository, ReceiveContext
 
-from app import database, queue_commands
-from app.postgres_store import PostgresConnection, TempoRow
+from tempo_legacy_database import connections as database
+from app import queue_commands
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection, TempoRow
 from app.services import legacy_study_remediation as bridge
 from app.services.learning_review_adapter import LearningReviewAdapter, submit_legacy_review
 from app.services.legacy_game_evidence_scope import BRIDGE_MISS_REASON
@@ -418,7 +419,8 @@ def test_local_http_commands_only_dispatch_original_immutable_payloads(vertical,
 def test_http_cutover_matching_background_admission_and_query_only_guard_are_preserved(monkeypatch, method, path, work_class, status):
     from fastapi import Request
     from fastapi.responses import JSONResponse
-    from app import main, postgres_store
+    from app import main
+    from tempo_legacy_database.adapters import postgres_store
     entered = []
     @asynccontextmanager
     async def foreground():

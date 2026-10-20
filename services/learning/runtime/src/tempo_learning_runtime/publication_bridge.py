@@ -198,7 +198,7 @@ def physical_id(database, card_id):
 
 def dispatch_activation(payload, operation_id):
     """Compute/legal validation after closing the read, before the writer locks."""
-    from .database import connection
+    from tempo_learning_database.connections import connection
     from . import gateway
     validate_operation_request('publication.activate.v2', payload, operation_id)
     receipt = gateway.read_operation(operation_id, publication=True)

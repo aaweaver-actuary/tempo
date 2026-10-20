@@ -120,12 +120,12 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         "--label", `com.docker.compose.volume=${key}`, volume.name]);
     }
     await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
-    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "scripts/check_postgres_cli_lifecycle.py"], { echo: true });
+    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "database/tests/check_postgres_cli_lifecycle.py"], { echo: true });
     const readHistory = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-      "scripts/check_postgres_cli_lifecycle.py", "--history"])).stdout);
+      "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
     const readNormalization = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-      "scripts/check_postgres_cli_lifecycle.py", "--normalization"])).stdout);
+      "database/tests/check_postgres_cli_lifecycle.py", "--normalization"])).stdout);
     const legacyTacticalRow = await readNormalization();
     assert.equal(legacyTacticalRow.card_bucket, "tactics");
     assert.equal(legacyTacticalRow.content_type, "tactics");
@@ -136,7 +136,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     // not let the next process skip its original H0 obligation.
     const mutatingRun = async (command, args, options) => {
       const result = await run(command, args, options);
-      if (args.includes("scripts/apply_postgres_migrations.py") && !args.includes("--check"))
+      if (args.includes("database/tooling/apply_postgres_migrations.py") && !args.includes("--check"))
         await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
           "UPDATE reviews SET rating='incorrect' WHERE card_id='cli-history'"]);
       return result;
@@ -147,13 +147,13 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
     assert.equal(originalGuard.state, "pending");
     const failedReceipt = await compose(["exec", "-T", "postgres", "psql", "-tA", "-U", "postgres", "-d", "tempo", "-c", "SELECT MAX(version) FROM tempo_schema_migrations"]);
-    assert.equal(Number(failedReceipt.stdout.trim()), schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
+    assert.equal(Number(failedReceipt.stdout.trim()), schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")));
     const retryRuntime = () => makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
     const failedRetry = retryRuntime(); await failedRetry.inspectTarget();
     const retryStart = commandLog.length;
     await assert.rejects(lifecycle("history_retry_rejected", { recreate: false }, failedRetry), /Original migration history verification failed/);
-    assert(!commandLog.slice(retryStart).some(call => call.args.includes("scripts/verify_postgres_cli_state.py") && !call.args.includes("--expected")));
-    assert(!commandLog.slice(retryStart).some(call => call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check")));
+    assert(!commandLog.slice(retryStart).some(call => call.args.includes("database/tooling/verify_postgres_cli_state.py") && !call.args.includes("--expected")));
+    assert(!commandLog.slice(retryStart).some(call => call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check")));
     assert.deepEqual(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).study_invariants, originalGuard.study_invariants);
     assert(!(await failedRetry.runningServices()).includes("api"));
     await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c", "UPDATE reviews SET rating='correct' WHERE card_id='cli-history'"]);
@@ -161,7 +161,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     await lifecycle("history_repaired_retry", { recreate: false }, repairedRetry);
     assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
     const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
-    assert.equal(record.schema, schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
+    assert.equal(record.schema, schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")));
     assert.equal(record.backup.verified, true);
     assert.equal(JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8")).phase, "ready");
     assert.deepEqual(await readNormalization(), { ...legacyTacticalRow, card_bucket: "tactic", content_type: "tactic" },
@@ -173,7 +173,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const repeatStart = commandLog.length;
     await lifecycle("compatible_repeat", { recreate: false }, repeat);
     assert(!commandLog.slice(repeatStart).some(call => call.args.includes("build") || call.args.includes("stop")
-      || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))));
+      || (call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"))));
     assert(commandLog.slice(repeatStart).filter(call => call.args.includes("up") && call.args.includes("postgres"))
       .every(call => call.args.includes("--no-recreate")));
 

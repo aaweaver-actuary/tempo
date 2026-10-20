@@ -37,7 +37,7 @@ def test_expanded_tactical_catalog_contains_every_requested_theme_and_complete_p
 
 def test_active_tactical_packs_share_one_daily_introduction_quota(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
     from helpers import wait_for_daily_queue
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
@@ -54,7 +54,7 @@ def test_active_tactical_packs_share_one_daily_introduction_quota(tmp_path, monk
 
 def test_deactivating_a_tactical_pack_preserves_scheduled_reviews(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
     from helpers import wait_for_daily_queue
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
@@ -70,7 +70,7 @@ def test_deactivating_a_tactical_pack_preserves_scheduled_reviews(tmp_path, monk
 
 def test_tactical_pack_migration_preserves_reviews_scheduling_and_completion(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     with TestClient(app):
@@ -94,7 +94,7 @@ def test_tactical_pack_migration_preserves_reviews_scheduling_and_completion(tmp
 
 def test_practice_in_an_inactive_pack_still_admits_the_puzzle_to_reviews(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
     from app.services.tactical_catalog import pack_records
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
@@ -109,7 +109,7 @@ def test_practice_in_an_inactive_pack_still_admits_the_puzzle_to_reviews(tmp_pat
 
 def test_tactical_completion_counts_distinct_clean_solves_across_practice_and_training(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
     from app.services.tactical_catalog import pack_records
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')

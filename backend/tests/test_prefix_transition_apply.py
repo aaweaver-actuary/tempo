@@ -137,7 +137,8 @@ def test_issue80_http_apply_requires_stable_identity_and_keeps_preparation_outsi
 
 def test_issue80_apply_dispatch_does_not_hold_a_foreground_lease_during_preparation(monkeypatch):
     import asyncio
-    from app import main, database
+    from app import main
+    from tempo_legacy_database import connections as database
     from app.services.activity_gate import activity_gate
     from starlette.requests import Request
     from starlette.responses import Response
@@ -261,14 +262,14 @@ def test_issue80_completion_handoff_uses_the_actual_completed_queue_generation(m
 
 
 def test_issue80_sqlite_task_failure_and_retry_never_call_postgres_transition_hooks(tmp_path, monkeypatch):
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.services import durable_tasks, prefix_transition_application
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'compatibility.db')
     monkeypatch.setattr(durable_tasks.postgres_store, 'configured', lambda: False)
     for hook in ('lock_linked_receipts', 'record_linked_failure'):
         monkeypatch.setattr(prefix_transition_application, hook, lambda *_args: pytest.fail('SQLite used a PostgreSQL transition hook'))
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     database_writer.start()
     try:
         task = durable_tasks.enqueue_task('opening_graph_rebuild', 'compatibility', {'repertoire_id': 'compatibility'})
@@ -291,7 +292,7 @@ def test_issue80_http_proof_redelivers_only_eligible_original_foreground_yield(m
     from datetime import datetime, timedelta, timezone
     from pathlib import Path
     spec = importlib.util.spec_from_file_location('prefix_application_proof',
-        Path(__file__).resolve().parents[2] / 'scripts/check_postgres_prefix_transition_application.py')
+        Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_prefix_transition_application.py')
     proof = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(proof)
     receipt = {'state': 'retrying', 'attempt_count': 0, 'cycle_attempt_count': 0,

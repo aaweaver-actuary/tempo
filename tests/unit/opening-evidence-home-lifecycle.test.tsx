@@ -1,4 +1,4 @@
-import { studyIntentStore } from "../../app/lib/study-intent-storage";
+import { studyIntentStore } from "../../database/browser/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Home from "../../app/views/legacy-home";

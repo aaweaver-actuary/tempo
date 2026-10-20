@@ -75,7 +75,7 @@ ui:
 
 browser:
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
-	node scripts/test-postgres-docker.mjs --mode browser
+	node database/tests/test-postgres-docker.mjs --mode browser
 
 visual:
 	node scripts/check-test-capabilities.mjs --docker --workspace-mount
@@ -90,11 +90,11 @@ full:
 
 docker-durability:
 	node scripts/check-test-capabilities.mjs --docker --loopback
-	node scripts/test-postgres-docker.mjs --mode durability
+	node database/tests/test-postgres-docker.mjs --mode durability
 
 docker-lifecycle:
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
-	node scripts/test-postgres-docker.mjs --mode lifecycle
+	node database/tests/test-postgres-docker.mjs --mode lifecycle
 
 legacy-sqlite:
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
@@ -106,17 +106,17 @@ unit-file:
 
 python-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=backend/tests/test_<name>.py'; exit 2; }
-	PYTHONPATH=backend "$(PYTHON)" -m pytest "$(FILE)" -q -o cache_dir=.pytest_cache --rootdir=.
+	PYTHONPATH=backend:database "$(PYTHON)" -m pytest "$(FILE)" -q -o cache_dir=.pytest_cache --rootdir=.
 
 ui-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=<name>.spec.ts from tests/browser'; exit 2; }
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
-	node scripts/run-focused-postgres-browser.mjs file
+	node database/tests/run-focused-postgres-browser.mjs file
 
 view:
 	@test -n "$(VIEW)" || { echo 'Set VIEW to a browser test title pattern, for example VIEW=Builder'; exit 2; }
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
-	node scripts/run-focused-postgres-browser.mjs grep
+	node database/tests/run-focused-postgres-browser.mjs grep
 
 rust-case:
 	@test -n "$(FILTER)" || { echo 'Set FILTER to a Rust test name'; exit 2; }

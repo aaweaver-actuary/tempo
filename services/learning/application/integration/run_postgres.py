@@ -56,8 +56,8 @@ def provision_owned_cluster(identity, password):
                 raise RuntimeError('Owned PostgreSQL TCP endpoint did not become ready') from None
             time.sleep(.1)
     sys.path[:0] = [str(ROOT), str(ROOT/'scripts'), str(ROOT/'backend')]
-    from apply_postgres_migrations import apply_migrations
-    from provision_postgres_roles import provision
+    from database.tooling.apply_postgres_migrations import apply_migrations
+    from database.tooling.provision_postgres_roles import provision
     apply_migrations(admin)
     reader_password, writer_password = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     provision(admin, reader_password, writer_password)

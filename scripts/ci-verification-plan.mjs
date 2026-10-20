@@ -1,10 +1,10 @@
 import { createBrowserShardPlan } from "./ci-browser-shards.mjs";
 import { protectRegressionSuite } from "./verification-stages.mjs";
-import { postgresTestStages } from "./postgres-test-plan.mjs";
+import { postgresTestStages } from "../database/tests/postgres-test-plan.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
-import { validateMigrationInventory } from "./check-migration-inventory.mjs";
+import { validateMigrationInventory } from "../database/tooling/check-migration-inventory.mjs";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -63,7 +63,7 @@ function developmentSelection(paths, comparisonAvailable, sourceInventory) {
       }
       allFrontend = true; ["frontend", "build", "browser"].forEach(layer => selected.add(layer));
       if (/\.(tsx|css|scss|svg|png|jpe?g|webp)$/.test(path)) selected.add("visual");
-    } else if (path.startsWith("backend/app/") || path.startsWith("backend/migrations/")) {
+    } else if (path.startsWith("backend/app/") || path.startsWith("database/tempo_legacy_database/ddl/migrations/")) {
       if (!path.startsWith("backend/app/services/") || /(?:database|background_runtime|database_executor|redis_admission_gate)\.py$/.test(path)) broadBrowser = true;
       allBackend = true; ["backend", "postgres", "browser"].forEach(layer => selected.add(layer));
       if (lifecycleApplicability({ paths: [path], comparisonAvailable: true, complete: false, sourceInventory }).applicable) selected.add("lifecycle");
@@ -274,7 +274,7 @@ function git(args) {
 }
 
 export function createPlan({ base, complete = false, context = {} } = {}) {
-  validateMigrationInventory(readdirSync("backend/migrations"), readFileSync("backend/app/schema_version.py", "utf8"));
+  validateMigrationInventory(readdirSync("database/tempo_legacy_database/ddl/migrations"), readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8"));
   protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
   let paths = [], comparisonAvailable = false;
   if (base) {

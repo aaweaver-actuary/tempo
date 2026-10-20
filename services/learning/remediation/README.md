@@ -115,7 +115,7 @@ change does not silently withdraw omitted facts; C must publish current support
 or explicit withdrawals. This also prevents stale source facts from granting a
 curriculum/quota override through an otherwise current card proposal.
 
-`migrations/001_remediation.sql` is a packaged, module-local migration input. A
+`tempo_remediation_database/ddl/migrations/001_remediation.sql` is a packaged, module-local migration input. A
 registers it in the owning ordered migration system. F adopts artifacts only
 after both owners land. It has no global number, live migration, legacy source
 backfill, HTTP receiver, settings switch, or FSRS/history writes.
@@ -162,3 +162,5 @@ stale responses bind transport identity too; invalid context grants no acceptanc
 A stale receipt creates
 no source/game/evidence/work authority or admission request. The caller still owns
 commit/rollback and encompassing card locks must precede the module lock.
+
+Database implementation, DDL and source-schema charts: [central database owner](../../../database/tempo_remediation_database/README.md).

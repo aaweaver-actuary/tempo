@@ -7,7 +7,7 @@ from unittest.mock import patch
 import chess
 import pytest
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.canonical_prefix_api import save_prefix
 from app.services.canonical_prefix import (
     ensure_line_in_scope, game_in_scope, parse_prefix, prefix_projection,
@@ -50,7 +50,7 @@ def test_italian_prefix_suppresses_sicilian_and_philidor_coverage_nodes():
 def prefix_database(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "prefix.db")
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     database_writer.start()
     with database.connection() as connection:
         connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('italian','Italian','italian.pgn','2026-10-02')")
@@ -920,7 +920,7 @@ def test_canonical_explorer_source_race_cannot_publish_and_priority_ignores_old_
 
 def test_canonical_coverage_scope_predicate_survives_postgres_compatibility_translation():
     from types import SimpleNamespace
-    from app.postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
     from app.services.canonical_scope_freshness import coverage_scope_predicate
     postgres_database = SimpleNamespace(execute_native=lambda: None)
     compatibility_sql = postgres_sql("SELECT n.id FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE " + coverage_scope_predicate(postgres_database))

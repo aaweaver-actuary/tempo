@@ -8,7 +8,7 @@ import chess
 from fastapi import HTTPException
 
 from ..models import TacticCaptureRequest
-from ..queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .cards import card_id
 from .review_service import ensure_card_queued_after
 from .tactic_admission import lock_daily_tactic_admission

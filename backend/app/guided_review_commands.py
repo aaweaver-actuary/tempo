@@ -11,7 +11,7 @@ import chess
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.guided_review import (
     _impact, _public_item, read_session_from_database,
     reconcile_guided_review_session, guided_review_error,

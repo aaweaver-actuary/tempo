@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .postgres_store import PostgresConnection
+from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from .review_service import preserve_daily_queue_order
 from dataclasses import dataclass

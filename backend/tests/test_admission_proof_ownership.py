@@ -15,7 +15,7 @@ from app.services import redis_admission_gate
 
 @pytest.fixture
 def admission_proof(monkeypatch):
-    script_path = Path(__file__).resolve().parents[2] / "scripts/check_postgres_opening_evidence.py"
+    script_path = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_opening_evidence.py"
     monkeypatch.syspath_prepend(str(script_path.parent))
     specification = importlib.util.spec_from_file_location("opening_admission_proof", script_path)
     module = importlib.util.module_from_spec(specification)
@@ -81,7 +81,8 @@ def test_admission_proof_cleanup_preserves_original_assertion(admission_proof):
 def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
     admission_proof, monkeypatch, fail_proof,
 ):
-    from app import command_gateway, postgres_store
+    from app import command_gateway
+    from tempo_legacy_database.adapters import postgres_store
 
     proof, _unused_server = admission_proof
     parent_keys = redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY

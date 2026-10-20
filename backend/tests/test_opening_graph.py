@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import chess
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import opening_graph as opening_graph_module
 from app.main import app
 from app.services.durable_tasks import claim_task, complete_task

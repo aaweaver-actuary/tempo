@@ -237,7 +237,7 @@ def test_postgres_game_position_import_keeps_legacy_view_until_generation_switch
     scripts = Path(__file__).resolve().parents[2] / "scripts"
     sys.path.insert(0, str(scripts))
     try:
-        from migrate_sqlite_to_postgres import COPY_TARGETS
+        from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.pop(0)
     migration = (Path(__file__).resolve().parents[1] / "migrations"

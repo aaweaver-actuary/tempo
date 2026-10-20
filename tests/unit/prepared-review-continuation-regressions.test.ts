@@ -1,4 +1,4 @@
-import { updateStudyIntent } from "../../app/lib/study-intent-storage";
+import { updateStudyIntent } from "../../database/browser/study-intent-storage";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { advancePreparedContinuation, capturePreparedNext } from "../../app/lib/prepared-review-continuation";
 import { enqueuePendingReview, flushPendingReviews, pendingReviews } from "../../app/lib/review-outbox";

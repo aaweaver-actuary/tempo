@@ -265,6 +265,10 @@ def copy_artifact_source(source_root, restricted):
     for package in SOURCE_PACKAGES:
         target = restricted / package
         target.mkdir(parents=True)
+        owner_databases = {"services/learning/runtime": "tempo_learning_database", "services/learning/remediation": "tempo_remediation_database", "services/content": "tempo_content_database", "services/intelligence": "tempo_intelligence_database", "services/game-evidence": "tempo_game_evidence_database"}
+        if package in owner_databases:
+            name = owner_databases[package]
+            shutil.copytree(source_root / "database" / name, target / "database" / name, ignore=shutil.ignore_patterns("__pycache__"))
         for item in sorted(staging.PACKAGE_PARTS):
             source = source_root / package / item
             if source.is_dir(): shutil.copytree(source, target / item, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
@@ -401,7 +405,7 @@ def controller(args):
                 if hashlib.sha256((root / "wheels" / name).read_bytes()).hexdigest() != digest:
                     raise RuntimeError("Qualified artifact bytes changed")
             stage.stage_qualified(root, staging.qualified_inputs(root, prior), destination=stage.output)
-            fixture_module = load("legacy_bridge_fixture", ROOT / "contracts/database-ownership/fixture.py")
+            fixture_module = load("legacy_bridge_fixture", ROOT / "database/ownership/fixture.py")
             fixture_module.IMAGE = POSTGRES_IMAGE_ID
             def bounded_docker(*arguments, check=True):
                 if arguments[0] == "run":
@@ -428,7 +432,7 @@ def controller(args):
             timer.run(["docker", "network", "create", "--internal", "--label", "tempo.legacy-bridge-owner=" + identity, network], maximum=15)
             timer.run(["docker", "network", "connect", "--alias", "native-db", network, fixture.container], maximum=15)
             wheel = next((root / "wheels").glob("tempo_learning_remediation-0.1.0-*.whl"))
-            with zipfile.ZipFile(wheel) as bundle: schema = bundle.read("tempo_learning_remediation/migrations/001_remediation.sql")
+            with zipfile.ZipFile(wheel) as bundle: schema = bundle.read("tempo_remediation_database/ddl/migrations/001_remediation.sql")
             if hashlib.sha256(schema).hexdigest() != MODULE_SHA: raise RuntimeError("Qualified module schema checksum changed")
             with fixture.admin("learning") as database:
                 database.execute("SET statement_timeout=5000")

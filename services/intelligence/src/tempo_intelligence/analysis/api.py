@@ -1,7 +1,7 @@
 """Narrow authenticated report consumer surface, registered by the existing owner."""
 from fastapi import APIRouter, Query
 from .models import Manifest, Page, RunRequest, Command
-from .store import AnalysisStore
+from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
 
 
 def register(app):

@@ -5,7 +5,7 @@ import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { learningDayKey as localDayKey } from "./study-connection";
-import { offlineTrainingDatabase as database } from "./offline-training-storage";
+import { offlineTrainingDatabase as database } from "../../database/browser/offline-training-storage";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";

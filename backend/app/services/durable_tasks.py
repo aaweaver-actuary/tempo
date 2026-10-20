@@ -8,9 +8,9 @@ import random
 import sqlite3
 import uuid
 
-from ..database import read_connection, background_read_connection
-from .. import postgres_store
-from .database_executor import submit_background_write, submit_foreground_write
+from tempo_legacy_database.connections import read_connection, background_read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
 from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, task_admission_sql
 from .background_metrics import increment, record_event_counts
@@ -63,7 +63,7 @@ _QUEUE_REFRESH_PROGRESS_SQL = "UPDATE queue_projections SET last_error=NULL WHER
 def warm_completion_sql() -> None:
     """Translate durable-task completion SQL before a 50 ms PostgreSQL section."""
 
-    from ..postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
 
     for statement in (
         _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL,

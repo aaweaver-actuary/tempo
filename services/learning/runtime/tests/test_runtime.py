@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import json, time, uuid
 import chess, psycopg, pytest
 from tempo_chess_core import card_id
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime import gateway
 from tempo_learning_runtime.durable_tasks import enqueue_task_in_transaction
 from tempo_learning_runtime.maintenance import run_once

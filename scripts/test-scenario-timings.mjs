@@ -110,7 +110,7 @@ export function createScenarioTimer(outputPath, metadata, clock = () => performa
 
 // Only fixed operation/script names are recorded, never command arguments or output.
 export function postgresCommandTiming(argumentsList) {
-  const script = argumentsList.find(argument => /^(?:\/source\/)?scripts\/[a-z_]+\.py$/.test(argument));
+  const script = argumentsList.find(argument => /^(?:\/source\/)?(?:scripts|database\/(?:tooling|tests))\/[a-z_]+\.py$/.test(argument));
   if (script) {
     const label = script.split("/").at(-1).slice(0, -3);
     const category = /migration|upgrade/.test(label) ? "migration"

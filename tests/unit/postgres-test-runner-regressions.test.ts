@@ -2,7 +2,7 @@
 import { expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from
-  "../../scripts/postgres-test-options.mjs";
+  "../../database/tests/postgres-test-options.mjs";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 
 const cleanEnvironment = { NODE_ENV: "test" as const };
@@ -61,7 +61,7 @@ it("PostgreSQL runner rejects empty, unknown, conflicting, and inherited filters
 });
 
 it("PostgreSQL runner propagates failures and scopes destructive cleanup to its unique project", () => {
-  const runner = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
+  const runner = readFileSync("database/tests/test-postgres-docker.mjs", "utf8");
   expect(runner).toContain("const project = `tempo-pg-regressions-${process.pid}-${randomBytes(4).toString(\"hex\")}`");
   expect(runner).toContain("let resourcesCreated = false");
   expect(runner).toContain("if (resourcesCreated)");

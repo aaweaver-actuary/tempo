@@ -14,7 +14,7 @@ import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, t
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
 import { executeStudyRequest, retainedStudyRequest, startAnotherStudyPractice, studyPracticeBoundary, StudyRequestRejectedError } from "../lib/study-command-client";
 
-import { subscribeStudyIntents } from "../lib/study-intent-storage";
+import { subscribeStudyIntents } from "../../database/browser/study-intent-storage";
 
 type PresentedStudyExercise = {
   id: string; revision: number; type: "move_line" | "square_set" | "knight_path" | "choice" | "explanation";

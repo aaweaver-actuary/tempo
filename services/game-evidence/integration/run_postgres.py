@@ -113,7 +113,7 @@ def main():
         learning_runtime=make_conninfo(admin,dbname="learning_fixture",user="remediation_runtime",password=learning_runtime_password)
         from importlib.resources import files
         with psycopg.connect(learning_migration) as database:
-            database.execute(files("tempo_learning_remediation").joinpath("migrations/001_remediation.sql").read_text())
+            database.execute(files("tempo_remediation_database").joinpath("ddl/migrations/001_remediation.sql").read_text())
             database.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
             database.execute("GRANT USAGE ON SCHEMA public TO remediation_runtime")
             tables=database.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'").fetchall()

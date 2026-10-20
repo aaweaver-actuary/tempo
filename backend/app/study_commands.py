@@ -12,9 +12,9 @@ from fastapi import HTTPException
 import psycopg
 
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .study_contracts import (
     ChapterCreate, StudyBundleImportRequest, StudyCreate, StudyImportCommitRequest,
     StudyLinkCreate,

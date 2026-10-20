@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.main import seed_queue
 from app.main import app
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import introduction_priorities as priorities
 
 

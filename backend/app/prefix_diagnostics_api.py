@@ -8,7 +8,7 @@ import psycopg
 from psycopg_pool import PoolTimeout
 import redis
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from .prefix_diagnostics_contracts import PrefixDiagnosticsList, PrefixDiagnosticsDetail
 from .services.activity_gate import activity_gate
 from .services.opening_decision_evidence import decision_manifest

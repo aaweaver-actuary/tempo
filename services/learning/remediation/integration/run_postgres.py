@@ -21,7 +21,7 @@ def load(name, path):
 
 def main():
     qualification = load("learning_qualification", ROOT / "services/learning/application/qualification.py")
-    fixture_module = load("ownership_fixture", ROOT / "contracts/database-ownership/fixture.py")
+    fixture_module = load("ownership_fixture", ROOT / "database/ownership/fixture.py")
     evidence = Path(sys.argv[1] if len(sys.argv) == 2 else os.environ.get(
         "TEMPO_REMEDIATION_EVIDENCE_DIR", ROOT / "test-results/learning-remediation")).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
@@ -44,7 +44,7 @@ def main():
         with fixture.admin("learning") as administration:
             administration.execute("SET ROLE learning_owner")
             administration.execute("SET search_path=domain,pg_catalog")
-            administration.execute((HERE.parent / "migrations/001_remediation.sql").read_text())
+            administration.execute((ROOT / "database/tempo_remediation_database/ddl/migrations/001_remediation.sql").read_text())
             administration.execute("""CREATE TABLE remediation_test_schedule(workspace_id text,card_id text,
                 fsrs_json text NOT NULL,history_json text NOT NULL,PRIMARY KEY(workspace_id,card_id));
                 CREATE TABLE remediation_test_queue(workspace_id text,card_id text,position integer,

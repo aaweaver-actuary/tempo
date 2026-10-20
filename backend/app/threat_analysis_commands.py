@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .services.engine_diagnostics import record_engine_outcome
 from .services.background_metrics import increment
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 from .services.threat_pipeline import (
     _request_from_json, report_from_json, validate_analysis_report,

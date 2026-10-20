@@ -34,7 +34,7 @@ export function createBrowserShardPlan(collection, profile = browserTimingProfil
     shard.grep = selected.filter(item => shard.testIds.includes(item.id)).sort((left, right) => compareNames(left.id, right.id))
       .map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|");
     shard.commands = [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
-      ["browser", "node", ["scripts/test-postgres-docker.mjs", "--mode", "browser", "--browser-grep", shard.grep]]];
+      ["browser", "node", ["database/tests/test-postgres-docker.mjs", "--mode", "browser", "--browser-grep", shard.grep]]];
   }
   const assignment = { version: 1, algorithm: "longest-spec-first-v1", count, profileHash: digest(profile), shards };
   return { ...assignment, hash: digest(assignment) };

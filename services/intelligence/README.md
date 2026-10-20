@@ -268,3 +268,5 @@ normal Learning-owned queue. Any future practice influence must use that owner's
 semantic command interface, never cross-component queue SQL. Separate deployment
 and host/database resource allocation remain necessary before claiming operational
 failure isolation; no such live rollout is performed by this change.
+
+Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_intelligence_database/README.md).

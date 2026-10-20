@@ -404,7 +404,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
 
   async function checkSchema() {
     stage("checking_schema");
-    status = JSON.parse((await maintenance("scripts/apply_postgres_migrations.py", ["--check", "--json",
+    status = JSON.parse((await maintenance("database/tooling/apply_postgres_migrations.py", ["--check", "--json",
       "--reader-passfile", "/run/secrets/reader_pgpass", "--writer-passfile", "/run/secrets/writer_pgpass"])).stdout);
     if (!status.applied_versions.length || !status.initialized)
       throw new Error("Existing PostgreSQL study data is not initialized. Verify the historical cutover; Tempo will not import SQLite or create an empty study database.");
@@ -466,7 +466,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     backupRecord.restore_created = true; atomicJson(journalPath, operation);
     await backupCommand(['pg_restore -h postgres -U "$1" -d "$2" --no-owner --no-privileges --single-transaction "/backups/$3"',
       "sh", user, restoreDatabase, name]);
-    await maintenance("scripts/verify_postgres_backup.py", [`postgresql://${user}@postgres:5432/${database}`,
+    await maintenance("database/tooling/verify_postgres_backup.py", [`postgresql://${user}@postgres:5432/${database}`,
       `postgresql://${user}@postgres:5432/${restoreDatabase}`], { echo: true });
     backupRecord.verified = true; atomicJson(journalPath, operation);
     await backupCommand(['dropdb -h postgres -U "$1" "$2"', "sh", user, restoreDatabase]);
@@ -487,7 +487,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         database: { name: configuration.services.postgres.environment.POSTGRES_DB, volume: target.volumes[target.postgresVolumeKey].name },
         attempt_id: operation.id, origin_revision: revision, starting_schema: status.applied_versions.at(-1),
         starting_versions: status.applied_versions, intended_schema: status.expected_version,
-        study_invariants: JSON.parse((await maintenance("scripts/verify_postgres_cli_state.py")).stdout),
+        study_invariants: JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py")).stdout),
         backup: backupRecord, state: "pending", created_at: new Date().toISOString() };
     }
     migrationGuard.last_attempted_revision = revision;
@@ -496,9 +496,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.study_invariants = migrationGuard.study_invariants;
     operation.backup = migrationGuard.backup;
     atomicJson(journalPath, operation);
-    if (status.pending_versions.length) await maintenance("scripts/apply_postgres_migrations.py", [], { echo: true });
+    if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", [], { echo: true });
     try {
-      await maintenance("scripts/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
+      await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
       originalHistoryVerified = true;
     } catch (error) {
       throw new Error(`Original migration history verification failed; keep writers stopped. Preserve backup ${migrationGuard.backup.filename} and guard ${guardPath}. ${error.message}`, { cause: error });

@@ -11,9 +11,9 @@ import json
 import chess
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
-from ..database import background_read_connection, connection, read_connection
-from .. import postgres_store
-from ..queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.connections import background_read_connection, connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .activity_gate import activity_gate
 from .durable_tasks import (
     advance_task_slice_in_transaction,

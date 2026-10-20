@@ -36,7 +36,7 @@ import { resolvePython } from '../../scripts/resolve-python.mjs';
 
 import { verificationContext, planHash, allLayers, createPlan } from '../../scripts/ci-verification-plan.mjs';
 import { layerCommands, validateUnitResults, executeLayer, backendUnitFileCounts, frontendInventory, frontendResults } from '../../scripts/ci-run-layer.mjs';
-import { validateMigrationInventory } from '../../scripts/check-migration-inventory.mjs';
+import { validateMigrationInventory } from '../../database/tooling/check-migration-inventory.mjs';
 const pr = {number:132, draft: true, state: 'open', head: {sha: 'head'}, base: {sha: 'base',repo:{id:1371942142,full_name:'aaweaver-actuary/tempo'}}, labels: [], merge_commit_sha: 'integration' };
 function captured(pullRequest = pr, paths = ['docs/testing.md']) {
   return draft(paths, verificationContext('pull_request', {pull_request: pullRequest}, false, 'integration'));

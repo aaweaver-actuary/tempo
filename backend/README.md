@@ -40,9 +40,9 @@ still joins gameplay priorities, opportunities and miss projections while prepar
 ordinary queue candidates. Its
 [feedback composition](app/services/real_game_feedback_adapter.py)
 wraps the caller connection with
-[`BorrowedFeedbackStore`](app/storage/real_game_feedback.py);
-the [miss projection](app/storage/real_game_miss_projection.py)
-and [accepted-scope storage](app/storage/legacy_game_evidence_scope.py)
+[`BorrowedFeedbackStore`](../database/tempo_legacy_database/adapters/real_game_feedback.py);
+the [miss projection](../database/tempo_legacy_database/adapters/real_game_miss_projection.py)
+and [accepted-scope storage](../database/tempo_legacy_database/adapters/legacy_game_evidence_scope.py)
 own those queries. Queue policies must not acquire a second writer.
 
 The legacy [evidence command](app/game_evidence_commands.py)

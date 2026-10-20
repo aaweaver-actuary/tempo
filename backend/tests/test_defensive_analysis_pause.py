@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 import json
 import pytest
 from fastapi.testclient import TestClient
-from app.services.database_executor import database_writer
+from tempo_legacy_database.adapters.database_executor import database_writer
 
-from app import database, main, settings_commands
+from tempo_legacy_database import connections as database
+from app import main, settings_commands
 from app.models import Settings, GameAnalysisLeaseRequest, ThreatAnalysisFailureRequest
 from app.services import durable_tasks, background_activity, threat_pipeline
 from app.services.threat_detection import find_defensive_knight_forks

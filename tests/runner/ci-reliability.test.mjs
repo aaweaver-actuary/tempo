@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { inventory, mandatoryLayers, allLayers, changedPathsFromNameStatus, validateInventory, verificationPlan, collectCases } from "../../scripts/ci-verification-plan.mjs";
 import { evaluateQuality, deploymentAllowed } from "../../scripts/ci-quality.mjs";
 import { executeLayer, layerCommands, browserResults } from "../../scripts/ci-run-layer.mjs";
-import { postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
+import { postgresTestStages } from "../../database/tests/postgres-test-plan.mjs";
 
 const demotedCriticalCases = [
   { file: "opening-evidence.spec.ts", family: "training", title: "AS-15 a real tab lease releases stranded evidence into a later idle slice" },
@@ -97,7 +97,7 @@ test("foreground_redis_admission_native_regression_is_registered_and_selected", 
 test("lifecycle-sensitive changes require deployment lifecycle verification", () => {
   for (const path of ["scripts/tempo-runtime.mjs", "scripts/tempo-deployment.mjs", "scripts/tempo-cli.mjs",
     "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",
-    "scripts/verify_postgres_backup.py", "scripts/check-redis-readiness.mjs", "backend/app/postgres_store.py",
+    "database/tooling/verify_postgres_backup.py", "scripts/check-redis-readiness.mjs", "database/tempo_legacy_database/adapters/postgres_store.py",
     "tests/runner/tempo-cli-fixture.mjs", "tests/unit/tempo-cli-regressions.test.ts", "backend/Dockerfile", "package-lock.json",
     ...inventory.lifecycle.sensitivePaths]) {
     const planned = plan({ paths: [path, "tests/REGRESSIONS.md"] });
@@ -143,7 +143,7 @@ test("reviewed ordinary and sensitive service classifications survive ordinary c
     ["backend/app/services/study_grading.py", false],
     ["backend/app/services/opening_segmentation.py", false],
     ["backend/app/services/repertoire_statistics.py", false],
-    ["backend/app/services/database_executor.py", true],
+    ["database/tempo_legacy_database/adapters/database_executor.py", true],
     ["backend/app/services/background_runtime.py", true],
   ]) {
     assert(existsSync(servicePath), servicePath);
@@ -199,12 +199,12 @@ test("complete verification always requires deployment lifecycle", () => {
 });
 
 test("migration and schema changes cannot omit deployment lifecycle", () => {
-  for (const path of ["backend/migrations/036_new.sql", "backend/app/schema_version.py",
-    "backend/app/postgres_readiness.py", "scripts/apply_postgres_migrations.py", "scripts/generate_postgres_schema.py",
+  for (const path of ["database/tempo_legacy_database/ddl/migrations/036_new.sql", "database/tempo_legacy_database/ddl/schema_version.py",
+    "database/tempo_legacy_database/adapters/postgres_readiness.py", "database/tooling/apply_postgres_migrations.py", "database/tooling/generate_postgres_schema.py",
     "backend/tests/test_postgres_upgrade_regressions.py", "backend/app/new_schema_policy.py"]) {
     assert.equal(plan({ paths: [path] }).jobs.lifecycle?.required, true, path);
   }
-  const renamed = changedPathsFromNameStatus("R100\0backend/app/schema_version.py\0backend/app/version.py\0D\0backend/migrations/036_new.sql\0");
+  const renamed = changedPathsFromNameStatus("R100\0database/tempo_legacy_database/ddl/schema_version.py\0backend/app/version.py\0D\0database/tempo_legacy_database/ddl/migrations/036_new.sql\0");
   assert.equal(plan({ paths: renamed }).jobs.lifecycle?.required, true);
 });
 
@@ -354,8 +354,8 @@ test("quarantined harness failures remain visible with required replacement cove
 });
 
 test("rename deletion unknown paths and missing history select conservative coverage", () => {
-  const paths = changedPathsFromNameStatus("R100\0app/components/discoveries-tray.tsx\0backend/app/main.py\0D\0backend/migrations/021.sql\0");
-  assert(paths.includes("app/components/discoveries-tray.tsx")); assert(paths.includes("backend/app/main.py")); assert(paths.includes("backend/migrations/021.sql"));
+  const paths = changedPathsFromNameStatus("R100\0app/components/discoveries-tray.tsx\0backend/app/main.py\0D\0database/tempo_legacy_database/ddl/migrations/021.sql\0");
+  assert(paths.includes("app/components/discoveries-tray.tsx")); assert(paths.includes("backend/app/main.py")); assert(paths.includes("database/tempo_legacy_database/ddl/migrations/021.sql"));
   for (const options of [{ paths }, { paths: ["unknown/new-file.txt"] }, { paths: ["unknown/new-file.md"] }, { comparisonAvailable: false }, { paths: ["package-lock.json"] }, { paths: ["app/components/chessboard.tsx"] }]) {
     const planned = plan(options); assert.equal(planned.collection.filter(item => item.selected).length, cases.length);
     assert.equal(planned.scope, planned.jobs.lifecycle.applicable ? "complete" : "targeted");
@@ -384,7 +384,7 @@ test("split complete coverage preserves every PostgreSQL product scenario", () =
   assert.deepEqual([...split].sort(), full.filter(stage => stage !== "study_isolation").sort());
   // study_isolation destroys the old browser volume; the split owners instead
   // each create fresh ports, credentials and volumes in the existing runner.
-  const runner = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
+  const runner = readFileSync("database/tests/test-postgres-docker.mjs", "utf8");
   assert(runner.includes('randomBytes(4).toString("hex")')); assert(runner.includes("verifyProjectIsUnused"));
 });
 
@@ -433,7 +433,7 @@ test("actual browser collection grep selects exactly the planned tests", () => {
 });
 
 test("diagnostic artifact failure still cleans owned resources and preserves both failures", async () => {
-  const { executeDiagnosticCleanup } = await import("../../scripts/postgres-test-plan.mjs");
+  const { executeDiagnosticCleanup } = await import("../../database/tests/postgres-test-plan.mjs");
   const captureFailure = new Error("artifact write denied"), cleanupFailure = new Error("cleanup denied");
   let cleaned = false;
   await assert.rejects(executeDiagnosticCleanup(() => { throw captureFailure; }, () => { cleaned = true; }), error => error === captureFailure);
@@ -594,8 +594,8 @@ test("cross-cutting browser infrastructure and uncertain inputs require the comp
   const crossCuttingPaths = ["playwright.config.ts", "tests/browser/ui-fixtures.ts", "tests/browser/product-fixtures.ts",
     "tests/browser/observability.ts", "tests/fixtures/study-grading.json", "tests/unit/keyboard-board-fixture.tsx", "backend/tests/conftest.py",
     "app/components/board/chessboard.tsx", "app/state/training-store.ts", "app/domain/schemas/index.ts", "app/lib/operation-status.ts",
-    "app/lib/offline-training.ts", "backend/app/main.py", "backend/app/database.py", "backend/migrations/001_initial.sql",
-    "scripts/ci-verification-plan.mjs", "scripts/test-postgres-docker.mjs", "tests/runner/ci-reliability.test.mjs",
+    "app/lib/offline-training.ts", "backend/app/main.py", "database/tempo_legacy_database/connections.py", "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+    "scripts/ci-verification-plan.mjs", "database/tests/test-postgres-docker.mjs", "tests/runner/ci-reliability.test.mjs",
     "package.json", "package-lock.json", ".github/workflows/pages.yml", "unclassified/new-source.ts", "unclassified/new-file.md"];
   for (const path of crossCuttingPaths) {
     const planned = plan({ paths: ["app/domain/opening-segmentation.ts", path] });

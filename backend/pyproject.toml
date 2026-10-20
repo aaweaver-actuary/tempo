@@ -28,3 +28,6 @@ tempo-learning-review = { path = "../services/learning/application" }
 tempo-learning-remediation = { path = "../services/learning/remediation" }
 tempo-learning-runtime = { path = "../services/learning/runtime" }
 tempo-game-evidence-contracts = { path = "../contracts/game-evidence" }
+
+[tool.pytest.ini_options]
+pythonpath = [".", "../database"]

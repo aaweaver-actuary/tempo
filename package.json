@@ -17,7 +17,7 @@
     "build:local": "TEMPO_TARGET=local vite build --config vite.static.config.ts",
     "test": "node scripts/test-all.mjs",
     "test:unit": "vitest run",
-    "test:browser": "node scripts/test-postgres-docker.mjs",
+    "test:browser": "node database/tests/test-postgres-docker.mjs",
     "test:legacy-sqlite": "node scripts/test-docker.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "preview:static": "vite preview --config vite.static.config.ts --host 127.0.0.1 --port 4173 --strictPort",
@@ -66,7 +66,7 @@
     "zod": "4.5.4",
     "zustand": "^5.0.15",
     "@tempo/chess-line": "file:packages/chess-line",
-    "@tempo/browser-intents": "file:packages/browser-intents",
+    "@tempo/browser-intents": "file:database/browser-intents",
     "@tempo/study-session": "file:packages/study-session"
   },
   "devDependencies": {
@@ -99,7 +99,7 @@
   "type": "module",
   "workspaces": [
     "packages/chess-line",
-    "packages/browser-intents",
+    "database/browser-intents",
     "packages/study-session"
   ]
 }

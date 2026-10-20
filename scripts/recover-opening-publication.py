@@ -74,7 +74,7 @@ def selected_rebuild_main(args):
         before = capture_evidence(args.repertoire_id, args.day, selected_rebuild=True)
         (output / 'before.json').write_text(json.dumps(before, indent=2) + '\n')
     # Resume preflight checks the saved day/source/target without taking a task.
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from app.services.opening_graph_recovery import validate_selected_scope, background_lease
     with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
         validate_selected_scope(database, prepared, lock=False)

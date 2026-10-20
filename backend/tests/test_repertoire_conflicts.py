@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.repertoire_conflicts import _conflicts_from_snapshot
 from helpers import wait_for_integrity

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from app import database
-from app.services.database_executor import database_writer
+from tempo_legacy_database import connections as database
+from tempo_legacy_database.adapters.database_executor import database_writer
 from app.services.introduction_priorities import enqueue_priority_refresh_in_transaction
 from app.services.repertoire_opportunities import (
     enqueue_opportunity_refresh, enqueue_opportunity_refresh_in_transaction,

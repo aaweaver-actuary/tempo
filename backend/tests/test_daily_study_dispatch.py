@@ -7,12 +7,13 @@ from threading import Event, Thread
 import pytest
 from kombu.exceptions import OperationalError as BrokerUnavailable
 
-from app import database, tasks
+from tempo_legacy_database import connections as database
+from app import tasks
 from app.services import durable_tasks
 
 
 def test_issue107_browser_fixture_uses_application_day_without_host_clock(monkeypatch):
-    from scripts import check_postgres_daily_study_dispatch as proof
+    import database.tests.check_postgres_daily_study_dispatch as proof
     statements, queue_dates = [], []
     class FixtureDatabase:
         def execute(self, statement, parameters=()):

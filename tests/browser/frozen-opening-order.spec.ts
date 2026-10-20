@@ -9,7 +9,7 @@ test('frozen first-study rank survives refresh and replacement preserves the iss
     'compose','-p',project,'-f','docker-compose.postgres.test.yml','run','--rm','--no-deps',
     '-e','TEMPO_DATABASE_READ_URL=postgresql://postgres@postgres:5432/tempo',
     '-e','TEMPO_DATABASE_WRITE_URL=postgresql://postgres@postgres:5432/tempo',
-    'schema','python','/source/scripts/frozen-order-browser-fixture.py',action,
+    'schema','python','/source/database/tests/frozen-order-browser-fixture.py',action,
   ], { encoding:'utf8', timeout:30_000 }).trim());
   const seeded = fixture('seed');
   const queue = async () => (await (await request.get(`${api}/queue/window?limit=20`)).json()).cards as { id:string; moves:string[] }[];

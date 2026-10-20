@@ -339,7 +339,7 @@ def test_controller_mounts_only_owned_tmp_then_copies_receipts_before_removal(tm
 
 def test_native_role_provisioning_dependency_is_required_and_hash_verified(tmp_path):
     module = qualification.staging
-    provision = 'scripts/provision_postgres_roles.py'
+    provision = 'database/tooling/provision_postgres_roles.py'
     assert provision in module.SOURCE_FILES
     stage = module.OwnedStaging('required-native-source', 'head', base=tmp_path)
     with pytest.raises(ValueError, match='Required runner source inputs missing'):

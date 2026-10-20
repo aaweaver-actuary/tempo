@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from ..database import connection
+from tempo_legacy_database.connections import connection
 from ..models import GameSyncRequest
 from .chesscom_client import fetch_chesscom_games
 from .game_record import GameRecord

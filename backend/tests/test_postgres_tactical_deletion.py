@@ -85,7 +85,7 @@ def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(mon
     from app.services.cards import card_id
     from app.services.puzzles import validate_puzzle_record
 
-    script_path = Path(__file__).resolve().parents[2] / "scripts/check_postgres_deletion.py"
+    script_path = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_deletion.py"
     monkeypatch.syspath_prepend(str(script_path.parent))
     specification = importlib.util.spec_from_file_location("pr102_deletion_proof", script_path)
     rehearsal = importlib.util.module_from_spec(specification)

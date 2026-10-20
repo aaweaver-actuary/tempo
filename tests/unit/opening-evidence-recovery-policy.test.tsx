@@ -232,7 +232,7 @@ it("cross-tab completion during an active slice retains a later idle reconciliat
 it("cross-tab completion with failed storage reads preserves warnings and permits lifecycle recovery", async () => {
   const state = await recoveryHarness(); state.response.mode = "blocked";
   await state.idle();
-  const database = await (await import("../../app/lib/offline-training-storage")).offlineTrainingDatabase();
+  const database = await (await import("../../database/browser/offline-training-storage")).offlineTrainingDatabase();
   const read = vi.spyOn(database, "transaction").mockImplementation(() => { throw new DOMException("Storage unavailable", "InvalidStateError"); });
   act(() => announceCompletion()); await state.idle();
   const { notifications } = await import("../../app/lib/notifications");
@@ -281,7 +281,7 @@ it.each(["pending", "blocked"] as const)("uncertain cross-tab recovery retains s
   await state.idle();
   const savedAttempt = structuredClone(state.stores.opening_attempts.get("A"));
   const requestCount = state.requests.length;
-  const storage = await import("../../app/lib/offline-training-storage");
+  const storage = await import("../../database/browser/offline-training-storage");
   const database = await storage.offlineTrainingDatabase();
   const read = vi.spyOn(database, "transaction").mockImplementation(() => { throw new DOMException("Storage unavailable", "InvalidStateError"); });
   await expect(state.journal.recoverOpeningEvidence()).rejects.toThrow("Storage unavailable");

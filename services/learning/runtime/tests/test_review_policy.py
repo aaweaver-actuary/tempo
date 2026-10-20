@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 import tempo_learning_review as learning
-from tempo_learning_runtime import database as runtime_database, review_adapter
+from tempo_learning_database import connections as runtime_database
+from tempo_learning_runtime import review_adapter
 
 
 @pytest.mark.parametrize(

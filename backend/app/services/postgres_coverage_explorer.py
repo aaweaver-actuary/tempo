@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from ..database import background_read_connection, connection
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .canonical_scope_freshness import coverage_run_is_current, latest_coverage_attempt_predicate
 from .canonical_prefix import read_prefix
 from .durable_tasks import (

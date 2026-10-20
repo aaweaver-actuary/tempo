@@ -12,10 +12,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app, enqueue_daily_queue_refresh
 from app.study_contracts import ExerciseAnswer, ExerciseSpecification
-from app.study_migration import migrate_studies
+from tempo_legacy_database.ddl.study_migration import migrate_studies
 from app.services.study_grading import evaluate_answer, validate_exercise
 from app.services.study_pgn import preview_pgn
 
@@ -223,7 +223,7 @@ def test_study_native_bundle_preserves_identity_and_rejects_changed_content(tmp_
 
 def test_study_migration_preserves_legacy_cards_reviews_and_foreign_keys(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    from app import study_migration
+    from tempo_legacy_database.ddl import study_migration
 
     with monkeypatch.context() as legacy_schema:
         legacy_schema.setattr(study_migration, "migrate_studies", lambda: None)
@@ -249,7 +249,7 @@ def test_study_native_bundle_multi_source_reimport_ignores_table_row_order():
     from copy import deepcopy
     from app.services.stalemate_swindles import build_bundle
     from app.services.study_portable import import_bundle
-    from app.study_migration import STUDY_TABLES
+    from tempo_legacy_database.ddl.study_migration import STUDY_TABLES
     from test_stalemate_swindles import BLACK_FEN, mined, synthetic_pgn
 
     candidates = mined()[0] + mined(synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5")))[0]
@@ -334,7 +334,7 @@ def test_study_pgn_preview_keeps_variations_annotations_and_invalid_record_diagn
 
 def test_study_migration_failure_rolls_back_and_backup_restores(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    from app import study_migration
+    from tempo_legacy_database.ddl import study_migration
 
     with monkeypatch.context() as legacy_schema:
         legacy_schema.setattr(study_migration, "migrate_studies", lambda: None)
@@ -406,7 +406,7 @@ def test_stalemate_history_protection_fixture_seeds_authored_and_standard_review
     from app import queue_commands
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "stalemate-history.db")
-    proof = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/check_postgres_stalemate_swindles.py"))
+    proof = runpy.run_path(str(Path(__file__).resolve().parents[2] / "database/tests/check_postgres_stalemate_swindles.py"))
     def execute_owned_command(operation_id, name, payload):
         if name == "cards.review":
             response = client.post(f"/api/cards/{payload['card_id']}/review", json=payload["review"],

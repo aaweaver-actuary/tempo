@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from ..postgres_store import PostgresConnection, connection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
 from .durable_tasks import (
     complete_task_slice_in_transaction, enqueue_compact_postgres_task_in_transaction,
     lock_current_slice,

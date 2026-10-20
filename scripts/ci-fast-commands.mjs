@@ -7,7 +7,7 @@ export function studyGrep(browser) {
 export function fastCommands(plan) {
   const commands = [
     ['conflicts','node',['scripts/check-merge-conflicts.mjs']],
-    ['migrations','node',['scripts/check-migration-inventory.mjs']],
+    ['migrations','node',['database/tooling/check-migration-inventory.mjs']],
     ['diff','git',['diff','--check',`${plan.base}...${plan.head}`]],
   ];
   if (plan.node) commands.push(['lint','npm',['run','lint']],['typecheck','npm',['run','typecheck']]);
@@ -23,7 +23,7 @@ export function fastCommands(plan) {
   if (plan.tier === 'STUDY') commands.push(
     ['capabilities','node',['scripts/check-test-capabilities.mjs','--docker','--loopback','--workspace-mount']],
     ['browser_inventory','npx',['playwright','test','--list','--reporter=json','--project=chromium',...new Set(plan.browser.map(test => `tests/browser/${test.file}`))]],
-    ['study','node',['scripts/test-postgres-docker.mjs','--mode','study','--browser-grep',studyGrep(plan.browser),
+    ['study','node',['database/tests/test-postgres-docker.mjs','--mode','study','--browser-grep',studyGrep(plan.browser),
       ...(plan.nativeChecks ?? []).flatMap(check => ['--native-check',check])]],
   );
   return commands;

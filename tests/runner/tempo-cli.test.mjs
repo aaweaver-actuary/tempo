@@ -159,7 +159,7 @@ test("CLI worker storage contract rejects PGPASSWORD before mutations and keeps 
   assert(result.stderr.includes("/run/secrets/writer_pgpass"));
   assert(!result.stdout.includes(password) && !result.stderr.includes(password));
   assert(!fixture.calls().some(call => ["build", "pull", "up", "stop", "merge"].some(command => call.args.includes(command))
-    || call.args.includes("scripts/apply_postgres_migrations.py")));
+    || call.args.includes("database/tooling/apply_postgres_migrations.py")));
   assert.equal(readFileSync(deploymentPath, "utf8"), previousDeployment);
   assert.equal(readFileSync(journalPath, "utf8"), previousJournal);
   assert.equal(readFileSync(failurePath, "utf8"), previousFailure);
@@ -408,7 +408,7 @@ function assertOriginalHistory(fixture) {
   const guard = readFixtureJson(fixture, "migration-guard.json", true);
   assert.equal(guard.study_invariants.reviews.digest, "preserved");
   assert.equal(guard.backup.verified, true);
-  assert.equal(fixture.calls().filter(call => call.args.includes("scripts/verify_postgres_cli_state.py") && !call.args.includes("--expected")).length, 1,
+  assert.equal(fixture.calls().filter(call => call.args.includes("database/tooling/verify_postgres_cli_state.py") && !call.args.includes("--expected")).length, 1,
     "an unresolved attempt never captures a new baseline");
   assert.equal(fixture.calls().filter(call => call.args.some(argument => argument.includes("pg_dump"))).length, 1,
     "retries retain the restore-verified original backup");
@@ -689,12 +689,12 @@ test("CLI migration guard durability failure prevents migrations writer startup 
     if (args.includes("--mount")) return "18";
     if (args.includes("ping")) return "PONG";
     if (args.includes("ps")) return "[]";
-    if (args.includes("scripts/apply_postgres_migrations.py")) {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
       if (!args.includes("--check")) { appliedSchema = 29; return ""; }
       return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 29,
         applied_versions: Array.from({ length: appliedSchema }, (_, index) => index + 1), pending_versions: appliedSchema === 28 ? [29] : [] });
     }
-    if (args.includes("scripts/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { count: 1, digest: "original-H0" } });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { count: 1, digest: "original-H0" } });
   });
   rmSync(join(fixture.stateDirectory, "deployment.json"));
   await runtime.config();
@@ -709,7 +709,7 @@ test("CLI migration guard durability failure prevents migrations writer startup 
   await assert.rejects(executeLifecycle({ recreate: true }, { ...runtime, verifyReady: async () => {} }), /deployment state.*durab/i);
   assert(failedDirectorySync, "failure occurs after the guard rename");
   assert.equal(appliedSchema, 28);
-  assert(!calls.some(args => args.includes("scripts/apply_postgres_migrations.py") && !args.includes("--check")));
+  assert(!calls.some(args => args.includes("database/tooling/apply_postgres_migrations.py") && !args.includes("--check")));
   assert(!calls.some(args => args.includes("up") && args.includes("foreground-worker")));
   assert(calls.at(-2).includes("stop") && calls.at(-2).includes("foreground-worker"), "failure leaves writers stopped");
   assert(!existsSync(join(fixture.stateDirectory, "deployment.json")));
@@ -774,13 +774,13 @@ test("actual CLI upgrades with a verified backup and keeps repeat starts free of
   assert(first.stdout.includes("Tempo ready"));
   const calls = fixture.calls();
   const backup = calls.findIndex(call => call.args.some(argument => argument.includes("pg_dump")));
-  const migration = calls.findIndex(call => call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"));
+  const migration = calls.findIndex(call => call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"));
   assert(backup >= 0 && migration > backup);
   const beforeRepeat = calls.length;
   const repeated = fixture.command("start", "--no-open");
   assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr);
   for (const call of fixture.calls().slice(beforeRepeat)) assert(!call.args.includes("build") && !call.args.includes("stop")
-    && !(call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check")));
+    && !(call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check")));
   for (const call of fixture.calls().slice(beforeRepeat).filter(call => call.args.includes("up") && call.args.includes("postgres")))
     assert(call.args.includes("--no-recreate"), "compatible dependency checks cannot recreate running infrastructure");
   const record = JSON.parse(readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8"));
@@ -825,13 +825,13 @@ test("actual CLI failed migration never starts dependents and requires explicit 
   const result = fixture.command("start", "--no-open");
   assert.notEqual(result.status, 0);
   const calls = fixture.calls();
-  const migration = calls.findIndex(call => call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"));
+  const migration = calls.findIndex(call => call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"));
   assert(migration >= 0);
   assert(!calls.slice(migration + 1).some(call => call.args.includes("up") && call.args.includes("api")));
   const beforeRepeat = calls.length;
   const repeat = fixture.command("migrate");
   assert.notEqual(repeat.status, 0); assert(repeat.stderr.includes("--retry"));
-  assert(!fixture.calls().slice(beforeRepeat).some(call => call.args.includes("scripts/apply_postgres_migrations.py")));
+  assert(!fixture.calls().slice(beforeRepeat).some(call => call.args.includes("database/tooling/apply_postgres_migrations.py")));
 });
 
 test("actual CLI failed builds preserve running services and failure diagnostics redact passwords", t => {
@@ -983,12 +983,12 @@ function assertIncompatibleRecovery(fixture, shouldStop) {
   assert.match(result.stderr, /previous deployment is incompatible with the current database/);
   const calls = fixture.calls().slice(callStart);
   const stopped = calls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
-  const schemaCheck = calls.findIndex(call => call.args.includes("scripts/apply_postgres_migrations.py") && call.args.includes("--check"));
+  const schemaCheck = calls.findIndex(call => call.args.includes("database/tooling/apply_postgres_migrations.py") && call.args.includes("--check"));
   if (shouldStop) assert(stopped >= 0 && stopped < schemaCheck, "uncommitted writers must stop before incompatible schema rejection");
   else assert.equal(stopped, -1, "stopped containers do not require another shutdown");
   assert(!calls.some(call => call.args.includes("up") && call.args.includes("api")), "incompatible applications cannot start");
   assert(!calls.some(call => call.args.includes("build") || call.args.includes("pull")
-    || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))
+    || (call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"))
     || call.args.some(argument => argument.includes("pg_dump") || argument.includes("pg_restore"))));
   const dependencies = calls.find(call => call.args.includes("up") && call.args.includes("postgres"));
   assert(dependencies.args.includes("--no-recreate"), "matching dependencies remain intact");
@@ -1047,7 +1047,7 @@ test("actual CLI compatible fallback keeps committed applications running despit
   const result = fixture.command("start", "--no-open");
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert(!fixture.calls().some(call => call.args.includes("stop") || call.args.includes("build") || call.args.includes("pull")
-    || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))));
+    || (call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"))));
   assert.equal(readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8"), receipt);
   assert.deepEqual(readFixtureJson(fixture, "machine.json").containers.map(container => container.Image), before.containers.map(container => container.Image));
 });
@@ -1204,7 +1204,7 @@ function assertNoCandidateMutation(fixture) {
 for (const probe of ["branch", "head", "status", "remote", "launch"]) test(`actual CLI source inspection fallback survives ${probe} probe failure without candidate mutation`, t => {
   const fixture = sourceFallbackFixture(t, probe);
   const receipt = readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8");
-  const sourceFiles = [join(fixture.root, "study-notes"), join(fixture.root, "backend/app/schema_version.py"), ...fixture.target.composeFiles];
+  const sourceFiles = [join(fixture.root, "study-notes"), join(fixture.root, "database/tempo_legacy_database/ddl/schema_version.py"), ...fixture.target.composeFiles];
   const sourceBefore = sourceFiles.map(path => readFileSync(path, "utf8"));
   const sourceHead = readFixtureJson(fixture, "machine.json").head;
   const result = fixture.command("start", "--no-wait", "--no-open");
@@ -1284,7 +1284,7 @@ for (const surface of ["doctor", "status", "start", "restart", "migrate"]) test(
 
 test("actual CLI source inspection diagnostics retain independent facts when Git cannot launch or local schema is unreadable", t => {
   const fixture = sourceFallbackFixture(t, "launch");
-  rmSync(join(fixture.root, "backend/app/schema_version.py"));
+  rmSync(join(fixture.root, "database/tempo_legacy_database/ddl/schema_version.py"));
   const result = fixture.command("doctor", "--verbose");
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /unknown branch.*unknown revision.*working-tree status unavailable/);
@@ -1819,7 +1819,7 @@ test("actual CLI diagnostic safety leaves source state receipts guards services 
   writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify({ state: "pending", origin_revision: "b".repeat(40), backup: { filename: "original.dump" } }));
   const preservedPaths = [join(fixture.directory, "machine.json"), fixture.registration,
     ...readdirSync(fixture.stateDirectory).map(name => join(fixture.stateDirectory, name)),
-    join(fixture.root, "backend/app/schema_version.py")];
+    join(fixture.root, "database/tempo_legacy_database/ddl/schema_version.py")];
   const before = preservedPaths.map(path => readFileSync(path, "utf8"));
   for (const argumentsList of [["status"], ["doctor"], ["start", "--plan"], ["restart", "--plan"], ["migrate", "--plan"]]) {
     const result = fixture.command(...argumentsList, "--verbose");

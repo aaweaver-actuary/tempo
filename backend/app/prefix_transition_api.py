@@ -4,7 +4,7 @@ from datetime import date
 from fastapi import APIRouter
 import psycopg
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from . import prefix_evaluation_api as structural
 from .prefix_transition_contracts import PrefixTransitionPlan, PrefixTransitionRequest
 from .services.prefix_evaluation import PrefixEvaluationError, snapshot_identity

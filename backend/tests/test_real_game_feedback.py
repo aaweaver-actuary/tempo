@@ -9,7 +9,7 @@ import chess
 from fsrs import Card
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.main import queue_today, randomize_daily_queue, requeue, seed_queue
 from app.services import repertoire_comparison

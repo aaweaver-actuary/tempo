@@ -1,5 +1,5 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
-import { putStudyIntent, studyIntentRecords, studyIntentStore, updateStudyIntent } from "./study-intent-storage";
+import { putStudyIntent, studyIntentRecords, studyIntentStore, updateStudyIntent } from "../../database/browser/study-intent-storage";
 import { confirmOperationResponse, readOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
 import { pendingReviews } from "./review-outbox";
 

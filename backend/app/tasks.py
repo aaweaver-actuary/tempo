@@ -21,7 +21,7 @@ from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,
     record_operation_retry, defer_operation_for_foreground,
 )
-from .database import read_connection
+from tempo_legacy_database.connections import read_connection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands

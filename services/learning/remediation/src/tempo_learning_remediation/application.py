@@ -4,7 +4,7 @@ from typing import Protocol
 
 from .models import AdmissionPort, AdmissionResult, Candidate, WorkItem
 from .policy import MAX_PREPARATION_PAGES, PAGE_SIZE, evaluate_eligibility, order_candidates, propose_admission
-from .repository import PostgresRepository
+from tempo_remediation_database.adapters.repository import PostgresRepository
 
 
 class CandidateFactsPort(Protocol):

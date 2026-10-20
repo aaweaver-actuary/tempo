@@ -307,3 +307,5 @@ not change migration history or imply a deployment.
 For retained regular-suite receipts, add `--evidence DIRECTORY` to
 `services/content/run_suite.py pure`. The same strict collection/execution/JUnit
 validation runs whether evidence is retained or temporary.
+
+Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_content_database/README.md).

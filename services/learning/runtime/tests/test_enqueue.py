@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 import pytest
 import psycopg, time
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime.durable_tasks import enqueue_task_in_transaction
 
 

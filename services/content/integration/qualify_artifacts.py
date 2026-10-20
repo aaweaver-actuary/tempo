@@ -139,6 +139,7 @@ def main(arguments=None):
             context = workspace / "build-context"
             for relative in PACKAGES:
                 shutil.copytree(ROOT / relative, context / relative, ignore=shutil.ignore_patterns(*IGNORED))
+            shutil.copytree(ROOT / "database/tempo_content_database", context / "database/tempo_content_database", ignore=shutil.ignore_patterns("__pycache__"))
             build_service = context / "services/content"
             artifacts = destination / "distributions"
             artifacts.mkdir(exist_ok=True)
@@ -179,7 +180,7 @@ def main(arguments=None):
                     guard = ("import pathlib,sys,tempo_content; "
                              "assert 'site-packages' in pathlib.Path(tempo_content.__file__).parts; "
                              "assert not any(pathlib.Path(p).is_relative_to(" + repr(str(ROOT)) + ") for p in sys.path if p); "
-                             "assert pathlib.Path(tempo_content.__file__).with_name('migrations').joinpath('manifest.json').is_file()")
+                             "assert pathlib.Path(__import__('tempo_content_database').__file__).parent.joinpath('ddl/migrations').joinpath('manifest.json').is_file()")
                     run([python, "-I", "-c", guard], consumer, label + "-guard")
                     receipts = {}
                     junit = destination / (label + ".xml")

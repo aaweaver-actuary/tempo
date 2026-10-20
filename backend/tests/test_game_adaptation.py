@@ -4,7 +4,7 @@ import json
 import chess
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.game_findings import refresh_game_findings
 from app.services import introduction_priorities

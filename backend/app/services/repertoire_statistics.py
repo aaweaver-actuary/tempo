@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..database import read_connection
+from tempo_legacy_database.connections import read_connection
 from .opening_progression import PRACTICED_OPENING_PARENT_SQL
 
 

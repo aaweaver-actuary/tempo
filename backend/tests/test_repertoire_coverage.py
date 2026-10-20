@@ -1,6 +1,6 @@
 import pytest
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import repertoire_coverage
 
 from app.services.repertoire_coverage import (

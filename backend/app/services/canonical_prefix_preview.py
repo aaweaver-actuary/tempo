@@ -8,8 +8,8 @@ import uuid
 
 import chess
 
-from .. import postgres_store
-from ..database import background_read_connection, connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.connections import background_read_connection, connection
 from .canonical_prefix import (
     line_origin, position_key, prefix_projection, read_prefix, store_positions,
     validate_scoped_line,
@@ -157,7 +157,7 @@ def initialize_sqlite_schema(database) -> None:
     if 'source_revision' not in {row[1] for row in database.execute('PRAGMA table_info(canonical_prefix_positions)')}:
         database.execute('ALTER TABLE canonical_prefix_positions ADD COLUMN source_revision BIGINT NOT NULL DEFAULT -1')
     database.execute('CREATE INDEX IF NOT EXISTS canonical_prefix_preview_versions ON canonical_prefix_previews(repertoire_id,expected_revision,source_revision,created_at DESC)')
-    from .canonical_scope_schema import initialize_scope_schema
+    from tempo_legacy_database.ddl.canonical_scope_schema import initialize_scope_schema
     initialize_scope_schema(database)
 
 

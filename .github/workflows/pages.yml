@@ -164,7 +164,7 @@ jobs:
       - name: Reject committed merge-conflict artifacts
         run: node scripts/check-merge-conflicts.mjs
       - name: Guard migration numbering and schema agreement
-        run: node scripts/check-migration-inventory.mjs
+        run: node database/tooling/check-migration-inventory.mjs
       - run: npm ci
       - name: Collect complete inventory and select required work
         id: inventory

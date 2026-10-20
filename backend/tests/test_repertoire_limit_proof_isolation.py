@@ -10,14 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from app import database, postgres_store, repertoire_commands
+from tempo_legacy_database import connections as database
+from tempo_legacy_database.adapters import postgres_store
+from app import repertoire_commands
 from app.queue_commands import request_queue_refresh_in_transaction
 from app.services.background_metrics import increment
 
 
 proof_spec = importlib.util.spec_from_file_location(
     'repertoire_limit_proof',
-    Path(__file__).resolve().parents[2] / 'scripts/check_postgres_repertoire_limits.py',
+    Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_repertoire_limits.py',
 )
 proof = importlib.util.module_from_spec(proof_spec)
 proof_spec.loader.exec_module(proof)

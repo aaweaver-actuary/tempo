@@ -59,7 +59,7 @@ The regular owning unit suites cover exact claims, source/day/identity and
 generation guards, interruption/reclaim, stale deliveries, checkpoint scope
 postconditions, protected data, publication caps and CLI dry-run/resume pins.
 The existing registered native owner is
-`scripts/check_postgres_opening_graph_recovery.py`. Added cases cover retained
+`database/tests/check_postgres_opening_graph_recovery.py`. Added cases cover retained
 gen1/queued gen2, new generated cards, matching scan/segmentation, committed
 checkpoint restart, exact lease abandonment/reclaim, generation/source/day and
 unrelated-task refusal, real transaction rollback, protected schedule/history/
@@ -84,7 +84,7 @@ TEMPO_TEST_INSTANCE=disposable TEMPO_REDIS_URL=redis://redis:6379/0 \
 PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH=/source/backend:/source/packages/scheduling/src:/source/packages/chess-core/src:/source/services/learning/application/src:/source/services/learning/runtime/src:/source/services/learning/remediation/src:/source/contracts/game-evidence/src:/source/contracts/content-publication/src \
 /usr/bin/timeout --signal=TERM --kill-after=5s "${WORK_SECONDS_REMAINING:?set from the original work deadline}s" \
-python /source/scripts/check_postgres_opening_graph_recovery.py
+python /source/database/tests/check_postgres_opening_graph_recovery.py
 ```
 
 Use a prebuilt qualified image; no build, engines, browser or full-system runner.
@@ -104,8 +104,8 @@ from live `72530cfa`; main-based tests do not prove that compatibility. Each
 native/compatibility pass needs its own approved finite allocation. Missing
 native/compatibility runs are unqualified; source-level passes are not substitutes.
 
-For that compatibility pass, mount only `scripts/`, `backend/migrations/` and
-`backend/app/schema_version.py` as fixture inputs under `/source`, plus the
+For that compatibility pass, mount only `scripts/`, `database/tempo_legacy_database/ddl/migrations/` and
+`database/tempo_legacy_database/ddl/schema_version.py` as fixture inputs under `/source`, plus the
 four-file overlay under `/app` and `/operator` as below. Set `PYTHONPATH=/app`;
 do not mount `/source/backend/app` or use the main-based source-path list, which
 would silently select newer app owners. The schema-version file imports no app

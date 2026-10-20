@@ -2,9 +2,9 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app, materialize_daily_queue
-from app.services.database_executor import submit_foreground_write
+from tempo_legacy_database.adapters.database_executor import submit_foreground_write
 
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

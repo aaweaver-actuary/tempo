@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { StudyStorageBoundary } from "../../app/components/study-storage-boundary";
-import { closeStudyIntentStorage, initializeStudyIntentStorage, studyIntentStore, studyIntentStorageReady } from "../../app/lib/study-intent-storage";
+import { closeStudyIntentStorage, initializeStudyIntentStorage, studyIntentStore, studyIntentStorageReady } from "../../database/browser/study-intent-storage";
 const command = (key: string) => ({ key, kind: "study-command", attemptId: key, requestId: key, endpoint: "/attempts", createdAt: "2026-10-15T16:00:00Z", payload: {} });
 
 it.each([false, true])("pr285_storage_retry_actual_button_rehydrates_or_stays_blocked (retry denied: %s)", async denied => {
@@ -77,7 +77,7 @@ it("pr285_storage_retry_version_change_requires_reload_and_keeps_study_blocked",
 
 it("pr285_storage_retry_healthy_initialization_preserves_the_mounted_study_generation", async () => {
   const { useEffect } = await import("react"); const mounted = vi.fn(), unmounted = vi.fn();
-  const storage = await import("../../app/lib/study-intent-storage"); const store = await studyIntentStore();
+  const storage = await import("../../database/browser/study-intent-storage"); const store = await studyIntentStore();
   let release!: () => void; const barrier = new Promise<void>(resolve => { release = resolve; });
   const checking = barrier.then(() => store); vi.spyOn(storage, "initializeStudyIntentStorage").mockReturnValueOnce(checking);
   function Study() { useEffect(() => { mounted(); return unmounted; }, []); return <p>Existing study generation</p>; }

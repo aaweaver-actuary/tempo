@@ -408,7 +408,7 @@ def test_native_new_miss_lookup_does_not_scan_past_review_history(workspace):
 
 
 def test_native_same_frontier_nonsettling_history_lookup_is_bounded(workspace):
-    from tempo_learning_remediation.repository import _OUTSTANDING
+    from tempo_remediation_database.adapters.repository import _OUTSTANDING
 
     history_count = 1000
     with connect() as connection, connection.transaction():

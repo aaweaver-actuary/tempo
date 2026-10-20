@@ -312,7 +312,7 @@ def test_harness_cli_offline_hash_seed_and_clock_independent_replay_preserves_in
     bootstrap = '''
 import builtins, runpy, socket, sys
 original_import = builtins.__import__
-blocked = {"app.main", "app.database", "app.postgres_store", "app.services.opening_ranking_snapshot", "app.services.opening_card_valuation", "psycopg", "redis", "sqlite3", "httpx", "celery"}
+blocked = {"app.main", "tempo_legacy_database.connections", "tempo_legacy_database.adapters.postgres_store", "app.services.opening_ranking_snapshot", "app.services.opening_card_valuation", "psycopg", "redis", "sqlite3", "httpx", "celery"}
 def guarded_import(name, *args, **kwargs):
     if name in blocked: raise AssertionError("Offline runner imported service dependency: " + name)
     return original_import(name, *args, **kwargs)

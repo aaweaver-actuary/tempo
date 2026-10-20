@@ -3,7 +3,7 @@ import { registerStudyDeliveryAdapter, studySession } from "./study-session-runt
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
-import { isStudyIntentStoreCurrent, studyIntentStore } from "./study-intent-storage";
+import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/browser/study-intent-storage";
 import { endgameAttemptSchema } from "../domain/schemas";
 import { studySettingsSchema } from "./study-connection";
 import { z } from "zod";

@@ -9,7 +9,7 @@ from psycopg.errors import LockNotAvailable, TransactionTimeout
 
 from app import tasks
 from app.services import durable_tasks
-from app.services.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
+from tempo_legacy_database.ddl.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
 
 
 @pytest.fixture

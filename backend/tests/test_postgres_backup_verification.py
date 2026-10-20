@@ -7,7 +7,7 @@ import pytest
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-import verify_postgres_backup as backup_verification
+import database.tooling.verify_postgres_backup as backup_verification
 
 
 def test_postgres_backup_comparison_rejects_missing_table_and_changed_rows(monkeypatch):

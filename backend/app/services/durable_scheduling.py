@@ -51,7 +51,7 @@ def _selected_classes(allowed_kinds):
 
 def warm_scheduling_sql(allowed_kinds):
     """Translate before entering the fail-fast background database budget."""
-    from ..postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
     classes, controls, ordinary = _selected_classes(allowed_kinds)
     statements = [_SCHEDULER_SQL, _TURN_UPDATE_SQL]
     for kinds in classes.values():
@@ -83,7 +83,7 @@ def select_scheduled_task(database, allowed_kinds, now):
             return None
         statement = _candidate_sql(kinds, **kwargs)
         if hasattr(database, 'execute_native'):
-            from ..postgres_store import postgres_sql
+            from tempo_legacy_database.adapters.postgres_store import postgres_sql
             return database.execute_native(
                 postgres_sql(statement) + ' FOR UPDATE OF background_tasks SKIP LOCKED', (now, *kinds)).fetchone()
         return database.execute(statement, (now, *kinds)).fetchone()

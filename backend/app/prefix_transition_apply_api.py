@@ -1,7 +1,7 @@
 """Reader-only HTTP dispatch for the durable foreground transition command."""
 from fastapi import APIRouter, Header, HTTPException
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from .command_dispatch import dispatch_command
 from .prefix_transition_contracts import PrefixTransitionApplyRequest, PrefixTransitionApplicationResult, PrefixTransitionPendingResponse
 

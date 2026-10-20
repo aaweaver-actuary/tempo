@@ -7,7 +7,7 @@ import psycopg
 import pytest
 
 from tempo_intelligence.config import Configuration
-from tempo_intelligence.store import Store
+from tempo_intelligence_database.adapters.store import Store
 
 
 @pytest.fixture(autouse=True)

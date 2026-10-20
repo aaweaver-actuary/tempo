@@ -6,8 +6,8 @@ import time
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from .. import postgres_store
-from ..database import read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.connections import read_connection
 from .background_metrics import BackgroundDiagnostics, COUNT_NAMES, DURATION_NAMES, KINDS
 from . import background_runtime
 from ..threat_analysis_commands import _ELIGIBLE_THREAT_REQUEST

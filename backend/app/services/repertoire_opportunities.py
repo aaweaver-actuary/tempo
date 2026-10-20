@@ -11,8 +11,8 @@ import sqlite3
 
 import chess
 
-from ..database import background_read_connection, connection, read_connection
-from .. import postgres_store
+from tempo_legacy_database.connections import background_read_connection, connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction, enqueue_compact_postgres_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
@@ -738,7 +738,7 @@ def enqueue_opportunity_refresh_in_transaction(database, repertoire_id: str, *, 
 
 
 def enqueue_opportunity_refresh(repertoire_id: str, *, background: bool = False) -> None:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
     with connection(background=background) as database:
         enqueue_opportunity_refresh_in_transaction(
             database, repertoire_id, quiet_seconds=5 if background else 0,

@@ -4,17 +4,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts import apply_postgres_migrations as migration
+from database.tooling import apply_postgres_migrations as migration
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = ROOT / "services/learning/remediation/migrations/001_remediation.sql"
-WRAPPER = ROOT / "backend/migrations/050_learning_remediation.sql"
+MODULE = ROOT / "database/tempo_remediation_database/ddl/migrations/001_remediation.sql"
+WRAPPER = ROOT / "database/tempo_legacy_database/ddl/migrations/050_learning_remediation.sql"
 
 
 def distribution(version="0.1.0", resource=MODULE):
     def locate_file(path):
-        assert path == "tempo_learning_remediation/migrations/001_remediation.sql"
+        assert path == "tempo_remediation_database/ddl/migrations/001_remediation.sql"
         return resource
     return SimpleNamespace(version=version, locate_file=locate_file)
 
@@ -71,7 +71,8 @@ def test_supported_images_install_registered_module_and_contract_from_their_own_
         assert "/services/learning/remediation" in install and "/contracts/game-evidence" in install
     maintenance = (ROOT / "Dockerfile.postgres-maintenance").read_text()
     assert "/services/learning/runtime" not in maintenance
-    assert '"migrations" = "tempo_learning_remediation/migrations"' in (
+    assert MODULE.is_file()
+    assert 'packages = ["src/tempo_learning_remediation"]' in (
         ROOT / "services/learning/remediation/pyproject.toml").read_text()
 
 

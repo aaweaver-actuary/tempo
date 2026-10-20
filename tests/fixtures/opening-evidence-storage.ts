@@ -96,7 +96,7 @@ export async function openingEvidenceStorage() {
     },
   } as unknown as IDBDatabase;
   const install = async () => {
-    const storage = await import("../../app/lib/offline-training-storage");
+    const storage = await import("../../database/browser/offline-training-storage");
     vi.spyOn(storage, "offlineTrainingDatabase").mockResolvedValue(database);
   };
   await install();

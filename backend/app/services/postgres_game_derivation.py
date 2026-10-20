@@ -8,7 +8,7 @@ from typing import Any
 
 import chess
 
-from ..database import background_read_connection, connection
+from tempo_legacy_database.connections import background_read_connection, connection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,

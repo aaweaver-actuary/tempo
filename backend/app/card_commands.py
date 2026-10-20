@@ -11,9 +11,9 @@ from fastapi import HTTPException
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
-from .database import card_columns
+from tempo_legacy_database.connections import card_columns
 from .models import CardRevisionRequest
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_integrity import (
     invalidate_integrity_in_transaction, request_integrity_scan_in_transaction,

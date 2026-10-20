@@ -181,7 +181,7 @@ the counter hook; only exceptional ID-only calls require a kind lookup.
 Run the isolated compatibility measurement with:
 
 ```sh
-PYTHONPATH=backend backend/.venv/bin/python scripts/benchmark-background-diagnostics.py
+PYTHONPATH=backend backend/.venv/bin/python database/tests/benchmark-background-diagnostics.py
 ```
 
 It owns a temporary SQLite fixture, rejects configured PostgreSQL URLs and

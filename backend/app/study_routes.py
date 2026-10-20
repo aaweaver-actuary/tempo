@@ -12,8 +12,8 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import TypeAdapter
 
-from .database import connection, read_connection
-from . import postgres_store
+from tempo_legacy_database.connections import connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
 from .command_dispatch import dispatch_command
 from .study_contracts import (
     ChapterCreate, ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification,

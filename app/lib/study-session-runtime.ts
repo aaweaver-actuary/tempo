@@ -1,5 +1,5 @@
 import { createStudySession, type LearningClient } from "@tempo/study-session";
-import { studyIntentStore } from "./study-intent-storage";
+import { studyIntentStore } from "../../database/browser/study-intent-storage";
 
 // The composition registers protocol adapters; this is the only session/settlement owner.
 const adapters = new Map<string, LearningClient>();

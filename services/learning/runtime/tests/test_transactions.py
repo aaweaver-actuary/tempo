@@ -5,7 +5,7 @@ import json, time, uuid
 import chess, psycopg, pytest
 from tempo_chess_core import card_id
 from tempo_learning_runtime import review_adapter
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime.review_conflicts import ReviewConflict
 from tempo_learning_runtime.maintenance import run_once
 from test_runtime import activate, bundle, head, review_payload, submit

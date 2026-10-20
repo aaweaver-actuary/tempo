@@ -313,7 +313,7 @@ def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeyp
 
 
 def test_evidence_migration_is_unique_additive_and_matches_readiness():
-    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     directory=Path(__file__).resolve().parents[1]/'migrations'
     migrations=sorted(directory.glob('[0-9][0-9][0-9]_*.sql'))
     assert [int(path.name[:3]) for path in migrations]==list(range(1,POSTGRES_SCHEMA_VERSION+1))

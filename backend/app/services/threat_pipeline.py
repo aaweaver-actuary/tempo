@@ -9,8 +9,8 @@ import json
 import uuid
 import chess
 
-from ..database import background_read_connection, connection, read_connection
-from .. import postgres_store
+from tempo_legacy_database.connections import background_read_connection, connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from .background_activity import claimable, control_order
 from .defensive_analysis import search_admission_sql, analysis_enabled, recommendation_request_ids_sql

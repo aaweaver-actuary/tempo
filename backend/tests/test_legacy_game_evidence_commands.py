@@ -10,9 +10,9 @@ from tempo_game_evidence_contracts import v3
 from tempo_learning_remediation import ReceiveContext, RemediationError, validate_delivery
 
 from app import command_gateway, game_evidence_commands as commands
-from app.postgres_store import TempoRow
+from tempo_legacy_database.adapters.postgres_store import TempoRow
 from app.services import legacy_game_authority as owner
-from app.storage.legacy_game_evidence_scope import owned_legacy_scope_sql
+from tempo_legacy_database.adapters.legacy_game_evidence_scope import owned_legacy_scope_sql
 from app.services.legacy_game_evidence_scope import LEGACY_WORKSPACE_ID, BRIDGE_MISS_REASON
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -294,8 +294,8 @@ def test_worker_fences_changed_introduction_chronology_without_changing_source_i
 
 
 def test_native_legacy_priority_query_is_translatable_by_the_existing_owner():
-    from app.postgres_store import postgres_sql
-    from app.storage.real_game_miss_projection import outstanding_miss_sql
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
     assert "remediation_contributions" in postgres_sql(outstanding_miss_sql(postgres=True))
 
 
@@ -308,7 +308,7 @@ def test_worker_cannot_bypass_the_read_only_guard():
 
 def test_legacy_scope_ownership_and_priority_reason_are_disjoint_from_weaker_path():
     from app.services.real_game_feedback import MISS_REASON
-    from app.storage.real_game_miss_projection import outstanding_miss_sql
+    from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
     native, sqlite = outstanding_miss_sql(postgres=True), outstanding_miss_sql(postgres=False)
     assert "AND NOT " + owned_legacy_scope_sql() in native
     assert "remediation_" not in sqlite

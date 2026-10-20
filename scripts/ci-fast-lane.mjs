@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } fr
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fastCommands } from './ci-fast-commands.mjs';
-import { postgresTestStages } from './postgres-test-plan.mjs';
+import { postgresTestStages } from '../database/tests/postgres-test-plan.mjs';
 import { changedPathsFromNameStatus, planHash, runtime } from './ci-verification-plan.mjs';
 import { certificate, readCertificateSources, validateCertificate, nativeFixtureCases } from './ci-certified-tests.mjs';
 
@@ -69,8 +69,8 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
   let nativeCases = {};
   if (nativeChecks.length && tier !== 'FULL') {
     try { nativeCases = {'redis-fixture-isolation':nativeFixtureCases(
-      certificateSources ? certificateSources['scripts/check_postgres_redis_fixture_isolation.py']
-        : readFileSync('scripts/check_postgres_redis_fixture_isolation.py','utf8'))}; }
+      certificateSources ? certificateSources['database/tests/check_postgres_redis_fixture_isolation.py']
+        : readFileSync('database/tests/check_postgres_redis_fixture_isolation.py','utf8'))}; }
     catch { full('Unknown native fixture collection'); }
   }
   const python = backend.length > 0 || frontend.some(file => existsSync(file) && /python|backend\/|resolvePython|scripts\//i.test(readFileSync(file,'utf8')));

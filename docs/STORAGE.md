@@ -7,7 +7,7 @@ database backups in separate external volumes. `docker compose down` preserves
 them; never use `down --volumes` for the product stack. The `postgres-backup`
 service writes a daily custom-format archive and checksum to
 `tempo-postgres-backups`. Regularly restore an archive into a second database
-and compare every public table with `scripts/verify_postgres_backup.py`, as in
+and compare every public table with `database/tooling/verify_postgres_backup.py`, as in
 the maintenance guide. Keep a copy of verified archives outside Docker as
 well. After the first accepted PostgreSQL write, recovery must use a verified
 PostgreSQL backup and accepted operation receipts.
@@ -21,7 +21,7 @@ a write.
 
 The [2026-09-24 storage audit](STORAGE-AUDIT-2026-09-24.md) identifies the
 measured growth drivers and the offline recovery checks. The operator-only
-`scripts/reclaim_priority_storage.py` reports size, records table fingerprints,
+`database/tooling/reclaim_priority_storage.py` reports size, records table fingerprints,
 deletes stale derived priority generations in resumable batches, and compacts
 SQLite after a verified backup. Never run its write modes while the API is up.
 

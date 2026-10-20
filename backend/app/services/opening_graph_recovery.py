@@ -12,7 +12,7 @@ import time
 import uuid
 from zoneinfo import ZoneInfo
 
-from .. import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import defer_task_for_contention, fail_task, warm_completion_sql
 from .opening_segmentation import stable_key

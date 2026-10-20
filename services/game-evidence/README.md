@@ -115,7 +115,7 @@ sequenceDiagram
   Note over S,L: Game Evidence and Games may be<br/>stopped, accepted local facts remain
 ```
 
-[`Store._compare`](src/tempo_game_evidence/store.py)
+[`Store._compare`](../../database/tempo_game_evidence_database/adapters/store.py)
 and [`reconciliation`](src/tempo_game_evidence/reconciliation.py)
 own desired results/outbox/accepted-head projection.
 [`deliver_one`](src/tempo_game_evidence/delivery.py)
@@ -128,7 +128,7 @@ uses `connection(background=True, intake=True)`;
 [`receivers.receive`](../learning/runtime/src/tempo_learning_runtime/receivers.py)
 and [`remediation_adapter.receive`](../learning/runtime/src/tempo_learning_runtime/remediation_adapter.py)
 validate/store inside it. The
-[installed remediation repository](../learning/remediation/src/tempo_learning_remediation/repository.py)
+[installed remediation repository](../../database/tempo_remediation_database/adapters/repository.py)
 owns Learning-local obligation persistence. [`maintenance`](../learning/runtime/src/tempo_learning_runtime/maintenance.py),
 [`durable_tasks`](../learning/runtime/src/tempo_learning_runtime/durable_tasks.py)
 and [`admission.admit`](../learning/runtime/src/tempo_learning_runtime/admission.py)
@@ -373,3 +373,5 @@ The new supplied-current-snapshot comparer is read-only authored membership, not
 a replacement for Game Evidence's historical remediation eligibility guards. The
 canonical four-boundary drawing lives in the shared values README. No worker or
 live adoption is implied by extraction.
+
+Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_game_evidence_database/README.md).

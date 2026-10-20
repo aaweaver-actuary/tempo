@@ -7,8 +7,8 @@ import { targetKey } from "../../scripts/tempo-deployment.mjs";
 export function cliFixture(mode = "upgrade") {
   const directory = mkdtempSync(join(tmpdir(), "tempo-cli-command-"));
   const root = join(directory, "checkout"); const bin = join(directory, "bin");
-  mkdirSync(join(root, "backend/app"), { recursive: true }); mkdirSync(bin);
-  writeFileSync(join(root, "backend/app/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 29\n");
+  mkdirSync(join(root, "database/tempo_legacy_database/ddl"), { recursive: true }); mkdirSync(bin);
+  writeFileSync(join(root, "database/tempo_legacy_database/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 29\n");
   const secret = join(directory, "password"); writeFileSync(secret, "canary-private-password", { mode: 0o600 });
   const names = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker", "postgres-backup", "migration"];
   const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups", "tempo-redis-data", "tempo-engine-operations"].map(name => [name, { name, external: true }]));
@@ -255,7 +255,7 @@ async function fakeCommand() {
     if (machine.ledgerReadUnavailable) process.exit(17);
     output((machine.appliedVersions ?? Array.from({ length: machine.schema }, (_, index) => index + 1)).join("\n")); process.exit(0);
   }
-  if (args.includes("scripts/apply_postgres_migrations.py")) {
+  if (args.includes("database/tooling/apply_postgres_migrations.py")) {
     if (args.includes("--check")) output({ expected_version: 29, applied_versions: Array.from({ length: machine.schema }, (_, index) => index + 1),
       pending_versions: Array.from({ length: 29 - machine.schema }, (_, index) => machine.schema + index + 1), initialized: true, roles_ready: fixture.mode !== "status-fail", credentials_ready: true });
     else {
@@ -271,7 +271,7 @@ async function fakeCommand() {
     }
     process.exit(0);
   }
-  if (args.includes("scripts/verify_postgres_cli_state.py")) {
+  if (args.includes("database/tooling/verify_postgres_cli_state.py")) {
     const actual = { reviews: { columns: ["id", "rating"], count: 1, digest: machine.history } };
     if (args.includes("--expected") && JSON.stringify(actual) !== JSON.stringify(JSON.parse(args[args.indexOf("--expected") + 1]))) {
       console.error("Schema upgrade changed review, queue, or operation receipt history; keep writers stopped"); process.exit(19);

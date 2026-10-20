@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import queue_admission, queue_application
 from app.services.queue_admission_adapter import QueueAdmissionAdapter, READ_BATCH_SIZE
 from test_repertoire_settings import workspace, complete_cards

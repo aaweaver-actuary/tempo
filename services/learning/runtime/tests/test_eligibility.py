@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import uuid
 from test_runtime import activate, bundle, head, review_payload, submit
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime.maintenance import run_once
 
 

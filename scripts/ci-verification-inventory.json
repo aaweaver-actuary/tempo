@@ -2,14 +2,14 @@
   "version": 1,
   "lifecycle": {
     "sensitivePaths": [
-      "backend/app/database.py", "backend/app/postgres_store.py", "backend/app/postgres_readiness.py",
-      "backend/app/schema_version.py", "backend/app/celery_app.py", "backend/app/main.py",
-      "backend/app/services/database_executor.py", "backend/app/services/background_runtime.py",
+      "database/tempo_legacy_database/connections.py", "database/tempo_legacy_database/adapters/postgres_store.py", "database/tempo_legacy_database/adapters/postgres_readiness.py",
+      "database/tempo_legacy_database/ddl/schema_version.py", "backend/app/celery_app.py", "backend/app/main.py",
+      "database/tempo_legacy_database/adapters/database_executor.py", "backend/app/services/background_runtime.py",
       "tests/unit/tempo-cli-regressions.test.ts", "tests/unit/ci-reliability-regressions.test.ts",
       "tests/unit/postgres-test-speedups-regressions.test.ts", "tests/unit/postgres-test-runner-regressions.test.ts",
       "tests/unit/test-plan-regressions.test.ts", "tests/unit/api-schema-parity-regressions.test.ts"
     ],
-    "sensitivePrefixes": ["backend/migrations/", "scripts/", "tests/runner/", "docker/", ".github/"],
+    "sensitivePrefixes": ["database/tempo_legacy_database/ddl/migrations/", "scripts/", "database/", "tests/runner/", "docker/", ".github/"],
     "sensitivePatterns": [
       "(^|/)Dockerfile($|\\.)", "(^|/)docker-compose[^/]*\\.ya?ml$",
       "(^|/)[^/]*(migration|schema|upgrade|backup|restore|redis|credential|secret)[^/]*\\.(py|mjs|[cm]?tsx?|json|ya?ml|sh)$"
@@ -172,7 +172,7 @@
       "tests/runner/postgres-test-speedups.test.mjs": ["tests/unit/postgres-test-speedups-regressions.test.ts"],
       "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
     },
-    "postgresFixturePaths": ["scripts/check_postgres_opening_evidence.py"],
+    "postgresFixturePaths": ["database/tests/check_postgres_opening_evidence.py"],
     "harnessPaths": [
       ".github/workflows/verify-browser.yml",
       "scripts/ci-browser-shards.mjs",
@@ -188,7 +188,7 @@
       "scripts/ci-run-layer.mjs",
       "scripts/ci-evidence.mjs",
       "scripts/ci-collect-backend.py",
-      "scripts/check-migration-inventory.mjs",
+      "database/tooling/check-migration-inventory.mjs",
       "scripts/ci-verification-inventory.json",
       "scripts/ci-quarantine.json",
       "tests/runner/ci-reliability.test.mjs",

@@ -40,8 +40,8 @@ def synthetic_package(tmp_path, additions):
     """Copy only source, never mutate the development or live checkout."""
     backend_directory = tmp_path / 'backend'
     sources = {'app': '', 'app.services': '', 'app.main': '',
-               'app.database': '', 'app.services.review_service': '',
-               'app.services.scheduling_review_store': ''}
+               'tempo_legacy_database.connections': '', 'app.services.review_service': '',
+               'tempo_legacy_database.adapters.scheduling_review_store': ''}
     for module in CERTIFIED_MODULES:
         sources[module] = (REPOSITORY / 'backend' / Path(*module.split('.')).with_suffix('.py')).read_text()
     for module, extra_source in additions.items():
@@ -76,7 +76,7 @@ def test_scheduling_boundary_rejects_transitive_infrastructure_imports(tmp_path)
         'app.services.bridge': 'from app import database\nvalue = 1'})
     completed = lint_imports(backend_directory)
     assert completed.returncode != 0, completed.stdout
-    assert 'app.services.scheduler' in completed.stdout and 'app.database' in completed.stdout
+    assert 'app.services.scheduler' in completed.stdout and 'tempo_legacy_database.connections' in completed.stdout
 
 
 @pytest.mark.parametrize('protected_module', [APPLICATION, CONTRACTS])
@@ -221,7 +221,7 @@ def test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imp
     entry = import_root / '__init__.py'
     entry.write_text(entry.read_text() + '\n' + forbidden_source + '\n')
     if forbidden_source == 'from . import bridge':
-        (import_root / 'bridge.py').write_text('import app.database\n')
+        (import_root / 'bridge.py').write_text('import tempo_legacy_database\n')
     completed = subprocess.run([sys.executable, str(REPOSITORY / 'tools/component-build/check-python.py'),
         str(isolated), json.dumps(dependencies), json.dumps(exports)],
         capture_output=True, text=True, timeout=20)

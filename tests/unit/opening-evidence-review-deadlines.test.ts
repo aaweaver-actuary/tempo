@@ -13,7 +13,7 @@ it.each([false, true])(`AS-16 ${lane} review receipt polling remains bounded aft
   const state = await openingEvidenceStorage();
   vi.stubGlobal("localStorage", browserStorage); browserStorage.clear();
   vi.stubGlobal("indexedDB", new IDBFactory());
-  await (await import("../../app/lib/study-intent-storage")).initializeStudyIntentStorage();
+  await (await import("../../database/browser/study-intent-storage")).initializeStudyIntentStorage();
   const completion = evidenceCompletion("bounded-review");
   const offline = await import("../../app/lib/offline-training");
   const outbox = await import("../../app/lib/review-outbox");
@@ -71,7 +71,7 @@ it.each([false, true])(`AS-16 ${lane} review receipt polling remains bounded aft
 it("AS-16 guided review failure receipt shares the foreground review deadline", async () => {
   await openingEvidenceStorage(); vi.stubGlobal("localStorage", browserStorage); browserStorage.clear();
   vi.stubGlobal("indexedDB", new IDBFactory());
-  await (await import("../../app/lib/study-intent-storage")).initializeStudyIntentStorage();
+  await (await import("../../database/browser/study-intent-storage")).initializeStudyIntentStorage();
   const outbox = await import("../../app/lib/review-outbox");
   await outbox.enqueuePendingReview({ backendId: "shadow-card", queueEntryId: 101, attemptId: "guided-review", guided: true, outcome: "again" });
   const original = outbox.pendingReviews(); vi.useFakeTimers();

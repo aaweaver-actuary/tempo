@@ -87,10 +87,10 @@ app/                       React + TypeScript application
 app/domain/                Shared chess/product models and transport adapters
 app/state/                 Training state and focused selectors/actions
 backend/app/main.py        FastAPI routes
-backend/app/database.py    SQLite compatibility path and PostgreSQL connection routing
+database/                  Database owners, DDL/adapters/tooling, ER charts and data dictionaries
 backend/app/services/      PGN, identity, and scheduling logic
 tempo-core/                Rust/WASM deterministic chess and scheduling core
-app/lib/tempo-db.ts        Versioned browser persistence and SQLite transfer
+database/browser/tempo-db.ts        Versioned browser persistence and SQLite transfer
 static/                    GitHub Pages entry point (base path /tempo/)
 docker-compose.yml         PostgreSQL API, web, and Celery workers
 docker-compose.sqlite.yml  Explicit legacy SQLite stack for regression tests
@@ -168,3 +168,5 @@ records; SQLite remains a compatibility and verified-import path.
 ## Remaining implementation decision
 
 - When a revised PGN removes or renames lines, decide whether missing cards are archived automatically or retained until explicitly deleted. Review history should be preserved either way.
+
+Database source, keys and stored fields: [database/README.md](database/README.md).

@@ -13,7 +13,7 @@ from app.services.activity_gate import ApplicationActivityGate
 
 @pytest.fixture
 def canonical_proof(monkeypatch):
-    path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_canonical_freshness.py'
+    path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_canonical_freshness.py'
     monkeypatch.syspath_prepend(str(path.parent))
     specification = importlib.util.spec_from_file_location('canonical_admission_proof', path)
     proof = importlib.util.module_from_spec(specification)
@@ -73,7 +73,7 @@ def test_canonical_task_driver_waits_for_real_local_policy_section_without_recla
 
 
 def test_canonical_admission_exhaustion_retains_original_task_and_cause(canonical_proof, monkeypatch):
-    from postgres_rehearsal_admission import admitted_call
+    from database.tooling.postgres_rehearsal_admission import admitted_call
     import postgres_rehearsal_admission
     clock = iter([0, 11])
     monkeypatch.setattr(postgres_rehearsal_admission.time, 'monotonic', lambda: next(clock))

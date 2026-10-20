@@ -8,7 +8,7 @@ import uuid
 import chess
 from pydantic import TypeAdapter
 
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from ..study_contracts import ExerciseSpecification
 from .study_grading import validate_exercise
 

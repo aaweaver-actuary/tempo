@@ -68,7 +68,7 @@ def increment(database, kind: str, identity: str, *, now: datetime | None = None
     if not 0 <= shard < SHARDS:
         raise ValueError("Invalid metric shard")
     key = (kind, shard, bucket_number % BUCKET_SLOTS, bucket_start)
-    from ..postgres_store import PostgresConnection
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     if isinstance(database, PostgresConnection):
         database.add_background_metrics(key, counts)
     else:

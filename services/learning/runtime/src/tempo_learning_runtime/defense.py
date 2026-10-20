@@ -4,9 +4,9 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 from .clock import date
-from .database import connection, read_connection
-from . import postgres_store
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.connections import connection, read_connection
+from tempo_learning_database.adapters import postgres_store
+from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .review_service import (
     apply_scheduling_review,
     capture_daily_queue_order,

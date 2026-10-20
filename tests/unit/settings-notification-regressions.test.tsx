@@ -3,14 +3,14 @@ import { beforeEach, expect, it, vi } from "vitest";
 import SettingsView from "../../app/views/settings_view";
 import { NotificationCenter, NotificationViewport } from "../../app/components/notification-center";
 import { clearNotificationHistory, notificationNeedsAttention, notificationToastIds, notifications } from "../../app/lib/notifications";
-import { migrateSqliteToBrowser } from "../../app/lib/sqlite-migration";
+import { migrateSqliteToBrowser } from "../../database/browser/sqlite-migration";
 
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
 vi.mock("../../app/lib/workspace-data", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../app/lib/workspace-data")>(),
   readWorkspaceResponse: vi.fn(async () => Response.json({ initial_depth: 6 })),
 }));
-vi.mock("../../app/lib/sqlite-migration", () => ({ migrateSqliteToBrowser: vi.fn() }));
+vi.mock("../../database/browser/sqlite-migration", () => ({ migrateSqliteToBrowser: vi.fn() }));
 
 beforeEach(() => {
   clearNotificationHistory();

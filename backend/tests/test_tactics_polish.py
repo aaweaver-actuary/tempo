@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 
 def test_tactic_progress_returns_distinct_discovered_ids_including_legacy_clean_records(tmp_path, monkeypatch):

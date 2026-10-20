@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from .models import BranchRequest, RemoveBranchRequest
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction

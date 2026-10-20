@@ -5,7 +5,7 @@ from .models import (AcceptedDecision, AdmissionPort, AdmissionProposal, Admissi
                      RemediationError, ReviewOutcome, WorkItem, WorkPage, LegacyAcceptedDecision,
                      LegacyAuthority, accepted_storage_identity)
 from .policy import MAX_PREPARATION_PAGES, PAGE_SIZE, evaluate_eligibility, order_candidates, propose_admission
-from .repository import PostgresRepository, current_miss_sql
+from tempo_remediation_database.adapters.repository import PostgresRepository, current_miss_sql
 from .validation import validate_delivery
 
 __all__ = ["AcceptedDecision", "AdmissionPort", "AdmissionProposal", "AdmissionResult", "AttemptAuthority",

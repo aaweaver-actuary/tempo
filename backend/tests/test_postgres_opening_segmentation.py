@@ -11,7 +11,7 @@ from app.services import opening_segmentation
 
 
 def test_segmentation_migration_has_unique_number_and_matches_schema_readiness():
-    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
     migration_directory = Path(__file__).resolve().parents[1] / 'migrations'
     migration_paths = sorted(migration_directory.glob('[0-9][0-9][0-9]_*.sql'))

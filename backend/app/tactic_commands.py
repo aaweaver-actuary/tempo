@@ -11,8 +11,8 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .models import TacticAttemptRequest, TacticCaptureRequest
-from .postgres_store import PostgresConnection
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .queue_commands import request_queue_refresh_in_transaction
 from .services.cards import card_id
 from .services.review_service import ensure_card_queued_after

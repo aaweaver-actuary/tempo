@@ -50,7 +50,7 @@ def percentile(values: list[float], fraction: float) -> float:
 
 async def main_async(arguments) -> None:
     os.environ["TEMPO_DB_PATH"] = str(arguments.sqlite_path)
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
 
     database.DB_PATH = arguments.sqlite_path

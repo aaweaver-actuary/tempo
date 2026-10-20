@@ -74,7 +74,7 @@ async function savedJournal(complete = false) {
       return transaction;
     },
   } as unknown as IDBDatabase;
-  const storage = await import("../../app/lib/offline-training-storage");
+  const storage = await import("../../database/browser/offline-training-storage");
   vi.spyOn(storage, "offlineTrainingDatabase").mockResolvedValue(database);
   return { journal: await import("../../app/lib/opening-evidence-journal"), attempts, savedEvents, originalDelivery };
 }

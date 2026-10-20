@@ -13,8 +13,8 @@ import uuid
 import chess
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
-from ..database import card_columns, read_connection
-from .database_executor import submit_background_write
+from tempo_legacy_database.connections import card_columns, read_connection
+from tempo_legacy_database.adapters.database_executor import submit_background_write
 
 from .cards import card_id
 from .repertoire_comparison import canonical_fen
@@ -295,7 +295,7 @@ def enqueue_integrity_scans(
 
     queued: list[str] = []
     system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
 
     with connection(background=background) as database:
         if repertoire_id:
@@ -380,7 +380,7 @@ def _issues_from_observations(
 
 
 def claim_integrity_slice() -> dict | None:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
     from .background_activity import claimable, control_order
 
     with connection(background=True) as database:
@@ -413,7 +413,7 @@ def claim_integrity_slice() -> dict | None:
 
 
 def execute_integrity_slice(job: dict) -> None:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
     from .activity_gate import activity_gate
     from .background_activity import emit_progress
 
@@ -462,7 +462,7 @@ def execute_integrity_slice(job: dict) -> None:
                     "UPDATE repertoire_integrity_jobs SET status='complete',last_error=NULL,updated_at=? WHERE repertoire_id=?",
                     (now, job["repertoire_id"]),
                 )
-            from .database_executor import database_writer
+            from tempo_legacy_database.adapters.database_executor import database_writer
             from .durable_tasks import enqueue_task
 
             if database_writer.healthy:
@@ -530,7 +530,7 @@ def execute_integrity_slice(job: dict) -> None:
 def requeue_integrity_slice(job: dict, error: Exception) -> None:
     """Return a failed slice to durable storage without disturbing published issues."""
 
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
 
     message = str(error)
     now = _now()

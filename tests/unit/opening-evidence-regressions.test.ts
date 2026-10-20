@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import manifestFixture from "../fixtures/opening-evidence-manifest.json";
 import { openingDecisionManifestSchema, openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
 import { OpeningAttemptJournal, beginOpeningAttempt, partialOpeningAttempt, recoverOpeningEvidence } from "../../app/lib/opening-evidence-journal";
-import * as openingStorage from "../../app/lib/offline-training-storage";
+import * as openingStorage from "../../database/browser/offline-training-storage";
 import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 import { useTrainingStore } from "../../app/state/training-store";
 import { asCardId, asFenString, asQueueEntryId, asSanMove } from "../../app/types";

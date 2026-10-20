@@ -1,6 +1,6 @@
 """Durable installation-wide admission policy for emergency study isolation."""
 
-from ..database import read_connection, background_read_connection
+from tempo_legacy_database.connections import read_connection, background_read_connection
 from .activity_gate import activity_gate
 from contextlib import nullcontext
 from fastapi import HTTPException

@@ -14,7 +14,7 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
   const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
   const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000 });
   const fixture = (action: string, ...args: string[]) => JSON.parse(docker("run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/check_postgres_training_transition.py", action, identifier, ...args));
+    "/source/database/tests/check_postgres_training_transition.py", action, identifier, ...args));
   const originalSettings = await (await request.get(`${api}/settings`)).json();
   let displacedPositions: number[][] = [];
   const reviewRequests: { url: string; body: unknown; key: string }[] = [];

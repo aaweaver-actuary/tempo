@@ -14,7 +14,7 @@ import uuid
 
 import chess
 
-from ..database import connection, read_connection
+from tempo_legacy_database.connections import connection, read_connection
 from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
 from .real_game_feedback_adapter import apply_real_game_misses

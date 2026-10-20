@@ -13,7 +13,7 @@ import uuid
 
 import chess
 import psycopg
-from tempo_content.store import ContentService
+from tempo_content_database.adapters.store import ContentService
 from tempo_content_publication_contracts.v1 import serialize_contract
 
 

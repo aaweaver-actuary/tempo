@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { escapeRegex, allLayers, planHash } from "./ci-verification-plan.mjs";
 import { resolvePython } from "./resolve-python.mjs";
-import { postgresTestStages } from "./postgres-test-plan.mjs";
+import { postgresTestStages } from "../database/tests/postgres-test-plan.mjs";
 import { dirname } from "node:path";
 import { cpus, totalmem } from "node:os";
 import { aggregateBrowserShards, browserShard, browserShardFingerprint, browserShardReportPath, validateBrowserShardPlan } from "./ci-browser-shards.mjs";
@@ -61,14 +61,14 @@ export function layerCommands(layer, plan, shardId) {
   if (["postgres", "lifecycle"].includes(layer)) {
     const { mode } = postgresVerification(layer, plan);
     return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
-      [mode, "node", ["scripts/test-postgres-docker.mjs", "--mode", mode]]];
+      [mode, "node", ["database/tests/test-postgres-docker.mjs", "--mode", mode]]];
   }
   if (layer === "visual") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--workspace-mount"]], ["visual", "npm", ["run", "test:visual"]]];
   const grep = layer === "quarantine" ? plan.collection.filter(item => item.quarantined).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|") : plan.browserGrep;
   if (!grep) throw new Error("Selected browser collection cannot be empty");
   const focus = layer === "browser" && plan.collection.every(item => item.selected) ? [] : ["--browser-grep", grep];
   return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
-    ["browser", "node", ["scripts/test-postgres-docker.mjs", "--mode", "browser", ...focus]]];
+    ["browser", "node", ["database/tests/test-postgres-docker.mjs", "--mode", "browser", ...focus]]];
 }
 
 export function browserResults(report) {
@@ -169,7 +169,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
     const commands = layerCommands(layer, plan, shardId);
     const testReportPath = shardId === undefined ? `test-results/ci/${layer}-tests.json` : `${dirname(reportPath)}/tests.json`;
-    const env = { ...process.env, PYTHONPATH: "backend", TEMPO_CI_PLAN_HASH: plan.hash, TEMPO_CI_REPORT: testReportPath };
+    const env = { ...process.env, PYTHONPATH: "backend:database", TEMPO_CI_PLAN_HASH: plan.hash, TEMPO_CI_REPORT: testReportPath };
     Object.assign(report, executeLayer(commands, (command, args, diagnostic) => {
       if (diagnostic) for (const path of [env.TEMPO_CI_REPORT, "test-results/ci/backend-tests.xml", "test-results/performance/unit-files-ci-frontend.json", "test-results/ci/frontend-inventory.json", "test-results/ci/backend-inventory.json"]) {
         if (existsSync(path)) copyFileSync(path, `${path}.first-failure`);

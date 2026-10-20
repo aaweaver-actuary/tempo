@@ -17,7 +17,8 @@ import pytest
 if not os.environ.get("TEMPO224_FIXTURE", "").startswith("tempo224-"):
     raise RuntimeError("Run integration/run_postgres.py; external databases are forbidden")
 
-from app import postgres_store, review_commands, queue_commands
+from tempo_legacy_database.adapters import postgres_store
+from app import review_commands, queue_commands
 from app.command_gateway import CommandConflict, execute_command, read_operation
 from app.services.learning_review_adapter import LearningReviewAdapter
 from app.services.review_reconciliation import card_schedule_state
@@ -298,7 +299,7 @@ def test_native_frozen_reader_admission_fences_successor_without_reordering(case
 
 
 def test_native_existing_issuance_edit_and_deletion_regression_uses_relocated_seam(case):
-    import check_postgres_training_transition as legacy_proof
+    import database.tests.check_postgres_training_transition as legacy_proof
     from app.models import ReviewRequest
     identities = {}
     with postgres_store.connection() as database:

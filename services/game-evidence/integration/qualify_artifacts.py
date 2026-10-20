@@ -44,6 +44,8 @@ def main():
                                  ("evidence-contract",ROOT/"contracts/game-evidence"),("service",SERVICE)]:
                 copied=workspace/(label+"-build")
                 shutil.copytree(source,copied,ignore=shutil.ignore_patterns(".venv","__pycache__","test-results","dist",".pytest_cache"))
+                if source == SERVICE:
+                    shutil.copytree(ROOT / "database/tempo_game_evidence_database", copied / "database/tempo_game_evidence_database", ignore=shutil.ignore_patterns("__pycache__"))
                 run([sys.executable,"-m","build","--no-isolation","--outdir",distributions],copied,label+"-build")
             requirements=workspace/"requirements.txt"
             requirements.write_text(run(["uv","export","--locked","--no-emit-project","--no-emit-local","--no-hashes","--no-header"],SERVICE,"locked-requirements"))
@@ -67,7 +69,7 @@ def main():
                     run(["uv","pip","install","--python",python,"--no-build-isolation",artifact],consumer,label+"-install")
                     shutil.copytree(SERVICE/"tests",consumer/"tests",ignore=shutil.ignore_patterns("__pycache__"))
                     shutil.copytree(SERVICE/"fixtures",consumer/"fixtures")
-                    guard="import pathlib,sys; import tempo_game_evidence as p; assert 'site-packages' in p.__file__; assert all(pathlib.Path(p.__file__).with_name('migrations').joinpath(name).is_file() for name in ('001.sql','002.sql')); assert not any('backend' in x for x in sys.path)"
+                    guard="import pathlib,sys; import tempo_game_evidence as p; assert 'site-packages' in p.__file__; assert all(pathlib.Path(__import__('tempo_game_evidence_database').__file__).parent.joinpath('ddl/migrations').joinpath(name).is_file() for name in ('001.sql','002.sql')); assert not any('backend' in x for x in sys.path)"
                     run([python,"-I","-c",guard],consumer,label+"-installed-guard")
                     junit=destination/(label+".xml")
                     run([python,"-I","-m","pytest","tests","--import-mode=importlib","-q","--junitxml="+str(junit)],consumer,label+"-tests")

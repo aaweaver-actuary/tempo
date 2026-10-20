@@ -9,11 +9,11 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.models import TacticCaptureRequest
 from app.services.tactic_capture import capture_tactic, validate_tactic_line
 from app.services.tactic_admission import count_daily_tactic_introductions
-from app.services.tactic_capture_migration import normalize_game_tactic_cards
+from tempo_legacy_database.ddl.tactic_capture_migration import normalize_game_tactic_cards
 from app.services.tactical_catalog import seed_tactical_introductions
 
 

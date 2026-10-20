@@ -5,7 +5,7 @@ import json
 from fastapi import HTTPException
 
 from ..next_opponent_contract import NextOpponentProfile, NextOpponentProfileResponse, SpeedWeight
-from ..postgres_store import connection
+from tempo_legacy_database.adapters.postgres_store import connection
 from .durable_tasks import complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice
 from .next_opponent_profile import METHOD_VERSION, SAMPLE_LIMIT, build_profile, utc_time
 from .redis_admission_gate import background_lease

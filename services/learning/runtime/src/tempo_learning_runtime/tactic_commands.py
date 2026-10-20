@@ -4,8 +4,8 @@ from .clock import date
 import json, uuid
 from typing import Any
 from .models import TacticAttemptRequest
-from .postgres_store import PostgresConnection
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.adapters.postgres_store import PostgresConnection
+from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .review_service import ensure_card_queued_after
 from .tactic_admission import lock_daily_tactic_admission
 from tempo_chess_core import card_id

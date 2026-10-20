@@ -6,7 +6,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from migrate_sqlite_to_postgres import destination_fingerprint
+from database.tooling.migrate_sqlite_to_postgres import destination_fingerprint
 
 
 def test_postgres_cutover_digest_ignores_new_target_columns():
@@ -52,7 +52,7 @@ def test_postgres_cutover_digest_ignores_new_target_columns():
 def test_canonical_prefix_snapshot_copy_preserves_source_revision_and_restores_trigger(tmp_path, table_name, trigger_name):
     from contextlib import nullcontext
     import sqlite3
-    from migrate_sqlite_to_postgres import copy_table
+    from database.tooling.migrate_sqlite_to_postgres import copy_table
     source = sqlite3.connect(tmp_path / "source.db")
     source.execute(f'CREATE TABLE "{table_name}"(id TEXT PRIMARY KEY)')
     source.execute(f'INSERT INTO "{table_name}" VALUES(\'line\')')

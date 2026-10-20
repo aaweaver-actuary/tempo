@@ -16,7 +16,7 @@ from app.services.activity_gate import ApplicationActivityGate
 
 @pytest.mark.parametrize('operation_name', ['prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice'])
 def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(monkeypatch, operation_name):
-    path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_graph_retention.py'
+    path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_graph_retention.py'
     monkeypatch.syspath_prepend(str(path.parent))
     specification = importlib.util.spec_from_file_location('graph_admission_proof', path)
     proof = importlib.util.module_from_spec(specification)

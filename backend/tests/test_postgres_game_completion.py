@@ -6,7 +6,8 @@ from contextlib import contextmanager
 from pathlib import Path
 import sys
 
-from app import tasks, postgres_store
+from app import tasks
+from tempo_legacy_database.adapters import postgres_store
 from app.services import (
     postgres_game_events, postgres_game_features, postgres_game_priorities,
     postgres_priority, introduction_priorities, durable_tasks, refresh_requests, repertoire_opportunities,
@@ -17,7 +18,7 @@ def test_postgres_gameplay_event_import_targets_legacy_table():
     scripts = Path(__file__).resolve().parents[2] / "scripts"
     sys.path.insert(0, str(scripts))
     try:
-        from migrate_sqlite_to_postgres import COPY_TARGETS
+        from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.remove(str(scripts))
     assert COPY_TARGETS["gameplay_events"] == "gameplay_events_legacy"

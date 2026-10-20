@@ -1,7 +1,7 @@
 """Read API; JSON reports are also usable without this server."""
 from fastapi import FastAPI, HTTPException, Query
 
-from .store import EvidenceStore
+from tempo_game_evidence_database.adapters.store import EvidenceStore
 
 
 def create_app(store: EvidenceStore):

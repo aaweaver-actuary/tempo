@@ -9,7 +9,7 @@ import pytest
 
 @pytest.fixture
 def incident_fixture_script():
-    script_path = Path(__file__).resolve().parents[2] / "scripts/check_postgres_graph_retention.py"
+    script_path = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_graph_retention.py"
     specification = spec_from_file_location("incident_fixture_safety_script", script_path)
     module = module_from_spec(specification)
     specification.loader.exec_module(module)

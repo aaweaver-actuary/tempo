@@ -6,12 +6,12 @@ import json
 
 from fastapi import HTTPException
 import tempo_learning_review as learning
-from .. import postgres_store
-from ..database import connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.connections import connection, read_connection
 from ..models import ReviewRequest
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from ..review_conflicts import ReviewConflict
-from ..queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import queue_application
 from .review_service import apply_scheduling_review, capture_daily_queue_order, preserve_daily_queue_order
 from .review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
@@ -247,7 +247,7 @@ class LearningReviewAdapter:
 
     def _compatibility_queue_refresh(self, day):
         from .durable_tasks import enqueue_task
-        from .database_executor import submit_foreground_write
+        from tempo_legacy_database.adapters.database_executor import submit_foreground_write
         from .game_sync_coordinator import coordinator
         enqueue_task("daily_queue", "current", {"queue_date":day}, priority=10, foreground=True)
         submit_foreground_write(lambda database: database.execute(queue_application._QUEUE_REFRESH_PROJECTION_SQL, (day,)), label=f"daily-queue-refreshing:{day}")

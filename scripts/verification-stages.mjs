@@ -28,7 +28,7 @@ const stages = [
   ["wasm_build", "npm", ["run", "build:wasm"]],
   ["local_build", "npm", ["run", "build:local"]],
   // The PostgreSQL runner owns the single regular Playwright matrix.
-  ["postgres_docker", "node", ["scripts/test-postgres-docker.mjs"]],
+  ["postgres_docker", "node", ["database/tests/test-postgres-docker.mjs"]],
   ["visual", "npm", ["run", "test:visual"]],
 ];
 const stagesByTier = {

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from app import command_dispatch, main, postgres_store, statistics_commands, tasks
+from app import command_dispatch, main, statistics_commands, tasks
+from tempo_legacy_database.adapters import postgres_store
 from app.services import postgres_daily_statistics
 
 

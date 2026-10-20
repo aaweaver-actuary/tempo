@@ -121,7 +121,7 @@ import sys
 from importlib.abc import MetaPathFinder
 class RejectInfrastructure(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname in {'app.main','app.database','app.postgres_store','app.tasks','app.celery_app'} or fullname.split('.')[0] in {'psycopg','redis','celery','fastapi'}:
+        if fullname in {'app.main','tempo_legacy_database.connections','tempo_legacy_database.adapters.postgres_store','app.tasks','app.celery_app'} or fullname.split('.')[0] in {'psycopg','redis','celery','fastapi'}:
             raise AssertionError(fullname)
 sys.meta_path.insert(0, RejectInfrastructure())
 from datetime import date, datetime, timezone

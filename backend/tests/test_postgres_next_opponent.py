@@ -284,7 +284,7 @@ def test_issue107_unsupported_speed_only_does_not_fabricate_supported_probabilit
 
 
 def test_issue107_maintenance_profile_proof_configures_disposable_redis(monkeypatch):
-    from scripts import check_postgres_next_opponent as proof
+    import database.tests.check_postgres_next_opponent as proof
     monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     monkeypatch.setattr(proof.sys, "argv", ["proof", "--resume"])

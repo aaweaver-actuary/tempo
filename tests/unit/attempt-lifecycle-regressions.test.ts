@@ -11,7 +11,7 @@ import { attemptEntryKey } from "../../app/domain/attempt";
 import { conflictedReviews, enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
-import { studyIntentStore } from "../../app/lib/study-intent-storage";
+import { studyIntentStore } from "../../database/browser/study-intent-storage";
 import { completedRecoveryReceipt, deferred, enterRecovery, observe, observeRecoveryPasses, recoveryCommand } from "./support/recovery-ownership-fixtures";
 import {
   asCardId,

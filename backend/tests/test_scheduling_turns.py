@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app import database, tasks
+from tempo_legacy_database import connections as database
+from app import tasks
 from app.services import durable_tasks
 from test_daily_study_dispatch import dispatch_store, task_row
 

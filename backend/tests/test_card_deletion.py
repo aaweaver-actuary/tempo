@@ -8,7 +8,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 from app.card_deletion import (
     RETAINED_REPERTOIRE_ID, cancel_repertoire_tasks, delete_repertoire_data,
     permanent_delete_card, omit_deleted_graph_steps,
@@ -169,7 +170,7 @@ def test_retained_introduced_cards_survive_queue_refresh_and_next_day_without_a_
 
 
 def test_card_archive_api_remains_compatible_and_permanent_requires_revision(workspace):
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     database_writer.start()
     try:
         client = TestClient(main.app)

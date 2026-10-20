@@ -16,8 +16,8 @@ import { usesLocalApi } from "../utils/local";
 import {
   createEncryptedBackup,
   restoreEncryptedBackup,
-} from "../lib/encrypted-backup";
-import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
+} from "../../database/browser/encrypted-backup";
+import { migrateSqliteToBrowser } from "../../database/browser/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
 import { saveLocalSettings } from "../lib/settings-save";
 import { PendingOperationError } from "../lib/operation-status";

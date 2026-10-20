@@ -13,7 +13,7 @@ import uuid
 import httpx
 
 from ..models import GameSyncRequest
-from ..postgres_store import PostgresConnection, connection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
 from .chesscom_client import fetch_chesscom_archive_month, fetch_chesscom_archive_urls
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,

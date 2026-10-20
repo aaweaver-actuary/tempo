@@ -3,7 +3,7 @@ import json
 
 import pytest
 from tempo_content.domain import ContentError
-from tempo_content.store import _decode_inventory_cursor, _json
+from tempo_content_database.adapters.store import _decode_inventory_cursor, _json
 
 
 def cursor(kind='positions'):

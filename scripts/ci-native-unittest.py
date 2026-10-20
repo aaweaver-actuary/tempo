@@ -60,7 +60,7 @@ def execute_suite(suite):
 if __name__ == '__main__':
     if sys.argv[1:] != ['redis-fixture-isolation']:
         raise RuntimeError('Unknown native suite')
-    import check_postgres_redis_fixture_isolation as native_fixture
+    import database.tests.check_postgres_redis_fixture_isolation as native_fixture
     native_fixture.fixture.configure()
     collected = unittest.defaultTestLoader.loadTestsFromTestCase(native_fixture.RedisFixtureIsolation)
     evidence, success = execute_suite(collected)

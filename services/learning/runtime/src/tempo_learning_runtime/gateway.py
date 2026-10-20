@@ -5,7 +5,7 @@ import hashlib, json, uuid
 import psycopg
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from .database import connection, current_database
+from tempo_learning_database.connections import connection, current_database
 from .review_conflicts import ReviewConflict
 
 _handlers = {}

@@ -5,7 +5,7 @@ import chess
 import pytest
 
 from tempo_game_evidence import ComparisonSnapshot, compare_game, normalize_pgn, replay_positions
-from tempo_game_evidence.store import make_delivery
+from tempo_game_evidence_database.adapters.store import make_delivery
 from .factories import observed, pgn, snapshot
 
 
@@ -163,7 +163,7 @@ def test_C3_shared_policy_prefix_is_unknown_before_authoritative_anchor():
 
 
 def test_C3_worker_reuses_only_byte_identical_validated_snapshot(monkeypatch):
-    from tempo_game_evidence import store as module
+    from tempo_game_evidence_database.adapters import store as module
     parsed=[]
     def parse(document):
         value=object();parsed.append((document,value));return value

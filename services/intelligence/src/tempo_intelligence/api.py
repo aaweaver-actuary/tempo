@@ -78,7 +78,7 @@ def create_app(configuration: Configuration, store=None, worker=None):
         try:
             try:
                 if owned_store:
-                    from .store import Store
+                    from tempo_intelligence_database.adapters.store import Store
 
                     await runner.run(Store, configuration,
                                      on_result=lambda value: setattr(app.state, "store", value))
@@ -103,7 +103,7 @@ def create_app(configuration: Configuration, store=None, worker=None):
                     while not stopping:
                         try:
                             progressed = await app.state.worker.work_once()
-                            from .analysis.store import AnalysisStore
+                            from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
                             analysis_owner = AnalysisStore(app.state.store)
                             derived = await runner.run(analysis_owner.derive_next)
                             progressed = progressed or derived

@@ -6,7 +6,6 @@ COPY services/learning/application/pyproject.toml services/learning/application/
 COPY services/learning/application/src services/learning/application/src
 COPY services/learning/remediation/pyproject.toml services/learning/remediation/pyproject.toml
 COPY services/learning/remediation/src services/learning/remediation/src
-COPY services/learning/remediation/migrations services/learning/remediation/migrations
 COPY packages/scheduling/pyproject.toml packages/scheduling/pyproject.toml
 COPY packages/scheduling/src packages/scheduling/src
 COPY packages/chess-core/pyproject.toml packages/chess-core/pyproject.toml
@@ -21,6 +20,10 @@ COPY contracts/game-evidence/schemas contracts/game-evidence/schemas
 COPY contracts/game-evidence/fixtures contracts/game-evidence/fixtures
 COPY services/learning/runtime/pyproject.toml services/learning/runtime/uv.lock services/learning/runtime/
 COPY services/learning/runtime/src services/learning/runtime/src
+COPY services/learning/runtime/hatch_build.py services/learning/runtime/hatch_build.py
+COPY services/learning/remediation/hatch_build.py services/learning/remediation/hatch_build.py
+COPY database/tempo_learning_database database/tempo_learning_database
+COPY database/tempo_remediation_database database/tempo_remediation_database
 COPY services/learning/runtime/fixtures services/learning/runtime/fixtures
 RUN uv sync --project services/learning/runtime --locked --no-dev --no-editable --no-cache --python /usr/local/bin/python
 FROM python:3.12-slim

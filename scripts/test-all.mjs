@@ -61,7 +61,7 @@ for (const [name, command, args] of selectedStages) {
     rmSync(unitProfilePath, { force: true });
   }
   const start = performance.now();
-  const result = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend",
+  const result = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend:database",
     ...(tier === "full" ? { TEMPO_FULL_TEST_RUN_TIMESTAMP: report.timestamp, TEMPO_FULL_TEST_RUN_COMMIT: report.commit } : {}) } });
   report.stages[name] = { duration_seconds: Math.round((performance.now() - start) / 10) / 100, exit_code: result.status, error: result.error?.message ?? null };
   saveReport();

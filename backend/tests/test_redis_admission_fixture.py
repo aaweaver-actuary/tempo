@@ -11,7 +11,7 @@ import pytest
 @pytest.fixture
 def redis_fixture():
     specification = importlib.util.spec_from_file_location(
-        'redis_fixture', Path(__file__).resolve().parents[2] / 'scripts/check_postgres_redis_admission.py')
+        'redis_fixture', Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_redis_admission.py')
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module

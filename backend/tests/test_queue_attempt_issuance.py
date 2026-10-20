@@ -5,7 +5,8 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

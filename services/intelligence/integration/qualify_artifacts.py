@@ -69,6 +69,8 @@ def main(arguments=None):
             for label, source in sources:
                 copied_source = workspace / (label + "-build")
                 shutil.copytree(source, copied_source, ignore=shutil.ignore_patterns(*IGNORED))
+                if source == SERVICE:
+                    shutil.copytree(ROOT / "database/tempo_intelligence_database", copied_source / "database/tempo_intelligence_database", ignore=shutil.ignore_patterns("__pycache__"))
                 run([sys.executable, "-m", "build", "--no-isolation", "--outdir", distributions], copied_source, label + "-build")
             requirements = workspace / "requirements.txt"
             requirements.write_text(run(["uv", "export", "--locked", "--no-emit-project", "--no-emit-local", "--no-hashes", "--no-header"], SERVICE, "locked-requirements"))
@@ -105,8 +107,8 @@ import tempo_intelligence as intelligence
 package=Path(intelligence.__file__).parent
 assert 'site-packages' in package.parts
 assert metadata.version('tempo-intelligence') == '0.1.0'
-assert (package/'migrations/manifest.json').is_file()
-assert (package/'migrations/0001_sources.sql').is_file()
+assert (pathlib.Path(__import__('tempo_intelligence_database').__file__).parent/'ddl/migrations/manifest.json').is_file()
+assert (pathlib.Path(__import__('tempo_intelligence_database').__file__).parent/'ddl/migrations/0001_sources.sql').is_file()
 assert not (Path.cwd()/'src').exists()
 assert not any('backend' in path for path in sys.path)
 for name in ('tempo-learning-runtime','tempo-game-evidence','tempo-content','tempo-stockfish-client','celery','redis','torch','onnxruntime','transformers'):

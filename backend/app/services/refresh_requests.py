@@ -46,7 +46,7 @@ def request_refresh(database, kind, repertoire_id, *, quiet_seconds=5):
     Terminal failures retain explicit retry semantics. A missing task is not
     proof of publication: only accepted completion marks the published identity.
     """
-    from .. import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from .queue_refresh_wakeup import mark_queue_refresh_requested
 
     now = _now()

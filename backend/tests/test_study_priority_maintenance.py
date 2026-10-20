@@ -82,7 +82,7 @@ def test_owned_fixture_database_renews_private_policy_without_touching_parent_co
     import threading
     import time
     from types import SimpleNamespace
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.services import study_priority
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))

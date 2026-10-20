@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 import time
 
 from fastapi.testclient import TestClient
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app, enqueue_daily_queue_refresh
 from helpers import wait_for_daily_queue, wait_for_integrity
 

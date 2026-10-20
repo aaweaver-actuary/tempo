@@ -109,7 +109,7 @@ def apply_scheduling_review(
     review_day: date,
 ) -> dict:
     from .scheduling_review_application import apply_scheduling_review as apply_review_to_store
-    from .scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
 
     result = apply_review_to_store(
         OwnedConnectionSchedulingReviewStore(database), card_id, outcome,
