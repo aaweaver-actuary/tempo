@@ -4,6 +4,7 @@ import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, relative } from 'node:path';
 import assert from 'node:assert/strict';
 import { chromium, expect } from '@playwright/test';
+import {runGamesOnlyScenario} from './games-readonly.mjs';
 import {runCreationScenarios} from './run-creation.mjs';
 const root=resolve(new URL('../',import.meta.url).pathname);
 const fixturePath=process.argv[2];const evidence=resolve(process.argv[3]??root+'/test-results/browser');
@@ -177,6 +178,7 @@ try{
   await expect(page.getByRole('button',{name:'Cancel',exact:true})).toHaveCount(1);
   await expect(page.getByText('This older analysis requires a new revision before continuing. Cancel remains available.',{exact:true})).toBeVisible();
   await context.close();assert.deepEqual(unexpected,[]);
+  navigationCases.push(await runGamesOnlyScenario(browser,origin,fixtures,evidence));
   creationCases=await runCreationScenarios(browser,origin,fixtures,evidence);
   assert.ok(creationCases.every(result=>result.passed),JSON.stringify(creationCases.map(({case:identity,passed,error,run_ids})=>({identity,passed,error,run_ids}))));
   passed=true;

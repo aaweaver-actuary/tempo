@@ -51,7 +51,7 @@ def main():
             secret_file.write_text("POSTGRES_PASSWORD="+administrator+"\n")
             secret_file.chmod(0o600)
             docker("run","--detach","--name",owner,"--label","tempo.owner="+owner,"--label","tempo.disposable=true",
-                "--memory","384m","--cpus","1","--pids-limit","256","--mount",f"type=volume,source={volume},target=/var/lib/postgresql",
+                "--memory","384m","--memory-swap","384m","--cpus","1","--pids-limit","256","--mount",f"type=volume,source={volume},target=/var/lib/postgresql",
                 "--publish","127.0.0.1::5432","--env-file",str(secret_file),image,"postgres","-c","shared_buffers=32MB","-c","max_connections=40")
         created_container=True
         port=docker("inspect",owner,"--format",'{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}').stdout.strip()
@@ -84,7 +84,7 @@ def main():
             TEMPO_INTELLIGENCE_TEST_UPGRADE_URL=make_conninfo(owner_url,dbname="intelligence_upgrade"),
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", TEMPO_C_BROWSER_FIXTURE_FILE=str(destination/"workbench-producer.json"))
         junit=destination/"native.xml"
-        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_analysis_postgres.py"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),str(SERVICE/"integration/test_server_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
+        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_analysis_postgres.py"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),str(SERVICE/"integration/test_server_postgres.py"),str(SERVICE/"integration/test_games_readonly_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
         if os.environ.get("TEMPO_C_STOCKFISH_PROFILE"):
             environment["TEMPO_C_STOCKFISH_PROFILE"]=str(Path(os.environ["TEMPO_C_STOCKFISH_PROFILE"]).resolve())
             command.insert(command.index("-q"),str(SERVICE/"integration/test_actual_analysis.py"))
@@ -93,9 +93,15 @@ def main():
                 if not os.environ.get(name):raise RuntimeError('explicit_actual_a_inputs_required')
                 environment[name]=str(Path(os.environ[name]).resolve())
             command.insert(command.index('-q'),str(SERVICE/'integration/test_actual_a.py'))
-        if os.environ.get("TEMPO_C_NATIVE_SELECTION"):
-            if os.environ["TEMPO_C_NATIVE_SELECTION"]!="analysis":raise RuntimeError("unknown_native_selection")
+        selection=os.environ.get("TEMPO_C_NATIVE_SELECTION")
+        if selection=="analysis":
             command=[argument for argument in command if not argument.endswith(("/test_postgres.py","/test_provider_postgres.py","/test_server_postgres.py"))]
+        elif selection=="games-readonly":
+            command=[argument for argument in command if not argument.endswith(("/test_analysis_postgres.py","/test_postgres.py","/test_provider_postgres.py","/test_server_postgres.py","/test_games_readonly_postgres.py"))]
+            command.insert(command.index('-q'),str(SERVICE/'integration/test_games_readonly_postgres.py')+'::test_games_readonly_http_and_transactions_preserve_all_state')
+            command.insert(command.index('-q'),str(SERVICE/'integration/test_analysis_postgres.py')+'::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free')
+        elif selection:
+            raise RuntimeError("unknown_native_selection")
         command.extend(["-o","faulthandler_timeout=45","-vv"])
         environment["PYTHONUNBUFFERED"]="1"
         for value in shlex.split(os.environ.get("PYTEST_ADDOPTS","")):
@@ -120,6 +126,10 @@ def main():
         cases=ET.parse(junit).getroot().findall(".//testcase") if junit.exists() else []
         report["cases"]=[case.attrib for case in cases]
         report["passed"]=sum(not any(case.find(tag) is not None for tag in ("failure","error","skipped")) for case in cases)
+        if selection=="games-readonly":
+            required={'test_games_readonly_http_and_transactions_preserve_all_state','test_C3_actual_game_read_is_exact_paginated_and_side_effect_free'}
+            if len(cases)!=2 or {case.attrib.get('name') for case in cases}!=required:
+                raise RuntimeError('games_readonly_case_inventory_mismatch')
         report["complete"]=returncode==0 and bool(cases) and report["passed"]==len(cases)
     except Exception as error:
         report["error"]=str(error) if isinstance(error,RuntimeError) and re.fullmatch("[a-z_]+",str(error)) else type(error).__name__

@@ -28,7 +28,7 @@ export function gameFrames(startingFen:string,moves:string[]){
   return frames;
 }
 
-export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,runId:string,expected:{revision:number;input_id:string;input_revision:number},onBack:()=>void,onError:(error:unknown)=>void){
+export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,runId:string,expected:{revision:number;input_id:string;input_revision:number},onBack:()=>void,onError:(error:unknown)=>void,options:{backLabel?:string}={}){
   let active=true,requestGeneration=0,board:Api|undefined;
   const back=()=>{board?.destroy();onBack();};
   function detail(game:Game,selections:z.infer<typeof pageSchema>["selections"]){
@@ -54,7 +54,7 @@ export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,ru
     }catch(error){onError(error);}
   }
   async function load(after?:string){
-    const generation=++requestGeneration;board?.destroy();board=undefined;target.replaceChildren(button("Back to findings",back),node("h2","Selected games"));
+    const generation=++requestGeneration;board?.destroy();board=undefined;target.replaceChildren(button(options.backLabel??"Back to findings",back),node("h2","Selected games"));
     try{
       const query=after?`?after=${encodeURIComponent(after)}`:"";
       const page=await client.request(`/v1/analysis/runs/${encodeURIComponent(runId)}/games${query}`,pageSchema);

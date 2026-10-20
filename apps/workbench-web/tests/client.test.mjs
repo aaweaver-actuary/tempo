@@ -334,3 +334,23 @@ test('connected Intelligence origin is a validated public form default with no m
     assert.throws(()=>intelligenceOriginForBuild(value),error=>String(error).includes('TEMPO_INTELLIGENCE_ORIGIN must be a public')&&!String(error).includes(value)&&!String(error).includes('synthetic-secret'));
   }
 });
+
+test('Games read-only capability prevents mutation delivery while retaining reads',async()=>{
+  const calls=[];const client=new IntelligenceClient(connection,async(url,options)=>{calls.push({url,method:options.method});return Response.json({...bootstrap,capabilities:['analysis-v1','selected-games-v1','games-readonly-v1']});});
+  assert.equal(client.readOnly,false);await client.bootstrap();assert.equal(client.readOnly,true);
+  await assert.rejects(()=>client.request('/v1/analysis/runs',bootstrapSchema,{run_id:'new'}),/read-only/);
+  await assert.rejects(()=>client.requestSerialized('/v1/analysis/runs/run/commands',bootstrapSchema,'{}'),/read-only/);
+  await client.request('/v1/analysis/bootstrap',bootstrapSchema);
+  assert.deepEqual(calls.map(item=>item.method),['GET','GET']);
+});
+
+test('Games scope reader requires server enforcement and exact immutable run/input identity',async()=>{
+  const mutable=new IntelligenceClient(connection,async()=>assert.fail('No request to a mutable server'));
+  await assert.rejects(()=>mutable.gamesScope('run'),/read-only/);
+  const scope={schema_version:1,workspace_id:'fixture',run_id:'run',revision:1,expected_revision:null,input_id:'accepted',input_revision:2,policy_version:'c-analysis-v1',position_budget:250,ranking_source:'actual',source_evidence_ids:[],ranking_evidence_id:null};
+  let wrong=false;const calls=[];
+  const client=new IntelligenceClient(connection,async(url,options)=>{calls.push(options.method);return Response.json(url.endsWith('/bootstrap')?{...bootstrap,capabilities:['analysis-v1','games-readonly-v1']}:{schema_version:1,workspace_id:'fixture',run_id:wrong?'other':'run',revision:1,scope});});
+  await client.bootstrap();assert.deepEqual(await client.gamesScope('run'),{revision:1,input_id:'accepted',input_revision:2});
+  wrong=true;await assert.rejects(()=>client.gamesScope('run'),/identity mismatch/);
+  assert.ok(calls.every(method=>method==='GET'));
+});

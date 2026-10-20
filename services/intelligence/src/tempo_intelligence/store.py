@@ -40,6 +40,10 @@ class Store:
             timeout=1, open=True, connection_class=BackgroundConnection,
             kwargs={"row_factory":dict_row,"connect_timeout":2,"application_name":"tempo-intelligence-worker"})
 
+    @property
+    def read_only(self):
+        return self.configuration.read_only
+
     @contextmanager
     def transaction(self, *, background=False, read_only=False):
         pool = self.background if background else self.foreground
@@ -48,7 +52,7 @@ class Store:
             token = background_deadline.set(time.monotonic() + BACKGROUND_OPERATION_SECONDS)
         try:
             with pool.connection() as database:
-                if read_only:
+                if read_only or self.configuration.read_only:
                     database.execute("SET TRANSACTION READ ONLY")
                 database.execute("SET LOCAL search_path=intelligence,pg_catalog")
                 database.execute("SELECT set_config('statement_timeout',%s,true)",("1500ms",))

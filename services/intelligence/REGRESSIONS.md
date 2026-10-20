@@ -396,3 +396,13 @@ strict limits, malformed cursors and cursor fencing across runs/revisions.
 compares responses with actual accepted input, checks authentication/workspace
 rejection and proves unchanged run/job progress across reads. The native
 Workbench producer exports this real read response for its constructed fixture.
+
+## Games-only read enforcement
+
+`tests/test_games_readonly.py` owns configuration/worker exclusion, authenticated
+mutation rejection before storage, workspace isolation and capability discovery.
+`integration/test_games_readonly_postgres.py` owns actual read-only enforcement
+through both pools even when an internal caller omits the read flag, accepted-game
+paging through the real API, bounded DB settings and unchanged source/run/job/
+command/profile state. The native `games-readonly` selection also retains the
+existing exact accepted-game reader proof. No provider, engine or Study is used.

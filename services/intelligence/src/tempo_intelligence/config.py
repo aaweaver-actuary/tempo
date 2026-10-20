@@ -72,6 +72,7 @@ class Configuration:
     background_pool_size: int = 1
     poll_interval: float = 1.0
     worker_enabled: bool = True
+    read_only: bool = False
     origins: tuple[str, ...] = ()
     hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]", "testserver")
 
@@ -94,6 +95,12 @@ class Configuration:
             raise ValueError("invalid_background_pool_size")
         if type(self.poll_interval) not in (float, int) or not math.isfinite(self.poll_interval) or not 0.05 <= self.poll_interval <= 60:
             raise ValueError("invalid_poll_interval")
+        if type(self.read_only) is not bool:
+            raise ValueError('invalid_read_only')
+        if self.read_only and self.worker_enabled:
+            raise ValueError('read_only_workers_disabled')
+        if self.read_only and self.model_profiles:
+            raise ValueError('read_only_profiles_unavailable')
         if type(self.worker_enabled) is not bool:
             raise ValueError("invalid_worker_enabled")
         if not self.hosts or any(not isinstance(host, str) or not host or "*" in host or "/" in host for host in self.hosts):
@@ -152,7 +159,10 @@ class Configuration:
             profiles = json.loads(private_text(Path(profiles_file))) if profiles_file else []
             if not isinstance(profiles, list):
                 raise ValueError("invalid_model_profiles")
-            enabled = os.environ.get("TEMPO_INTELLIGENCE_WORKER_ENABLED", "1")
+            read_only = os.environ.get("TEMPO_INTELLIGENCE_READ_ONLY", "0")
+            if read_only not in {"0", "1"}:
+                raise ValueError("invalid_read_only")
+            enabled = os.environ.get("TEMPO_INTELLIGENCE_WORKER_ENABLED", "0" if read_only=="1" else "1")
             if enabled not in {"0", "1"}:
                 raise ValueError("invalid_worker_enabled")
             return cls(
@@ -168,6 +178,7 @@ class Configuration:
                 background_pool_size=int(os.environ.get("TEMPO_INTELLIGENCE_BACKGROUND_POOL_SIZE", "1")),
                 poll_interval=float(os.environ.get("TEMPO_INTELLIGENCE_POLL_INTERVAL", "1")),
                 worker_enabled=enabled == "1",
+                read_only=read_only == "1",
                 origins=tuple(filter(None, os.environ.get("TEMPO_INTELLIGENCE_ORIGINS", "").split(","))),
                 hosts=tuple(os.environ.get("TEMPO_INTELLIGENCE_HOSTS", "localhost,127.0.0.1,[::1]").split(",")),
             )

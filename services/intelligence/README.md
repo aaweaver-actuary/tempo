@@ -214,3 +214,30 @@ public installed client; it never imports their service implementations.
 PR295 corrections retain component-local schema 1 and existing migrations. See
 INTERFACES.md for global ranking, nullable unscoped engine lineage, digest-bound
 receipts, historical generation compatibility and explicit engine-profile recovery.
+
+## Read-only Games viewing
+
+`TEMPO_INTELLIGENCE_READ_ONLY=1` selects an enforced viewing mode. Workers default
+to disabled in this mode; explicitly enabling them is rejected. Model-profile
+startup registration and injected workers/mutable stores are also rejected.
+Existing restricted runtime credentials and workspace binding remain required;
+this feature neither provisions credentials nor changes database grants.
+
+Every Store transaction is forced PostgreSQL READ ONLY, including internal calls
+that omit the read flag. The authenticated API permits only GET/HEAD/OPTIONS;
+mutation requests are rejected before validation or store dispatch. Bootstrap
+advertises `games-readonly-v1`, which the Workbench uses to open its Games-only
+surface. Changing this setting requires a separately authorized service startup;
+these instructions are not deployment approval.
+
+The viewer consumes an **already accepted immutable input through an existing
+run identity**. It does not import, create/continue analysis, query providers,
+execute engines, admit Study work, or refresh comparison on read. An incomplete
+engine run remains browsable. Frozen input comparison is not today's live
+repertoire and does not prove repertoire availability or prior study at game time.
+
+A future current-repertoire comparison is a separate explicit producer operation:
+select game/repertoire and current authority, capture using the existing bounded
+source owner, normalize/compare through the existing A/GE interfaces, and accept
+a new immutable input identity. It must not mutate an old snapshot or be triggered
+by viewing. No such operation is implemented or exposed by this viewing slice.

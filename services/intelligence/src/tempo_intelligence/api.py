@@ -63,6 +63,10 @@ class CredentialCommand(BaseModel):
 
 
 def create_app(configuration: Configuration, store=None, worker=None):
+    if configuration.read_only and worker is not None:
+        raise ValueError("read_only_workers_disabled")
+    if configuration.read_only and store is not None and getattr(store,"read_only",False) is not True:
+        raise ValueError("read_only_store_required")
     @asynccontextmanager
     async def lifespan(app):
         owned_store = store is None
@@ -168,6 +172,7 @@ def create_app(configuration: Configuration, store=None, worker=None):
                     raise
 
     app = FastAPI(title="Tempo Intelligence", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.read_only=configuration.read_only
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(configuration.hosts))
     app.add_middleware(BodyLimitMiddleware)
 
@@ -184,7 +189,7 @@ def create_app(configuration: Configuration, store=None, worker=None):
 
         if request.headers.get("origin") and request.headers["origin"] not in configuration.origins:
             return JSONResponse({"error":"origin_not_allowed"},status_code=403)
-        if request.url.path == "/healthz":
+        if request.url.path == "/healthz" and (not configuration.read_only or request.method in {"GET","HEAD"}):
             return await safely_forward()
         if request.url.path.startswith("/v1/credentials/") or request.url.path.startswith("/v1/analysis/inputs") and request.method=="POST":
             expected = configuration.operator_token
@@ -197,6 +202,8 @@ def create_app(configuration: Configuration, store=None, worker=None):
             return JSONResponse({"error": "unauthorized"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
         if request.headers.get("x-tempo-workspace", configuration.workspace_id) != configuration.workspace_id:
             return JSONResponse({"error": "workspace_mismatch"}, status_code=403)
+        if configuration.read_only and request.method not in {"GET","HEAD","OPTIONS"}:
+            return JSONResponse({"error":"games_read_only"},status_code=405,headers={"Allow":"GET, HEAD, OPTIONS"})
         return await safely_forward()
 
     @app.exception_handler(DomainError)
@@ -265,5 +272,5 @@ def create_app(configuration: Configuration, store=None, worker=None):
 
     from .analysis.api import register
     register(app)
-    app.add_middleware(CORSMiddleware, allow_origins=list(configuration.origins), allow_methods=["GET","POST"], allow_headers=["Authorization","Content-Type","X-Tempo-Workspace"], allow_credentials=False)
+    app.add_middleware(CORSMiddleware, allow_origins=list(configuration.origins), allow_methods=["GET"] if configuration.read_only else ["GET","POST"], allow_headers=["Authorization","Content-Type","X-Tempo-Workspace"], allow_credentials=False)
     return app

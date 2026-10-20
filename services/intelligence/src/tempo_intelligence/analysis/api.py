@@ -11,7 +11,7 @@ def register(app):
 
     @router.get("/bootstrap")
     def bootstrap():
-        return {"schema_version":1,"workspace_id":app.state.store.workspace_id,"capabilities":["analysis-v1","informational-export","selected-games-v1"],"policy_version":"c-analysis-v1"}
+        return {"schema_version":1,"workspace_id":app.state.store.workspace_id,"capabilities":["analysis-v1","informational-export","selected-games-v1", *(["games-readonly-v1"] if app.state.read_only else [])],"policy_version":"c-analysis-v1"}
 
     @router.get("/inputs")
     def inputs():
