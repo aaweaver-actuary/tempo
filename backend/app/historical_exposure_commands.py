@@ -9,9 +9,8 @@ from tempo_learning_review import historical_exposure as policy
 from .command_gateway import register_command
 from .historical_exposure_contracts import ExposureSelection
 from .services.historical_exposure_source import prepare_selection,VerifiedExposure
-from .services import legacy_game_authority as source_owner
 from .services.historical_exposure_adapter import locked_ports
-from .storage.historical_exposure import BorrowedExposureStore,read_record,record_document
+from .storage.historical_exposure import BorrowedExposureStore,record_document,retained_request_for_selection
 from .storage.historical_exposure_facts import lock_card_scope
 
 
@@ -26,12 +25,9 @@ def prepare_request(payload):
     try:selection=ExposureSelection.model_validate(payload['selection'])
     except ValueError as error:raise HTTPException(422,'Invalid exposure selection') from error
     # Semantic replay wins even after source edits; it grants no new effects.
-    prior=source_owner.read_rows('''SELECT record_json FROM historical_exposure_intents
-        WHERE target_id=%s AND workspace_id=%s AND card_id=%s
-        AND source_json->'selection'=%s::jsonb LIMIT 2''',
-        (selection.target_id,selection.workspace_id,selection.card_id,selection.model_dump_json()))
-    if len(prior)>1:raise HTTPException(409,'Ambiguous retained exposure selection')
-    if prior:return PreparedExposure(read_record(prior[0]['record_json']).request,None)
+    try:prior=retained_request_for_selection(selection)
+    except policy.ExposureRejected as error:raise HTTPException(409,str(error)) from error
+    if prior:return PreparedExposure(prior,None)
     try:verified=prepare_selection(selection)
     except (policy.ExposureRejected,RemediationError) as error:
         raise HTTPException(409,str(error)) from error

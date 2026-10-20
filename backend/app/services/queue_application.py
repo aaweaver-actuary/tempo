@@ -30,6 +30,12 @@ from .queue_admission_adapter import QueueAdmissionAdapter, _PRIORITY_OPENING_CA
 from . import queue_admission
 
 
+def protected_queue_entry_ids(rows) -> frozenset[int]:
+    """Public queue-owner projection of existing issued/protected-head rules."""
+    from .queue_ordering import _protected_queue_ids
+    return frozenset(_protected_queue_ids(rows))
+
+
 def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     return queue_admission.reconcile_unseen_queue(QueueAdmissionAdapter(db), day, limit, repertoire_limits)
 

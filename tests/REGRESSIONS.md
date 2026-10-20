@@ -12,7 +12,14 @@ and rollback with semantic fake queue/store ports, including failures after queu
 and intent effects. Learning's regular application suite owns contributor and
 completion policy. These source checks do not establish native PostgreSQL locking,
 migration, queue ordering or enabled API/worker composition; see the Learning
-application README for the pending adoption boundary.
+application README for the pending adoption boundary. The adapter suite's named
+`test_clearing_exposure_preserves_other_days_completed_attempts_and_unrelated_priority`
+executes the canonical owner's scoped clear using SQLite. Semantic storage replay,
+locked-day mismatch and public queue-owner boundary controls accompany it. The
+native bridge suite's
+`test_native_exposure_clear_locks_only_its_day_and_preserves_concurrent_other_day_writer`
+is prepared but unexecuted: it requires the separately granted owned PostgreSQL
+fixture and checks that a concurrent other-day writer is neither locked nor changed.
 
 ## Combined feedback / queue / Discovery boundary
 

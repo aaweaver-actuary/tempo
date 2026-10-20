@@ -5,6 +5,11 @@ adapter must hold the target/workspace/card lock for the complete active set.
 """
 from dataclasses import asdict
 from datetime import datetime
+from typing import TYPE_CHECKING
+from ..database import background_read_connection
+
+if TYPE_CHECKING:
+    from ..historical_exposure_contracts import ExposureSelection
 import json
 from tempo_learning_review import historical_exposure as policy
 
@@ -37,6 +42,18 @@ def read_record(value):
     value['accepted_at']=datetime.fromisoformat(value['accepted_at'])
     value['placement']=policy.Placement(**value['placement'])
     return policy.Record(**value)
+
+
+def retained_request_for_selection(selection: 'ExposureSelection') -> policy.Request | None:
+    """Read one immutable semantic replay through the ordinary gated reader."""
+    with background_read_connection() as database:
+        rows=database.execute_native('''SELECT record_json FROM historical_exposure_intents
+            WHERE target_id=%s AND workspace_id=%s AND card_id=%s
+            AND source_json->'selection'=%s::jsonb LIMIT 2''',
+            (selection.target_id,selection.workspace_id,selection.card_id,
+             selection.model_dump_json())).fetchall()
+    if len(rows)>1:raise policy.ExposureRejected('ambiguous_retained_exposure_selection')
+    return read_record(rows[0]['record_json']).request if rows else None
 
 
 class BorrowedExposureStore:

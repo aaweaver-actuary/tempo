@@ -204,3 +204,15 @@ savepoints and receipts with semantic fake queue/store ports. They establish
 rollback/replay at that boundary, not PostgreSQL or the concrete queue writer.
 The canonical-writer invocation and SQL lock protocol have source contract tests;
 actual infrastructure proof is still required.
+
+
+The adapter repair checkpoint keeps retained-selection SQL inside the exposure
+read projection and returns a typed Request after closing its gated reader. The
+command does not issue SQL or use another feature's generic read capability.
+Protected-head facts come from the queue owner's public projection. Label removal
+also delegates to that owner and is constrained to matching queued entries in the
+single already-locked day; it preserves other days, inactive attempts, other cards,
+unrelated reasons and all positions. A named real-SQLite regression reproduces the
+original cross-day/inactive clearing bug and now passes. The owning native bridge
+suite contains a prepared, unexecuted concurrent other-day-writer contract for the
+same boundary; no native execution or lock proof is claimed here.

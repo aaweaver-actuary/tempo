@@ -8,7 +8,7 @@ from ..storage.historical_exposure_facts import current_source_rows,lock_source_
 from ..storage.legacy_game_source import CARD_SOURCE_FIELDS,GAME_SOURCE_FIELDS
 from .historical_exposure_source import chronology
 from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
-from .queue_ordering import MISS_REASON,_protected_queue_ids
+from .queue_ordering import MISS_REASON
 
 
 def proof_document(verified):
@@ -42,9 +42,10 @@ class CurrentFactReader:
 
 
 class ProtectedHeadWriter:
-    def __init__(self,database,scope):self.database,self.scope=database,scope
+    def __init__(self,database,scope,queue_day):
+        self.database,self.scope,self.queue_day=database,scope,queue_day
     def prioritize(self,identity,queue_day,reason):
-        if policy.CardScope(identity.target_id,identity.workspace_id,identity.card_id)!=self.scope or reason!=policy.REASON:
+        if policy.CardScope(identity.target_id,identity.workspace_id,identity.card_id)!=self.scope or reason!=policy.REASON or queue_day!=self.queue_day:
             raise policy.ExposureRejected('exposure_writer_scope_mismatch')
         existing=queued_entry(self.database,identity.card_id,queue_day)
         if existing and existing['gameplay_priority_reason'] not in (None,policy.REASON):
@@ -58,14 +59,15 @@ class ProtectedHeadWriter:
         return policy.Placement('applied',queue_entry_id=row['id']) if row else policy.Placement('deferred','queue_unavailable')
     def clear_priority(self,scope,reason):
         if scope!=self.scope or reason!=policy.REASON:raise policy.ExposureRejected('exposure_writer_scope_mismatch')
-        self.database.execute('''UPDATE daily_queue SET gameplay_priority_reason=NULL WHERE card_id=?
-            AND gameplay_priority_reason=?''',(scope.card_id,reason))
+        from .review_service import clear_queued_card_priority
+        clear_queued_card_priority(self.database,scope.card_id,queue_date=self.queue_day,reason=reason)
+
 
 
 def locked_ports(database,scope,verified=None,day=None):
     """Caller holds card/edit + row; source locks precede the day lock."""
     from .postgres_integrity import current_integrity_certificate
-    from .queue_application import presentation_rows
+    from .queue_application import presentation_rows,protected_queue_entry_ids
     day=day or date.today().isoformat()
     initial={verified.request.encounter.key():proof_document(verified)} if verified else {}
     store=BorrowedExposureStore(database,scope,initial)
@@ -82,11 +84,11 @@ def locked_ports(database,scope,verified=None,day=None):
     queue_rows=presentation_rows(database,day)
     raw_target=queued_entry(database,scope.card_id,day)
     target=next((row for row in queue_rows if raw_target and row['id']==raw_target['id']),None)
-    protected=_protected_queue_ids(queue_rows)
+    protected=protected_queue_entry_ids(queue_rows)
     reason=raw_target['gameplay_priority_reason'] if raw_target else None
     priority_class=('recall' if reason in {MISS_REASON,BRIDGE_MISS_REASON} else 'exposure' if reason==policy.REASON
                     else 'other' if reason else 'none')
     buried=buried_today(database,scope.card_id,day)
     queue_facts=dict(buried=buried,protected=bool(target and target['id'] in protected),queue_day=day,
         queue_entry_id=target['id'] if target else None,priority_class=priority_class)
-    return store,ProtectedHeadWriter(database,scope),CurrentFactReader(proofs,rows,queue_facts,certificates)
+    return store,ProtectedHeadWriter(database,scope,day),CurrentFactReader(proofs,rows,queue_facts,certificates)

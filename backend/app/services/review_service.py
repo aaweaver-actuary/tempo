@@ -126,6 +126,19 @@ def apply_scheduling_review(
     return result
 
 
+def clear_queued_card_priority(database, card_id: str, *, queue_date: str, reason: str) -> None:
+    """Remove only this label from live entries in the caller-locked queue day.
+
+    Caller owns the card-before-day transaction. This does not reorder or delete
+    attempts, touch inactive history, or acquire locks for any other day.
+    """
+    database.execute(
+        """UPDATE daily_queue SET gameplay_priority_reason=NULL
+           WHERE card_id=? AND queue_date=? AND status='queued'
+             AND gameplay_priority_reason=?""", (card_id,queue_date,reason),
+    )
+
+
 def ensure_card_queued_after(
     database: sqlite3.Connection,
     card_id: str,

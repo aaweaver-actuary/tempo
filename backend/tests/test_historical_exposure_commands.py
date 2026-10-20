@@ -168,13 +168,13 @@ def test_source_lock_contention_yields_retained_operation_without_false_receipt(
 def test_retained_selection_replay_preparation_does_not_recapture_changed_source(monkeypatch):
     verified,*_=inputs();record=policy.Record(verified.request,datetime.now(timezone.utc),
         'completed',policy.Placement('applied',queue_entry_id=2),'2026-10-20','review-1','practice_served')
-    monkeypatch.setattr(commands.source_owner,'read_rows',lambda *args:[dict(record_json=record_document(record))])
+    monkeypatch.setattr(commands,'retained_request_for_selection',lambda selection:record.request)
     monkeypatch.setattr(commands,'prepare_selection',lambda *args:pytest.fail('Retained immutable request must not recapture'))
     prepared=commands.prepare_request({'selection':verified.selection})
     assert prepared.request==verified.request and prepared.verified is None
 
 
 def test_preparation_invalid_selection_has_explicit_error_before_source_read(monkeypatch):
-    monkeypatch.setattr(commands.source_owner,'read_rows',lambda *args:pytest.fail('Invalid input must not read'))
+    monkeypatch.setattr(commands,'retained_request_for_selection',lambda *args:pytest.fail('Invalid input must not read'))
     with pytest.raises(HTTPException) as error:commands.prepare_request({'selection':{}})
     assert error.value.status_code==422

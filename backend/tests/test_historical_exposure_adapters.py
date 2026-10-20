@@ -103,7 +103,7 @@ def test_mutation_requires_existing_row_or_immutable_new_verified_proof():
 
 def test_writer_scope_fence_runs_before_any_queue_effect():
     scope=policy.CardScope('target','legacy','physical');database=Database()
-    writer=ProtectedHeadWriter(database,scope)
+    writer=ProtectedHeadWriter(database,scope,'2026-10-20')
     with pytest.raises(policy.ExposureRejected,match='writer_scope'):
         writer.clear_priority(replace(scope,target_id='other'),'historical_exposure')
     assert not database.calls
@@ -118,7 +118,7 @@ def test_writer_calls_only_the_existing_canonical_protected_head_writer(monkeypa
     def canonical(database,card_id,after,**options):
         calls.append((card_id,after,options));state['gameplay_priority_reason']=policy.REASON
     monkeypatch.setattr(review_service,'ensure_card_queued_after',canonical)
-    result=ProtectedHeadWriter(Database(),scope).prioritize(identity,'2026-10-20',policy.REASON)
+    result=ProtectedHeadWriter(Database(),scope,'2026-10-20').prioritize(identity,'2026-10-20',policy.REASON)
     assert result==policy.Placement('applied',queue_entry_id=7)
     assert calls==[(identity.card_id,0,dict(priority_reason=policy.REASON,queue_date='2026-10-20',
         protect_presented=True,preserve_order=False))]
@@ -131,7 +131,7 @@ def test_writer_independently_preserves_any_unrelated_existing_priority(monkeypa
     scope=policy.CardScope(identity.target_id,identity.workspace_id,identity.card_id)
     monkeypatch.setattr(adapter,'queued_entry',lambda *args:dict(id=7,gameplay_priority_reason=reason))
     monkeypatch.setattr(review_service,'ensure_card_queued_after',lambda *args,**kwargs:pytest.fail('Do not overwrite another priority'))
-    assert ProtectedHeadWriter(Database(),scope).prioritize(identity,'2026-10-20',policy.REASON)==policy.Placement(
+    assert ProtectedHeadWriter(Database(),scope,'2026-10-20').prioritize(identity,'2026-10-20',policy.REASON)==policy.Placement(
         'deferred','unrelated_priority_preserved',7)
 
 
@@ -183,3 +183,80 @@ def test_source_locks_after_card_are_nonblocking_to_avoid_reversed_waits():
     from psycopg.errors import LockNotAvailable
     with pytest.raises(LockNotAvailable):lock_source_inputs(database,(verified.request,))
     assert len(database.calls)==1
+
+
+def test_clearing_exposure_preserves_other_days_completed_attempts_and_unrelated_priority():
+    import sqlite3
+    database=sqlite3.connect(':memory:')
+    database.executescript('''CREATE TABLE daily_queue(id INTEGER,card_id TEXT,queue_date TEXT,
+        status TEXT,gameplay_priority_reason TEXT,position INTEGER);
+        INSERT INTO daily_queue VALUES
+        (1,'physical','2026-10-19','queued','historical_exposure',0),
+        (2,'physical','2026-10-20','queued','historical_exposure',1),
+        (3,'physical','2026-10-20','completed','historical_exposure',2),
+        (4,'physical','2026-10-20','queued','real_game_miss',3),
+        (5,'other','2026-10-20','queued','historical_exposure',4);''')
+    scope=policy.CardScope('target','legacy','physical')
+    ProtectedHeadWriter(database,scope,'2026-10-20').clear_priority(scope,policy.REASON)
+    assert database.execute('SELECT id,gameplay_priority_reason,position FROM daily_queue ORDER BY id').fetchall()==[
+        (1,'historical_exposure',0),(2,None,1),(3,'historical_exposure',2),
+        (4,'real_game_miss',3),(5,'historical_exposure',4)]
+
+
+def test_clear_delegates_to_canonical_owner_with_only_the_locked_day(monkeypatch):
+    from app.services import review_service
+    database=Database();scope=policy.CardScope('target','legacy','physical');calls=[]
+    monkeypatch.setattr(review_service,'clear_queued_card_priority',
+        lambda db,card_id,**options:calls.append((db,card_id,options)))
+    writer=ProtectedHeadWriter(database,scope,'2026-10-20')
+    writer.clear_priority(scope,policy.REASON)
+    assert calls==[(database,'physical',dict(queue_date='2026-10-20',reason=policy.REASON))]
+    assert not database.calls
+
+
+def test_priority_writer_cannot_write_an_unlocked_different_day():
+    verified,*_=inputs();identity=verified.request.encounter
+    scope=policy.CardScope(identity.target_id,identity.workspace_id,identity.card_id);database=Database()
+    with pytest.raises(policy.ExposureRejected,match='writer_scope'):
+        ProtectedHeadWriter(database,scope,'2026-10-20').prioritize(identity,'2026-10-19',policy.REASON)
+    assert not database.calls
+
+
+@pytest.mark.parametrize('row_count',[0,1,2])
+def test_retained_selection_projection_returns_typed_request_and_closes_reader(monkeypatch,row_count):
+    from contextlib import contextmanager
+    from app.storage import historical_exposure as storage
+    from app.historical_exposure_contracts import ExposureSelection
+    verified,*_=inputs();record=policy.Record(verified.request,datetime(2026,10,20,tzinfo=timezone.utc),
+        'completed',policy.Placement('applied',queue_entry_id=7),'2026-10-20','review-1','practice_served')
+    database=Database([dict(record_json=record_document(record))]*row_count);events=[]
+    @contextmanager
+    def reader():
+        events.append('open')
+        try:yield database
+        finally:events.append('closed')
+    monkeypatch.setattr(storage,'background_read_connection',reader)
+    selection=ExposureSelection.model_validate(verified.selection)
+    if row_count==2:
+        with pytest.raises(policy.ExposureRejected,match='ambiguous_retained'):
+            storage.retained_request_for_selection(selection)
+    else:
+        assert storage.retained_request_for_selection(selection)==(record.request if row_count else None)
+    assert events==['open','closed']
+    assert database.calls[0][1]==(selection.target_id,selection.workspace_id,selection.card_id,selection.model_dump_json())
+
+
+def test_exposure_orchestration_uses_semantic_storage_and_public_queue_boundary():
+    import ast
+    from pathlib import Path
+    from app import historical_exposure_commands as commands
+    from app.services import historical_exposure_adapter as adapter
+    command_tree=ast.parse(Path(commands.__file__).read_text())
+    adapter_tree=ast.parse(Path(adapter.__file__).read_text())
+    assert not any(isinstance(node,ast.ImportFrom) and any(alias.name=='legacy_game_authority' for alias in node.names)
+        for node in ast.walk(command_tree))
+    assert not any(isinstance(node,ast.Constant) and isinstance(node.value,str)
+        and node.value.lstrip().upper().startswith(('SELECT ','UPDATE ','INSERT ','DELETE '))
+        for tree in (command_tree,adapter_tree) for node in ast.walk(tree))
+    assert not any(isinstance(node,ast.ImportFrom) and node.module=='queue_ordering'
+        and any(alias.name.startswith('_') for alias in node.names) for node in ast.walk(adapter_tree))
