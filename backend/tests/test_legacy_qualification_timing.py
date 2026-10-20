@@ -262,7 +262,7 @@ class NativePrerequisiteTests(unittest.TestCase):
             (wheels / name).write_bytes(b'synthetic owned artifact')
             artifacts[name] = hashlib.sha256((wheels / name).read_bytes()).hexdigest()
         host = dict(complete=True, cleanup_verified=True, source_head='current-head', image='pinned',
-                    plan=dict(artifact_test_total=284))
+                    plan=dict(artifact_test_total=373))
         (self.root / 'host.json').write_text(json.dumps(host))
         (self.root / 'inside.json').write_text(json.dumps(dict(complete=True, artifacts=artifacts)))
         with patch.object(backend.shared.staging, 'qualified_inputs'), \

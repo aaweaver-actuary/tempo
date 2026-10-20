@@ -33,6 +33,9 @@ CASES = (
     'integration/legacy_bridge/test_native.py::test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction',
     'integration/legacy_bridge/test_native.py::test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends',
     'integration/legacy_bridge/test_native.py::test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire',
+    'integration/legacy_bridge/test_native.py::test_native_historical_practice_priority_replay_and_actual_normal_completion',
+    'integration/legacy_bridge/test_native.py::test_native_historical_practice_protected_fallback_old_issuance_and_cancel[prior]',
+    'integration/legacy_bridge/test_native.py::test_native_historical_practice_position_fault_rolls_back_intent_admission_and_receipt',
 )
 IMAGES = dict(helper='sha256:a095f09e905ecb00635b80387e17d195560a5752df83d970f94f1ada902ba3e2',
               postgres=shared.POSTGRES_IMAGE_ID,
@@ -47,7 +50,7 @@ def describe():
         cases=list(CASES), caps=CAPS, total=dict(containers=3, cpus=1.85, memory_mib=1216, pids=288,
             extra_swap_mib=0, owned_internal_networks=1, published_ports=0),
         candidate_images=IMAGES, missing=['Redis candidate image/mount provenance verified during a later authorized preflight',
-            'successful same-head284-case artifact receipt and retained qualified environment',
+            'successful same-head373-case artifact receipt and retained qualified environment',
             'helper-start diagnostic result, independent review and separate native resource grant'],
         no_build_pull_install_or_live_target=True)
 
@@ -64,8 +67,8 @@ def qualified_artifacts(directory, head, helper_image):
     if (not host.get('complete') or not host.get('cleanup_verified') or host['source_head'] != head
             or host['image'] != helper_image or not inside.get('complete')):
         raise ValueError('Successful cleaned same-head artifact qualification is required')
-    if len(inside['artifacts']) != 12 or host['plan']['artifact_test_total'] != 284:
-        raise ValueError('The reviewed284-case/six-wheel/six-sdist qualification is required')
+    if len(inside['artifacts']) != 12 or host['plan']['artifact_test_total'] != 373:
+        raise ValueError('The reviewed373-case/six-wheel/six-sdist qualification is required')
     for name, expected in inside['artifacts'].items():
         if Path(name).name != name or hashlib.sha256((directory / 'wheels' / name).read_bytes()).hexdigest() != expected:
             raise ValueError('Qualified artifact bytes changed')

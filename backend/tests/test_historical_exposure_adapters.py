@@ -245,3 +245,27 @@ def test_large_queue_keeps_ordinary_admission_without_partial_priority_or_unboun
     assert result.status=='queued' and result.mode=='ordinary_queue' and result.reason=='placement_budget_exceeded'
     assert [tuple(row) for row in db.execute("SELECT id,position FROM daily_queue WHERE card_id!='physical' ORDER BY id")]==before
     assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='physical'").fetchone()[0]==1
+
+
+@pytest.mark.parametrize('fault',[False,True])
+def test_postgres_admission_transaction_control_bypasses_sql_translation(ordinary,monkeypatch,fault):
+    db,owner,_=ordinary;controls=[]
+    class NativeRouting:
+        def execute(self,statement,parameters=()):
+            assert not statement.startswith(('SAVEPOINT','ROLLBACK TO','RELEASE'))
+            return db.execute(statement,parameters)
+        def execute_native(self,statement,parameters=()):
+            controls.append(statement)
+            return db.execute(statement,parameters)
+    original=owner.ensure_card_queued_after
+    def admit(*args,**kwargs):
+        original(*args,**kwargs)
+        if fault:raise RuntimeError('after actual admission')
+    monkeypatch.setattr(owner,'ensure_card_queued_after',admit)
+    if fault:
+        with pytest.raises(RuntimeError,match='after actual admission'):
+            owner.enqueue_introduced_review(NativeRouting(),'physical',1,'2026-10-20')
+        assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='physical'").fetchone()[0]==0
+    else:
+        assert owner.enqueue_introduced_review(NativeRouting(),'physical',1,'2026-10-20').status=='queued'
+    assert controls==['SAVEPOINT ordinary_practice_admission',*(['ROLLBACK TO SAVEPOINT ordinary_practice_admission'] if fault else []),'RELEASE SAVEPOINT ordinary_practice_admission']

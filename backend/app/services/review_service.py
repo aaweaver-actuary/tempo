@@ -222,23 +222,25 @@ def enqueue_introduced_review(database,card_id: str,revision: int,day: str,*,pre
             ReviewAdmission('queued',entry_id=existing['id']) if allowed else ReviewAdmission('deferred','queue_eligibility_unavailable'))
     if database.execute("SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='complete' LIMIT 1",(day,card_id)).fetchone():
         return ReviewAdmission('deferred','already_practiced_today')
-    database.execute('SAVEPOINT ordinary_practice_admission')
+    # Transaction control must bypass SQLite-to-PostgreSQL SQL translation.
+    transaction_control=getattr(database,'execute_native',database.execute)
+    transaction_control('SAVEPOINT ordinary_practice_admission')
     try:
         ensure_card_queued_after(database,card_id,attempt_state='clean',queue_date=day,
             protect_presented=True,preserve_order=True,_requested_review=True)
         entry=database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",(day,card_id)).fetchone()
         allowed=entry and database.execute(available_attempt_sql()+' AND q.id=?',(day,entry['id'])).fetchone()
         if not allowed:
-            database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
+            transaction_control('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
             return ReviewAdmission('deferred','queue_eligibility_unavailable')
         result=_place_requested_review_once(database,day,entry['id'])
-        if result.status=='deferred':database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
+        if result.status=='deferred':transaction_control('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
         return result
     except Exception:
-        database.execute('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
+        transaction_control('ROLLBACK TO SAVEPOINT ordinary_practice_admission')
         raise
     finally:
-        database.execute('RELEASE SAVEPOINT ordinary_practice_admission')
+        transaction_control('RELEASE SAVEPOINT ordinary_practice_admission')
 
 
 def _place_requested_review_once(database,day,entry_id):

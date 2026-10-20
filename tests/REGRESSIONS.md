@@ -14,12 +14,17 @@ try one-time front placement after recall while preserving protected slots and
 other relative order, keep ordinary admission for recognized layout limits,
 roll back unavailable placement and propagate database failure. A real SQLite
 position-write fault also rolls back request, admission and positions through
-the existing gateway savepoint with a semantic fake request store. The lifecycle
+the existing gateway savepoint with a semantic fake request store. The adapter
+also requires PostgreSQL savepoint/rollback/release to bypass SQL translation,
+while SQLite retains its supported transaction route. The lifecycle
 suite owns first-issued timestamp immutability/rollback, trusted receipt checks,
 per-card retry and cancellation with no admission effect. Route tests own operator
 auth, strict control payloads and visible failed-pending/manual retry status.
 Learning's regular historical-exposure application suite owns the pure request
-policy. No PostgreSQL, real worker-restart or live acceptance pass is implied.
+policy. The separate native fixture adds exact historical-practice HTTP/auth,
+priority/replay, protected fallback/old issuance/cancellation, real Study receipt
+completion and after-position fault rollback cases. Their presence is not an
+execution claim; consult the pinned native receipt. No live acceptance is implied.
 
 The abandoned persistent-priority overlay, label freshness projection, display
 pill and exposure-specific attempt ledger were removed under the approved MVP
