@@ -64,3 +64,10 @@ python -m pytest backend/tests/test_database_cli_bootstrap.py backend/tests/test
 ```
 
 The first increment is not complete centralization: **156 mixed SQL/application modules remain outside `database/`**. Their database operations must be extracted, while application/domain logic belongs in logical folders outside it. This is unfinished work rather than a permanent exception. Extraction will proceed in separately reviewable dependent changes; no schema redesign, live operation, CI enablement or full-system campaign is authorized here.
+
+
+## Dependent mixed-file extraction: frozen-order slice
+
+- 77 focused cases passed: 29 in `test_frozen_opening_order.py`, `test_frozen_opening_schema.py` and `test_frozen_order_policy.py`; 41 in `test_frozen_maia_plan.py`; 7 in `test_queue_admission_adapter.py`. Command prefix: `PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest`, with the named `backend/tests/` files, `-q --rootdir=.`. Only in-memory or task-owned temporary SQLite was used. One existing Starlette/AnyIO deprecation warning occurred.
+- One-time AST/source comparison against `cd4ffbdb58a7634cbe9b1db0a31a6e86580fa42e` found every SQL string literal unchanged across the moved implementations, and identical assignment ASTs for `SCHEMA`, `GUARDED_TABLES` and `SQLITE_GUARDS`. No PostgreSQL migration changed. This comparison is relocation evidence, not a new permanent SQL-literal test or framework.
+- Pure-import guards reject database drivers, sibling implementation and application imports at the new boundaries. Existing exposure, legacy protection, rollback and stale-plan tests retain their assertions. Existing native PostgreSQL tests were not executed: no live or disposable service, worker, credentials or data was touched. Native execution and full-backend domain isolation remain unverified; this draft is not declared merge-qualified from SQLite evidence.

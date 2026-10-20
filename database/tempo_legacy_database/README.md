@@ -9,7 +9,7 @@
 | [schema](schema/README.md) | Rendered Mermaid relationships and complete field/type dictionaries. |
 | [connections.py](connections.py) | Existing component-owned connection/transaction routing. |
 
-The legacy backend still contains SQL in command/service modules outside this directory; moving or extracting that application logic would change architecture and is outside this mechanical move. `connections.py` also retains the SQLite compatibility startup DDL; the charts describe the authoritative PostgreSQL migration sequence through 050, not a claim that SQLite has identical constraints/types. The legacy database co-locates Games and Study tables; this is existing coupling, not acceptance of a new cross-component dependency.
+The legacy backend still contains SQL in command/service modules outside this directory; the [mixed-file checklist](../INVENTORY.md) tracks their unfinished extraction. Frozen-order storage now lives here, with [pure Study decisions and legacy composition](../../backend/app/study/frozen_order/README.md) outside this tree. `connections.py` also retains SQLite compatibility startup DDL; [frozen-order SQLite fields and constraints](ddl/frozen-opening/README.md) are documented separately. The principal schema charts describe authoritative PostgreSQL migrations through 050, not a claim that SQLite has identical constraints/types. The legacy database co-locates Games and Study tables; this is existing coupling, not acceptance of a new cross-component dependency.
 
 ## Logical relationships (not SQL foreign keys)
 

@@ -3,6 +3,7 @@ import json
 import sqlite3
 import pytest
 from app.services import frozen_opening_order as order
+from tempo_legacy_database.ddl.frozen_opening_schema import SCHEMA
 from app.services.frozen_maia_math import content_fingerprint
 from app.services.opening_capacity_frontier import plan_prioritized_opening_admissions
 
@@ -20,7 +21,7 @@ def database():
     CREATE TABLE queue_attempt_origins(card_id TEXT,issued_as_head INTEGER,attempt_failed INTEGER,review_result_json TEXT,last_status TEXT,legacy INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE daily_queue(id INTEGER,card_id TEXT,attempt_failed INTEGER,review_result_json TEXT,status TEXT,attempt_state TEXT);
     ''')
-    for statement in order.SCHEMA:database.execute(statement)
+    for statement in SCHEMA:database.execute(statement)
     for identifier in ('a','b','c'):
         database.execute("INSERT INTO cards VALUES(?,1,'fen','[]','white','repertoire','new',NULL)",(identifier,))
     yield database
@@ -42,6 +43,15 @@ def activate(database):
 
 def candidate(identifier, repertoire='repertoire', **extra):
     return {'id':identifier,'repertoire_id':repertoire,'gameplay_priority_reason':None,'priority_date':None,'priority_score':100 if identifier=='a' else 0,'completed_line_ids_json':'[]','frontier_decisions_json':'[]','moves_json':'[]',**extra}
+
+
+def test_frozen_annotation_preserves_generator_and_inactive_input_behavior(database):
+    # No active order requires no sortable identities, rank reads or fingerprints.
+    inputs = [{'card_id': None}, {'id': 'card'}]
+    assert order.annotate(database, (row for row in inputs)) == [
+        {**row, 'frozen_token': [None, 0]} for row in inputs]
+    activate(database)
+    assert [row['id'] for row in order.annotate(database, (candidate(card) for card in ('b', 'a')))] == ['b', 'a']
 
 
 def test_frozen_ranks_override_generated_scores_breadth_and_ordinary_gameplay(database):
