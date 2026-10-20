@@ -17,11 +17,9 @@ from . import frozen_opening_order
 from .opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .pgn import ends_on_trained_move
 from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
-from .real_game_feedback import (
-    MISS_REASON, outstanding_miss_query, outstanding_miss_sql,
-    has_outstanding_real_game_miss, promote_real_game_card,
-    clear_satisfied_miss_priority, prioritize_queued_misses,
-)
+from .real_game_feedback import MISS_REASON
+from ..storage.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
+from .real_game_feedback_adapter import has_outstanding_real_game_miss, promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses
 from .review_service import preserve_daily_queue_order
 from .tactical_catalog import seed_tactical_introductions
 

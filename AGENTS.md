@@ -15,6 +15,13 @@
 - Every user-reported defect needs a named regression in its regular owning suite. Follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction). Never hide a failure by skipping, deleting, or weakening a selected check.
 - Foreground study and authoring work takes priority over derived-data work. Background jobs must be durable, idempotent, bounded, and yield between short database sections.
 
+## Separate policy from persistence
+
+- Application policy consumes typed semantic facts and operations through a storage port, following Learning's `ReviewStore` pattern. Keep SQL, cursors, driver/dialect checks and concrete adapter imports out of isolated application modules. Persistence adapters and explicit read projections own complete parameter-bound queries, database locks and bounded batch reads.
+- Make transaction ownership explicit. An adapter borrows the caller's transaction when policy effects, queue writes and command receipts must commit atomically; preserve existing lock order and canonical writers. A generic `execute(sql, parameters)` interface is not a semantic boundary, and independently committing repositories must not split one required transaction.
+- Test decisions with fake semantic stores, persistence contracts against the actual database, and focused composition tests for wiring/atomicity. Do not make policy tests parse SQL or freeze all query literals. Retain database locking, rollback, replay and query-budget proofs at their owning adapter/integration boundary.
+- Enforce the boundary incrementally with named import/SQL guards and an explicit shrinking legacy list where needed. Do not claim untouched legacy modules comply, introduce abstractions without a concrete consumer, or broaden a focused extraction into an ORM/service rewrite.
+
 ## Discover shared components before building
 
 - Before adding or replacing a reusable component, inspect the [component discovery guide](docs/architecture/component-reconstruction.md#discover-before-building), `components.json`, the owning package README/public exports, and existing consumer adapters. Search current source as well as the registry: a planned registration can coexist with a merged implementation.

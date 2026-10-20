@@ -76,7 +76,7 @@ def proposal_valid(database, planned):
     if token[0] is None:
         return True
     if planned.get('reason') == MISS_REASON:
-        from .real_game_feedback import has_outstanding_real_game_miss
+        from .real_game_feedback_adapter import has_outstanding_real_game_miss
         return has_outstanding_real_game_miss(database, planned['card_id'])
     return annotate(database, [{'card_id': planned['card_id']}])[0]['frozen_valid']
 
@@ -287,7 +287,7 @@ def stale_queue_predicate():
 
 def legacy_queue_predicate():
     """Hold uncertain, unstarted legacy openings while a frozen run is active."""
-    from .real_game_feedback import outstanding_miss_sql
+    from ..storage.real_game_miss_projection import outstanding_miss_sql
 
     mandatory_miss = outstanding_miss_sql(
         columns="1", additional_where="AND card.id=c.id LIMIT 1",

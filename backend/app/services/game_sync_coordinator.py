@@ -17,7 +17,7 @@ import chess
 from ..database import connection, read_connection
 from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
-from .real_game_feedback import apply_real_game_misses
+from .real_game_feedback_adapter import apply_real_game_misses
 from .gameplay_events import refresh_gameplay_events
 from .game_sync import sync_providers
 from .game_sync_serialization import serialize_job

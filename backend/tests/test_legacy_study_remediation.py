@@ -383,7 +383,8 @@ def test_invalidation_requires_the_actual_review_owner_write(vertical):
 
 def test_old_legacy_review_clearing_cannot_remove_a_current_bridge_priority(vertical):
     db, _value, _accepted, module = vertical
-    from app.services.real_game_feedback import clear_satisfied_miss_priority, MISS_REASON
+    from app.services.real_game_feedback_adapter import clear_satisfied_miss_priority
+    from app.services.real_game_feedback import MISS_REASON
     entry = bridge.admit_card(db, {"card_id": "physical-black"})["queue_entry_id"]
     db.execute("UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?", (MISS_REASON, entry))
     clear_satisfied_miss_priority(db, "physical-black")

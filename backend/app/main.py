@@ -98,11 +98,9 @@ from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_m
 from .services.review_service import apply_scheduling_review, capture_daily_queue_order, ensure_card_queued_after, preserve_daily_queue_order
 from .services.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
-from .services.real_game_feedback import (
-    MISS_REASON, prioritize_real_game_miss, outstanding_miss_query, outstanding_miss_sql,
-    has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses,
-    clear_satisfied_miss_priority,
-)
+from .services.real_game_feedback import MISS_REASON
+from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
+from .storage.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
 from .services.endgames import (
     category_for_player,
     generate_position,

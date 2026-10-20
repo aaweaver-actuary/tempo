@@ -1,3 +1,14 @@
+## Feedback semantic storage boundary
+
+`backend/tests/test_real_game_feedback_policy.py` owns typed fake-store admission,
+review promotion, burial, lock/effect ordering and priority replacement decisions,
+plus explicit no-SQL/driver/concrete-adapter guards for the extracted modules.
+`backend/tests/test_feedback_storage_adapter.py` owns actual SQLite compatibility
+queries, microsecond/timezone boundaries, unsafe/excluded facts, 128-row typed
+batches and caller rollback. Existing native command/Study/replay proofs remain
+required; source-only checks do not certify native PostgreSQL integration.
+See [boundary ownership](../docs/architecture/feedback-storage.md).
+
 ## Legacy game evidence receiver checkpoint
 
 `backend/tests/test_legacy_game_evidence_scope.py` owns
