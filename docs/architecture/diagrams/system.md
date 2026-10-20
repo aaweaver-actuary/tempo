@@ -119,18 +119,26 @@ infrastructure can still fail or contend. Effective deployment budgets and
 shutdown under load require their own relevant evidence before claiming
 operational independence; none is established by this documentation.
 
-Learning's optional
-[`HostActivity`](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py)
-file publisher is currently an **awaited essential-request dependency when
-configured**: the [API middleware](../../../services/learning/runtime/src/tempo_learning_runtime/api.py)
-awaits its thread-based context entry/exit, including the publisher's lock and
-filesystem operations. Catching publication errors does not remove a slow-I/O
-wait. It does not contact Games or await a consumer acknowledgement.
+**PROPOSED HOST REPAIR:** Learning's optional
+[`HostActivity` checkpoint](https://github.com/aaweaver-actuary/tempo/blob/09cb4eef027666aaa3e728660b9e7ca39eb36091/services/learning/runtime/src/tempo_learning_runtime/host_activity.py)
+uses bounded-memory synchronization for essential request counters and quiet
+deadlines, without a hard real-time or lock-free guarantee. Its
+optional daemon owns file publication and cleanup after releasing that memory
+lock; startup and shutdown do not wait for its I/O or join it. The
+[affected execution view](study-games.md#shared-learning-request-execution-gaps-main)
+records focused source tests and the retained 15-second healthy idle lease window,
+during which a new essential request may overlap admitted managed work. Missing
+source protection requires configured expected workspace identities before deployment;
+the default empty expected-source array accepts absence as idle.
+This source change is unmerged; deployment and host resource isolation remain
+unverified. No Games consumer acknowledgement is required.
 
-The same API's async tablebase/endgame handlers perform synchronous database
-phases on the shared ASGI event loop, which can delay unrelated Study progress.
-Awaiting provider HTTP outside transactions does not isolate those synchronous
-phases. The [request-execution view](study-games.md#shared-learning-request-execution-gaps-main)
-shows both **source-supported open gaps**. Neither is a reproduced live failure
-or a completed repair; declared pool/transaction bounds do not prove independent
-request progress across these execution/resource boundaries.
+The **PROPOSED** endgame repair at
+[`92edbc16`](https://github.com/aaweaver-actuary/tempo/commit/92edbc16) moves complete
+synchronous phases to one daemon owner with separate lazy max1 reader/writer
+pools. Result waits are bounded; cancellation/shutdown does not join optional
+I/O or close its active pools. Process connection maximum is `2 * pool_size + 3`.
+The [request-execution view](study-games.md#shared-learning-request-execution-gaps-main)
+distinguishes that scoped fake-ASGI/process-exit proof from the separately owned
+MAIN HostActivity gap. Native PostgreSQL and deployment allocation remain
+unverified; shared host/cluster failures still require their own evidence.
