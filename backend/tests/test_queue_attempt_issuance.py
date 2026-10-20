@@ -56,7 +56,7 @@ def test_identified_never_issued_non_head_attempt_is_rejected(queued_attempts, a
 
 def _promote_real_game_miss():
     from datetime import datetime, timezone
-    from test_real_game_feedback_adapter import _seed_game, _seed_repertoire
+    from test_real_game_feedback import _seed_game, _seed_repertoire
     from app.services.repertoire_comparison import compare_games
     from app.services.real_game_feedback_adapter import apply_real_game_misses
 

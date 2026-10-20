@@ -40,6 +40,11 @@ cursor. Durable PostgreSQL worker slicing remains unchanged.
 - `backend/tests/test_feedback_storage_adapter.py`: actual SQLite compatibility
   projections, exact instants, unsafe/excluded facts, typed batches and caller
   rollback. No SQL-prefix fake database or policy SQL literal inventory.
+- `backend/tests/test_feedback_consumer_wiring.py`: connection-to-port composition,
+  supplied admission day, snapshot/write transaction separation and named external
+  native consumer bindings. The recovery script uses the composition entry;
+  Learning native overlays import the canonical queue writer directly. The
+  repository audit covers scripts/integration packages, not only backend files.
 - Existing feedback, queue, review and remediation owners retain their behavioral
   assertions. Import changes bind them to the new legacy composition entry.
 - Actual PostgreSQL adapter locking, accepted-scope exclusion and command rollback

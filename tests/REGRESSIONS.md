@@ -12,6 +12,12 @@ cover borrowed rollback/typed projections, actual card/day lock lifetime and
 accepted-scope exclusion with a different-repertoire control. They join the three
 existing command/Study cases under the unchanged capped native runner; adding or
 collecting them does not establish a native pass.
+`backend/tests/test_feedback_consumer_wiring.py` retains the native recovery-script,
+Learning integration and issuance-fixture import regressions. Its composition
+checks prove wrapping before policy, day ownership and closing the read snapshot
+before short per-event transactions; its repository-wide backend-policy import
+audit includes scripts and integration packages while leaving the independent
+runtime's same-named module alone. Actual native execution remains separate.
 See [boundary ownership](../docs/architecture/feedback-storage.md).
 
 ## Legacy game evidence receiver checkpoint
