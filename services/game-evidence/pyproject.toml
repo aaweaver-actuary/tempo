@@ -9,6 +9,7 @@ description = "Repertoire-aware game observations and durable Learning delivery"
 requires-python = ">=3.12,<3.15"
 dependencies = [
   "chess==1.11.2", "tempo-chess-core==0.1.0",
+  "tempo-game-ingestion==0.1.0", "tempo-game-review-contracts==0.1.0",
   "tempo-content-publication-contracts==1.0.0", "tempo-game-evidence-contracts==3.0.0",
   "fastapi==0.116.1", "uvicorn==0.35.0", "httpx==0.28.1", "psycopg[binary]==3.3.6",
   "pydantic==2.12.5",
@@ -21,6 +22,8 @@ tempo-game-evidence = "tempo_game_evidence.cli:main"
 dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0", "tempo-learning-remediation==0.1.0"]
 
 [tool.uv.sources]
+tempo-game-ingestion = { path = "../../packages/game-ingestion" }
+tempo-game-review-contracts = { path = "../../packages/game-review-contracts" }
 tempo-learning-remediation = { path = "../learning/remediation" }
 tempo-chess-core = { path = "../../packages/chess-core" }
 tempo-content-publication-contracts = { path = "../../contracts/content-publication" }

@@ -411,6 +411,8 @@ dependencies = [
     { name = "tempo-chess-core" },
     { name = "tempo-content-publication-contracts" },
     { name = "tempo-game-evidence-contracts" },
+    { name = "tempo-game-ingestion" },
+    { name = "tempo-game-review-contracts" },
     { name = "uvicorn" },
 ]
 
@@ -432,6 +434,8 @@ requires-dist = [
     { name = "tempo-chess-core", directory = "../../packages/chess-core" },
     { name = "tempo-content-publication-contracts", directory = "../../contracts/content-publication" },
     { name = "tempo-game-evidence-contracts", directory = "../../contracts/game-evidence" },
+    { name = "tempo-game-ingestion", directory = "../../packages/game-ingestion" },
+    { name = "tempo-game-review-contracts", directory = "../../packages/game-review-contracts" },
     { name = "uvicorn", specifier = "==0.35.0" },
 ]
 
@@ -453,6 +457,51 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = "==2.12.5" }]
+
+[[package]]
+name = "tempo-game-ingestion"
+version = "0.1.0"
+source = { directory = "../../packages/game-ingestion" }
+dependencies = [
+    { name = "chess" },
+    { name = "tempo-game-review-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "chess", specifier = "==1.11.2" },
+    { name = "tempo-game-review-contracts", directory = "../../packages/game-review-contracts" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "hatchling", specifier = "==1.27.0" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
+
+[[package]]
+name = "tempo-game-review-contracts"
+version = "0.1.0"
+source = { directory = "../../packages/game-review-contracts" }
+dependencies = [
+    { name = "chess" },
+    { name = "pydantic" },
+    { name = "tempo-chess-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "chess", specifier = "==1.11.2" },
+    { name = "pydantic", specifier = "==2.12.5" },
+    { name = "tempo-chess-core", directory = "../../packages/chess-core" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
 
 [[package]]
 name = "tempo-learning-remediation"

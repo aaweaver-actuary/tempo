@@ -287,6 +287,8 @@
         "EvidenceStore"
       ],
       "dependencies": [
+        "tempo_game_ingestion",
+        "tempo_game_review_contracts",
         "chess",
         "tempo_chess_core",
         "tempo_content_publication_contracts",
@@ -1751,6 +1753,129 @@
         "authority": "external manual pilot only",
         "databases": [],
         "migrations": []
+      },
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "game-review-contracts",
+      "type": "library",
+      "maintainer": "Tempo / Games restoration",
+      "status": "implemented",
+      "root": "packages/game-review-contracts",
+      "publicExports": [
+        "CanonicalGame",
+        "ReentryAuthority",
+        "AuthoredRoute",
+        "RepertoireSnapshot",
+        "RouteContext",
+        "PositionFact",
+        "ComparisonReport",
+        "GameInput",
+        "GameIngester",
+        "RepertoireComparer",
+        "Unavailable",
+        "ClassificationPort",
+        "ActionRequest",
+        "ActionPort",
+        "replay_line"
+      ],
+      "dependencies": [
+        "pydantic",
+        "chess",
+        "tempo_chess_core"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-game-review-contracts",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "game-review-contracts",
+          "kind": "python",
+          "cwd": "packages/game-review-contracts",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": [],
+        "productionAdoption": false
+      },
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "game-ingestion",
+      "type": "library",
+      "maintainer": "Tempo / Games restoration",
+      "status": "implemented",
+      "root": "packages/game-ingestion",
+      "publicExports": [
+        "PgnGameIngester",
+        "BytesInput",
+        "FileInput",
+        "normalize_pgn",
+        "MAX_SOURCE_BYTES"
+      ],
+      "dependencies": [
+        "chess",
+        "tempo_game_review_contracts"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-game-ingestion",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "game-ingestion",
+          "kind": "python",
+          "cwd": "packages/game-ingestion",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests",
+            "src",
+            "pyproject.toml",
+            "uv.lock"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": [],
+        "productionAdoption": false
       },
       "testInventory": "REGRESSIONS.md"
     }
