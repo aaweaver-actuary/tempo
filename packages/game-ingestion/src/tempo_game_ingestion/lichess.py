@@ -159,5 +159,12 @@ def fetch_lichess_games(transport: PublicHttpTransport, *, workspace_id: str,
     return PublicGameBatch(tuple(games), username.casefold(), since.isoformat(), until.isoformat(), limit, len(games) == limit)
 
 
-__all__ = ["fetch_lichess_games", "PublicHttpTransport", "UrlPublicTransport",
+__all__ = ["get_games", "fetch_lichess_games", "PublicHttpTransport", "UrlPublicTransport",
            "PublicResponse", "PublicGameBatch", "PublicImportError"]
+
+
+def get_games(username: str, since: datetime, until: datetime, limit: int = 100) -> list[CanonicalGame]:
+    """Simple public account/date-window entry; at most limit games, no persistence."""
+    return list(fetch_lichess_games(UrlPublicTransport(), workspace_id="public",
+        username=username, since=since, until=until, limit=limit,
+        game_revision=1, source_revision=1).games)

@@ -9,10 +9,12 @@ from .lichess import PublicImportError, UrlPublicTransport, fetch_lichess_games
 
 def main(arguments=None, *, transport=None):
     parser = argparse.ArgumentParser(description="Fetch one bounded public Lichess game window as canonical JSON.")
-    for name in ("workspace-id", "username", "since", "until"):
+    for name in ("username", "since", "until"):
         parser.add_argument(f"--{name}", required=True)
-    for name in ("limit", "game-revision", "source-revision"):
-        parser.add_argument(f"--{name}", required=True, type=int)
+    parser.add_argument("--workspace-id", default="public")
+    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--game-revision", type=int, default=1)
+    parser.add_argument("--source-revision", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=10)
     options = vars(parser.parse_args(arguments))
     try:

@@ -1,3 +1,17 @@
+# Simplest public entry
+
+`get_games(username, since_datetime, until_datetime, limit=100)` returns a list of
+canonical games. Times are timezone-aware; no database, credentials or jobs.
+
+```python
+from datetime import datetime, timezone
+from tempo_game_ingestion.lichess import get_games
+games = get_games("USERNAME", datetime(2026, 10, 1, tzinfo=timezone.utc),
+                  datetime(2026, 10, 20, tzinfo=timezone.utc))
+```
+
+The short CLI is `tempo-lichess-ingest --username USER --since 2026-10-01T00:00:00Z --until 2026-10-20T00:00:00Z`. The result includes a games list and the honest limit flag; it is one bounded request, not an unlimited archive.
+
 # Independent game ingestion 0.1
 
 Implemented source on `codex/public-game-ingestion`; unmerged, no deployment
