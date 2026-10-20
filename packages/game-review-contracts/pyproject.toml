@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-game-review-contracts"
+version = "0.1.0"
+description = "Pure canonical game, supplied repertoire and read-only comparison contracts"
+requires-python = ">=3.12,<3.15"
+dependencies = ["pydantic==2.12.5", "chess==1.11.2", "tempo-chess-core==0.1.0"]
+
+[tool.uv.sources]
+tempo-chess-core = { path = "../chess-core" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_game_review_contracts"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-game-ingestion"
+version = "0.1.0"
+description = "Independent bounded public-game ingestion and canonical normalization"
+requires-python = ">=3.12,<3.15"
+dependencies = ["chess==1.11.2", "tempo-game-review-contracts==0.1.0"]
+
+[project.scripts]
+tempo-game-ingest = "tempo_game_ingestion.cli:main"
+tempo-lichess-ingest = "tempo_game_ingestion.public_cli:main"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+
+[tool.uv.sources]
+tempo-game-review-contracts = { path = "../game-review-contracts" }
+tempo-chess-core = { path = "../chess-core" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_game_ingestion"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "pyproject.toml", "uv.lock", "README.md", "REGRESSIONS.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib -ra"

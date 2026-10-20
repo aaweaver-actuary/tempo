@@ -9,6 +9,15 @@
 
 Four logical databases may initially share one PostgreSQL server. This remains a shared CPU, memory, connection, I/O, backup and failure boundary; separate roles do not prove resource isolation. Each domain controls migrations through its own owner credentials and operates through its own restricted runtime credentials/pools. No permanent cross-domain SQL join, shared table/ORM or administrative runtime credential is part of the target. Domain communication uses accepted contract payloads/publications. Web clients own browser state, not domain database access. Stockfish/Maia receive explicit job inputs, return results, and hold no domain database credentials.
 
+## Independent game review values
+
+The [game review contracts](../packages/game-review-contracts/README.md) own canonical game and supplied
+repertoire values, raw comparison reports and injectable protocols. They own no
+database, queue or effects. The independent ingester/comparer can be used without
+Game Evidence storage; existing Game Evidence storage/receipts and Learning/Content
+authorities remain with their established owners. Classification/actions are
+explicit nonexecuting stubs in this milestone.
+
 ## Native fixture
 
 `database-ownership/fixture.py` creates **only** a fresh PostgreSQL container using the locally available `postgres:18.6-trixie` image resolved to its exact image ID. It uses a unique ownership label, random secrets, a random loopback port, bounded CPU/memory, and ephemeral tmpfs storage. It never accepts a caller-supplied database URL and never connects to Tempo Compose or the running study database.
