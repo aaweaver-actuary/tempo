@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {once} from 'node:events';
+import {createInterface} from 'node:readline';
+import {fileURLToPath} from 'node:url';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -456,4 +460,66 @@ test('failed startup journal reconciles only an explicitly removed absent contai
     assert.equal(other.status,1);assert.deepEqual(await readdir(join(lock,'resources')),[]);
     await lease.release();lease=undefined;
   }finally{await lease?.release();await rm(directory,{recursive:true,force:true});}
+});
+
+test('stalled or removed expected host publisher cannot turn stale evidence into admitted inactivity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tempo-stalled-activity-'));
+  const now = 100_000_000_000n;
+  const path = join(directory, 'owner.json');
+  const expectedSources = ['learning-a'];
+  try {
+    await writeFile(path, JSON.stringify({version:1, producer:'owner', source:'learning-a', pendingRequests:false,
+      validUntilNs:String(now + 15_000_000_000n), sessions:{}}));
+    assert.deepEqual(await readHostStudyActivity({directory, now, expectedSources}), {available:true, active:false});
+    assert.equal((await readHostStudyActivity({directory, now:now + 15_000_000_000n, expectedSources})).available, false);
+    await rm(path);
+    assert.equal((await readHostStudyActivity({directory, now, expectedSources})).available, false);
+    let waits = 0;
+    const controller = new AbortController();
+    await assert.rejects(waitForStudyQuiet({legacyAbsent:true, signal:controller.signal,
+      hostActivity:() => readHostStudyActivity({directory, now, expectedSources}),
+      pause:async () => { waits++; controller.abort(new Error('expected publisher unavailable')); }}), /expected publisher unavailable/);
+    assert.equal(waits, 1);
+  } finally { await rm(directory, {recursive:true, force:true}); }
+});
+
+
+test('healthy idle snapshot with stalled publisher allows a new essential request before the 15-second admission expiry', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tempo-idle-stall-boundary-'));
+  const child = spawn(process.env.TEMPO_COMPONENT_PYTHON ?? 'python3',
+    [fileURLToPath(new URL('./host-activity-idle-stall.py', import.meta.url)), directory],
+    {stdio:['pipe', 'pipe', 'pipe']});
+  const exited = once(child, 'close').catch(error => [null, String(error)]);
+  const lines = createInterface({input:child.stdout});
+  let errors = '';
+  child.stderr.on('data', data => { errors += data; });
+  try {
+    const [line] = await once(lines, 'line', {signal:AbortSignal.timeout(3000)});
+    const status = JSON.parse(line);
+    assert.equal(status.essentialCompleted, true);
+    assert.equal(status.publisherBlocked, true);
+    const source = fileURLToPath(new URL('../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py', import.meta.url));
+    assert.equal(status.sourcePath, source);
+    assert.equal(status.sourceSHA256, createHash('sha256').update(await readFile(source)).digest('hex'));
+    const now = BigInt(status.now);
+    const expectedSources = ['learning-idle-stall'];
+    const retained = JSON.parse(await readFile(join(directory, status.producer + '.json'), 'utf8'));
+    assert.equal(retained.pendingRequests, false, 'The completed essential request has not reached disk');
+    assert.deepEqual(retained.sessions, {});
+    assert.deepEqual(await readHostStudyActivity({directory, now, expectedSources}), {available:true, active:false});
+    assert.deepEqual(await readHostStudyActivity({directory, now:now + 15_000_000_000n - 1n, expectedSources}),
+      {available:true, active:false}, 'Async publication does not immediately exclude foreground overlap');
+    assert.equal((await readHostStudyActivity({directory, now:now + 15_000_000_000n, expectedSources})).available, false);
+    child.stdin.end('close\n');
+    const [code, signal] = await exited;
+    assert.equal(code, 0, errors || String(signal));
+    assert.equal((await readHostStudyActivity({directory, now, expectedSources})).available, false);
+    assert.deepEqual(await readHostStudyActivity({directory, now, expectedSources:[]}), {available:true, active:false},
+      'Absent-source protection requires configured expected identities; default empty identities allow absence');
+  } finally {
+    lines.close();
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await exited;
+    await rm(directory, {recursive:true, force:true});
+  }
 });

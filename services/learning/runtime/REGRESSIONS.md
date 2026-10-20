@@ -263,9 +263,50 @@ Concurrent installed operator parameters cover both activation and retirement:
 two actual apply processes share one retirement outcome; two abandon processes
 fence a genuinely queued retirement without changing the active predecessor.
 
-`test_host_activity_reporting_thread_failure_does_not_prevent_service_startup` proves an unavailable optional renewal thread leaves authenticated Study service startup and essential request protection usable. `test_host_activity_shutdown_reporting_failure_is_diagnostic_and_retains_owned_snapshot` proves cleanup reporting cannot escape shutdown or erase uncertain ownership. Both use injected standard-library failures and remain in the regular native Learning suite.
+`test_host_activity_reporting_thread_failure_does_not_prevent_service_startup` proves an unavailable optional renewal thread leaves authenticated service startup and essential in-memory request accounting usable while no optional snapshot is claimed. `test_host_activity_shutdown_reporting_failure_is_diagnostic_and_retains_owned_snapshot` proves cleanup reporting cannot escape shutdown or erase uncertain ownership. Both use injected standard-library failures and remain in the regular native Learning suite.
 
 `test_host_activity_stale_short_pulse_cannot_shorten_a_fresh_held_session` keeps a renewed same-session deadline monotonic when an older short pulse arrives late. The legacy native priority proof's `test_postgres_priority_monotonic_activity_renewal` executes the actual Redis Lua and checks both per-member deadlines and the shared key lifetime against a longer pending foreground lease.
 
 
 `test_host_activity_clock_retains_reader_domain_after_host_sleep` protects the shared-host clock contract. macOS Python uptime excludes sleep while the native Node reader includes it; the producer uses `CLOCK_MONOTONIC_RAW` on macOS and the ordinary monotonic clock elsewhere. The regression simulates a suspend offset without requiring Node, a broker, or a database for Learning progress. Real Python 3.12/3.14 and Node clock brackets are retained in the task's qualification evidence.
+
+
+Host activity filesystem independence (source repair; deployment unverified):
+
+- `test_host_activity_stalled_publication_does_not_block_start_essential_request_or_shutdown`
+  blocks actual directory creation until after startup/request/close complete.
+- `test_host_activity_api_request_and_lifespan_do_not_wait_for_stalled_publication`
+  proves authenticated essential middleware returns its 404 and optional activity
+  returns 503, then lifespan exits, while the publisher remains stalled.
+- `test_host_activity_stalled_publisher_recovers_pending_and_independent_quiet_holds`
+  retains nested pending requests, expiry and quiet holds across a stall/recovery.
+- `test_host_activity_stalled_cleanup_does_not_block_shutdown` keeps owned cleanup
+  on the daemon and proves repeat close does not wait for its blocked read.
+- `test_host_activity_cancelled_essential_request_releases_pending_without_publication`
+  proves cancellation settles in-memory holds with no filesystem dependency.
+- `test_host_activity_publication_error_reports_unavailable_then_recovers_without_study_restart`
+  preserves diagnostic failures, retry and recovery without changing Study lifecycle.
+- `test_host_activity_browser_capacity_keeps_essential_state_bounded` proves browser
+  saturation cannot grow the shared snapshot memory bound or prevent essential accounting.
+- `tests/runner/development-budget.test.mjs` owns
+  `stalled or removed expected host publisher cannot turn stale evidence into admitted inactivity`:
+  existing healthy idle evidence remains usable inside its 15-second lease; stale
+  and removed expected sources remain unavailable and the admission waiter defers.
+
+These are injected source-level regressions, not evidence of a live incident or
+of deployment, host-resource isolation, or instantaneous detection of a stall.
+
+
+`healthy idle snapshot with stalled publisher allows a new essential request before the 15-second admission expiry`
+in `tests/runner/development-budget.test.mjs` runs a stdlib-only Python producer
+from the exact source path and verifies its SHA-256 against the native harness.
+After a healthy idle publication, it blocks actual `os.replace`, completes a new
+essential request and feeds the retained file to the actual Node host reader at
+deterministic clock values. The reader still reports idle until one nanosecond
+before the 15-second expiry, then unavailable at expiry. After owned cleanup,
+configured expected sources remain unavailable while explicit `[]` admits absence.
+This proves the foreground-overlap tradeoff, not immediate foreground exclusion.
+The fixture releases and joins only its own daemon; no database or server runs.
+The implementation uses bounded-memory synchronization, not hard real-time or
+lock-free progress. Configuring expected workspace identities is a deployment
+prerequisite for startup/missing-source protection; default `[]` provides none.

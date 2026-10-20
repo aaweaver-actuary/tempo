@@ -133,7 +133,7 @@ def create_app(configuration: Configuration):
     @asynccontextmanager
     async def lifespan(app):
         stopping = asyncio.Event()
-        await asyncio.to_thread(activity.start)
+        activity.start()
 
         async def maintain():
             while not stopping.is_set():
@@ -152,7 +152,7 @@ def create_app(configuration: Configuration):
             if task:
                 await task
             try:
-                await asyncio.to_thread(activity.close)
+                activity.close()
             finally:
                 database.close()
 
@@ -162,15 +162,9 @@ def create_app(configuration: Configuration):
 
     @asynccontextmanager
     async def request_activity():
-        context = activity.request()
-        entering = asyncio.create_task(asyncio.to_thread(context.__enter__))
-        try:
-            await asyncio.shield(entering)
+        # Host activity updates memory only; publication has its own daemon.
+        with activity.request():
             yield
-        finally:
-            # Cancellation cannot abandon a file/lock operation still entering in a thread.
-            await entering
-            await asyncio.shield(asyncio.to_thread(context.__exit__, None, None, None))
 
     @app.middleware("http")
     async def authority(request: Request, call_next):
@@ -275,7 +269,7 @@ def create_app(configuration: Configuration):
     async def study_activity(session_id: str = Query(pattern=r"^[A-Za-z0-9_-]{1,80}$"),
                              expires_in_ms: int = Query(default=3000, ge=1, le=3000)):
         try:
-            await asyncio.to_thread(activity.record, session_id, expires_in_ms)
+            activity.record(session_id, expires_in_ms)
         except (OSError, RuntimeError):
             return JSONResponse(status_code=503, content={"available": False})
         return {"available": True, "expires_in_ms": expires_in_ms}
