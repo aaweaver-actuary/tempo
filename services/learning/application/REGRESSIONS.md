@@ -104,3 +104,10 @@ revision/attempt events cannot complete intent. Verified source supersession,
 verified membership revocation and explicit cancellation are auditable terminal
 outcomes. Equivalent timezone offsets retain one encounter key. No SQL/native/
 HTTP/queue adoption or infrastructure proof is implied by these source cases.
+
+`test_completion_with_identical_local_ids_in_another_scope_cannot_retire_intent`
+owns cross-target and cross-workspace completion fencing: identical local card,
+revision, queue-entry and review IDs with a valid verification flag are not
+enough. The supplied `CardScope` must match; both negative controls leave records
+and queue-writer effects untouched. Positive completion and stale-object replay
+continue in the same regular source suite.

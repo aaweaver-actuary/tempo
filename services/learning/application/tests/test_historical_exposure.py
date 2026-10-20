@@ -177,7 +177,8 @@ def test_only_verified_source_supersession_or_revocation_ends_unserved_intent():
 
 
 def completion(**changes):
-    return replace(exposure.PracticeCompletion('physical',1,42,'review-1',NOW,'study',True),**changes)
+    return replace(exposure.PracticeCompletion('physical',1,42,'review-1',NOW,'study',True,
+        exposure.CardScope('target','legacy','physical')),**changes)
 
 
 @pytest.mark.parametrize('change',[{'card_revision':2},{'queue_entry_id':99},{'source_kind':'gameplay'},
@@ -196,6 +197,23 @@ def test_normal_practice_completion_is_exactly_once_not_mastery_or_remediation_s
     assert not done.intent_active(NOW)
     assert exposure.complete_practice(store,writer,record,completion(),writer.reader,NOW)==done
     assert len(store.saves)==before+1 and writer.cleared==[(record.card_scope(),'historical_exposure')]
+
+
+@pytest.mark.parametrize('other_scope',[
+    exposure.CardScope('other-target','legacy','physical'),
+    exposure.CardScope('target','other-workspace','physical'),
+])
+def test_completion_with_identical_local_ids_in_another_scope_cannot_retire_intent(other_scope):
+    store,writer,record=accepted()
+    before=dict(store.rows),len(store.saves),list(writer.calls)
+    # Every local identifier, revision, timestamp and verification flag is the
+    # same. Only the target/workspace authority differs.
+    event=completion(scope=other_scope)
+    assert event.card_id==record.request.encounter.card_id and event.queue_entry_id==42
+    assert event.review_id=='review-1' and event.verified_normal_attempt
+    assert exposure.complete_practice(store,writer,record,event,writer.reader,NOW)==record
+    assert (store.rows,len(store.saves),writer.calls)==before
+    assert not writer.cleared
 
 
 def test_same_game_instant_in_another_offset_has_same_idempotent_identity():

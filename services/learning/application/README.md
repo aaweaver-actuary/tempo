@@ -161,7 +161,10 @@ priority wins and must not be overwritten. Protected attempts remain fixed.
 The writer still must atomically preserve these facts and precedence when calling
 the existing canonical protected-head queue writer; it cannot issue new work.
 
-A verified subsequent normal Study completion on the bound queue entry serves
+A verified subsequent normal Study completion carries the exact `CardScope`
+(target, workspace, card), checked against the retained request before any
+mutation. Matching local card/revision/queue-entry/review IDs in another scope
+cannot retire intent. A completion on the bound queue entry serves
 this practice request at any grade. It means practice occurred, **not mastery**,
 forgotten recall or remediation settlement. No review, scheduling or settlement
 record is created here. Old/unverified answers and other revisions/attempts cannot

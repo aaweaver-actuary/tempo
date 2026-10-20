@@ -96,6 +96,7 @@ class PracticeCompletion:
     reviewed_at: datetime
     source_kind: str
     verified_normal_attempt: bool
+    scope: 'CardScope'
 
 
 class ExposureRejected(ValueError):
@@ -287,7 +288,8 @@ def complete_practice(store: Store, writer: QueueWriter, record: Record,
     if not record.intent_active(now):
         return record
     identity = record.request.encounter
-    if (completion.card_id != identity.card_id or completion.card_revision != identity.card_revision
+    if (completion.scope != record.card_scope()
+            or completion.card_id != identity.card_id or completion.card_revision != identity.card_revision
             or completion.queue_entry_id != record.placement.queue_entry_id
             or not completion.review_id or completion.source_kind != 'study'
             or not completion.verified_normal_attempt
