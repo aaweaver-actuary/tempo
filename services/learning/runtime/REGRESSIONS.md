@@ -274,12 +274,20 @@ fence a genuinely queued retirement without changing the active predecessor.
 `test_endgame_isolation.py` owns the optional endgame execution boundary:
 `test_delayed_endgame_cache_does_not_block_ordinary_study_request` retains the
 actual-ASGI delayed-cache regression; the separate pool-size-one composition
-uses real `Database` routing with bounded fake pool leases. The worker cases
-cover ContextVar preservation, serial capacity, waiting cancellation, repeated
-active cancellation and shutdown drain. The attempt composition verifies worker
-ownership of read/write/gateway phases, provider calls outside transactions and
-unchanged receipt replay/conflict behavior. These require no database or HTTP
-server. Existing `test_endgames.py` retains native PostgreSQL receipt, cache,
-provider-protocol and review proof; the fake suite does not replace it. An
-arbitrary stalled OS/database driver can still delay active cancellation and
-shared-process shutdown; this suite makes no bounded-shutdown claim.
+uses real `Database` routing with bounded fake pool leases. Worker cases cover
+ContextVar preservation, serial admission, busy rejection, cancellation before
+admission, immediate active cancellation, and daemon-owned cleanup after actual
+completion. Actual-ASGI regressions prove cancellation and service shutdown
+return before a held optional connection is released. A fresh-process regression
+proves a never-returning daemon cannot hold interpreter exit. Late exceptions
+after event-loop exit retain their cleanup owner. Main close never takes the
+optional lock/pools; the optional lane rejects maintenance escapes.
+
+The attempt composition verifies one-worker phase ownership, provider calls
+outside transactions and immutable replay/conflict behavior. The real gateway
+with fake receipt persistence proves an unconfirmed write returns its generated
+operation ID, can commit later and replay under that same ID without a second
+logical effect. These fake tests require no database or HTTP server and do not
+replace native PostgreSQL locking/rollback proof. Existing `test_endgames.py`
+retains native receipt, cache, provider-protocol and review proof. Host and
+PostgreSQL allocation/deployment isolation remain unverified.

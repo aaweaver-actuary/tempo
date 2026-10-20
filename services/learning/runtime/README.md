@@ -59,16 +59,29 @@ connection, and at most two optional endgame connections. Optional phases do not
 occupy foreground leases even when the foreground pool size is 1. They still
 share PostgreSQL, the process and host; this is not deployment resource isolation.
 
-Request cancellation drains an already-started endgame phase before releasing
-its worker slot; application shutdown drains that worker before closing database
-pools. Waiting phases can be cancelled without starting work. PostgreSQL's
-configured SQL deadlines and the 3-second HTTP timeout cover their normal
-operations, but arbitrary OS/driver stalls are not bounded by those server-side
-deadlines. Such a stall can still delay cancellation and shared-process shutdown
-indefinitely. The focused fake-pool ASGI proofs establish ordinary Study progress
-during delayed optional DB work, not complete optional shutdown independence or
-production deployment qualification. No native PostgreSQL proof is added by
-these fake tests; existing endgame native contracts retain that ownership.
+The worker admits at most one phase. Busy requests return 503 immediately;
+confirmation waits are bounded to 5 seconds. Timeout, cancellation and shutdown
+end the caller's wait without cancelling or misreporting the admitted database
+phase. A 503 for attempt work includes `state: unknown`, the same `operation_id`
+(including a server-generated ID), `Location` and `Retry-After`; retry that ID to
+recover the canonical receipt instead of creating a second operation.
+
+The worker is a daemon with no interpreter-exit join. Application shutdown
+rejects new/unstarted work, ends active result waits, and closes only foreground
+and maintenance pools. The daemon retains its optional connection/transaction
+until the phase actually leaves, then closes only its own pools. Background-pool
+escapes are rejected. A stalled OS/database driver can therefore leave one
+bounded optional phase/pool allocation alive until process exit without becoming
+a Study shutdown wait or causing another owner to close its active transaction.
+PostgreSQL decides rollback/commit if the process exits; the canonical receipt
+remains the authority on retry. No timeout is claimed to kill a Python thread.
+
+Focused fake-pool ASGI tests cover Study progress, cancellation and shutdown
+before a delayed optional phase is released, plus canonical gateway replay after
+a confirmation timeout. A fresh-process regression proves a never-returning
+optional daemon does not hold interpreter exit. Native PostgreSQL qualification
+and deployment resource isolation remain unverified; existing native endgame
+contracts retain transaction/receipt/provider/cache ownership.
 
 ## Daily presentation
 
