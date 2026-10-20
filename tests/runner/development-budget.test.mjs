@@ -457,3 +457,24 @@ test('failed startup journal reconciles only an explicitly removed absent contai
     await lease.release();lease=undefined;
   }finally{await lease?.release();await rm(directory,{recursive:true,force:true});}
 });
+
+test('stalled or removed expected host publisher cannot turn stale evidence into admitted inactivity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tempo-stalled-activity-'));
+  const now = 100_000_000_000n;
+  const path = join(directory, 'owner.json');
+  const expectedSources = ['learning-a'];
+  try {
+    await writeFile(path, JSON.stringify({version:1, producer:'owner', source:'learning-a', pendingRequests:false,
+      validUntilNs:String(now + 15_000_000_000n), sessions:{}}));
+    assert.deepEqual(await readHostStudyActivity({directory, now, expectedSources}), {available:true, active:false});
+    assert.equal((await readHostStudyActivity({directory, now:now + 15_000_000_000n, expectedSources})).available, false);
+    await rm(path);
+    assert.equal((await readHostStudyActivity({directory, now, expectedSources})).available, false);
+    let waits = 0;
+    const controller = new AbortController();
+    await assert.rejects(waitForStudyQuiet({legacyAbsent:true, signal:controller.signal,
+      hostActivity:() => readHostStudyActivity({directory, now, expectedSources}),
+      pause:async () => { waits++; controller.abort(new Error('expected publisher unavailable')); }}), /expected publisher unavailable/);
+    assert.equal(waits, 1);
+  } finally { await rm(directory, {recursive:true, force:true}); }
+});
