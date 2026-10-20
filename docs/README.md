@@ -5,6 +5,9 @@ background-work rules, product contracts, and generated-content workflows.
 
 ## Start here
 
+- [Maintained architecture drawings](architecture/diagrams/README.md) — navigable
+  system, component, Study/Games, transaction, data-flow and failure views, with
+  source references and a PR maintenance procedure.
 - [Component reconstruction guide](architecture/component-reconstruction.md) —
   adopted component boundaries, current implementation limits, and the
   [12-phase migration index](https://github.com/aaweaver-actuary/tempo/issues/192).
