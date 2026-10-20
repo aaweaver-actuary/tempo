@@ -2,6 +2,8 @@ from __future__ import annotations
 from .postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from .review_service import preserve_daily_queue_order
+from dataclasses import dataclass
+import json
 from typing import Any
 
 
@@ -106,10 +108,7 @@ def request_queue_refresh_in_transaction(
     )
     from .remediation_adapter import request_remediation
     request_remediation(database, queue_date)
-    database.execute(
-        _QUEUE_REFRESH_PROJECTION_SQL,
-        (queue_date,),
-    )
+    mark_queue_refresh_pending_in_transaction(database, queue_date)
     return task
 
 
@@ -118,8 +117,7 @@ _QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,stat
            state='refreshing',refresh_pending=1,last_error=NULL"""
 
 
-_AVAILABLE_ATTEMPT_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
-            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+_AVAILABLE_ATTEMPT_WHERE_SQL = """WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
               AND c.pending_validation=0 AND c.superseded_by IS NULL
               AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
               AND (c.content_type!='opening' OR EXISTS(
@@ -142,12 +140,92 @@ _AVAILABLE_ATTEMPT_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=
 def available_attempt_sql() -> str:
     # Frozen publications are PostgreSQL-authoritative. The optional legacy
     # exposure sources do not exist in SQLite's recovery compatibility schema.
-    return _AVAILABLE_ATTEMPT_SQL + " AND c.serving_active=1"
+    return ("SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id "
+            + _available_attempt_where_sql())
 
 
 from . import frozen_opening_order
 
-_AVAILABLE_ATTEMPT_SQL += (
+_AVAILABLE_ATTEMPT_WHERE_SQL += (
     frozen_opening_order.stale_queue_predicate()
     + frozen_opening_order.legacy_queue_predicate()
 )
+
+
+def _available_attempt_where_sql() -> str:
+    return _AVAILABLE_ATTEMPT_WHERE_SQL + " AND c.serving_active=1"
+
+
+def mark_queue_refresh_pending_in_transaction(
+    database: PostgresConnection, queue_date: str,
+) -> None:
+    """Mark the projection last, borrowing the caller's refresh transaction."""
+    database.execute(_QUEUE_REFRESH_PROJECTION_SQL, (queue_date,))
+
+
+@dataclass(frozen=True)
+class QueueWindowProjection:
+    """Learning-owned legacy card projection before authoritative head issuance."""
+
+    cards: list[dict[str, Any]]
+    available_count: int
+    projection: dict[str, Any] | None
+
+
+def read_queue_window(
+    db: PostgresConnection, queue_date: str, *, limit: int,
+) -> QueueWindowProjection:
+    """Read complete queue facts in the caller's read-only transaction."""
+    # Today/prepared retain their 200-card legacy window; HTTP /window caps at 20.
+    if not 1 <= limit <= 200:
+        raise ValueError("Queue projection limit must be between 1 and 200")
+    statement = (
+        "SELECT q.id AS queue_entry_id,q.cycle,q.attempt_failed,q.position,"
+        "q.attempt_state,q.admission_kind,q.admission_source,q.gameplay_priority_reason,"
+        "c.*,COALESCE(r.name,study.title,'Learning') AS repertoire_name,"
+        "COALESCE(r.source_name,'accepted-publication') AS repertoire_source,exercise.study_id "
+        "FROM daily_queue q JOIN cards c ON c.id=q.card_id "
+        "LEFT JOIN repertoires r ON r.id=c.repertoire_id "
+        "LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id "
+        "LEFT JOIN studies study ON study.id=exercise.study_id "
+        + _available_attempt_where_sql()
+        + " ORDER BY q.position,q.id LIMIT ?"
+    )
+    rows = db.execute(statement, (queue_date, limit)).fetchall()
+    cards = []
+    for row in rows:
+        card = dict(row)
+        card["moves"] = json.loads(card.pop("moves_json"))
+        card["latest_review_id"] = db.execute(
+            "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=? AND invalidated_at IS NULL",
+            (card["id"],),
+        ).fetchone()[0]
+        if card["content_type"] == "defense":
+            accepted_defense = db.execute(
+                "SELECT candidate_id FROM accepted_defense_exercises WHERE card_id=? AND exercise_revision=?",
+                (card["id"], card["revision"])).fetchone()
+            card["source_ref"] = accepted_defense[0] if accepted_defense else None
+        if card["content_type"] == "study_exercise":
+            spec = db.execute(
+                "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
+                (card["study_exercise_id"], card["revision"]),
+            ).fetchone()
+            card["study_snapshot"] = {
+                "schema_version": 1,
+                "grader_version": 1,
+                "exercise_id": card["study_exercise_id"],
+                "revision": card["revision"],
+                "fen": card["start_fen"],
+                "specification": json.loads(spec[0]),
+            }
+        # Explicit legacy protocol boundary: internal acceptance metadata is not wire data.
+        allowed = "id queue_entry_id start_fen moves content_type repertoire_name repertoire_source cycle position attempt_state attempt_failed gameplay_priority_reason admission_kind admission_source first_correct_at recent_attempts_json source_ref is_main trained_color revision repertoire_id study_id study_exercise_id study_snapshot kind state due_date interval_days ease repetitions lapses unlock_after_card_id fsrs_card_json reinforcement_pending stability guided_review maximum_interval scheduling_mode hard_correct_streak archived superseded_by source_fen introduced_at pending_validation canonical_route_source latest_review_id".split()
+        cards.append({key: card[key] for key in allowed if key in card})
+    projection = db.execute(
+        "SELECT * FROM queue_projections WHERE queue_date=?", (queue_date,)
+    ).fetchone()
+    count = db.execute(
+        "SELECT COUNT(*) FROM (" + available_attempt_sql() + ") available",
+        (queue_date,),
+    ).fetchone()[0]
+    return QueueWindowProjection(cards, count, dict(projection) if projection else None)

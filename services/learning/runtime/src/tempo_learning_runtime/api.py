@@ -366,60 +366,10 @@ def create_app(configuration: Configuration):
         for _ in range(2):
             safe_run_once()
         with connection(read_only=True) as db:
-            statement = (
-                queue_application.available_attempt_sql()
-                .replace(
-                    "SELECT q.id FROM",
-                    "SELECT q.id AS queue_entry_id,q.cycle,q.attempt_failed,q.position,q.attempt_state,q.admission_kind,q.admission_source,q.gameplay_priority_reason,c.*,COALESCE(r.name,study.title,'Learning') AS repertoire_name,COALESCE(r.source_name,'accepted-publication') AS repertoire_source,exercise.study_id FROM",
-                    1,
-                )
-                .replace(
-                    "JOIN cards c ON c.id=q.card_id",
-                    "JOIN cards c ON c.id=q.card_id LEFT JOIN repertoires r ON r.id=c.repertoire_id LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id LEFT JOIN studies study ON study.id=exercise.study_id",
-                    1,
-                )
-            )
-            rows = db.execute(
-                statement + " ORDER BY q.position,q.id LIMIT ?", (day, limit)
-            ).fetchall()
-            cards = []
-            for row in rows:
-                card = dict(row)
-                card["moves"] = json.loads(card.pop("moves_json"))
-                card["latest_review_id"] = db.execute(
-                    "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=? AND invalidated_at IS NULL",
-                    (card["id"],),
-                ).fetchone()[0]
-                if card["content_type"] == "defense":
-                    accepted_defense = db.execute(
-                        "SELECT candidate_id FROM accepted_defense_exercises WHERE card_id=? AND exercise_revision=?",
-                        (card["id"], card["revision"])).fetchone()
-                    card["source_ref"] = accepted_defense[0] if accepted_defense else None
-                if card["content_type"] == "study_exercise":
-                    spec = db.execute(
-                        "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
-                        (card["study_exercise_id"], card["revision"]),
-                    ).fetchone()
-                    card["study_snapshot"] = {
-                        "schema_version": 1,
-                        "grader_version": 1,
-                        "exercise_id": card["study_exercise_id"],
-                        "revision": card["revision"],
-                        "fen": card["start_fen"],
-                        "specification": json.loads(spec[0]),
-                    }
-                # Explicit legacy protocol boundary: internal acceptance metadata is not wire data.
-                allowed = "id queue_entry_id start_fen moves content_type repertoire_name repertoire_source cycle position attempt_state attempt_failed gameplay_priority_reason admission_kind admission_source first_correct_at recent_attempts_json source_ref is_main trained_color revision repertoire_id study_id study_exercise_id study_snapshot kind state due_date interval_days ease repetitions lapses unlock_after_card_id fsrs_card_json reinforcement_pending stability guided_review maximum_interval scheduling_mode hard_correct_streak archived superseded_by source_fen introduced_at pending_validation canonical_route_source latest_review_id".split()
-                cards.append({key: card[key] for key in allowed if key in card})
-            projection = db.execute(
-                "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
-            ).fetchone()
-            count = db.execute(
-                "SELECT COUNT(*) FROM ("
-                + queue_application.available_attempt_sql()
-                + ") available",
-                (day,),
-            ).fetchone()[0]
+            window = queue_application.read_queue_window(db, day, limit=limit)
+        cards = window.cards
+        projection = window.projection
+        count = window.available_count
         if cards:
             head = cards[0]
             issued = gateway.dispatch(
