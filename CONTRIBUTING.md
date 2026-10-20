@@ -12,7 +12,8 @@ Start with the adopted [component architecture](docs/architecture/component-reco
 
 ## Changes and review
 
-- Preserve public behavior unless the task explicitly changes it. Keep named regression tests in their regular owning component suite and follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction).
+- Apply the project-wide [single-user MVP delivery policy](AGENTS.md#deliver-a-usable-single-user-mvp): prioritize common workflows, preserve essential safeguards, and track non-blocking edge cases with safe fallback, scope, user impact and follow-up acceptance criteria in linked issues. Their existence alone does not block delivery.
+- Preserve public behavior unless the task explicitly changes it. Add named regressions for user-reported defects fixed by the change, keep them in their regular owning component suite, and follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction). Deferred issues are not claims of fixes or regression coverage.
 - Explain why a legacy invariant or implementation detail is retired or moved, identify its new owner, and show the replacement proof. Protect user data, durable study state, and truthful error reporting.
 - Keep PRs focused. Describe the user-visible or architectural result, affected contracts and consumers, exact validation performed, and checks not run with reasons. Separate unrelated failures and name their evidence and owner; do not silently broaden the task to repair unrelated systems.
 - A draft state, issue status, or unrelated advancement of `main` alone does not establish that tests must be repeated. Reuse prior evidence only when the relevant source, dependencies, fixtures, commands, and toolchain inputs are unchanged. Failed, missing, cancelled, or zero-selected required checks never pass.

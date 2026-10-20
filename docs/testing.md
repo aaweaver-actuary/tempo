@@ -15,7 +15,8 @@ suites.
 | Persistence, transaction, migration, receipt, or recovery | Run focused owning-component tests and real tests against that component's PostgreSQL boundary. Mocked or SQLite-only tests do not prove PostgreSQL behavior. |
 | Shared runtime, security, CI selection, build configuration, or cross-component change | Include actual affected consumers and integration boundaries. Broaden for unknown/shared dependencies with a stated reason. |
 
-For a reported defect, add a named regression to its regular owning suite and
+For a reported defect fixed by the change, add a named regression to its regular
+owning suite and
 follow [regression ownership and transitional registration](#regression-ownership-during-reconstruction).
 Verify the intended cases ran: zero-selected, skipped, failed, cancelled, or
 missing required tests are not passes. Diagnose failures in the smallest
@@ -30,9 +31,13 @@ relevant inputs require fresh evidence for the affected scope.
 
 ## Regression ownership during reconstruction
 
-Every user-reported defect requires a named regression that is discoverable
-and executable through its regular owning suite. A prose entry alone is not
-regression coverage.
+Every user-reported defect fixed by a change requires a named regression that
+is discoverable and executable through its regular owning suite. Under the
+[single-user MVP delivery policy](../AGENTS.md#deliver-a-usable-single-user-mvp),
+non-blocking edge cases may be deferred to linked issues with a safe fallback,
+affected scope, user impact and follow-up acceptance criteria. They do not
+automatically block delivery; issues and prose entries are not regression
+coverage. Preserve existing regressions and required checks.
 
 For tests still governed by the legacy runner and its registration checks,
 continue to record coverage in `tests/REGRESSIONS.md` until replacement
