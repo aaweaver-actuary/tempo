@@ -44,6 +44,9 @@ Study revision `86d11afe` is outside this inspection and was not touched.
 
 ## Implemented component increments
 
+The [proposed local pgAdmin companion](../../../config/pgadmin/README.md#ownership-and-startup)
+has its own bounded operational view. It is not activated or a Study dependency.
+
 **MAIN:** these implementations coexist with the
 [legacy assembly](../../../backend/README.md#legacy-assembly-and-existing-coupling). This
 view shows source interfaces available for explicit composition, not a claim that
