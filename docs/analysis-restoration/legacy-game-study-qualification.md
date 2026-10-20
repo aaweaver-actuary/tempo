@@ -177,3 +177,20 @@ Focused regular runner tests cover these filesystem/provenance boundaries and
 a mocked controller transfer. They do not establish Docker bind availability,
 artifact builds, installed test execution, PostgreSQL/Redis or native success.
 The parent must grant each of those actual gates separately.
+
+## Interrupted-command diagnostics
+
+Work timers now atomically persist `host.json` / `inside.json` before each logged
+command starts and again after its process group is known. `pending_stage` and
+the command's pending/running state, UTC start, completion time, elapsed seconds
+and error type distinguish setup, collection and execution interruptions. A
+helper SIGTERM reaches its receipt-writing finalizer. An abrupt kill can leave
+the last pending/running record; that record is evidence of incomplete work,
+never a successful test or qualified artifact. It cannot identify a pytest case
+that pytest did not report. Control captures do not log arguments or output.
+
+Receipt writes consume the existing work deadline. Cleanup timers do not depend
+on incremental receipt I/O; process-group TERM/KILL reserves, resource caps,
+inventories and source/artifact identity guards are unchanged. These diagnostic
+changes do not authorize a rerun or extend a window. Earlier partial artifacts
+remain unqualified and a future actual run requires a fresh explicit grant.

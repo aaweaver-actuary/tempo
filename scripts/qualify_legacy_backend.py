@@ -183,24 +183,26 @@ def inside():
     shared.write(root / 'native-manifest.json', manifest)
     report = dict(complete=False, cases=list(CASES), artifact_origins=origins, dependencies=expected, commands=[])
     shared.write(root / 'inside.json', report)
-    timer = shared.Deadline(840, report)  # Service startup and host work share the900s outer deadline.
+    timer = shared.Deadline(840, report, receipt=root / 'inside.json')  # Same outer deadline.
     checker = ROOT / 'services/learning/application/qualification.py'
     bootstrap = ('import sys,runpy;sys.pycache_prefix=' + repr(sys.pycache_prefix) + ';sys.path[:0]=' + repr(paths) + ';'
         'sys.argv=[' + repr(str(checker)) + ',*sys.argv[1:]];runpy.run_path(' + repr(str(checker)) + ",run_name='__main__')")
     common = ['-c', str(ROOT / 'backend/pyproject.toml'), '-o', 'addopts=', '--import-mode=importlib',
               '-p', 'no:cacheprovider', '--maxfail=1', str(ROOT / 'backend/integration/legacy_bridge/test_native.py')]
-    receipts = {}
-    for stage, tail in [('collection', ['--collect-only', '-q']),
-                        ('execution', ['-q', '--junitxml=' + str(root / 'native.xml'), '--basetemp=' + str(root / 'pytest')])]:
-        receipt = root / ('native-' + stage + '.json')
-        timer.run([sys.executable, '-I', '-B', '-c', bootstrap, str(receipt), *common, *tail],
-                  cwd=root, log=root / ('native-' + stage + '.log'))
-        receipts[stage] = json.loads(receipt.read_text())
-        verify_case_inventory(receipts[stage])
-    inventory = shared.load('backend_native_inventory', checker)
-    report['validated_cases'] = inventory.validate_inventory(receipts['collection'], receipts['execution'], root / 'native.xml')
-    report['complete'] = True
-    shared.write(root / 'inside.json', report)
+    try:
+        receipts = {}
+        for stage, tail in [('collection', ['--collect-only', '-q']),
+                            ('execution', ['-q', '--junitxml=' + str(root / 'native.xml'), '--basetemp=' + str(root / 'pytest')])]:
+            receipt = root / ('native-' + stage + '.json')
+            timer.run([sys.executable, '-I', '-B', '-c', bootstrap, str(receipt), *common, *tail],
+                      cwd=root, log=root / ('native-' + stage + '.log'))
+            receipts[stage] = json.loads(receipt.read_text())
+            verify_case_inventory(receipts[stage])
+        inventory = shared.load('backend_native_inventory', checker)
+        report['validated_cases'] = inventory.validate_inventory(receipts['collection'], receipts['execution'], root / 'native.xml')
+        report['complete'] = True
+    finally:
+        shared.write(root / 'inside.json', report)
 
 
 def host(options):
@@ -236,7 +238,7 @@ def host(options):
         observed_volumes.update(mounted_volume_names(container))
         report['observed_volume_names'] = sorted(observed_volumes)
         shared.write(directory / 'host.json', report)
-    timer = shared.Deadline(WORK_SECONDS - (time.monotonic() - started), report)
+    timer = shared.Deadline(WORK_SECONDS - (time.monotonic() - started), report, receipt=directory / 'host.json')
     stage = None
     private = None
     try:
@@ -366,6 +368,9 @@ def main(arguments=None):
     parser.add_argument('--evidence', type=Path)
     options = parser.parse_args(arguments)
     if options.describe: print(json.dumps(describe(), indent=2)); return 0
+    def interrupted(signum, frame): raise KeyboardInterrupt('Finite qualification interrupted')
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     if options.inside: inside(); return 0
     if not all((options.helper_image_id, options.postgres_image_id, options.redis_image_id, options.artifact_run, options.evidence)):
         parser.error('Explicit immutable images, qualified artifact run and owned evidence directory required')

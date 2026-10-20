@@ -6,6 +6,7 @@ helper image containing Python. uv is one pinned, hash-verified PyPI wheel in
 owned evidence under the same caps/deadline. No image is built or pulled here.
 """
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -141,20 +142,45 @@ def helper_arguments(image, name, evidence, mode, *, source, source_sha256, netw
 
 
 class Deadline:
-    def __init__(self, seconds, report):
+    def __init__(self, seconds, report, *, receipt=None):
         self.end, self.report = time.monotonic() + seconds, report
+        self.receipt = receipt
+
+    def persist(self):
+        if self.receipt is not None:
+            write(self.receipt, self.report)
+
+    def finish(self, entry, started, *, code=None, error=None):
+        entry.update(state="failed" if error or code else "completed", exit_code=code,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            seconds=round(time.monotonic() - started, 3))
+        if error is not None: entry["error"] = type(error).__name__
+        self.report.pop("pending_stage", None)
+        self.persist()
 
     def run(self, command, *, cwd=None, env=None, log=None, check=True, maximum=None):
-        remaining = self.end - time.monotonic() - 10  # TERM/KILL stays inside this phase's budget.
-        if maximum is not None: remaining = min(remaining, maximum)
-        if remaining <= 0: raise TimeoutError("Finite work/cleanup deadline reached")
         started = time.monotonic()
-        with (open(log, "w") if log else open(os.devnull, "w")) as output:
-            process = subprocess.Popen(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
-                                       start_new_session=True)
-            try:
+        entry = dict(argv=command, stage=Path(log).stem if log else Path(command[0]).name,
+            state="pending", started_at=datetime.now(timezone.utc).isoformat())
+        self.report.setdefault("commands", []).append(entry)
+        self.report["pending_stage"] = entry["stage"]
+        process = None
+        try:
+            # Persist before spawn; receipt I/O consumes the existing deadline.
+            self.persist()
+            remaining = self.end - time.monotonic() - 10
+            if maximum is not None: remaining = min(remaining, maximum)
+            if remaining <= 0: raise TimeoutError("Finite work/cleanup deadline reached")
+            with (open(log, "w") if log else open(os.devnull, "w")) as output:
+                process = subprocess.Popen(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
+                                           start_new_session=True)
+                entry.update(state="running", process_group=process.pid)
+                self.persist()
+                remaining = min(remaining, self.end - time.monotonic() - 10)
+                if remaining <= 0: raise TimeoutError("Finite work/cleanup deadline reached")
                 code = process.wait(timeout=remaining)
-            except BaseException as error:
+        except BaseException as error:
+            if process is not None:
                 try: os.killpg(process.pid, signal.SIGTERM)
                 except ProcessLookupError: pass
                 try: process.wait(timeout=5)
@@ -162,19 +188,15 @@ class Deadline:
                     try: os.killpg(process.pid, signal.SIGKILL)
                     except ProcessLookupError: pass
                     process.wait(timeout=5)
-                self.report.setdefault("commands", []).append(dict(argv=command,
-                    exit_code=getattr(process, "returncode", None), error=type(error).__name__,
-                    seconds=round(time.monotonic() - started, 3)))
-                raise
-        self.report.setdefault("commands", []).append(dict(argv=command, exit_code=code,
-            process_group=process.pid,
-            seconds=round(time.monotonic() - started, 3)))
+            self.finish(entry, started, code=getattr(process, "returncode", None), error=error)
+            raise
         if code:
             # The managed CLI wrapper may fail while its Docker child survives.
             # wait() only reaps the wrapper, not that pending create/run request.
             # This session was created by us and contains only this command.
             try: os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError: pass
+        self.finish(entry, started, code=code)
         if check and code: raise RuntimeError("Qualification command failed; see its stage log")
         return code
 
@@ -255,7 +277,8 @@ def inside(mode, relative):
     destination = root / relative
     destination.mkdir(parents=True, exist_ok=True)
     report = dict(complete=False, mode=mode, plan=describe(), commands=[])
-    timer = Deadline(WORK_SECONDS[mode], report)
+    write(destination / "inside.json", report)
+    timer = Deadline(WORK_SECONDS[mode], report, receipt=destination / "inside.json")
     try:
         uv = pinned_uv(root, mode, timer, destination)
         if mode == "artifacts":
@@ -330,7 +353,7 @@ def controller(args):
     report = dict(complete=False, mode=args.mode, identity=identity, image=args.helper_image_id,
         source_head=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         plan=describe(), commands=[], cleanup_verified=False)
-    timer = Deadline(WORK_SECONDS[args.mode], report)
+    timer = Deadline(WORK_SECONDS[args.mode], report, receipt=directory / "host.json")
     def phase_expired(signum, frame): raise TimeoutError("Finite qualification phase expired")
     signal.signal(signal.SIGALRM, phase_expired)
     signal.setitimer(signal.ITIMER_REAL, WORK_SECONDS[args.mode])
@@ -478,12 +501,12 @@ def main():
     parser.add_argument("--report-relative", default="")
     args = parser.parse_args()
     if args.describe: print(json.dumps(describe(), indent=2)); return 0
-    if args.inside: inside(args.inside, args.report_relative); return 0
-    if not args.mode or not args.evidence or args.mode == "native" and not args.artifact_run:
-        parser.error("Explicit mode/evidence and native artifact run are required")
     def interrupted(signum, frame): raise KeyboardInterrupt("Finite qualification interrupted")
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
+    if args.inside: inside(args.inside, args.report_relative); return 0
+    if not args.mode or not args.evidence or args.mode == "native" and not args.artifact_run:
+        parser.error("Explicit mode/evidence and native artifact run are required")
     return controller(args)
 
 

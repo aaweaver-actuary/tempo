@@ -26,6 +26,13 @@ accumulation helper; partial capture remains rejected.
 
 The same regular runner suite also owns private tmp staging, tracked source/hash allowlists, retained installed dependency/tool provenance, credential exclusion, durable fsync/hash-verified copy-back and retention on failed copy or uncertain resource absence. These are source-only checks; the actual artifact/native gates still need separate grants.
 
+`backend/tests/test_legacy_qualification_timing.py` owns durable pending/running
+command receipts before spawn/wait, UTC completion and elapsed timing, timeout
+and interruption reaping, spawn/receipt failures, unchanged cleanup independence
+and helper signal dispatch. Its standard-library tests mock every child process.
+Control captures remain unrecorded so private provisioning arguments are not
+added to receipts. Command progress never substitutes for a complete inventory.
+
 `backend/tests/test_legacy_bridge_qualification_plan.py` owns the finite fixed
 artifact/native inventories, hard helper caps/no socket mount, immutable-image
 refusal, approved managed-window guard and process-group timeout behavior. It

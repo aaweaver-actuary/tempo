@@ -309,7 +309,7 @@ def test_controller_mounts_only_owned_tmp_then_copies_receipts_before_removal(tm
     monkeypatch.setattr(module, 'OwnedStaging', lambda identity, head: real_staging(identity, head, base=tmp_path))
     mounts = {}
     class Timer:
-        def __init__(self, *_args): pass
+        def __init__(self, *_args, **_options): pass
         def run(self, command, **_options):
             if command[:2] == ['docker', 'run']:
                 for value in command:
