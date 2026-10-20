@@ -367,3 +367,61 @@ def test_endgame_attempt_phases_preserve_provider_transaction_and_receipt_bounda
         assert len(set(phase_threads)) == 1
 
     asyncio.run(exercise())
+
+
+def test_optional_endgame_writer_uses_separate_lazy_capacity_and_keeps_foreground_defaults(monkeypatch):
+    from tempo_learning_runtime import database as database_module
+    from tempo_learning_runtime.endgame_io import EndgameIO
+
+    pools = []
+
+    class Pool:
+        check_connection = staticmethod(lambda connection: None)
+
+        def __init__(self, url, **options):
+            self.url, self.options = url, options
+            pools.append(self)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(database_module, "ConnectionPool", Pool)
+    configuration = Configuration("lane", "unused-writer", "unused-reader", "x" * 40,
+                                  maintenance=False, pool_size=1)
+    database = database_module.Database(configuration)
+    # Inspect the actual selected pool without replacing Database.transaction.
+    selected = []
+
+    def select_writer():
+        with database_module.connection():
+            pass
+
+    @contextmanager
+    def lease(pool):
+        selected.append(pool)
+        raise LookupError("selected")
+        yield  # pragma: no cover -- lease intentionally stops before any SQL.
+
+    monkeypatch.setattr(Pool, "connection", lease, raising=False)
+
+    async def exercise():
+        import pytest
+        worker = EndgameIO()
+        with database.scope():
+            with pytest.raises(LookupError, match="selected"):
+                select_writer()
+            with pytest.raises(LookupError, match="selected"):
+                await worker.run(select_writer)
+            with pytest.raises(LookupError, match="selected"):
+                select_writer()
+        await worker.aclose()
+        database.close()
+
+    asyncio.run(exercise())
+    assert selected[0] is database.writer
+    assert selected[2] is database.writer
+    assert selected[1] is pools[3]
+    assert selected[1].url == "unused-writer"
+    assert selected[1].options["max_size"] == 1
+    assert selected[1].options["timeout"] == .25
+    assert len(pools) == 4
