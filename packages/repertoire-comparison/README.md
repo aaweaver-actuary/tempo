@@ -1,6 +1,6 @@
 # Repertoire membership: first departure
 
-The smallest entry is `first_departure(game, supplied_snapshot)`: it returns a
+The smallest entry is `first_departure_ply(game, supplied_snapshot)` returning the integer/null; unsupported evidence raises an explicit ValueError. Optional `first_departure(game, supplied_snapshot)` adds side/status details: it returns a
 **one-based** move ply and `learner`/`opponent`, or `ply: null` when the whole
 game is covered. Invalid or insufficient evidence is explicitly `unsupported`;
 it never silently means no departure. Any supplied authored alternative counts
@@ -12,8 +12,7 @@ result = first_departure(game, snapshot)
 # {"status": "compared", "ply": 2, "side": "opponent", "reason": None}
 ```
 
-`tempo-first-departure --game game.json --snapshot repertoire.json` prints that
-small result. It has no provider, database or Study dependency. The existing
+`tempo-first-departure --game game.json --snapshot repertoire.json` prints the integer or `null` (unsupported evidence is explicit and exits nonzero). It has no provider, database or Study dependency. The existing
 Game Evidence route traversal is reused. Rich raw reports below remain optional;
 none of their future consumers is required to use this minimal entry.
 

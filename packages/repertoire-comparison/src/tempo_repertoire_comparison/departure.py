@@ -29,3 +29,11 @@ def first_departure(game: CanonicalGame, snapshot: RepertoireSnapshot) -> Depart
             continue
         return dict(status="compared", ply=fact.ply + 1, side=fact.side, reason=None)
     return dict(status="compared", ply=None, side=None, reason=None)
+
+
+def first_departure_ply(game: CanonicalGame, snapshot: RepertoireSnapshot) -> int | None:
+    """Return the one-based integer/null; insufficient input is an explicit error."""
+    result = first_departure(game, snapshot)
+    if result["status"] == "unsupported":
+        raise ValueError(result["reason"])
+    return result["ply"]

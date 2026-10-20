@@ -1,5 +1,5 @@
 import pytest
-from tempo_repertoire_comparison import first_departure
+from tempo_repertoire_comparison import first_departure, first_departure_ply
 from .test_comparison import game, route, snapshot
 
 
@@ -11,3 +11,5 @@ from .test_comparison import game, route, snapshot
 def test_first_departure_normal_cases(played, expected_ply, side):
     result = first_departure(game(played), snapshot([route(["e2e4", "e7e5"])]))
     assert result == dict(status="compared", ply=expected_ply, side=side, reason=None)
+
+    assert first_departure_ply(game(played), snapshot([route(["e2e4", "e7e5"])])) == expected_ply

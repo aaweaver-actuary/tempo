@@ -16,5 +16,5 @@ def main(argv=None):
         result = first_departure(read_value(arguments.game, CanonicalGame), read_value(arguments.snapshot, RepertoireSnapshot))
     except (OSError, ValueError) as error:
         parser.exit(2, f"Unsupported comparison input: {error}\n")
-    print(json.dumps(result))
+    print(json.dumps(result["ply"] if result["status"] == "compared" else result))
     return 0 if result["status"] == "compared" else 2

@@ -1994,7 +1994,8 @@
         "RouteFrontier",
         "TraversalRoute",
         "DepartureResult",
-        "first_departure"
+        "first_departure",
+        "first_departure_ply"
       ],
       "dependencies": [
         "tempo_game_review_contracts"
