@@ -7,12 +7,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-from typing import Any, NotRequired, TypedDict
+from typing import Any
 
 from .. import postgres_store
 from ..postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
-from .opening_capacity_frontier import plan_prioritized_opening_admissions
 from . import frozen_opening_order
 from .opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .pgn import ends_on_trained_move
@@ -26,219 +25,22 @@ from .review_service import preserve_daily_queue_order
 from .tactical_catalog import seed_tactical_introductions
 
 
-class OpeningCapacityRoutePayload(TypedDict):
-    repertoire_id: str
-    generation: int
-    line_id: str
-    decision_index: int
-    parent_card_id: str
-    parent_introduced: bool
-    earlier_unreviewed_card_ids: tuple[str, ...]
-    current_ready_publication: bool
-    structurally_valid: bool
-    single_decision: bool
-
-
-class AdmittedOpeningProposal(TypedDict):
-    """Existing durable opening-plan shape; annotations do not alter checkpoints."""
-
-    repertoire_id: str
-    card_id: str
-    reason: str | None
-    capacity_route: NotRequired[OpeningCapacityRoutePayload]
+# The compatibility surface remains here; introduction decisions and persistence
+# now have explicit, separately testable owners.
+from .queue_admission import AdmittedOpeningProposal, OpeningCapacityRoutePayload
+from .queue_admission_adapter import QueueAdmissionAdapter, _PRIORITY_OPENING_CANDIDATE_BODY
+from . import queue_admission
 
 
 def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
-    """Trim legacy queues that eagerly admitted every unseen card."""
-    if frozen_opening_order.activation(db)[0] is not None:
-        return
-    rows = db.execute(
-        """
-        SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id FROM daily_queue q
-        JOIN cards c ON c.id=q.card_id
-        WHERE q.queue_date=? AND q.status='queued' AND c.content_type='opening'
-          AND c.repertoire_id<>'__retained_cards__'
-          AND COALESCE(q.admission_kind,'')!='explicit'
-          AND (c.introduced_at IS NULL OR c.introduced_at=?)
-          AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-        ORDER BY q.position,q.id
-    """,
-        (day, day),
-    ).fetchall()
-    # Historical introductions consume allowance even if eligibility changes later.
-    introduced_by_repertoire = dict(
-        db.execute(
-            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id) FROM cards c
-               LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
-               WHERE c.content_type='opening' AND c.introduced_at=?
-                 AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
-            (day,),
-        ).fetchall()
-    )
-    for row in rows:
-        repertoire_id = row["repertoire_id"]
-        introduced = introduced_by_repertoire.get(repertoire_id, 0)
-        daily_limit = repertoire_limits.get(repertoire_id, limit) if repertoire_limits is not None else limit
-        if introduced < daily_limit or has_outstanding_real_game_miss(db, row["card_id"]):
-            db.execute(
-                "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-                (day, row["card_id"]),
-            )
-            introduced_by_repertoire[repertoire_id] = introduced + 1
-        else:
-            db.execute("DELETE FROM daily_queue WHERE id=?", (row["id"],))
-            db.execute(
-                "UPDATE cards SET introduced_at=NULL,state='new' WHERE id=?",
-                (row["card_id"],),
-            )
+    return queue_admission.reconcile_unseen_queue(QueueAdmissionAdapter(db), day, limit, repertoire_limits)
 
 
 _ACTIVE_OPENING_MISS_SQL = outstanding_miss_sql(postgres=True)
 
 
-_PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
-                  CASE WHEN active_miss.card_id IS NOT NULL THEN ?
-                    WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
-                    'Priority introduction · reached ' || json_extract(opportunity.evidence_json,'$.encounter_count') ||
-                    ' times in games, missed ' || json_extract(opportunity.evidence_json,'$.miss_count') || ' times'
-                    ELSE p.reason END gameplay_priority_reason,
-                  CASE WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.priority_date END priority_date,
-                  COALESCE(published_priority.priority_score,legacy_priority.priority_score) priority_score,
-                  COALESCE(published_priority.completed_line_ids_json,legacy_priority.completed_line_ids_json) completed_line_ids_json,
-                  COALESCE(published_priority.frontier_decisions_json,legacy_priority.frontier_decisions_json) frontier_decisions_json
-           FROM cards c
-           JOIN repertoires linked ON (
-               linked.id=c.repertoire_id OR EXISTS(
-                   SELECT 1 FROM repertoire_cards candidate_link
-                   WHERE candidate_link.card_id=c.id
-                     AND candidate_link.repertoire_id=linked.id
-               )
-           )
-           LEFT JOIN current_gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
-           LEFT JOIN active_miss ON active_miss.card_id=c.id
-           LEFT JOIN current_repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
-             AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
-             AND opportunity.status='active'
-             AND json_extract(opportunity.evidence_json,'$.analysis_based') IS NULL
-           LEFT JOIN repertoire_priority_publications publication
-             ON publication.repertoire_id=linked.id
-           LEFT JOIN current_repertoire_card_priority_generations published_priority
-             ON published_priority.card_id=c.id
-            AND published_priority.repertoire_id=linked.id
-            AND published_priority.generation=publication.generation
-           LEFT JOIN current_repertoire_card_introduction_priorities legacy_priority
-             ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
-           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL OR opportunity.id IS NOT NULL)
-             AND (c.state='new' OR (c.state='locked' AND (opportunity.id IS NOT NULL OR active_miss.card_id IS NOT NULL)))
-             AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
-             AND EXISTS(SELECT 1 FROM repertoires r_ok
-                        WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
-                          AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                         WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id))
-             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)"""
-
-
 def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], maximum: int) -> int:
-    """Admit unseen opening cards by impact without changing the active queue."""
-
-    candidates = db.execute(
-        f"WITH active_miss AS ({outstanding_miss_query(db)}) " + _PRIORITY_OPENING_CANDIDATE_BODY,
-        (MISS_REASON, day, day, day, day),
-    ).fetchall()
-    # Historical introductions consume allowance even if eligibility changes later.
-    introduced_by_repertoire = dict(
-        db.execute(
-            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
-               FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?
-               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
-            (day, day),
-        ).fetchall()
-    )
-    candidates = frozen_opening_order.annotate(db, candidates)
-    normal_plan = plan_prioritized_opening_admissions(candidates, introduced_by_repertoire, day, limit, miss_reason=MISS_REASON)
-    admission_plan = list(normal_plan)
-    from .opening_capacity_admission import (
-        capacity_expansion_enabled, remaining_opening_allowances, read_capacity_routes,
-        capacity_priority_statement, propose_capacity_expansion_from_priority_rows, capacity_proposal_payload, capacity_route_still_valid,
-        CAPACITY_READ_BATCH_SIZE,
-    )
-    if capacity_expansion_enabled():
-        from .study_mode import study_only_enabled
-        if not study_only_enabled(db):
-            limits = limit if isinstance(limit, dict) else {
-                row[0]: limit for row in db.execute('SELECT id FROM repertoires').fetchall()
-            }
-            frozen_active = frozen_opening_order.activation(db)[0] is not None
-            remaining = remaining_opening_allowances([] if frozen_active else normal_plan, introduced_by_repertoire, limits)
-            if any(remaining.values()):
-                normal_parent_ids = tuple(row['id'] for row in candidates) if frozen_active else tuple(row['id'] for _, row in normal_plan)
-                routes = tuple(route for repertoire_id in sorted(remaining) if remaining[repertoire_id] > 0
-                               for route in read_capacity_routes(
-                                   lambda statement, parameters: db.execute(statement, parameters).fetchall(),
-                                   repertoire_id, normal_parent_ids,
-                               ))
-                capacity_rows = []
-                card_ids = sorted({card_id for card_id, _ in routes})
-                for offset in range(0, len(card_ids), CAPACITY_READ_BATCH_SIZE):
-                    page = card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE]
-                    capacity_rows.extend(db.execute(
-                        f"WITH active_miss AS ({outstanding_miss_query(db)}) "
-                        + capacity_priority_statement(_PRIORITY_OPENING_CANDIDATE_BODY)
-                        + ' AND c.id IN (' + ','.join('?' for _ in page) + ')',
-                        (MISS_REASON, day, day, day, day, *page),
-                    ).fetchall())
-                if frozen_active:
-                    from .opening_capacity_admission import plan_frozen_with_capacity
-                    admission_plan = plan_frozen_with_capacity(day, candidates, introduced_by_repertoire, limits, routes,
-                        frozen_opening_order.annotate(db, capacity_rows), miss_reason=MISS_REASON)
-                for proposal in ([] if frozen_active else propose_capacity_expansion_from_priority_rows(day, normal_plan, remaining, routes, capacity_rows,
-                                                   miss_reason=MISS_REASON)):
-                    admission_plan.append((proposal.candidate.repertoire_id, {
-                        **proposal.candidate.priority_row(), **capacity_proposal_payload(proposal),
-                    }))
-    next_position = maximum
-    for repertoire_id, choice in admission_plan:
-        if not frozen_opening_order.proposal_valid(db, {**choice, "card_id": choice["id"], "reason": choice["gameplay_priority_reason"]}):
-            continue
-        if 'capacity_route' in choice:
-            if not capacity_route_still_valid(db, choice, day):
-                continue
-            # Shared cards are charged only to the writer's chosen membership.
-            consumed = db.execute(
-                """SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                   WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?
-                     AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=?""",
-                (day, day, repertoire_id),
-            ).fetchone()[0]
-            current_limit = db.execute(
-                'SELECT COALESCE(r.new_cards_per_day,s.new_cards_per_day) '
-                'FROM repertoires r CROSS JOIN settings s WHERE r.id=? AND s.id=1', (repertoire_id,),
-            ).fetchone()
-            requested_limit = limit.get(repertoire_id, 0) if isinstance(limit, dict) else limit
-            if current_limit is None or consumed >= min(current_limit[0], requested_limit):
-                continue
-        next_position += 1
-        db.execute(
-            """INSERT INTO daily_queue(
-                   queue_date,card_id,position,gameplay_priority_reason,admission_repertoire_id
-               ) VALUES(?,?,?,?,?)""",
-            (day, choice["id"], next_position, choice["gameplay_priority_reason"], repertoire_id),
-        )
-        db.execute(
-            "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-            (day, choice["id"]),
-        )
-        db.execute(
-            """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
-               WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
-                 AND json_extract(evidence_json,'$.analysis_based') IS NULL
-                 AND status='active'""",
-            (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
-             repertoire_id, choice["id"]),
-        )
-    return next_position
+    return queue_admission.admit_prioritized_opening_cards(QueueAdmissionAdapter(db), day, limit, maximum)
 
 
 _OPENING_UNLOCK_ELIGIBILITY_SQL = f"""content_type='opening' AND state='locked' AND archived=0

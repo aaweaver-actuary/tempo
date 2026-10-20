@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import os
 
-from .opening_capacity_frontier import (
-    CapacityCandidate,
-    CapacityRoute,
-    CapacitySnapshot,
-    propose_capacity_expansion,
+from .opening_capacity_frontier import CapacityRoute
+# Compatibility exports: policy has one pure owner; existing consumers keep
+# their imports while the storage adapter retains route queries and validation.
+from .queue_admission import (
+    remaining_opening_allowances, propose_capacity_expansion_from_priority_rows,
+    capacity_proposal_payload, plan_frozen_with_capacity,
 )
 
 CAPACITY_READ_BATCH_SIZE = 16
@@ -17,18 +17,6 @@ CAPACITY_READ_BATCH_SIZE = 16
 
 def capacity_expansion_enabled() -> bool:
     return os.getenv("OPENING_CAPACITY_FRONTIER_EXPANSION", "0") == "1"
-
-
-def remaining_opening_allowances(
-    normal_plan, introduced_counts, limits
-) -> dict[str, int]:
-    remaining = {
-        repertoire_id: max(0, allowance - introduced_counts.get(repertoire_id, 0))
-        for repertoire_id, allowance in limits.items()
-    }
-    for repertoire_id, _ in normal_plan:
-        remaining[repertoire_id] = max(0, remaining.get(repertoire_id, 0) - 1)
-    return remaining
 
 
 def _available_route_card(alias: str) -> str:
@@ -190,58 +178,6 @@ def capacity_priority_statement(statement: str) -> str:
     return statement.replace(existing_state_clause, "c.state='locked'")
 
 
-def propose_capacity_expansion_from_priority_rows(
-    day, normal_plan, remaining, routes, priority_rows, *, miss_reason
-):
-    routes_by_membership = {
-        (route.repertoire_id, card_id): route for card_id, route in routes
-    }
-    candidates = tuple(
-        CapacityCandidate(
-            row["id"],
-            row["repertoire_id"],
-            (routes_by_membership[row["repertoire_id"], row["id"]],),
-            frozen_rank=dict(row).get("frozen_rank"),
-            frozen_valid=dict(row).get("frozen_valid", True),
-            frozen_token=tuple(dict(row).get("frozen_token", (None, 0))),
-            **{
-                field: row[field]
-                for field in (
-                    "moves_json",
-                    "gameplay_priority_reason",
-                    "priority_date",
-                    "priority_score",
-                    "completed_line_ids_json",
-                    "frontier_decisions_json",
-                )
-            },
-        )
-        for row in priority_rows
-        if (row["repertoire_id"], row["id"]) in routes_by_membership
-    )
-    return propose_capacity_expansion(
-        CapacitySnapshot(
-            True,
-            day,
-            tuple((repertoire_id, row["id"]) for repertoire_id, row in normal_plan),
-            tuple(sorted(remaining.items())),
-            sum(remaining.values()),
-            candidates,
-        ),
-        miss_reason=miss_reason,
-    )
-
-
-def capacity_proposal_payload(proposal) -> dict:
-    return {
-        "repertoire_id": proposal.candidate.repertoire_id,
-        "card_id": proposal.candidate.card_id,
-        "reason": proposal.candidate.gameplay_priority_reason,
-        "capacity_route": asdict(proposal.route),
-        **({"frozen_token": list(proposal.candidate.frozen_token)} if proposal.candidate.frozen_token != (None, 0) else {}),
-    }
-
-
 def capacity_route_still_valid(database, planned: dict, day: str) -> bool:
     """Revalidate the exact proposed route through the existing admission transaction."""
     if not capacity_expansion_enabled():
@@ -284,27 +220,3 @@ def capacity_route_still_valid(database, planned: dict, day: str) -> bool:
         ).fetchone()
         is not None
     )
-
-
-def plan_frozen_with_capacity(day, candidates, counts, limits, routes, capacity_rows, *, miss_reason):
-    """Preserve existing bounded capacity eligibility; prefer ranks after each choice."""
-    from .opening_capacity_frontier import plan_prioritized_opening_admissions
-    selected, consumed = [], dict(counts)
-    chosen_ids = set()
-    while True:
-        remaining = remaining_opening_allowances([], consumed, limits)
-        normal_parents = [(repertoire_id, row) for repertoire_id, row in selected if 'capacity_route' not in row]
-        proposals = propose_capacity_expansion_from_priority_rows(day, normal_parents, remaining, routes, capacity_rows, miss_reason=miss_reason)
-        pool = [row for row in candidates if row['id'] not in chosen_ids]
-        for proposal in proposals:
-            payload = capacity_proposal_payload(proposal)
-            pool.append({**proposal.candidate.priority_row(), **payload})
-        choices = plan_prioritized_opening_admissions(pool, consumed, day, limits, miss_reason=miss_reason)
-        if not choices:
-            return selected
-        repertoire_id, row = choices[0]
-        selected.append((repertoire_id, row))
-        chosen_ids.add(row['id'])
-        consumed[repertoire_id] = consumed.get(repertoire_id, 0) + 1
-        candidates = [row for row in candidates if row['id'] not in chosen_ids]
-        capacity_rows = [row for row in capacity_rows if row['id'] not in chosen_ids]
