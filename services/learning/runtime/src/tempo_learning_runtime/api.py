@@ -1,10 +1,10 @@
 """Learning-only HTTP composition. Authentication precedes database access."""
 
-import asyncio, hashlib, hmac, json, uuid, time
+import asyncio, hmac, json, uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
-import chess, httpx, psycopg
+import chess, psycopg
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,8 +36,6 @@ from .defense import (
     submit_defense_attempt,
     submit_defense_recognition,
 )
-from .endgames import generate_position, category_for_player
-from .endgame_io import EndgameIO, EndgameUnavailable
 from . import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
@@ -130,7 +128,6 @@ def register_handlers():
 def create_app(configuration: Configuration):
     register_handlers()
     database = Database(configuration)
-    endgame_io = EndgameIO(lambda: database.close_endgames())
     activity = HostActivity(configuration.host_activity_directory, source=configuration.workspace_id)
 
     @asynccontextmanager
@@ -157,10 +154,7 @@ def create_app(configuration: Configuration):
             try:
                 activity.close()
             finally:
-                try:
-                    await endgame_io.aclose()
-                finally:
-                    database.close()
+                database.close()
 
     app = FastAPI(title="Tempo Learning", version="0.1.0", lifespan=lifespan)
     app.state.database = database
@@ -695,121 +689,27 @@ def create_app(configuration: Configuration):
             idempotency_key or "defense-attempt:" + request.attempt_id,
         )
 
-    async def endgame_phase(operation, *arguments, operation_id=None):
-        try:
-            return await endgame_io.run(operation, *arguments)
-        except EndgameUnavailable as error:
-            detail = {"message": str(error) + "; retry the same operation", "state": "unknown"}
-            headers = {"Retry-After": "1"}
-            if operation_id is not None:
-                detail["operation_id"] = operation_id
-                headers["Location"] = "/api/operations/" + operation_id
-            raise HTTPException(503, detail, headers=headers) from error
-
     @app.post("/api/endgames/probe")
     async def probe(request: EndgameProbeRequest):
-        return await tablebase(request.fen)
-
-    async def tablebase(fen, *, operation_id=None):
-        try:
-            position = chess.Board(fen)
-        except ValueError as error:
-            raise HTTPException(422, "Invalid endgame FEN") from error
-        if not position.is_valid() or len(position.piece_map()) > 7:
-            raise HTTPException(422, "Unsupported endgame position")
-        key = "tb-fen-v2:" + position.fen()
-        cached = await endgame_phase(endgame_store.cached_answer, key, operation_id=operation_id)
-        if cached is not None:
-            return cached
-        if not configuration.tablebase_url:
-            raise HTTPException(
-                503, "No local tablebase answer; optional provider disabled"
-            )
-        try:
-            async with httpx.AsyncClient(timeout=3, follow_redirects=False) as client:
-                response = await client.get(
-                    configuration.tablebase_url, params={"fen": fen}
-                )
-            response.raise_for_status()
-            data = response.json()
-            if data.get("category") not in (
-                "win",
-                "loss",
-                "draw",
-                "cursed-win",
-                "blessed-loss",
-                "maybe-win",
-                "maybe-loss",
-            ):
-                raise ValueError("Unrecognized tablebase category")
-        except (httpx.HTTPError, ValueError) as error:
-            raise HTTPException(
-                503, "Optional tablebase unavailable; retry when online"
-            ) from error
-        await endgame_phase(endgame_store.cache_answer, key, data, operation_id=operation_id)
-        return data
+        raise HTTPException(410, "On-demand endgame calculation has been removed")
 
     @app.get("/api/endgames/templates")
-    async def templates():
-        return {"templates": await endgame_phase(endgame_store.active_templates)}
+    def templates():
+        return {"templates": endgame_store.active_templates()}
 
     @app.post("/api/endgames/templates/{identifier}/attempt")
-    async def endgame_attempt(
-        identifier: str, idempotency_key: str | None = Header(None)
-    ):
-        operation_id = idempotency_key or uuid.uuid4().hex
-        prior = await endgame_phase(endgame_store.prior_attempt, operation_id, operation_id=operation_id)
-        if prior:
-            payload = json.loads(prior["payload_json"])
-            if (
-                prior["command_name"] != "endgames.attempt.create"
-                or payload["template_id"] != identifier
-            ):
-                raise HTTPException(
-                    409, "Operation ID was already used for another request"
-                )
-            return await endgame_phase(
-                gateway.dispatch, "endgames.attempt.create", payload, operation_id,
-                operation_id=operation_id,
-            )
-        template = await endgame_phase(endgame_store.active_template, identifier, operation_id=operation_id)
-        if not template:
-            raise HTTPException(404, "Endgame template not found")
-        deadline = time.monotonic() + 5
-        for index in range(80):
-            if time.monotonic() > deadline:
-                raise HTTPException(
-                    503,
-                    "Endgame preparation budget exhausted; retry the same operation",
-                )
-            seed = int.from_bytes(
-                hashlib.sha256(f"{operation_id}:{index}".encode()).digest()[:8], "big"
-            )
-            fen = generate_position(
-                template["white_material"],
-                template["black_material"],
-                template["trained_color"],
-                seed=seed,
-            )
-            data = await tablebase(fen, operation_id=operation_id)
-            target = category_for_player(data["category"])
-            if target != "loss" and template["goal_mix"] in ("both", target):
-                break
-        else:
-            raise HTTPException(422, "Could not find a supported win/draw position")
-
-        return await endgame_phase(
-            gateway.dispatch,
-            "endgames.attempt.create",
-            {
-                "template_id": identifier,
-                "fen": fen,
-                "target": target,
-                "moves": data.get("moves", []),
-            },
-            operation_id,
-            operation_id=operation_id,
-        )
+    def endgame_attempt(identifier: str, idempotency_key: str | None = Header(None)):
+        # Recover only an already-recorded immutable position. Never generate a
+        # replacement or create a new operation identity after removal.
+        if idempotency_key:
+            prior = endgame_store.prior_attempt(idempotency_key)
+            if prior:
+                payload = json.loads(prior["payload_json"])
+                if (prior["command_name"] != "endgames.attempt.create"
+                        or payload.get("template_id") != identifier):
+                    raise HTTPException(409, "Operation ID was already used for another request")
+                return gateway.dispatch("endgames.attempt.create", payload, idempotency_key)
+        raise HTTPException(410, "On-demand endgame calculation has been removed; saved attempts remain available")
 
     @app.get("/internal/publications/operations/{operation_id}")
     def publication_operation(operation_id: str):

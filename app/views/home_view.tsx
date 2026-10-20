@@ -58,6 +58,7 @@ import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
 import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
 import EndgamesView from "./endgames_view";
+import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { Chess, Move, Square } from "chess.js";
@@ -860,7 +861,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
       isLocked ||
       step >= card.moves.length ||
       currentTurn !== trainedColor(card) ||
-      card.kind === "endgame"
+      (card.kind === "endgame" && !hasSavedEndgameLine(card))
     )
       return;
     const position = new Chess(currentFenString);

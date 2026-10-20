@@ -96,3 +96,15 @@ functions. Services must report real provider and storage failures; they must
 not substitute sample records or claim success. Background work follows the
 bounded-slice contract in `docs/BACKGROUND-WORK.md`: claim one item, close
 SQLite before computation or network I/O, then publish one idempotent result.
+
+
+### Removed on-demand endgame calculation
+
+Probe, generated-template admission and new generated-attempt routes return 410.
+Their provider/cache/generation paths and generator implementation are removed;
+queued template-generation commands also decline without calculation. Existing
+immutable attempt receipts retain template binding and canonical status/result
+recovery. Saved cards, attempts, history and ordinary review storage are not
+migrated or deleted. See the canonical
+[Learning request/resource drawing](../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
+and [saved browser practice policy](../app/README.md#saved-endgame-practice-after-calculation-removal).

@@ -9,6 +9,7 @@ import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
 import RetryButton from "../components/buttons/RetryButton";
 import EndgamesView from "./endgames_view";
+import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import { PracticeCard } from "../types";
 import { BoardTheme, Chessboard, PieceSet } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
@@ -171,7 +172,7 @@ function StandardTrainingView({
   }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError, reviewPersistenceIdentity]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const trainingMutationBlocked = liveQueueBlocked || reviewBlocked || burialPending;
-  const isEndgame = card.kind === "endgame";
+  const isEndgame = card.kind === "endgame" && !hasSavedEndgameLine(card);
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;

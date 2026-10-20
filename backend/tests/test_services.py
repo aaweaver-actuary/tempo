@@ -7,7 +7,6 @@ from app.services.cards import card_id
 from app.services.puzzles import load_packaged_decks, validate_puzzle_record
 from app.services.pgn import parse_pgn, prefix_through_user_moves
 from app.services.scheduler import schedule_review, unlock_ready
-from app.services.endgames import generate_position, normalized_material
 from app.services.game_analysis import classify_swings
 import chess
 
@@ -141,17 +140,6 @@ class PackagedContentTests(unittest.TestCase):
         self.assertEqual(board.piece_at(chess.A2), chess.Piece(chess.BISHOP, chess.WHITE))
         self.assertEqual(board.piece_at(chess.A3), chess.Piece(chess.BISHOP, chess.WHITE))
         self.assertEqual(solution, ["a2e6", "d7d8", "f7f8"])
-
-    def test_endgame_generator_is_legal_and_seven_piece_bounded(self) -> None:
-        for seed in range(40):
-            board = chess.Board(generate_position("KQR", "K", "white", seed=seed))
-            self.assertTrue(board.is_valid())
-            idle_king = board.king(not board.turn)
-            self.assertIsNotNone(idle_king)
-            self.assertFalse(board.is_attacked_by(board.turn, idle_king))
-        self.assertEqual(normalized_material("Q & K"), "KQ")
-        with self.assertRaises(ValueError):
-            generate_position("KPPPPPP", "KPPPPP", "white")
 
     def test_game_analysis_finds_mistake_and_missed_punishment(self) -> None:
         result = classify_swings([{"ply":0,"before_cp":150,"after_cp":20,"opponent_created_chance":True}], "white", 100)

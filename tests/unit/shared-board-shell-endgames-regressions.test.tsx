@@ -1,6 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Chess } from "chess.js";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { probeTablebase } from "../../app/utils/tablebase";
 import EndgamesView from "../../app/views/endgames_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
@@ -13,14 +12,8 @@ vi.mock("../../app/utils/local", () => ({
   usesLocalApi: () => false,
 }));
 
-vi.mock("../../app/lib/endgame-generator", () => ({
-  generateLegalEndgameFen: () =>
-    "rn1qkbnr/pppb1ppp/8/3pp3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 3",
-}));
-
 vi.mock("../../app/utils/tablebase", () => ({
   probeTablebase: vi.fn(async () => ({ category: "draw", moves: [] })),
-  tablebaseCategoryForWhite: vi.fn(() => "draw"),
 }));
 
 beforeEach(() => {
@@ -59,22 +52,30 @@ it("Endgames shared board publishes shell ownership and hides local board instan
   expect(useBoardShellStore.getState().board.owner).toBe("train");
 });
 
-it("endgame shortcuts browse only actual played moves without probing or grading again", async () => {
-  render(<EndgamesView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} useSharedBoard />);
-  await waitFor(() => expect(screen.getByText("Classify the position before playing.")).toBeTruthy());
-  const originalFen = useBoardShellStore.getState().board.fen;
-  act(() => useBoardShellStore.getState().board.keyboard?.end?.());
-  expect(useBoardShellStore.getState().board.fen).toBe(originalFen);
-  fireEvent.click(screen.getByRole("button", { name: "Draw" }));
-  await act(async () => { await useBoardShellStore.getState().board.onMove?.("a2", "a3"); });
-  const played = new Chess(originalFen); played.move("a3");
-  expect(useBoardShellStore.getState().board.fen).toBe(played.fen());
-  const requestCount = vi.mocked(probeTablebase).mock.calls.length;
-  act(() => useBoardShellStore.getState().board.keyboard?.start?.());
-  expect(useBoardShellStore.getState().board.fen).toBe(originalFen);
+it("saved material-only endgames show the stored position without calculation or fabricated grading", async () => {
+  const { asCardId, asFenString } = await import("../../app/types");
+  const onReview = vi.fn();
+  const onBury = vi.fn(async () => undefined);
+  const fen = "8/8/8/8/8/2k5/R7/1K6 w - - 0 1";
+  render(<EndgamesView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} useSharedBoard
+    scheduledCard={{ id: asCardId("saved"), kind: "endgame", title: "Saved rook ending", subtitle: "",
+      startingFen: asFenString(fen), moves: [], userMoveTarget: 0 }} onReview={onReview} onBury={onBury} />);
+  expect(screen.getByRole("status").textContent).toContain("no playable stored solution");
+  expect(useBoardShellStore.getState().board.fen).toBe(fen);
   expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
-  act(() => useBoardShellStore.getState().board.keyboard?.reset?.());
-  expect(useBoardShellStore.getState().board.fen).toBe(played.fen());
-  expect(useBoardShellStore.getState().board.interactionMode).toBe("legal");
-  expect(vi.mocked(probeTablebase).mock.calls.length).toBe(requestCount);
+  expect(screen.queryByRole("button", { name: /New position/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Correct" })).toBeNull();
+  expect(vi.mocked(probeTablebase)).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Bury" }));
+  await waitFor(() => expect(onBury).toHaveBeenCalledOnce());
+  expect(onReview).not.toHaveBeenCalled();
+});
+
+it("standalone endgames mount without provider, position or template requests", () => {
+  const request = vi.spyOn(globalThis, "fetch");
+  render(<EndgamesView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  expect(screen.getByRole("status").textContent).toContain("calculation has been removed");
+  expect(screen.queryByRole("button", { name: /Add to daily training|New position|Edit material/ })).toBeNull();
+  expect(request).not.toHaveBeenCalled();
+  request.mockRestore();
 });

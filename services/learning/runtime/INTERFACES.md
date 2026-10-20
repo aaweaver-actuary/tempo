@@ -91,7 +91,10 @@ Idempotency-Key values and durable payload normalization remain legacy protocol.
 
 Supported families: card/opening review and reconciliation, required opening
 checkpoints, five typed Study specifications (including self-assessment), tactical
-discovery attempts, endgame attempts/probes and defense recognition/move attempts.
+discovery attempts, saved endgame attempt recovery and defense recognition/move attempts.
+Endgame probe/new-position calculation returns 410. An existing operation key
+can recover only its recorded immutable payload; no provider or replacement
+position is calculated. Saved templates/cards/attempts/history remain stored.
 GET queue issuance authenticates and commits issuance before returning an attempt.
 Projection generation is never an attempt token. Pending operation responses keep
 202, operation_id, state and Location; errors retain detail and review conflict codes.

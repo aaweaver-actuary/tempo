@@ -147,19 +147,14 @@ test("hover feedback covers controls outside the chessboard without changing the
   await expect(board).toHaveCSS("background-image", boardBackground);
 });
 
-test("endgame study actions remain reachable on narrow screens", async ({
-  page,
-}) => {
+test("removed endgame calculation notice remains readable on narrow screens", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareUI(page);
   await navigate(page, "Endgames");
-  for (const name of ["Edit material", "Win", "Draw"]) {
-    const control = page.getByRole("button", { name: new RegExp(name) });
-    await control.scrollIntoViewIfNeeded();
-    await expect(control).toBeInViewport();
-  }
-  await page.getByRole("button", { name: /Edit material/ }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  const notice = page.getByText(/On-demand endgame calculation has been removed/);
+  await notice.scrollIntoViewIfNeeded();
+  await expect(notice).toBeInViewport();
+  await expect(page.getByRole("button", { name: /Edit material|New position|^Win$|^Draw$/ })).toHaveCount(0);
 });
 
 test("desktop workspace panels do not clip controls or content", async ({
