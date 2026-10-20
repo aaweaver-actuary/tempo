@@ -16,7 +16,8 @@ The build rejects named optional implementation roots and emits
 The offline worker still requires every emitted JS/CSS asset; its inventory is
 not weakened to exclude optional chunks after they have been emitted.
 
-[Source composition and offline boundary](../../docs/architecture/diagrams/study-games.md)
-records the branch implementation and evidence scope. Shared host/request gaps
-and deployment resource isolation have separate owners and remain unqualified
-by this frontend work.
+[Canonical source composition](../../app/README.md#main-study-path-and-source-gap) and
+[offline boundary](../../static/README.md#conditional-study-build-and-offline-assets-main)
+records the branch implementation and evidence scope. Merged host/endgame repairs have separate
+[Learning ownership](../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main);
+deployment resource isolation remains unqualified by this frontend work.

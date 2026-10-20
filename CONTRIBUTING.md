@@ -29,6 +29,14 @@ check interfaces, dependency direction, data/transaction/effect ownership,
 asynchronous receipt semantics, shutdown and resource limits. Keep proposed work
 and unverified deployment claims separate from implemented source.
 
+Place canonical Mermaid blocks directly in the relevant owning directory's
+`README.md`, including component and detailed sequence views, so GitHub directory
+navigation renders the drawings. The central diagram README owns the system
+overview and links to those sections. Give a cross-component view one canonical
+README home and link from peers. When relocating a drawing, move its block and
+source notes, update links, and retain useful old anchors as pointers; do not copy
+the same drawing into multiple files. See the index's canonical placement table.
+
 Include an `Architecture impact:` statement in the PR: link the updated views and
 summarize the changed boundary, or write `Architecture impact: none` with a
 specific reason. A documentation correction can update a drawing without changing

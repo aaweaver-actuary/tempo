@@ -59,6 +59,95 @@ sync, connect the legacy UI or implement engines, tactical cards or Intelligence
 It imports no backend or Learning implementation. Existing Learning 0.1.0 and
 scheduling 0.2.0 remain downstream owners; this component never schedules reviews.
 
+## Architecture drawings
+
+These are the canonical drawings for the views below. Edit the blocks here;
+peer documents link to them instead of maintaining copies. See the
+[diagram index and source/status baseline](../../docs/architecture/diagrams/README.md) and
+[maintenance procedure](../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
+
+### Observed game evidence to Learning (MAIN)
+
+Scope: independent Game Evidence v1/v2 delivery into independent Learning. This is
+distinct from the [legacy-local receiver](../../backend/README.md#legacy-assembly-and-existing-coupling).
+The Games viewer is not the evidence producer, and reading a game does not trigger
+this sequence.
+
+```mermaid
+sequenceDiagram
+  participant G as Game Evidence<br/>compare / reconcile<br/>/ deliver
+  participant GD as Game Evidence<br/>database
+  participant L as Learning<br/>authenticated<br/>evidence receiver
+  participant LD as Learning database
+  participant M as Learning essential<br/>maintenance /<br/>admission owner
+  participant S as Study ordinary queue<br/>client
+  G->>GD: Persist desired comparison<br/>and reconciliation request
+  Note over G,GD: Eligible finalization + immutable<br/>outbox insertion commit together
+  G->>GD: Claim delivery under<br/>game/outbox locks, commit<br/>lease and attempt
+  G->>L: POST immutable<br/>EvidenceDelivery with<br/>evidence credential
+  Note over G,L: HTTP outside Game Evidence<br/>transaction, no foreign DB access
+  L->>LD: Begin bounded intake<br/>transaction (background<br/>writer pool)
+  L->>LD: Validate against own active<br/>accepted definitions and<br/>source/game heads
+  alt Accepted current delivery or exact replay
+    L->>LD: Accept facts/revisions +<br/>acknowledgement + durable<br/>remediation request
+    LD-->>L: Atomic commit
+    L-->>G: completed acknowledgement =<br/>accepted evidence
+  else Conflict / invalid / stale authority
+    L-->>G: Explicit rejection or<br/>conflict, no manufactured<br/>queue/review effect
+  else Intake contention or transaction expiry
+    L->>LD: Roll back all acceptance<br/>effects
+    L-->>G: Retryable unavailable<br/>response
+  end
+  alt Valid matching acknowledgement received
+    G->>GD: Lease-fenced receipt +<br/>accepted heads +<br/>reconciliation request,<br/>commit
+  else Lost / invalid response or unavailable receiver
+    G->>GD: Retain same attempted<br/>payload and retry status,<br/>fence successors
+    Note over G,GD: Never rewrite possibly accepted<br/>bytes or infer non-acceptance from<br/>HTTP alone
+  end
+  opt Durable remediation work is available
+    M->>LD: Claim task in short<br/>transaction, commit before<br/>card/queue locks
+    M->>LD: New transaction: prepare one<br/>card, recheck eligibility<br/>and authority
+    M->>LD: Sole admission writer<br/>applies valid queue effect
+    M->>LD: Commit effects + cursor only<br/>under current unexpired<br/>lease/generation
+    Note over M,LD: Yield/rollback releases owned claim<br/>or recovers by expiry, no producer<br/>wait
+  end
+  S->>L: Read/issue normal queue,<br/>submit controlled review
+  Note over S,L: Game Evidence and Games may be<br/>stopped, accepted local facts remain
+```
+
+[`Store._compare`](src/tempo_game_evidence/store.py)
+and [`reconciliation`](src/tempo_game_evidence/reconciliation.py)
+own desired results/outbox/accepted-head projection.
+[`deliver_one`](src/tempo_game_evidence/delivery.py)
+owns the attempt, external HTTP, immutable retry and local receipt lease fence.
+[`EvidenceDelivery` contracts](../../contracts/game-evidence/README.md) express
+observed facts and obligations, not permission to schedule or invent controlled
+study evidence. Learning's
+[HTTP intake](../learning/runtime/src/tempo_learning_runtime/api.py)
+uses `connection(background=True, intake=True)`;
+[`receivers.receive`](../learning/runtime/src/tempo_learning_runtime/receivers.py)
+and [`remediation_adapter.receive`](../learning/runtime/src/tempo_learning_runtime/remediation_adapter.py)
+validate/store inside it. The
+[installed remediation repository](../learning/remediation/src/tempo_learning_remediation/repository.py)
+owns Learning-local obligation persistence. [`maintenance`](../learning/runtime/src/tempo_learning_runtime/maintenance.py),
+[`durable_tasks`](../learning/runtime/src/tempo_learning_runtime/durable_tasks.py)
+and [`admission.admit`](../learning/runtime/src/tempo_learning_runtime/admission.py)
+own claims, short slices and canonical queue writing.
+
+Acceptance is bounded to at most 128 wire items in the 1000 ms intake transaction;
+ordinary maintenance retains its 250 ms transaction bound and size-1 pool.
+`completed` acknowledges durable acceptance, not completed studying or synchronous
+admission. A miss may retain a documented allowance/progression exception, but
+cannot bypass burial, retirement, invalidity, deletion or revision validation.
+Controlled review settlement stays in the
+[Learning review transaction](../learning/runtime/README.md#review-commit-and-recovery-main).
+
+Delivery `401` is retained retryable with a minimum 60-second backoff; replacing
+the producer's private token file requires producer restart/reload, not Study
+restart. Unverifiable terminal/conflict/stale outcomes can block reconciliation
+with diagnostics. See [delivery/auth recovery](README.md#authentication-recovery).
+No command here grants a producer cross-component database writes.
+
 ## Install and local commands
 
 From the repository root:

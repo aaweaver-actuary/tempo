@@ -2,6 +2,159 @@
 
 `tempo-learning-runtime` 0.1.0 serves Learning from one dedicated PostgreSQL 18 database and one configured workspace. Its installed closure contains Learning review and remediation 0.1.0, scheduling 0.2.0, chess-core 0.1.0 and the Content/Game Evidence contract packages. Redis, Celery, engines, model runtimes and the legacy backend are absent. No live database import, deployment, installer change or cutover is provided here.
 
+## Architecture drawings
+
+These are the canonical drawings for the views below. Edit the blocks here;
+peer documents link to them instead of maintaining copies. See the
+[diagram index and source/status baseline](../../../docs/architecture/diagrams/README.md) and
+[maintenance procedure](../../../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
+
+### Shared Learning request execution gaps (MAIN)
+
+**MAIN IMPLEMENTED SOURCE:** main at
+[`588cea54`](https://github.com/aaweaver-actuary/tempo/commit/588cea54574c2b56799f0a22f8235976171c4fba)
+contains HostActivity PR325, endgame PR326, borrowed review-policy PR327 and queue
+persistence PR329. The complete physical Study composition from PR324 is also
+merged. This documentation relocation changes no runtime behavior or deployment.
+The [integration receipt](../../../docs/architecture/study-isolation-integration-2026-10-20.md)
+records exact feature/merge inputs, source parity, 44 combined adapter passes,
+seven focused native passes and their resource/qualification limits.
+
+```mermaid
+flowchart TB
+  Study["Essential Study HTTP request"] -->|"dispatch / response progress"| Loop["Learning ASGI event loop"]
+  Loop -->|"bounded-memory request entry / exit"| Activity["HostActivity request counter and maximum quiet deadline"]
+  Activity -->|"wake event; no publication I/O wait"| Publisher["Optional host daemon: snapshot under memory lock"]
+  Publisher -->|"release memory lock then mkdir / write / replace"| Files[("HostActivity filesystem")]
+  Endgame["Optional async endgame routes"] -->|"await admitted complete synchronous phase"| Worker["EndgameIO daemon: one phase; 5s confirmation wait"]
+  Worker -->|"cache / template / receipt or canonical gateway"| Store["endgame_store + gateway transaction owner"]
+  Store -->|"optional lane"| Optional[("Lazy optional reader / writer pools: max1 each")]
+  Loop -->|"ordinary Study transactions"| Foreground[("Foreground reader / writer pools")]
+  Foreground --> DB[("Shared Learning PostgreSQL")]
+  Optional --> DB
+  Endgame -->|"cache miss: awaited provider HTTP outside transaction"| Provider["Optional tablebase provider"]
+  Shutdown["Learning shutdown"] -->|"signal; no publication or cleanup join"| Publisher
+  Publisher -->|"after I/O returns: remove owned snapshot"| Files
+  Shutdown -->|"reject / signal; no active optional join"| Worker
+  Shutdown -->|"close foreground and maintenance only"| Foreground
+  Worker -->|"after actual phase leaves: close own optional pools"| Optional
+```
+
+| Interface / lifecycle owner | Actual assembled source and limit |
+| --- | --- |
+| Essential request memory accounting | [`HostActivity.request`](src/tempo_learning_runtime/host_activity.py) updates a counter and maximum quiet deadline. At most 1,024 browser sessions bound shared snapshot memory work. [`request_activity`](src/tempo_learning_runtime/api.py) has no filesystem or daemon-result await, including cancellation. This is bounded-memory synchronization, not hard real-time, lock-free progress or a scheduler latency guarantee. |
+| Optional publication and cleanup | `HostActivity.start` starts its daemon without initial file I/O. The daemon releases the memory lock before publishing; `close` signals without joining publication or cleanup. An optional activity 200 acknowledges memory submission against the last healthy lease; missing/known-failed/stale publication or browser capacity returns 503. |
+| Explicit admission tradeoff and deployment prerequisite | The unchanged [native reader](../../../scripts/host-study-activity.mjs) can retain an idle snapshot until its 15-second producer lease expires. A new essential request may overlap admitted managed work during that remaining lease; asynchronous publication provides no immediate foreground exclusion. Present stale evidence is unavailable. Missing/startup/removed-source denial requires configuring protected workspace identities in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` before deployment; default `[]` accepts absence as idle. No live configuration or lease protocol changed. |
+| Optional complete database phases | [`EndgameIO`](src/tempo_learning_runtime/endgame_io.py) admits one phase to a dedicated daemon and preserves request database context. [`endgame_store`](src/tempo_learning_runtime/endgame_store.py) owns cache/template/receipt SQL; admitted command effects still use the canonical gateway. Each connection stays inside its complete worker phase. Busy requests return 503; result waits end at five seconds or immediately on cancellation/shutdown. Provider HTTP stays outside transactions, retaining its three-second timeout and the existing five-second/80-candidate preparation policy. |
+| Separate connection capacity | [`Database`](src/tempo_learning_runtime/database.py) routes optional worker phases to lazy size-1 reader/writer pools. Foreground capacity is preserved even at configured pool size one. Total configured maximum is `2 * pool_size + 3`, including maintenance and both optional pools. Database/process/host resource and lock contention remain possible; separate pools do not establish deployment isolation. |
+| Optional cancellation and shutdown authority | Main close never takes the optional pool lock or closes an active optional transaction. It signals the daemon and closes foreground/maintenance pools; the daemon closes its own pools after actual phase completion. A stalled phase may remain allocated until process exit. An unconfirmed attempt carries `state: unknown`, its same operation ID, `Location` and `Retry-After`; the canonical receipt determines eventual commit/replay. No thread kill, abandoned transaction, fabricated failure or duplicate logical effect is claimed. |
+
+**Evidence and limits:** [owning regressions](REGRESSIONS.md) retain blocked
+HostActivity directory creation/cleanup, essential HTTP/lifespan progress,
+cancellation and recovery. The native reader case runs the exact Python source,
+verifies its hash and proves healthy idle persists through 15 seconds minus one
+nanosecond, then becomes unavailable. Endgame cases exercise actual ASGI requests,
+real `Database` routing with fake size-one pools, provider/transaction boundaries,
+canonical gateway timeout/replay and interpreter exit with a never-returning
+daemon. The integration receipt additionally records seven focused native PostgreSQL passes,
+including actual optional-lease/foreground/shutdown and borrowed-policy rollback
+compositions. These are selected checks, not a complete runtime or hosted-CI
+qualification; live latency/resource allocation remains unverified. No live incident, deployment
+or whole-host resource independence is established by these drawings.
+
+### Review commit and recovery (MAIN)
+
+The MAIN durable commit/replay protocol includes merged HostActivity accounting,
+borrowed review-policy settings (PR327) and queue projection/refresh ownership
+(PR329). The integration receipt qualifies selected combined behavior; source
+and selected passes do not imply deployment.
+
+Scope: Learning-connected aggregate review through the installed review
+application. Typed Study/tactics/defense attempts retain their own handlers and
+identity rules; they are not silently folded into `cards.review`.
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant S as Study session /<br/>review-outbox
+  participant B as Browser IntentStore
+  participant A as Learning HTTP and<br/>gateway
+  participant R as Review application +<br/>borrowed adapter
+  participant D as Learning PostgreSQL
+  User->>S: Complete issued attempt with<br/>stable logical ID
+  S->>B: Retain immutable payload,<br/>authority and request ID
+  alt Browser retention fails
+    B-->>S: storage-failed, no new<br/>unretained dispatch
+  else Retained
+    B-->>S: pending intent committed<br/>locally
+    S->>A: POST card review with same<br/>Idempotency-Key
+    Note over A: Authenticate workspace/origin before<br/>DB access
+    Note over A: MAIN host accounting: bounded-memory<br/>request accounting; daemon owns file I/O
+    A->>D: record_intent in its own<br/>transaction
+    D-->>A: queued intent committed (or<br/>matching identity found)
+    Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
+    A->>R: submit_review using caller<br/>connection / handler<br/>savepoint
+    R->>D: Lock cards then queue date,<br/>validate attempt, revision,<br/>receipt
+    Note over R,D: Policy settings use this borrowed transaction<br/>unless injected provider supplies policy
+    Note over R,D: Optional successor uses nonblocking<br/>locks, never delays current review
+    R->>D: Required evidence +<br/>review/history/schedule +<br/>attempt completion
+    R->>D: Required local obligation<br/>settlement and logical receipt
+    R->>D: All daily refresh requests, all remediation requests,<br/>then queue projection updates last
+    alt Valid execution
+      R-->>A: Persisted result (or<br/>original idempotent result)
+      A->>D: Complete operation receipt,<br/>commit with all handler<br/>effects
+      A-->>S: Authoritative result<br/>(response may be lost)
+    else Terminal domain conflict
+      A->>D: Roll back handler savepoint,<br/>commit failed operation<br/>receipt
+      A-->>S: Conflict / failure, no<br/>partial handler effects
+    else Transient DB contention or timeout
+      A->>D: Roll back execution,<br/>original queued intent<br/>remains
+      A-->>S: Unavailable, retain identity<br/>for retry
+    end
+    opt Response lost or acceptance still unconfirmed
+      S->>A: Read original operation<br/>receipt / replay same<br/>request
+      A-->>S: Original result, pending<br/>state, or explicit conflict
+      Note over S,A: Unknown/pending is not committed,<br/>changed payload under same ID<br/>conflicts
+    end
+    S->>B: Persist authoritative<br/>settlement before projecting<br/>it
+    opt Settled review may advance
+      S->>A: Load issued next attempt /<br/>validate prepared<br/>continuation
+      A-->>S: Next attempt or explicit<br/>load failure
+      Note over S,B: Next-load retry uses progression<br/>checkpoint, never resubmits grade
+    end
+  end
+```
+
+Source owners: [`review-outbox`](../../../app/lib/review-outbox.ts) retains immutable
+aggregate intent and adapts receipts;
+[`createStudySession`](../../../packages/study-session/src/index.ts) claims delivery,
+persists settlement, fences presentation generations and bounds next acquisition;
+[`IntentStore`](../../../packages/browser-intents/src/index.ts) owns browser
+transactions. [`learningFetch`](../../../app/lib/study-connection.ts) restricts
+authority; the [HTTP review handler](src/tempo_learning_runtime/api.py)
+dispatches to [`gateway`](src/tempo_learning_runtime/gateway.py).
+[`submit_review`](../application/src/tempo_learning_review/application.py)
+uses [`ReviewSubmissionStore`](../application/src/tempo_learning_review/ports.py),
+implemented by [`LearningReviewAdapter`](src/tempo_learning_runtime/review_adapter.py).
+[Scheduling/review effects](src/tempo_learning_runtime/review_service.py)
+and [required settlement](src/tempo_learning_runtime/remediation_adapter.py)
+remain Learning-local under the borrowed transaction. The
+[`Database`](src/tempo_learning_runtime/database.py)
+context commits/rolls back, not the application port.
+
+Transport idempotency and logical attempt identity are separate protections.
+Reconciliation may use a new transport operation while retaining the original
+logical attempt. A rejected/discarded attempt must not advance as a successful
+review. Browser disposal preserves retained work; a late response may settle its
+original record but cannot overwrite a newer session snapshot. Auth rejection,
+storage failure, pending save and failed next load remain different states.
+
+Ordinary queue reads are not necessarily side-effect free: the
+[queue payload handler](src/tempo_learning_runtime/api.py)
+dispatches `queue.ensure_current`, runs at most two foreground maintenance assists,
+and [queue command handlers](src/tempo_learning_runtime/queue_commands.py)
+own attempt issuance. None of those operations calls the game producer.
+
 ## Install and run
 
 From the repository root:
