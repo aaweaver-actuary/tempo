@@ -1,16 +1,11 @@
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import { Chess } from "chess.js";
-import { z } from "zod";
-import { IntelligenceClient } from "./client.js";
+import type { GamesReader, Game, GamePage } from './games-reader.js';
 import { gameSourceUrl } from "./game-source.js";
 
 export const comparisonChronologyNotice="Repertoire comparisons use the exported snapshot. Repertoire availability and prior study at game time are unverified.";
 
-const contextSchema=z.object({ply:z.number().int().nonnegative(),repertoire_id:z.string(),policy_id:z.string(),status:z.enum(["matched","missed","unknown"]),reason:z.string(),coverage:z.string(),expected_moves:z.array(z.string())}).passthrough();
-const gameSchema=z.object({game_id:z.string(),provider:z.string().nullable().optional(),provider_game_id:z.string().nullable().optional(),game_url:z.string().nullable().optional(),played_at:z.string().nullable(),learner_color:z.enum(["white","black"]),starting_fen:z.string(),moves:z.array(z.string()).max(1000),contexts:z.array(contextSchema).max(2000)}).passthrough();
-const pageSchema=z.object({schema_version:z.literal(1),workspace_id:z.string(),run_id:z.string(),revision:z.number().int().positive(),input_id:z.string(),input_revision:z.number().int().positive(),game_count:z.number().int().nonnegative(),selections:z.array(z.object({repertoire_id:z.string(),policy_id:z.string(),repertoire_title:z.string().nullish()}).passthrough()).max(32),items:z.array(gameSchema).max(10),next_after:z.string().nullable()});
-type Game=z.infer<typeof gameSchema>;
 function node<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string){const element=document.createElement(tag);if(text!==undefined)element.textContent=text;return element;}
 function button(title:string,action:()=>void){const element=node("button",title);element.type="button";element.onclick=action;return element;}
 
@@ -28,10 +23,10 @@ export function gameFrames(startingFen:string,moves:string[]){
   return frames;
 }
 
-export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,runId:string,expected:{revision:number;input_id:string;input_revision:number},onBack:()=>void,onError:(error:unknown)=>void,options:{backLabel?:string}={}){
+export function mountGameBrowser(target:HTMLElement,reader:GamesReader,runId:string,expected:{revision:number;input_id:string;input_revision:number},onBack:()=>void,onError:(error:unknown)=>void,options:{backLabel?:string}={}){
   let active=true,requestGeneration=0,board:Api|undefined;
   const back=()=>{board?.destroy();onBack();};
-  function detail(game:Game,selections:z.infer<typeof pageSchema>["selections"]){
+  function detail(game:Game,selections:GamePage['selections']){
     try{
       const frames=gameFrames(game.starting_fen,game.moves);
       board?.destroy();target.replaceChildren(button("Back to selected games",()=>{void load();}));
@@ -56,8 +51,7 @@ export function mountGameBrowser(target:HTMLElement,client:IntelligenceClient,ru
   async function load(after?:string){
     const generation=++requestGeneration;board?.destroy();board=undefined;target.replaceChildren(button(options.backLabel??"Back to findings",back),node("h2","Selected games"));
     try{
-      const query=after?`?after=${encodeURIComponent(after)}`:"";
-      const page=await client.request(`/v1/analysis/runs/${encodeURIComponent(runId)}/games${query}`,pageSchema);
+      const page=await reader.readGames({run_id:runId,...expected},after);
       if(!active||generation!==requestGeneration)return;
       if(page.run_id!==runId||page.revision!==expected.revision||page.input_id!==expected.input_id||page.input_revision!==expected.input_revision)throw new Error("Game scope identity mismatch");
       target.append(node("p",`${page.game_count} accepted games · run revision ${page.revision} · input revision ${page.input_revision}. Optional engine progress does not change these games.`));

@@ -8,3 +8,5 @@ export { gameFrames } from "./game-browser.js";
 
 export { studyUrl, studyUrlForBuild, studyHandoffNotice, intelligenceOrigin, intelligenceOriginForBuild } from "./public-navigation.js";
 export type { WorkbenchOptions } from "./workbench.js";
+
+export type { GamesReader, GameScope, GamePage, Game } from './games-reader.js';

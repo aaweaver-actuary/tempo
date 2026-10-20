@@ -406,3 +406,9 @@ through both pools even when an internal caller omits the read flag, accepted-ga
 paging through the real API, bounded DB settings and unchanged source/run/job/
 command/profile state. The native `games-readonly` selection also retains the
 existing exact accepted-game reader proof. No provider, engine or Study is used.
+
+The Games-only native composition uses an invocation-owned SELECT-only role with
+no engine-position privileges. Scope listing/page reads must still work; mutable
+Analysis status is not registered in this mode. Pure configuration requires no
+operator/worker files and the registered route inventory contains only Games
+reads/health. These enforce architecture boundaries, not just hidden controls.

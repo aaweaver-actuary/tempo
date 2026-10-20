@@ -105,3 +105,7 @@ browser fixture with the existing renderer, selection/replay, explicit frozen
 provenance, reload/phone layout and authenticated GET-only traffic. Mutation
 controls and implicit comparison/analysis work are absent. Server-side read-only
 enforcement is independently owned and proved by Intelligence.
+
+`Games semantic reader resolves scope without engine progress and checks identity`
+uses only game-scope envelopes. The view/browser accept `GamesReader`, enabling
+substitution without an HTTP client or mutation capability.

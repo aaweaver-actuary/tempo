@@ -62,19 +62,24 @@ and exit nonzero. The health endpoint verifies database access/workspace binding
 `Configuration(read_only=True, worker_enabled=False)` or
 `TEMPO_INTELLIGENCE_READ_ONLY=1` selects the same enforced server mode. The
 flag defaults workers off; explicitly enabled workers, injected workers or
-startup model-profile writes are rejected. Existing authentication, workspace
-binding, database role and host/origin restrictions remain in effect. No new
-authority is granted by selecting this mode.
+startup model-profile writes are rejected. Caller authentication, workspace and host/origin restrictions remain in effect.
+Games configuration does not read or require operator/worker token files or
+provider credentials. Startup accepts SELECT-only access to Games tables and
+metadata; mutable-mode grant validation remains unchanged. No live authority
+is granted by selecting this mode.
 
 The analysis bootstrap adds `games-readonly-v1`. After authentication and scope
 checks, unsafe HTTP methods return `405 games_read_only` before route handlers.
 Every owning Store transaction, including internal/background calls that omit a
-read flag, starts PostgreSQL read-only. Existing statement, lock, transaction,
-pool and paginated-reader bounds apply. This is enforcement in the server and
+read flag, starts PostgreSQL read-only. Scope listing reads at most 100 identities without engine-table access. Game
+pagination selects at most 11 game payloads in PostgreSQL, without loading every
+accepted page. Existing statement, lock, transaction and pool bounds apply. This is enforcement in the server and
 adapter; the UI capability is discovery, not the security boundary.
 
-Workbench's public `IntelligenceClient.gamesScope(runId)` resolves an existing
-run to its exact accepted input identity/revision. The Games composition uses
+Workbench's public `GamesReader` exposes `listScopes`, `readScope` and `readGames`.
+Its HTTP adapter uses `GET /v1/analysis/game-scopes`,
+`GET /v1/analysis/game-scopes/{run_id}` and the existing game-page route.
+Scope envelopes contain run/input identities and revisions, without engine progress. The Games composition uses
 that scope and the existing selected-games reader/browser. Reads never create
 inputs, runs, analysis jobs, Content or Study requests. An empty run list stays
 empty. Incomplete optional engine analysis does not prevent game replay.

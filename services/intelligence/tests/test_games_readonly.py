@@ -32,10 +32,10 @@ def test_games_readonly_configuration_refuses_workers_and_startup_profile_writes
 
 
 @pytest.mark.parametrize('method,path,scope',[
-    ('POST','/v1/analysis/runs','caller'),('POST','/v1/analysis/inputs','operator'),
-    ('POST','/v1/analysis/inputs/pages','operator'),('POST','/v1/analysis/runs/run/commands','caller'),
+    ('POST','/v1/analysis/runs','caller'),('POST','/v1/analysis/inputs','caller'),
+    ('POST','/v1/analysis/inputs/pages','caller'),('POST','/v1/analysis/runs/run/commands','caller'),
     ('POST','/v1/analysis/findings/finding/commands','caller'),('POST','/v1/requests','caller'),
-    ('POST','/v1/maia/results','worker'),('POST','/v1/credentials/lichess-explorer/reload','operator'),
+    ('POST','/v1/maia/results','caller'),('POST','/v1/credentials/lichess-explorer/reload','caller'),
     ('PUT','/v1/analysis/runs/run','caller'),('PATCH','/v1/analysis/runs/run','caller'),
     ('DELETE','/v1/analysis/runs/run','caller'),
 ])
@@ -74,13 +74,21 @@ def test_games_readonly_refuses_mutable_store_or_injected_worker_before_startup(
 
 
 def test_games_readonly_environment_defaults_workers_off_and_rejects_explicit_on(monkeypatch,tmp_path):
-    values={'DATABASE_URL':'postgresql://unused/intelligence','CALLER_TOKEN':'c'*40,'OPERATOR_TOKEN':'o'*40,'WORKER_TOKEN':'w'*40}
+    values={'DATABASE_URL':'postgresql://unused/intelligence','CALLER_TOKEN':'c'*40}
     for name,value in values.items():
         path=tmp_path/name;path.write_text(value);path.chmod(0o600)
         monkeypatch.setenv('TEMPO_INTELLIGENCE_'+name+'_FILE',str(path))
     monkeypatch.setenv('TEMPO_INTELLIGENCE_WORKSPACE','fixture')
     monkeypatch.setenv('TEMPO_INTELLIGENCE_READ_ONLY','1')
     monkeypatch.delenv('TEMPO_INTELLIGENCE_WORKER_ENABLED',raising=False)
+    monkeypatch.setenv('TEMPO_INTELLIGENCE_OPERATOR_TOKEN_FILE','/not-present/operator')
+    monkeypatch.setenv('TEMPO_INTELLIGENCE_WORKER_TOKEN_FILE','/not-present/worker')
     value=Configuration.environment();assert value.read_only and not value.worker_enabled
+    assert value.operator_token is None and value.worker_token is None
     monkeypatch.setenv('TEMPO_INTELLIGENCE_WORKER_ENABLED','1')
     with pytest.raises(ValueError,match='read_only_workers_disabled'):Configuration.environment()
+
+
+def test_games_only_http_composition_does_not_register_mutation_or_provider_readers():
+    app=create_app(configuration(read_only=True),store=GamesStore())
+    assert {route.path for route in app.routes}=={'/healthz','/v1/analysis/bootstrap','/v1/analysis/game-scopes','/v1/analysis/game-scopes/{run_id}','/v1/analysis/runs/{run_id}/games'}

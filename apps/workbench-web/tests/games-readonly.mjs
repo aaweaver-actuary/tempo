@@ -17,8 +17,8 @@ export async function runGamesOnlyScenario(browser,origin,fixtures,evidence){
         assert.equal(request.method(),'GET');assert.equal(request.headers().authorization,'Bearer synthetic-caller');assert.equal(request.headers()['x-tempo-workspace'],'fixture');
         let body;
         if(url.pathname==='/v1/analysis/bootstrap')body={...fixtures.bootstrap,capabilities:[...fixtures.bootstrap.capabilities,'games-readonly-v1']};
-        else if(url.pathname==='/v1/analysis/runs')body=fixtures.runs;
-        else if(url.pathname==='/v1/analysis/runs/run')body=fixtures.runs.items.find(run=>run.run_id==='run');
+        else if(url.pathname==='/v1/analysis/game-scopes')body={schema_version:1,workspace_id:'fixture',items:fixtures.runs.items.map(run=>({run_id:run.run_id,revision:run.revision,input_id:run.scope.input_id,input_revision:run.scope.input_revision}))};
+        else if(url.pathname==='/v1/analysis/game-scopes/run')body={schema_version:1,workspace_id:'fixture',run_id:'run',revision:1,input_id:fixtures.games.input_id,input_revision:fixtures.games.input_revision};
         else if(url.pathname==='/v1/analysis/runs/run/games')body=fixtures.games;
         else throw new Error('Unexpected viewer request');
         assert.ok(body);await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});

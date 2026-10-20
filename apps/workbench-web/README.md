@@ -122,3 +122,12 @@ is displayed, and a fresh comparison is identified as a separate unavailable
 operation. A new accepted input without a run is not made viewable by silently
 creating one. Study opens separately using its existing general link; no Study
 credential, card identity, queue request or DB connection is transferred.
+
+The Games views depend on the public `GamesReader` semantic interface, not
+`IntelligenceClient`, fetch, URLs, request schemas or mutation storage. The
+existing HTTP client implements `listScopes/readScope/readGames`; another reader
+can substitute without changing game presentation. The composition root selects
+the mode after bootstrap and retains connection/session ownership. Shared pure
+chess/render libraries and navigation are acceptable; Study never imports, calls
+or waits for the Games reader. Its shutdown owns only its board and pending UI
+responses. Deployment/resource isolation is a separate unverified rollout gate.

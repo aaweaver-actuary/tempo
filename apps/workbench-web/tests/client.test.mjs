@@ -344,13 +344,16 @@ test('Games read-only capability prevents mutation delivery while retaining read
   assert.deepEqual(calls.map(item=>item.method),['GET','GET']);
 });
 
-test('Games scope reader requires server enforcement and exact immutable run/input identity',async()=>{
-  const mutable=new IntelligenceClient(connection,async()=>assert.fail('No request to a mutable server'));
-  await assert.rejects(()=>mutable.gamesScope('run'),/read-only/);
-  const scope={schema_version:1,workspace_id:'fixture',run_id:'run',revision:1,expected_revision:null,input_id:'accepted',input_revision:2,policy_version:'c-analysis-v1',position_budget:250,ranking_source:'actual',source_evidence_ids:[],ranking_evidence_id:null};
+test('Games semantic reader resolves scope without engine progress and checks identity',async()=>{
   let wrong=false;const calls=[];
-  const client=new IntelligenceClient(connection,async(url,options)=>{calls.push(options.method);return Response.json(url.endsWith('/bootstrap')?{...bootstrap,capabilities:['analysis-v1','games-readonly-v1']}:{schema_version:1,workspace_id:'fixture',run_id:wrong?'other':'run',revision:1,scope});});
-  await client.bootstrap();assert.deepEqual(await client.gamesScope('run'),{revision:1,input_id:'accepted',input_revision:2});
-  wrong=true;await assert.rejects(()=>client.gamesScope('run'),/identity mismatch/);
-  assert.ok(calls.every(method=>method==='GET'));
+  const scope={run_id:'run',revision:1,input_id:'accepted',input_revision:2};
+  const client=new IntelligenceClient(connection,async(url,options)=>{
+    calls.push({url,method:options.method});
+    const envelope={schema_version:1,workspace_id:'fixture'};
+    return Response.json(url.endsWith('/game-scopes')?{...envelope,items:[scope]}:{...envelope,...scope,run_id:wrong?'other':'run'});
+  });
+  assert.deepEqual(await client.listScopes(),[scope]);
+  assert.deepEqual(await client.readScope('run'),scope);
+  wrong=true;await assert.rejects(()=>client.readScope('run'),/identity mismatch/);
+  assert.ok(calls.every(call=>call.method==='GET'&&call.url.includes('/game-scopes')));
 });

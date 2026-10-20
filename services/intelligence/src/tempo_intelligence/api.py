@@ -87,9 +87,9 @@ def create_app(configuration: Configuration, store=None, worker=None):
                 await runner.run(app.state.store.validate_startup)
             except Exception:
                 raise RuntimeError("intelligence_startup_failed") from None
-            from .credentials import PrivateCredentials
-
-            app.state.credentials = PrivateCredentials(configuration.credential_file)
+            if not configuration.read_only:
+                from .credentials import PrivateCredentials
+                app.state.credentials = PrivateCredentials(configuration.credential_file)
             app.state.worker = worker
             if configuration.worker_enabled:
                 if worker is None:
@@ -191,7 +191,9 @@ def create_app(configuration: Configuration, store=None, worker=None):
             return JSONResponse({"error":"origin_not_allowed"},status_code=403)
         if request.url.path == "/healthz" and (not configuration.read_only or request.method in {"GET","HEAD"}):
             return await safely_forward()
-        if request.url.path.startswith("/v1/credentials/") or request.url.path.startswith("/v1/analysis/inputs") and request.method=="POST":
+        if configuration.read_only:
+            expected = configuration.caller_token
+        elif request.url.path.startswith("/v1/credentials/") or request.url.path.startswith("/v1/analysis/inputs") and request.method=="POST":
             expected = configuration.operator_token
         elif request.url.path in {"/v1/maia/results", "/v1/maia/status"}:
             expected = configuration.worker_token
@@ -223,6 +225,12 @@ def create_app(configuration: Configuration, store=None, worker=None):
     def health():
         app.state.store.health()
         return {"status": "ready", "workspace_id": configuration.workspace_id}
+
+    if configuration.read_only:
+        from .analysis.games_api import register
+        register(app)
+        app.add_middleware(CORSMiddleware, allow_origins=list(configuration.origins), allow_methods=["GET"], allow_headers=["Authorization","Content-Type","X-Tempo-Workspace"], allow_credentials=False)
+        return app
 
     @app.post("/v1/requests")
     def submit(payload: RequestInput):

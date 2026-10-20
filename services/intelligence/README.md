@@ -220,7 +220,7 @@ receipts, historical generation compatibility and explicit engine-profile recove
 `TEMPO_INTELLIGENCE_READ_ONLY=1` selects an enforced viewing mode. Workers default
 to disabled in this mode; explicitly enabling them is rejected. Model-profile
 startup registration and injected workers/mutable stores are also rejected.
-Existing restricted runtime credentials and workspace binding remain required;
+Only caller/read configuration and workspace binding are required in this mode;
 this feature neither provisions credentials nor changes database grants.
 
 Every Store transaction is forced PostgreSQL READ ONLY, including internal calls
@@ -241,3 +241,30 @@ select game/repertoire and current authority, capture using the existing bounded
 source owner, normalize/compare through the existing A/GE interfaces, and accept
 a new immutable input identity. It must not mutate an old snapshot or be triggered
 by viewing. No such operation is implemented or exposed by this viewing slice.
+
+### Games failure boundary
+
+Games-only startup registers only bootstrap, game-scope and game-page readers,
+not provider, mutation or analysis-progress routes. Its owning projection reads
+`analysis_heads`, `analysis_runs`, `analysis_inputs` and `analysis_pages`, plus
+startup metadata. It neither queries engine positions/results nor owns an import,
+queue or worker. It needs no operator/worker token files or provider credentials.
+A SELECT-only role with schema usage, connection permission and SELECT on those
+four tables plus `instance`/`migration_history` can start. This PR does not create
+or change any live role, token or grant.
+
+The connection/transaction owner remains Intelligence's Store; Games is a narrow
+read adapter over its own schema, not access to Learning tables. Scope listing is
+one query capped at 100. Each game read shares one read-only transaction for its
+scope/input/page and returns at most 11 game rows (10 plus cursor lookahead);
+complete input pages are never materialized in the server process. Existing
+statement/lock/transaction and pool bounds still apply. The accepted manifest
+bounds identity metadata to 1000 games. Database work may scan accepted pages,
+under the timeout; this is not a new precomputed comparison or engine operation.
+
+Study does not import/call/wait for this adapter and never participates in its
+shutdown. The optional producer may be unavailable while Study consumes its
+normal Learning-owned queue. Any future practice influence must use that owner's
+semantic command interface, never cross-component queue SQL. Separate deployment
+and host/database resource allocation remain necessary before claiming operational
+failure isolation; no such live rollout is performed by this change.
