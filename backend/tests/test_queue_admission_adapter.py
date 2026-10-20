@@ -30,6 +30,34 @@ def test_adapter_candidates_are_paged_and_keep_all_memberships(workspace, monkey
         }
 
 
+def test_cross_page_shared_card_preserves_legacy_admitting_membership_with_opposed_insertion(workspace, monkeypatch):
+    day = date.today().isoformat()
+    with database.connection() as connection:
+        connection.execute('UPDATE cards SET archived=1')
+        # Insert repertoire/card owners opposite their identity order. The shared
+        # card's shorter sequence outranks the private card within owner-a.
+        for repertoire_id in ('owner-z', 'owner-a'):
+            connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'fixture',?)", (repertoire_id, repertoire_id, day))
+        rows = [('z-shared', 'owner-z', '["e2e4"]', 'new'),
+                ('a-private', 'owner-a', '["e2e4","e7e5","g1f3"]', 'new'),
+                *[(f'm-rejected-{index:02}', 'owner-z', '["e2e4"]', 'locked') for index in range(18)]]
+        for card_id, repertoire_id, moves, state in rows:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix','fen',?,?,?)", (card_id, repertoire_id, moves, state, day))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('owner-a','z-shared')")
+        adapter = QueueAdmissionAdapter(connection)
+        pages, original = [], adapter._priority_page
+        def capture(day, identifiers, **kwargs):
+            pages.append(tuple(identifiers))
+            return original(day, identifiers, **kwargs)
+        monkeypatch.setattr(adapter, '_priority_page', capture)
+        assert queue_admission.admit_prioritized_opening_cards(adapter, day, {'owner-a':1, 'owner-z':1}, -1) == 0
+        assert len(pages) == 2 and pages[0][0] == 'a-private' and pages[-1][-1] == 'z-shared'
+        assert [tuple(row) for row in connection.execute('SELECT card_id,admission_repertoire_id FROM daily_queue')] == [('z-shared', 'owner-a')]
+        assert queue_admission.read_introduction_counts(adapter, day) == {'owner-a':1}
+        assert adapter.introduced_count(day, 'owner-z') == 0
+        assert connection.execute("SELECT introduced_at FROM cards WHERE id='a-private'").fetchone()[0] is None
+
+
 @pytest.mark.parametrize('reviewed', [False, True])
 def test_adapter_historical_counts_keep_admitting_membership_after_integrity_change(workspace, reviewed):
     day = date.today().isoformat()

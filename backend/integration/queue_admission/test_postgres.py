@@ -15,17 +15,31 @@ import pytest
 from app import postgres_store
 from app.queue_position_lock import lock_queue_date_for_position
 from app.services import queue_admission, queue_application
-from app.services.queue_admission_adapter import QueueAdmissionAdapter
+from app.services.queue_admission_adapter import QueueAdmissionAdapter, _PRIORITY_OPENING_CANDIDATE_BODY
+from app.services.opening_capacity_frontier import plan_prioritized_opening_admissions
+from queue_fixture_guard import owned_target, verify_owned_target
 
 FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
 
 @pytest.fixture
-def case():
-    if not (os.environ.get('TEMPO224_FIXTURE', '').startswith('tempo224-')
-            and os.environ.get('TEMPO_TEST_INSTANCE') == 'disposable'
-            and postgres_store.configured()):
-        pytest.fail('Parent must provide the invocation-owned disposable PostgreSQL fixture; no external target is accepted')
+def fixture_database():
+    # Validate all DSNs against the parent's exact target receipt before even
+    # opening the read-only identity probe. No configured-pool write can precede
+    # the current_database/cluster/OID check or reuse an earlier pool.
+    target = owned_target(os.environ)
+    postgres_store.close_pools()
+    verify_owned_target(target)
+    if owned_target(os.environ) != target:
+        raise RuntimeError('Fixture target changed during identity verification')
+    try:
+        yield target
+    finally:
+        postgres_store.close_pools()
+
+
+@pytest.fixture
+def case(fixture_database):
     identity, day = 'queue-port-' + uuid.uuid4().hex, date.today().isoformat()
     with postgres_store.connection() as database:
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'fixture',?,1)", (identity, identity, day))
@@ -37,7 +51,6 @@ def case():
         head = database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,0) RETURNING id', (day, identity+'-head')).fetchone()[0]
         database.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?', (head,))
     yield dict(identity=identity, day=day, head=head)
-    postgres_store.close_pools()
 
 
 def lock_candidates(database, case):
@@ -71,7 +84,32 @@ def test_native_adapter_failure_rolls_back_card_queue_and_unissued_origin(case, 
         assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id IN (?,?)', (case['identity']+'-a', case['identity']+'-b')).fetchone()[0] == 0
 
 
-def test_native_existing_card_day_locks_serialize_admission_without_moving_issued_head(case):
+def test_native_existing_card_day_locks_serialize_admission_without_moving_issued_head(case, monkeypatch):
+    monkeypatch.setenv('OPENING_CAPACITY_FRONTIER_EXPANSION', '0')
+    # Characterize enumeration on the actual engine before asserting parity.
+    # The legacy complete query has no ORDER BY; keyset reads must not silently
+    # change which repertoire consumes a globally shared card's allowance.
+    identity, day = case['identity'], case['day']
+    with postgres_store.connection() as database:
+        for repertoire_id in (identity+'-owner-z', identity+'-owner-a'):
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'fixture',?)", (repertoire_id, repertoire_id, day))
+        rows = [(identity+'-cross-z-shared', identity+'-owner-z', '["e2e4"]', 'new'),
+                (identity+'-cross-a-private', identity+'-owner-a', '["e2e4","e7e5","g1f3"]', 'new'),
+                *[(identity+f'-cross-m-rejected-{index:02}', identity+'-owner-z', '["e2e4"]', 'locked') for index in range(18)]]
+        for card_id, repertoire_id, moves, state in rows:
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,?,?,?)", (card_id, repertoire_id, FEN, moves, state, day))
+        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (identity+'-owner-a', identity+'-cross-z-shared'))
+        adapter = QueueAdmissionAdapter(database)
+        legacy_rows = database.execute(
+            f'WITH active_miss AS ({queue_application.outstanding_miss_query(database)}) '
+            + _PRIORITY_OPENING_CANDIDATE_BODY,
+            (adapter.miss_reason, day, day, day, day),
+        ).fetchall()
+        limits = {identity:1, identity+'-owner-a':1, identity+'-owner-z':1}
+        legacy = plan_prioritized_opening_admissions(adapter.annotate_openings(legacy_rows),
+            queue_admission.read_introduction_counts(adapter, day), day, limits, miss_reason=adapter.miss_reason)
+        paged = queue_admission.plan_opening_admissions(adapter, day, limits)
+        assert sorted((rep, row['id']) for rep, row in paged) == sorted((rep, row['id']) for rep, row in legacy)
     barrier = Barrier(2)
     def admit():
         barrier.wait(timeout=10)

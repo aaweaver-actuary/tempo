@@ -180,7 +180,9 @@ class QueueAdmissionAdapter:
             result.extend(self._priority_page(day, card_ids[offset:offset+READ_BATCH_SIZE], capacity=True))
         return result
 
-    def proposal_valid(self, proposal):
+    def frozen_proposal_valid(self, proposal):
+        # This is the existing frozen-activation fence, not general card/route
+        # eligibility. It returns true when the inactive token still matches.
         return frozen_opening_order.proposal_valid(self.database, proposal)
 
     def capacity_route_valid(self, proposal, day):

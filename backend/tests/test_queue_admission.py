@@ -47,7 +47,7 @@ class Store:
     def capacity_candidates(self, day, identifiers):
         self.calls.append(('capacity', identifiers))
         return self.capacity_rows
-    def proposal_valid(self, proposal):
+    def frozen_proposal_valid(self, proposal):
         self.calls.append(('token', proposal['card_id']))
         return self.token_valid
     def capacity_route_valid(self, proposal, day):
