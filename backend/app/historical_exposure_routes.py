@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from . import postgres_store
 from .command_dispatch import dispatch_command
-from .historical_exposure_contracts import ExposureSelection
+from .historical_exposure_contracts import ExposureSelection,ExposureControl
 
 router=APIRouter()
 
@@ -36,3 +36,17 @@ def request_historical_exposure(selection: ExposureSelection,
         raise HTTPException(404,'Historical exposure requires the PostgreSQL owner')
     return dispatch_command('historical_exposure.request',{'selection':selection.model_dump(mode='json')},
         idempotency_key=idempotency_key)
+
+
+@router.post('/api/learning/historical-exposure/cancel',dependencies=[Depends(require_exposure_operator)])
+def cancel_historical_exposure(control: ExposureControl,
+    idempotency_key: str=Header(alias='Idempotency-Key',min_length=1,max_length=128)):
+    if not postgres_store.configured():raise HTTPException(404,'Historical exposure requires the PostgreSQL owner')
+    return dispatch_command('historical_exposure.cancel',control.model_dump(mode='json'),idempotency_key=idempotency_key)
+
+
+@router.post('/api/learning/historical-exposure/refresh',dependencies=[Depends(require_exposure_operator)])
+def refresh_historical_exposure(control: ExposureControl,
+    idempotency_key: str=Header(alias='Idempotency-Key',min_length=1,max_length=128)):
+    if not postgres_store.configured():raise HTTPException(404,'Historical exposure requires the PostgreSQL owner')
+    return dispatch_command('historical_exposure.refresh',control.model_dump(mode='json'),idempotency_key=idempotency_key)

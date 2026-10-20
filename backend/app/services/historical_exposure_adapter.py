@@ -56,7 +56,11 @@ class ProtectedHeadWriter:
         ensure_card_queued_after(self.database,identity.card_id,0,priority_reason=reason,
             queue_date=queue_day,protect_presented=True,preserve_order=False)
         row=queued_entry(self.database,identity.card_id,queue_day)
-        return policy.Placement('applied',queue_entry_id=row['id']) if row else policy.Placement('deferred','queue_unavailable')
+        if row is None:return policy.Placement('deferred','queue_unavailable')
+        from .queue_application import queued_entry_available
+        if not queued_entry_available(self.database,queue_day,row['id']):
+            return policy.Placement('deferred','queue_eligibility_unavailable',row['id'])
+        return policy.Placement('applied',queue_entry_id=row['id'])
     def clear_priority(self,scope,reason):
         if scope!=self.scope or reason!=policy.REASON:raise policy.ExposureRejected('exposure_writer_scope_mismatch')
         from .review_service import clear_queued_card_priority

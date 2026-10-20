@@ -118,6 +118,8 @@ def test_writer_calls_only_the_existing_canonical_protected_head_writer(monkeypa
     def canonical(database,card_id,after,**options):
         calls.append((card_id,after,options));state['gameplay_priority_reason']=policy.REASON
     monkeypatch.setattr(review_service,'ensure_card_queued_after',canonical)
+    from app.services import queue_application
+    monkeypatch.setattr(queue_application,'queued_entry_available',lambda *args:True)
     result=ProtectedHeadWriter(Database(),scope,'2026-10-20').prioritize(identity,'2026-10-20',policy.REASON)
     assert result==policy.Placement('applied',queue_entry_id=7)
     assert calls==[(identity.card_id,0,dict(priority_reason=policy.REASON,queue_date='2026-10-20',
@@ -193,7 +195,7 @@ def test_clearing_exposure_preserves_other_days_completed_attempts_and_unrelated
         INSERT INTO daily_queue VALUES
         (1,'physical','2026-10-19','queued','historical_exposure',0),
         (2,'physical','2026-10-20','queued','historical_exposure',1),
-        (3,'physical','2026-10-20','completed','historical_exposure',2),
+        (3,'physical','2026-10-20','complete','historical_exposure',2),
         (4,'physical','2026-10-20','queued','real_game_miss',3),
         (5,'other','2026-10-20','queued','historical_exposure',4);''')
     scope=policy.CardScope('target','legacy','physical')
@@ -260,3 +262,42 @@ def test_exposure_orchestration_uses_semantic_storage_and_public_queue_boundary(
         for tree in (command_tree,adapter_tree) for node in ast.walk(tree))
     assert not any(isinstance(node,ast.ImportFrom) and node.module=='queue_ordering'
         and any(alias.name.startswith('_') for alias in node.names) for node in ast.walk(adapter_tree))
+
+
+def test_canonical_placement_does_not_claim_success_when_frozen_or_other_queue_eligibility_refuses(monkeypatch):
+    from app.services import historical_exposure_adapter as adapter,review_service,queue_application
+    verified,*_=inputs();identity=verified.request.encounter
+    scope=policy.CardScope(identity.target_id,identity.workspace_id,identity.card_id)
+    monkeypatch.setattr(adapter,'queued_entry',lambda *args:dict(id=7,gameplay_priority_reason=None))
+    monkeypatch.setattr(review_service,'ensure_card_queued_after',lambda *args,**kwargs:None)
+    monkeypatch.setattr(queue_application,'queued_entry_available',lambda *args:False)
+    assert ProtectedHeadWriter(Database(),scope,'2026-10-20').prioritize(identity,'2026-10-20',policy.REASON)==policy.Placement(
+        'deferred','queue_eligibility_unavailable',7)
+
+
+@pytest.mark.parametrize('state,introduced,allowed',[
+    ('learning','2026-10-18',True),('mature','2026-10-18',True),
+    ('new',None,False),('learning',None,False),('locked','2026-10-18',False),
+])
+def test_canonical_exposure_enqueue_retains_review_admission_from_insert_without_introduction(monkeypatch,state,introduced,allowed):
+    import sqlite3
+    from app.services import review_service,queue_application
+    database=sqlite3.connect(':memory:');database.row_factory=sqlite3.Row
+    database.executescript('''CREATE TABLE cards(id TEXT,content_type TEXT,introduced_at TEXT,state TEXT);
+        CREATE TABLE reviews(card_id TEXT,source_kind TEXT,invalidated_at TEXT);
+        CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,cycle INTEGER,position INTEGER,
+            attempt_state TEXT,gameplay_priority_reason TEXT,admission_kind TEXT DEFAULT 'new',card_bucket TEXT,
+            status TEXT DEFAULT 'queued');
+        CREATE TABLE origins(entry_id INTEGER,admission_kind TEXT);
+        CREATE TRIGGER retain_admission AFTER INSERT ON daily_queue BEGIN
+            INSERT INTO origins VALUES(NEW.id,NEW.admission_kind); END;''')
+    database.execute("INSERT INTO cards VALUES('physical','opening',?,?)",(introduced,state))
+    before=tuple(database.execute('SELECT * FROM cards').fetchone())
+    monkeypatch.setattr(queue_application,'presentation_rows',lambda *args:[])
+    review_service.ensure_card_queued_after(database,'physical',0,priority_reason=policy.REASON,
+        queue_date='2026-10-20',protect_presented=True,preserve_order=False)
+    assert tuple(database.execute('SELECT * FROM cards').fetchone())==before
+    assert database.execute('SELECT COUNT(*) FROM reviews').fetchone()[0]==0
+    rows=database.execute('SELECT admission_kind,gameplay_priority_reason FROM daily_queue').fetchall()
+    assert [tuple(row) for row in rows]==([('review','historical_exposure')] if allowed else [])
+    assert [row[0] for row in database.execute('SELECT admission_kind FROM origins')]==(['review'] if allowed else [])

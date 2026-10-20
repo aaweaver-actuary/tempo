@@ -32,6 +32,7 @@ class ReceiptDatabase:
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE fake_intents(encounter_key TEXT PRIMARY KEY,record_json TEXT NOT NULL);
             CREATE TABLE fake_queue(card_id TEXT PRIMARY KEY,id INTEGER,position INTEGER,reason TEXT);
+            CREATE TABLE fake_wakes(card_id TEXT PRIMARY KEY);
             INSERT INTO fake_queue VALUES('protected-head',1,0,NULL);
         ''')
     def execute(self,statement,parameters=()):
@@ -102,6 +103,8 @@ def case(monkeypatch):
     monkeypatch.setattr(commands,'lock_card_scope',lock_scope)
     monkeypatch.setattr(commands,'BorrowedExposureStore',Store)
     monkeypatch.setattr(commands,'locked_ports',ports)
+    monkeypatch.setattr(commands,'schedule_refresh',lambda db,scope:db.connection.execute(
+        'INSERT INTO fake_wakes VALUES(?) ON CONFLICT DO NOTHING',(scope.card_id,)))
     yield database,prepared
     database.connection.close()
 
@@ -120,6 +123,7 @@ def test_registered_prepare_closes_before_writer_and_receipt_replay_is_quiet(cas
     assert len(database.connection.execute('SELECT * FROM fake_intents').fetchall())==1
     assert gateway.execute_command('op',COMMAND,payload())==result
     assert database.events.count('queue_write')==1
+    assert database.connection.execute('SELECT COUNT(*) FROM fake_wakes').fetchone()[0]==1
     assert database.connection.execute('SELECT * FROM fake_queue ORDER BY position').fetchall()==before
     assert database.connection.execute('SELECT state FROM operation_receipts').fetchone()[0]=='complete'
 

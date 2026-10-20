@@ -7,11 +7,12 @@ from tempo_learning_remediation import RemediationError
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from tempo_learning_review import historical_exposure as policy
 from .command_gateway import register_command
-from .historical_exposure_contracts import ExposureSelection
+from .historical_exposure_contracts import ExposureSelection,ExposureControl
 from .services.historical_exposure_source import prepare_selection,VerifiedExposure
 from .services.historical_exposure_adapter import locked_ports
 from .storage.historical_exposure import BorrowedExposureStore,record_document,retained_request_for_selection
 from .storage.historical_exposure_facts import lock_card_scope
+from .services.historical_exposure_refresh import schedule_refresh
 
 
 @dataclass(frozen=True)
@@ -55,8 +56,7 @@ def _request_exposure(database,prepared):
     store,writer,reader=locked_ports(database,scope,prepared.verified)
     try:record=policy.request_priority(store,writer,prepared.request,reader,datetime.now(timezone.utc))
     except policy.ExposureRejected as error:raise HTTPException(409,str(error)) from error
-    # The active durable intent is retained. Refresh/completion scheduling is a
-    # separately reviewed composition step before this route can be adopted.
+    schedule_refresh(database,scope)
     return response(record)
 
 
@@ -67,3 +67,35 @@ def response(record):
 
 
 register_command('historical_exposure.request',request_exposure,prepare=prepare_request)
+
+
+def prepare_control(payload):
+    try:return ExposureControl.model_validate(payload)
+    except ValueError as error:raise HTTPException(422,'Invalid retained exposure control') from error
+
+
+def control_exposure(database,control,*,cancel):
+    scope=policy.CardScope(control.target_id,control.workspace_id,control.card_id)
+    try:
+        lock_card_scope(database,scope)
+        record=BorrowedExposureStore(database,scope).find(control.encounter_key)
+        if record is None:raise HTTPException(404,'Retained exposure not found in this card scope')
+        if not cancel:
+            if record.state=='active':schedule_refresh(database,scope)
+            return {**response(record),'refresh_requested':record.state=='active'}
+        if record.state=='active':
+            from .services.historical_exposure_refresh import refresh_locked_card
+            store,writer,reader=refresh_locked_card(database,scope,now=datetime.now(timezone.utc))
+            # Consume already committed practice before explicit cancellation.
+            record=policy.cancel_priority(store,writer,record,reader,datetime.now(timezone.utc))
+        return response(record)
+    except (LockNotAvailable,SerializationFailure) as error:
+        raise BackgroundAdmissionDeferred('Exposure source busy; retain control operation') from error
+
+
+def cancel_exposure(database,control):return control_exposure(database,control,cancel=True)
+def refresh_exposure(database,control):return control_exposure(database,control,cancel=False)
+
+
+register_command('historical_exposure.cancel',cancel_exposure,prepare=prepare_control)
+register_command('historical_exposure.refresh',refresh_exposure,prepare=prepare_control)

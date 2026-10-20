@@ -58,3 +58,17 @@ def test_bulk_or_unconfirmed_payload_is_rejected(monkeypatch,tmp_path):
         assert session.post('/api/learning/historical-exposure',json=body,
             headers={'Authorization':'Bearer '+'x'*40,'Idempotency-Key':'one'}).status_code==422
     assert not calls
+
+
+@pytest.mark.parametrize('action',['cancel','refresh'])
+def test_retained_intent_controls_require_operator_idempotency_and_cannot_assert_completion(monkeypatch,tmp_path,action):
+    session,calls=client(monkeypatch,tmp_path)
+    body=dict(target_id='target',workspace_id='legacy',card_id='physical',encounter_key='historical-exposure:'+'a'*64)
+    url='/api/learning/historical-exposure/'+action
+    assert session.post(url,json=body,headers={'Idempotency-Key':'control'}).status_code==401
+    headers={'Authorization':'Bearer '+'x'*40,'Idempotency-Key':'control'}
+    assert session.post(url,json={**body,'verified_normal_attempt':True},headers=headers).status_code==422
+    assert session.post(url,json=body,headers={'Authorization':'Bearer '+'x'*40}).status_code==422
+    assert not calls
+    assert session.post(url,json=body,headers=headers).status_code==200
+    assert calls==[(('historical_exposure.'+action,body),dict(idempotency_key='control'))]

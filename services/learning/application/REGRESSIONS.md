@@ -111,3 +111,5 @@ revision, queue-entry and review IDs with a valid verification flag are not
 enough. The supplied `CardScope` must match; both negative controls leave records
 and queue-writer effects untouched. Positive completion and stale-object replay
 continue in the same regular source suite.
+
+Historical exposure lifecycle: the regular historical-exposure application and runtime queue-ordering suites cover batch served-contributor reconciliation, exact scope, recall precedence and unchanged protected/repeat positions. Backend SQL/locks and native compositions require separate proof.

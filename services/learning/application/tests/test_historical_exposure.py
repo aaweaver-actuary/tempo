@@ -281,3 +281,38 @@ def test_reconciliation_is_target_and_workspace_scoped():
     assert writer.cleared==[(record.card_scope(),'historical_exposure')]
     assert store.find(other_request.encounter.key()).state=='active'
     assert writer.reader.queue[other.card_scope()]['priority_class']=='exposure'
+
+
+def test_card_refresh_consumes_all_served_contributors_before_reconciliation_or_requeue():
+    store,writer,record,second=paired()
+    writer.reader.change(record.request,queue_entry_id=None,priority_class='none')
+    before=len(writer.calls)
+    result=exposure.refresh_card_priority(store,writer,writer.reader,record.card_scope(),(completion(),),NOW)
+    assert {row.state for row in result}=={'completed'}
+    assert len(writer.calls)==before and len(writer.cleared)==1
+    assert not store.active_for_card(record.card_scope())
+    assert exposure.refresh_card_priority(store,writer,writer.reader,record.card_scope(),(completion(),),NOW)==()
+    assert len(writer.calls)==before
+
+
+def test_card_refresh_retains_unserved_other_bound_attempt_and_recall_precedence():
+    store,writer,record,second=paired()
+    second=replace(second,placement=exposure.Placement('applied',queue_entry_id=99));store.save(second)
+    changed(writer,record,priority_class='recall',queue_entry_id=99)
+    before=len(writer.calls)
+    exposure.refresh_card_priority(store,writer,writer.reader,record.card_scope(),(completion(),),NOW)
+    assert store.find(record.request.encounter.key()).state=='completed'
+    remaining=store.find(second.request.encounter.key())
+    assert remaining.state=='active' and remaining.placement.reason=='unrelated_priority_preserved'
+    assert len(writer.calls)==before and not writer.cleared
+
+
+@pytest.mark.parametrize('change',[
+    {'scope':exposure.CardScope('other','legacy','physical')},
+    {'reviewed_at':NOW-timedelta(seconds=1)}, {'card_revision':2},
+    {'queue_entry_id':99}, {'verified_normal_attempt':False}, {'source_kind':'gameplay'},
+])
+def test_card_refresh_cannot_serve_unbound_old_or_unverified_practice(change):
+    store,writer,record=accepted()
+    exposure.refresh_card_priority(store,writer,writer.reader,record.card_scope(),(completion(**change),),NOW)
+    assert store.find(record.request.encounter.key()).state=='active' and not writer.cleared

@@ -218,6 +218,9 @@ class LearningReviewAdapter:
             from ..queue_attempt_origins import retain_recovered_completion
             retain_recovered_completion(self.database, {"id":attempt.id,"card_id":attempt.card_id,"revision":attempt.revision}, result_json)
 
+        from .historical_exposure_refresh import after_study_review
+        after_study_review(self.database,command.card_id)
+
     def refresh_progression(self, context, card, result):
         if card.content_type == "opening" and result.get("review_id") is not None:
             from ..queue_commands import request_queue_refresh_in_transaction

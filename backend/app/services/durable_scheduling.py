@@ -19,7 +19,7 @@ CLASS_KINDS = {
     'sync': ('game_sync_record', 'game_sync_window', *DEFENSIVE_TASK_KINDS),
 }
 # User-dependent publications and controls get prompt, but finite, preference.
-CONTROL_KINDS = ('daily_queue', 'prefix_transition_application',
+CONTROL_KINDS = ('daily_queue','historical_exposure_refresh', 'prefix_transition_application',
                  'canonical_prefix_preview', 'discovery_admission', 'game_analysis_publish')
 _SCHEDULER_SQL = 'SELECT * FROM background_scheduling_turns WHERE lane=\'durable\''
 _TURN_UPDATE_SQL = ('UPDATE background_scheduling_turns SET next_turn=?, '

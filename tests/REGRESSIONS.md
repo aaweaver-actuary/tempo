@@ -1,3 +1,24 @@
+## Historical exposure lifecycle source increment
+
+`backend/tests/test_historical_exposure_lifecycle.py` owns canonical receipt /
+issued-origin / revision / actual-time completion controls, complete projection
+refusal, worker lease fencing and completion-before-reconciliation ordering.
+Foreground wake tests forbid source verification or completion reconciliation in
+the review hook. Authenticated cancel/refresh transport controls are in
+`test_historical_exposure_routes.py`. These are source/fake lifecycle checks, not
+actual PostgreSQL, Celery restart or lock proofs.
+
+`services/learning/application/tests/test_historical_exposure.py` owns batch
+completion of all served contributors before placement, exact CardScope and
+unserved contributor preservation. Shared queue ordering regression
+`test_historical_exposure_is_urgent_without_becoming_a_miss_and_recall_wins` in
+Learning runtime's regular ordering suite preserves label semantics and recall
+precedence; its protected/repeat controls cover issued, presented, failed, guided,
+reinforcement and unavailable positions. Canonical insertion tests also retain
+review admission from the initial insert and refuse unintroduced/locked cards.
+`tests/unit/historical-exposure-priority-copy.test.ts` owns the no-forgetting
+priority copy and unchanged other labels in the regular frontend unit suite.
+
 ## Historical exposure practice request (unadopted source)
 
 `backend/tests/test_historical_exposure_source.py` owns single-encounter authority,

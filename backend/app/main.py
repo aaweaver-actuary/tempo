@@ -254,6 +254,8 @@ app.add_middleware(StudyResponseTiming)
 app.include_router(study_router)
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
+from .historical_exposure_routes import router as historical_exposure_router
+app.include_router(historical_exposure_router)
 
 @app.exception_handler(ReviewConflict)
 async def review_conflict_response(_request: Request, error: ReviewConflict):
@@ -1262,6 +1264,8 @@ register_durable_task_handler("opening_segmentation", execute_segmentation_slice
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
+from .services.historical_exposure_refresh import execute_exposure_refresh_slice
+register_durable_task_handler("historical_exposure_refresh", execute_exposure_refresh_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
 register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)

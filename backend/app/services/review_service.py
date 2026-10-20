@@ -149,6 +149,12 @@ def ensure_card_queued_after(
     preserve_order: bool = True,
 ) -> None:
     day = queue_date or date.today().isoformat()
+    exposure_review = priority_reason == 'historical_exposure'
+    if exposure_review and not database.execute(
+        "SELECT 1 FROM cards WHERE id=? AND introduced_at IS NOT NULL AND state IN ('learning','mature')",
+        (card_id,),
+    ).fetchone():
+        return
     previous_order = capture_daily_queue_order(database, day) if preserve_order else None
     entry = database.execute(
         "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",
@@ -160,10 +166,11 @@ def ensure_card_queued_after(
             (day, card_id),
         ).fetchone()[0]
         entry = database.execute(
-            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?) RETURNING id",
+            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason,admission_kind) VALUES(?,?,?,?,?,?,?) RETURNING id",
             (day, card_id, cycle,
              database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
-             if protect_presented else 2_000_000_000, attempt_state, priority_reason),
+             if protect_presented else 2_000_000_000, attempt_state, priority_reason,
+             "review" if exposure_review else "new"),
         ).fetchone()
     elif priority_reason:
         database.execute(
@@ -189,7 +196,10 @@ def ensure_card_queued_after(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
                admission_kind=CASE WHEN admission_kind='explicit' THEN 'explicit'
-                   WHEN EXISTS(SELECT 1 FROM reviews review
+                   WHEN (gameplay_priority_reason='historical_exposure'
+                       AND EXISTS(SELECT 1 FROM cards card WHERE card.id=daily_queue.card_id
+                           AND card.introduced_at IS NOT NULL AND card.state IN ('learning','mature')))
+                   OR EXISTS(SELECT 1 FROM reviews review
                    WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
                      AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
            WHERE id=?""",

@@ -108,3 +108,11 @@ class BorrowedExposureStore:
             (self.scope.target_id,self.scope.workspace_id,self.scope.card_id,key)).fetchone()
         if row is None:raise policy.ExposureRejected('retained_exposure_proof_required')
         return json.loads(row['source_json']) if isinstance(row['source_json'],str) else row['source_json']
+
+
+def active_scope_for_card(database,card_id) -> policy.CardScope | None:
+    row=database.execute_native('''SELECT identity.target_id,identity.workspace_id FROM legacy_learning_identity identity
+        WHERE identity.id=1 AND EXISTS(SELECT 1 FROM historical_exposure_intents intent
+            WHERE intent.target_id=identity.target_id AND intent.workspace_id=identity.workspace_id
+                AND intent.card_id=%s AND intent.state='active')''',(card_id,)).fetchone()
+    return policy.CardScope(row['target_id'],row['workspace_id'],card_id) if row else None

@@ -172,47 +172,59 @@ serve the request. Response-loss replay stays quiet; duplicate completion or
 cancellation reads the retained terminal state instead of recreating placement.
 
 
-### Backend receipt/card-lock source checkpoint
+### Backend lifecycle source increment (not native-qualified)
 
-The isolated backend source slice adds a strict one-line `ExposureSelection`, an
-operator-authenticated POST adapter, read-only encounter projection, borrowed
-intent storage, complete current-fact projection and command receipt orchestration.
-The source projector reuses the existing ordered route and physical-executable
-binding owner. It does not infer historical recall from current repertoire.
-Date-only introduction evidence uses the existing UTC day bounds, including games
-whose recorded timestamps have a non-UTC offset.
+The backend source now includes a strict single-encounter selection, authenticated
+request/cancel/refresh routes, borrowed intent storage and command receipts. The
+existing source projector verifies current ordered-route and physical-executable
+identity. The command gateway owns atomic effects and receipts. Card-before-day
+locks cover a complete contributor inventory; graph/source locks after the card
+are nonblocking. Retained-selection reads belong to exposure storage and return a
+typed Request after closing the normal gated reader. The queue adapter uses public
+protected-head facts and canonical queue writes; label clearing touches only
+matching queued entries in the already locked day, preserving other days, inactive
+attempts, positions and unrelated priority.
 
-The command gateway owns the transaction and receipt. The adapter locks the card
-scope before the day and refuses incomplete contributor inventories. Source locks
-after the card use nonblocking acquisition so contention yields the retained
-operation instead of publishing a false completion. Its queue port delegates to
-the existing canonical protected-head writer and independently preserves recall
-and unrelated priority. The transport is disabled unless an explicit private
-`TEMPO_EXPOSURE_OPERATOR_TOKEN_FILE` is configured; it never forwards that token
-into a command payload or receipt. No credential file was provisioned.
+`historical_exposure_refresh` is a yielding, durable, per-card task. Initial
+acceptance and actual Study completion enqueue a wake in the caller transaction.
+The foreground review does not verify repertoire sources or reconcile exposure.
+The worker validates canonical Study review receipts, their source references,
+issued revision-bound origins and actual review times. No transport flag can
+assert completion. It consumes all served contributors before one card-level
+reconciliation, avoiding transient re-admission of another already-served request.
+Unserved intent remains active; a 60-second follow-up is an operational refresh
+lease, not an intent expiry. Operational failures remain durable task failures and
+can be explicitly retried using the authenticated refresh control.
 
-This is **unadopted source**, not an enabled training path: neither the API nor
-worker composition imports these adapters, schema readiness remains version 50,
-and migration 051 is an unapplied draft. Refresh and normal-practice completion,
-priority ordering/classification, display and cancellation transport remain
-pending. No claim is made that a historical-exposure label currently moves a real
-card forward. Native migration, lock lifetime, concurrency, actual queue rollback
-and complete-inventory budgets require separate qualification before adoption.
+The shared queue owner ranks recall before exposure, preserves the exposure reason
+without translating it to a miss, and retains issued/protected/failed/guided/
+reinforcement positions. Only already introduced learning/mature cards can be
+queued through this path; canonical insertion records review admission from the
+start and changes no card introduction, schedule or review. Frozen-content and
+base eligibility gates remain intact; unavailable placement is reported deferred.
+The frontend label is **Encountered line practice**, with explicit no-forgetting
+copy, while other priority labels retain their existing text.
 
-The focused backend tests include actual in-memory SQLite command-gateway
-savepoints and receipts with semantic fake queue/store ports. They establish
-rollback/replay at that boundary, not PostgreSQL or the concrete queue writer.
-The canonical-writer invocation and SQL lock protocol have source contract tests;
-actual infrastructure proof is still required.
+API, worker and durable-handler source compositions are wired. The operator route
+remains disabled without explicit private `TEMPO_EXPOSURE_OPERATOR_TOKEN_FILE`
+configuration; no token file was provisioned. Source schema readiness is now 51
+because the composition needs the new table. Migration 051 has **not** been applied
+anywhere, and no running service or installed artifact was changed. The narrow
+explicit-practice refresh joins Study-only task admission; no provider, import,
+analysis, engine or graph work is admitted by that exception.
 
+This is an incremental source review boundary, not deployment readiness. Known
+review items remain: freshness of a queued exposure label between source changes
+and asynchronous refresh; and how a valid late cross-day review should serve
+intent after its placement has been rebound to a newer entry. The current strict
+completion rule accepts only the retained bound entry and does not silently relax
+that rule. These cases must be resolved and tested before native/adoption claims.
 
-The adapter repair checkpoint keeps retained-selection SQL inside the exposure
-read projection and returns a typed Request after closing its gated reader. The
-command does not issue SQL or use another feature's generic read capability.
-Protected-head facts come from the queue owner's public projection. Label removal
-also delegates to that owner and is constrained to matching queued entries in the
-single already-locked day; it preserves other days, inactive attempts, other cards,
-unrelated reasons and all positions. A named real-SQLite regression reproduces the
-original cross-day/inactive clearing bug and now passes. The owning native bridge
-suite contains a prepared, unexecuted concurrent other-day-writer contract for the
-same boundary; no native execution or lock proof is claimed here.
+Source tests include actual SQLite gateway/savepoint rollback with semantic fake
+queue/store ports, actual canonical SQLite label removal/admission insertion,
+trusted receipt projection controls, lifecycle orchestration fakes, shared pure
+ordering and frontend copy checks. They do not prove PostgreSQL JSON/LATERAL SQL,
+migration, actual lock lifetime/concurrency, worker restart or normal foreground
+budgets. The owning native bridge suite includes a prepared concurrent other-day
+writer case; it has not been collected or executed in this phase. Installed
+application/runtime wheels and native composition still require qualification.

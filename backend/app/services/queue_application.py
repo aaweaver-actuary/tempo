@@ -361,6 +361,7 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
                  if postgres_store.configured() else "0")
     statement = """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,
                   q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
+                  c.introduced_at, c.state AS card_state,
                   (q.review_result_json IS NOT NULL) review_completed,c.revision,
                   EXISTS(SELECT 1 FROM queue_attempt_origins origin
                     WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
@@ -393,7 +394,10 @@ def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=No
             from .legacy_study_remediation import has_current_miss
             if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
         row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
-                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed else 'new')
+                                 else 'review' if row.get('cycle',0)>0 or row['card_id'] in reviewed
+                                 or (row['gameplay_priority_reason']=='historical_exposure'
+                                     and row.get('introduced_at') is not None
+                                     and row.get('card_state') in ('learning','mature')) else 'new')
         row['eligible'] = row['id'] in eligible
     return rows
 
@@ -629,3 +633,8 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     )
     return task
 
+
+
+def queued_entry_available(database,day: str,entry_id: int) -> bool:
+    """Public queue-owner availability, retaining frozen/integrity safety gates."""
+    return database.execute(available_attempt_sql()+' AND q.id=?',(day,entry_id)).fetchone() is not None

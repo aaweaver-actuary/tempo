@@ -6,7 +6,8 @@ from contextlib import nullcontext
 from fastapi import HTTPException
 
 
-STUDY_TASK_KINDS = ('daily_queue',)
+# Only explicitly accepted practice intent; no import/engine/analysis admission.
+STUDY_TASK_KINDS = ('daily_queue','historical_exposure_refresh')
 PAUSED_IMPORT_COMMANDS = frozenset({'imports.pgn.admit', 'studies.import.commit', 'studies.bundle.import'})
 STUDY_BACKGROUND_COMMANDS = frozenset({
     'opening_evidence.checkpoint',

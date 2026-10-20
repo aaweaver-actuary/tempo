@@ -8,6 +8,11 @@ import json
 from typing import NotRequired, Sequence, TypedDict
 
 from .real_game_feedback import MISS_REASON
+from tempo_learning_review.historical_exposure import REASON as EXPOSURE_REASON
+
+
+def _priority_rank(row):
+    return {MISS_REASON:0,EXPOSURE_REASON:1}.get(row["gameplay_priority_reason"],2)
 
 
 PRESENTATION_VERSION = "queue-presentation-v3"
@@ -82,9 +87,9 @@ def _priority_queue_order(rows: Sequence[QueueOrderingRow]) -> list[QueueOrderin
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
     protected = _protected_queue_ids(rows)
     movable = [row for row in slots if row["id"] not in protected]
-    priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
-                      key=lambda row: (row["card_id"], row["id"]))
-    ordered = iter(priority + [row for row in movable if row["gameplay_priority_reason"] != MISS_REASON])
+    priority = sorted((row for row in movable if _priority_rank(row)<2),
+                      key=lambda row: (_priority_rank(row),row["card_id"],row["id"]))
+    ordered = iter(priority + [row for row in movable if _priority_rank(row)==2])
     return [row if row["id"] in protected else next(ordered) for row in slots]
 
 
@@ -114,7 +119,7 @@ def _protected_queue_ids(rows: Sequence[QueueOrderingRow], *, preserve_through_e
         row.get("eligible", True) is False or row.get("eligible") == 0
         or row["admission_kind"] == "explicit"
         or (row.get("cycle", 0) > 0 and not (
-            row["gameplay_priority_reason"] == MISS_REASON and row.get("attempt_state") == "gameplay"
+            _priority_rank(row)<2 and row.get("attempt_state") == "gameplay"
         ))
         or row.get("attempt_failed", False) or row.get("review_completed", False)
         or row.get("issued", False) or row.get("presented", False)
@@ -143,11 +148,11 @@ def _plan_daily_queue_order(
     slots = sorted(rows, key=lambda row: (row["position"], row["id"]))
     protected = _protected_queue_ids(rows, preserve_through_entry_id=preserve_through_entry_id)
     movable = [row for row in slots if row["id"] not in protected]
-    priority = sorted((row for row in movable if row["gameplay_priority_reason"] == MISS_REASON),
-                      key=lambda row: (row["card_id"], row["id"]))
+    priority = sorted((row for row in movable if _priority_rank(row)<2),
+                      key=lambda row: (_priority_rank(row),row["card_id"],row["id"]))
     groups: dict[tuple[str, str], list[QueueOrderingRow]] = {}
     for row in movable:
-        if row["gameplay_priority_reason"] != MISS_REASON:
+        if _priority_rank(row)==2:
             key = (row["admission_kind"], row["content_type"] or "opening")
             groups.setdefault(key, []).append(row)
 

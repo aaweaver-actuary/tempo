@@ -1,3 +1,4 @@
+import { practicePriorityCopy } from "../lib/practice-priority";
 import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
@@ -303,8 +304,10 @@ function StandardTrainingView({
         <span className="pill">Reinforcement</span>
       )}
       <StudyReviewBadge count={card.priorStudyReviewCount} />
-      {card.priorityReason && (
-        <span className="pill">{card.priorityReason}</span>
+      {practicePriorityCopy(card.priorityReason) && (
+        <span className="pill" title={practicePriorityCopy(card.priorityReason)?.explanation}>
+          {practicePriorityCopy(card.priorityReason)?.label}
+        </span>
       )}
       {card.encounterBadges?.map((badge) => (
         <span

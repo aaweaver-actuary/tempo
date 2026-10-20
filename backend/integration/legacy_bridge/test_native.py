@@ -312,7 +312,7 @@ def test_native_exposure_clear_locks_only_its_day_and_preserves_concurrent_other
     day,other_day='2040-01-20','2040-01-21'
     with native.connection(role='tempo_writer') as setup:
         for target_day,target_card,cycle,status,position in (
-                (day,card,0,'queued',0),(day,card,1,'completed',1),
+                (day,card,0,'queued',0),(day,card,1,'complete',1),
                 (other_day,card,0,'queued',0),(other_day,other,0,'queued',1)):
             setup.execute('''INSERT INTO daily_queue
                 (queue_date,card_id,cycle,status,position,gameplay_priority_reason)
@@ -339,7 +339,7 @@ def test_native_exposure_clear_locks_only_its_day_and_preserves_concurrent_other
         assert observer.execute('''SELECT queue_date,card_id,status,gameplay_priority_reason
             FROM daily_queue WHERE queue_date IN (%s,%s) ORDER BY queue_date,position''',
             (day,other_day)).fetchall()==[
-                (day,card,'queued',None),(day,card,'completed','historical_exposure'),
+                (day,card,'queued',None),(day,card,'complete','historical_exposure'),
                 (other_day,card,'queued','historical_exposure'),
                 (other_day,other,'queued','concurrent-other-day')]
     write_trace(native,exposure_contract='current-day label clear; concurrent other-day writer retained')

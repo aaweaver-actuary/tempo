@@ -155,3 +155,27 @@ def test_only_verified_pre_mutation_provenance_preserves_removal_and_positioned_
     assert ordering._preserved_queue_fingerprint(changed, saved, token, previous=previous) == expected
     assert ordering._preserved_queue_fingerprint(changed, saved, ['replacement', 2], previous=previous).startswith('unmixed:')
     assert ordering._queue_order_provenance(rows[1:], saved, token) is None
+
+
+@pytest.mark.parametrize('planner',['_priority_queue_order','_plan_daily_queue_order'])
+def test_historical_exposure_is_urgent_without_becoming_a_miss_and_recall_wins(planner):
+    rows=rows_for(('review','opening',6))
+    rows[0].update(issued=True)
+    rows[3].update(gameplay_priority_reason=ordering.EXPOSURE_REASON,cycle=1,attempt_state='gameplay')
+    rows[4].update(gameplay_priority_reason=ordering.MISS_REASON,attempt_state='gameplay')
+    original=deepcopy(rows)
+    if planner=='_priority_queue_order':result=ordering._priority_queue_order(rows)
+    else:result=ordering._plan_daily_queue_order(rows,'2026-10-20',None)[2]
+    assert [row['id'] for row in result[:3]]==[rows[0]['id'],rows[4]['id'],rows[3]['id']]
+    assert result[2]['gameplay_priority_reason']=='historical_exposure'
+    assert rows==original and {row['id'] for row in result}=={row['id'] for row in rows}
+
+
+@pytest.mark.parametrize('protection',[dict(issued=True),dict(presented=True),dict(attempt_failed=True),
+    dict(attempt_state='guided'),dict(attempt_state='reinforcement'),dict(eligible=False)])
+def test_historical_exposure_never_moves_protected_or_positioned_repeat(protection):
+    rows=rows_for(('review','opening',6))
+    rows[4].update(gameplay_priority_reason=ordering.EXPOSURE_REASON,cycle=1,attempt_state='gameplay')
+    rows[4].update(protection)
+    assert ordering._priority_queue_order(rows)[4]['id']==rows[4]['id']
+    assert ordering._plan_daily_queue_order(rows,'2026-10-20',None)[2][4]['id']==rows[4]['id']

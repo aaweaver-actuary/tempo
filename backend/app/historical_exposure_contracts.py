@@ -28,3 +28,12 @@ class ExposureSelection(BaseModel):
                 or any(len(value) not in (4,5) for value in self.expected_moves)):
             raise ValueError('Explicit canonical route/move selection required')
         return self
+
+
+class ExposureControl(BaseModel):
+    """Control an existing retained intent; never assert a completion or facts."""
+    model_config = ConfigDict(extra='forbid',strict=True,frozen=True)
+    target_id: str = Field(min_length=1,max_length=128)
+    workspace_id: Literal['legacy']
+    card_id: str = Field(min_length=1,max_length=128)
+    encounter_key: str = Field(pattern=r'^historical-exposure:[0-9a-f]{64}$')

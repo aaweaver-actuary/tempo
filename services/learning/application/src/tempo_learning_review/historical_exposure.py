@@ -287,6 +287,13 @@ def complete_practice(store: Store, writer: QueueWriter, record: Record,
     record = _current(store, record)
     if not record.intent_active(now):
         return record
+    if not _serves(record,completion,now):
+        return record
+    return _finish(store, writer, reader, record, 'completed','practice_served',now,completion.review_id)
+
+
+def _serves(record: Record, completion: PracticeCompletion, now: datetime) -> bool:
+    _instant(completion.reviewed_at)
     identity = record.request.encounter
     if (completion.scope != record.card_scope()
             or completion.card_id != identity.card_id or completion.card_revision != identity.card_revision
@@ -294,5 +301,33 @@ def complete_practice(store: Store, writer: QueueWriter, record: Record,
             or not completion.review_id or completion.source_kind != 'study'
             or not completion.verified_normal_attempt
             or not record.accepted_at <= completion.reviewed_at <= now):
-        return record
-    return _finish(store, writer, reader, record, 'completed','practice_served',now,completion.review_id)
+        return False
+    return True
+
+
+def refresh_card_priority(store: Store, writer: QueueWriter, reader: FactReader,
+                          scope: CardScope, completions: tuple[PracticeCompletion, ...],
+                          now: datetime) -> tuple[Record, ...]:
+    """Consume trusted practice for the complete card set before any requeue.
+
+    Adapters derive completions from retained canonical receipts, never transport
+    flags. Decide every terminal transition before reconciling survivors once;
+    a served contributor must not cause a transient new admission for another
+    contributor that was served by that same normal attempt.
+    """
+    _instant(now)
+    records=store.active_for_card(scope)
+    keys=[record.request.encounter.key() for record in records]
+    if len(keys)!=len(set(keys)) or any(record.card_scope()!=scope or record.state!='active' for record in records):
+        raise ExposureRejected('complete_scoped_active_inventory_required')
+    updates=[]
+    for record in records:
+        if now<record.accepted_at:raise ExposureRejected('clock_before_acceptance')
+        candidates=[event for event in completions if _serves(record,event,now)]
+        if candidates:
+            event=min(candidates,key=lambda value:(value.reviewed_at,value.review_id))
+            updates.append(replace(record,state='completed',terminal_reason='practice_served',
+                                   completion_review_id=event.review_id))
+    for record in updates:store.save(record)
+    reconcile_card_priority(store,writer,reader,scope,now)
+    return tuple(_current(store,record) for record in records)
