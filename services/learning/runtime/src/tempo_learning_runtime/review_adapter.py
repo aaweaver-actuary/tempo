@@ -9,7 +9,7 @@ import json
 from fastapi import HTTPException
 import tempo_learning_review as learning
 from . import postgres_store
-from .database import connection, read_connection
+from .database import connection
 from .models import ReviewRequest
 from .postgres_store import PostgresConnection
 from .review_conflicts import ReviewConflict
@@ -134,10 +134,9 @@ class LearningReviewAdapter:
             return learning.ReviewPolicy(
                 settings.timezone, settings.light_first_interval_days
             )
-        with read_connection() as database:
-            row = database.execute(
-                "SELECT timezone,light_first_interval_days FROM settings WHERE id=1"
-            ).fetchone()
+        row = self.database.execute(
+            "SELECT timezone,light_first_interval_days FROM settings WHERE id=1"
+        ).fetchone()
         return learning.ReviewPolicy(row["timezone"], row["light_first_interval_days"])
 
     def is_deleted(self, card_id):
@@ -432,7 +431,7 @@ class LearningReviewAdapter:
         for day in sorted(self.remediation_days):
             request_remediation(self.database, day)
         for day in sorted(self.queue_refreshes):
-            self.database.execute(queue_application._QUEUE_REFRESH_PROJECTION_SQL, (day,))
+            queue_application.mark_queue_refresh_pending_in_transaction(self.database, day)
 
     def lock_review_cards(self, command):
         return _lock_review_cards(self.database, command.card_id, command.prepared_next)

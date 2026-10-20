@@ -21,7 +21,7 @@ SQLite compatibility paths also exist; see [storage](../docs/STORAGE.md).
 
 ```mermaid
 flowchart TB
-  Home["Shared Home - training,<br/>authoring, Games"] -->|"feature imports / shared<br/>browser state"| Views["Legacy Games and other<br/>workspaces"]
+  Home["Full legacy entry + optional workspace composition"] -->|"feature imports / shared<br/>browser state"| Views["Legacy Games and other<br/>workspaces"]
   Home -->|"queue/review and feature<br/>HTTP"| API["backend/app/main.py -<br/>all-domain composition"]
   Views -->|"legacy Games HTTP"| API
   API -->|"durable command dispatch"| Broker["Redis / Celery"]
@@ -54,15 +54,15 @@ and must not be mistaken for permission for another service to write these table
 [Celery root](app/celery_app.py) and
 [Compose](../docker-compose.yml) are the source anchors for the graph.
 
-These are scoped legacy gaps for architecture review, not a claim that Games can
-fail independently throughout the full app. The [Study detail](../app/README.md#main-study-path-and-source-gap)
-also exposes shared browser imports; lazy declarations alone do not execute those
-features. Its [conditional build/offline view](../static/README.md#conditional-study-build-and-offline-assets-main)
-shows how optional chunks, **if emitted**, can enter the shared required shell
-inventory and affect offline readiness. Artifact presence and live failure are
-unverified. Changes claiming isolation must satisfy the
-new rule at the affected boundary; this documentation does not repair the legacy
-assembly or authorize a live cutover.
+These are scoped legacy backend gaps, not a claim that Games can fail
+independently throughout the full local app. The merged PR324
+[Study composition](../app/README.md#main-study-path-and-source-gap) uses a physical
+entry without the legacy optional workspace root; the full local/demo entry owns
+that root and supplies narrow capabilities to the shared core shell. The
+[canonical build view](../static/README.md#conditional-study-build-and-offline-assets-main)
+retains PR324's actual emitted-artifact and synthetic offline proof, without
+qualifying a combined deployment or repairing the backend's shared broker/data
+assembly. No live cutover is authorized.
 
 ## Start and test
 

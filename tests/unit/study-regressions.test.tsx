@@ -10,7 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import TacticsView from "../../app/views/tactics_view";
-import Home from "../../app/views/home_view";
+import Home from "../../app/views/legacy-home";
 import { advanceTacticProgress } from "../../app/lib/tactics-progress";
 import { useTrainingStore } from "../../app/state/training-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";

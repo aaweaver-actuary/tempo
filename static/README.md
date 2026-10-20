@@ -16,43 +16,38 @@ peer documents link to them instead of maintaining copies. See the
 
 ### Conditional Study build and offline assets (MAIN)
 
-**MAIN source checked; emitted-artifact verification pending.** The Study build
-uses the shared offline-shell inventory plugin. This is an asset-availability
-boundary beyond whether a lazy component executes. Arrows below label build data
-flow and readiness waits; dotted edges are explicitly conditional.
+**MAIN IMPLEMENTED SOURCE AND REVIEWED PR324 BUILD:** the all-emitted-assets
+inventory rule remains intact. The physical Study composition merged in main `588cea54574c2b56799f0a22f8235976171c4fba` removes optional
+implementations before emission. This changes the former conditional dependency;
+it does not filter required assets out of the worker to conceal coupling.
 
 ```mermaid
 flowchart TB
-  Build["Study Vite build<br/>static/app source graph"] -->|"all emitted JS, MJS and CSS"| Inventory["offlineShellAssets<br/>BUILD_SHELL_ASSETS inventory"]
-  Build -.->|"IF optional chunks remain<br/>in emitted Study output"| Optional["Games / sync chunks<br/>Artifact presence unverified"]
-  Optional -.->|"IF emitted, included<br/>without feature filtering"| Inventory
-  Inventory -->|"inventory embedded in sw.js"| SW["Service worker<br/>requiredShellUrls / precacheShell"]
-  SW -->|"cache.addAll required URLs"| Cache[("Browser offline shell cache")]
-  Ready["Study offline queue readiness<br/>waitForOfflineShell"] -->|"wait for worker readiness<br/>and request shell status"| SW
-  SW -.->|"IF a required asset fails or<br/>is missing from the cache"| Failure["New shell install can reject<br/>or shell ready can be false"]
+  Build["Physical Study source graph"] -->|"semantic implementation guard rejects optional roots"| Output["Study output: core shell, training, settings and worker"]
+  Legacy["Legacy optional implementations"] -.->|"excluded from loaded graph and emitted output"| Guard["Study composition guard"]
+  Output -->|"all emitted JS, MJS and CSS"| Inventory["offlineShellAssets / BUILD_SHELL_ASSETS"]
+  Inventory -->|"inventory embedded in emitted sw.js"| SW["Service worker / requiredShellUrls / precacheShell"]
+  SW -->|"cache.addAll required Study URLs"| Cache[("Browser offline shell cache")]
+  Ready["Study offline queue readiness / waitForOfflineShell"] -->|"worker readiness and shell status"| SW
+  SW -.->|"a missing required Study asset still fails install or readiness"| Failure["Truthful unavailable offline shell"]
 ```
 
 | Edge / owner | Concrete source and effect |
 | --- | --- |
-| Build composition → inventory | [Vite config](../vite.static.config.ts) installs [`offlineShellAssets`](../scripts/offline-shell-assets.ts). Its `writeBundle` inventories **all** emitted `.js`, `.mjs` and `.css` bundle keys, not only initial HTML references or a Study-only feature list, then replaces `BUILD_SHELL_ASSETS` in emitted `sw.js`. |
-| Inventory → install/cache | [`public/sw.js`](../public/sw.js): `requiredShellUrls` combines the base shell, HTML-referenced assets and build inventory. `precacheShell` uses `cache.addAll`; the install event waits for that promise before `skipWaiting`. A required fetch failure can reject installation of the new shell. This does not establish failure of an already active older shell. |
-| Cache → offline readiness | The same worker's `tempo:offline-shell-status` handler sets `ready` only when every required URL is cached. [`waitForOfflineShell`](../app/lib/offline-shell.ts) waits for service-worker readiness/control and validates the version/status reply. [Queue preparation and cached fallback](../app/views/fetchAndInitializeQueue.tsx) call it before reporting phone readiness or accepting that cached fallback. [Static startup](src/main.tsx) registers the worker in production. |
+| Composition → actual output | [`studyComposition`](../scripts/study-composition.ts) emits `study-composition.json`, recording loaded application modules and each emitted chunk's modules. PR324's actual bounded Study build passed the expanded implementation guard. It emitted seven JS/CSS assets, including the Study worker, and no named optional implementations. |
+| Output → inventory | [Vite config](../vite.static.config.ts) installs [`offlineShellAssets`](../scripts/offline-shell-assets.ts). Its `writeBundle` inventories every emitted `.js`, `.mjs` and `.css` key and replaces `BUILD_SHELL_ASSETS` in `sw.js`. The actual emitted inventory equals that output set. |
+| Inventory → install/cache | [`public/sw.js`](../public/sw.js): `requiredShellUrls` combines base shell, HTML references and build inventory. `precacheShell` uses `cache.addAll`; installation waits for that promise before `skipWaiting`. Required fetch failures still reject new-shell installation. |
+| Cache → offline readiness | Worker `tempo:offline-shell-status` checks all required URLs. [`waitForOfflineShell`](../app/lib/offline-shell.ts) verifies worker version and readiness. [Queue preparation/fallback](../app/views/fetchAndInitializeQueue.tsx) calls it before claiming offline readiness. [`renderApplication`](src/render-application.tsx) registers the production worker. |
 
-**Conditional consequence:** if Games/sync chunks remain in the emitted Study
-output, they enter this required inventory even without Games/sync execution.
-Unavailable optional assets can then affect Study's new offline-shell installation
-or offline-readiness check. The asset set is served from the Study build's own
-origin; this is not evidence of an API call or readiness wait on the independent
-Games service.
-
-**Verification status:** the inventory, install and status paths above were read
-in source. No Study build was produced; emitted chunks and the built inventory
-were not inspected. No asset-loss scenario was executed or live/offline failure
-observed here.
-Whether this conditional edge exists in a particular artifact remains unverified.
-The target is a Study composition/artifact whose required offline assets exclude
-optional feature implementations. A separate composition repair is in progress
-on another branch; it is not incorporated or claimed complete by this view.
-Its owning change must inspect the actual output/inventory and verify the affected
-offline boundary before claiming the gap removed. This documentation correction
-does not require a full-stack suite or change runtime source.
+**Verification status:** actual emitted modules, chunks and offline inventory were
+inspected for PR324
+[`30191b9c`](https://github.com/aaweaver-actuary/tempo/commit/30191b9c026f27f3d816304c47e5b72e0ec390b0): 157 application modules and seven emitted JS/CSS assets.
+One native Chromium context served the actual artifact and worker from a disposable
+loopback host with canonical synthetic Learning bootstrap/settings/queue/teaching
+fixtures. Optional asset URLs returned 404; worker status was ready before and after
+offline reload, the prepared opening queue remained usable, and browser appearance
+preferences persisted across settings/training navigation. Unknown API, external
+network and page-error counts were zero; the context, Chromium process and host
+were closed. The PR evidence retains the exact fixture script, screenshots and
+initial fixture/oracle failures. No live service, data, deployment, PostgreSQL
+behavior or whole-host resource independence is certified by this frontend proof.

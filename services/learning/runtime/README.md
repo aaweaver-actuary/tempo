@@ -11,38 +11,63 @@ peer documents link to them instead of maintaining copies. See the
 
 ### Shared Learning request execution gaps (MAIN)
 
-**MAIN / OPEN SOURCE GAPS:** the source has two request-progress dependencies
-that the separation target does not permit us to hide. They concern awaited
-host-reporting I/O and shared event-loop execution, not Games service calls.
+**MAIN IMPLEMENTED SOURCE:** main at
+[`588cea54`](https://github.com/aaweaver-actuary/tempo/commit/588cea54574c2b56799f0a22f8235976171c4fba)
+contains HostActivity PR325, endgame PR326, borrowed review-policy PR327 and queue
+persistence PR329. The complete physical Study composition from PR324 is also
+merged. This documentation relocation changes no runtime behavior or deployment.
+The [integration receipt](../../../docs/architecture/study-isolation-integration-2026-10-20.md)
+records exact feature/merge inputs, source parity, 44 combined adapter passes,
+seven focused native passes and their resource/qualification limits.
 
 ```mermaid
 flowchart TB
   Study["Essential Study HTTP request"] -->|"dispatch / response progress"| Loop["Learning ASGI event loop"]
-  Loop -->|"essential middleware awaits<br/>context entry and exit"| Activity["request_activity<br/>asyncio.to_thread + shield"]
-  Activity -->|"wait for threading.Lock<br/>and synchronous _publish"| Files[("HostActivity filesystem<br/>mkdir / write / replace")]
-  Endgame["Async tablebase probe /<br/>endgame attempt handlers"] -->|"synchronous DB phases<br/>within async handlers"| Sync["connection / execute / fetch<br/>and gateway dispatch"]
-  Sync -->|"pool / queries / transactions"| DB[("Learning PostgreSQL")]
-  Sync -.->|"occupies the same event loop<br/>during synchronous phases"| Loop
-  Endgame -->|"cache miss: awaited HTTP<br/>outside DB transactions"| Provider["Optional tablebase provider"]
-  classDef gap fill:#fff1f0,stroke:#c53030,color:#7f1d1d
-  class Activity,Sync gap
+  Loop -->|"bounded-memory request entry / exit"| Activity["HostActivity request counter and maximum quiet deadline"]
+  Activity -->|"wake event; no publication I/O wait"| Publisher["Optional host daemon: snapshot under memory lock"]
+  Publisher -->|"release memory lock then mkdir / write / replace"| Files[("HostActivity filesystem")]
+  Endgame["Optional async endgame routes"] -->|"await admitted complete synchronous phase"| Worker["EndgameIO daemon: one phase; 5s confirmation wait"]
+  Worker -->|"cache / template / receipt or canonical gateway"| Store["endgame_store + gateway transaction owner"]
+  Store -->|"optional lane"| Optional[("Lazy optional reader / writer pools: max1 each")]
+  Loop -->|"ordinary Study transactions"| Foreground[("Foreground reader / writer pools")]
+  Foreground --> DB[("Shared Learning PostgreSQL")]
+  Optional --> DB
+  Endgame -->|"cache miss: awaited provider HTTP outside transaction"| Provider["Optional tablebase provider"]
+  Shutdown["Learning shutdown"] -->|"signal; no publication or cleanup join"| Publisher
+  Publisher -->|"after I/O returns: remove owned snapshot"| Files
+  Shutdown -->|"reject / signal; no active optional join"| Worker
+  Shutdown -->|"close foreground and maintenance only"| Foreground
+  Worker -->|"after actual phase leaves: close own optional pools"| Optional
 ```
 
-| Actual dependency | Source and ownership |
+| Interface / lifecycle owner | Actual assembled source and limit |
 | --- | --- |
-| Essential requests await host publication | [Learning API](src/tempo_learning_runtime/api.py): `authority` wraps essential `/api/` requests (excluding activity/OPTIONS) in `request_activity`. It awaits the thread running `context.__enter__` before `call_next`, and awaits entry/exit completion in cleanup, including cancellation. [`HostActivity.request`](src/tempo_learning_runtime/host_activity.py) takes `threading.Lock` and synchronously calls `_publish`, which creates directories, writes JSON and replaces its file. Moving that work to a thread frees the event loop while awaiting it, but does not remove the request's wait. |
-| Reporting configuration and failure limit | [`Configuration.environment`](src/tempo_learning_runtime/config.py) sets the activity directory; `HostActivity.request` is a no-op only when its directory is `None`. Publication catches/logs `OSError`, but a slow lock/filesystem operation can still delay the awaited path. It does not wait for a Games consumer acknowledgement. Database timeout settings do not establish a bound on this filesystem wait. |
-| Optional endgame work can occupy the shared ASGI loop | [Learning API](src/tempo_learning_runtime/api.py): async `tablebase` performs synchronous cache reads before awaited provider HTTP and synchronous cache writes afterward; async `endgame_attempt` also performs synchronous receipt/template reads and `gateway.dispatch`. Those synchronous connection/query/dispatch phases run on the shared event loop and can delay unrelated Study request progress. The provider HTTP itself is awaited outside a database transaction; that fact does not isolate the synchronous phases. |
+| Essential request memory accounting | [`HostActivity.request`](src/tempo_learning_runtime/host_activity.py) updates a counter and maximum quiet deadline. At most 1,024 browser sessions bound shared snapshot memory work. [`request_activity`](src/tempo_learning_runtime/api.py) has no filesystem or daemon-result await, including cancellation. This is bounded-memory synchronization, not hard real-time, lock-free progress or a scheduler latency guarantee. |
+| Optional publication and cleanup | `HostActivity.start` starts its daemon without initial file I/O. The daemon releases the memory lock before publishing; `close` signals without joining publication or cleanup. An optional activity 200 acknowledges memory submission against the last healthy lease; missing/known-failed/stale publication or browser capacity returns 503. |
+| Explicit admission tradeoff and deployment prerequisite | The unchanged [native reader](../../../scripts/host-study-activity.mjs) can retain an idle snapshot until its 15-second producer lease expires. A new essential request may overlap admitted managed work during that remaining lease; asynchronous publication provides no immediate foreground exclusion. Present stale evidence is unavailable. Missing/startup/removed-source denial requires configuring protected workspace identities in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` before deployment; default `[]` accepts absence as idle. No live configuration or lease protocol changed. |
+| Optional complete database phases | [`EndgameIO`](src/tempo_learning_runtime/endgame_io.py) admits one phase to a dedicated daemon and preserves request database context. [`endgame_store`](src/tempo_learning_runtime/endgame_store.py) owns cache/template/receipt SQL; admitted command effects still use the canonical gateway. Each connection stays inside its complete worker phase. Busy requests return 503; result waits end at five seconds or immediately on cancellation/shutdown. Provider HTTP stays outside transactions, retaining its three-second timeout and the existing five-second/80-candidate preparation policy. |
+| Separate connection capacity | [`Database`](src/tempo_learning_runtime/database.py) routes optional worker phases to lazy size-1 reader/writer pools. Foreground capacity is preserved even at configured pool size one. Total configured maximum is `2 * pool_size + 3`, including maintenance and both optional pools. Database/process/host resource and lock contention remain possible; separate pools do not establish deployment isolation. |
+| Optional cancellation and shutdown authority | Main close never takes the optional pool lock or closes an active optional transaction. It signals the daemon and closes foreground/maintenance pools; the daemon closes its own pools after actual phase completion. A stalled phase may remain allocated until process exit. An unconfirmed attempt carries `state: unknown`, its same operation ID, `Location` and `Retry-After`; the canonical receipt determines eventual commit/replay. No thread kill, abandoned transaction, fabricated failure or duplicate logical effect is claimed. |
 
-**Verification status:** these are source-supported open architecture gaps. No
-contention, latency or live failure was reproduced here. Transaction/pool budgets
-remain useful bounds at their own boundaries; they are not proof that optional
-work cannot delay Study through the shared event loop or awaited filesystem path.
-The target is essential Study progress independent of optional host reporting and
-optional workload execution. Coordinator-owned code repairs are separate work,
-not completed by or incorporated into this documentation view.
+**Evidence and limits:** [owning regressions](REGRESSIONS.md) retain blocked
+HostActivity directory creation/cleanup, essential HTTP/lifespan progress,
+cancellation and recovery. The native reader case runs the exact Python source,
+verifies its hash and proves healthy idle persists through 15 seconds minus one
+nanosecond, then becomes unavailable. Endgame cases exercise actual ASGI requests,
+real `Database` routing with fake size-one pools, provider/transaction boundaries,
+canonical gateway timeout/replay and interpreter exit with a never-returning
+daemon. The integration receipt additionally records seven focused native PostgreSQL passes,
+including actual optional-lease/foreground/shutdown and borrowed-policy rollback
+compositions. These are selected checks, not a complete runtime or hosted-CI
+qualification; live latency/resource allocation remains unverified. No live incident, deployment
+or whole-host resource independence is established by these drawings.
 
 ### Review commit and recovery (MAIN)
+
+The MAIN durable commit/replay protocol includes merged HostActivity accounting,
+borrowed review-policy settings (PR327) and queue projection/refresh ownership
+(PR329). The integration receipt qualifies selected combined behavior; source
+and selected passes do not imply deployment.
 
 Scope: Learning-connected aggregate review through the installed review
 application. Typed Study/tactics/defense attempts retain their own handlers and
@@ -64,15 +89,17 @@ sequenceDiagram
     B-->>S: pending intent committed<br/>locally
     S->>A: POST card review with same<br/>Idempotency-Key
     Note over A: Authenticate workspace/origin before<br/>DB access
-    Note over A: Essential middleware also awaits<br/>HostActivity context entry / exit
+    Note over A: MAIN host accounting: bounded-memory<br/>request accounting; daemon owns file I/O
     A->>D: record_intent in its own<br/>transaction
     D-->>A: queued intent committed (or<br/>matching identity found)
     Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
     A->>R: submit_review using caller<br/>connection / handler<br/>savepoint
     R->>D: Lock cards then queue date,<br/>validate attempt, revision,<br/>receipt
+    Note over R,D: Policy settings use this borrowed transaction<br/>unless injected provider supplies policy
     Note over R,D: Optional successor uses nonblocking<br/>locks, never delays current review
     R->>D: Required evidence +<br/>review/history/schedule +<br/>attempt completion
-    R->>D: Required local obligation<br/>settlement, logical receipt,<br/>queue effects
+    R->>D: Required local obligation<br/>settlement and logical receipt
+    R->>D: All daily refresh requests, all remediation requests,<br/>then queue projection updates last
     alt Valid execution
       R-->>A: Persisted result (or<br/>original idempotent result)
       A->>D: Complete operation receipt,<br/>commit with all handler<br/>effects
@@ -157,7 +184,7 @@ Configure these variables explicitly; store bearer credentials in permission-res
 | `TEMPO_LEARNING_ORIGINS` | Comma-separated exact browser origins, including scheme and port |
 | `TEMPO_LEARNING_HOSTS` | Exact hosts; defaults `localhost,127.0.0.1` |
 | `TEMPO_LEARNING_TIMEZONE` | Study-day zone; default `America/New_York` |
-| `TEMPO_LEARNING_POOL_SIZE` | Each foreground pool maximum, 1–16; default 4 |
+| `TEMPO_LEARNING_POOL_SIZE` | Each foreground pool maximum, 1–16; default 4; optional endgame pools are separate (see resource budget below) |
 | `TEMPO_LEARNING_MAINTENANCE` | `1` enables lifecycle-managed essential maintenance; default 1 |
 | `TEMPO_LEARNING_TABLEBASE_URL` | Optional HTTP provider; empty disables; default Lichess standard endpoint |
 | `TEMPO_LEARNING_OPERATOR_TOKEN_FILE` | Optional, distinct publication credential; omitted disables publication HTTP commands |
@@ -173,6 +200,41 @@ services/learning/runtime/.venv/bin/tempo-learning maintain --once
 A command first durably accepts its immutable intent, then executes its handler directly. The gateway owns commit/rollback and nested handler savepoints. Borrowed application transactions cannot commit. Exact transport retries return the recorded response; a different request under the same identity conflicts. Logical review, Study, tactical and defense identities retain their family-specific bindings. Reconciliation has its own savepoint, and optional successor locks use nonblocking acquisition.
 
 Essential queue work and cursors live in PostgreSQL. Maintenance commits one admission/cursor slice at a time and yields between sections. Its pool maximum is 1. Foreground acquisition/lock/statement/transaction budgets are 250/250/1500/2500 ms; maintenance uses 100/25/200/250 ms. Evidence intake uses the same background pool and 25 ms lock budget with a 1,000 ms transaction bound for an atomic maximum-128-item wire delivery; ordinary maintenance keeps its 250 ms bound. Intake transaction expiry returns 503/Retry-After with all acceptance effects rolled back. Transient failures retain the original intent for retry; a contended command backs off so queue maintenance can progress. Tablebase calls run outside database transactions, use a 3-second provider timeout, and endgame preparation checks a 5-second total budget between the retained maximum of 80 deterministic candidates.
+
+Optional endgame persistence uses one dedicated serial worker, separate from
+Study's request workers. Cache reads/writes, template/receipt reads, and the
+canonical attempt gateway each run as complete synchronous phases; their
+connections never cross a worker invocation. Lazy optional reader/writer pools
+each have maximum 1 and retain the ordinary acquisition/SQL/lock/transaction
+budgets above. The configured process connection maximum is therefore
+`2 * TEMPO_LEARNING_POOL_SIZE + 3`: the foreground pair, one maintenance
+connection, and at most two optional endgame connections. Optional phases do not
+occupy foreground leases even when the foreground pool size is 1. They still
+share PostgreSQL, the process and host; this is not deployment resource isolation.
+
+The worker admits at most one phase. Busy requests return 503 immediately;
+confirmation waits are bounded to 5 seconds. Timeout, cancellation and shutdown
+end the caller's wait without cancelling or misreporting the admitted database
+phase. A 503 for attempt work includes `state: unknown`, the same `operation_id`
+(including a server-generated ID), `Location` and `Retry-After`; retry that ID to
+recover the canonical receipt instead of creating a second operation.
+
+The worker is a daemon with no interpreter-exit join. Application shutdown
+rejects new/unstarted work, ends active result waits, and closes only foreground
+and maintenance pools. The daemon retains its optional connection/transaction
+until the phase actually leaves, then closes only its own pools. Background-pool
+escapes are rejected. A stalled OS/database driver can therefore leave one
+bounded optional phase/pool allocation alive until process exit without becoming
+a Study shutdown wait or causing another owner to close its active transaction.
+PostgreSQL decides rollback/commit if the process exits; the canonical receipt
+remains the authority on retry. No timeout is claimed to kill a Python thread.
+
+Focused fake-pool ASGI tests cover Study progress, cancellation and shutdown
+before a delayed optional phase is released, plus canonical gateway replay after
+a confirmation timeout. A fresh-process regression proves a never-returning
+optional daemon does not hold interpreter exit. Native PostgreSQL qualification
+and deployment resource isolation remain unverified; existing native endgame
+contracts retain transaction/receipt/provider/cache ownership.
 
 ## Daily presentation
 

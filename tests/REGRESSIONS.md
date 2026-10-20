@@ -4989,3 +4989,10 @@ uses a synthetic wheel and mocked version command. Qualification-plan tests
 cover hash refusal, no native download fallback and first pytest failure with
 retained incomplete inventory. They do not execute a real tool, build or Docker.
 
+
+## PR #324 independent Study composition
+
+- `tests/unit/study-composition-regressions.test.ts`: physical Study entry selection, direct optional workspace intent rejection, semantic optional implementation guards, and emitted module/chunk inventory.
+- `tests/unit/study-shell-composition-regressions.test.tsx`: Study trains with absent optional capabilities, omits unsupported authoring controls, and persists browser appearance preferences without workspace administration.
+- `tests/unit/training-builder-handoff-regressions.test.tsx`: explicit legacy composition retains full-route Builder, Analysis, Games-position and comparison handoffs without advancing the live attempt.
+- Existing `study-regressions`, `repertoire-alternative-home-regressions`, and `opening-evidence-home-lifecycle`, and `training-burial-caller-regressions` fixtures select the explicit legacy composition where they exercise repair, editor, repertoire or Workbench-launch behavior; their original behavioral assertions remain.

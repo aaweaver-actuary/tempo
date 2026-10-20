@@ -1,7 +1,7 @@
 import { act, cleanup, render, waitFor, screen, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
-import Home from "../../app/views/home_view";
+import Home from "../../app/views/legacy-home";
 import { useTrainingStore } from "../../app/state/training-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { asCardId, asFenString, asQueueEntryId, asSanMove, type PracticeCard } from "../../app/types";
