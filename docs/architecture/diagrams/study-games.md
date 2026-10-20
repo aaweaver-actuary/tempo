@@ -6,10 +6,12 @@
 ## Main Study path and source gap
 
 **PR324 IMPLEMENTED SOURCE, UNMERGED:** the browser composition below describes
-`799d6a56` on `codex/study-games-composition`, with PR323's documentation merged
+`30191b9c026f27f3d816304c47e5b72e0ec390b0` on `codex/study-games-composition`, with PR323's documentation merged
 separately. It replaces the shared-Home Games import gap in this branch. MAIN at
 `fc92a4d9` and any deployed artifact are not claimed to contain this change.
-The Learning serving and transaction owners are unchanged.
+The Learning gateway retains serving and transaction authority. MAIN now includes
+HostActivity325, endgame326, borrowed review-policy327 and queue persistence329;
+this PR adds only the physical browser composition and its scoped proof.
 
 ```mermaid
 flowchart TB
@@ -28,6 +30,10 @@ flowchart TB
   Gateway -->|"queue command handlers"| Queue["Learning queue / admission / first issuance"]
   Review -->|"same-transaction required settlement"| Remediation["Learning remediation adapter / repository"]
   Review -->|"history / scheduling / evidence / receipt effects"| DB[("Learning-owned PostgreSQL state")]
+  HTTP -->|"read_queue_window semantic operation"| Projection["Learning queue read projection owner (MAIN)"]
+  Projection -->|"complete parameter-bound reads in borrowed transaction"| DB
+  Review -->|"policy settings via borrowed command transaction"| DB
+  Review -->|"daily-all / remediation-all / projection-last"| Queue
   Queue -->|"canonical writer and lock protocol"| DB
   Remediation -->|"Learning-owned obligation settlement"| DB
   Full["static/src/main.tsx - full local/demo entry"] --> Legacy["legacy-home / legacy-workspace"]
@@ -43,6 +49,8 @@ flowchart TB
 | Genuine Study settings and navigation | [`StudyConnectionBoundary`](../../../app/components/study-connection-boundary.tsx) retains [`StudySettingsPanel`](../../../app/components/study-settings-panel.tsx) for Learning settings. [`StudySettingsView`](../../../app/views/study-settings-view.tsx) changes browser appearance/shortcuts. [`canOpenWorkspace`](../../../app/lib/study-workspace-policy.ts) checks direct intents as well as Navbar visibility. |
 | Connection and allowed transport | [`study-connection.ts`](../../../app/lib/study-connection.ts): `connectStudy`, `studyWorkspace`, `learningPaths`, `authenticatedLearningFetch`. Only the configured Learning origin/Study paths receive the credential; no Games fallback. The boundary waits for Learning bootstrap or explicitly permitted cached practice. |
 | Session and browser data ownership | [`study-session-runtime.ts`](../../../app/lib/study-session-runtime.ts) composes adapters into [`createStudySession`](../../../packages/study-session/src/index.ts); [`study-intent-storage.ts`](../../../app/lib/study-intent-storage.ts) supplies [`IntentStore`](../../../packages/browser-intents/src/index.ts). [`review-outbox.ts`](../../../app/lib/review-outbox.ts) and [`study-command-client.ts`](../../../app/lib/study-command-client.ts) preserve family-specific payloads/identities. |
+| MAIN PR329 queue read and refresh projection | [`queue_application.read_queue_window`](../../../services/learning/runtime/src/tempo_learning_runtime/queue_application.py) owns complete card/count/projection queries and the retained legacy card fields. The HTTP queue payload consumes `QueueWindowProjection` before commanding head issuance; it does not rewrite SQL. The same owner exposes `mark_queue_refresh_pending_in_transaction`; review flushes all daily tasks, then remediation tasks, then projection marks in its borrowed transaction. Existing entry-state/queue-command SQL helpers remain a scoped legacy boundary outside this queue-window repair. |
+| Borrowed review capabilities | [`ReviewStore` / `ReviewSubmissionStore`](../../../services/learning/application/src/tempo_learning_review/ports.py), [`submit_review`](../../../services/learning/application/src/tempo_learning_review/application.py), [`LearningReviewAdapter`](../../../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py). The application receives semantic facts/operations; it does not acquire/commit a connection. The adapter reads policy settings through the same borrowed transaction after submission acquires card/queue locks; it does not acquire a nested reader connection. An injected policy provider remains supported. |
 | Serving, borrowed review and settlement | [API registration](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [gateway](../../../services/learning/runtime/src/tempo_learning_runtime/gateway.py), [`submit_review` / ports](../../../services/learning/application/src/tempo_learning_review/application.py), [review adapter](../../../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py), [queue application](../../../services/learning/runtime/src/tempo_learning_runtime/queue_application.py), [admission](../../../services/learning/runtime/src/tempo_learning_runtime/admission.py), [receivers](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py), [remediation adapter](../../../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py). The review application receives semantic capabilities; gateway retains transaction authority. Settlement uses Learning-local facts, not an online Games call. |
 
 The independent Learning install closure contains no Game Evidence service,
@@ -54,8 +62,8 @@ libraries do not create a producer lifecycle dependency.
 **Acceptance invariant:** Study must have no Games call, import, wait,
 readiness, transaction or lifecycle dependency. Games must be able to fail
 completely while ordinary Study continues. This PR repairs the browser source and
-artifact boundary only; shared host/request execution gaps below and deployment
-resource isolation retain their own proof owners.
+artifact boundary only; merged host/endgame execution repairs below retain their own scoped proof,
+and deployment resource isolation remains unverified.
 
 Optional practice influence enters the **Learning/queue owner's semantic
 interface**, as the [existing evidence sequence](flows.md#observed-game-evidence-to-learning-main)
@@ -103,36 +111,54 @@ behavior or whole-host resource independence is certified by this frontend proof
 
 ## Shared Learning request execution gaps (MAIN)
 
-**MAIN / OPEN SOURCE GAPS:** the source has two request-progress dependencies
-that the separation target does not permit us to hide. They concern awaited
-host-reporting I/O and shared event-loop execution, not Games service calls.
+**MAIN HOST, ENDGAME AND POLICY REPAIRS:** HostActivity PR325, optional endgame
+PR326 (merged at `8b1dcbfd`) and borrowed review-policy PR327 are merged source.
+Host publication/cleanup belongs to its optional daemon; essential request
+accounting uses bounded memory. Endgame persistence runs as complete phases on
+its dedicated daemon with separate connection capacity and late cleanup ownership.
+Source availability does not establish deployment or shared host/PostgreSQL
+isolation. The merged PR329 queue persistence boundary is described above.
 
 ```mermaid
 flowchart TB
   Study["Essential Study HTTP request"] -->|"dispatch / response progress"| Loop["Learning ASGI event loop"]
-  Loop -->|"essential middleware awaits<br/>context entry and exit"| Activity["request_activity<br/>asyncio.to_thread + shield"]
-  Activity -->|"wait for threading.Lock<br/>and synchronous _publish"| Files[("HostActivity filesystem<br/>mkdir / write / replace")]
-  Endgame["Async tablebase probe /<br/>endgame attempt handlers"] -->|"synchronous DB phases<br/>within async handlers"| Sync["connection / execute / fetch<br/>and gateway dispatch"]
-  Sync -->|"pool / queries / transactions"| DB[("Learning PostgreSQL")]
-  Sync -.->|"occupies the same event loop<br/>during synchronous phases"| Loop
-  Endgame -->|"cache miss: awaited HTTP<br/>outside DB transactions"| Provider["Optional tablebase provider"]
-  classDef gap fill:#fff1f0,stroke:#c53030,color:#7f1d1d
-  class Activity,Sync gap
+  Loop -->|"bounded-memory request entry / exit"| Activity["HostActivity request counter and maximum quiet deadline"]
+  Activity -->|"wake event; no publication I/O wait"| Publisher["Optional host daemon: snapshot under memory lock"]
+  Publisher -->|"release memory lock then mkdir / write / replace"| Files[("HostActivity filesystem")]
+  Endgame["Optional async endgame routes (MAIN)"] -->|"await admitted complete synchronous phase"| Worker["EndgameIO daemon: one phase; 5s confirmation wait"]
+  Worker -->|"cache / template / receipt or canonical gateway"| Store["endgame_store + gateway transaction owner"]
+  Store -->|"optional lane"| Optional[("Lazy optional reader / writer pools: max1 each")]
+  Loop -->|"ordinary Study transactions"| Foreground[("Foreground reader / writer pools")]
+  Foreground --> DB[("Shared Learning PostgreSQL")]
+  Optional --> DB
+  Endgame -->|"cache miss: awaited provider HTTP outside transaction"| Provider["Optional tablebase provider"]
+  Shutdown["Learning shutdown"] -->|"signal; no publication or cleanup join"| Publisher
+  Publisher -->|"after I/O returns: remove owned snapshot"| Files
+  Shutdown -->|"reject / signal; no active optional join"| Worker
+  Shutdown -->|"close foreground and maintenance only"| Foreground
+  Worker -->|"after actual phase leaves: close own optional pools"| Optional
 ```
 
-| Actual dependency | Source and ownership |
+| Interface / lifecycle owner | Actual assembled source and limit |
 | --- | --- |
-| Essential requests await host publication | [Learning API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py): `authority` wraps essential `/api/` requests (excluding activity/OPTIONS) in `request_activity`. It awaits the thread running `context.__enter__` before `call_next`, and awaits entry/exit completion in cleanup, including cancellation. [`HostActivity.request`](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py) takes `threading.Lock` and synchronously calls `_publish`, which creates directories, writes JSON and replaces its file. Moving that work to a thread frees the event loop while awaiting it, but does not remove the request's wait. |
-| Reporting configuration and failure limit | [`Configuration.environment`](../../../services/learning/runtime/src/tempo_learning_runtime/config.py) sets the activity directory; `HostActivity.request` is a no-op only when its directory is `None`. Publication catches/logs `OSError`, but a slow lock/filesystem operation can still delay the awaited path. It does not wait for a Games consumer acknowledgement. Database timeout settings do not establish a bound on this filesystem wait. |
-| Optional endgame work can occupy the shared ASGI loop | [Learning API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py): async `tablebase` performs synchronous cache reads before awaited provider HTTP and synchronous cache writes afterward; async `endgame_attempt` also performs synchronous receipt/template reads and `gateway.dispatch`. Those synchronous connection/query/dispatch phases run on the shared event loop and can delay unrelated Study request progress. The provider HTTP itself is awaited outside a database transaction; that fact does not isolate the synchronous phases. |
+| Essential request memory accounting | [`HostActivity.request`](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py) updates a counter and maximum quiet deadline. At most 1,024 browser sessions bound shared snapshot memory work. [`request_activity`](../../../services/learning/runtime/src/tempo_learning_runtime/api.py) has no filesystem or daemon-result await, including cancellation. This is bounded-memory synchronization, not hard real-time, lock-free progress or a scheduler latency guarantee. |
+| Optional publication and cleanup | `HostActivity.start` starts its daemon without initial file I/O. The daemon releases the memory lock before publishing; `close` signals without joining publication or cleanup. An optional activity 200 acknowledges memory submission against the last healthy lease; missing/known-failed/stale publication or browser capacity returns 503. |
+| Explicit admission tradeoff and deployment prerequisite | The unchanged [native reader](../../../scripts/host-study-activity.mjs) can retain an idle snapshot until its 15-second producer lease expires. A new essential request may overlap admitted managed work during that remaining lease; asynchronous publication provides no immediate foreground exclusion. Present stale evidence is unavailable. Missing/startup/removed-source denial requires configuring protected workspace identities in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` before deployment; default `[]` accepts absence as idle. No live configuration or lease protocol changed. |
+| MAIN optional complete database phases | [`EndgameIO`](../../../services/learning/runtime/src/tempo_learning_runtime/endgame_io.py) admits one phase to a dedicated daemon and preserves request database context. [`endgame_store`](../../../services/learning/runtime/src/tempo_learning_runtime/endgame_store.py) owns cache/template/receipt SQL; admitted command effects still use the canonical gateway. Each connection stays inside its complete worker phase. Busy requests return 503; result waits end at five seconds or immediately on cancellation/shutdown. Provider HTTP stays outside transactions, retaining its three-second timeout and the existing five-second/80-candidate preparation policy. |
+| MAIN separate connection capacity | [`Database`](../../../services/learning/runtime/src/tempo_learning_runtime/database.py) routes optional worker phases to lazy size-1 reader/writer pools. Foreground capacity is preserved even at configured pool size one. Total configured maximum is `2 * pool_size + 3`, including maintenance and both optional pools. Database/process/host resource and lock contention remain possible; separate pools do not establish deployment isolation. |
+| MAIN optional cancellation and shutdown authority | Main close never takes the optional pool lock or closes an active optional transaction. It signals the daemon and closes foreground/maintenance pools; the daemon closes its own pools after actual phase completion. A stalled phase may remain allocated until process exit. An unconfirmed attempt carries `state: unknown`, its same operation ID, `Location` and `Retry-After`; the canonical receipt determines eventual commit/replay. No thread kill, abandoned transaction, fabricated failure or duplicate logical effect is claimed. |
 
-**Verification status:** these are source-supported open architecture gaps. No
-contention, latency or live failure was reproduced here. Transaction/pool budgets
-remain useful bounds at their own boundaries; they are not proof that optional
-work cannot delay Study through the shared event loop or awaited filesystem path.
-The target is essential Study progress independent of optional host reporting and
-optional workload execution. Coordinator-owned code repairs are separate work,
-not completed by or incorporated into this documentation view.
+**Evidence and limits:** [owning regressions](../../../services/learning/runtime/REGRESSIONS.md) retain blocked
+HostActivity directory creation/cleanup, essential HTTP/lifespan progress,
+cancellation and recovery. The native reader case runs the exact Python source,
+verifies its hash and proves healthy idle persists through 15 seconds minus one
+nanosecond, then becomes unavailable. Endgame cases exercise actual ASGI requests,
+real `Database` routing with fake size-one pools, provider/transaction boundaries,
+canonical gateway timeout/replay and interpreter exit with a never-returning
+daemon. These component proofs are scoped and synthetic. The scoped endgame component evidence does not itself establish native
+PostgreSQL behavior or live latency/resource allocation. No live incident, deployment
+or whole-host resource independence is established by these drawings.
+
 
 ## Merged PR322 Games reader
 
@@ -183,9 +209,10 @@ read-only composition, narrow view port and bounded game projection above.
 
 | Path | Local ownership and failure result | Limit of claim |
 | --- | --- | --- |
-| Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. Shared Home remains a source gap. |
-| Conditional Study offline assets | The shared build inventories all emitted JS/MJS/CSS; worker installation/cache status can depend on optional chunks **if** they remain in that output. Lazy declarations alone do not execute those features. | [Source-backed conditional view](#conditional-study-build-and-offline-assets-main); emitted artifact and failure scenario unverified, no observed live failure. |
-| Shared Learning request execution | Essential middleware awaits HostActivity lock/filesystem publication. Optional async endgame handlers contain synchronous DB phases on the shared ASGI loop. | [Source-supported open gaps](#shared-learning-request-execution-gaps-main); no reproduced contention or live failure, no repair-completion claim. |
+| Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. PR324 provides a physical Study entry and optional composition boundary in this source; deployment remains unverified. |
+| Conditional Study offline assets | PR324 excludes named optional implementations before emission; the worker still requires every emitted JS/MJS/CSS asset and reports unavailable required assets honestly. | [Actual PR324 artifact and synthetic offline proof](#conditional-study-build-and-offline-assets-main): 157 application modules, seven emitted JS/CSS assets, ready worker before/after offline reload with optional URLs unavailable. This is component-scoped evidence, not a live incident or deployment claim. |
+| Shared Learning host reporting (MAIN) | Essential accounting uses bounded-memory synchronization; daemon-owned publication and cleanup have no essential filesystem wait or shutdown join. | [Merged host source](#shared-learning-request-execution-gaps-main); last healthy idle evidence can permit foreground overlap for the remaining 15-second lease. Missing/startup/removed-source denial requires configured expected workspace identities; default `[]` accepts absence. Deployment/resource isolation unverified. |
+| Optional endgame execution (MAIN) | One daemon admits complete synchronous phases; separate lazy reader/writer pools each max1 preserve foreground capacity. Main shutdown signals without joining active optional I/O or closing its transaction; the daemon owns late completion and cleanup. | [Merged endgame source](#shared-learning-request-execution-gaps-main); canonical operation receipt owns unknown/late outcomes. Shared PostgreSQL/process/host allocation remains deployment-unverified. |
 | Games read (MAIN) | Invalid auth/schema/scope/cursor or DB failure returns Games error; missing scopes remain missing. No hidden run creation, import, analysis, Study call or repair. View disposal destroys its own board and ignores late responses; server lifespan closes only its pools/executor. | See [read/failure sequence](flows.md#games-read-failure-and-disposal-main-merged-pr322). No Study/worker shutdown is part of this path. |
 | Games DB work (MAIN) | Scope listing ≤100 rows; accepted scope metadata ≤1000 games; page ≤10 games plus one lookahead. Existing 1500 ms statement, 250 ms lock, 3000 ms transaction bounds and configured pool maxima apply. | PostgreSQL may scan/order accepted JSON pages within that budget; no indexed/precomputed projection or host latency guarantee is claimed. |
 | Navigation | Optional public Workbench launch and general Open Study root link are user navigation with no credentials/card authority transfer or service readiness check. | A link is not a required Study API dependency. Reuse existing [navigation contracts](../../../apps/workbench-web/src/public-navigation.ts), [launch URL validation](../../../app/lib/workbench-navigation.ts); do not add a wait. |
