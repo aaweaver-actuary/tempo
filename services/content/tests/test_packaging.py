@@ -9,6 +9,7 @@ import sys
 
 import pytest
 import tempo_content
+import tempo_content_database
 
 
 def test_installed_distribution_declares_independent_runtime_and_cli():
@@ -26,7 +27,7 @@ def test_installed_distribution_declares_independent_runtime_and_cli():
 
 def test_packaged_migrations_have_complete_manifest_and_checksums():
     import hashlib
-    directory = Path(tempo_content.__file__).parent / "migrations"
+    directory = Path(tempo_content_database.__file__).parent / "ddl" / "migrations"
     manifest = json.loads((directory / "manifest.json").read_text())
     assert manifest
     identities = set()

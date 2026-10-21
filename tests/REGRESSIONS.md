@@ -98,6 +98,7 @@ one actual maintenance wake rather than relying on another intake POST.
 artifact/native inventories, hard helper caps/no socket mount, immutable-image
 refusal, approved managed-window guard and process-group timeout behavior. It
 does not start Docker, build packages, install dependencies or run native tests.
+
 Its `test_native_role_provisioning_dependency_is_required_and_hash_verified` and
 `test_remediation_migrations_survive_both_source_allowlists` regressions preserve
 required native fixture code and installed migration inputs. The native receipt
@@ -106,6 +107,19 @@ logs before stage removal, while excluding private credentials, pytest current
 links and unknown scratch files; tampered receipts prevent removal. Unknown
 pytest-shaped source remains manifest-checked. The pinned x86 uv URL regression
 records the published 0.9.3 wheel identity without changing its checksum/version.
+
+## Database relocation reference repair
+
+`test_repertoire_limit_migration_has_unique_number_and_matches_schema_readiness`
+reproduces the empty inventory from the removed `backend/migrations/` path.
+The affected existing migration, readiness and fake/memory-SQLite cases now read
+`database/tempo_legacy_database/ddl/migrations/`; their assertions are unchanged.
+`test_postgres_cutover_inventory_includes_native_postgres_queries` retains the
+tooling import through `database.tooling.audit_storage_cutover`.
+`test_remediation_migrations_survive_both_source_allowlists` checks relocated SQL
+bytes in the artifact source and rejects a changed staged migration. These cases
+do not execute native PostgreSQL. See [focused evidence](../database/VALIDATION.md#pr334-reference-audit-repair)
+and [Game Evidence's fingerprint regression](../services/game-evidence/REGRESSIONS.md#database-relocation-fingerprints).
 
 `backend/tests/test_remediation_migration_registration.py` owns migration 050's
 exact installed 12-table schema/checksum registration, backend target identity,

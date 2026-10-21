@@ -195,3 +195,14 @@ The regression fails with `missed == unknown` against checkpoint `88a1fdf`.
 Italian route ending at the proposed miss with one ending a ply earlier. The
 first stays unknown without an exclusive anchor; later genuine separation can
 still produce the original physical-card miss.
+
+## Database relocation fingerprints
+
+`tests/test_boundary.py::test_native_source_fingerprints_cover_relocated_database_inputs_and_hooks`
+evaluates the native report's two input-map expressions against synthetic files.
+It retains existing service-relative keys and proves that changes to either the
+Game Evidence or remediation database adapter, migration and build hook change
+the corresponding fingerprint. It does not import or execute the native runner.
+The existing regular-suite count mismatch remains disclosed in
+[focused relocation evidence](../../database/VALIDATION.md#pr334-reference-audit-repair);
+collection and this one passing regression do not establish native qualification.
