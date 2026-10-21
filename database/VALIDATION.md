@@ -458,3 +458,10 @@ TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /
 ```
 
 Proof/baselines: `/tmp/tempo-db-study-attempts-{proof.py,before/}`. Native PostgreSQL/advisory locks, installed-wheel execution, deployed isolation and full-system remain unverified. No schema/migration/JSON/security/credential, grading/scheduling policy, lifecycle or CI behavior changes; existing Studies→practice/queue composition is retained and disclosed, with no Games dependency added.
+
+
+## Legacy guided game-review sessions
+
+Twenty-one original query call sites move into eighteen fixed root operations, sharing repeated BEGIN and identical advance statements. Specific expansion restores every non-import application AST, including dynamic finding-ID SQL and concrete driver lock selection. Application ranking/deduplication/top-five, chess/correction/reveal, hidden/current snapshot reconciliation, completed-prefix remapping, HTTP/error/result and clock/callback order remain unchanged. No new query API, connection/commit authority or scheduling writer is introduced.
+
+`TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backend/tests/test_guided_review.py backend/tests/test_postgres_guided_review.py -q --rootdir=.` passes **10 cases** (pre-existing Starlette alias deprecation warning only). Those existing task-SQLite/fake-native cases retain ranking, resume/FSRS preservation, lock order, hidden findings and stale/complete session outcomes. Proof/baselines: `/tmp/tempo-db-guided-review-{proof.py,before/}`; four Python sources compile. Native PostgreSQL, installed-wheel execution, engine/live/deployed isolation and full-system remain unverified. No schema/migration/JSON/security/credential/lifecycle/CI behavior or Study dependency change.

@@ -10,6 +10,7 @@ import chess
 
 from tempo_legacy_database.connections import connection
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.games.guided_review import storage
 
 
 FINDING_PRIORITY = {
@@ -33,26 +34,14 @@ def _impact(finding) -> tuple[int, int, float]:
 
 def create_or_resume_session(game_id: str) -> dict:
     with connection() as database:
-        database.execute("BEGIN IMMEDIATE")
-        game = database.execute(
-            "SELECT id,analysis_version FROM imported_games WHERE id=?", (game_id,)
-        ).fetchone()
+        storage.begin_session_write(database)
+        game = storage.game(database, game_id)
         if not game:
             raise LookupError("Game not found")
-        existing = database.execute(
-            """SELECT id FROM guided_review_sessions
-                WHERE game_id=? AND analysis_version=? AND status='active'
-                ORDER BY updated_at DESC LIMIT 1""",
-            (game_id, game["analysis_version"]),
-        ).fetchone()
+        existing = storage.active_session(database, game_id, game["analysis_version"])
         if existing:
             return read_session_from_database(database, existing["id"])
-        findings = database.execute(
-            """SELECT * FROM current_game_findings game_findings WHERE game_id=?
-                 AND analysis_version=? AND kind!='defensive tactical threat'
-                 AND status NOT IN ('ignored','excluded') ORDER BY ply""",
-            (game_id, game["analysis_version"]),
-        ).fetchall()
+        findings = storage.actionable_findings(database, game_id, game["analysis_version"])
         strongest_by_ply = {}
         for finding in findings:
             current = strongest_by_ply.get(finding["ply"])
@@ -62,13 +51,8 @@ def create_or_resume_session(game_id: str) -> dict:
         finding_ids = [finding["id"] for finding in ranked[:5]]
         session_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        database.execute(
-            """INSERT INTO guided_review_sessions(
-                   id,game_id,analysis_version,finding_ids_json,current_index,status,created_at,updated_at
-               ) VALUES(?,?,?,?,0,?,?,?)""",
-            (session_id, game_id, game["analysis_version"], json.dumps(finding_ids),
-             "active" if finding_ids else "complete", now, now),
-        )
+        storage.create_session_values(database, (session_id, game_id, game["analysis_version"], json.dumps(finding_ids),
+             "active" if finding_ids else "complete", now, now))
     return read_session(session_id)
 
 
@@ -94,7 +78,7 @@ def _public_item(finding, *, reveal: bool) -> dict:
 
 def read_session(session_id: str) -> dict:
     with connection() as database:
-        database.execute("BEGIN IMMEDIATE")
+        storage.begin_session_write(database)
         return read_session_from_database(database, session_id)
 
 
@@ -103,11 +87,7 @@ def reconcile_guided_review_session(database, session) -> dict:
     reconciled = dict(session)
     original_ids = json.loads(session["finding_ids_json"])
     original_index = int(session["current_index"])
-    current_findings = database.execute(
-        "SELECT * FROM current_game_findings WHERE id IN ("
-        + ",".join("?" for _ in original_ids) + ")",
-        tuple(original_ids),
-    ).fetchall() if original_ids else []
+    current_findings = storage.published_findings(database, original_ids) if original_ids else []
     findings_by_id = {finding["id"]: finding for finding in current_findings}
     retained_ids = [finding_id for finding_id in original_ids if finding_id in findings_by_id]
     completed_survivors = sum(finding_id in findings_by_id for finding_id in original_ids[:original_index])
@@ -118,10 +98,7 @@ def reconcile_guided_review_session(database, session) -> dict:
     if retained_ids != original_ids or completed_survivors != original_index or status != session["status"]:
         serialized_ids = json.dumps(retained_ids)
         updated_at = datetime.now(timezone.utc).isoformat()
-        database.execute(
-            "UPDATE guided_review_sessions SET finding_ids_json=?,current_index=?,status=?,updated_at=? WHERE id=?",
-            (serialized_ids, completed_survivors, status, updated_at, session["id"]),
-        )
+        storage.reconcile_session(database, serialized_ids, completed_survivors, status, updated_at, session["id"])
         reconciled.update(finding_ids_json=serialized_ids, current_index=completed_survivors,
                           status=status, updated_at=updated_at)
     return reconciled
@@ -135,20 +112,14 @@ def guided_review_error(status_code: int, detail: str) -> dict:
 def read_session_from_database(database, session_id: str) -> dict:
     """Build the usual session response inside a command's uncommitted transaction."""
 
-    session = database.execute(
-        "SELECT * FROM guided_review_sessions WHERE id=?"
-        + (" FOR UPDATE" if isinstance(database, PostgresConnection) else ""), (session_id,),
-    ).fetchone()
+    session = storage.session_for_read(database, session_id)
     if not session:
         raise LookupError("Guided review not found")
     session = reconcile_guided_review_session(database, session)
     findings = session["current_findings"]
     current_index = int(session["current_index"])
     current = findings[current_index] if current_index < len(findings) else None
-    attempts = database.execute(
-        "SELECT finding_id,move_uci,correct,attempted_at FROM guided_review_attempts WHERE session_id=?",
-        (session_id,),
-    ).fetchall()
+    attempts = storage.session_attempts(database, session_id)
     return {
         "id": session["id"], "game_id": session["game_id"], "status": session["status"],
         "current_index": current_index, "total": len(findings),
@@ -159,10 +130,8 @@ def read_session_from_database(database, session_id: str) -> dict:
 
 def submit_attempt(session_id: str, move_uci: str, finding_id: str) -> dict:
     with connection() as database:
-        database.execute("BEGIN IMMEDIATE")
-        session = database.execute(
-            "SELECT * FROM guided_review_sessions WHERE id=?", (session_id,)
-        ).fetchone()
+        storage.begin_session_write(database)
+        session = storage.session(database, session_id)
         if not session:
             raise LookupError("Active guided review not found")
         session = reconcile_guided_review_session(database, session)
@@ -189,18 +158,10 @@ def submit_attempt(session_id: str, move_uci: str, finding_id: str) -> dict:
             expected_moves.add(evidence["best_move_uci"])
         correct = move_uci in expected_moves
         now = datetime.now(timezone.utc).isoformat()
-        database.execute(
-            """INSERT OR IGNORE INTO guided_review_attempts(
-                   session_id,finding_id,move_uci,correct,attempted_at
-               ) VALUES(?,?,?,?,?)""",
-            (session_id, finding["id"], move_uci, int(correct), now),
-        )
+        storage.insert_attempt_values(database, (session_id, finding["id"], move_uci, int(correct), now))
         next_index = current_index + 1
         next_status = "complete" if next_index >= len(finding_ids) else "active"
-        database.execute(
-            "UPDATE guided_review_sessions SET current_index=?,status=?,updated_at=? WHERE id=?",
-            (next_index, next_status, now, session_id),
-        )
+        storage.advance_session(database, next_index, next_status, now, session_id)
     return {
         "correct": correct, "revealed": _public_item(finding, reveal=True),
         "session": read_session(session_id),

@@ -44,3 +44,6 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 
 
 [Analysis-worker position storage](analysis_worker/README.md) and [legacy finding projections](finding_projections/README.md) own the existing report/lease, threshold/candidate and finding/opportunity/priority operations. Scoring/chess/evidence/recommendation, time/attempt/lease decisions and callback order remain in the original worker/application files. The existing command adapter `findings.py` remains distinct.
+
+
+[Guided game-review storage](guided_review/README.md) holds existing game/session/finding/attempt reads, locks and guarded writes. Ranking, chess/correction grading, hidden-finding reconciliation, reveal/HTTP responses and clocks remain outside database; no Study scheduling/FSRS writer is introduced.
