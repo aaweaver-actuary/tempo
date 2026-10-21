@@ -52,6 +52,14 @@ report/positions/receipt `Jsonb` evaluation order and locked publication fences.
 Native replay monkeypatches now target the comparison application module; those
 files are statically parsed/reference-audited without claiming native execution.
 
+`tests/test_import_write_preparation.py` owns locked-replay exclusion of metadata
+clock/normalization, exact insert/update metadata/player/`Jsonb` evaluation order,
+the unchanged 60-second provider-unavailable retry and final lease-release order,
+and offline driver adaptation of both 5/60-second values to PostgreSQL intervals.
+`test_worker.py` retains the unchanged 5-second failure value and fenced parameter
+order. SQL now binds these two fixed application values while retaining server
+`now()`; these focused cases do not claim native SQL execution.
+
 `tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
 legacy observation: exact original physical card/interior offset, played/expected
 move, deterministic immutable identity, unknown/no-miss without an envelope,

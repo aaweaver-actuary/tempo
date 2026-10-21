@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **75 files**; one candidate is confirmed non-database application code, and **80 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **86 files**; one candidate is confirmed non-database application code, and **69 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -49,15 +49,15 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed queue/lifecycle storage split: [backend/app/services/background_metrics.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - [backend/app/services/canonical_prefix.py](../backend/app/services/canonical_prefix.py)
 - [backend/app/services/canonical_prefix_preview.py](../backend/app/services/canonical_prefix_preview.py)
-- [backend/app/services/canonical_scope_freshness.py](../backend/app/services/canonical_scope_freshness.py)
+- Completed repertoire-scope storage split: [backend/app/services/canonical_scope_freshness.py](tempo_legacy_database/adapters/repertoire_scope/README.md).
 - Completed defensive settings/predicate storage split: [backend/app/services/defensive_analysis.py](tempo_legacy_database/adapters/defensive_analysis.py).
 - [backend/app/services/discovery_admission.py](../backend/app/services/discovery_admission.py)
-- [backend/app/services/durable_scheduling.py](../backend/app/services/durable_scheduling.py)
+- Completed legacy scheduling storage split: [backend/app/services/durable_scheduling.py](tempo_legacy_database/adapters/scheduling/README.md).
 - [backend/app/services/durable_tasks.py](../backend/app/services/durable_tasks.py)
-- [backend/app/services/engine_scheduling.py](../backend/app/services/engine_scheduling.py)
+- Completed legacy scheduling storage split: [backend/app/services/engine_scheduling.py](tempo_legacy_database/adapters/scheduling/README.md).
 - Completed SQL/DDL split: [backend/app/services/frozen_opening_order.py](../backend/app/services/frozen_opening_order.py) now only binds [Study policy](../backend/app/study/frozen_order/README.md) and [database storage](tempo_legacy_database/adapters/frozen_order.py). Legacy caller composition migration remains.
-- [backend/app/services/game_analysis_worker.py](../backend/app/services/game_analysis_worker.py)
-- [backend/app/services/game_findings.py](../backend/app/services/game_findings.py)
+- Completed legacy analysis/finding storage split: [backend/app/services/game_analysis_worker.py](tempo_legacy_database/adapters/games/analysis_worker/README.md).
+- Completed legacy analysis/finding storage split: [backend/app/services/game_findings.py](tempo_legacy_database/adapters/games/finding_projections/README.md).
 - Completed legacy Games imports storage split: [backend/app/services/game_sync.py](tempo_legacy_database/adapters/games/imports/README.md).
 - Completed legacy Games coordinator storage split: [backend/app/services/game_sync_coordinator.py](tempo_legacy_database/adapters/games/coordinator/README.md).
 - Completed legacy Games evidence storage split: [backend/app/services/gameplay_events.py](tempo_legacy_database/adapters/games/evidence/README.md).
@@ -75,7 +75,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/postgres_coverage_explorer.py](../backend/app/services/postgres_coverage_explorer.py)
 - Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/postgres_coverage_seed.py](../backend/app/services/postgres_coverage_seed.py)
-- [backend/app/services/postgres_daily_statistics.py](../backend/app/services/postgres_daily_statistics.py)
+- Completed legacy derived-publication storage split: [backend/app/services/postgres_daily_statistics.py](tempo_legacy_database/adapters/derived_publications/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_derivation.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_events.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_features.py](tempo_legacy_database/adapters/games/derivation/README.md).
@@ -87,7 +87,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy Games sync storage split: [backend/app/services/postgres_game_sync_completion.py](tempo_legacy_database/adapters/games/sync/README.md).
 - Completed legacy Games sync storage split: [backend/app/services/postgres_game_sync_windows.py](tempo_legacy_database/adapters/games/sync/README.md).
 - [backend/app/services/postgres_integrity.py](../backend/app/services/postgres_integrity.py)
-- [backend/app/services/postgres_next_opponent.py](../backend/app/services/postgres_next_opponent.py)
+- Completed legacy derived-publication storage split: [backend/app/services/postgres_next_opponent.py](tempo_legacy_database/adapters/derived_publications/README.md).
 - [backend/app/services/postgres_opening_evidence.py](../backend/app/services/postgres_opening_evidence.py)
 - [backend/app/services/postgres_opening_graph.py](../backend/app/services/postgres_opening_graph.py)
 - [backend/app/services/postgres_opening_segmentation.py](../backend/app/services/postgres_opening_segmentation.py)
@@ -103,9 +103,9 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy read/publication projection split: [backend/app/services/repertoire_comparison.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed authored-Studies policy / database line-projection split: [backend/app/services/repertoire_conflicts.py](../backend/app/studies/README.md).
 - [backend/app/services/repertoire_coverage.py](../backend/app/services/repertoire_coverage.py)
-- [backend/app/services/repertoire_game_refresh.py](../backend/app/services/repertoire_game_refresh.py)
+- Completed repertoire-scope storage split: [backend/app/services/repertoire_game_refresh.py](tempo_legacy_database/adapters/repertoire_scope/README.md).
 - [backend/app/services/repertoire_integrity.py](../backend/app/services/repertoire_integrity.py)
-- [backend/app/services/repertoire_move_verification.py](../backend/app/services/repertoire_move_verification.py)
+- Completed repertoire-scope storage split: [backend/app/services/repertoire_move_verification.py](tempo_legacy_database/adapters/repertoire_scope/README.md).
 - [backend/app/services/repertoire_opportunities.py](../backend/app/services/repertoire_opportunities.py)
 - Completed legacy read/publication projection split: [backend/app/services/repertoire_statistics.py](tempo_legacy_database/adapters/projections/README.md).
 - [backend/app/services/review_service.py](../backend/app/services/review_service.py)
@@ -157,8 +157,8 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed Learning essential-work storage split: [services/learning/runtime/src/tempo_learning_runtime/receivers.py](tempo_learning_database/adapters/essential-work/README.md).
 - [services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py](../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py)
 - [services/learning/runtime/src/tempo_learning_runtime/review_adapter.py](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py)
-- [services/learning/runtime/src/tempo_learning_runtime/review_reconciliation.py](../services/learning/runtime/src/tempo_learning_runtime/review_reconciliation.py)
-- [services/learning/runtime/src/tempo_learning_runtime/review_service.py](../services/learning/runtime/src/tempo_learning_runtime/review_service.py)
+- Completed Learning review storage split: [services/learning/runtime/src/tempo_learning_runtime/review_reconciliation.py](tempo_learning_database/adapters/reviews/README.md).
+- Completed Learning review storage split: [services/learning/runtime/src/tempo_learning_runtime/review_service.py](tempo_learning_database/adapters/reviews/README.md).
 - Completed Learning practice-attempt storage split: [services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py](tempo_learning_database/adapters/practice-attempts/README.md).
 - Completed Learning practice-attempt storage split: [services/learning/runtime/src/tempo_learning_runtime/study_attempts.py](tempo_learning_database/adapters/practice-attempts/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py](tempo_learning_database/adapters/README.md).
@@ -217,13 +217,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 50 | 0 | 70 |
-| Learning runtime | 16 | 0 | 10 |
+| Legacy backend | 59 | 0 | 61 |
+| Learning runtime | 18 | 0 | 8 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **75** | **1** | **80** |
+| **Total baseline** | **86** | **1** | **69** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 
@@ -231,9 +231,9 @@ Additional sources above show their current extraction status; their pending ope
 
 | Owner | Existing application home now outside database | Actual remaining work |
 | --- | --- | --- |
-| Content | [Source/exercise/binding/publication/coverage policy](../services/content/src/tempo_content/policy/README.md) [reconciliation/route/binding worker helpers](../services/content/src/tempo_content/worker/README.md) and [publication preparation](../services/content/src/tempo_content/publication/README.md). | Multi-section source staging, phase/I/O, replay/reservation/read/write coordination remains inside the store. |
-| Game Evidence | [Source identity/normalization](../services/game-evidence/src/tempo_game_evidence/source.py), [snapshot/cache/staleness preparation](../services/game-evidence/src/tempo_game_evidence/snapshot.py), [comparison preparation](../services/game-evidence/src/tempo_game_evidence/comparison.py), [reconciliation coordination](../services/game-evidence/src/tempo_game_evidence/reconciliation.py), and [response/list-input policy](../services/game-evidence/src/tempo_game_evidence/reporting.py). The [job worker](../services/game-evidence/src/tempo_game_evidence/worker.py) owns dispatch/failure control flow. | Import metadata/player shaping and embedded five/sixty-second retry policy remain. SQL locks, replay conflicts and atomic writes stay persistence responsibilities. |
-| Intelligence | [Finding assembly](../services/intelligence/src/tempo_intelligence/analysis/README.md#finding-assembly), [serialization](../services/intelligence/src/tempo_intelligence/serialization.py) and [request descriptor/cache/retry helpers](../services/intelligence/src/tempo_intelligence/source_requests.py). | Request inspection/final envelopes now use a fixed read projection. Replay checks, expired-cache refresh, Maia profile/job decisions, model/credential/provider transitions, command orchestration and Analysis workflow/report/engine policy remain. |
+| Content | [Source/exercise/binding/publication/coverage policy](../services/content/src/tempo_content/policy/README.md) [reconciliation/route/binding worker helpers](../services/content/src/tempo_content/worker/README.md) and [publication preparation](../services/content/src/tempo_content/publication/README.md). | Exercise phase and multi-section source/publication staging, replay/reservation/read/write coordination remain inside the store. Route and binding sequences are now outside; their original fenced atomic writes stay inside. |
+| Game Evidence | [Source identity/normalization](../services/game-evidence/src/tempo_game_evidence/source.py), [snapshot/cache/staleness preparation](../services/game-evidence/src/tempo_game_evidence/snapshot.py), [comparison preparation](../services/game-evidence/src/tempo_game_evidence/comparison.py), [reconciliation coordination](../services/game-evidence/src/tempo_game_evidence/reconciliation.py), and [response/list-input policy](../services/game-evidence/src/tempo_game_evidence/reporting.py). The [job worker](../services/game-evidence/src/tempo_game_evidence/worker.py) owns dispatch/failure control flow. | Final import metadata/player shaping and application-supplied retry intervals are separated. Source audit found no further pure application block in this owner store. SQL locks, replay conflicts, lease/resource limits, bounded atomic fanout and the unchanged compatibility cache holder stay explicit persistence/composition responsibilities; native execution remains unverified. |
+| Intelligence | [Finding assembly](../services/intelligence/src/tempo_intelligence/analysis/README.md#finding-assembly), [serialization](../services/intelligence/src/tempo_intelligence/serialization.py) and [request descriptor/cache/retry helpers](../services/intelligence/src/tempo_intelligence/source_requests.py). | Request inspection and refresh/retry orchestration now use fixed owner operations. Submit replay/expired-cache refresh, Maia profile/job/evidence decisions, model/credential/provider transitions and Analysis workflow/report/engine policy remain. |
 | Learning and legacy owner adapters | Frozen preference policy now lives in the [legacy Study folder](../backend/app/study/frozen_order/README.md) and [Learning Study folder](../services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/README.md); authored-line conflict computation lives in [Studies](../backend/app/studies/README.md). | Finish baseline application SQL extraction, then audit remaining originally moved concrete adapters for application decisions. Do not assume that moving their whole files established a boundary. |
 
 All completed checklist rows above link their actual owner. Complete bound queries, driver/dialect handling, DDL, row locks, cursor batches and savepoints belong inside the one root database tree. Keep application decisions in logical owner folders and preserve their original evaluation/transaction/callback points. Existing legacy call-site composition/cross-feature coupling remains disclosed; no new sibling-domain dependency, generic SQL execution port, shared runtime, duplicate implementation or full-domain isolation claim is introduced.

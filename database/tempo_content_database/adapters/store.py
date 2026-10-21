@@ -13,7 +13,7 @@ from tempo_content_publication_contracts.v1 import Publication, serialize_contra
 
 from tempo_content.models import SourceSnapshot, SourceExercise
 from tempo_content.policy import prepare_source, exercise_continuation, publication_report, coverage_reply, inventory_report
-from tempo_content.worker import reconcile_once, reconcile_binding, route_segment
+from tempo_content.worker import reconcile_once, reconcile_binding, reconcile_route
 from tempo_content.publication import prepare_publication, publication_authority
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
@@ -328,36 +328,33 @@ class ContentService:
         return {'worked':True,'status':state,'phase':phase}
 
     def _route_slice(self,task,manifest,hook):
-        if task['cursor']>=manifest['counts']['memberships']:
-            return self._transition(task,'exercises',hook=hook)
-        membership = self._item(manifest['stage_id'],'memberships',task['cursor'])
-        route = self._item(manifest['stage_id'],'routes',key=membership['route_key'])
-        repertoire = self._item(manifest['stage_id'],'repertoires',key=membership['repertoire_key'])
-        color = repertoire['learner_color']
+        return reconcile_route(task,manifest,hook,transition=self._transition,read_item=self._item,
+                               read_artifact=self._route_artifact,register_route=self._register_route,
+                               commit_segment=self._commit_route_segment,notify=_hook)
+
+    def _route_artifact(self,route,color):
         artifact_id = _digest(_json([INVENTORY_VERSION,route['starting_fen'],route['moves'],color]))
         artifact = self._one('SELECT * FROM content.artifacts WHERE id=%s',(artifact_id,))
-        _hook(hook,'after_read',task=task,artifact=artifact)
-        if artifact is None:
-            # Chess validation and artifact construction occur without a pool lease.
-            canonical_position(route['starting_fen'])
-            _hook(hook,'before_commit',task=task)
-            with self._transaction() as database:
-                self._fence(database,task,hook)
-                database.execute('INSERT INTO content.artifacts(id,starting_fen,moves,learner_color,version,next_fen) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(artifact_id,route['starting_fen'],Jsonb(route['moves']),color,INVENTORY_VERSION,route['starting_fen']))
-                database.execute('SELECT id FROM content.artifacts WHERE id=%s FOR UPDATE',(artifact_id,)).fetchone()
-                _hook(hook,'after_artifact_lock',artifact_id=artifact_id,action='register')
-                self._attach_route(database,task,membership,artifact_id)
-                self._advance(database,task)
-                _hook(hook,'after_writes',task=task)
-            return {'worked':True,'status':'pending','phase':'routes','registered':artifact_id,'plies':0}
-        first, moves, terminal, occurrences, end_fen = route_segment(route,artifact,color)
-        _hook(hook,'before_commit',task=task,artifact=artifact)
+        return artifact_id, artifact
+
+    def _register_route(self,task,membership,route,color,artifact_id,hook):
+        with self._transaction() as database:
+            self._fence(database,task,hook)
+            database.execute('INSERT INTO content.artifacts(id,starting_fen,moves,learner_color,version,next_fen) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(artifact_id,route['starting_fen'],Jsonb(route['moves']),color,INVENTORY_VERSION,route['starting_fen']))
+            database.execute('SELECT id FROM content.artifacts WHERE id=%s FOR UPDATE',(artifact_id,)).fetchone()
+            _hook(hook,'after_artifact_lock',artifact_id=artifact_id,action='register')
+            self._attach_route(database,task,membership,artifact_id)
+            self._advance(database,task)
+            _hook(hook,'after_writes',task=task)
+
+    def _commit_route_segment(self,task,membership,artifact_id,artifact,segment,hook):
+        first, moves, terminal, occurrences, end_fen = segment
         with self._transaction() as database:
             self._fence(database,task,hook)
             current = database.execute('SELECT * FROM content.artifacts WHERE id=%s FOR UPDATE',(artifact_id,)).fetchone()
             if not current or (current['epoch'],current['cursor'])!=(artifact['epoch'],artifact['cursor']):
                 self._advance(database,task)
-                return {'worked':False,'status':'artifact_advanced','phase':'routes'}
+                return False
             _hook(hook,'after_artifact_lock',artifact_id=artifact_id,action='traverse')
             self._attach_route(database,task,membership,artifact_id)
             self._save_occurrences(database,artifact_id,occurrences)
@@ -365,7 +362,7 @@ class ContentService:
             database.execute('UPDATE content.artifacts SET cursor=%s,next_fen=%s,complete=%s WHERE id=%s',(first+len(moves),end_fen,complete,artifact_id))
             self._advance(database,task,cursor=task['cursor']+int(complete))
             _hook(hook,'after_writes',task=task)
-        return {'worked':True,'status':'pending','phase':'routes','plies':len(moves),'occurrences':len(occurrences),'reused':artifact['complete']}
+        return True
 
     def _attach_route(self,database,task,membership,artifact_id):
         database.execute('INSERT INTO content.generation_routes VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(task['source_id'],task['generation'],membership['route_key'],membership['policy_key'],membership['repertoire_key'],artifact_id))

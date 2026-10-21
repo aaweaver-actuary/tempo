@@ -5,7 +5,7 @@ import chess
 import pytest
 
 from tempo_game_evidence import ComparisonSnapshot, compare_game, normalize_pgn, replay_positions
-from tempo_game_evidence_database.adapters.store import make_delivery
+from tempo_game_evidence.payloads import make_delivery
 from .factories import observed, pgn, snapshot
 
 

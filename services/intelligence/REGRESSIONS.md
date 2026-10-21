@@ -1,5 +1,18 @@
 # Intelligence regression ownership
 
+## Complete refresh/retry command workflow
+
+`tests/test_request_commands.py` exercises actual Store composition and the fixed
+root `RequestCommands` operations with a scripted fake driver. Refresh/retry cases
+retain sorted cache locks, terminal/ineligible skips, source-local effects,
+existing generation/Maia work calls on the same connection and receipt-last
+ordering. Replay/conflict/stale cases finish before cache work, with the same
+root guards and write-context outcome. Existing source-policy and bounded HTTP
+refresh/retry cases remain in their owning suites. Native durable no-op/partial
+retry, immutable evidence, replay, provider permit and concurrency proofs retain
+their existing owner and were not run here. No SQL parsing, native database,
+credential operation or real transaction is used by these fake-driver cases.
+
 ## Complete request inspection workflow
 
 `test_complete_inspection_keeps_one_snapshot_clock_order_and_post_read_credential_refresh`

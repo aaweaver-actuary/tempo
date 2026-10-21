@@ -36,3 +36,12 @@
 
 
 [Redis admission and policy storage](redis_control/README.md) owns the original cached clients, control keys/Lua/pipelines and Study-mode query. Lifecycle, clocks, identity, cancellation, local fallback and policy validation stay at their existing application composition points.
+
+
+[Derived publications](derived_publications/README.md) contains the next-opponent profile and daily-chess-statistics reads and guarded writes. Existing time/eligibility/math/insight/presentation decisions remain in their application compositions.
+
+
+[Scheduling storage](scheduling/README.md) owns existing engine/durable turn-state, candidate SQL and dialect/translation mechanics. Class/turn/fairness decisions remain in their original application compositions; lease and turn persistence share the caller's transaction.
+
+
+[Repertoire scope and saved moves](repertoire_scope/README.md) contains existing generation/freshness SQL, game-refresh queries and bounded line/digest/dialect operations. Application freshness validation, chess/deadline/cursor and task policy remain outside.

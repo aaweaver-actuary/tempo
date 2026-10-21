@@ -14,6 +14,7 @@ from tempo_content.policy import inventory_report
 from tempo_content.publication import prepare_publication, publication_authority
 from tempo_content.publication import preparation
 from tempo_content.worker import route_segment
+from tempo_content.worker import routes
 from tempo_content_database.adapters import store
 
 
@@ -148,7 +149,7 @@ def test_route_preparation_stays_between_read_and_commit_hooks_without_a_pool_le
     service._attach_route = lambda *arguments: events.append('attach')
     service._save_occurrences = lambda *arguments: events.append('save occurrences')
     service._advance = lambda *arguments, **keywords: events.append(('advance', keywords['cursor']))
-    monkeypatch.setattr(store, 'route_segment', compute)
+    monkeypatch.setattr(routes, 'route_segment', compute)
     result = service._route_slice(task, {'stage_id': 'stage', 'counts': {'memberships': 1}},
                                   lambda event, context: events.append(event))
     assert result['reused'] is True

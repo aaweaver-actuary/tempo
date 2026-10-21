@@ -434,3 +434,57 @@ the previously listed Analysis workflows. Inspection is no longer an unfinished
 mixed block. Database startup/binding/lease/replay atomic guards and fixed writes
 retain their authority. No installed-consumer, native/live, security, full-system,
 CI, deployment or merge qualification is claimed.
+
+## Complete refresh/retry command workflow — October 21, 2026
+
+The complete existing `Store._command` application workflow now lives in
+`source_requests.command_request`. The root `RequestCommands` adapter retains
+six fixed SQL operations, the command advisory lock, receipt-conflict and
+request-revision guards, and delegates existing head/generation/Maia work
+operations on the same caller-owned connection. Store supplies its unchanged
+write transaction. The eligibility callback contains the original expression
+`self._retry_eligible(cache,utcnow())`, preserving lazy consultation, method
+lookup before clock observation and the original retry-only call point. No
+generic SQL port, new transaction or framework is introduced.
+
+**44 selected source-root cases passed**, reusing the previous 39 cases and
+adding five actual command-composition/fixed-operation cases with a fake driver.
+After tightening callback wiring for exact attribute/clock evaluation, all five
+new cases passed again; they are repeated identities, not 49 distinct cases.
+Refresh/retry retain sorted locks, terminal/ineligible skips, source-local effects,
+existing generation/Maia work calls and receipt-last ordering. Replay, receipt
+conflict and stale revision finish before cache work with the same write-context
+outcome. Existing source-policy and HTTP assertions are unchanged. The upstream
+Starlette/AnyIO deprecation remains unsuppressed.
+
+One-time source comparison matches the complete application sequence after
+fixed-operation mapping, separately verifies both root guard ASTs, and verifies
+the eligibility callback body exactly matches the original expression. Every
+other existing Store method and earlier application helper remains AST-identical;
+the complete query inventory retains the six exact moved SQL strings. The
+[complete 32-method Store audit](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
+accounts for database authority, composition and every remaining mixed block.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_request_commands.py services/intelligence/tests/test_source_requests.py services/intelligence/tests/test_api.py::test_caller_reads_and_bounded_refresh_retry_have_explicit_revision_commands -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_request_commands.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-command-build
+```
+
+The fresh source distribution rebuilds its wheel and includes current Store,
+application workflow, fixed operations and owning tests. Owner Mermaid syntax,
+links, Python syntax and scoped whitespace/conflict checks pass. The final source
+and artifact hashes, exact file list and method audit are retained in
+`/tmp/tempo-intelligence-command-evidence.json`; test logs are
+`/tmp/tempo-intelligence-command-tests.log` and
+`/tmp/tempo-intelligence-command-final-tests.log`. Original Store/policy snapshots
+remain `/tmp/tempo-intelligence-command-before.py` and
+`/tmp/tempo-intelligence-command-policy-before.py`; distributions remain in the
+build directory for integration. No shared review environment was modified.
+
+Remaining source replay/cache refresh, profile/Maia construction/admission/status,
+credential/provider workflows, evidence response and Analysis policy remain
+unfinished extraction work, as explicitly inventoried. Fixed database/atomic
+guards retain their existing authority. Native durability/concurrency, installed
+consumer runtime, live data, credentials/security, full-system behavior, CI,
+deployment and merge were not exercised or qualified by this slice.

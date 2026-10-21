@@ -361,3 +361,65 @@ Fifty-five existing fake/reservation/timing cases and three new boundary/orderin
 The complete request/source inspection and post-snapshot credential refresh sequence moves into application `source_requests.inspect_request`. The root owner exposes only fixed request/cache/evidence/provider/credential reads in the same read-only transaction, preserving provider field composition, conditional lookup order and refresh after context closure. Three SELECTs retain their exact text/parameters; all other Store methods and prior policy helpers are unchanged. Thirty-nine selected pure/fake cases pass; two existing identities were strengthened and rerun through the concrete fixed projection rather than counted twice.
 
 Fresh sdist→wheel/runtime-byte, moved statement equivalence, owner Mermaid/links, syntax and whitespace checks pass. Exact commands/artifact hashes are `services/intelligence/VALIDATION.md` and `/tmp/tempo-intelligence-inspect-workflow-evidence.json`. Remaining cache/replay/Maia/provider/command/Analysis workflow stays inventoried; this cleanup does not change baseline counts. Installed-consumer runtime, native/live/full-system/deployment checks remain unverified. No schema/contract, credential values/security behavior or CI operation changed.
+
+
+## Legacy analysis-worker and finding projections
+
+Twenty-six existing operations move from `game_analysis_worker.py` and `game_findings.py` into fixed same-owner root adapters. Completed report reads share one query; three identical event reads reuse existing storage. Exact expansion restores every non-import application AST node, including dynamic games selection, driver/read choice, clocks, leases, callback/fence order and all chess/scoring/motif/recommendation algorithms. Neither original retains SQL literals or direct driver calls.
+
+Thirteen selected fake/task-SQLite cases pass: seven finding cases, four analysis-job API cases with supplied engine JSON, and two adaptation preview/gap cases. No engine, Docker or network service was started. Source proof, six Python compilations, owner Mermaid/links and whitespace pass. The initial new package name shadowed the existing `games/findings.py`; it was corrected to `finding_projections/` and collection/tests then passed without changing the existing implementation. Exact commands/source proof and limits: `/tmp/tempo-db-games-worker-findings-extraction.md`. Native PostgreSQL, actual engine execution, installed-wheel discovery, deployed isolation and full-system behavior remain unverified. Existing legacy queue/card/settings/catalogue coupling is disclosed, not proof of domain isolation or added Study dependency. No schema/migration/contract/security/CI change.
+
+
+## Legacy next-opponent and daily-statistics publications
+
+Twenty-three original operations now live in `derived_publications/`; one identical account lookup is shared, leaving twenty-two physical query sites. All query/method/parameter expressions and retained application functions reconstruct exactly, including clocks, account/sync freshness, profile/daily metrics, serialization, read/borrowed-write scopes, canonical task callbacks and publication fences. Twenty existing cases and four new focused boundary cases pass. Six Python sources, owner Mermaid/links, source proof and whitespace pass. Exact selections: `/tmp/tempo-db-derived-check-command.txt`; logs/proof: `/tmp/tempo-db-derived-{existing-tests,boundary-tests,source-proof}.log`. Native PostgreSQL, installed-package discovery, deployment/independent resources and full-system checks remain unverified. No schema/migration/contract/security/CI behavior changed; existing optional feature/legacy data coupling is retained and disclosed.
+
+
+## Legacy engine and durable scheduling storage
+
+Existing SQL constants/builders, dialect/lock handling, query execution and warming move into root `adapters/scheduling/`. Application class/turn/fairness, threshold/interactive decisions, HTTP outcomes and caller transaction authority remain outside. The existing executor and SQL-only exports move intact; the durable builder receives the same defensive task tuple. Warm preparation retains translator import→class selection→translation order, before the original fail-fast budget.
+
+Specific reconstructed ASTs match all moved constants/functions, original selected application bodies and query/parameter expressions. A one-time before/current comparison matches 186 fake paths and 422 executions across SQLite/native dialect branches, state guards, finite preferences, empty/new kinds and warming. No direct query/driver operation remains in either original. Proof/baselines: `/tmp/tempo-db-scheduling-{proof.py,before/}`. Five Python sources compile.
+
+The following existing focused selection passes **34 cases** (only the pre-existing Starlette alias deprecation warning):
+
+```sh
+TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backend/tests/test_engine_fairness.py backend/tests/test_scheduling_turns.py backend/tests/test_postgres_cutover.py::test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape backend/tests/test_postgres_cutover.py::test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds -q --rootdir=.
+```
+
+This uses existing task-temporary SQLite and fake-native claims, including rollback/restart/stale receipt proofs. No engine, native PostgreSQL/broker/live store or full-system check ran. No schema/migration/contract, key/security/credential, lifecycle, fairness bound or CI behavior changed. Package discovery is unchanged because these adapters reside in the already included legacy owner tree; installed-wheel execution and deployed isolation remain unverified.
+
+
+## Game Evidence final import/retry policy separation
+
+Import document stamping and player normalization move at the original replay/clock/argument points. Worker/provider applications pass the existing five/sixty-second retry delays as timedeltas. **Exactly two Python SQL expressions change** from `now()+interval 'N seconds'` to `now()+%s`, with that interval first and the original fence arguments in the same relative order. Server `now()`, transaction/fence/status/reason/error/finally behavior and all other statements remain unchanged. This is the narrow binding necessary to move those policy values outside database, without a scheduler or client-clock substitution.
+
+Sixty-three selected installed cases pass. Actual installed psycopg AUTO/BINARY/TEXT interval adaptation round-trips preserve both values and interval OID1186 without a connection. Fresh sdist→wheel, twenty-five runtime-module bytes/migrations, 164 static references/patches, syntax/links and whitespace pass. Eighteen other store methods and all other provider adapter functions are unchanged. Exact commands/hashes and final method/constant classification are task `evidence/game-evidence-final-policy/{HANDOFF,FINAL-SOURCE-AUDIT}.md`. No further pure application block was found in the audited owner store; required persistence guards/resource limits/atomic fanout and the preserved compatibility cache holder are disclosed. Native PostgreSQL SQL execution, actual deployment/resource independence and full-system behavior remain unverified. No schema/migration/data/security/credential/CI change occurred.
+
+
+## Content route-phase orchestration
+
+The complete route-phase sequence now lives in application `worker/routes.py::reconcile_route`. Root storage retains the original artifact-cache read and complete registration/traversal transactions. The phase reconstructs exactly, preserving validation, hook/result timing, epoch-race outcome and sixteen-ply traversal. All ninety-two SQL literals, forty-four other methods/root helpers and the existing segment helper are unchanged; the existing preparation tests retain their assertions and follow the moved monkeypatch owner. Eleven selected source cases and fourteen installed cases pass, with four missing branch/order cases added and seven existing cases reused.
+
+Fresh sdist→wheel/current runtime bytes, three owner Mermaid blocks/links, source equivalence and whitespace pass. Exact selections/commands/hashes: `/tmp/tempo-content-route-evidence/manifest.json` and `services/content/VALIDATION.md`. Exercise and source/publication coordination remain explicit unfinished work. Native/live/full-system checks remain unverified; five denied loopback cases were unchanged and not retried. No schema/query, security/credential, lifecycle or CI behavior changed.
+
+
+## Learning review scheduling and independent reconciliation
+
+Two existing review application modules now use same-named root owner adapters for complete review/history/schedule/snapshot/card/queue persistence. Replay/rating/time-zone/history/placement decisions, settlement/follow-up callbacks, date clocks and returned outcomes stay outside database. Thirty-two SQL literals and schedule-column order are unchanged. Eighteen before/current paths preserve returned values, ninety-four query executions, eight clock reads and callback/capability order, including chronology/fallback/history-only and protected-priority cases.
+
+Twelve selected semantic source checks and thirteen installed checks pass. Fresh sdist→wheel, four changed runtime-source bytes, source-free migration resource discovery, owner Mermaid/links and whitespace pass. Exact commands/changed hashes: `services/learning/runtime/VALIDATION.md` and `/tmp/tempo-learning-db-reviews-report.json`; complete wheel manifest retained separately. Eight original Learning mixed files (3,854 lines/224 static calls) and initial-adapter policy audit remain. Native PostgreSQL/full-system and the known stale installation version assertion remain unverified/unselected; no live/schema/contract/security/CI behavior changed.
+
+
+## Legacy repertoire scope, refresh and move verification
+
+Nine query sites, three SQL predicate builders and unchanged SQLite digest/native dialect mechanics move into `repertoire_scope/`. Existing freshness/helper aliases remain; a matching derivation-version read reuses current owner storage. Exact named expansion restores every retained application AST and moved definition, including clock/driver/read/lease/callback order and chess/deadline/cursor/source token behavior. Original SQLite SHA-256 versus native PostgreSQL MD5 behavior remains unchanged; no new cross-dialect equivalence is claimed.
+
+Fifteen existing focused cases pass: nine move-verification, one local refresh, two fake PostgreSQL refresh/admission and three canonical compatibility/rollback/stale-coverage cases. Seven Python modules, owner Mermaid/links, source proof and whitespace pass. Exact commands/limits: `/tmp/tempo-db-repertoire-scope-extraction.md`; eight-source SHA-256 manifest `/tmp/tempo-db-repertoire-scope-ready.json`. Native PostgreSQL/collation/locks/rollback, installed-wheel discovery, deployed isolation and full-system remain unverified. Existing legacy cross-feature reads/writer seams are retained/disclosed; no schema/migration/JSON, Study dependency, new table access or CI behavior changed.
+
+
+## Intelligence refresh and retry command workflow
+
+The complete existing refresh/retry application sequence moves into `source_requests.command_request`; root `RequestCommands` retains six complete queries, the same advisory lock, guarded command receipt/revision checks and borrowed write authority. Cache ordering/terminal skips/retry eligibility/new generation/Maia-work decisions and final response remain in the application sequence. The lazy eligibility callback preserves method resolution before clock sampling; fixed-operation lookup remains at the original points. SQL/parameters and all other Store methods/prior helpers are unchanged under named operation mapping.
+
+Forty-four selected focused cases pass. Five command cases were rerun after correcting method/clock wiring and are not five additional identities. Fresh sdist→wheel/current runtime bytes, complete thirty-two-method residual audit, owner Mermaid/links, syntax and whitespace pass. Exact commands/hashes: `services/intelligence/VALIDATION.md` and `/tmp/tempo-intelligence-command-evidence.json`. Remaining submit/Maia/evidence/credential/provider and Analysis work is explicit. Installed-consumer runtime/native/live/full-system/deployment remain unverified; no schema/contract, credential/security behavior or CI change.

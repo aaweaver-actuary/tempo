@@ -10,7 +10,8 @@ flowchart LR
   callers[Existing CLI and bridge callers] --> composition[ContentService.work_once composition]
   composition --> application[Content reconcile_once]
   application -->|claim, manifest, slice, collection, fenced failure| storage[Existing Content storage methods]
-  storage -->|route and cached facts| routes[Pure bounded route segment]
+  storage -->|route facts and operations| routes[Route phase application]
+  routes --> segment[Pure bounded route segment]
   storage --> database[Content-owned PostgreSQL]
 ```
 
@@ -34,9 +35,9 @@ package/import/resource closure. Native PostgreSQL and the five unchanged,
 previously denied loopback HTTP cases are unverified for this slice. The public
 Content package still eagerly exports its concrete `ContentService`.
 
-[`route_segment`](routes.py) also holds the existing four-statement traversal
+[`route_segment`](routes.py) holds the existing four-statement traversal
 preparation: choose at most 16 plies, determine terminality and reuse a completed
-artifact without invoking chess traversal. `_route_slice` calls it after
+artifact without invoking chess traversal. The route application calls it after
 `after_read` and before `before_commit`, without a pool lease. Cache identity,
 registration validation, epoch/fence guards, membership/occurrence writes and
 cursor advancement remain in the original adapter sections.
@@ -44,7 +45,7 @@ cursor advancement remain in the original adapter sections.
 `tests/test_content_preparation.py` checks full-versus-sliced route inventory,
 completed-cache reuse and the computation/hook/transaction order. Pure
 [publication preparation](../publication/README.md) is also outside the adapter.
-Route/exercise phase and I/O sequencing, source staging and publication
+Exercise phase and I/O sequencing, source staging and publication
 read/reservation/write coordination remain mixed extraction work. These bounded
 moves do not claim those methods are application-free or make them a permanent
 exception.
@@ -86,3 +87,46 @@ Installed package checks retain the component's independent artifact closure.
 Native PostgreSQL locking, leases and rollback remain unverified for this move;
 the native contracts are retained and the previously denied loopback cases were
 not retried.
+
+## Route phase
+
+[`reconcile_route`](routes.py) owns the complete existing route phase:
+exhaustion/transition, ordered membership/route/repertoire reads, cache lookup,
+new-artifact validation/registration, existing bounded segment preparation,
+the original read/commit hooks and exact processing responses.
+
+```mermaid
+flowchart LR
+  delivery[Existing work_once phase delivery] --> composition[ContentService._route_slice composition]
+  composition --> application[reconcile_route application]
+  application -->|immutable inputs| items[Existing _item reads]
+  application -->|cache facts| cache[Content _route_artifact]
+  application -->|new artifact| register[Content _register_route]
+  application -->|computed segment| commit[Content _commit_route_segment]
+  items --> database[Content-owned PostgreSQL]
+  cache --> database
+  register -->|one fenced section| database
+  commit -->|one fenced section with epoch guard| database
+```
+
+The [root adapter](../../../../../database/tempo_content_database/adapters/store.py)
+supplies three fixed storage operations. `_route_artifact` owns the unchanged
+versioned cache-key serialization and single `_one` read. `_register_route`
+owns the original fence, artifact insert, artifact row lock, registration hook,
+membership attachment, task advance and after-write hook. `_commit_route_segment`
+owns the original fence, artifact lock and epoch/cursor guard, attachment,
+occurrence save, artifact/task advancement and hooks. Its boolean outcome maps
+the original artifact-advanced versus successful response in the application.
+The existing segment tuple is passed directly; no schema or command protocol is
+introduced.
+
+Chess validation and traversal remain after `after_read` and before
+`before_commit`, outside a pool lease. Both write sections retain their original
+SQL, parameters, ordering and transaction authority. The existing occurrence
+batching, sorted position locks, legal-universe checks and response data are
+unchanged. `tests/test_route_application.py` adds four missing boundary cases:
+phase exhaustion, valid/invalid new registration and an epoch-race result.
+Existing selected preparation/domain checks retain traversal, cache reuse and
+hook/transaction order. One-time source comparison verifies the full moved body
+and atomic blocks. Native PostgreSQL contracts remain unverified for this move;
+the previously denied loopback cases were not retried.

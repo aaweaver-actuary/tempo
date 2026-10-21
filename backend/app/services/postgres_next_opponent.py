@@ -6,13 +6,13 @@ from fastapi import HTTPException
 
 from ..next_opponent_contract import NextOpponentProfile, NextOpponentProfileResponse, SpeedWeight
 from tempo_legacy_database.adapters.postgres_store import connection
+from tempo_legacy_database.adapters.derived_publications import next_opponent as storage
+from tempo_legacy_database.adapters.derived_publications.next_opponent import _GAME_FIELDS
 from .durable_tasks import complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice
 from .next_opponent_profile import METHOD_VERSION, SAMPLE_LIMIT, build_profile, utc_time
 from .redis_admission_gate import background_lease
 
 TASK_KIND = "next_opponent_profile"
-_GAME_FIELDS = ("id,provider,username,played_at,speed,rated,adaptive_excluded,"
-                "player_rating,opponent_rating,rating_change,time_control")
 
 
 def _current_utc_time() -> datetime:
@@ -21,24 +21,17 @@ def _current_utc_time() -> datetime:
 
 def request_profile_refresh(database) -> bool:
     """O(1) intent only, called at sync/account/exclusion publication boundaries."""
-    configured = database.execute("SELECT lichess_username FROM settings WHERE id=1").fetchone()
+    configured = storage.configured_account(database)
     account = configured["lichess_username"].strip().lower() if configured else ""
     if not account:
         return False
-    database.execute("INSERT INTO next_opponent_accounts(account) VALUES(?) ON CONFLICT DO NOTHING", (account,))
-    state = database.execute(
-        "SELECT input_generation,published_generation,published_method,"
-        "COALESCE(next_evidence_at<=?,FALSE) AS future_evidence_due "
-        "FROM next_opponent_accounts WHERE account=? FOR UPDATE", (_current_utc_time(), account),
-    ).fetchone()
+    storage.ensure_account(database, account)
+    state = storage.locked_refresh_state(database, _current_utc_time(), account)
     if (state["published_generation"] == state["input_generation"]
             and state["published_method"] == METHOD_VERSION and not state["future_evidence_due"]):
         return False
     payload = {"account": account, "input_generation": state["input_generation"], "method_version": METHOD_VERSION}
-    existing = database.execute(
-        "SELECT state,payload_json FROM background_tasks WHERE kind=? AND deduplication_key=?",
-        (TASK_KIND, account),
-    ).fetchone()
+    existing = storage.existing_refresh_task(database, TASK_KIND, account)
     if existing and existing["state"] in {"queued", "leased", "retrying"} and json.loads(existing["payload_json"]) == payload:
         return False
     enqueue_task_in_transaction(database, TASK_KIND, account, payload, priority=135)
@@ -48,35 +41,16 @@ def request_profile_refresh(database) -> bool:
 def _load_inputs(account: str, as_of: datetime) -> tuple[int, list[dict], list[dict], str | None] | None:
     with background_lease():
         with connection(read_only=True, background=True) as database:
-            state = database.execute("SELECT input_generation FROM next_opponent_accounts WHERE account=?", (account,)).fetchone()
+            state = storage.account_input_generation(database, account)
             if state is None:
                 return None
-            sample = database.execute_native(
-                f"SELECT {_GAME_FIELDS} FROM imported_games WHERE provider='lichess' AND rated=1 "
-                "AND adaptive_excluded=0 AND lower(trim(username))=%s "
-                "AND next_opponent_game_time(played_at)<=%s "
-                "ORDER BY next_opponent_game_time(played_at) DESC,id DESC LIMIT %s",
-                (account, as_of, SAMPLE_LIMIT + 1),
-            ).fetchall()
+            sample = storage.sample_games(database, account, as_of, SAMPLE_LIMIT + 1)
             latest_ratings = []
             for speed in ("blitz", "rapid", "classical"):
-                rating = database.execute_native(
-                    f"SELECT {_GAME_FIELDS} FROM imported_games WHERE provider='lichess' AND rated=1 "
-                    "AND adaptive_excluded=0 AND player_rating>0 AND lower(trim(username))=%s "
-                    "AND speed=%s AND next_opponent_game_time(played_at)<=%s "
-                    "ORDER BY next_opponent_game_time(played_at) DESC,id DESC LIMIT 1",
-                    (account, speed, as_of),
-                ).fetchone()
+                rating = storage.latest_speed_rating(database, account, speed, as_of)
                 if rating:
                     latest_ratings.append(dict(rating))
-            next_evidence = database.execute_native(
-                # PostgreSQL's timestamp range exceeds Python's datetime range.
-                "SELECT CAST(next_opponent_game_time(played_at) AS TEXT) AS next_evidence_at FROM imported_games "
-                "WHERE provider='lichess' AND rated=1 AND adaptive_excluded=0 AND lower(trim(username))=%s "
-                "AND next_opponent_game_time(played_at)>%s "
-                "ORDER BY next_opponent_game_time(played_at) ASC,id ASC LIMIT 1",
-                (account, as_of),
-            ).fetchone()
+            next_evidence = storage.next_evidence(database, account, as_of)
             return (int(state["input_generation"]), [dict(row) for row in sample], latest_ratings,
                     next_evidence["next_evidence_at"] if next_evidence else None)
 
@@ -84,9 +58,8 @@ def _load_inputs(account: str, as_of: datetime) -> tuple[int, list[dict], list[d
 def _publish(database, task: dict, input_generation: int, profile: NextOpponentProfile,
              next_evidence_at: str | None) -> bool:
     # Same order as account commands: settings, account state, durable task.
-    configured = database.execute("SELECT lichess_username FROM settings WHERE id=1 FOR SHARE").fetchone()
-    state = database.execute("SELECT input_generation FROM next_opponent_accounts WHERE account=? FOR UPDATE",
-                             (profile.source_account,)).fetchone()
+    configured = storage.locked_configured_account(database)
+    state = storage.locked_account_input_generation(database, profile.source_account)
     if not lock_current_slice(database, task):
         return False
     if (configured is None or configured["lichess_username"].strip().lower() != profile.source_account
@@ -95,15 +68,12 @@ def _publish(database, task: dict, input_generation: int, profile: NextOpponentP
             or task["payload"]["method_version"] != METHOD_VERSION):
         return complete_task_slice_in_transaction(database, task)
     published_at = _current_utc_time().isoformat()
-    database.execute(
-        "INSERT INTO next_opponent_snapshots(version,account,method_version,profile_json,published_at) "
-        "VALUES(?,?,?,?,?) ON CONFLICT(version) DO NOTHING",
-        (profile.version, profile.source_account, profile.method_version, profile.model_dump_json(), published_at),
+    storage.store_profile_snapshot(
+        database, profile.version, profile.source_account, profile.method_version,
+        profile.model_dump_json(), published_at,
     )
-    database.execute(
-        "UPDATE next_opponent_accounts SET published_generation=?,published_method=?,profile_version=?,"
-        "next_evidence_at=? WHERE account=?",
-        (input_generation, METHOD_VERSION, profile.version, next_evidence_at, profile.source_account),
+    storage.mark_profile_published(
+        database, input_generation, METHOD_VERSION, profile.version, next_evidence_at, profile.source_account,
     )
     return complete_task_slice_in_transaction(database, task)
 
@@ -128,21 +98,16 @@ def execute_profile_slice(task: dict) -> bool:
 
 def read_profile(database, speed: str = "auto", *, now: datetime | None = None) -> NextOpponentProfileResponse:
     now = now or _current_utc_time()
-    configured = database.execute("SELECT lichess_username FROM settings WHERE id=1").fetchone()
+    configured = storage.configured_account(database)
     if configured is None:
         raise HTTPException(503, "Next-opponent profile settings are unavailable; check Tempo service status and database initialization.")
     account = configured["lichess_username"].strip().lower()
     if not account:
         return NextOpponentProfileResponse(availability="unknown", refresh_status="idle", stale=True,
             stale_reasons=("no_account",), requested_speed=speed, detail="Configure a Lichess account and sync games.")
-    row = database.execute(
-        "SELECT a.input_generation,a.published_generation,a.published_method,"
-        "COALESCE(a.next_evidence_at<=?,FALSE) AS future_evidence_due,s.profile_json,s.published_at "
-        "FROM next_opponent_accounts a LEFT JOIN next_opponent_snapshots s ON s.version=a.profile_version "
-        "WHERE a.account=?", (now, account),
-    ).fetchone()
-    sync = database.execute("SELECT username,status,last_success_at FROM game_sync_state WHERE provider='lichess'").fetchone()
-    task = database.execute("SELECT state FROM background_tasks WHERE kind=? AND deduplication_key=?", (TASK_KIND, account)).fetchone()
+    row = storage.published_profile_row(database, now, account)
+    sync = storage.account_sync_state(database)
+    task = storage.profile_task_state(database, TASK_KIND, account)
     same_sync = bool(sync and sync["username"].strip().lower() == account)
     sync_time = sync["last_success_at"] if same_sync else None
     last_success = utc_time(sync_time)

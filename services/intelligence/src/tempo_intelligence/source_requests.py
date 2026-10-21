@@ -1,4 +1,4 @@
-"""Source request policies and inspection through fixed owner read operations."""
+"""Source request policies and workflows through fixed owner operations."""
 from datetime import timedelta
 from .errors import DomainError
 from .identity import digest, source_descriptor
@@ -85,3 +85,34 @@ def inspect_request(request_id,workspace_id,configuration,transaction,retry,cred
             if source["kind"] != "maia":
                 source["credential"]=credential
     return response
+
+
+def command_request(request_id,command_id,expected_revision,retry,transaction,eligible):
+    """Apply the existing source-local retry/refresh workflow in one owner write.
+
+    transaction yields fixed guarded RequestCommands operations. Locks, receipt
+    binding and writes belong to that owner; there is no query/execute API here.
+    """
+    with transaction() as commands:
+        commands.lock(command_id)
+        payload={"request_id":request_id,"expected_revision":expected_revision,"operation":"retry" if retry else "refresh"}
+        previous=commands.receipt(command_id,payload)
+        if previous:
+            return previous["result"]
+        request=commands.request(request_id,expected_revision)
+        for binding in sorted(request["bindings"],key=lambda item:item["cache_id"]):
+            cache=commands.locked_cache(binding["cache_id"])
+            if cache["state"] == "terminal":
+                continue
+            if retry:
+                if not eligible(cache):
+                    continue
+                commands.queue_retry(cache["cache_id"])
+            elif cache["state"] not in ("queued","running","retry_wait","waiting_credentials","awaiting_result"):
+                commands.new_generation(cache)
+            current=commands.cache(cache["cache_id"])
+            if current["kind"] == "maia" and current["state"] == "queued":
+                commands.maia_job(current)
+        result={"schema_version":1,"request_id":request_id,"request_revision":request["revision"],"command_id":command_id,"accepted":True}
+        commands.save(command_id,payload,result)
+        return result

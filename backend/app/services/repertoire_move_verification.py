@@ -1,14 +1,14 @@
 """Bounded foreground membership checks against current saved opening sources."""
 
-import hashlib
 import json
-import sqlite3
 import time
 
 import chess
 from fastapi import HTTPException
 
 from tempo_legacy_database.connections import read_connection
+from tempo_legacy_database.adapters.repertoire_scope import move_verification as storage
+from tempo_legacy_database.adapters.repertoire_scope.move_verification import _SourceDigest, _source_token
 from .repertoire_comparison import canonical_fen
 
 SOURCE_PAGE_SIZE = 64
@@ -18,32 +18,6 @@ SOURCE_LINE_MOVE_LIMIT = 2048
 
 class _ReplayBudgetExhausted(Exception):
     """An unfinished line must be retried from the last completed source."""
-
-
-class _SourceDigest:
-    def __init__(self):
-        self.digest = hashlib.sha256()
-
-    def step(self, *values):
-        self.digest.update(json.dumps(values, separators=(',', ':')).encode())
-
-    def finalize(self):
-        return self.digest.hexdigest()
-
-
-def _source_token(database, repertoire_id):
-    if isinstance(database, sqlite3.Connection):
-        database.create_aggregate('tempo_source_digest', 4, _SourceDigest)
-        return database.execute(
-            'SELECT tempo_source_digest(id,trained_color,start_fen,moves_json) FROM '
-            '(SELECT id,trained_color,start_fen,moves_json FROM repertoire_lines '
-            'WHERE repertoire_id=? ORDER BY id)', (repertoire_id,),
-        ).fetchone()[0]
-    return database.execute_native(
-        "SELECT md5(COALESCE(string_agg(md5(row_to_json(item)::text),'' ORDER BY item.id),'')) "
-        "FROM (SELECT id,trained_color,start_fen,moves_json FROM repertoire_lines "
-        "WHERE repertoire_id=%s) item", (repertoire_id,),
-    ).fetchone()[0]
 
 
 def _line_contains_move(source_line, position_key, move_uci, deadline):
@@ -80,11 +54,7 @@ def verify_repertoire_move(repertoire_id, fen, move_uci, cursor='', source_token
         current_token = _source_token(database, repertoire_id)
         if source_token is not None and source_token != current_token:
             raise HTTPException(409, 'Saved repertoire lines changed. Retry verification from the current position.')
-        source_lines = [dict(row) for row in database.execute(
-            'SELECT id,start_fen,moves_json FROM repertoire_lines '
-            'WHERE repertoire_id=? AND id>? ORDER BY id LIMIT ?',
-            (repertoire_id, cursor, SOURCE_PAGE_SIZE + 1),
-        )]
+        source_lines = storage.source_line_page(database, repertoire_id, cursor, SOURCE_PAGE_SIZE + 1)
     if not source_lines:
         raise HTTPException(503, 'Saved repertoire evidence is unavailable. Reload or inspect its lines before grading this move.')
     deadline = time.monotonic() + SOURCE_REPLAY_SECONDS

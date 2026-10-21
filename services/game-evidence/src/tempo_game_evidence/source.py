@@ -44,3 +44,12 @@ def prepare_import_document(workspace, provider, source_id, player, raw, raw_dig
     document.update(workspace_id=workspace, game_id=game_id, provider=provider,
                     provider_game_id=source_id, source_digest=raw_digest)
     return document
+
+
+def stamp_import_document(document, revision):
+    document["revision"] = revision
+    document["imported_at"] = utc_now().isoformat()
+
+
+def normalized_import_player(player):
+    return player.casefold()

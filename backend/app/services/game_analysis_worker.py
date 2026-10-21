@@ -11,6 +11,7 @@ import chess
 
 from tempo_legacy_database.connections import background_read_connection, connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.games.analysis_worker import positions as storage
 from .activity_gate import activity_gate
 from .threat_pipeline import (ENGINE_VERSION, NETWORK_VERSION, report_from_json,
                               validate_analysis_report)
@@ -66,13 +67,8 @@ def _confirmed_indices(positions: list[chess.Board], moves: list[str],
 def _release_parent(game_id: str, parent_lease_id: str, *, failed: bool = False,
                     error: str | None = None) -> None:
     with connection(background=activity_gate.in_background) as database:
-        database.execute(
-            """UPDATE game_analysis_jobs SET status=?,lease_id=NULL,lease_expires_at=NULL,
-                   last_error=?,updated_at=? WHERE game_id=? AND status='leased' AND lease_id=?""",
-            ("failed" if failed else "queued", error, _now(), game_id, parent_lease_id),
-        )
-        database.execute("UPDATE imported_games SET analysis_state=? WHERE id=?",
-                         ("failed" if failed else "pending", game_id))
+        storage.release_parent(database, "failed" if failed else "queued", error, _now(), game_id, parent_lease_id)
+        storage.set_game_analysis_state(database, "failed" if failed else "pending", game_id)
 
 
 def claim_position(parent_job: dict | None) -> dict | None:
@@ -84,11 +80,7 @@ def claim_position(parent_job: dict | None) -> dict | None:
     positions = _positions(parent_job["start_fen"], moves)
     analysis_version = parent_job["analysis_version"]
     with read_connection() as database:
-        rows = database.execute(
-            """SELECT scan_pass,position_index,report_json FROM game_analysis_position_reports
-               WHERE game_id=? AND analysis_version=? AND state='complete'""",
-            (game_id, analysis_version),
-        ).fetchall()
+        rows = storage.completed_position_reports(database, game_id, analysis_version)
     reports = {(row["scan_pass"], row["position_index"]): json.loads(row["report_json"])
                for row in rows}
     shallow = {index: reports[("shallow", index)] for index in range(len(positions))
@@ -108,10 +100,8 @@ def claim_position(parent_job: dict | None) -> dict | None:
         # A terminal board has no legal engine root; store its typed terminal
         # state as one bounded slice and resume at the following position.
         with connection(background=activity_gate.in_background) as database:
-            database.execute(
-                """INSERT OR IGNORE INTO game_analysis_position_reports
-                   (id,game_id,analysis_version,scan_pass,position_index,request_json,report_json,state,updated_at)
-                   VALUES(?,?,?,?,?,?,?,'complete',?)""",
+            storage.insert_terminal_report(
+                database,
                 (str(uuid.uuid4()), game_id, analysis_version, scan_pass, next_position,
                  "{}", json.dumps({"terminal": "checkmate" if board.is_checkmate() else "draw"}), _now()),
             )
@@ -128,11 +118,7 @@ def claim_position(parent_job: dict | None) -> dict | None:
     lease_id = str(uuid.uuid4())
     report_id = str(uuid.uuid4())
     with connection(background=activity_gate.in_background) as database:
-        existing = database.execute(
-            """SELECT id,state,attempts FROM game_analysis_position_reports
-               WHERE game_id=? AND analysis_version=? AND scan_pass=? AND position_index=?""",
-            (game_id, analysis_version, scan_pass, next_position),
-        ).fetchone()
+        existing = storage.position_lease_state(database, game_id, analysis_version, scan_pass, next_position)
         if existing and existing["state"] in {"complete", "failed"}:
             existing_state = existing["state"]
         else:
@@ -141,19 +127,14 @@ def claim_position(parent_job: dict | None) -> dict | None:
             pass
         elif existing:
             report_id = existing["id"]
-            database.execute(
-                """UPDATE game_analysis_position_reports SET state='leased',lease_id=?,parent_lease_id=?,
-                   lease_expires_at=?,request_json=?,attempts=attempts+1,updated_at=? WHERE id=?""",
-                (lease_id, parent_lease_id,
-                 (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
-                 request_json, _now(), report_id),
+            storage.lease_existing_report(
+                database, lease_id, parent_lease_id,
+                (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+                request_json, _now(), report_id,
             )
         else:
-            database.execute(
-                """INSERT INTO game_analysis_position_reports
-                   (id,game_id,analysis_version,scan_pass,position_index,request_json,state,
-                    lease_id,parent_lease_id,lease_expires_at,attempts,updated_at)
-                   VALUES(?,?,?,?,?,?,'leased',?,?,?,1,?)""",
+            storage.insert_leased_report(
+                database,
                 (report_id, game_id, analysis_version, scan_pass, next_position,
                  request_json, lease_id, parent_lease_id,
                  (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(), _now()),
@@ -170,7 +151,7 @@ def claim_position(parent_job: dict | None) -> dict | None:
 
 def save_position_report(report_id: str, lease_id: str, raw_report: dict) -> str:
     with read_connection() as database:
-        row = database.execute("SELECT * FROM game_analysis_position_reports WHERE id=?", (report_id,)).fetchone()
+        row = storage.position_report(database, report_id)
         if not row:
             raise KeyError("Game position request not found")
         saved = dict(row)
@@ -178,15 +159,12 @@ def save_position_report(report_id: str, lease_id: str, raw_report: dict) -> str
                                 "position_prefix_uci": tuple(json.loads(saved["request_json"])["position_prefix_uci"])})
     validate_analysis_report(request, report_from_json(raw_report))
     with connection(background=activity_gate.in_background) as database:
-        updated = database.execute(
-            """UPDATE game_analysis_position_reports SET state='complete',report_json=?,lease_id=NULL,
-                   parent_lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=?
-                   WHERE id=? AND state='leased' AND lease_id=? AND request_json=?""",
-            (json.dumps(raw_report), _now(), report_id, lease_id, saved["request_json"]),
-        ).rowcount
+        updated = storage.complete_leased_report(
+            database, json.dumps(raw_report), _now(), report_id, lease_id, saved["request_json"],
+        )
     if not updated:
         with read_connection() as database:
-            current = database.execute("SELECT state,report_json FROM game_analysis_position_reports WHERE id=?", (report_id,)).fetchone()
+            current = storage.published_report(database, report_id)
         if current and current["state"] == "complete" and current["report_json"] == json.dumps(raw_report):
             return "complete"
         raise ValueError("Game position lease is stale")
@@ -196,23 +174,13 @@ def save_position_report(report_id: str, lease_id: str, raw_report: dict) -> str
 
 def release_position(report_id: str, lease_id: str, error: str | None = None) -> str:
     with connection(background=activity_gate.in_background) as database:
-        row = database.execute(
-            "SELECT game_id,parent_lease_id,attempts FROM game_analysis_position_reports WHERE id=? AND state='leased' AND lease_id=?",
-            (report_id, lease_id),
-        ).fetchone()
+        row = storage.leased_position_release(database, report_id, lease_id)
         if not row:
             return "stale"
         failed = error is not None and row["attempts"] >= MAX_POSITION_ATTEMPTS
-        database.execute(
-            """UPDATE game_analysis_position_reports SET state=?,lease_id=NULL,parent_lease_id=NULL,
-                   lease_expires_at=NULL,last_error=?,updated_at=? WHERE id=?""",
-            ("failed" if failed else "queued", error, _now(), report_id),
-        )
+        storage.release_report(database, "failed" if failed else "queued", error, _now(), report_id)
         if error:
-            database.execute(
-                "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) VALUES(?,?,?,?)",
-                (report_id, row["game_id"], error, _now()),
-            )
+            storage.record_position_error(database, report_id, row["game_id"], error, _now())
     _release_parent(row["game_id"], row["parent_lease_id"], failed=failed, error=error)
     return "failed" if failed else "queued"
 
@@ -220,13 +188,9 @@ def release_position(report_id: str, lease_id: str, error: str | None = None) ->
 def build_game_evaluations(parent_job: dict) -> list[dict]:
     moves = parent_job["moves"]
     positions = _positions(parent_job["start_fen"], moves)
-    read_section = background_read_connection if postgres_store.configured() else read_connection
+    read_section = storage.evaluation_read_section(background_read_connection, read_connection)
     with read_section() as database:
-        rows = database.execute(
-            """SELECT scan_pass,position_index,report_json FROM game_analysis_position_reports
-               WHERE game_id=? AND analysis_version=? AND state='complete'""",
-            (parent_job["game_id"], parent_job["analysis_version"]),
-        ).fetchall()
+        rows = storage.completed_position_reports(database, parent_job["game_id"], parent_job["analysis_version"])
     reports = {(row["scan_pass"], row["position_index"]): json.loads(row["report_json"])
                for row in rows}
     shallow = {index: reports[("shallow", index)] for index in range(len(positions))}
