@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **46 files**; one candidate is confirmed non-database application code, and **109 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **49 files**; one candidate is confirmed non-database application code, and **106 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -100,14 +100,14 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/queue_application.py](../backend/app/services/queue_application.py)
 - [backend/app/services/redis_admission_gate.py](../backend/app/services/redis_admission_gate.py)
 - [backend/app/services/refresh_requests.py](../backend/app/services/refresh_requests.py)
-- [backend/app/services/repertoire_comparison.py](../backend/app/services/repertoire_comparison.py)
+- Completed legacy read/publication projection split: [backend/app/services/repertoire_comparison.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed authored-Studies policy / database line-projection split: [backend/app/services/repertoire_conflicts.py](../backend/app/studies/README.md).
 - [backend/app/services/repertoire_coverage.py](../backend/app/services/repertoire_coverage.py)
 - [backend/app/services/repertoire_game_refresh.py](../backend/app/services/repertoire_game_refresh.py)
 - [backend/app/services/repertoire_integrity.py](../backend/app/services/repertoire_integrity.py)
 - [backend/app/services/repertoire_move_verification.py](../backend/app/services/repertoire_move_verification.py)
 - [backend/app/services/repertoire_opportunities.py](../backend/app/services/repertoire_opportunities.py)
-- [backend/app/services/repertoire_statistics.py](../backend/app/services/repertoire_statistics.py)
+- Completed legacy read/publication projection split: [backend/app/services/repertoire_statistics.py](tempo_legacy_database/adapters/projections/README.md).
 - [backend/app/services/review_service.py](../backend/app/services/review_service.py)
 - [backend/app/services/statistics.py](../backend/app/services/statistics.py)
 - [backend/app/services/study_attempts.py](../backend/app/services/study_attempts.py)
@@ -117,7 +117,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/tactic_admission.py](tempo_legacy_database/adapters/tactic_admission.py).
 - [backend/app/services/tactic_capture.py](../backend/app/services/tactic_capture.py)
 - [backend/app/services/tactical_catalog.py](../backend/app/services/tactical_catalog.py)
-- [backend/app/services/tactical_opportunities.py](../backend/app/services/tactical_opportunities.py)
+- Completed legacy read/publication projection split: [backend/app/services/tactical_opportunities.py](tempo_legacy_database/adapters/projections/README.md).
 - [backend/app/services/threat_pipeline.py](../backend/app/services/threat_pipeline.py)
 - [backend/app/services/threat_training.py](../backend/app/services/threat_training.py)
 - [backend/app/settings_commands.py](../backend/app/settings_commands.py)
