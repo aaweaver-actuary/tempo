@@ -5144,3 +5144,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Queue admission feedback projection compatibility export
 
 `backend/tests/test_feedback_boundary_integration.py::test_combined_queue_uses_feedback_projection_and_semantic_store[False]` and `[True]` preserve the existing `outstanding_miss_query` identity, miss reason and semantic-store consumer behavior. The admission extraction briefly removed that export; restoring the exact root-factory import repairs the regression without duplicate SQL or behavior changes.
+
+
+## PGN import and discard persistence
+
+`backend/tests/test_pgn_import_storage_boundary.py` owns eight fake-only cases for empty/multi-result batches, identity/clock/certification/callback order, discard receipts and validation before reads. Exact source proof also covers unchanged models, decorators and registrations; the fake inner function does not qualify outer refresh wiring/native import behavior.
