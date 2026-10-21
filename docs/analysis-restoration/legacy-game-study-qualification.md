@@ -115,7 +115,7 @@ only supervises/provisions. Installed wheel bytes and the retained environment m
 no native reinstallation repairs or hides a changed environment.
 
 Exactly five cases, each collected then executed once, in
-`services/learning/remediation/integration/test_postgres.py`:
+`database/tempo_remediation_database/tests/native/test_postgres.py`:
 
 1. `test_native_outer_rollback_includes_obligation_and_completed_receipt`
 2. `test_native_response_loss_restart_and_new_transport_have_one_effect`

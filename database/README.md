@@ -1,6 +1,6 @@
 # Database files and source schema
 
-This tree is the required single home for database operations. PR334 relocates dedicated files; follow-up batches have extracted or relocated **155 of 156 baseline candidates**, with one confirmed non-database false positive and **zero original baseline entries pending**. **Complete centralization is still unfinished:** additional native harness/test placement and technical composition work is tracked separately in the [inventory](INVENTORY.md#additional-storage-candidates-found-after-the-baseline). A zero original count is not an all-database-code completion claim. Application/domain logic belongs outside this tree, connected through explicit interfaces and outer composition.
+This tree is the required single home for database operations. PR334 relocates dedicated files; follow-up batches have extracted or relocated **155 of 156 baseline candidates**, with one confirmed non-database false positive and **zero original baseline entries pending**. The separately discovered native harnesses, storage-only tests and database benchmark entry points are now physically centralized too. **Complete centralization is still unfinished:** remaining technical composition edges and any further source-audit findings are tracked separately in the [inventory](INVENTORY.md#additional-storage-candidates-found-after-the-baseline). A zero original count is not an all-database-code completion claim. Application/domain logic belongs outside this tree, connected through explicit interfaces and outer composition.
 
 Physical colocation does not grant a component access to another owner's data and does not create a shared runtime module. Each owner retains its own package artifact, migration authority and transaction boundaries.
 
@@ -31,7 +31,7 @@ Service `hatch_build.py` hooks include only their corresponding database package
 
 For legacy source checks use `PYTHONPATH=backend:database`; the existing Make/runner paths set this. Services should be checked from their installed wheels using their existing owning runners. Rebuild/reinstall the relevant artifact after changing its centralized database source.
 
-[Database tooling](tooling/README.md) contains the existing explicit migration/import/backup/restore/provisioning commands. [Database proof scripts](tests/README.md) contains the existing disposable PostgreSQL scenarios and benchmarks. They retain their original authority and are not new acceptance gates. Application/contract suites stay with their feature owners; [the inventory](INVENTORY.md) explicitly records mixed application/SQL files rather than claiming they have been extracted.
+[Database tooling](tooling/README.md) contains the existing explicit migration/import/backup/restore/provisioning commands. [Database proof scripts](tests/README.md) contains the existing disposable PostgreSQL scenarios and benchmarks; owner-specific native tooling and tests are indexed in each owner's README. They retain their original authority and are not new acceptance gates. Application/contract suites stay with their feature owners; [the inventory](INVENTORY.md) distinguishes the closed original extraction checklist from additional placement and composition review.
 
 The [disposable ownership fixture](ownership/README.md) remains the existing cross-owner test infrastructure, now in this same tree.
 
@@ -39,7 +39,7 @@ The [disposable ownership fixture](ownership/README.md) remains the existing cro
 
 Each bounded Mermaid ER chart renders directly in its directory README on GitHub. Charts show keys; dictionaries list every field/type, primary/composite keys, nullable fields, enforced foreign keys and unique tuples, with links to DDL. SQL views are listed separately as read projections. A similar `card_id`, `game_id`, publication ID or JSON identity is **not** a foreign key unless the DDL declares it. Logical cross-component protocol identities are labeled in each owner's overview. No diagram claims a live constraint was inspected.
 
-The legacy source still co-locates Games and Study tables and application SQL. This move preserves that existing limitation; it does not introduce or approve a new Study → Games dependency. Optional producers still must fail independently under [AGENTS.md](../AGENTS.md).
+The legacy schema still co-locates Games and Study tables, and existing backend composition still couples some feature workflows. This move preserves the schema and behavior; it does not introduce or approve a new Study → Games dependency. Optional producers still must fail independently under [AGENTS.md](../AGENTS.md). Physical file placement alone does not establish that acceptance criterion.
 
 ## Before merge
 

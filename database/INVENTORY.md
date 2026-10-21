@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **155 files**; one candidate is confirmed non-database application code, and **zero original entries remain for review/extraction**. The original checklist is closed; complete centralization remains unfinished while the additional native harness/test placement and technical composition work below is unresolved. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **155 files**; one candidate is confirmed non-database application code, and **zero original entries remain for review/extraction**. The original checklist is closed, and the separately identified native harness/test/benchmark placement groups below are complete. Technical composition boundaries and any further source-audit findings remain unfinished work, not permanent exceptions or a claim of complete centralization. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -170,7 +170,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 ## Additional storage candidates found after the baseline
 
-The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. The first nine additional storage/tooling sources were resolved by checking Redis operations, SQL constants and Content native harnesses outside the original call scan. Further closure scans found the separately pending native/test groups below. None alter baseline arithmetic.
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. The first nine additional storage/tooling sources were resolved by checking Redis operations, SQL constants and Content native harnesses outside the original call scan. Further closure scans found the separately tracked native/test groups below, now relocated. None alter baseline arithmetic.
 
 | Additional source / status | Database operations | Application responsibility to retain outside database |
 | --- | --- | --- |
@@ -185,9 +185,9 @@ Three Content native-only files discovered after the runtime audit are also relo
 
 ### Further native harness and storage-test placement — current status
 
-These concrete source-placement/discovery items remain even though the original156-row checklist is closed. All work is mechanical; no native suite,restore,provisioning or live service is run. Application policy/contract tests remain outside database where they do not implement database-specific fixtures. Historical qualification receipts retain original paths.
+These separately discovered source-placement/discovery groups are now complete; they are not part of the original 156-row arithmetic. All changes are mechanical. No native suite, restore, provisioning or live service was run. Application policy/contract tests remain outside database where they do not implement database-specific fixtures. Historical qualification receipts retain original paths. Native qualification and strict domain/composition boundaries remain unverified or unfinished as specified below.
 
-| Owner / current pending scope | Required placement or reference work | Current validation limit |
+| Owner / placement status | Completed placement or reference work | Current validation limit |
 | --- | --- | --- |
 | Completed Game Evidence | [Native suite and source metadata tests](tempo_game_evidence_database/tests/README.md),[runner](tempo_game_evidence_database/tooling/README.md) and qualifier root-owner fingerprints are centralized. | Three installed focused checks and sdist→wheel/resource checks pass; all native functions/SQL/guards unchanged. Native tooling remains source-checkout-only and unexecuted. |
 | Completed Intelligence | Ten native runner/test/fixture/support files,including actual-A/Analysis qualification,now live in [owner tests](tempo_intelligence_database/tests/README.md) and [tooling](tempo_intelligence_database/tooling/README.md); artifact/registry inputs follow them. | Guarded collection preserves141 default identities in original/source/wheel-consumer layouts,with no native fixture/body execution. Runtime Python bytes unchanged; full qualifier has a documented pre-existing guard-name limitation. |
@@ -241,7 +241,7 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 | Browser connection | 1 | 0 | 0 |
 | **Total baseline** | **155** | **1** | **0** |
 
-Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
+Additional sources above show their separate placement status. The initially relocated adapters also received the bounded application-responsibility audits below; remaining technical composition and backend boundary work stays explicit. Zero pending baseline rows alone does not establish that an adapter is application-free or a domain is independent.
 
 ### Application blocks removed from originally moved adapters
 
