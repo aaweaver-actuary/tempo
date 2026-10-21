@@ -1511,7 +1511,7 @@ def initialize() -> None:
             database.execute("ALTER TABLE discovery_admission_intents_revisioned RENAME TO discovery_admission_intents")
         from tempo_legacy_database.ddl.background_metrics_schema import install as install_background_metrics
         install_background_metrics(database)
-        from app.services.canonical_prefix_preview import initialize_sqlite_schema
+        from tempo_legacy_database.ddl.canonical_prefix_preview_schema import initialize_sqlite_schema
         initialize_sqlite_schema(database)
         # Materialize the default in existing rows before a later VACUUM. Older
         # SQLite builds can report a virtual NOT NULL default as NULL afterward.
@@ -1745,7 +1745,7 @@ def initialize() -> None:
     from tempo_legacy_database.ddl.study_migration import migrate_studies
 
     migrate_studies()
-    from app.queue_attempt_origins import initialize_sqlite_origins
+    from tempo_legacy_database.ddl.queue_attempt_origins import initialize_sqlite_origins
     with connection() as database:
         initialize_sqlite_origins(database)
         database.execute("CREATE TABLE IF NOT EXISTS deleted_cards(card_id TEXT PRIMARY KEY,deleted_at TEXT NOT NULL)")

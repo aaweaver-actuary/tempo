@@ -194,7 +194,7 @@ class PostgresConnection:
 
     def flush_background_metrics(self) -> None:
         if self._background_metric_deltas:
-            from app.services.background_metrics import write_metric_delta
+            from tempo_legacy_database.adapters.lifecycle.background_metrics import write_metric_delta
             for key, counts in sorted(self._background_metric_deltas.items()):
                 write_metric_delta(self, key, counts)
             self._background_metric_deltas.clear()
