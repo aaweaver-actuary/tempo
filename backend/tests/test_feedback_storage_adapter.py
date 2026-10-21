@@ -6,7 +6,8 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tempo_legacy_database.adapters.real_game_feedback import BATCH_SIZE, BorrowedFeedbackStore
+from tempo_legacy_database.adapters.real_game_feedback import BATCH_SIZE
+from app.services.real_game_feedback_store import BorrowedFeedbackStore
 
 
 @pytest.fixture

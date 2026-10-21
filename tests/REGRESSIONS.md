@@ -5154,3 +5154,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Authored card edit and archive persistence
 
 `backend/tests/test_card_edits_storage_boundary.py` owns eight fake boundaries for expected revision, legal move/scope checks, sorted locks, replacement/history/review/queue transitions, archive and callback order. Models/decorators/registrations preserve exact source AST; outer Games refresh wiring and native execution remain unverified.
+
+
+## Initial borrowed feedback application and storage separation
+
+`backend/tests/test_feedback_store_separation.py` owns nine semantic boundaries for borrowed facts/typed mapping, priority choices, lazy batches and queue/remediation callback order. Existing storage,policy and consumer checks preserve assertions; source snapshot and differential evidence do not qualify a backend wheel,native concurrency or Study isolation.

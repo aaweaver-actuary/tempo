@@ -267,7 +267,7 @@ def _personal_evidence_from_rows(
 
 def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -> dict[str, dict]:
     """Select one unstudied, non-excluded miss per card for a fixed bonus."""
-    from tempo_legacy_database.adapters.real_game_feedback import BorrowedFeedbackStore
+    from app.services.real_game_feedback_store import BorrowedFeedbackStore
     from .real_game_feedback_ports import utc_instant
     rows = [row for batch in BorrowedFeedbackStore(database).repertoire_miss_batches(repertoire_id)
             for row in batch]

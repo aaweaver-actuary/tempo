@@ -12,7 +12,7 @@
 | [opening_progression.py](opening_progression.py) | Existing completed-practice SQL predicate and legacy-child update, moved intact. |
 | [tactic_admission.py](tactic_admission.py) | Existing daily-introduction count and PostgreSQL transaction-scoped admission lock, moved intact. |
 | [postgres_store.py](postgres_store.py) | PostgreSQL connection and SQL compatibility seam for the cutover. |
-| [real_game_feedback.py](real_game_feedback.py) | Feedback persistence and legacy queue effects on a borrowed transaction. |
+| [real_game_feedback.py](real_game_feedback.py) | Fixed feedback facts/locks/priority writes and bounded cursor batches; [borrowed application composition](../../../backend/app/services/real_game_feedback_store.py) retains typed, queue and remediation choices. |
 | [real_game_miss_projection.py](real_game_miss_projection.py) | Persistence-only miss projections shared by explicit queue read adapters. |
 | [repertoire_lines.py](repertoire_lines.py) | Existing authored-line snapshot query; [Studies conflict computation](../../../backend/app/studies/README.md) lives outside database. |
 | [scheduling_review_store.py](scheduling_review_store.py) | Legacy adapter exports; Learning owns the shared implementation. |
@@ -86,3 +86,36 @@ Readiness facts use [runtime metadata](../schema/runtime-metadata/README.md) and
 [Legacy Learning review bridge storage](learning_bridge/README.md) owns complete review/card/attempt/scheduling/evidence/queue projection queries on original borrowed or owned scopes. Review command/recognition/grade/scheduling/deferred compatibility policy stays outside; the shared foreground projection operation retains one SQL home.
 
 [Portable authored/imported Studies storage](studies/portable/README.md) owns fixed content export/import/column-shape queries. Bundle validation, UUID/source-group remapping, replay/conflict and response policy remain outside. Plural Studies is distinct from ordinary daily-practice Study and excludes personal review history.
+
+## Existing borrowed feedback storage and composition
+
+**Current source; live schema and deployment unverified.** [real_game_feedback.py](real_game_feedback.py) owns the original complete parameter-bound miss/card/event projections, queue-priority/position writes, PostgreSQL card/day locks, SQLite projection preparation and single-cursor bounded batches. [real_game_feedback_store.py](../../../backend/app/services/real_game_feedback_store.py) retains the existing fourteen-method borrowed capability: typed DTO mapping, sorted priority planning and changed-position choices, introduction/review queue callbacks and accepted-remediation priority decisions. [real_game_feedback_adapter.py](../../../backend/app/services/real_game_feedback_adapter.py) retains receipt/connection/task composition; the public [feedback ports](../../../backend/app/services/real_game_feedback_ports.py) are unchanged.
+
+```mermaid
+flowchart TD
+  caller[Existing legacy command / introduction-priority composition] --> capability[Existing borrowed feedback capability]
+  capability --> facts[Root fixed facts / driver locks / bounded cursor batches]
+  capability --> typed[Application typed card / event mapping]
+  capability --> plan[Application sorted queue priority / changed-position choice]
+  plan --> write[Root fixed position update]
+  capability --> queue[Existing canonical introduction / review queue writers]
+  capability --> accepted[Existing current-remediation priority decision]
+  facts --> projection[Existing native / SQLite miss projection]
+  projection --> utc[Existing pure UTC contract helper / SQLite UDF]
+  queue --> tx[Original caller transaction and receipt authority]
+  write --> tx
+  accepted --> tx
+```
+
+| Existing storage | Read/written fields and purpose | Canonical source dictionary / ER |
+| --- | --- | --- |
+| `cards` | Card identity/state/introduction for typed facts; availability/deletion/integrity/current-membership filters remain in the existing projection | [Cards and deletion](../schema/study-queue-review-1/README.md), [membership/integrity](../schema/authored-content-2/README.md) |
+| `daily_queue` | Day/card/status burial read; changed slot position and existing gameplay-priority reason replacement | [Queue](../schema/study-queue-review-1/README.md) |
+| `current_repertoire_decision_events` | Existing current-view event/card/game/repertoire/ply/outcome/time projection; one game-event snapshot ordered by ply/id | [Underlying staged events](../schema/game-projections-3/README.md) and [current-view alias](../ddl/migrations/035_canonical_publication_freshness.sql) and [current view definition](../ddl/migrations/041_real_game_study_obligations.sql) |
+| `imported_games`, `repertoires`, `repertoire_cards`, integrity blocks, `reviews` | Existing non-excluded/current-membership and safe physical-card projection; exact study-review instant/source/invalidation filter | [Game identity](../schema/authored-content-1/README.md), [repertoires](../schema/authored-content-3/README.md), [membership/integrity](../schema/authored-content-2/README.md), [reviews](../schema/study-queue-review-2/README.md) |
+
+The linked dictionaries describe actual types, primary/composite keys and enforced FK cardinality. The current decision-events view is a projection, not a newly stored table or inferred constraint. No schema, fields, keys, encoding, relationship or grants change. The fixed store never imports application code or opens/commits/rolls back a transaction. Both event iterators retain one query/snapshot, lazy execution and `fetchmany(128)` order; application mapping preserves each yielded batch and early-close behavior. `BATCH_SIZE` remains at its original root import for compatibility.
+
+Existing legacy Study/queue/feedback/remediation coupling remains; it is not a completed domain or optional-producer isolation boundary. Separately, the unchanged `real_game_miss_projection.py` imports the pure `utc_instant` contract helper from the backend feedback ports to implement its SQLite timestamp UDF. That is an existing contract/helper callback edge, not application queue orchestration or proof of app-independent package closure.
+
+Focused checks: 55 existing/new feedback storage, policy, consumer-wiring and store-boundary cases pass, including actual in-memory SQLite filtering, batching and caller rollback. Captured-original/current comparison passes 58 paths: exact query/parameter/cursor events, UDF registration, DTO results/errors, lazy/partial batch iteration and callback order. No native PostgreSQL locks/races/rollback or live/service/full-system validation is claimed. The native fixture's store import changes only; it was not executed.
