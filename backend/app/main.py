@@ -32,6 +32,7 @@ from tempo_legacy_database.adapters.http_composition import (
     queue_projection as queue_projection_storage,
     repertoires as repertoire_http_storage,
     snapshots as snapshot_http_storage,
+    line_authoring as line_authoring_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
@@ -1454,9 +1455,7 @@ async def import_pgn(
     if not lines:
         raise HTTPException(422, "No playable lines were found")
     with read_connection() as settings_database:
-        saved_depth = settings_database.execute(
-            "SELECT initial_depth FROM settings WHERE id=1"
-        ).fetchone()[0]
+        saved_depth = line_authoring_storage.initial_depth(settings_database)
     depth = max(
         2, min(20, initial_depth if initial_depth is not None else saved_depth)
     )
@@ -1488,28 +1487,16 @@ async def import_pgn(
     derived_at = time.perf_counter()
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
-        if not db.in_transaction:
-            db.execute("BEGIN IMMEDIATE")
-        existing_repertoire = db.execute(
-            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
-            (file.filename, trained_color),
-        ).fetchone()
+        line_authoring_storage.begin_import_if_needed(db)
+        existing_repertoire = line_authoring_storage.matching_import_repertoire(db, file.filename, trained_color)
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
         validated_routes = ensure_batch_lines_in_scope(db, [(rid, line.starting_fen, line.moves) for line in lines]) if existing_repertoire else [{} for line in lines]
         admitted_routes = []
-        db.execute(
-            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"
-        )
-        db.execute(
-            "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
-            (rid, file.filename.rsplit(".", 1)[0], file.filename, now),
-        )
+        line_authoring_storage.clear_main_repertoires(db)
+        line_authoring_storage.save_import_repertoire(db, rid, file.filename.rsplit(".", 1)[0], file.filename, now)
         for line, validated_route in zip(lines, validated_routes):
             moves_json = json.dumps(line.moves)
-            existing_line = db.execute(
-                "SELECT id FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?",
-                (rid, line.starting_fen, moves_json),
-            ).fetchone()
+            existing_line = line_authoring_storage.matching_import_line(db, rid, line.starting_fen, moves_json)
             line_id = (
                 existing_line["id"]
                 if existing_line
@@ -1517,58 +1504,23 @@ async def import_pgn(
                     f"{rid}\0{card_id(line.starting_fen, line.moves)}".encode()
                 ).hexdigest()
             )
-            inserted = db.execute(
-                "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
-                (
-                    line_id,
-                    rid,
-                    file.filename,
-                    trained_color,
-                    line.starting_fen,
-                    json.dumps(line.moves),
-                    now,
-                ),
-            )
-            if inserted.rowcount:
+            inserted = line_authoring_storage.insert_import_line(db, line_id, rid, file.filename, trained_color, line.starting_fen, json.dumps(line.moves), now)
+            if inserted:
                 admitted_routes.append(validated_route)
-            db.execute(
-                """INSERT INTO repertoire_line_training_depths(
-                       line_id,learner_decision_count
-                   ) VALUES(?,?) ON CONFLICT(line_id) DO UPDATE SET
-                       learner_decision_count=excluded.learner_decision_count""",
-                (line_id, depth),
-            )
+            line_authoring_storage.set_import_line_depth(db, line_id, depth)
             for annotation in line.annotations:
-                db.execute(
-                    """INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at)
-                              VALUES(?,?,?,?,?,?) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET
-                              comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
-                    (
-                        rid,
-                        annotation.fen_key,
-                        annotation.comment,
-                        json.dumps(annotation.arrows),
-                        json.dumps(annotation.squares),
-                        now,
-                    ),
-                )
+                line_authoring_storage.save_import_annotation(db, rid, annotation.fen_key, annotation.comment, json.dumps(annotation.arrows), json.dumps(annotation.squares), now)
         for validated_route in admitted_routes:
             certify_admitted_route(db, rid, validated_route)
-        placeholders = ",".join("?" for _ in segment_ids)
         existing_segment_ids = {
             row["id"]
             for row in (
-                db.execute(
-                    f"SELECT id FROM cards WHERE id IN ({placeholders})",
-                    tuple(sorted(segment_ids)),
-                ).fetchall()
+                line_authoring_storage.existing_segment_rows(db, segment_ids)
                 if segment_ids
                 else []
             )
         }
-        deleted_segment_ids = {row[0] for row in db.execute(
-            f"SELECT card_id FROM deleted_cards WHERE card_id IN ({placeholders})", tuple(sorted(segment_ids)),
-        )} if segment_ids else set()
+        deleted_segment_ids = {row[0] for row in line_authoring_storage.deleted_segment_rows(db, segment_ids)} if segment_ids else set()
         eligible_segments = [segment for segment in imported_segments if segment.card_id not in deleted_segment_ids]
         created = len(segment_ids - existing_segment_ids - deleted_segment_ids)
         prefix_cards_created = len(prefix_segment_ids - existing_segment_ids - deleted_segment_ids)
@@ -2146,49 +2098,22 @@ def branch(request: BranchRequest,
     ).hexdigest()
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, request.repertoire_id):
             raise HTTPException(404, "Repertoire not found")
         validated_route = ensure_line_in_scope(db, request.repertoire_id, request.starting_fen, moves, remember=False)
         duplicate = (
-            db.execute("SELECT 1 FROM repertoire_lines WHERE id=?", (lid,)).fetchone()
+            line_authoring_storage.branch_line_presence(db, lid)
             is not None
         )
-        db.execute(
-            "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
-            (
-                lid,
-                request.repertoire_id,
-                request.name,
-                request.trained_color,
-                request.starting_fen,
-                json.dumps(moves),
-                now,
-            ),
-        )
-        depth = db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[
-            0
-        ]
-        db.execute(
-            """INSERT INTO repertoire_line_training_depths(
-                   line_id,learner_decision_count
-               ) VALUES(?,?) ON CONFLICT(line_id) DO UPDATE SET
-                   learner_decision_count=excluded.learner_decision_count""",
-            (lid, depth),
-        )
+        line_authoring_storage.insert_branch_line(db, lid, request.repertoire_id, request.name, request.trained_color, request.starting_fen, json.dumps(moves), now)
+        depth = line_authoring_storage.initial_depth(db)
+        line_authoring_storage.set_branch_line_depth(db, lid, depth)
         if request.source_gap_id:
             try:
                 gap_node_id, gap_move_uci = request.source_gap_id.split(":", 1)
             except ValueError as error:
                 raise HTTPException(422, "Invalid repertoire coverage gap") from error
-            gap = db.execute(
-                """SELECT c.node_id,c.move_uci,n.repertoire_id
-                   FROM repertoire_coverage_candidates c
-                   JOIN repertoire_coverage_nodes n ON n.id=c.node_id
-                   WHERE c.node_id=? AND c.move_uci=?""",
-                (gap_node_id, gap_move_uci),
-            ).fetchone()
+            gap = line_authoring_storage.source_gap(db, gap_node_id, gap_move_uci)
             if not gap or gap["repertoire_id"] != request.repertoire_id:
                 raise HTTPException(422, "Coverage gap does not belong to this repertoire")
             if not moves or moves[0] != gap_move_uci or len(moves) < 2:
@@ -2196,10 +2121,7 @@ def branch(request: BranchRequest,
                     422,
                     "A resolved gap must include the missing opponent move and your response",
                 )
-            db.execute(
-                "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
-                (gap_node_id, gap_move_uci),
-            )
+            line_authoring_storage.mark_source_gap_covered(db, gap_node_id, gap_move_uci)
         if not duplicate:
             certify_admitted_route(db, request.repertoire_id, validated_route)
         integrity = integrity_summary(db, request.repertoire_id)
@@ -2237,14 +2159,9 @@ def remove_branch(request: RemoveBranchRequest,
         raise HTTPException(422, "Branch contains an illegal move")
     position_key = " ".join(request.starting_fen.split()[:4])
     with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, request.repertoire_id):
             raise HTTPException(404, "Repertoire not found")
-        lines = db.execute(
-            "SELECT * FROM repertoire_lines WHERE repertoire_id=?",
-            (request.repertoire_id,),
-        ).fetchall()
+        lines = line_authoring_storage.removal_lines(db, request.repertoire_id)
         removed_lines = []
         for line in lines:
             if " ".join(line["start_fen"].split()[:4]) != position_key:
@@ -2266,7 +2183,7 @@ def remove_branch(request: RemoveBranchRequest,
                 "integrity": integrity,
             }
         for line in removed_lines:
-            db.execute("DELETE FROM repertoire_lines WHERE id=?", (line["id"],))
+            line_authoring_storage.remove_line(db, line["id"])
         deleted_cards = 0
         integrity = integrity_summary(db, request.repertoire_id)
     try:
