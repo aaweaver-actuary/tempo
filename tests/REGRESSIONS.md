@@ -5164,3 +5164,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Queue command storage and warm projection ordering
 
 `backend/tests/test_queue_command_database_split.py` owns four focused boundaries for complete query capture, warming compiler/completion order, advisory lock behavior and application/database direction. Existing queue issuance/ensure/bury cases preserve assertions; native locks and whole-system behavior remain unverified.
+
+
+## Card and repertoire deletion storage
+
+`backend/tests/test_card_deletion_storage_boundary.py` owns seven fake boundaries for cancellation recheck,dialect locks,purge/tombstone timing,shared learned ownership,occurrence-aware ancestry and stale rejection. The original transaction and callback authority stay with the caller; native deletion/rollback and domain isolation remain unverified.

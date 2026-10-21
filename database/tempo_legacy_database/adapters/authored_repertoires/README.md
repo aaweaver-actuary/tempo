@@ -56,3 +56,5 @@ The pasted-line extraction preserves all eight statement strings. Snapshot mappi
 [Card edit and archive persistence](card_edits/README.md) owns existing card/revision/membership/review/queue queries and locks. Application legal-move, identity, revision, replacement/archive, clock and callback decisions stay outside. Existing shared review/queue writes and Games refresh composition remain disclosed.
 
 [Discovery admission persistence](discovery_admission/README.md) holds existing recommendation, request, materialization and source/coverage/card/task operations. Existing validation, ranking, freshness, lease/admission/queue decisions and acceptance composition remain outside; complete queries and caller transaction authority remain unchanged.
+
+[Card and repertoire deletion persistence](card_deletion/README.md) owns original tombstone, cancellation/recheck, purge, retention and occurrence-aware graph queries. Existing cancellation JSON matching, shared/learned ownership, evidence aggregation, ancestor selection and clock/callback decisions stay outside. Cross-feature destructive coupling is retained and explicitly inventoried.
