@@ -12,6 +12,8 @@ from tempo_intelligence.analysis.engine import validate_result, comparison, comp
 from tempo_intelligence.analysis.read_work import (require_workspace, read_inputs, read_input, run_status, read_runs,
     read_receipt, read_report, read_finding, export_finding, read_remaining, read_engine_result, read_input_status)
 from tempo_intelligence_database.adapters.analysis_reads import AnalysisReads
+from tempo_intelligence.analysis.input_work import admit_manifest, admit_page, finalize_input
+from tempo_intelligence_database.adapters.analysis_inputs import AnalysisInputs
 
 
 class AnalysisStore:
@@ -22,32 +24,16 @@ class AnalysisStore:
     def _workspace(self, workspace):
         return require_workspace(workspace,lambda:self.workspace)
 
-    def manifest(self, value):
-        self._workspace(value.workspace_id)
-        payload = value.model_dump(mode="json")
-        fingerprint = payload_digest(value)
+    @contextmanager
+    def input_transaction(self):
         with self.owner.transaction() as db:
-            db.execute("INSERT INTO analysis_inputs(input_id,revision,payload,digest) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",(value.input_id,value.revision,Jsonb(payload),fingerprint))
-            row = db.execute("SELECT * FROM analysis_inputs WHERE input_id=%s AND revision=%s",(value.input_id,value.revision)).fetchone()
-            if row["digest"] != fingerprint:
-                raise DomainError("immutable_input_conflict")
-        return {"schema_version":1,"workspace_id":self.workspace,"input_id":value.input_id,"revision":value.revision,"state":row["state"],"digest":fingerprint}
+            yield AnalysisInputs(self,db)
+
+    def manifest(self, value):
+        return admit_manifest(value,lambda:self._workspace,lambda:self.workspace,self.input_transaction)
 
     def page(self, value):
-        payload = value.model_dump(mode="json")
-        fingerprint = payload_digest(value)
-        with self.owner.transaction() as db:
-            row = db.execute("SELECT * FROM analysis_inputs WHERE input_id=%s AND revision=%s FOR UPDATE",(value.input_id,value.revision)).fetchone()
-            if not row:
-                raise DomainError("analysis_input_not_found",404)
-            reference = next((p for p in row["payload"]["pages"] if p["page_id"]==value.page_id),None)
-            if not reference or reference["digest"] != fingerprint or reference["game_count"] != len(value.games):
-                raise DomainError("analysis_page_mismatch",422)
-            db.execute("INSERT INTO analysis_pages VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(value.input_id,value.revision,value.page_id,Jsonb(payload),fingerprint))
-            saved = db.execute("SELECT digest FROM analysis_pages WHERE input_id=%s AND revision=%s AND page_id=%s",(value.input_id,value.revision,value.page_id)).fetchone()
-            if saved["digest"] != fingerprint:
-                raise DomainError("immutable_page_conflict")
-        return {"schema_version":1,"workspace_id":self.workspace,"accepted":True,"page_id":value.page_id}
+        return admit_page(value,lambda:self.workspace,self.input_transaction)
 
     @contextmanager
     def read_transaction(self):
@@ -61,26 +47,7 @@ class AnalysisStore:
         return read_input(input_id,revision,self.read_transaction)
 
     def finalize(self,input_id,command):
-        if command.action!="finalize":
-            raise DomainError("invalid_input_action",422)
-        row,games = self._input(input_id,command.expected_revision)
-        if len(games)!=len(row["payload"]["game_ids"]):
-            raise DomainError("analysis_input_incomplete")
-        with self.owner.transaction() as db:
-            saved = self._receipt(db,command.command_id,{"input_id":input_id,**command.model_dump(mode="json")})
-            if saved:
-                return saved
-            locked = db.execute("SELECT * FROM analysis_inputs WHERE input_id=%s AND revision=%s FOR UPDATE",(input_id,command.expected_revision)).fetchone()
-            # Lock serializes page admission with finalization; pages already accepted are immutable.
-            pages = db.execute("SELECT page_id FROM analysis_pages WHERE input_id=%s AND revision=%s",(input_id,command.expected_revision)).fetchall()
-            if {p["page_id"] for p in pages} != {p["page_id"] for p in locked["payload"]["pages"]}:
-                raise DomainError("analysis_input_incomplete")
-            if sorted(g["game_id"] for g in games) != sorted(row["payload"]["game_ids"]):
-                raise DomainError("analysis_game_scope_mismatch",422)
-            db.execute("UPDATE analysis_inputs SET state='accepted' WHERE input_id=%s AND revision=%s",(input_id,command.expected_revision))
-            result={"schema_version":1,"workspace_id":self.workspace,"accepted":True,"state":"accepted","input_id":input_id,"revision":command.expected_revision}
-            self._save_receipt(db,command.command_id,{"input_id":input_id,**command.model_dump(mode="json")},result)
-        return result
+        return finalize_input(input_id,command,lambda:self._input,lambda:self.workspace,self.input_transaction)
 
     def _head(self,db,run_id,lock=False):
         row=db.execute("SELECT r.* FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) WHERE run_id=%s"+(" FOR UPDATE OF r" if lock else ""),(run_id,)).fetchone()

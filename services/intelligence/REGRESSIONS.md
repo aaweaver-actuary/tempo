@@ -547,3 +547,17 @@ Finding visibility guards remain root-owned. Export consults finding/report
 capabilities lazily and returns the original proposal object. Existing packaged
 schema and legacy ReportPage contract cases remain the unchanged wire proofs;
 native read/isolation/publication proofs were not executed by this extraction.
+
+## Analysis input admission/finalization composition
+
+`tests/test_analysis_inputs.py` owns manifest/page/finalize source boundaries with
+actual fixed operations, synthetic models and fake rows. It retains workspace
+admission and both model serializations before writes, immutable input/page
+guards, locked page-reference checks and post-commit response lookup. Finalize
+keeps the prior input read before its write, early invalid/incomplete rejection,
+receipt replay before input lock, page-set and game-scope guards, accepted-state
+write and receipt last. Its private receipt/writer lookup still precedes each
+command serialization, and reply digest mutation stays at the canonical writer
+call point. Existing public-schema and optional-metadata page-digest cases retain
+wire/hash identity. Native lock/rollback/concurrency proofs remain separate and
+were not run by this move.

@@ -709,3 +709,9 @@ Thirteen captured-original/current direct-function paths match expanded SQL/orde
 ## Running simplification proposals — 2026-10-21
 
 The existing `SIMPLIFICATION.md` now keeps one proposal-only list with separate table/schema and code sections. Concrete query repetition, similar-but-unproven concepts, compatibility consumers, expected benefits and behavior/ownership uncertainties are recorded. No proposal is implemented; existing file moves/responsibility splits continue. No schema deletion/consolidation, generic framework or new issue publication is authorized by the list.
+
+## Intelligence Analysis input admission application separation — 2026-10-21
+
+Existing manifest/page/finalize application sequences now live in `analysis/input_work.py`, with complete fixed SQL, immutable/page-set guards, locks and receipt authority root-owned. Exact expansion preserves all three workflows/eight query callpoints/seven SQL strings/model and hash ordering/public signatures;31 other methods, including receipt helpers, remain AST-identical. Prior read-then-write, replay-before-input-lock and receipt/writer binding-before-command-serialization remain unchanged.
+
+Thirteen selected current cases pass; the same eleven new boundaries also pass against saved original adapter. Fresh sdist-built wheel SHA256 `7026bd863da76f960e0cd414994ea2d43b80dcd734cf8cd1efed8b3aca2372f5` includes five matching files, with eight current sdist files. Artifact/import/static/link and four Analysis Mermaid blocks pass. Nine exact source hashes/proof/full commands/logs and the complete35-method audit are `/tmp/tempo-intelligence-analysis-input-evidence.json`; twelve mixed methods remain in run commands/receipts, derivation/publication and engine groups. No native locking/rollback/concurrency, installed consumer runtime/live/deployment/resource/full-system qualification or actual engine/provider/private-material/security/CI action occurred.
