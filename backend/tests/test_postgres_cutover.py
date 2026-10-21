@@ -290,7 +290,7 @@ def test_postgres_versioned_game_analysis_import_targets_preserve_published_view
         from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.pop(0)
-    migration = (Path(__file__).resolve().parents[1] / "migrations"
+    migration = (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
                  / "009_versioned_game_analysis.sql").read_text()
     assert COPY_TARGETS["game_move_analysis"] == "game_move_analysis_legacy"
     assert COPY_TARGETS["game_move_analysis_candidates"] == "game_move_analysis_candidates_legacy"
@@ -1385,7 +1385,7 @@ def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from tempo_legacy_database import connections as database
     from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
-    migration_directory = Path(__file__).resolve().parents[1] / "migrations"
+    migration_directory = Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
     newest_migration = max(int(path.name[:3]) for path in migration_directory.glob("[0-9][0-9][0-9]_*.sql"))
     assert POSTGRES_SCHEMA_VERSION == newest_migration
 
@@ -3347,7 +3347,7 @@ def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
 def test_postgres_cutover_inventory_includes_native_postgres_queries():
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-    from audit_storage_cutover import inspect_python_file
+    from database.tooling.audit_storage_cutover import inspect_python_file
 
     source = Path(__file__).resolve().parents[1] / "app" / "services" / "postgres_queue_refresh.py"
     report = inspect_python_file(source)

@@ -99,7 +99,7 @@ does not upgrade the live study instance.
 For a fresh historical SQLite import, keep the source snapshot read-only. Apply
 schema migrations, copy, and perform the unchanged exact source/destination
 verification **before** any destination normalization. Then, while destination
-writers remain stopped, run `scripts/repair_verified_game_tactics.py` with that
+writers remain stopped, run `database/tooling/repair_verified_game_tactics.py` with that
 same snapshot and destination DSN. The command repeats exact verification before
 its first repair and records the source file SHA-256 in `internal_migrations`;
 replaying the repair with those same bytes is inert. Preserve the exact pre-repair

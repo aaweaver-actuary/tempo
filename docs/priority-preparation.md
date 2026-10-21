@@ -79,7 +79,7 @@ measurement below includes input reads, staged rows, and publication.
 
 The raw observations are in
 [`priority-preparation-2026-10-01.json`](benchmarks/priority-preparation-2026-10-01.json).
-Run `node scripts/test-postgres-docker.mjs --mode priority-benchmark` from the
+Run `node database/tests/test-postgres-docker.mjs --mode priority-benchmark` from the
 repository root to repeat the measurement. The runner uses a disposable Docker
 PostgreSQL stack and stops test-owned background consumers during measurement.
 The frozen calculation time is 2026-10-01 00:00 UTC. Each fixture contains two

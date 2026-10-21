@@ -240,7 +240,7 @@ def test_postgres_game_position_import_keeps_legacy_view_until_generation_switch
         from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.pop(0)
-    migration = (Path(__file__).resolve().parents[1] / "migrations"
+    migration = (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
                  / "011_versioned_game_positions.sql").read_text()
     assert COPY_TARGETS["game_position_occurrences"] == "game_position_occurrences_legacy"
     assert "COALESCE(job.published_position_version,0)=0" in migration

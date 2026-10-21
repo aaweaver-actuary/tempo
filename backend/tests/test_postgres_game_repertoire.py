@@ -19,7 +19,7 @@ def test_postgres_game_repertoire_import_keeps_three_legacy_views_until_publicat
         from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.pop(0)
-    migration = (Path(__file__).resolve().parents[1] / "migrations"
+    migration = (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
                  / "012_versioned_game_repertoire.sql").read_text()
     for table in ("game_repertoire_matches", "repertoire_decision_events",
                   "repertoire_comparisons"):
