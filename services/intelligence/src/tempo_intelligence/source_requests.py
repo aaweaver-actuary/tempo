@@ -1,7 +1,8 @@
-"""Source request admission, inspection and cache decisions; no database access."""
+"""Source request policies and inspection through fixed owner read operations."""
 from datetime import timedelta
 from .errors import DomainError
 from .identity import digest, source_descriptor
+from .serialization import public
 
 
 def request_descriptors(request,configuration):
@@ -55,3 +56,32 @@ def failure_transition(cache,code,retryable,retry_at,auth_failed,cancelled,clock
     deadline=retry_at or (clock()+timedelta(seconds=60 if waiting else (5 if attempts<2 else 30)) if state in ("retry_wait","waiting_credentials") else None)
     can_retry=bool(retryable or waiting or retry_at or cancelled)
     return attempts,state,deadline,can_retry
+
+
+def inspect_request(request_id,workspace_id,configuration,transaction,retry,credential_status,clock):
+    """Project request state in one owner read snapshot, then refresh credentials.
+
+    transaction yields the fixed Intelligence request-inspection reader. Callbacks
+    retain their existing call points; this function has no driver or query API.
+    """
+    with transaction() as reader:
+        request=reader.request(request_id)
+        sources=[]
+        for binding in request["bindings"]:
+            cache=reader.cache(binding["cache_id"])
+            evidence=reader.evidence(cache["accepted_id"]) if cache["accepted_id"] else None
+            source=source_inspection(cache,evidence,request,retry,clock)
+            if cache["kind"] != "maia":
+                source["credential"]=reader.credential_status()
+                source["provider_origin"]=cache["descriptor"]["provider_origin"]
+                source["provider_configuration_status"]="configured" if source["provider_origin"]==configuration.provider_base_url else "unavailable"
+                control=reader.provider_control()
+                source["provider_retry_at"]=control["next_attempt_at"]
+            sources.append(source)
+        response=public({"schema_version":1,"workspace_id":workspace_id,"request_id":request_id,"request_revision":request["revision"],"snapshot":request["payload"]["snapshot"],"sources":sources})
+    if any(source["kind"] != "maia" for source in sources):
+        credential=credential_status()
+        for source in response["sources"]:
+            if source["kind"] != "maia":
+                source["credential"]=credential
+    return response

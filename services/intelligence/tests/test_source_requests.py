@@ -1,5 +1,6 @@
 """Pure request/cache policy and response serialization; synthetic facts only."""
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -187,3 +188,90 @@ def test_failure_transition_retains_attempt_budget_deadlines_and_cancellation(at
     count,state,delay,can_retry=expected
     assert actual==(count,state,now+timedelta(seconds=delay) if delay is not None else None,can_retry)
     assert calls==(['clock'] if delay is not None and not provider_delay else [])
+
+
+@pytest.mark.parametrize('with_provider',[False,True])
+def test_complete_inspection_keeps_one_snapshot_clock_order_and_post_read_credential_refresh(monkeypatch,with_provider):
+    from tempo_intelligence import source_requests
+    from tempo_intelligence_database.adapters import store as store_module
+    now=datetime(2026,10,21,tzinfo=timezone.utc)
+    events=[]
+    maia={'kind':'maia','cache_id':'maia-cache','generation':2,'execution_generation':3,
+        'state':'retry_wait','accepted_id':'accepted','error_code':None,'attempts':1,
+        'retryable':True,'next_attempt_at':now}
+    provider={**maia,'kind':'lichess','cache_id':'provider-cache','accepted_id':None,
+        'descriptor':{'provider_origin':'old-origin'}}
+    caches={'maia-cache':maia,'provider-cache':provider}
+    bindings=[{'cache_id':'maia-cache'}]+([{'cache_id':'provider-cache'}] if with_provider else [])
+    class Database:
+        def execute(self,_query,parameters=()):
+            # Exercise the concrete projection's ID binding without parsing SQL.
+            if not parameters:
+                events.append(('provider-control',None))
+                value={'next_attempt_at':now}
+            elif parameters[0] in caches:
+                events.append(('cache',parameters[0]))
+                value=caches[parameters[0]]
+            else:
+                assert parameters==('accepted',)
+                events.append(('evidence',parameters[0]))
+                value={'accepted_at':now-timedelta(seconds=1)}
+            return SimpleNamespace(fetchone=lambda:value)
+    database=Database()
+    @contextmanager
+    def transaction(**options):
+        assert options=={'read_only':True}
+        events.append(('enter',None))
+        yield database
+        events.append(('exit',None))
+    def head(connection,identity):
+        assert connection is database
+        events.append(('request',identity))
+        return {'revision':4,'bindings':bindings,'payload':{'max_age_seconds':10,'snapshot':{'source':'synthetic'}}}
+    def borrowed_credentials(connection):
+        assert connection is database
+        events.append(('borrowed-credential',None))
+        return {'generation':1,'status':'registered'}
+    def clock():
+        events.append(('clock',None))
+        return now
+    def retry(cache,when):
+        assert when is now
+        events.append(('retry',cache['cache_id']))
+        return cache['kind']=='maia'
+    def credentials():
+        events.append(('refresh-credential',None))
+        return {'generation':2,'status':'credential_missing'}
+    def serialize(value):
+        events.append(('serialize',None))
+        return public(value)
+    monkeypatch.setattr(source_requests,'public',serialize)
+    monkeypatch.setattr(store_module,'utcnow',clock)
+    owner=store_module.Store.__new__(store_module.Store)
+    owner.workspace_id='fixture'
+    owner.configuration=SimpleNamespace(provider_base_url='current-origin')
+    owner.transaction=transaction
+    owner._head=head
+    owner._credential_status=borrowed_credentials
+    owner._retry_eligible=retry
+    owner.credential_status=credentials
+    response=owner.inspect('request')
+    expected=[('enter',None),('request','request'),('cache','maia-cache'),('evidence','accepted'),
+        ('clock',None),('clock',None),('retry','maia-cache')]
+    if with_provider:
+        expected += [('cache','provider-cache'),('clock',None),('retry','provider-cache'),
+            ('borrowed-credential',None),('provider-control',None)]
+    expected += [('serialize',None),('exit',None)]
+    if with_provider:expected.append(('refresh-credential',None))
+    assert events==expected
+    assert response['workspace_id']=='fixture' and response['request_revision']==4
+    assert response['snapshot']=={'source':'synthetic'}
+    assert response['sources'][0]['freshness']=='current' and response['sources'][0]['retry_eligible'] is True
+    assert response['sources'][0]['retry_at']=='2026-10-21T00:00:00+00:00'
+    assert 'credential' not in response['sources'][0]
+    if with_provider:
+        item=response['sources'][1]
+        assert item['freshness']=='absent' and item['retry_eligible'] is False
+        assert item['provider_origin']=='old-origin' and item['provider_configuration_status']=='unavailable'
+        assert item['provider_retry_at']=='2026-10-21T00:00:00+00:00'
+        assert item['credential']=={'generation':2,'status':'credential_missing'}

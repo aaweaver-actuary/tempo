@@ -1,5 +1,18 @@
 # Intelligence regression ownership
 
+## Complete request inspection workflow
+
+`test_complete_inspection_keeps_one_snapshot_clock_order_and_post_read_credential_refresh`
+has Maia-only and mixed-provider cases. Both execute the actual Store composition
+and `RequestInspection` projection with a fake driver, checking read-only context
+ownership, bound cache/evidence IDs, source read/clock/retry order, provider-origin
+availability, serialization before context exit and final credential refresh
+afterward. The Maia-only case never invokes provider/credential capabilities.
+The complete application workflow lives in `source_requests.inspect_request`;
+SQL and the initial borrowed transaction remain in the root database owner.
+Existing native inspection/freshness/provider-origin proofs remain unexecuted
+here; no private credential, live database or service is used by these cases.
+
 ## Source admission, inspection and failure decisions
 
 The regular `tests/test_source_requests.py` suite also owns workspace rejection

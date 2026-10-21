@@ -15,8 +15,9 @@ from tempo_intelligence.maia import build_maia_job, validate_maia_result
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
 from tempo_intelligence.serialization import public
-from tempo_intelligence.source_requests import (admit_request, cache_identity, failure_transition,
-    request_descriptors, request_snapshot, retry_eligible, source_inspection, validate_request_revision)
+from tempo_intelligence.source_requests import (admit_request, cache_identity, failure_transition, inspect_request,
+    request_descriptors, request_snapshot, retry_eligible, validate_request_revision)
+from tempo_intelligence_database.adapters.request_inspection import RequestInspection
 
 
 def utcnow():
@@ -175,28 +176,14 @@ class Store:
     def _new_generation(self,database,cache):
         database.execute("UPDATE caches SET generation=generation+1,state='queued',attempts=0,retryable=true,error_code=NULL,next_attempt_at=NULL,lease_token=NULL,leased_until=NULL,updated_at=now() WHERE cache_id=%s",(cache["cache_id"],))
 
-    def inspect(self,request_id):
+    @contextmanager
+    def inspection_transaction(self):
         with self.transaction(read_only=True) as database:
-            request=self._head(database,request_id)
-            sources=[]
-            for binding in request["bindings"]:
-                cache=database.execute("SELECT * FROM caches WHERE cache_id=%s",(binding["cache_id"],)).fetchone()
-                evidence=database.execute("SELECT accepted_at FROM evidence WHERE evidence_id=%s",(cache["accepted_id"],)).fetchone() if cache["accepted_id"] else None
-                source=source_inspection(cache,evidence,request,self._retry_eligible,utcnow)
-                if cache["kind"] != "maia":
-                    source["credential"]=self._credential_status(database)
-                    source["provider_origin"]=cache["descriptor"]["provider_origin"]
-                    source["provider_configuration_status"]="configured" if source["provider_origin"]==self.configuration.provider_base_url else "unavailable"
-                    control=database.execute("SELECT next_attempt_at FROM provider_control WHERE id=1").fetchone()
-                    source["provider_retry_at"]=control["next_attempt_at"]
-                sources.append(source)
-            response=public({"schema_version":1,"workspace_id":self.workspace_id,"request_id":request_id,"request_revision":request["revision"],"snapshot":request["payload"]["snapshot"],"sources":sources})
-        if any(source["kind"] != "maia" for source in sources):
-            credential=self.credential_status()
-            for source in response["sources"]:
-                if source["kind"] != "maia":
-                    source["credential"]=credential
-        return response
+            yield RequestInspection(self,database)
+
+    def inspect(self,request_id):
+        return inspect_request(request_id,self.workspace_id,self.configuration,self.inspection_transaction,
+            self._retry_eligible,self.credential_status,utcnow)
 
     def evidence(self,evidence_id):
         with self.transaction(read_only=True) as database:

@@ -385,3 +385,52 @@ provider-specific inspection/final request envelopes, command orchestration and
 the documented Analysis workflows still require responsibility extraction. They
 remain explicit unfinished work. This focused evidence is not installed-consumer,
 native, live, security, full-system, CI, deployment or merge qualification.
+
+## Complete request-inspection workflow — October 21, 2026
+
+`Store.inspect` is now composition for the complete existing application
+`source_requests.inspect_request` workflow. A concrete root
+`RequestInspection` projection retains the three fixed cache/evidence/provider
+SELECTs and delegates the existing request-head and credential-row reads. Store's
+new small context wrapper lends its existing `read_only=True` transaction; the
+projection opens/commits nothing. Application code receives fixed semantic reads,
+retry/status/clock capabilities and facts, with no query/execute port.
+
+**39 selected source-root cases passed**, reusing the previous 37 cases and
+adding only Maia-only and mixed-provider inspection cases. Those two cases were
+then strengthened to use the actual projection/context wrapper with a fake driver
+and both passed again; they are repeated identities, not 41 distinct cases. They
+check read-only context ownership, cache/evidence parameter binding, read/clock/
+retry order, unavailable retained provider origin, serialization before snapshot
+exit and final credential refresh afterward. The final status callback retains
+its existing independent read/I/O lifecycle. No real private material or database
+is used. The upstream Starlette/AnyIO deprecation remains unsuppressed.
+
+One-time source comparison matches the complete application statement sequence
+to the original method after fixed-read/name mapping; all other existing Store
+methods and earlier policy helpers remain AST-identical. The complete SQL
+inventory is unchanged, including the three exact moved SELECT strings. Tests
+exercise the actual bound IDs and context wiring without parsing or pinning SQL.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_requests.py services/intelligence/tests/test_api.py::test_caller_reads_and_bounded_refresh_retry_have_explicit_revision_commands -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_requests.py::test_complete_inspection_keeps_one_snapshot_clock_order_and_post_read_credential_refresh -q --rootdir=. -o pythonpath= --import-mode=importlib
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-inspect-workflow-build
+```
+
+The source distribution rebuilt its wheel. Current workflow, Store and projection
+bytes and the strengthened regular tests are included; no cache files ship. The
+updated owner diagram parses with existing jsdom/Mermaid, and owner file links
+resolve. Logs are `/tmp/tempo-intelligence-inspect-{workflow,projection}-tests.log`;
+original Store/policy snapshots are
+`/tmp/tempo-intelligence-inspect-workflow-before.py` and
+`/tmp/tempo-intelligence-inspect-policy-before.py`. Artifacts remain in the build
+directory for integration; the shared review environment remains read only.
+
+Remaining mixed root policy is [explicitly inventoried](../../database/tempo_intelligence_database/adapters/README.md):
+request/snapshot replay and cache refresh, model/Maia generation and admission,
+command orchestration, credential/provider decisions, the evidence envelope and
+the previously listed Analysis workflows. Inspection is no longer an unfinished
+mixed block. Database startup/binding/lease/replay atomic guards and fixed writes
+retain their authority. No installed-consumer, native/live, security, full-system,
+CI, deployment or merge qualification is claimed.
