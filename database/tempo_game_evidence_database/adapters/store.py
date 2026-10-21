@@ -7,7 +7,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from tempo_game_evidence.comparison import compare_game
-from tempo_game_evidence.snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage, validated_snapshot_cache
+from tempo_game_evidence.snapshot import ComparisonSnapshot, prepare_snapshot, snapshot_changed_positions, snapshot_storage, validated_snapshot_cache
 from tempo_game_evidence.source import INDEX_VERSION, identity, prepare_import_identity, prepare_import_document, replay_positions, utc_now
 from tempo_game_evidence.reporting import build_comparison_report, comparison_report_response, import_status_response
 
@@ -90,10 +90,7 @@ class EvidenceStore:
             ("compare:"+game_id, workspace, game_id))
 
     def load_snapshot(self, snapshot):
-        snapshot = parse_snapshot(snapshot)
-        document = snapshot.model_dump(mode="json")
-        digest = identity(document)
-        workspace = snapshot.publication.workspace_id
+        snapshot, document, digest, workspace = prepare_snapshot(snapshot)
         with self.connect() as database:
             database.execute("INSERT INTO workspace_inputs(workspace_id) VALUES(%s) ON CONFLICT DO NOTHING", (workspace,))
             current = database.execute("SELECT * FROM workspace_inputs WHERE workspace_id=%s FOR UPDATE", (workspace,)).fetchone()
@@ -104,16 +101,7 @@ class EvidenceStore:
             if existing and existing["digest"] != digest:
                 raise ValueError("immutable_snapshot_revision_conflict")
             previous = database.execute("SELECT document FROM snapshots WHERE digest=%s", (current["snapshot_digest"],)).fetchone()
-            if previous and snapshot.schema_version == 2:
-                old = parse_snapshot(previous['document'])
-                if old.snapshot_id == snapshot.snapshot_id and old.revision >= snapshot.revision:
-                    raise ValueError('stale_snapshot_revision')
-                if old.publication.publication_id == snapshot.publication.publication_id and old.publication.publication_generation > snapshot.publication.publication_generation:
-                    raise ValueError('stale_snapshot_generation')
-            affected = set(current["changed_positions"])
-            for item in [snapshot, parse_snapshot(previous["document"]) if previous else None]:
-                if item:
-                    affected.update(key for _, keys, _ in item.compiled_routes() for key in keys)
+            affected = snapshot_changed_positions(snapshot, previous, current)
             database.execute("INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                              (digest,workspace,snapshot.snapshot_id,snapshot.revision,Jsonb(snapshot_storage(document))))
             database.execute("UPDATE workspace_inputs SET epoch=epoch+1,snapshot_digest=%s,changed_positions=%s WHERE workspace_id=%s",

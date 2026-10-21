@@ -629,10 +629,11 @@ def test_nonintersecting_snapshot_refresh_converges_without_replay(state,monkeyp
     drain(store)
     assert store.report(workspace,game)['readiness']=='ready'
     import tempo_game_evidence_database.adapters.store as storage
+    from tempo_game_evidence import source as source_owner
     def forbidden(*args,**kwargs):
         raise AssertionError('verified_index_replayed')
     monkeypatch.setattr(storage,'replay_positions',forbidden)
-    monkeypatch.setattr(storage,'normalize_pgn',forbidden)
+    monkeypatch.setattr(source_owner,'normalize_pgn',forbidden)
     value.update(revision=2,routes=[])
     store.load_snapshot(value)
     drain(store)
