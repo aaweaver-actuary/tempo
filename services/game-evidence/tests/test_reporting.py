@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from tempo_game_evidence.reporting import build_comparison_report
+from tempo_game_evidence import comparison, reconciliation
+from tempo_game_evidence.source import INDEX_VERSION
 from tempo_game_evidence_database.adapters import store as storage
 
 
@@ -70,10 +72,10 @@ def test_import_status_shapes_or_raises_only_after_read_scope_closes(monkeypatch
 
 @pytest.mark.parametrize('current,exists', [(True, False), (True, True), (False, False)])
 def test_report_construction_stays_after_callback_and_current_locked_read(monkeypatch, current, exists):
-    events, reports, writes = [], [], []
+    events, reports, writes, json_values = [], [], [], []
     game, findings = {'game_id': 'game', 'moves': []}, []
     row = {'document': game, 'revision': 2, 'input_digest': 'input', 'positions': ['position'],
-           'index_receipt': {'input_digest': 'input', 'version': storage.INDEX_VERSION,
+           'index_receipt': {'input_digest': 'input', 'version': INDEX_VERSION,
                              'position_count': 1, 'complete': True}}
     inputs = {'epoch': 3, 'snapshot_digest': 'digest'}
     snapshot = SimpleNamespace(snapshot_id='snapshot', revision=4, serving_current=lambda: True,
@@ -96,11 +98,11 @@ def test_report_construction_stays_after_callback_and_current_locked_read(monkey
     store = storage.EvidenceStore('unused')
     monkeypatch.setattr(store, 'connect', lambda: next(connections))
     monkeypatch.setattr(store, 'comparison_snapshot', lambda *_: events.append('snapshot') or snapshot)
-    monkeypatch.setattr(storage, 'compare_game', lambda *_: events.append('compare') or findings)
+    monkeypatch.setattr(comparison, 'compare_game', lambda *_: events.append('compare') or findings)
     monkeypatch.setattr(store, '_current', lambda *_: events.append('fence') or current)
-    monkeypatch.setattr(storage, 'Jsonb', lambda value: value)
-    monkeypatch.setattr(storage, 'request_reconciliation', lambda *_: events.append('reconcile'))
-    monkeypatch.setattr(storage, 'finalize', lambda *_, **__: events.append('finalize'))
+    monkeypatch.setattr(storage, 'Jsonb', lambda value: json_values.append(value) or value)
+    monkeypatch.setattr(reconciliation, 'request_reconciliation', lambda *_: events.append('reconcile'))
+    monkeypatch.setattr(reconciliation, 'finalize', lambda *_, **__: events.append('finalize'))
 
     def construct(*arguments):
         assert events[-1] == 'write.4'
@@ -118,6 +120,10 @@ def test_report_construction_stays_after_callback_and_current_locked_read(monkey
         assert events[13:] == ['write.4', 'report', 'write.5', 'write.6', 'reconcile', 'finalize', 'write.7', 'write.exit']
         assert writes[4][3] is reports[0]
         assert reports[0]['comparison_revision'] == 7
+        assert json_values[0] is reports[0] and json_values[1] is row['positions']
+        assert json_values[2] == {'input_digest': 'input', 'version': INDEX_VERSION,
+                                  'position_count': 1, 'complete': True}
     else:
         assert not reports
+        assert not json_values
         assert events[13:] == (['write.4', 'write.5', 'write.exit'] if current else ['write.4', 'write.exit'])

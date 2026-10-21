@@ -6,14 +6,14 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from tempo_game_evidence.comparison import compare_game
+from tempo_game_evidence.comparison import comparison_index_receipt, prepare_game_comparison
 from tempo_game_evidence.snapshot import ComparisonSnapshot, prepare_snapshot, snapshot_changed_positions, snapshot_storage, validated_snapshot_cache
-from tempo_game_evidence.source import INDEX_VERSION, identity, prepare_import_identity, prepare_import_document, replay_positions, utc_now
-from tempo_game_evidence.reporting import build_comparison_report, comparison_report_response, import_status_response
+from tempo_game_evidence.source import prepare_import_identity, prepare_import_document, utc_now
+from tempo_game_evidence.reporting import build_comparison_report, comparison_report_response, import_status_response, validate_game_page_limit
 
 
 from tempo_game_evidence.payloads import make_delivery
-from tempo_game_evidence.reconciliation import finalize, request_reconciliation
+from tempo_game_evidence.reconciliation import reconcile_comparison
 from tempo_game_evidence.worker import process_comparison_job
 
 
@@ -171,17 +171,7 @@ class EvidenceStore:
             row = database.execute("SELECT * FROM games WHERE game_id=%s", (job["game_id"],)).fetchone()
             inputs = database.execute("SELECT * FROM workspace_inputs WHERE workspace_id=%s", (job["workspace_id"],)).fetchone()
             snapshot_row = database.execute("SELECT document FROM snapshots WHERE digest=%s", (inputs["snapshot_digest"],)).fetchone()
-        game = row["document"]
-        receipt = row["index_receipt"]
-        reusable = (receipt and receipt == {"input_digest": row["input_digest"], "version": INDEX_VERSION,
-                    "position_count": len(game.get("moves", []))+1, "complete": True}
-                    and row["positions"] is not None and len(row["positions"]) == receipt["position_count"])
-        positions = row["positions"] if reusable else replay_positions(game) if "source_error" not in game else []
-        snapshot = self.comparison_snapshot(inputs["snapshot_digest"], snapshot_row["document"]) if snapshot_row else None
-        findings = compare_game(game, positions, snapshot) if snapshot and positions else []
-        token = identity(row["revision"],row["input_digest"],inputs["epoch"],inputs["snapshot_digest"],INDEX_VERSION)
-        if before_publish:
-            before_publish()
+        game, positions, snapshot, findings, token = prepare_game_comparison(row, inputs, snapshot_row, self, before_publish)
         # Lock ordering: workspace -> game -> job -> outbox. Imports take game -> job.
         with self.connect() as database:
             current_inputs = database.execute("SELECT epoch FROM workspace_inputs WHERE workspace_id=%s FOR SHARE", (job["workspace_id"],)).fetchone()
@@ -197,10 +187,8 @@ class EvidenceStore:
                 report = build_comparison_report(game, revision, snapshot, inputs["snapshot_digest"], findings)
                 database.execute("INSERT INTO comparisons VALUES(%s,%s,%s,%s)", (game["game_id"],revision,token,Jsonb(report)))
                 database.execute("UPDATE games SET report_revision=%s,positions=%s,index_receipt=%s WHERE game_id=%s",
-                                 (revision,Jsonb(positions),Jsonb({"input_digest": row["input_digest"], "version": INDEX_VERSION,
-                                  "position_count": len(positions), "complete": "source_error" not in game}),game["game_id"]))
-                request_reconciliation(database, job["workspace_id"], game["game_id"])
-                finalize(database, game["game_id"], snapshot_loader=self.comparison_snapshot)
+                                 (revision,Jsonb(positions),Jsonb(comparison_index_receipt(row, game, positions)),game["game_id"]))
+                reconcile_comparison(database, job, game, self)
             database.execute("UPDATE jobs SET published=requested,lease_token=NULL,leased_until=NULL,error=NULL WHERE job_key=%s", (job["job_key"],))
 
     def report(self, workspace, game_id):
@@ -216,8 +204,7 @@ class EvidenceStore:
         return comparison_report_response(row, delivery)
 
     def list_games(self, workspace, after="", limit=64):
-        if not 1 <= limit <= 100:
-            raise ValueError("page_limit_out_of_range")
+        validate_game_page_limit(limit)
         with self.connect() as database:
             return database.execute("SELECT game_id,revision,report_revision,document->>'source_error' AS source_error FROM games WHERE workspace_id=%s AND game_id>%s ORDER BY game_id LIMIT %s",
                                     (workspace,after,limit)).fetchall()

@@ -1,4 +1,9 @@
-"""Comparison/import response shaping over captured facts; no I/O."""
+"""Game read input and comparison/import response shaping; no I/O."""
+
+
+def validate_game_page_limit(limit):
+    if not 1 <= limit <= 100:
+        raise ValueError("page_limit_out_of_range")
 
 
 def comparison_report_response(row, delivery):
