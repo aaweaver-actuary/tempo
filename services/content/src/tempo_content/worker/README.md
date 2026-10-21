@@ -12,6 +12,8 @@ flowchart LR
   application -->|claim, manifest, slice, collection, fenced failure| storage[Existing Content storage methods]
   storage -->|route facts and operations| routes[Route phase application]
   routes --> segment[Pure bounded route segment]
+  storage -->|exercise facts and operations| exercises[Exercise phase application]
+  exercises --> policy[Existing exercise_continuation]
   storage --> database[Content-owned PostgreSQL]
 ```
 
@@ -45,7 +47,7 @@ cursor advancement remain in the original adapter sections.
 `tests/test_content_preparation.py` checks full-versus-sliced route inventory,
 completed-cache reuse and the computation/hook/transaction order. Pure
 [publication preparation](../publication/README.md) is also outside the adapter.
-Exercise phase and I/O sequencing, source staging and publication
+Source staging and publication
 read/reservation/write coordination remain mixed extraction work. These bounded
 moves do not claim those methods are application-free or make them a permanent
 exception.
@@ -130,3 +132,29 @@ Existing selected preparation/domain checks retain traversal, cache reuse and
 hook/transaction order. One-time source comparison verifies the full moved body
 and atomic blocks. Native PostgreSQL contracts remain unverified for this move;
 the previously denied loopback cases were not retried.
+
+## Exercise phase
+
+[`reconcile_exercise`](exercises.py) owns the full existing exercise phase:
+exhaustion/transition, payload read and model validation, dependent policy and
+repertoire reads, existing bounded `exercise_continuation`, the original hooks
+and continuation/completion response. The overview above shows its own-domain
+policy dependency and supplied storage operations.
+
+The [root adapter](../../../../../database/tempo_content_database/adapters/store.py)
+composes existing `_transition`, `_item` and `_hook` with `_commit_exercise`.
+That operation retains the original complete fenced transaction: continuation
+checkpoint/advance, immutable identity/predecessor checks, version digest/read,
+identity/version/generation inserts, cursor advance and after-write hooks. Its
+boolean outcome supplies the original pending-validation versus validated fact;
+the application returns the original record. All six fixed SQL operations,
+parameters, identity rules and query/transaction/hook order are unchanged.
+
+`tests/test_exercise_application.py` adds only four missing moved-boundary cases:
+exhaustion, payload parsing before dependent reads, and continuation/completion
+order/result mapping (including a non-`None` empty checkpoint). Existing selected
+policy/domain checks retain learner-turn, 16-ply JSON checkpoint/resume and
+exercise-legality proof. One-time source comparison covers the full moved body
+and original atomic section. Native identity, predecessor, fence and rollback
+contracts remain retained/unverified for this move; the previously denied
+loopback cases were not retried.
