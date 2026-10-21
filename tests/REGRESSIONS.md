@@ -5047,3 +5047,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Legacy projection database extraction
 
 `backend/tests/test_legacy_projection_database_split.py` owns the three selected application SQL boundaries and SQLite/PostgreSQL tactical filter binding/query order. Existing comparison foreground-concurrency, transposition/publication, fake PostgreSQL paging/cache-scope and tactical/read-budget cases retain behavior assertions. These checks do not establish native PostgreSQL or whole-backend isolation.
+
+
+## Legacy queue and lifecycle database extraction
+
+`backend/tests/test_legacy_lifecycle_database_split.py` guards the selected queue-origin/refresh/metric compositions against direct DB operations. Existing retained-origin/issuance, SQLite installation rollback, coalescing/clock/publication/transaction and fake PostgreSQL buffered metric flush cases retain their assertions. Complete initializer and writer source equivalence is recorded as one-time move evidence, not a generated runtime or universal test gate.

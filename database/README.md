@@ -1,6 +1,6 @@
 # Database files and source schema
 
-This tree is the required single home for database operations. PR334 relocates dedicated files. Follow-up batches have extracted or relocated **53 of 156 baseline candidates**; one candidate is confirmed non-database application code. **Complete centralization is unfinished: 102 baseline candidates remain for review/extraction**, along with identified application computation still inside some database adapters. The [inventory](INVENTORY.md) tracks the work. Application/domain logic belongs outside this tree, connected through explicit interfaces and outer composition.
+This tree is the required single home for database operations. PR334 relocates dedicated files. Follow-up batches have extracted or relocated **56 of 156 baseline candidates**; one candidate is confirmed non-database application code. **Complete centralization is unfinished: 99 baseline candidates remain for review/extraction**, along with identified application computation still inside some database adapters. The [inventory](INVENTORY.md) tracks the work. Application/domain logic belongs outside this tree, connected through explicit interfaces and outer composition.
 
 Physical colocation does not grant a component access to another owner's data and does not create a shared runtime module. Each owner retains its own package artifact, migration authority and transaction boundaries.
 

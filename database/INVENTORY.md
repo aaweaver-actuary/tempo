@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **53 files**; one candidate is confirmed non-database application code, and **102 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **56 files**; one candidate is confirmed non-database application code, and **99 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -38,7 +38,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/prefix_evaluation_api.py](../backend/app/prefix_evaluation_api.py)
 - [backend/app/prefix_split_commands.py](../backend/app/prefix_split_commands.py)
 - [backend/app/prefix_transition_api.py](../backend/app/prefix_transition_api.py)
-- [backend/app/queue_attempt_origins.py](../backend/app/queue_attempt_origins.py)
+- Completed queue/lifecycle storage split: [backend/app/queue_attempt_origins.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - [backend/app/queue_commands.py](../backend/app/queue_commands.py)
 - [backend/app/repertoire_commands.py](../backend/app/repertoire_commands.py)
 - Completed controls SQL split: [backend/app/repertoire_settings.py](tempo_legacy_database/adapters/controls/README.md).
@@ -46,7 +46,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/analysis_paste.py](../backend/app/services/analysis_paste.py)
 - [backend/app/services/background_activity.py](../backend/app/services/background_activity.py)
 - [backend/app/services/background_diagnostics.py](../backend/app/services/background_diagnostics.py)
-- [backend/app/services/background_metrics.py](../backend/app/services/background_metrics.py)
+- Completed queue/lifecycle storage split: [backend/app/services/background_metrics.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - [backend/app/services/canonical_prefix.py](../backend/app/services/canonical_prefix.py)
 - [backend/app/services/canonical_prefix_preview.py](../backend/app/services/canonical_prefix_preview.py)
 - [backend/app/services/canonical_scope_freshness.py](../backend/app/services/canonical_scope_freshness.py)
@@ -99,7 +99,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/queue_admission_adapter.py](../backend/app/services/queue_admission_adapter.py)
 - [backend/app/services/queue_application.py](../backend/app/services/queue_application.py)
 - [backend/app/services/redis_admission_gate.py](../backend/app/services/redis_admission_gate.py)
-- [backend/app/services/refresh_requests.py](../backend/app/services/refresh_requests.py)
+- Completed queue/lifecycle storage split: [backend/app/services/refresh_requests.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - Completed legacy read/publication projection split: [backend/app/services/repertoire_comparison.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed authored-Studies policy / database line-projection split: [backend/app/services/repertoire_conflicts.py](../backend/app/studies/README.md).
 - [backend/app/services/repertoire_coverage.py](../backend/app/services/repertoire_coverage.py)

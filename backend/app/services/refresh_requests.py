@@ -2,6 +2,9 @@
 from datetime import datetime, timedelta, timezone
 import json
 
+from tempo_legacy_database.adapters.lifecycle import refresh_requests as storage
+from tempo_legacy_database.adapters.lifecycle.refresh_requests import record_publication
+
 
 def _now():
     return datetime.now(timezone.utc)
@@ -19,18 +22,7 @@ def input_version(database, kind, repertoire_id):
     )
     if source_version is None:
         raise KeyError('Repertoire source is unavailable; restore it before refreshing')
-    scope = database.execute(
-        'SELECT scope_source_revision,canonical_prefix_revision,canonical_prefix_preview_id '
-        'FROM repertoires WHERE id=?', (repertoire_id,),
-    ).fetchone()
-    graph = database.execute(
-        'SELECT generation,state FROM opening_graph_publications WHERE repertoire_id=?',
-        (repertoire_id,),
-    ).fetchone()
-    priority = database.execute(
-        'SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?',
-        (repertoire_id,),
-    ).fetchone() if kind == 'repertoire_opportunity' else None
+    scope, graph, priority = storage.input_source_rows(database, kind, repertoire_id)
     scoring_version = (PRIORITY_SCORING_VERSION if kind == 'repertoire_priority'
                        else OPPORTUNITY_SCORING_VERSION)
     return json.dumps([scoring_version, source_version, list(scope),
@@ -51,21 +43,7 @@ def request_refresh(database, kind, repertoire_id, *, quiet_seconds=5):
 
     now = _now()
     requested_input_version = input_version(database, kind, repertoire_id)
-    suffix = ' FOR UPDATE' if hasattr(database, 'execute_native') else ''
-    priority_job = None
-    if kind == 'repertoire_priority':
-        priority_job = database.execute(
-            'SELECT status FROM repertoire_priority_jobs WHERE repertoire_id=?' + suffix,
-            (repertoire_id,),
-        ).fetchone()
-    existing_task = database.execute(
-        'SELECT state FROM background_tasks WHERE kind=? AND deduplication_key=?' + suffix,
-        (kind, repertoire_id),
-    ).fetchone()
-    current_intent = database.execute(
-        'SELECT input_version,published_input_version,pending_since FROM analysis_refresh_requests '
-        'WHERE kind=? AND repertoire_id=?' + suffix, (kind, repertoire_id),
-    ).fetchone()
+    priority_job, existing_task, current_intent = storage.refresh_status_rows(database, kind, repertoire_id)
     if current_intent and current_intent['input_version'] == requested_input_version:
         if kind == 'repertoire_priority':
             useful_work_exists = bool(priority_job and priority_job['status'] != 'complete'
@@ -80,19 +58,6 @@ def request_refresh(database, kind, repertoire_id, *, quiet_seconds=5):
                      if current_intent and current_intent['pending_since'] else now)
     eligible_at = min(now + timedelta(seconds=max(0, quiet_seconds)),
                       pending_since + timedelta(seconds=60))
-    database.execute(
-        'INSERT INTO analysis_refresh_requests(kind,repertoire_id,input_version,pending_since,requested_at) '
-        'VALUES(?,?,?,?,?) ON CONFLICT(kind,repertoire_id) DO UPDATE SET '
-        'input_version=excluded.input_version,pending_since=excluded.pending_since,requested_at=excluded.requested_at',
-        (kind, repertoire_id, requested_input_version, pending_since.isoformat(), now.isoformat()),
-    )
+    storage.save_refresh_intent(database, kind, repertoire_id, requested_input_version, pending_since, now)
     mark_queue_refresh_requested()
     return max(0.0, (eligible_at - now).total_seconds())
-
-
-def record_publication(database, kind, repertoire_id):
-    """Called only after a generation-fenced accepted publication, in its commit."""
-    database.execute(
-        'UPDATE analysis_refresh_requests SET published_input_version=input_version,pending_since=NULL '
-        'WHERE kind=? AND repertoire_id=?', (kind, repertoire_id),
-    )
