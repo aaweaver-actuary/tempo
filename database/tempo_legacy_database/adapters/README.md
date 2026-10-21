@@ -84,3 +84,5 @@ Readiness facts use [runtime metadata](../schema/runtime-metadata/README.md) and
 [Borrowed Study review storage](study/review/README.md) owns existing schedule facts/write, queue order receipts and requeue positions/classification. Replay/scheduling/provenance/seed/clock/requeue policy stays outside. Existing feedback coupling is explicitly retained, not accepted as a completed Study isolation boundary.
 
 [Legacy Learning review bridge storage](learning_bridge/README.md) owns complete review/card/attempt/scheduling/evidence/queue projection queries on original borrowed or owned scopes. Review command/recognition/grade/scheduling/deferred compatibility policy stays outside; the shared foreground projection operation retains one SQL home.
+
+[Portable authored/imported Studies storage](studies/portable/README.md) owns fixed content export/import/column-shape queries. Bundle validation, UUID/source-group remapping, replay/conflict and response policy remain outside. Plural Studies is distinct from ordinary daily-practice Study and excludes personal review history.

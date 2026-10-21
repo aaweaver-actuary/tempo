@@ -5124,3 +5124,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 `backend/tests/test_legacy_review_storage_separation.py` owns eighteen semantic boundaries for review facts, original card locks/scope/deferred effects and shared queue-projection wiring. Source-snapshot import checks deny sockets/SQLite infrastructure and verify module origins; no backend wheel or native behavior is claimed.
 
 The final `test_queue_application_database_split.py` selection also covers complete captured projection writes, requeue and clock/JSON/order sequencing. All39 direct sites plus sparse selector are now root-owned; existing queue-extraction/randomization/quarantine assertions remain intact.
+
+
+## Authored Studies portable persistence
+
+`backend/tests/test_study_portable_storage_boundary.py` owns six fake boundaries for lazy export/column shape/UUID-reference remapping/replay/conflict/nonmutation behavior. Two existing contract/corpus checks remain selected; the seven authored-content tables are exercised by the existing bundle format, without personal practice history or unused-table claims.

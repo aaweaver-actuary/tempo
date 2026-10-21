@@ -8,7 +8,8 @@ import uuid
 import chess
 from pydantic import TypeAdapter
 
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.studies.portable import storage
+from tempo_legacy_database.adapters.studies.portable.storage import PostgresConnection
 from ..study_contracts import ExerciseSpecification
 from .study_grading import validate_exercise
 
@@ -21,27 +22,15 @@ SPECIFICATION = TypeAdapter(ExerciseSpecification)
 
 
 def export_bundle(database, study_id: str) -> dict:
-    study = database.execute("SELECT * FROM studies WHERE id=?", (study_id,)).fetchone()
+    study = storage.study_header(database, study_id)
     if not study:
         raise KeyError("Study not found")
-    chapters = [dict(row) for row in database.execute("SELECT * FROM study_chapters WHERE study_id=? ORDER BY position", (study_id,))]
-    sources = [dict(row) for row in database.execute(
-        "SELECT source.* FROM study_sources source JOIN study_chapters chapter ON chapter.id=source.chapter_id WHERE chapter.study_id=? ORDER BY source.created_at,source.record_index",
-        (study_id,),
-    )]
-    positions = [dict(row) for row in database.execute(
-        """SELECT position.* FROM study_positions position
-           JOIN study_sources source ON source.id=position.source_id
-           JOIN study_chapters chapter ON chapter.id=source.chapter_id
-           WHERE chapter.study_id=? ORDER BY length(position.node_path),position.node_path""",
-        (study_id,),
-    )]
-    exercises = [dict(row) for row in database.execute("SELECT * FROM study_exercises WHERE study_id=? ORDER BY created_at,id", (study_id,))]
-    revisions = [dict(row) for row in database.execute(
-        "SELECT revision.* FROM study_exercise_revisions revision JOIN study_exercises exercise ON exercise.id=revision.exercise_id WHERE exercise.study_id=? ORDER BY exercise_id,revision",
-        (study_id,),
-    )]
-    links = [dict(row) for row in database.execute("SELECT * FROM study_links WHERE study_id=? ORDER BY id", (study_id,))]
+    chapters = [dict(row) for row in storage.chapter_rows(database, study_id)]
+    sources = [dict(row) for row in storage.source_rows(database, study_id)]
+    positions = [dict(row) for row in storage.position_rows(database, study_id)]
+    exercises = [dict(row) for row in storage.exercise_rows(database, study_id)]
+    revisions = [dict(row) for row in storage.revision_rows(database, study_id)]
+    links = [dict(row) for row in storage.link_rows(database, study_id)]
     return {"format": "tempo-study", "schema_version": 1, "tables": {
         "studies": [dict(study)], "study_chapters": chapters, "study_sources": sources,
         "study_positions": positions, "study_exercises": exercises,
@@ -127,13 +116,7 @@ def validate_bundle(bundle: object) -> dict[str, list[dict]]:
 def import_bundle(database, bundle: object, *, copy: bool = False) -> dict:
     tables = validate_bundle(bundle)
     for table_name in TABLES:
-        if isinstance(database, PostgresConnection):
-            exported_columns = {column["column_name"] for column in database.execute_native(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema='public' AND table_name=%s", (table_name,),
-            )}
-        else:
-            exported_columns = {column["name"] for column in database.execute(f"PRAGMA table_info({table_name})")}
+        exported_columns = storage.table_columns(database, table_name)
         if any(set(row) != exported_columns for row in tables[table_name]):
             raise ValueError(f"Invalid {table_name} columns in study bundle")
     rows = {name: [dict(row) for row in tables[name]] for name in TABLES}
@@ -167,7 +150,7 @@ def import_bundle(database, bundle: object, *, copy: bool = False) -> dict:
             row["target_exercise_id"] = mappings["study_exercises"].get(row["target_exercise_id"])
             row["id"] = mappings["study_links"][row["id"]]
     study_id = rows["studies"][0]["id"]
-    existing = database.execute("SELECT 1 FROM studies WHERE id=?", (study_id,)).fetchone()
+    existing = storage.study_exists(database, study_id)
     if existing:
         exported = export_bundle(database, study_id)["tables"]
         def rows_by_identity(table_name, table_rows):
@@ -178,8 +161,5 @@ def import_bundle(database, bundle: object, *, copy: bool = False) -> dict:
         raise ValueError("Study IDs already exist with different content; import as a copy")
     for name in TABLES:
         for row in rows[name]:
-            columns = list(row)
-            placeholders = ",".join("?" for _ in columns)
-            database.execute(f"INSERT INTO {name}({','.join(columns)}) VALUES({placeholders})",
-                             tuple(row[column] for column in columns))
+            storage.insert_bundle_row(database, name, row)
     return {"study_id": study_id, "idempotent": False}
