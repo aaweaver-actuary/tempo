@@ -10,6 +10,9 @@
 | [queue_attempt_origins.py](queue_attempt_origins.py) | Retained queue-origin/current-definition reads and recovered completion write; caller transaction preserved. |
 | [study_bootstrap.py](study_bootstrap.py) | Existing Study settings/progress/accepted-route reads and settings writes; [application decisions/composition](../../../services/learning/runtime/src/tempo_learning_runtime/study/README.md). |
 | [teaching_states.py](teaching_states.py) | Existing card lock order and idempotent teaching-state writes/reads; validation stays outside database. |
+| [durable_tasks.py](durable_tasks.py) | Original task enqueue/event/create-or-lock/fenced claim SQL; [essential-work decisions/composition](essential-work/README.md). |
+| [maintenance.py](maintenance.py) | Existing task fences, retained operation retry and queue/day/projection writes; caller transaction/lifecycle remain outside database. |
+| [evidence_receipts.py](evidence_receipts.py) | Historical delivery receipt and accepted revision frontier reads; receipt authority/conflicts remain in runtime intake. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
 | [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |

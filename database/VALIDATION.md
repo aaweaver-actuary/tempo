@@ -229,3 +229,10 @@ PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backe
 ```
 
 The boundary case is `backend/tests/test_legacy_lifecycle_database_split.py` under the same prefix. Logs/source proof: `/tmp/tempo-db-lifecycle-{existing-tests,boundary-tests,source-proof}.log`. The long existing node list is deliberate focused selection, not a full-backend run. Source compilation, owner Mermaid/links and whitespace pass. Only fakes/task-owned SQLite ran; native PostgreSQL, live schema/deployment/resource isolation and full-system qualification remain unverified.
+
+
+## Learning essential-work persistence
+
+Three more Learning files (durable tasks, maintenance and receivers) now use owner adapters for leasing/enqueueing, bounded receipt/task reads, fenced completion/release writes and receipt persistence. Application kind/date/rescan/cursor/lifecycle/error and receiver workspace/digest/replay/frontier decisions retain their order. All twenty SQL literals are unchanged; the existing claim function moved text-identically. The existing connection/transaction owner still governs rollback-before-release and lock ordering.
+
+Eighteen source semantic cases and those plus the installed deferred-import/denied-authentication guard (nineteen installed) pass. Fresh sdist→wheel, six application/adapter source-byte checks, four offline migration resources, owner Mermaid/links and whitespace pass. Exact command selections, hashes and artifacts are in `services/learning/runtime/VALIDATION.md` and `/tmp/tempo-learning-db-essential-work-report.json`. The older contract-version assertion is still unselected and unmodified. Fifteen baseline Learning candidates remain unfinished; native PostgreSQL/full-system and complete lifecycle/resource isolation remain unverified. No live resources or schema/contract/CI changes occurred.
