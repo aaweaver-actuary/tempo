@@ -22,7 +22,8 @@ semantics, and [REGRESSIONS.md](REGRESSIONS.md) for owning tests.
 **Implemented source in this unmerged extraction; deployment unverified.**
 [`source_requests.py`](src/tempo_intelligence/source_requests.py) owns existing
 request/revision admission, snapshot preparation, source descriptor/cache identity,
-captured-source inspection and retry/failure decisions.
+captured-source inspection, retry/failure decisions and complete request
+inspection/refresh/retry application workflows.
 [`serialization.py`](src/tempo_intelligence/serialization.py) owns nested public
 JSON value conversion. The pure decisions use existing request/configuration
 facts. The complete `inspect_request` application workflow consumes the fixed
@@ -39,6 +40,9 @@ flowchart LR
   reader --> tables
   inspection -->|after initial snapshot closes| credentials[Existing credential status capability]
   inspection --> serializer
+  store --> commands[Refresh/retry application]
+  commands -->|one owner write transaction| writer[Fixed command operations and atomic guards]
+  writer --> tables
   store --> serializer[Public JSON serialization]
   analysis[AnalysisStore responses] --> serializer
 ```
@@ -65,6 +69,16 @@ only one transaction for a provider-containing request.
 Its two complete inspection cases also exercise the actual projection and
 transaction composition with a fake driver; no private credential or native
 database is accessed.
+The complete `command_request` workflow uses the same existing write transaction
+through [fixed command operations](../../database/tempo_intelligence_database/adapters/request_commands.py).
+The command advisory lock, receipt binding and request-revision guard remain in
+that root adapter. Sorted cache locks, terminal/ineligible skips, source-local
+retry or generation changes, Maia work creation and final receipt ordering are
+unchanged. Its injected eligibility callback retains the original method lookup
+before clock observation and runs only at the existing retry point.
+`tests/test_request_commands.py` exercises those actual fixed operations and
+Store composition with a fake driver, including replay/conflict/stale rejection;
+real PostgreSQL atomicity and concurrency remain separate native proofs.
 The [adapter inventory](../../database/tempo_intelligence_database/adapters/README.md)
 still names the mixed workflows awaiting later extraction; this bounded move
 does not establish complete separation or live resource isolation.

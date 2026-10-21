@@ -15,9 +15,10 @@ from tempo_intelligence.maia import build_maia_job, validate_maia_result
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
 from tempo_intelligence.serialization import public
-from tempo_intelligence.source_requests import (admit_request, cache_identity, failure_transition, inspect_request,
+from tempo_intelligence.source_requests import (admit_request, cache_identity, command_request, failure_transition, inspect_request,
     request_descriptors, request_snapshot, retry_eligible, validate_request_revision)
 from tempo_intelligence_database.adapters.request_inspection import RequestInspection
+from tempo_intelligence_database.adapters.request_commands import RequestCommands
 
 
 def utcnow():
@@ -195,34 +196,14 @@ class Store:
     def _retry_eligible(self,cache,now):
         return retry_eligible(cache,now,self.configuration)
 
-    def _command(self,request_id,command_id,expected_revision,retry):
+    @contextmanager
+    def command_transaction(self):
         with self.transaction() as database:
-            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("command:"+command_id,))
-            payload={"request_id":request_id,"expected_revision":expected_revision,"operation":"retry" if retry else "refresh"}
-            previous=database.execute("SELECT * FROM commands WHERE command_id=%s",(command_id,)).fetchone()
-            if previous:
-                if previous["payload"] != payload:
-                    raise DomainError("command_replay_conflict")
-                return previous["result"]
-            request=self._head(database,request_id)
-            if expected_revision is not None and expected_revision != request["revision"]:
-                raise DomainError("request_revision_conflict")
-            for binding in sorted(request["bindings"],key=lambda item:item["cache_id"]):
-                cache=database.execute("SELECT * FROM caches WHERE cache_id=%s FOR UPDATE",(binding["cache_id"],)).fetchone()
-                if cache["state"] == "terminal":
-                    continue
-                if retry:
-                    if not self._retry_eligible(cache,utcnow()):
-                        continue
-                    database.execute("UPDATE caches SET state='queued',attempts=0,error_code=NULL,next_attempt_at=NULL WHERE cache_id=%s",(cache["cache_id"],))
-                elif cache["state"] not in ("queued","running","retry_wait","waiting_credentials","awaiting_result"):
-                    self._new_generation(database,cache)
-                current=database.execute("SELECT * FROM caches WHERE cache_id=%s",(cache["cache_id"],)).fetchone()
-                if current["kind"] == "maia" and current["state"] == "queued":
-                    self._maia_job(database,current)
-            result={"schema_version":1,"request_id":request_id,"request_revision":request["revision"],"command_id":command_id,"accepted":True}
-            database.execute("INSERT INTO commands VALUES(%s,%s,%s)",(command_id,Jsonb(payload),Jsonb(result)))
-            return result
+            yield RequestCommands(self,database)
+
+    def _command(self,request_id,command_id,expected_revision,retry):
+        return command_request(request_id,command_id,expected_revision,retry,self.command_transaction,
+            lambda cache:self._retry_eligible(cache,utcnow()))
 
     def refresh(self,request_id,command_id,expected_revision=None):
         return self._command(request_id,command_id,expected_revision,False)
