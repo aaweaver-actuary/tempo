@@ -5,11 +5,8 @@ import hashlib
 
 import pytest
 
-from app.services.discovery_acceptance_application import DiscoveryAcceptanceError, accept_discovery
-from app.services.discovery_acceptance_contracts import (
-    DiscoveryAcceptanceReason, DiscoveryChoice, DiscoveryOpportunity, DiscoveryScope, LockedDiscoveryOpportunity,
-    MatchingDiscoveryIntent,
-)
+from app.authoring.discovery.acceptance import DiscoveryAcceptanceError, accept_discovery
+from app.authoring.discovery.contracts import DiscoveryAcceptanceReason, DiscoveryChoice, DiscoveryOpportunity, DiscoveryScope, LockedDiscoveryOpportunity, MatchingDiscoveryIntent
 from tempo_chess_core import card_id
 
 
@@ -213,7 +210,7 @@ def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
     from app import command_dispatch, discovery_commands, main
     from tempo_legacy_database.adapters import postgres_store
     from app.command_gateway import request_digest
-    from app.models import DiscoveryAcceptanceRequest
+    from app.contracts.transport.discovery import DiscoveryAcceptanceRequest
     calls = []
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
     monkeypatch.setattr(discovery_commands, "prepare_discovery_acceptance", lambda *_args: prepared())
@@ -287,7 +284,7 @@ def test_discovery_freshness_parity_with_existing_canonical_reader(monkeypatch):
     from dataclasses import asdict
     from itertools import product
     from app.services import canonical_scope_freshness
-    from app.services.discovery_acceptance_application import opportunity_is_current
+    from app.authoring.discovery.acceptance import opportunity_is_current
     for restricted, revision, source, preview, generation in product(
             (False, True), (0, 1), (None, 0, 2), (None, "current", "other"), (0, 1)):
         prefix = dict(moves=["e2e4"] if restricted else [], revision=1,

@@ -10,7 +10,7 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.authored_repertoires.opening_advisory import segmentation as storage
 from .command_gateway import register_command
 from tempo_legacy_database.connections import read_connection
-from .services.opening_segmentation import RECOMMENDATION_VERSION, POLICY_VERSION, stable_key
+from app.chess.opening_segments import RECOMMENDATION_VERSION, POLICY_VERSION, stable_key
 from .services.postgres_opening_segmentation import request_segmentation_in_transaction
 
 router = APIRouter()

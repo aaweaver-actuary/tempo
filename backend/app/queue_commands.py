@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from .services import queue_application
 from .command_gateway import register_command
-from .review_conflicts import ReviewConflict
+from app.contracts.review_conflicts import ReviewConflict
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction

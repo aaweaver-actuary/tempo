@@ -4,12 +4,12 @@ import json
 
 from fastapi import HTTPException
 
-from ..next_opponent_contract import NextOpponentProfile, NextOpponentProfileResponse, SpeedWeight
+from app.contracts.next_opponent import NextOpponentProfile, NextOpponentProfileResponse, SpeedWeight
 from tempo_legacy_database.adapters.postgres_store import connection
 from tempo_legacy_database.adapters.derived_publications import next_opponent as storage
 from tempo_legacy_database.adapters.derived_publications.next_opponent import _GAME_FIELDS
 from .durable_tasks import complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice
-from .next_opponent_profile import METHOD_VERSION, SAMPLE_LIMIT, build_profile, utc_time
+from app.games.opponents.profile import METHOD_VERSION, SAMPLE_LIMIT, build_profile, utc_time
 from .redis_admission_gate import background_lease
 
 TASK_KIND = "next_opponent_profile"

@@ -7,8 +7,8 @@ import json
 from tempo_legacy_database import connections as database
 from tempo_legacy_database.adapters import postgres_store
 from app.services.durable_tasks import enqueue_task_in_transaction
-from app.services.threat_detection import find_defensive_knight_forks
-from app.services.threat_models import GameSnapshot, SourceLine
+from app.chess.threat_geometry import find_defensive_knight_forks
+from app.contracts.defense import GameSnapshot, SourceLine
 from app.services import threat_pipeline
 from app.services.threat_validation import AnalysisLine, AnalysisReport, EngineScore
 

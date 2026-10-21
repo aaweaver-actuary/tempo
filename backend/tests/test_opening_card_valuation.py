@@ -15,10 +15,10 @@ from app.services.decision_readiness import (
     DecisionObservationEvidence, PresentationIdentity, ReadinessSnapshot,
     StudyReviewEvidence, decision_readiness,
 )
-from app.services.opening_policy_reach import PolicyReachRoute, SelectedOpponentEvidence, propagate_policy_reach
-from app.services.opening_preparedness import CardLearningEffect, ProbabilityEvidence as P
+from app.study.openings.policy_reach import PolicyReachRoute, SelectedOpponentEvidence, propagate_policy_reach
+from app.study.openings.preparedness import CardLearningEffect, ProbabilityEvidence as P
 from app.services.opening_ranking_evaluation import OpeningRankingCandidate, canonical_json
-from app.services.opening_segmentation import decision_identity, opening_position_key, presentation_occurrences
+from app.chess.opening_segments import decision_identity, opening_position_key, presentation_occurrences
 from app.services.scheduler import schedule_review
 from test_opening_policy_reach import CONTEXT, ITALIAN, RUY, evidence_for, policy_for, selected_evidence
 

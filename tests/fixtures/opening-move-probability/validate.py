@@ -2,10 +2,7 @@
 import json
 import sys
 
-from app.opening_move_probability_contracts import (
-    FusedMoveDistribution, FusionRequest, OpeningMoveEvidence,
-    OpeningMoveEvidenceBundle, PositionMoveUniverse, serialize_contract,
-)
+from app.contracts.opening_move_probability import FusedMoveDistribution, FusionRequest, OpeningMoveEvidence, OpeningMoveEvidenceBundle, PositionMoveUniverse, serialize_contract
 
 SCHEMAS = {"source": OpeningMoveEvidence, "bundle": OpeningMoveEvidenceBundle,
            "request": FusionRequest, "fused": FusedMoveDistribution, "position": PositionMoveUniverse}

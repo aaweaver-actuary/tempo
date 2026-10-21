@@ -8,7 +8,7 @@ import pytest
 
 from app import command_dispatch, game_analysis_publication, main
 from tempo_legacy_database.adapters import postgres_store
-from app.models import GameAnalysisRequest
+from app.contracts.transport.game_analysis import GameAnalysisRequest
 
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

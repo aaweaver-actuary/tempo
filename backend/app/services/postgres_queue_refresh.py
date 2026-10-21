@@ -19,9 +19,9 @@ from tempo_legacy_database.adapters.queue_refresh.presentation import _QUARANTIN
 from tempo_legacy_database.adapters.queue_refresh.eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import queue_application, queue_ordering, frozen_opening_order
-from .opening_capacity_frontier import plan_prioritized_opening_admissions
+from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
 from .queue_application import AdmittedOpeningProposal
-from .cards import card_id
+from app.chess.cards import card_id
 from .real_game_feedback import MISS_REASON
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
 from .real_game_feedback_adapter import has_outstanding_real_game_miss, promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses
@@ -30,7 +30,7 @@ from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     lock_current_slice,
 )
-from .pgn import ends_on_trained_move
+from app.chess.pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
 from .tactical_catalog import pack_records
 from tempo_legacy_database.adapters.tactic_admission import DAILY_TACTIC_COUNT_SQL, count_daily_tactic_introductions, lock_daily_tactic_admission

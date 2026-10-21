@@ -14,7 +14,7 @@ from pathlib import Path
 import chess
 import chess.pgn
 
-from app.services.pgn import parse_pgn
+from app.chess.pgn import parse_pgn
 
 
 def fixture(game_count: int) -> str:

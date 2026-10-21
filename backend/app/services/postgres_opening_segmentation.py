@@ -12,7 +12,7 @@ from tempo_legacy_database.connections import background_read_connection
 from .durable_tasks import (advance_task_slice_in_transaction, complete_task_slice_in_transaction,
                             enqueue_task_in_transaction, lock_current_slice)
 from .redis_admission_gate import background_lease
-from .opening_segmentation import (candidate_parts, presentation_occurrences, stable_key)
+from app.chess.opening_segments import candidate_parts, presentation_occurrences, stable_key
 
 GROUP_PAGE_SIZE = 8
 

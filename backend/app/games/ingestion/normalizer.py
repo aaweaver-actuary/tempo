@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import chess.pgn
 
-from .game_record import GameRecord
+from ..records import GameRecord
 
 
 SUPPORTED_SPEEDS = {"bullet", "blitz", "rapid", "classical"}

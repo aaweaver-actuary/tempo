@@ -6,7 +6,7 @@ from tempo_legacy_database.ddl.queue_attempt_origins import initialize_sqlite_or
 
 
 def recover_queue_entry(database, card_id: str, request) -> dict:
-    from .review_conflicts import ReviewConflict
+    from app.contracts.review_conflicts import ReviewConflict
 
     if not request.attempt_id or not request.queue_entry_id:
         raise ReviewConflict("queue_attempt_unprovable", "The original queue attempt cannot be verified. The completed result needs review.")
@@ -27,7 +27,7 @@ def recover_queue_entry(database, card_id: str, request) -> dict:
 
 def validate_failure_marker(database, entry_id: int, card_id=None, expected_revision=None) -> None:
     """A queue-only legacy marker cannot choose between replacement contexts."""
-    from .review_conflicts import ReviewConflict
+    from app.contracts.review_conflicts import ReviewConflict
 
     contexts = storage.entry_contexts(database, entry_id)
     current = storage.current_queue_card_identity(database, entry_id)

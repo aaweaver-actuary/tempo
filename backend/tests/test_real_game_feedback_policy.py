@@ -9,7 +9,7 @@ import pytest
 # These application modules have no runtime dependency beyond the standard library.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services import real_game_feedback as policy
-from app.services.real_game_feedback_ports import MissCard
+from app.study.review.feedback_contracts import MissCard
 
 
 class Store:
@@ -87,12 +87,12 @@ def test_unsatisfied_miss_never_clears_priority():
     assert store.calls == [('outstanding', 'card')]
 
 
-@pytest.mark.parametrize('module', ['real_game_feedback', 'real_game_feedback_ports'])
+@pytest.mark.parametrize('module', ['app.services.real_game_feedback', 'app.study.review.feedback_contracts'])
 def test_isolated_feedback_application_has_no_sql_driver_or_concrete_adapter_dependency(module):
-    source = Path(importlib.import_module('app.services.' + module).__file__).read_text()
+    source = Path(importlib.import_module(module).__file__).read_text()
     tree = ast.parse(source)
     imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
-    allowed = {'collections.abc', 'dataclasses', 'datetime', 'typing', 'real_game_feedback_ports'}
+    allowed = {'collections.abc', 'dataclasses', 'datetime', 'typing', 'app.study.review.feedback_contracts'}
     for node in imports:
         names = [node.module] if isinstance(node, ast.ImportFrom) else [item.name for item in node.names]
         assert all(name in allowed for name in names), names

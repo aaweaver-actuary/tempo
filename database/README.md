@@ -41,6 +41,8 @@ Each bounded Mermaid ER chart renders directly in its directory README on GitHub
 
 The legacy schema still co-locates Games and Study tables, and existing backend composition still couples some feature workflows. This move preserves the schema and behavior; it does not introduce or approve a new Study → Games dependency. Optional producers still must fail independently under [AGENTS.md](../AGENTS.md). Physical file placement alone does not establish that acceptance criterion.
 
+The subsequent [backend organization checklist](../backend/ORGANIZATION.md) separates logical application owners and transport contracts. The [shared timing contract](../backend/app/contracts/runtime_timing.py) now removes one PostgreSQL instrumentation reverse import; admission, writer and other technical composition seams remain pending. This changes no stored schema or resource authority.
+
 ## Before merge
 
 Schema/storage relationship changes must update the affected directory README diagrams and descriptions accurately in the same PR. Reviewers compare the charts/dictionary with actual DDL, migrations and persistence code before merge. Update only affected views; no new CI job, live database check, full-system gate or qualification framework is added. See [the acceptance rule](../AGENTS.md#keep-database-charts-accurate-before-merge).

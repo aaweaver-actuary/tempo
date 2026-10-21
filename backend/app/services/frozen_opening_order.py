@@ -6,7 +6,7 @@ Legacy callers still need domain-boundary migration; this facade is not that pro
 """
 from app.study import frozen_order as policy
 from tempo_legacy_database.adapters import frozen_order as storage
-from .frozen_maia_math import content_fingerprint, READER_VERSION
+from app.study.openings.frozen_math import content_fingerprint, READER_VERSION
 from .real_game_feedback import MISS_REASON
 
 activation = storage.activation
@@ -56,7 +56,7 @@ def queue_hash(membership_hash, token):
 
 
 def queue_state(database, day):
-    from .opening_segmentation import stable_key
+    from app.chess.opening_segments import stable_key
     return stable_key(storage.queue_state_rows(database, day))
 
 

@@ -9,7 +9,7 @@ import chess
 import pytest
 from psycopg.errors import SerializationFailure
 
-from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from app.services import postgres_opening_evidence as evidence
 from app.services.opening_decision_evidence import EvidenceConflict, decision_manifest
 
@@ -18,7 +18,7 @@ from app.services.opening_decision_evidence import EvidenceConflict, decision_ma
 def test_standalone_opening_checkpoint_reduces_outside_background_transaction(normal_study_mode, monkeypatch, historical_preparation):
     from app import command_gateway, tasks
     from tempo_legacy_database import connections as database
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.services import postgres_opening_evidence as evidence
     manifest = json.loads((Path(__file__).resolve().parents[2] / "tests/fixtures/opening-evidence-manifest.json").read_text())
     request = OpeningEvidenceCheckpoint(attempt_id="outside-transaction", manifest=manifest,

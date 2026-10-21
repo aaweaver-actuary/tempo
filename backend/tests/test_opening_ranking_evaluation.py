@@ -239,7 +239,7 @@ def raw_capture_fixture():
 
 def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closure(monkeypatch):
     from tempo_legacy_database.adapters import postgres_store
-    from app.services import opening_capacity_frontier
+    from app.study.openings import capacity_frontier as opening_capacity_frontier
     from app.services import opening_ranking_snapshot as snapshot
     state = {"open": False}
     captured = raw_capture_fixture()
@@ -651,7 +651,7 @@ def test_shadow_selected_policy_ranking_is_unchanged_when_other_repertoire_is_ad
     policy_id, defining_move, other_policy, other_move,
 ):
     from test_opening_preparedness import policy_fixture, policy_evaluation
-    from app.services.opening_preparedness import marginal_card_value
+    from app.study.openings.preparedness import marginal_card_value
     catalog = {policy_id: policy_fixture(policy_id, defining_move)}
     selected_context = replace(context(), evaluation_scope="selected_policy", policy_id=policy_id)
     def evaluate():
@@ -682,7 +682,7 @@ def test_shadow_selected_policy_ranking_is_unchanged_when_other_repertoire_is_ad
 
 def test_shadow_selected_policy_preserves_opponent_deviation_probability():
     from test_opening_preparedness import policy_fixture
-    from app.services.opening_preparedness import decision_reach, marginal_card_value
+    from app.study.openings.preparedness import decision_reach, marginal_card_value
     readiness, effects = policy_fixture("italian", "f1c4")
     selected_context = replace(context(), evaluation_scope="selected_policy", policy_id="italian")
     source = (evaluation.OpeningRankingCandidate("card-3", 1, policy_id="italian"),)

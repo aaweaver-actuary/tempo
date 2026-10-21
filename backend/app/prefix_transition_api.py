@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.prefix_reads import transitions as storage
 from . import prefix_evaluation_api as structural
-from .prefix_transition_contracts import PrefixTransitionPlan, PrefixTransitionRequest
+from app.contracts.prefix_transition import PrefixTransitionPlan, PrefixTransitionRequest
 from .services.prefix_evaluation import PrefixEvaluationError, snapshot_identity
 from .services.prefix_transition import (
     SnapshotTable, TransitionSnapshot, canonical_json, iter_transition_plan,

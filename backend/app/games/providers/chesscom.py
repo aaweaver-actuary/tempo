@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 
 import httpx
 
-from .game_normalizer import RejectedGame, normalize_provider_pgn
-from .game_record import GameRecord
-from .lichess_client import ProviderRequestError
+from ..ingestion.normalizer import RejectedGame, normalize_provider_pgn
+from ..records import GameRecord
+from ..contracts import ProviderRequestError
 
 
 def _validate_json(response: httpx.Response, provider_label: str) -> dict:

@@ -12,7 +12,7 @@ from app.services.decision_readiness import (
     DecisionObservationEvidence, GameDecisionEvidence, InheritedScheduleEvidence,
     PresentationIdentity, ReadinessSnapshot, StudyReviewEvidence, decision_readiness,
 )
-from app.services.opening_segmentation import presentation_occurrences
+from app.chess.opening_segments import presentation_occurrences
 from app.services.scheduler import _scheduler, schedule_review
 
 REVIEW_TIME = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)

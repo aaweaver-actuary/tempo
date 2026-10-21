@@ -4,7 +4,7 @@ from copy import deepcopy
 import chess
 import pytest
 from app.services.frozen_maia_plan import create_plan
-from app.services.opening_segmentation import decision_identity
+from app.chess.opening_segments import decision_identity
 
 
 def snapshot():
@@ -58,7 +58,7 @@ def plan_cli():
 
 
 def refresh_checksum(plan):
-    from app.services.opening_segmentation import stable_key
+    from app.chess.opening_segments import stable_key
     plan['checksum']=stable_key({key:value for key,value in plan.items() if key not in ('checksum','run_id')})
     plan['run_id']=plan['checksum']
 
@@ -168,7 +168,7 @@ def test_capture_revalidation_rejects_concurrent_study_changes(monkeypatch):
 
 def test_source_starting_at_anchor_needs_no_pre_anchor_move_history():
     from app.services.frozen_maia_plan import recover_lines
-    from app.services.opening_segmentation import opening_position_key
+    from app.chess.opening_segments import opening_position_key
     board=chess.Board();board.push_uci('e2e4')
     source={'id':'anchor-source','repertoire_id':'policy','start_fen':board.fen(),'moves_json':'["e7e5","g1f3"]'}
     recovered,diagnostics=recover_lines([source],anchor_positions={'policy':opening_position_key(board.fen())})
@@ -423,7 +423,7 @@ def test_lineage_summary_counts_distinct_cards_and_source_lines(tmp_path):
 
 
 def test_reader_capability_is_checksum_bound_and_old_or_missing_markers_are_rejected():
-    from app.services.frozen_maia_math import READER_VERSION, VERSION
+    from app.study.openings.frozen_math import READER_VERSION, VERSION
     data,config=snapshot()
     plan=create_plan(data,config,fake_maia,provenance())
     assert VERSION=='frozen-maia-v1'

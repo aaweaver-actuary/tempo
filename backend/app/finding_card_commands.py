@@ -10,10 +10,11 @@ import chess
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import GameFindingCardRequest, TacticCaptureRequest
+from app.contracts.transport.game_findings import GameFindingCardRequest
+from app.contracts.transport.tactics import TacticCaptureRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import finding_cards as storage
-from .services.cards import card_id
+from app.chess.cards import card_id
 from .services.review_service import ensure_card_queued_after
 from .services.tactic_capture import capture_tactic, game_capture_id, validate_tactic_line
 from .queue_commands import request_queue_refresh_in_transaction

@@ -22,8 +22,8 @@ import pytest
 from app import discovery_commands
 from tempo_legacy_database.adapters import postgres_store
 from app.command_gateway import CommandConflict, execute_command, read_operation
-from app.services.discovery_acceptance_application import accept_discovery
-from app.services.discovery_acceptance_contracts import DiscoveryChoice, NewDiscoveryIntent
+from app.authoring.discovery.acceptance import accept_discovery
+from app.authoring.discovery.contracts import DiscoveryChoice, NewDiscoveryIntent
 from app.services.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
 from app.services.discovery_admission import admission_intent_id
 

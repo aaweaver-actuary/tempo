@@ -10,7 +10,7 @@ from tempo_legacy_database.adapters.opening_evidence.storage import Serializatio
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.opening_evidence import storage
-from ..opening_evidence_contracts import OpeningEvidenceCheckpoint
+from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from .opening_decision_evidence import EvidenceConflict, decision_manifest, reduce_observations, validate_checkpoint
 
 

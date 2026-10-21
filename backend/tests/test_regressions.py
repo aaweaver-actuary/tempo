@@ -40,7 +40,7 @@ def test_legacy_timestamp_introduced_at_is_repaired_to_a_study_date(
 
 def test_prefixes_match_rust_including_incomplete_trained_turns():
     from pathlib import Path
-    from app.services.pgn import prefix_through_user_moves
+    from app.chess.pgn import prefix_through_user_moves
 
     fixtures = json.loads(
         (Path(__file__).parents[2] / "tests/fixtures/core-parity.json").read_text()
@@ -62,7 +62,7 @@ def test_prefixes_match_rust_including_incomplete_trained_turns():
 
 def test_python_card_ids_match_shared_rust_parity_fixture():
     from pathlib import Path
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
 
     fixtures = json.loads(
         (Path(__file__).parents[2] / "tests/fixtures/card-id-parity.json").read_text()
@@ -461,7 +461,7 @@ def test_again_reappears_after_four_other_entries(tmp_path, monkeypatch):
 
 
 def test_game_mistakes_respect_arbitrary_fen_side_to_move():
-    from app.services.game_analysis import classify_swings
+    from app.chess.evaluation import classify_swings
 
     result = classify_swings(
         [{"ply": 0, "before_cp": 0, "after_cp": 150}], "black", starting_color="black"

@@ -7,10 +7,12 @@ from tempo_legacy_database.adapters.database_executor import database_writer
 
 from tempo_legacy_database import connections as database
 from app import main, settings_commands
-from app.models import Settings, GameAnalysisLeaseRequest, ThreatAnalysisFailureRequest
+from app.contracts.transport.settings import Settings
+from app.contracts.transport.game_analysis import GameAnalysisLeaseRequest
+from app.contracts.transport.defense import ThreatAnalysisFailureRequest
 from app.services import durable_tasks, background_activity, threat_pipeline
-from app.services.threat_detection import find_defensive_knight_forks
-from app.services.threat_models import GameSnapshot, SourceLine
+from app.chess.threat_geometry import find_defensive_knight_forks
+from app.contracts.defense import GameSnapshot, SourceLine
 
 
 def initialize_pause_database(tmp_path, monkeypatch):
@@ -369,7 +371,7 @@ def test_paused_defensive_celery_delivery_never_computes_or_wakes_retries(tmp_pa
 
 
 def test_pausing_engine_release_preserves_retry_budget_and_idempotent_resume(tmp_path, monkeypatch):
-    from app.models import GameAnalysisLeaseRequest
+    from app.contracts.transport.game_analysis import GameAnalysisLeaseRequest
     initialize_pause_database(tmp_path, monkeypatch)
     request_id = seed_exercise_requests()
     with database.connection() as connection:

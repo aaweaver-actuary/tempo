@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from tempo_legacy_database import connections as database
 from app.main import app
 from app import main as main_module
-from app.services.cards import card_id
+from app.chess.cards import card_id
 
 
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

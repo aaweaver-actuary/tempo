@@ -15,15 +15,10 @@ from pydantic import TypeAdapter
 from tempo_legacy_database.connections import connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
 from .command_dispatch import dispatch_command
-from .study_contracts import (
-    ChapterCreate, ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification,
-    StudyAttemptRequest, StudyCreate, StudyImportCommitRequest,
-    StudyImportPreviewRequest, StudySelfAssessmentRequest, StudyLinkCreate,
-    StudyBundleImportRequest,
-)
+from app.contracts.studies import ChapterCreate, ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification, StudyAttemptRequest, StudyCreate, StudyImportCommitRequest, StudyImportPreviewRequest, StudySelfAssessmentRequest, StudyLinkCreate, StudyBundleImportRequest
 from .services.study_attempts import finish_study_attempt as _finish_attempt
 from .services.study_grading import GRADER_VERSION, evaluate_answer, validate_exercise
-from .services.study_pgn import preview_pgn
+from app.studies.pgn import preview_pgn
 from .services.study_portable import export_bundle, import_bundle, validate_bundle
 
 from tempo_legacy_database.adapters.commands.studies import routes as route_storage

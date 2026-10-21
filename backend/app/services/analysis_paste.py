@@ -18,8 +18,8 @@ import chess.pgn
 from tempo_legacy_database.adapters.authored_repertoires import analysis_paste as storage
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
-from .cards import card_id
-from .pgn import ends_on_trained_move
+from app.chess.cards import card_id
+from app.chess.pgn import ends_on_trained_move
 from .repertoire_comparison import canonical_fen
 
 

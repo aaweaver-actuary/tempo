@@ -23,13 +23,8 @@ from .durable_tasks import (
     enqueue_task_in_transaction,
     lock_current_slice,
 )
-from .threat_detection import (
-    find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route,
-)
-from .threat_models import (
-    ExerciseAnchor, ForkGeometry, ForkTarget, GameSnapshot, PositionContext,
-    SourceLine, ThreatPolicy, ThreatSeed,
-)
+from app.chess.threat_geometry import find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route
+from app.contracts.defense import ExerciseAnchor, ForkGeometry, ForkTarget, GameSnapshot, PositionContext, SourceLine, ThreatPolicy, ThreatSeed
 from .threat_validation import (
     AnalysisLine, AnalysisReport, AnalysisRequest, EngineScore,
     make_validation_plan, validate_threat_anchor,

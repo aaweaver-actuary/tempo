@@ -4,12 +4,8 @@ from pathlib import Path
 import chess
 import pytest
 
-from app.services import motif_detectors
-from app.services.motif_detectors import (
-    MOTIF_PRECEDENCE,
-    classify_candidate_lines,
-    select_primary_motif,
-)
+from app.chess import motifs as motif_detectors
+from app.chess.motifs import MOTIF_PRECEDENCE, classify_candidate_lines, select_primary_motif
 
 
 FIXTURE_PATH = Path(__file__).parents[2] / "tests/fixtures/motif-parity.json"

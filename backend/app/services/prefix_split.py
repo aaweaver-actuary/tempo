@@ -11,7 +11,7 @@ import chess
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from tempo_legacy_database.connections import card_columns
 from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as storage
-from .cards import card_id
+from app.chess.cards import card_id
 from .review_service import capture_daily_queue_order, preserve_daily_queue_order
 
 

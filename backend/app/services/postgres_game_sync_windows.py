@@ -12,17 +12,17 @@ import uuid
 
 import httpx
 
-from ..models import GameSyncRequest
+from app.contracts.transport.game_sync import GameSyncRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
 from tempo_legacy_database.adapters.games.sync import windows as storage
-from .chesscom_client import fetch_chesscom_archive_month, fetch_chesscom_archive_urls
+from app.games.providers.chesscom import fetch_chesscom_archive_month, fetch_chesscom_archive_urls
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_task_in_transaction, lock_current_slice,
 )
 from .game_sync import USER_AGENT
 from .postgres_game_sync_completion import finish_game_sync_if_complete
-from .lichess_client import fetch_lichess_games_window
+from app.games.providers.lichess import fetch_lichess_games_window
 from .redis_admission_gate import background_lease
 
 

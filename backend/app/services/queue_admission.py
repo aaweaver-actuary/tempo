@@ -9,10 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import NotRequired, Protocol, TypedDict
 
-from .opening_capacity_frontier import (
-    CapacityCandidate, CapacityRoute, CapacitySnapshot, propose_capacity_expansion,
-    plan_prioritized_opening_admissions,
-)
+from app.study.openings.capacity_frontier import CapacityCandidate, CapacityRoute, CapacitySnapshot, propose_capacity_expansion, plan_prioritized_opening_admissions
 
 
 class OpeningCapacityRoutePayload(TypedDict):

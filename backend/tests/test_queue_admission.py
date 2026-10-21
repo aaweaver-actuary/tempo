@@ -4,7 +4,7 @@ from dataclasses import asdict
 import pytest
 
 from app.services import queue_admission as application
-from app.services.opening_capacity_frontier import CapacityRoute
+from app.study.openings.capacity_frontier import CapacityRoute
 
 DAY = '2026-10-20'
 

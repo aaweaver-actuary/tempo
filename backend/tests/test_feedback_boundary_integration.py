@@ -13,7 +13,7 @@ def test_combined_queue_uses_feedback_projection_and_semantic_store(outstanding,
     from app.services import queue_admission_adapter as queue
     from app.services.real_game_feedback import MISS_REASON
     from app.services import real_game_feedback_adapter as feedback
-    from app.services.real_game_feedback_ports import MissCard
+    from app.study.review.feedback_contracts import MissCard
     from tempo_legacy_database.adapters import real_game_miss_projection as projection
     assert queue.outstanding_miss_query is projection.outstanding_miss_query
     assert queue.has_outstanding_real_game_miss is feedback.has_outstanding_real_game_miss

@@ -9,12 +9,8 @@ import sys
 import chess
 import pytest
 
-from app.services.opening_preparedness import (
-    CardLearningEffect, DecisionReadiness, OpponentReply, OpponentReplyDistribution,
-    ProbabilityEvidence, RouteReach, decision_reach, marginal_card_value,
-    preparedness, rank_card_values, route_probability,
-)
-from app.services.opening_segmentation import opening_position_key, presentation_occurrences
+from app.study.openings.preparedness import CardLearningEffect, DecisionReadiness, OpponentReply, OpponentReplyDistribution, ProbabilityEvidence, RouteReach, decision_reach, marginal_card_value, preparedness, rank_card_values, route_probability
+from app.chess.opening_segments import opening_position_key, presentation_occurrences
 
 
 def exact(value):
@@ -287,7 +283,7 @@ class DenyRuntimeImports(importlib.abc.MetaPathFinder):
             raise AssertionError('Unexpected runtime import: ' + fullname)
 sys.meta_path.insert(0, DenyRuntimeImports())
 sys.path.insert(0, sys.argv[1])
-from app.services.opening_preparedness import *
+from app.study.openings.preparedness import *
 state = DecisionReadiness('d', (RouteReach('context', 'root', (), ProbabilityEvidence.exact(.5), policy_id='fixture-policy'),), ProbabilityEvidence.exact(.2), policy_id='fixture-policy')
 result = marginal_card_value((state,), CardLearningEffect('c', (('d', ProbabilityEvidence.exact(.8)),), policy_id='fixture-policy'), policy_id='fixture-policy')
 assert abs(result.value - .3) < 1e-12

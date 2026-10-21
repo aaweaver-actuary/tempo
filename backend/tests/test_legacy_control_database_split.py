@@ -9,7 +9,7 @@ from fastapi import HTTPException
 import pytest
 
 from app import repertoire_settings, review_commands
-from app.review_conflicts import ReviewConflict
+from app.contracts.review_conflicts import ReviewConflict
 from app.services import postgres_coverage_candidates, study_mode
 
 

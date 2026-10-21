@@ -19,7 +19,7 @@ import uuid
 from fastapi.testclient import TestClient
 from app import main
 from tempo_legacy_database.adapters import postgres_store
-from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from app.services.opening_decision_evidence import decision_manifest, reduce_observations
 from app.services.postgres_opening_evidence import persist_checkpoint
 from app.services import redis_admission_gate

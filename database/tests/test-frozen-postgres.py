@@ -29,7 +29,7 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection, te
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 from app.services import frozen_opening_order as order,postgres_queue_refresh as refresh
 from app.services.frozen_maia_plan import create_plan
-from app.services.cards import card_id
+from app.chess.cards import card_id
 from database.tooling.provision_postgres_roles import provision
 import chess
 

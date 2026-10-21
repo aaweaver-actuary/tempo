@@ -13,11 +13,7 @@ from tempo_legacy_database.connections import background_read_connection, connec
 from tempo_legacy_database.adapters.games.finding_projections import legacy as storage
 from tempo_legacy_database.adapters.games.evidence import gameplay as event_storage
 from .activity_gate import activity_gate
-from .motif_detectors import (
-    MotifEvidence,
-    classify_candidate_lines,
-    select_primary_motif,
-)
+from app.chess.motifs import MotifEvidence, classify_candidate_lines, select_primary_motif
 from .tactical_catalog import catalog_status
 from .tactical_opportunities import opportunity_id
 from .repertoire_comparison import canonical_fen

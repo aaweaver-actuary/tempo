@@ -28,8 +28,8 @@ from app.card_deletion import RETAINED_REPERTOIRE_ID, permanent_delete_card
 from app.services.durable_tasks import enqueue_task_in_transaction, lock_current_slice
 from app.services.opening_graph import GraphInput, build_graph
 from app.services.postgres_opening_graph import PreparedGraphLine, stage_graph_line_in_transaction
-from app.models import ReviewRequest
-from app.review_conflicts import ReviewConflict
+from app.contracts.transport.study import ReviewRequest
+from app.contracts.review_conflicts import ReviewConflict
 from database.tests.check_postgres_repertoire_limits import snapshot_queue_environment, restore_queue_environment
 
 
@@ -78,7 +78,7 @@ def main_check():
     def prove_tactical_deletion_batches_and_publication_race():
         from app.card_deletion import purge_card_data
         from app.services import postgres_queue_refresh
-        from app.services.cards import card_id
+        from app.chess.cards import card_id
         from app.services.puzzles import validate_puzzle_record
         from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions
 
@@ -454,7 +454,7 @@ def main_check():
         assert command("cards.delete", {"card_id": f"{keep}-shared", "expected_revision": 1})["deleted"]
         print("PASS test_permanent_card_delete_global_history_rebuild_restart_descendant_usability_and_delayed_review")
         from app.pgn_import_commands import prepare_import_payload
-        from app.services.pgn import ParsedLine
+        from app.chess.pgn import ParsedLine
         import_payload = prepare_import_payload(f"{prefix}-import.pgn", "white", 2, 1,
             [ParsedLine(starting_fen, moves, ())])
         with postgres_store.connection() as database:

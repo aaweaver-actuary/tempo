@@ -7,9 +7,9 @@ import uuid
 import chess
 from fastapi import HTTPException
 
-from ..models import TacticCaptureRequest
+from app.contracts.transport.tactics import TacticCaptureRequest
 from tempo_legacy_database.adapters.tactics import captures as storage
-from .cards import card_id
+from app.chess.cards import card_id
 from .review_service import ensure_card_queued_after
 from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission
 

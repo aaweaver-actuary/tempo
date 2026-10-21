@@ -17,7 +17,7 @@ from tempo_legacy_database.adapters.authored_repertoires.integrity import storag
 from tempo_legacy_database.connections import card_columns, read_connection
 from tempo_legacy_database.adapters.database_executor import submit_background_write
 
-from .cards import card_id
+from app.chess.cards import card_id
 from .repertoire_comparison import canonical_fen
 
 from ..card_deletion import SYSTEM_REPERTOIRE_IDS

@@ -12,7 +12,7 @@ import sys
 import chess
 import pytest
 
-from app.services.cards import card_id
+from app.chess.cards import card_id
 from app.services.opening_frontier import (
     OpeningFrontierCard, OpeningFrontierObligation, OpeningFrontierPublication,
     OpeningFrontierReview, OpeningFrontierRoute, OpeningFrontierSnapshot,
@@ -20,11 +20,9 @@ from app.services.opening_frontier import (
 )
 from app.services.opening_graph import GraphInput, build_graph
 from app.services import opening_frontier as frontier_contract
-from app.services.opening_policy_reach import propagate_policy_reach, PolicyReachRoute
-from app.services.opening_preparedness import (
-    ProbabilityEvidence, DecisionReadiness, CardLearningEffect, rank_card_values,
-)
-from app.services.opening_segmentation import decision_identity
+from app.study.openings.policy_reach import propagate_policy_reach, PolicyReachRoute
+from app.study.openings.preparedness import ProbabilityEvidence, DecisionReadiness, CardLearningEffect, rank_card_values
+from app.chess.opening_segments import decision_identity
 from app.services.decision_readiness import (
     PresentationIdentity, ReadinessSnapshot, StudyReviewEvidence, decision_readiness,
 )

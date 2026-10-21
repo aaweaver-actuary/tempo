@@ -1563,7 +1563,7 @@ def test_postgres_study_import_commit_dispatches_parsed_source_with_stable_recei
 
 def test_postgres_study_import_worker_keeps_parent_links_and_duplicate_receipt():
     from app.study_commands import commit_study_import
-    from app.services.study_pgn import preview_pgn
+    from app.studies.pgn import preview_pgn
 
     raw_pgn = '[Event "Import"]\n\n1. e4 *'
     preview = preview_pgn(raw_pgn)
@@ -2261,7 +2261,7 @@ def test_postgres_settings_update_refreshes_queue_and_preserves_omitted_defense_
     from app.services import postgres_next_opponent
     profile_intents = []
     monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
-    from app.models import Settings
+    from app.contracts.transport.settings import Settings
     from app import settings_commands
 
     settings = Settings(new_cards_per_day=12)
@@ -2293,7 +2293,7 @@ def test_postgres_settings_update_refreshes_queue_and_preserves_omitted_defense_
 
 
 def test_postgres_settings_update_rejects_unsupported_coverage_refresh(monkeypatch):
-    from app.models import Settings
+    from app.contracts.transport.settings import Settings
     from app import settings_commands
 
     existing = Settings().model_dump(mode="json")
@@ -2447,7 +2447,7 @@ def test_postgres_game_sync_admission_preserves_provider_rate_limit(monkeypatch)
 
 
 def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(monkeypatch):
-    from app.services.game_record import GameRecord
+    from app.games.records import GameRecord
     from app.services import postgres_game_sync
 
     statements = []
@@ -6684,7 +6684,7 @@ def test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped
 def test_pgn_payload_diagnostic_counts_branches_moves_annotations_and_serializer_bytes():
     from benchmarks.pgn_payload import branching_fixture, measure_payload
     from app.pgn_import_commands import prepare_import_payload
-    from app.services.pgn import parse_pgn
+    from app.chess.pgn import parse_pgn
     from kombu.serialization import dumps
     from app.celery_app import celery_app
 

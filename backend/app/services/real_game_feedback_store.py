@@ -8,7 +8,7 @@ transaction; queue effects retain their existing writers.
 from collections.abc import Iterator
 
 from tempo_legacy_database.adapters import real_game_feedback as storage
-from app.services.real_game_feedback_ports import MissCard, MissEvidence
+from app.study.review.feedback_contracts import MissCard, MissEvidence
 
 
 class BorrowedFeedbackStore:

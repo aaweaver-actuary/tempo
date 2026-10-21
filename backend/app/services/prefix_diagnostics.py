@@ -1,7 +1,7 @@
 """Bounded read projection of existing reducer output, never attempt reconstruction."""
 from collections import Counter
 from datetime import datetime
-from ..prefix_diagnostics_contracts import PrefixDiagnosticsDetail
+from app.contracts.prefix_diagnostics import PrefixDiagnosticsDetail
 
 ATTEMPT_LIMIT = 100
 RECENT_LIMIT = 20

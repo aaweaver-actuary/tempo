@@ -52,12 +52,12 @@ from tempo_legacy_database.adapters.foreground_controls import repertoires as re
 from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
 from tempo_legacy_database.adapters.foreground_controls import prefix_splits as prefix_split_storage
 from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as opening_card_storage
-from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
+from app.contracts.next_opponent import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
 from .study_routes import router as study_router
-from .models import TacticActivationRequest
-from .review_conflicts import ReviewConflict
+from app.contracts.transport.tactics import TacticActivationRequest
+from app.contracts.review_conflicts import ReviewConflict
 from .services.tactical_catalog import (
     catalog_status,
     activate,
@@ -65,51 +65,22 @@ from .services.tactical_catalog import (
     puzzle_membership,
     progress_pack_id,
 )
-from .models import (
-    AccountSettings,
-    AnalysisPasteCommitRequest,
-    AnalysisPastePreviewRequest,
-    BranchRequest,
-    CardRevisionRequest,
-    CoverageMaiaSubmission,
-    EndgameProbeRequest,
-    EndgameTemplateRequest,
-    GameAnalysisRequest,
-    GameAnalysisFailureRequest,
-    GameAnalysisLeaseRequest,
-    GameAnalysisPositionClaimRequest,
-    GameFindingDecisionRequest,
-    GameFindingCurationRequest,
-    GameExclusionRequest,
-    GameFindingCardRequest,
-    GameSyncEnqueueResponse,
-    GamePublicRecord,
-    GameSyncRequest,
-    GameSyncStatusResponse,
-    GameSummaryRecord,
-    GuidedReviewAttemptRequest,
-    GamesSummaryResponse,
-    IntegrityResolutionRequest,
-    ImportResult,
-    PositionAnnotationRequest,
-    PrefixSplitRequest,
-    PrefixSplitResponse,
-    RepertoireRenameRequest,
-    RepertoireSettingsRequest,
-    RemoveBranchRequest,
-    ReviewRequest,
-    QueueAttemptFailureRequest,
-    Settings,
-    TacticAttemptRequest,
-    TacticCaptureRequest,
-    TacticCaptureResponse,
-    TeachingStateRequest,
-    ThreatAnalysisSubmission,
-    ThreatAnalysisFailureRequest,
-    DefenseAttemptRequest,
-    DefenseRecognitionRequest,
-    DiscoveryAcceptanceRequest, DiscoveryTrainingRequest,
-)
+from app.contracts.transport.game_sync import AccountSettings, GameSyncEnqueueResponse, GameSyncRequest, GameSyncStatusResponse
+from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, AnalysisPastePreviewRequest, BranchRequest, RemoveBranchRequest
+from app.contracts.transport.content import CardRevisionRequest, PrefixSplitRequest, PrefixSplitResponse
+from app.contracts.transport.authored_integrity import CoverageMaiaSubmission, IntegrityResolutionRequest
+from app.contracts.transport.endgames import EndgameProbeRequest, EndgameTemplateRequest
+from app.contracts.transport.game_analysis import GameAnalysisRequest, GameAnalysisFailureRequest, GameAnalysisLeaseRequest, GameAnalysisPositionClaimRequest
+from app.contracts.transport.game_findings import GameFindingDecisionRequest, GameFindingCurationRequest, GameExclusionRequest, GameFindingCardRequest
+from app.contracts.transport.games import GamePublicRecord, GameSummaryRecord, GamesSummaryResponse
+from app.contracts.transport.guided_review import GuidedReviewAttemptRequest
+from app.contracts.transport.authored_import import ImportResult
+from app.contracts.transport.authored_repertoire import PositionAnnotationRequest, RepertoireRenameRequest, RepertoireSettingsRequest
+from app.contracts.transport.study import ReviewRequest, QueueAttemptFailureRequest, TeachingStateRequest
+from app.contracts.transport.settings import Settings
+from app.contracts.transport.tactics import TacticAttemptRequest, TacticCaptureRequest, TacticCaptureResponse
+from app.contracts.transport.defense import ThreatAnalysisSubmission, ThreatAnalysisFailureRequest, DefenseAttemptRequest, DefenseRecognitionRequest
+from app.contracts.transport.discovery import DiscoveryAcceptanceRequest, DiscoveryTrainingRequest
 from .services import queue_application, queue_ordering
 from .services.analysis import AnalysisCapabilities
 from .services.analysis_paste import (
@@ -118,15 +89,15 @@ from .services.analysis_paste import (
 )
 from .services.activity_gate import activity_gate
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
-from .services.cards import card_id
-from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
+from app.chess.cards import card_id
+from app.chess.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, capture_daily_queue_order, ensure_card_queued_after, preserve_daily_queue_order
 from tempo_legacy_database.adapters.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .services.real_game_feedback import MISS_REASON
 from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
-from .services.game_analysis import classify_swings
+from app.chess.evaluation import classify_swings
 from .services.game_analysis_worker import (
     EVIDENCE_VERSION as GAME_WORKER_EVIDENCE_VERSION,
     build_game_evaluations, claim_position, release_position, save_position_report,
@@ -879,9 +850,9 @@ def health():
     if postgres_store.configured():
         from .operations.postgres_readiness import postgres_health
         response = postgres_health()
-        from .services.frozen_maia_math import READER_VERSION
+        from app.study.openings.frozen_math import READER_VERSION
         response["frozen_opening_reader_version"] = READER_VERSION
-        from .services.opening_segmentation import stable_key
+        from app.chess.opening_segments import stable_key
         with read_connection() as frozen_database:
             identity = system_storage.frozen_opening_identity(frozen_database)
         response["frozen_opening_target_id"] = stable_key(*tuple(identity)[:4])
@@ -1145,7 +1116,7 @@ _PRIORITY_OPENING_CANDIDATE_BODY = queue_application._PRIORITY_OPENING_CANDIDATE
 
 def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
                                          day: str, limit: int | dict[str, int]) -> list[tuple[str, dict]]:
-    from .services.opening_capacity_frontier import plan_prioritized_opening_admissions
+    from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
     return plan_prioritized_opening_admissions(
         candidates, introduced_by_repertoire, day, limit, miss_reason=MISS_REASON,
     )

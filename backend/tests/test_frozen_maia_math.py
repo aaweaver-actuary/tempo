@@ -1,8 +1,8 @@
 import json
 import chess
 import pytest
-from app.services.frozen_maia_math import anchor, represented_reach, card_decisions, greedy_order
-from app.services.opening_segmentation import decision_identity
+from app.study.openings.frozen_math import anchor, represented_reach, card_decisions, greedy_order
+from app.chess.opening_segments import decision_identity
 
 
 def scenario(prefix='', color='white', **extra):
@@ -112,13 +112,13 @@ def test_anchor_fen_accepts_transposed_arrivals_without_counting_arrival_mass():
     assert transposed_only['reach'][decision]==pytest.approx(.5)
     assert [route['moves'] for route in result['routes']]==[['g8f6','f1g2']]*2
     assert all(chess.Board(fen).ply()==3 for fen in predicted)
-    from app.services.opening_segmentation import opening_position_key
+    from app.chess.opening_segments import opening_position_key
     assert result['position_reach'][opening_position_key(anchor(policy).fen())]==1
     assert result['position_reach'][opening_position_key(board.fen())]==pytest.approx(.5)
 
 
 def test_anchor_position_identity_preserves_turn_castling_and_legal_en_passant():
-    from app.services.opening_segmentation import opening_position_key
+    from app.chess.opening_segments import opening_position_key
     anchor_board=anchor(scenario('e4 a6 e5 d5'))
     canonical=opening_position_key(anchor_board.fen())
     assert opening_position_key(anchor_board.fen().rsplit(' ',2)[0]+' 9 17')==canonical
@@ -131,7 +131,7 @@ def test_anchor_position_identity_preserves_turn_castling_and_legal_en_passant()
 
 
 def test_position_probability_is_not_sum_of_repeated_answer_decisions():
-    from app.services.opening_segmentation import opening_position_key
+    from app.chess.opening_segments import opening_position_key
     result=represented_reach(scenario(),[line('Nf3 Nf6 Ng1 Ng8 e4')],distribution)
     assert result['position_reach'][opening_position_key(chess.STARTING_FEN)]==1
     assert len([key for key,value in result['reach'].items() if value>0])==3
@@ -152,7 +152,7 @@ def test_transposed_arrivals_share_distinct_learner_policy_weights():
 
 
 def test_explicit_learner_choice_weights_and_invalid_kid_denominator():
-    from app.services.opening_segmentation import opening_position_key
+    from app.chess.opening_segments import opening_position_key
     policy=scenario(choice_weights={opening_position_key(chess.STARTING_FEN):{'e2e4':.8,'d2d4':.2}})
     result=represented_reach(policy,[line('e4'),line('d4','d4')],distribution)
     assert result['reach'][decision_identity('policy',chess.STARTING_FEN,'white','e2e4')]==.8

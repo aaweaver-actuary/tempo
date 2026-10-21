@@ -13,8 +13,8 @@ import chess
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'backend'))
 from tempo_legacy_database.connections import background_connection
 from app.services import frozen_opening_order as order
-from app.services.cards import card_id
-from app.services.frozen_maia_math import content_fingerprint
+from app.chess.cards import card_id
+from app.study.openings.frozen_math import content_fingerprint
 from app.services.queue_application import randomize_daily_queue
 from datetime import date
 

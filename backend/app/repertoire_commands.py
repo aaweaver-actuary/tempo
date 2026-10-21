@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.foreground_controls import repertoires as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from .models import RepertoireSettingsRequest
+from app.contracts.transport.authored_repertoire import RepertoireSettingsRequest
 from .repertoire_settings import repertoire_settings_response
 from .queue_commands import request_queue_refresh_in_transaction
 from .services.durable_tasks import enqueue_task_in_transaction

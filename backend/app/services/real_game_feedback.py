@@ -1,5 +1,5 @@
 """Real-game obligation policy over semantic facts; no database operations."""
-from .real_game_feedback_ports import RealGameFeedbackStore
+from app.study.review.feedback_contracts import RealGameFeedbackStore
 
 MISS_REASON = "Priority review · missed in a recent game"
 

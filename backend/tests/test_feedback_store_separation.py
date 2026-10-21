@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.services import real_game_feedback_store as composition
-from app.services.real_game_feedback_ports import MissCard, MissEvidence
+from app.study.review.feedback_contracts import MissCard, MissEvidence
 
 
 def test_priority_plan_retains_slot_order_and_writes_only_changed_positions(monkeypatch):

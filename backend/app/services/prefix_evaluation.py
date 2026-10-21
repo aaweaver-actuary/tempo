@@ -8,9 +8,10 @@ from typing import Iterator
 
 import chess
 
-from .cards import card_id
-from .opening_graph import GraphInput, GraphStep, build_graph
-from .opening_segmentation import POLICY_VERSION, POSITION_VERSION, decision_identity, stable_key
+from app.chess.cards import card_id
+from app.services.opening_graph import GraphInput, build_graph
+from app.contracts.opening_graph import GraphStep
+from app.chess.opening_segments import POLICY_VERSION, POSITION_VERSION, decision_identity, stable_key
 
 EVALUATION_VERSION = 1
 MAX_SOURCE_LINES = 2_000
