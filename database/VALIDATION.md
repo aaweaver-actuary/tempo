@@ -470,3 +470,20 @@ Twenty-one original query call sites move into eighteen fixed root operations, s
 ## Sampled GitHub ER rendering
 
 On October21 UTC, inspected the published `codex/database-analysis-and-review-storage/database/tempo_legacy_database/schema/study-queue-review-2/README.md` preview in Chrome. GitHub rendered the Mermaid diagram and full field dictionary; its expanded diagram view displayed table names, composite PK/FK markers and relationship edges legibly. This is one sampled source-chart visual check, not inspection of every chart or live-schema validation. The in-app browser was unavailable; the temporary task-owned Chrome tab was closed after inspection. No repository/UI data, settings or permissions were changed by that read-only inspection.
+
+
+## Legacy prefix diagnostics and transition read projections
+
+Five diagnostic queries/driver setup and the complete existing native transition state capture move into `prefix_reads/`. Full named expansion restores both application ASTs, capture/query bodies and parameters, size/payload table order, native types, resource limits/stale-link precedence, error classes and original connection kwargs. Existing algorithms/plans remain outside and no new model or persisted plan is implemented. Five Python sources compile; no SQL text or migration changed.
+
+Initial owning selection:
+
+```sh
+TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backend/tests/test_prefix_diagnostics_api.py backend/tests/test_prefix_transition_api.py -q --rootdir=.
+```
+
+Result: **35 passed,3 failed**. Both foreground-scope fixture parameterizations and the reader-pool fake fail identically using verified original API bytes; details are in `BASELINE-CHECK-LIMITATIONS.md`. The first overlay attempt was not accepted as original-source proof because pytest bootstrap selected the current module. The corrected reproduction pre-imports and verifies `/tmp/tempo-db-prefix-reads-baseline-overlay/app/prefix_diagnostics_api.py` against the captured source (SHA256 `a5a4bb0c413579083b812c6808b5b79d26d8714a4467464147b3ad30295e949b`) before `pytest.main` selects `background_admission_preserves_foreground_progress or reader_credentials_are_sufficient`; result3failed/11deselected with the same errors. No test or fixture was changed.
+
+After final factory/error-class relocation, the same Python/PYTHONPATH/environment runs the selected connection/admission, transaction-deadline, capture-transfer/hash-close, native batch/evidence/read-order, and cumulative-limit/stale-link precedence methods: **9 passed**, overlapping the original35, with no additional failure identity. Exact five selected methods are `test_prefix_diagnostics_connection_is_authoritative_bounded_and_admitted`, `test_prefix_diagnostics_transaction_deadline_is_actionable_without_false_evidence`, `test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_close`, `test_pr102_native_snapshot_batch_preserves_digest_evidence_and_read_order`, `test_pr102_snapshot_batch_respects_cumulative_limits_and_stale_link_precedence`.
+
+Proof/captures: `/tmp/tempo-db-prefix-reads-{proof.py,before/}`. Tests use synthetic read capabilities/ASGI only; actual driver/network/native PostgreSQL, credentials/grants, installed-wheel/live/deployment/full-system checks remain unverified. No schema/data, new canonical-model, security/lifecycle/CI behavior or Study dependency change.
