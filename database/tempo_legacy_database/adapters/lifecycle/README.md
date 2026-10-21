@@ -1,6 +1,6 @@
 # Legacy queue provenance and background lifecycle storage
 
-**Current unmerged source; live schema/deployment unverified.** These are the existing queue-origin, refresh-intent and diagnostic metric operations extracted from three legacy application modules. They borrow the caller's existing transaction and never open or commit one. No SQL, stored representation, parameter order, lock order, clock sampling or error decisions change.
+**Current unmerged source; live schema/deployment unverified.** These are the existing queue-origin, refresh-intent and diagnostic metric operations extracted from legacy application modules. They borrow the caller's existing transaction and never open or commit one. No SQL, stored representation, parameter order, lock order, clock sampling or error decisions change.
 
 ```mermaid
 flowchart LR
@@ -22,3 +22,6 @@ flowchart LR
 The linked schema READMEs own the actual stored types, primary/composite keys, enforced foreign keys and explicitly logical relationships. No constraints, tables or owner permissions are added. Existing legacy coupling remains explicit: refresh composition calls its existing priority-source owner, and PostgreSQL metric flushing still uses the existing application writer import. These mechanical moves do not establish a new isolated runtime or a Study dependency. Other mixed files remain on the [unfinished extraction checklist](../../../INVENTORY.md).
 
 All 32 original database call sites now reside in this root database tree. Source comparison verifies identical SQL values, the complete SQLite installer, metric writer/buffering branch, refresh read/write blocks, counter field constants and application validation/models. Thirty-two existing focused cases cover retained-attempt replay/conflicts, trigger/column install rollback, refresh coalescing/clock/transaction/publication behavior, metric lookup budgets, rollback and fake PostgreSQL buffered flush order; one local guard prevents direct database calls returning to the three originals. Only fakes and task-owned SQLite ran. Native PostgreSQL execution/locking, deployment/resource isolation and full-system behavior remain unverified.
+
+
+The existing [daily queue rollover worker](../../../../backend/app/tasks.py) now uses `refresh_requests.daily_queue_projection` for its complete `state`/`refresh_pending` read by queue date. The [queue-projection dictionary](../../schema/study-queue-review-2/README.md) remains canonical for actual fields/types/date key and relationships. Worker date, foreground/read scope, ready/pending decision, command ID/dispatch and retry/error response stay in the original application. Its sole direct database site is centralized; other Celery command dispatch is application orchestration. Whole non-import worker AST restoration, two-source compilation and the existing rollover-until-ready fake case pass. Native worker/broker/database/lifecycle and full-system were not run.

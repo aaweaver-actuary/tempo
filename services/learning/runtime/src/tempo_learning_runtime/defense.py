@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 from .clock import date
 from tempo_learning_database.connections import connection, read_connection
-from tempo_learning_database.adapters import postgres_store
+from tempo_learning_database.adapters import defense as storage
 from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .review_service import (
     apply_scheduling_review,
@@ -72,24 +72,16 @@ def _complete_defense_in_transaction(
     light_first_interval_days: int,
 ) -> dict:
     """Record one real review and one completed queue attempt atomically."""
-    if postgres_store.configured():
-        database.execute(
-            "SELECT id FROM cards WHERE id=? FOR UPDATE", (candidate["card_id"],)
-        )
-        queue_day = database.execute(
-            "SELECT queue_date FROM daily_queue WHERE id=?",
-            (queue_entry_id,),
-        ).fetchone()
+    if storage.requires_queue_lock():
+        storage.lock_card(database, candidate["card_id"])
+        queue_day = storage.queue_date(database, queue_entry_id)
         if queue_day is None:
             raise ValueError(
                 "This defensive exercise is no longer the active queue entry"
             )
         lock_queue_date_for_position(database, queue_day[0])
         candidate = _candidate(database, candidate["id"])
-    previous = database.execute(
-        "SELECT * FROM defense_attempts WHERE attempt_id=?",
-        (attempt_id,),
-    ).fetchone()
+    previous = storage.prior_attempt(database, attempt_id)
     if previous:
         if (
             previous["candidate_id"] != candidate["id"]
@@ -101,10 +93,7 @@ def _complete_defense_in_transaction(
     _require_current(candidate)
     if candidate["exercise_revision"] != exercise_revision:
         raise ValueError("Exercise revision changed; reload before trying again")
-    entry = database.execute(
-        """SELECT * FROM daily_queue WHERE id=? AND card_id=? AND status='queued'""",
-        (queue_entry_id, candidate["card_id"]),
-    ).fetchone()
+    entry = storage.queued_entry(database, queue_entry_id, candidate["card_id"])
     if not entry:
         raise ValueError("This defensive exercise is no longer the active queue entry")
     now = datetime.now(timezone.utc)
@@ -122,32 +111,12 @@ def _complete_defense_in_transaction(
         reviewed_at=now,
         review_day=today,
     )
-    database.execute(
-        """UPDATE daily_queue SET status='complete',attempt_state=?,review_result_json=?
-           WHERE id=?""",
-        ("clean" if correct else "again", json.dumps(scheduling), queue_entry_id),
-    )
+    storage.complete_queue_entry(database, "clean" if correct else "again", json.dumps(scheduling), queue_entry_id)
     if scheduling["requeue_today"]:
         if scheduling["requeue_after_cards"] is None:
-            next_cycle = database.execute(
-                "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
-                (today.isoformat(), candidate["card_id"]),
-            ).fetchone()[0]
-            final_position = database.execute(
-                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
-                (today.isoformat(),),
-            ).fetchone()[0]
-            database.execute(
-                """INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,
-                     card_bucket,admission_kind) VALUES(?,?,?,?,?,'defense','review')""",
-                (
-                    today.isoformat(),
-                    candidate["card_id"],
-                    next_cycle,
-                    final_position,
-                    "reinforcement",
-                ),
-            )
+            next_cycle = storage.next_cycle(database, today.isoformat(), candidate["card_id"])
+            final_position = storage.next_position(database, today.isoformat())
+            storage.insert_reinforcement(database, today.isoformat(), candidate["card_id"], next_cycle, final_position, "reinforcement")
         else:
             ensure_card_queued_after(
                 database,
@@ -157,21 +126,7 @@ def _complete_defense_in_transaction(
                 preserve_order=False,
             )
     preserve_daily_queue_order(database, today.isoformat(), previous=previous_order)
-    database.execute(
-        """INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,
-              queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at)
-           VALUES(?,?,?,?,?,?,?,?)""",
-        (
-            attempt_id,
-            candidate["id"],
-            candidate["card_id"],
-            queue_entry_id,
-            exercise_revision,
-            move_uci,
-            json.dumps(response),
-            now.isoformat(),
-        ),
-    )
+    storage.insert_attempt(database, attempt_id, candidate["id"], candidate["card_id"], queue_entry_id, exercise_revision, move_uci, json.dumps(response), now.isoformat())
     return {**response, "idempotent": False}
 
 
@@ -207,11 +162,7 @@ def submit_defense_recognition(
             is None
         ):
             raise ValueError("This defensive exercise needs a validated board preview")
-        prior = database.execute(
-            """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
-               FROM defense_recognition_submissions WHERE attempt_id=?""",
-            (request.attempt_id,),
-        ).fetchone()
+        prior = storage.prior_recognition(database, request.attempt_id)
         if prior:
             if (
                 prior["candidate_id"] != candidate_id
@@ -220,25 +171,16 @@ def submit_defense_recognition(
                 or prior["answer_json"] != serialized
             ):
                 raise ValueError("Recognition attempt ID belongs to a different answer")
-            completed = database.execute(
-                "SELECT grade_json FROM defense_attempts WHERE attempt_id=?",
-                (request.attempt_id,),
-            ).fetchone()
+            completed = storage.completed_grade(database, request.attempt_id)
             if completed:
                 return {**json.loads(completed["grade_json"]), "idempotent": True}
             evidence = json.loads(candidate["evidence_json"])
-            source_game = database.execute_native(
-                "SELECT definition_json::jsonb->>'source_game_url' game_url FROM accepted_defense_exercises WHERE definition_json::jsonb->>'game_id'=%s LIMIT 1",
-                (candidate["game_id"],),
-            ).fetchone()
+            source_game = storage.source_game(database, candidate["game_id"])
             return {
                 "status": "ready_for_move",
                 "recognition_attempt_id": request.attempt_id,
                 "recognition_correct": bool(
-                    database.execute(
-                        "SELECT recognition_correct FROM defense_recognition_submissions WHERE attempt_id=?",
-                        (request.attempt_id,),
-                    ).fetchone()[0]
+                    storage.recognition_correct(database, request.attempt_id)
                 ),
                 "feedback": {
                     "knight_route": [
@@ -257,10 +199,7 @@ def submit_defense_recognition(
                 },
                 "idempotent": True,
             }
-        queue_entry = database.execute(
-            "SELECT 1 FROM daily_queue WHERE id=? AND card_id=? AND status='queued'",
-            (request.queue_entry_id, candidate["card_id"]),
-        ).fetchone()
+        queue_entry = storage.queued_membership(database, request.queue_entry_id, candidate["card_id"])
         if not queue_entry:
             raise ValueError("This defensive exercise is no longer active")
         evidence = json.loads(candidate["evidence_json"])
@@ -286,31 +225,19 @@ def submit_defense_recognition(
         visible_route = [
             {"from_square": geometry["knight_from"], "to_square": geometry["knight_to"]}
         ]
-        source_game = database.execute_native(
-            "SELECT definition_json::jsonb->>'source_game_url' game_url FROM accepted_defense_exercises WHERE definition_json::jsonb->>'game_id'=%s LIMIT 1",
-            (candidate["game_id"],),
-        ).fetchone()
+        source_game = storage.source_game(database, candidate["game_id"])
     with (
         nullcontext(write_database)
         if write_database is not None
         else connection() as database
     ):
-        if postgres_store.configured():
-            database.execute(
-                "SELECT id FROM cards WHERE id=? FOR UPDATE", (candidate["card_id"],)
-            )
-            queue_day = database.execute(
-                "SELECT queue_date FROM daily_queue WHERE id=?",
-                (request.queue_entry_id,),
-            ).fetchone()
+        if storage.requires_queue_lock():
+            storage.lock_card(database, candidate["card_id"])
+            queue_day = storage.queue_date(database, request.queue_entry_id)
             if queue_day is None:
                 raise ValueError("This defensive exercise is no longer active")
             lock_queue_date_for_position(database, queue_day[0])
-        prior = database.execute(
-            """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
-               FROM defense_recognition_submissions WHERE attempt_id=?""",
-            (request.attempt_id,),
-        ).fetchone()
+        prior = storage.prior_recognition(database, request.attempt_id)
         if prior:
             if (
                 prior["candidate_id"] != candidate_id
@@ -319,10 +246,7 @@ def submit_defense_recognition(
                 or prior["answer_json"] != serialized
             ):
                 raise ValueError("Recognition attempt ID belongs to a different answer")
-            completed = database.execute(
-                "SELECT grade_json FROM defense_attempts WHERE attempt_id=?",
-                (request.attempt_id,),
-            ).fetchone()
+            completed = storage.completed_grade(database, request.attempt_id)
             return (
                 {**json.loads(completed["grade_json"]), "idempotent": True}
                 if completed
@@ -338,20 +262,7 @@ def submit_defense_recognition(
             raise ValueError("Exercise revision changed; reload before answering")
         if current["validation_state"] != candidate["validation_state"]:
             raise ValueError("Exercise evidence changed; reload before answering")
-        database.execute(
-            """INSERT INTO defense_recognition_submissions(
-                 attempt_id,candidate_id,queue_entry_id,exercise_revision,answer_json,
-                 recognition_correct,created_at) VALUES(?,?,?,?,?,?,?)""",
-            (
-                request.attempt_id,
-                candidate_id,
-                request.queue_entry_id,
-                request.exercise_revision,
-                serialized,
-                int(correct),
-                _now(),
-            ),
-        )
+        storage.insert_recognition(database, request.attempt_id, candidate_id, request.queue_entry_id, request.exercise_revision, serialized, int(correct), _now())
         if control:
             response = {
                 "status": "correct" if correct else "incorrect",
@@ -368,9 +279,7 @@ def submit_defense_recognition(
                     "source_game_url": source_game["game_url"] if source_game else None,
                 },
             }
-            light_interval = database.execute(
-                "SELECT light_first_interval_days FROM settings WHERE id=1",
-            ).fetchone()[0]
+            light_interval = storage.light_first_interval_days(database)
             return _complete_defense_in_transaction(
                 database,
                 current,
@@ -422,9 +331,7 @@ def submit_defense_attempt(
             not in {"engine_supported", "validated_control"}
         ):
             raise ValueError("Exercise revision changed; reload before trying again")
-        prior = database.execute(
-            "SELECT * FROM defense_attempts WHERE attempt_id=?", (attempt_id,)
-        ).fetchone()
+        prior = storage.prior_attempt(database, attempt_id)
         if prior:
             if (
                 prior["candidate_id"] != candidate_id
@@ -443,23 +350,11 @@ def submit_defense_attempt(
             raise ValueError("Exercise revision changed; reload before trying again")
         recognition = None
         if recognition_attempt_id:
-            recognition = database.execute(
-                """SELECT * FROM defense_recognition_submissions WHERE attempt_id=?
-                   AND candidate_id=? AND queue_entry_id=? AND exercise_revision=?""",
-                (
-                    recognition_attempt_id,
-                    candidate_id,
-                    queue_entry_id,
-                    exercise_revision,
-                ),
-            ).fetchone()
+            recognition = storage.bound_recognition(database, recognition_attempt_id, candidate_id, queue_entry_id, exercise_revision)
             if not recognition:
                 raise ValueError("Recognition answer is missing or stale")
         exercise = _exercise_from_rows(database, candidate)
-        source_game = database.execute_native(
-            "SELECT definition_json::jsonb->>'source_game_url' game_url FROM accepted_defense_exercises WHERE definition_json::jsonb->>'game_id'=%s LIMIT 1",
-            (candidate["game_id"],),
-        ).fetchone()
+        source_game = storage.source_game(database, candidate["game_id"])
     grade = grade_defense_move(exercise, move_uci)
     if grade.status == "needs_analysis" and grade.analysis_request:
         request = grade.analysis_request
@@ -474,10 +369,7 @@ def submit_defense_attempt(
                 raise ValueError(
                     "Exercise revision changed; reload before trying again"
                 )
-            database.execute(
-                "INSERT INTO analysis_obligations(request_id,candidate_id,request_json) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-                (request.request_id, candidate_id, json.dumps(asdict(request))),
-            )
+            storage.insert_analysis_obligation(database, request.request_id, candidate_id, json.dumps(asdict(request)))
             diagnostic = (
                 "This move needs analysis; the request is retained in Learning."
             )
@@ -587,10 +479,7 @@ def exercise_from_definition(definition):
 
 
 def _candidate(database, candidate_id):
-    row = database.execute(
-        "SELECT d.*,c.serving_active,c.archived FROM accepted_defense_exercises d JOIN cards c ON c.id=d.card_id WHERE d.candidate_id=?",
-        (candidate_id,),
-    ).fetchone()
+    row = storage.candidate_facts(database, candidate_id)
     if row is None:
         raise KeyError("Defense exercise unavailable")
     definition = json.loads(row["definition_json"])

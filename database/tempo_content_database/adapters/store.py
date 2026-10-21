@@ -12,9 +12,10 @@ from psycopg_pool import ConnectionPool
 from tempo_content_publication_contracts.v1 import Publication
 
 from tempo_content.models import SourceSnapshot
-from tempo_content.policy import prepare_source, publication_report, coverage_reply, inventory_report
+from tempo_content.policy import publication_report, coverage_reply, inventory_report
 from tempo_content.worker import reconcile_once, reconcile_binding, reconcile_exercise, reconcile_route
 from tempo_content.publication import build_source_publication, admit_publication
+from tempo_content.source import load_source_snapshot
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
 
@@ -173,29 +174,31 @@ class ContentService:
             after = page[-1]['exercise_key']
 
     def load_source(self,snapshot,expected_revision=0,hook=None,operation_id=None):
-        snapshot, payload, digest, source_id, publication_id, stage_id = prepare_source(
-            snapshot, expected_revision, self.workspace_id, digest_text=_digest)
+        return load_source_snapshot(snapshot,expected_revision,hook,operation_id,
+            workspace_id=self.workspace_id,kinds=KINDS,digest_text=_digest,preflight=self._preflight_source,
+            stage_page=self._stage_source_page,seal_manifest=self._seal_source_manifest,
+            admit_source=self._admit_source,notify=_hook)
+
+    def _preflight_source(self,source_id,digest,expected_revision):
         with self._read_snapshot() as database:
             current = database.execute('SELECT s.requested_revision,r.digest,t.generation,t.state FROM content.sources s LEFT JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision LEFT JOIN LATERAL (SELECT generation,state FROM content.tasks WHERE source_id=s.id AND revision=s.requested_revision ORDER BY generation DESC LIMIT 1) t ON true WHERE s.id=%s',(source_id,)).fetchone()
             if current and (current['digest'] is None or current['generation'] is None):
                 raise ContentError('inventory_incomplete','Current source revision or task is missing')
             if current and current['digest']==digest:
-                return {'source_id':source_id,'source_revision':current['requested_revision'],'generation':current['generation'],'status':current['state'],'replayed':True}
+                return current
             if (current['requested_revision'] if current else 0)!=expected_revision:
                 raise ContentError('stale_source_revision','Expected source revision differs')
-        counts = {kind:len(payload[kind]) for kind in KINDS}
-        # Each staged section is bounded. A crash before manifest/admission leaves
-        # only immutable resumable input, never a requested source revision.
-        for kind in KINDS:
-            for offset in range(0,counts[kind],64):
-                with self._transaction() as database:
-                    for ordinal,item in enumerate(payload[kind][offset:offset+64],offset):
-                        key = item.get('key',str(ordinal))
-                        existing = database.execute('SELECT payload FROM content.input_items WHERE stage_id=%s AND kind=%s AND item_key=%s',(stage_id,kind,key)).fetchone()
-                        if existing and existing['payload'] != item:
-                            raise ContentError('staging_conflict','Immutable input page differs')
-                        database.execute('INSERT INTO content.input_items VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(stage_id,kind,key,ordinal,Jsonb(item)))
-        header = {key:value for key,value in payload.items() if key not in KINDS}
+
+    def _stage_source_page(self,stage_id,kind,payload,offset):
+        with self._transaction() as database:
+            for ordinal,item in enumerate(payload[kind][offset:offset+64],offset):
+                key = item.get('key',str(ordinal))
+                existing = database.execute('SELECT payload FROM content.input_items WHERE stage_id=%s AND kind=%s AND item_key=%s',(stage_id,kind,key)).fetchone()
+                if existing and existing['payload'] != item:
+                    raise ContentError('staging_conflict','Immutable input page differs')
+                database.execute('INSERT INTO content.input_items VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(stage_id,kind,key,ordinal,Jsonb(item)))
+
+    def _seal_source_manifest(self,stage_id,source_id,digest,header,counts):
         with self._transaction() as database:
             actual = {row['kind']:row['count'] for row in database.execute('SELECT kind,count(*) FROM content.input_items WHERE stage_id=%s GROUP BY kind',(stage_id,)).fetchall()}
             if any(actual.get(kind,0)!=count for kind,count in counts.items()):
@@ -204,7 +207,8 @@ class ContentService:
             persisted = database.execute('SELECT source_id,digest,header,counts FROM content.input_manifests WHERE stage_id=%s',(stage_id,)).fetchone()
             if (persisted['source_id'],persisted['digest'],persisted['header'],persisted['counts'])!=(source_id,digest,header,counts):
                 raise ContentError('source_manifest_conflict','Immutable source manifest differs from accepted content')
-        _hook(hook,'after_staging',source_id=source_id,stage_id=stage_id)
+
+    def _admit_source(self,snapshot,source_id,publication_id,digest,stage_id,expected_revision,hook,operation_id):
         with self._transaction() as database:
             from .bridge import lock_scope
             lock_scope(database,source_id,operation_id)
@@ -217,7 +221,7 @@ class ContentService:
             previous = database.execute('SELECT digest FROM content.source_revisions WHERE source_id=%s AND revision=%s',(source_id,source['requested_revision'])).fetchone()
             task = database.execute('SELECT * FROM content.tasks WHERE source_id=%s ORDER BY generation DESC LIMIT 1 FOR UPDATE',(source_id,)).fetchone()
             if previous and previous['digest']==digest:
-                return {'source_id':source_id,'source_revision':source['requested_revision'],'generation':task['generation'],'status':task['state'],'replayed':True}
+                return source['requested_revision'],task['generation'],task['state'],True
             if source['requested_revision'] != expected_revision:
                 raise ContentError('stale_source_revision','Expected source revision differs')
             revision = source['requested_revision']+1
@@ -228,7 +232,7 @@ class ContentService:
             database.execute('INSERT INTO content.source_revisions VALUES(%s,%s,%s,%s)',(source_id,revision,stage_id,digest))
             database.execute('UPDATE content.sources SET requested_revision=%s WHERE id=%s',(revision,source_id))
             database.execute('INSERT INTO content.tasks(source_id,generation,revision) VALUES(%s,%s,%s)',(source_id,generation,revision))
-        return {'source_id':source_id,'source_revision':revision,'generation':generation,'status':'pending','replayed':False}
+        return revision,generation,'pending',False
 
     def source_show(self,source_key):
         source = self._source(source_key)

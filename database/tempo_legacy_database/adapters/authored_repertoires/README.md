@@ -40,3 +40,6 @@ The discovery/repair slice passes nine existing task-SQLite/fake-native cases fo
 
 
 [Opening advisory API projections](opening_advisory/README.md) holds existing segmentation state/recommendation/preference and structural prefix-evaluation queries, including the unchanged repeatable-read/optional recording wrapper. Snapshot/HTTP/chess/JSON/deadline/row-budget/capture decisions remain in the existing APIs. Existing read/configuration/presence helpers are reused; no proposed schema or feature is implemented.
+
+
+[Existing opening mutation storage](opening_mutations/README.md) holds segmentation worker queries/native cursor batches and prefix-split card/review/queue/membership writes. Application planning/group construction, stable IDs/JSON/revision checks, budgets and callbacks remain outside; existing direct legacy review/queue coupling remains disclosed. Fixed finite SQL selection is unchanged and accepts no arbitrary query/table input.

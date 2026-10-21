@@ -198,7 +198,7 @@ def test_selected_pipeline_runs_only_pinned_graph_scan_segmentation_and_retains_
     for module, name in ((recovery, 'execute_postgres_opening_graph_slice'), (recovery, 'execute_postgres_integrity_slice'),
                           (postgres_opening_segmentation, 'execute_segmentation_slice')):
         monkeypatch.setattr(module, name, lambda task: handled.append(task['kind']))
-    monkeypatch.setattr(recovery, 'read_rows', lambda statement, parameters: [{**prepared['tasks'][parameters[0]],
+    monkeypatch.setattr(recovery.storage, 'read_rows', lambda statement, parameters: [{**prepared['tasks'][parameters[0]],
                          'payload_json': json.dumps({'repertoire_id': 'caro', 'graph_generation': 2})}])
     database.execute_native.side_effect = None
     database.execute_native.return_value.fetchone.side_effect = [
@@ -299,7 +299,7 @@ def test_selected_queued_preflight_is_read_only_pins_followup_generations_and_re
         kind = parameters[0]
         return [{'id': prepared['tasks'][kind]['id'], 'generation': 2 if kind == 'integrity_scan' else 1, 'state': 'complete',
                  'phase': 'published', 'lease_token': None, 'lease_expires_at': None}]
-    monkeypatch.setattr(recovery, 'read_rows', read)
+    monkeypatch.setattr(recovery.storage, 'read_rows', read)
     arguments = ('target', 'caro', 2, 'target-hash')
     keywords = {'source_revision': 197, 'prefix_revision': 0, 'day': prepared['day']}
     plan = recovery.preflight_queued_rebuild(*arguments, **keywords)
@@ -355,7 +355,7 @@ def test_selected_evidence_pages_every_issued_revision_across_a_shared_queue_ent
             pages.append(parameters)
             return origins[:128] if len(pages) == 1 else origins[128:]
         return []
-    monkeypatch.setattr(recovery, 'read_rows', read)
+    monkeypatch.setattr(recovery.storage, 'read_rows', read)
     monkeypatch.setattr(recovery, 'target_identity', lambda: {'database': 'fixture'})
     evidence = recovery.capture_evidence('caro', recovery.local_study_day(), selected_rebuild=True)
     assert evidence['issued_origins'] == origins

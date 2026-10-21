@@ -1,6 +1,4 @@
 """Existing worker paths retain claim, callback, exception and failure-write order."""
-from datetime import timedelta
-
 import pytest
 
 from tempo_game_evidence import worker
@@ -64,7 +62,8 @@ def test_work_error_retains_exception_and_fenced_failure_write_order(monkeypatch
         def __enter__(self): events.append('failure.enter'); return self
         def __exit__(self, *_): events.append('failure.exit')
         def execute(self, _query, parameters):
-            assert parameters == (timedelta(seconds=5), 'job', 'lease')
+            assert parameters == ('job', 'lease')
+            assert "next_attempt_at=now()+interval '5 seconds'" in _query
             events.append('failure.write')
 
     monkeypatch.setattr(store, '_rescope', fail)

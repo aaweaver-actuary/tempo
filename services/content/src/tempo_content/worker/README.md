@@ -47,10 +47,10 @@ cursor advancement remain in the original adapter sections.
 `tests/test_content_preparation.py` checks full-versus-sliced route inventory,
 completed-cache reuse and the computation/hook/transaction order. Pure
 [publication preparation](../publication/README.md) is also outside the adapter.
-Source staging/admission remains mixed extraction work. Publication build/admission
-now lives in its [application module](../publication/README.md). These bounded
-moves do not claim those methods are application-free or make them a permanent
-exception.
+Source staging/admission lives in [source loading](../source/README.md), and
+publication build/admission in its [application module](../publication/README.md).
+Native guards, consistent read projections and storage lifecycle remain in the
+[root adapter audit](../../../../../database/tempo_content_database/adapters/README.md#store-responsibility-audit).
 
 ## Binding phase
 

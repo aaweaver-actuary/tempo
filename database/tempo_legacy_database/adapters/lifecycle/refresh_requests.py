@@ -51,3 +51,10 @@ def record_publication(database, kind, repertoire_id):
         'UPDATE analysis_refresh_requests SET published_input_version=input_version,pending_since=NULL '
         'WHERE kind=? AND repertoire_id=?', (kind, repertoire_id),
     )
+
+
+def daily_queue_projection(database, queue_date):
+    return database.execute(
+        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?",
+        (queue_date,),
+    ).fetchone()

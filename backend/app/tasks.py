@@ -22,6 +22,7 @@ from .command_gateway import (
     record_operation_retry, defer_operation_for_foreground,
 )
 from tempo_legacy_database.connections import read_connection
+from tempo_legacy_database.adapters.lifecycle.refresh_requests import daily_queue_projection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands
@@ -164,10 +165,7 @@ def ensure_daily_queue() -> bool:
     queue_date = date.today().isoformat()
     with activity_gate.foreground():
         with read_connection() as database:
-            projection = database.execute(
-                "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?",
-                (queue_date,),
-            ).fetchone()
+            projection = daily_queue_projection(database, queue_date)
         if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
             return False
         result = execute_command(

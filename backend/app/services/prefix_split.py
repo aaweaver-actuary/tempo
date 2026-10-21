@@ -10,6 +10,7 @@ import chess
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from tempo_legacy_database.connections import card_columns
+from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as storage
 from .cards import card_id
 from .review_service import capture_daily_queue_order, preserve_daily_queue_order
 
@@ -17,11 +18,7 @@ from .review_service import capture_daily_queue_order, preserve_daily_queue_orde
 def _trained_color_for_card(database: sqlite3.Connection, card: sqlite3.Row) -> str:
     if card["trained_color"] in {"white", "black"}:
         return card["trained_color"]
-    line = database.execute(
-        """SELECT trained_color FROM repertoire_lines
-           WHERE repertoire_id=? ORDER BY created_at,id LIMIT 1""",
-        (card["repertoire_id"],),
-    ).fetchone()
+    line = storage.first_line_color(database, card["repertoire_id"])
     if not line or line["trained_color"] not in {"white", "black"}:
         raise ValueError("The trained color for this opening card is unknown")
     return line["trained_color"]
@@ -100,7 +97,7 @@ def _response(
 
 
 def preview_prefix_split(database: sqlite3.Connection, source_card_id: str) -> dict:
-    card = database.execute("SELECT * FROM cards WHERE id=?", (source_card_id,)).fetchone()
+    card = storage.card_row(database, source_card_id)
     if not card:
         raise KeyError("Card not found")
     if card["content_type"] != "opening" or card["kind"] != "prefix":
@@ -115,13 +112,7 @@ def _copy_card(
     source_card: sqlite3.Row,
     values: dict,
 ) -> None:
-    columns = card_columns(database)
-    source_values = dict(source_card)
-    source_values.update(values)
-    database.execute(
-        f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
-        tuple(source_values.get(column) for column in columns),
-    )
+    storage.copy_card(database, source_card, values)
 
 
 def _queue_split_followups(
@@ -138,27 +129,12 @@ def _queue_split_followups(
         (shortened_card_id, "guided"),
         (continuation_card_id, "guided"),
     ):
-        queued_entry = database.execute(
-            """SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?
-               AND status='queued' ORDER BY position,id LIMIT 1""",
-            (today, card_id),
-        ).fetchone()
+        queued_entry = storage.queued_followup(database, today, card_id)
         if queued_entry is None:
-            cycle = database.execute(
-                "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
-                (today, card_id),
-            ).fetchone()[0]
-            queued_entry = database.execute(
-                """INSERT INTO daily_queue(
-                       queue_date,card_id,cycle,position,attempt_state,card_bucket,admission_kind
-                   ) VALUES(?,?,?,?,?,'opening','review') RETURNING id""",
-                (today, card_id, cycle, 2_000_000_000, attempt_state),
-            ).fetchone()
+            cycle = storage.next_queue_cycle(database, today, card_id)
+            queued_entry = storage.insert_followup(database, (today, card_id, cycle, 2_000_000_000, attempt_state))
         followup_ids.append(queued_entry["id"])
-    queued_entries = database.execute(
-        "SELECT id,position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id",
-        (today,),
-    ).fetchall()
+    queued_entries = storage.queued_positions(database, today)
     unaffected_ids = [entry["id"] for entry in queued_entries if entry["id"] not in followup_ids]
     insertion_index = min(4, len(unaffected_ids))
     reordered_ids = (
@@ -167,14 +143,11 @@ def _queue_split_followups(
         + unaffected_ids[insertion_index:]
     )
     current_positions = {entry["id"]: entry["position"] for entry in queued_entries}
-    database.executemany(
-        "UPDATE daily_queue SET position=? WHERE id=?",
-        (
+    storage.update_queue_positions(database, (
             (position, entry_id)
             for position, entry_id in enumerate(reordered_ids)
             if current_positions[entry_id] != position
-        ),
-    )
+        ))
     preserve_daily_queue_order(database, today, previous=previous_order)
 
 
@@ -184,12 +157,8 @@ def apply_prefix_split(
     source_card_id: str,
     expected_revision: int,
 ) -> dict:
-    prior = database.execute(
-        "SELECT * FROM prefix_splits WHERE source_card_id=?", (source_card_id,)
-    ).fetchone()
-    source_card = database.execute(
-        "SELECT * FROM cards WHERE id=?", (source_card_id,)
-    ).fetchone()
+    prior = storage.prior_split(database, source_card_id)
+    source_card = storage.card_row(database, source_card_id)
     if not source_card:
         raise KeyError("Card not found")
     trained_color = _trained_color_for_card(database, source_card)
@@ -212,16 +181,11 @@ def apply_prefix_split(
     continuation_card_id = split["continuation_card_id"]
     source_memberships = [
         (row[0], int(row[1]))
-        for row in database.execute(
-            "SELECT repertoire_id,canonical_route_source FROM repertoire_cards WHERE card_id=?",
-            (source_card_id,),
-        )
+        for row in storage.membership_rows(database, source_card_id)
     ] or [(source_card["repertoire_id"], int(source_card["canonical_route_source"]))]
 
     copied_child_ids = []
-    shortened_card = database.execute(
-        "SELECT * FROM cards WHERE id=?", (shortened_card_id,)
-    ).fetchone()
+    shortened_card = storage.card_row(database, shortened_card_id)
     if not shortened_card:
         _copy_card(
             database,
@@ -241,50 +205,28 @@ def apply_prefix_split(
             },
         )
         copied_child_ids.append(shortened_card_id)
-    database.execute(
-        """INSERT OR IGNORE INTO card_revisions(
-               card_id,revision,start_fen,moves_json,history_mode,created_at
-           ) VALUES(?,?,?,?,?,?)""",
-        (
+    storage.insert_revision(database, (
             source_card_id,
             int(source_card["revision"]) + 1,
             source_card["start_fen"],
             source_card["moves_json"],
             "preserve",
             now,
-        ),
-    )
-    database.execute(
-        "UPDATE reviews SET card_id=? WHERE card_id=?",
-        (shortened_card_id, source_card_id),
-    )
-    queued_entries = database.execute(
-        "SELECT id,queue_date,cycle FROM daily_queue WHERE card_id=?",
-        (source_card_id,),
-    ).fetchall()
+        ))
+    storage.reassign_reviews(database, shortened_card_id, source_card_id)
+    queued_entries = storage.source_queue_entries(database, source_card_id)
     for queue_entry in queued_entries:
-        collision = database.execute(
-            "SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND cycle=?",
-            (
+        collision = storage.queue_collision(database, (
                 queue_entry["queue_date"],
                 shortened_card_id,
                 queue_entry["cycle"],
-            ),
-        ).fetchone()
+            ))
         if collision:
-            database.execute(
-                "UPDATE daily_queue SET status='complete' WHERE id=?",
-                (queue_entry["id"],),
-            )
+            storage.complete_queue_entry(database, queue_entry["id"])
         else:
-            database.execute(
-                "UPDATE daily_queue SET card_id=? WHERE id=?",
-                (shortened_card_id, queue_entry["id"]),
-            )
+            storage.reassign_queue_entry(database, shortened_card_id, queue_entry["id"])
 
-    continuation_card = database.execute(
-        "SELECT 1 FROM cards WHERE id=?", (continuation_card_id,)
-    ).fetchone()
+    continuation_card = storage.card_present(database, continuation_card_id)
     if not continuation_card:
         _copy_card(
             database,
@@ -320,39 +262,25 @@ def apply_prefix_split(
         copied_child_ids.append(continuation_card_id)
     for repertoire_id, membership_source in source_memberships:
         for child_card_id in (shortened_card_id, continuation_card_id):
-            database.execute(
-                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,?) "
-                "ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1 "
-                "WHERE repertoire_cards.canonical_route_source=0 AND excluded.canonical_route_source=1",
-                (repertoire_id, child_card_id, membership_source),
-            )
+            storage.upsert_membership(database, repertoire_id, child_card_id, membership_source)
     if source_card["canonical_route_source"]:
         for child_card_id in copied_child_ids:
-            database.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (child_card_id,))
+            storage.promote_card_source(database, child_card_id)
     # Archive while the original links still describe the owner semantics.
     # Removing a generated owner link first would activate authored owner fallback.
-    database.execute(
-        "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
-        (shortened_card_id, source_card_id),
-    )
-    database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
+    storage.archive_source_card(database, shortened_card_id, source_card_id)
+    storage.delete_source_memberships(database, source_card_id)
     _queue_split_followups(
         database, shortened_card_id, continuation_card_id, today,
         previous_order=previous_order,
     )
-    database.execute(
-        """INSERT INTO prefix_splits(
-               source_card_id,source_revision,shortened_card_id,
-               continuation_card_id,created_at
-           ) VALUES(?,?,?,?,?)""",
-        (
+    storage.insert_split(database, (
             source_card_id,
             expected_revision,
             shortened_card_id,
             continuation_card_id,
             now,
-        ),
-    )
+        ))
     return _response(
         source_card_id,
         expected_revision,

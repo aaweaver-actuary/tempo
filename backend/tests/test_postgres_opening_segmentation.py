@@ -107,7 +107,7 @@ def test_group_preparation_reads_only_eight_indexed_occurrences_and_closes_conne
 
 def test_advisory_service_never_writes_legacy_learning_or_queue_tables():
     from pathlib import Path
-    source = Path(worker.__file__).read_text()
+    source = '\n'.join(Path(module.__file__).read_text() for module in (worker, worker.storage))
     for table in ['cards', 'reviews', 'daily_queue', 'prefix_splits']:
         assert f'UPDATE {table} ' not in source
         assert f'INSERT INTO {table}(' not in source

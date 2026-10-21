@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **113 files**; one candidate is confirmed non-database application code, and **42 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **123 files**; one candidate is confirmed non-database application code, and **32 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -67,8 +67,8 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy authority/evidence storage split: [backend/app/services/legacy_game_authority.py](tempo_legacy_database/adapters/games/authority/README.md).
 - [backend/app/services/legacy_study_remediation.py](../backend/app/services/legacy_study_remediation.py)
 - [backend/app/services/opening_capacity_admission.py](../backend/app/services/opening_capacity_admission.py)
-- [backend/app/services/opening_graph.py](../backend/app/services/opening_graph.py)
-- [backend/app/services/opening_graph_recovery.py](../backend/app/services/opening_graph_recovery.py)
+- Completed existing compatibility graph storage split: [backend/app/services/opening_graph.py](tempo_legacy_database/adapters/opening_graph/README.md).
+- Completed existing legacy opening graph recovery storage split: [backend/app/services/opening_graph_recovery.py](tempo_legacy_database/adapters/opening_graph/README.md).
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/opening_progression.py](tempo_legacy_database/adapters/opening_progression.py).
 - [backend/app/services/opening_ranking_snapshot.py](../backend/app/services/opening_ranking_snapshot.py)
 - Completed controls SQL split: [backend/app/services/postgres_coverage_candidates.py](tempo_legacy_database/adapters/controls/README.md).
@@ -89,11 +89,11 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/postgres_integrity.py](../backend/app/services/postgres_integrity.py)
 - Completed legacy derived-publication storage split: [backend/app/services/postgres_next_opponent.py](tempo_legacy_database/adapters/derived_publications/README.md).
 - [backend/app/services/postgres_opening_evidence.py](../backend/app/services/postgres_opening_evidence.py)
-- [backend/app/services/postgres_opening_graph.py](../backend/app/services/postgres_opening_graph.py)
-- [backend/app/services/postgres_opening_segmentation.py](../backend/app/services/postgres_opening_segmentation.py)
+- Completed existing legacy opening graph worker storage split: [backend/app/services/postgres_opening_graph.py](tempo_legacy_database/adapters/opening_graph/README.md).
+- Completed existing opening mutation storage split: [backend/app/services/postgres_opening_segmentation.py](tempo_legacy_database/adapters/authored_repertoires/opening_mutations/README.md).
 - Completed legacy priority lifecycle storage split: [backend/app/services/postgres_priority.py](tempo_legacy_database/adapters/priority_lifecycle/README.md).
 - [backend/app/services/postgres_queue_refresh.py](../backend/app/services/postgres_queue_refresh.py)
-- [backend/app/services/prefix_split.py](../backend/app/services/prefix_split.py)
+- Completed existing opening mutation storage split: [backend/app/services/prefix_split.py](tempo_legacy_database/adapters/authored_repertoires/opening_mutations/README.md).
 - [backend/app/services/prefix_transition_application.py](../backend/app/services/prefix_transition_application.py)
 - Completed legacy priority lifecycle storage split: [backend/app/services/priority_retention.py](tempo_legacy_database/adapters/priority_lifecycle/README.md).
 - [backend/app/services/queue_admission_adapter.py](../backend/app/services/queue_admission_adapter.py)
@@ -127,7 +127,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/study_commands.py](../backend/app/study_commands.py)
 - [backend/app/study_routes.py](../backend/app/study_routes.py)
 - Completed legacy tactic persistence split: [backend/app/tactic_commands.py](tempo_legacy_database/adapters/tactics/README.md).
-- [backend/app/tasks.py](../backend/app/tasks.py)
+- Completed legacy daily rollover readiness storage split: [backend/app/tasks.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - Completed commands SQL split: [backend/app/teaching_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - Completed legacy defensive-analysis command storage split: [backend/app/threat_analysis_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - Completed Content bridge split: [application/public composition](../services/content/src/tempo_content/bridge/README.md) and [database operations](tempo_content_database/adapters/bridge.py).
@@ -140,16 +140,16 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed Intelligence read-projection split: [games_reader.py](../services/intelligence/src/tempo_intelligence/analysis/games_reader.py) retains cursor/limit/envelope/read-transaction composition; [complete owner queries](tempo_intelligence_database/adapters/games_read_projection.py) live in database.
 - Reviewed non-database false positive: [Intelligence analysis worker](../services/intelligence/src/tempo_intelligence/analysis/worker.py). Its only `execute` call is `client.execute(claim["job"])`, an engine-client operation; the file has no SQL/driver/cursor operations. Keep this application dispatcher with Analysis.
 - Completed Learning foreground admission/review storage split: [services/learning/runtime/src/tempo_learning_runtime/admission.py](tempo_learning_database/adapters/admission-review/README.md).
-- [services/learning/runtime/src/tempo_learning_runtime/api.py](../services/learning/runtime/src/tempo_learning_runtime/api.py)
+- Completed existing Learning API/defense storage split: [services/learning/runtime/src/tempo_learning_runtime/api.py](tempo_learning_database/adapters/api-defense/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/card_deletion.py](tempo_learning_database/adapters/README.md).
-- [services/learning/runtime/src/tempo_learning_runtime/defense.py](../services/learning/runtime/src/tempo_learning_runtime/defense.py)
+- Completed existing Learning API/defense storage split: [services/learning/runtime/src/tempo_learning_runtime/defense.py](tempo_learning_database/adapters/api-defense/README.md).
 - Completed Learning essential-work storage split: [services/learning/runtime/src/tempo_learning_runtime/durable_tasks.py](tempo_learning_database/adapters/essential-work/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py](tempo_learning_database/adapters/README.md).
 - Completed Learning gateway/remediation storage split: [services/learning/runtime/src/tempo_learning_runtime/gateway.py](tempo_learning_database/adapters/gateway-remediation/README.md).
 - Completed Learning essential-work storage split: [services/learning/runtime/src/tempo_learning_runtime/maintenance.py](tempo_learning_database/adapters/essential-work/README.md).
 - Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/opening_progression.py](tempo_learning_database/adapters/opening_progression.py).
-- [services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py](../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py)
-- [services/learning/runtime/src/tempo_learning_runtime/publications.py](../services/learning/runtime/src/tempo_learning_runtime/publications.py)
+- Completed existing Learning publication execution storage split: [services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py](tempo_learning_database/adapters/publication-execution/README.md).
+- Completed existing Learning publication execution storage split: [services/learning/runtime/src/tempo_learning_runtime/publications.py](tempo_learning_database/adapters/publication-execution/README.md).
 - Completed Learning queue storage split: [services/learning/runtime/src/tempo_learning_runtime/queue_application.py](tempo_learning_database/adapters/queue/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/queue_attempt_origins.py](tempo_learning_database/adapters/README.md).
 - Completed Learning queue storage split: [services/learning/runtime/src/tempo_learning_runtime/queue_commands.py](tempo_learning_database/adapters/queue/README.md).
@@ -170,7 +170,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 ## Additional storage candidates found after the baseline
 
-The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Six additional storage/tooling sources were found by checking Redis operations and SQL constants outside the original call scan. They do not alter baseline arithmetic; their status is shown below:
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Nine additional storage/tooling sources were found by checking Redis operations, SQL constants and database-specific native harnesses outside the original call scan. They do not alter baseline arithmetic; their status is shown below:
 
 | Additional source / status | Database operations | Application responsibility to retain outside database |
 | --- | --- | --- |
@@ -180,6 +180,8 @@ The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive pr
 | Extracted [legacy_game_capture.py](../backend/app/services/legacy_game_capture.py) | Existing metadata and finite stream/count/high-water/page operations now live in [authority storage](tempo_legacy_database/adapters/games/authority/README.md). | Capture budget/digest/selection and finite traversal; extract with its authority/observation callers. |
 | Relocated [writer_latency.py](tests/benchmarks/writer_latency.py) | Disposable SQLite connection/schema/inserts and writer contention tooling. | Existing benchmark reporting; whole dedicated benchmark may relocate intact. |
 | Extracted [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) fixture operations | Five existing native setup statements now live in [ownership fixture.py](ownership/fixture.py), including the two unchanged test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
+
+Three Content native-only files discovered after the runtime audit are also relocated intact: [the PostgreSQL suite](tempo_content_database/tests/test_postgres.py), [its runner](tempo_content_database/tooling/run_postgres.py) and [benchmark](tempo_content_database/tooling/benchmark.py). Native assertions and benchmark are byte-identical; only runner/build/discovery/source-hash paths change. Application-facing synthetic tests and source-free consumer tooling retain Content ownership. These three additional relocations do not alter the original156-row arithmetic.
 
 The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis factories/Lua/pipeline/operations and Study-settings query now live under [redis_control](tempo_legacy_database/adapters/redis_control/README.md), preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 
@@ -217,13 +219,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 82 | 0 | 38 |
-| Learning runtime | 22 | 0 | 4 |
+| Legacy backend | 88 | 0 | 32 |
+| Learning runtime | 26 | 0 | 0 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **113** | **1** | **42** |
+| **Total baseline** | **123** | **1** | **32** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 
@@ -231,12 +233,12 @@ Additional sources above show their current extraction status; their pending ope
 
 | Owner | Existing application home now outside database | Actual remaining work |
 | --- | --- | --- |
-| Content | [Source/exercise/binding/publication/coverage policy](../services/content/src/tempo_content/policy/README.md) [reconciliation/route/binding/exercise worker helpers](../services/content/src/tempo_content/worker/README.md) and [publication preparation](../services/content/src/tempo_content/publication/README.md). | Source load/staging is the sole remaining mixed workflow. Publication build/admission now live in [publication application](../services/content/src/tempo_content/publication/application.py); their original reservation/immutable admission transactions stay inside. Route, exercise and binding sequences are outside. All fifty-three current methods and four helpers are source-classified, with no unaccounted method. |
-| Game Evidence | [Source identity/normalization](../services/game-evidence/src/tempo_game_evidence/source.py), [snapshot/cache/staleness preparation](../services/game-evidence/src/tempo_game_evidence/snapshot.py), [comparison preparation](../services/game-evidence/src/tempo_game_evidence/comparison.py), [reconciliation coordination](../services/game-evidence/src/tempo_game_evidence/reconciliation.py), and [response/list-input policy](../services/game-evidence/src/tempo_game_evidence/reporting.py). The [job worker](../services/game-evidence/src/tempo_game_evidence/worker.py) owns dispatch/failure control flow. | Final import metadata/player shaping and application-supplied retry intervals are separated. Source audit found no further pure application block in this owner store. SQL locks, replay conflicts, lease/resource limits, bounded atomic fanout and the unchanged compatibility cache holder stay explicit persistence/composition responsibilities; native execution remains unverified. |
-| Intelligence | [Finding assembly](../services/intelligence/src/tempo_intelligence/analysis/README.md#finding-assembly), [serialization](../services/intelligence/src/tempo_intelligence/serialization.py) and [request descriptor/cache/retry helpers](../services/intelligence/src/tempo_intelligence/source_requests.py). | Request inspection, refresh/retry, [Maia profile/job/result/status](../services/intelligence/src/tempo_intelligence/maia_work.py) and evidence response orchestration now use fixed owner operations. Source submit/replay/cache-refresh and provider claim/publication application sequences now also live outside database, using fixed admission/provider operations. Four credential workflow methods remain mixed, followed by the separate Analysis workflow/report/engine policy audit. No actual credential/provider action is part of these source moves. |
-| Learning and legacy owner adapters | Frozen preference policy now lives in the [legacy Study folder](../backend/app/study/frozen_order/README.md) and [Learning Study folder](../services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/README.md); authored-line conflict computation lives in [Studies](../backend/app/studies/README.md). | Finish baseline application SQL extraction, then audit remaining originally moved concrete adapters for application decisions. Do not assume that moving their whole files established a boundary. |
+| Content | [Source/exercise/binding/publication/coverage policy](../services/content/src/tempo_content/policy/README.md) [reconciliation/route/binding/exercise worker helpers](../services/content/src/tempo_content/worker/README.md) and [publication preparation](../services/content/src/tempo_content/publication/README.md). | [Source loading/staging orchestration](../services/content/src/tempo_content/source/README.md) is now outside database. The complete fifty-seven-method/four-helper store audit identifies no further independent mixed workflow; fixed guards/read projections/lifecycle/composition remain explicit. Nineteen production Content files contain no direct driver/cursor operations. The three database-specific native test/runner/benchmark files now reside in root owner [tests](tempo_content_database/tests/README.md) and [tooling](tempo_content_database/tooling/README.md); they are sdist-only, with no native execution. This is not a repository-wide completion claim. |
+| Game Evidence | [Source identity/normalization](../services/game-evidence/src/tempo_game_evidence/source.py), [snapshot/cache/staleness preparation](../services/game-evidence/src/tempo_game_evidence/snapshot.py), [comparison preparation](../services/game-evidence/src/tempo_game_evidence/comparison.py), [reconciliation coordination](../services/game-evidence/src/tempo_game_evidence/reconciliation.py), and [response/list-input policy](../services/game-evidence/src/tempo_game_evidence/reporting.py). The [job worker](../services/game-evidence/src/tempo_game_evidence/worker.py) owns dispatch/failure control flow. | Final import metadata/player shaping is separated; the two named failure operations retain original fixed retry SQL literals and fence parameters. Source audit found no further pure application block in this owner store. SQL locks, replay conflicts, lease/resource limits, bounded atomic fanout and the unchanged compatibility cache holder stay explicit persistence/composition responsibilities; native execution remains unverified. |
+| Intelligence | [Finding assembly](../services/intelligence/src/tempo_intelligence/analysis/README.md#finding-assembly), [serialization](../services/intelligence/src/tempo_intelligence/serialization.py) and [request descriptor/cache/retry helpers](../services/intelligence/src/tempo_intelligence/source_requests.py). | Request inspection, refresh/retry, [Maia profile/job/result/status](../services/intelligence/src/tempo_intelligence/maia_work.py) and evidence response orchestration now use fixed owner operations. Source submit/replay/cache-refresh and provider claim/publication application sequences now also live outside database, using fixed admission/provider operations. All four credential workflow source moves are now separated; the current Store audit identifies no further independent mixed workflow. Twelve existing Analysis read/workspace/export sequences now live in [read_work.py](../services/intelligence/src/tempo_intelligence/analysis/read_work.py), using fixed root reads. The updated34-method AnalysisStore audit classifies three fixed guards, sixteen composition methods and fifteen remaining mixed methods. Input admission, commands/receipts, derivation/publication and engine batches remain unfinished. No actual credential/provider action is part of these source moves. |
+| Learning and legacy owner adapters | Frozen preference policy now lives in the [legacy Study folder](../backend/app/study/frozen_order/README.md) and [Learning Study folder](../services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/README.md); authored-line conflict computation lives in [Studies](../backend/app/studies/README.md). | Learning has zero original baseline files pending. Its complete initial-adapter audit covers42 functions/methods across seven files; six files contain storage/driver/projection responsibilities. Existing opening-evidence still contains six pure application helpers, nine mixed functions and a DTO for extraction; compatibility wrappers remain inventoried. Legacy baseline work and the initially moved adapter policy audit remain. Do not assume that moving whole files established a boundary. |
 
-The [HTTP composition storage README](tempo_legacy_database/adapters/http_composition/README.md) tracks the partial extraction of `backend/app/main.py`: system/settings/queue-maintenance operations are centralized, while its remaining inline operations keep that original checklist row pending. Partial slices do not increment completed-file arithmetic.
+The [HTTP composition storage README](tempo_legacy_database/adapters/http_composition/README.md) tracks the partial extraction of `backend/app/main.py`: system/settings/queue-maintenance, queue payload/head/prepared/entry and repertoire/annotation/teaching/snapshot/export projections PGN/branch authored-line operations and card revision/split/archive operations are centralized, while remaining inline operations keep that original checklist row pending. The fixed availability SQL helper shared with `queue_application.py` is centralized too; that file retains other pending operations. Partial slices do not increment completed-file arithmetic. The [queue refresh storage README](tempo_legacy_database/adapters/queue_refresh/README.md) tracks its partial admission extraction; `postgres_queue_refresh.py` remains pending until its remaining direct/bounded queries, SQL builders and existing reader bridges are separated.
 
 All completed checklist rows above link their actual owner. Complete bound queries, driver/dialect handling, DDL, row locks, cursor batches and savepoints belong inside the one root database tree. Keep application decisions in logical owner folders and preserve their original evaluation/transaction/callback points. Existing legacy call-site composition/cross-feature coupling remains disclosed; no new sibling-domain dependency, generic SQL execution port, shared runtime, duplicate implementation or full-domain isolation claim is introduced.
 

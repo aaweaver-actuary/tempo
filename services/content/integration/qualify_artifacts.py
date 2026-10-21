@@ -130,7 +130,7 @@ def main(arguments=None):
         junit_destination(os.environ.get("PYTEST_ADDOPTS", ""))
         report["revision"] = run(["git", "rev-parse", "HEAD"], ROOT, "revision").strip()
         report["dirty"] = run(["git", "status", "--short"], ROOT, "source-status").strip()
-        for relative in PACKAGES:
+        for relative in (*PACKAGES, "database/tempo_content_database"):
             for path in (ROOT / relative).rglob("*"):
                 if path.is_file() and not IGNORED.intersection(path.parts):
                     report["source_inputs"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()

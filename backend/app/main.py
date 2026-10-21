@@ -29,8 +29,18 @@ from tempo_legacy_database.adapters.http_composition import (
     system as system_storage,
     settings as settings_storage,
     queue_maintenance as queue_maintenance_storage,
+    queue_projection as queue_projection_storage,
+    repertoires as repertoire_http_storage,
+    snapshots as snapshot_http_storage,
+    line_authoring as line_authoring_storage,
+    card_authoring as card_authoring_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
+from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
+from tempo_legacy_database.adapters.foreground_controls import repertoires as repertoire_control_storage
+from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
+from tempo_legacy_database.adapters.foreground_controls import prefix_splits as prefix_split_storage
+from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as opening_card_storage
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
@@ -1303,11 +1313,7 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
     payload = {"queue_date": queue_date, "entry_id": card["queue_entry_id"],
                "card_id": card["id"], "expected_revision": card["revision"]}
     with read_connection() as database:
-        issued = database.execute(
-            "SELECT issued_as_head FROM queue_attempt_origins "
-            "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-            (payload["entry_id"], payload["card_id"], payload["expected_revision"]),
-        ).fetchone()
+        issued = queue_projection_storage.issued_head(database, payload["entry_id"], payload["card_id"], payload["expected_revision"])
     if issued and issued["issued_as_head"]:
         return
     if postgres_store.configured():
@@ -1316,7 +1322,7 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
     else:
         from .queue_commands import issue_queue_head
         with connection() as database:
-            database.execute("BEGIN IMMEDIATE")
+            queue_projection_storage.begin_head_issuance(database)
             result = issue_queue_head(database, payload)
     if isinstance(result, JSONResponse) or not result.get("issued"):
         raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
@@ -1325,120 +1331,10 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
 def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
     day = date.today().isoformat()
     with read_connection() as db:
-        evidence_timezone = db.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0] if include_opening_evidence and postgres_store.configured() else None
-        projection_row = db.execute(
-            "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
-        ).fetchone()
-        diagnostic_rows = db.execute(
-            "SELECT card_id,message FROM queue_projection_diagnostics WHERE queue_date=? ORDER BY card_id",
-            (day,),
-        ).fetchall()
-        queue_sql = """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
-                                  (SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=c.id AND invalidated_at IS NULL) latest_review_id,
-                                  q.gameplay_priority_reason,q.admission_kind,
-                                  CASE WHEN c.kind='prefix'
-                                              AND instr(c.recent_attempts_json,'"again"')>0
-                                    THEN COALESCE((SELECT MAX(failed_review.id) FROM reviews failed_review
-                                      WHERE failed_review.card_id=c.id AND failed_review.rating='again'
-                                        AND failed_review.source_kind='study'
-                                        AND failed_review.invalidated_at IS NULL),0)
-                                    ELSE 0 END latest_failed_review_id,
-                                  EXISTS(SELECT 1 FROM reviews study_review
-                                         WHERE study_review.card_id=c.id AND study_review.source_kind='study'
-                                           AND study_review.invalidated_at IS NULL) has_study_review,
-                                  (SELECT COUNT(*) FROM reviews study_review_count
-                                   WHERE study_review_count.card_id=c.id
-                                     AND study_review_count.source_kind='study'
-                                     AND study_review_count.invalidated_at IS NULL) study_review_count,
-                                  COALESCE(q.admission_source,
-                                    (SELECT 'defense:' || candidate.id
-                                     FROM threat_training_candidates candidate
-                                     WHERE candidate.card_id=c.id LIMIT 1)) admission_source,c.*,
-                                  COALESCE(r.name,study.title,'Study') repertoire_name,
-                                  COALESCE(r.source_name,'Study') repertoire_source,
-                                  COALESCE(r.is_main,0) is_main,study.id study_id,
-                                  COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
-                           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                           LEFT JOIN repertoires r ON r.id=COALESCE(
-                               (SELECT linked.id FROM repertoires linked
-                                WHERE ((linked.id=c.repertoire_id AND EXISTS(
-                                    SELECT 1 FROM repertoire_cards primary_link
-                                    WHERE primary_link.repertoire_id=linked.id)) OR EXISTS(
-                                    SELECT 1 FROM repertoire_cards rc
-                                    WHERE rc.card_id=c.id AND rc.repertoire_id=linked.id))
-                                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                                 WHERE block.repertoire_id=linked.id AND block.card_id=c.id)
-                                ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
-                               c.repertoire_id)
-                           LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
-                           LEFT JOIN studies study ON study.id=exercise.study_id
-                           WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
-                             AND c.superseded_by IS NULL
-                             AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
-                             AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-                             AND COALESCE(c.pending_validation,0)=0
-                             AND (c.content_type!='study_exercise' OR
-                                  (exercise.status='published' AND study.archived=0
-                                   AND (q.admission_kind='explicit' OR NOT EXISTS(
-                                     SELECT 1 FROM study_sibling_burials burial
-                                     WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
-                             AND (c.content_type!='opening' OR EXISTS(
-                                 SELECT 1 FROM repertoires repertoire
-                                 WHERE (repertoire.id=c.repertoire_id OR EXISTS(
-                                     SELECT 1 FROM repertoire_cards link
-                                     WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
-                                   AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                       WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
-                           ORDER BY q.position,q.id"""
-        from .services.frozen_opening_order import stale_queue_predicate, legacy_queue_predicate
-        queue_sql = queue_sql.replace(
-            "ORDER BY q.position,q.id",
-            stale_queue_predicate() + (legacy_queue_predicate() if postgres_store.configured() else "") + " ORDER BY q.position,q.id",
-        )
-        if postgres_store.configured():
-            # Resolve linked repertoires once as a set. The correlated SQLite
-            # lookup makes PostgreSQL scan repertoire_cards thousands of times
-            # before it joins today's queue.
-            original_lookup = queue_sql[
-                queue_sql.index("LEFT JOIN repertoires r ON"):
-                queue_sql.index("LEFT JOIN study_exercises exercise")
-            ]
-            repertoire_lookup = (
-                "LEFT JOIN ranked_repertoires choice "
-                "ON choice.card_id=c.id AND choice.rank=1 "
-                "LEFT JOIN repertoires r ON r.id=COALESCE(choice.repertoire_id,c.repertoire_id) "
-            )
-            from .queue_commands import available_attempt_sql
-            candidate_window = available_attempt_sql().replace("SELECT q.id FROM", "SELECT q.* FROM", 1)
-            candidate_window += " ORDER BY q.position,q.id" + (" LIMIT ?" if limit is not None else "")
-            queue_sql = (
-                "WITH active_queue AS MATERIALIZED "
-                "(" + candidate_window + "), "
-                "candidate_repertoires AS MATERIALIZED ("
-                "SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
-                "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
-                "JOIN repertoire_cards rc ON rc.card_id=c.id "
-                "JOIN repertoires linked ON linked.id=rc.repertoire_id "
-                "WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
-                "WHERE block.repertoire_id=linked.id AND block.card_id=c.id) "
-                "UNION SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
-                "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
-                "JOIN repertoires linked ON linked.id=c.repertoire_id "
-                "WHERE EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.repertoire_id=linked.id) "
-                "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
-                "WHERE block.repertoire_id=linked.id AND block.card_id=c.id)), "
-                "ranked_repertoires AS MATERIALIZED (SELECT card_id,repertoire_id,"
-                "ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY is_main DESC,created_at DESC) rank "
-                "FROM candidate_repertoires) "
-                + queue_sql.replace(original_lookup, repertoire_lookup)
-                .replace("FROM daily_queue q JOIN cards c", "FROM active_queue q JOIN cards c")
-                .replace("WHERE q.queue_date=? AND q.status='queued' AND c.archived=0", "WHERE c.archived=0")
-            )
-        rows = db.execute(
-            queue_sql + (" LIMIT ?" if limit is not None else ""),
-            (day, limit, limit) if limit is not None and postgres_store.configured() else
-            (day, limit) if limit is not None else (day,),
-        ).fetchall()
+        evidence_timezone = queue_projection_storage.evidence_timezone(db)[0] if include_opening_evidence and postgres_store.configured() else None
+        projection_row = queue_projection_storage.queue_projection(db, day)
+        diagnostic_rows = queue_projection_storage.queue_diagnostics(db, day)
+        rows = queue_projection_storage.queue_rows(db, day, limit, miss_reason=MISS_REASON)
         cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
         badge_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         fen_keys = {" ".join(card["start_fen"].split()[:4]) for card in cards}
@@ -1446,18 +1342,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         unique_fen_keys = list(fen_keys)
         for offset in range(0, len(unique_fen_keys), 400):
             fen_key_batch = unique_fen_keys[offset:offset + 400]
-            placeholders = ",".join("?" for _ in fen_key_batch)
-            encounter_rows = db.execute(
-                f"""SELECT occurrence.fen_key,
-                           COUNT(DISTINCT occurrence.game_id) encounter_count,
-                           MAX(game.played_at) last_seen_at
-                    FROM game_position_occurrences occurrence
-                    JOIN imported_games game ON game.id=occurrence.game_id
-                    WHERE occurrence.fen_key IN ({placeholders})
-                      AND game.played_at>=? AND game.adaptive_excluded=0
-                    GROUP BY occurrence.fen_key""",
-                (*fen_key_batch, badge_cutoff),
-            ).fetchall()
+            encounter_rows = queue_projection_storage.encounter_rows(db, fen_key_batch, badge_cutoff)
             encounter_by_fen.update({row["fen_key"]: row for row in encounter_rows})
         for card in cards:
             card["prefix_split_offer_available"] = (
@@ -1475,11 +1360,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
             if encounter_count >= 3:
                 badges.append("Frequent")
             card["encounter_badges"] = badges
-        from .queue_commands import available_attempt_sql
-        total_count = len(cards) if limit is None else db.execute(
-            "SELECT COUNT(*) FROM (" + available_attempt_sql() + ") eligible_queue",
-            (day,),
-        ).fetchone()[0]
+        total_count = len(cards) if limit is None else queue_projection_storage.available_count(db, day, miss_reason=MISS_REASON)
     if cards:
         _issue_returned_queue_head(day, cards[0])
     for card in cards:
@@ -1523,12 +1404,7 @@ def prepared_queue(include_opening_evidence: bool = False):
     if study_cards:
         with read_connection() as database:
             for card in study_cards:
-                row = database.execute(
-                    """SELECT exercise.current_revision,revision.specification_json
-                       FROM study_exercises exercise JOIN study_exercise_revisions revision
-                         ON revision.exercise_id=exercise.id AND revision.revision=exercise.current_revision
-                       WHERE exercise.id=?""", (card["study_exercise_id"],),
-                ).fetchone()
+                row = queue_projection_storage.exercise_revision(database, card["study_exercise_id"])
                 if not row:
                     raise HTTPException(409, f"Study exercise {card['study_exercise_id']} has no current revision")
                 card["study_snapshot"] = {
@@ -1582,9 +1458,7 @@ async def import_pgn(
     if not lines:
         raise HTTPException(422, "No playable lines were found")
     with read_connection() as settings_database:
-        saved_depth = settings_database.execute(
-            "SELECT initial_depth FROM settings WHERE id=1"
-        ).fetchone()[0]
+        saved_depth = line_authoring_storage.initial_depth(settings_database)
     depth = max(
         2, min(20, initial_depth if initial_depth is not None else saved_depth)
     )
@@ -1616,28 +1490,16 @@ async def import_pgn(
     derived_at = time.perf_counter()
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
-        if not db.in_transaction:
-            db.execute("BEGIN IMMEDIATE")
-        existing_repertoire = db.execute(
-            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
-            (file.filename, trained_color),
-        ).fetchone()
+        line_authoring_storage.begin_import_if_needed(db)
+        existing_repertoire = line_authoring_storage.matching_import_repertoire(db, file.filename, trained_color)
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
         validated_routes = ensure_batch_lines_in_scope(db, [(rid, line.starting_fen, line.moves) for line in lines]) if existing_repertoire else [{} for line in lines]
         admitted_routes = []
-        db.execute(
-            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"
-        )
-        db.execute(
-            "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
-            (rid, file.filename.rsplit(".", 1)[0], file.filename, now),
-        )
+        line_authoring_storage.clear_main_repertoires(db)
+        line_authoring_storage.save_import_repertoire(db, rid, file.filename.rsplit(".", 1)[0], file.filename, now)
         for line, validated_route in zip(lines, validated_routes):
             moves_json = json.dumps(line.moves)
-            existing_line = db.execute(
-                "SELECT id FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?",
-                (rid, line.starting_fen, moves_json),
-            ).fetchone()
+            existing_line = line_authoring_storage.matching_import_line(db, rid, line.starting_fen, moves_json)
             line_id = (
                 existing_line["id"]
                 if existing_line
@@ -1645,58 +1507,23 @@ async def import_pgn(
                     f"{rid}\0{card_id(line.starting_fen, line.moves)}".encode()
                 ).hexdigest()
             )
-            inserted = db.execute(
-                "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
-                (
-                    line_id,
-                    rid,
-                    file.filename,
-                    trained_color,
-                    line.starting_fen,
-                    json.dumps(line.moves),
-                    now,
-                ),
-            )
-            if inserted.rowcount:
+            inserted = line_authoring_storage.insert_import_line(db, line_id, rid, file.filename, trained_color, line.starting_fen, json.dumps(line.moves), now)
+            if inserted:
                 admitted_routes.append(validated_route)
-            db.execute(
-                """INSERT INTO repertoire_line_training_depths(
-                       line_id,learner_decision_count
-                   ) VALUES(?,?) ON CONFLICT(line_id) DO UPDATE SET
-                       learner_decision_count=excluded.learner_decision_count""",
-                (line_id, depth),
-            )
+            line_authoring_storage.set_import_line_depth(db, line_id, depth)
             for annotation in line.annotations:
-                db.execute(
-                    """INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at)
-                              VALUES(?,?,?,?,?,?) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET
-                              comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
-                    (
-                        rid,
-                        annotation.fen_key,
-                        annotation.comment,
-                        json.dumps(annotation.arrows),
-                        json.dumps(annotation.squares),
-                        now,
-                    ),
-                )
+                line_authoring_storage.save_import_annotation(db, rid, annotation.fen_key, annotation.comment, json.dumps(annotation.arrows), json.dumps(annotation.squares), now)
         for validated_route in admitted_routes:
             certify_admitted_route(db, rid, validated_route)
-        placeholders = ",".join("?" for _ in segment_ids)
         existing_segment_ids = {
             row["id"]
             for row in (
-                db.execute(
-                    f"SELECT id FROM cards WHERE id IN ({placeholders})",
-                    tuple(sorted(segment_ids)),
-                ).fetchall()
+                line_authoring_storage.existing_segment_rows(db, segment_ids)
                 if segment_ids
                 else []
             )
         }
-        deleted_segment_ids = {row[0] for row in db.execute(
-            f"SELECT card_id FROM deleted_cards WHERE card_id IN ({placeholders})", tuple(sorted(segment_ids)),
-        )} if segment_ids else set()
+        deleted_segment_ids = {row[0] for row in line_authoring_storage.deleted_segment_rows(db, segment_ids)} if segment_ids else set()
         eligible_segments = [segment for segment in imported_segments if segment.card_id not in deleted_segment_ids]
         created = len(segment_ids - existing_segment_ids - deleted_segment_ids)
         prefix_cards_created = len(prefix_segment_ids - existing_segment_ids - deleted_segment_ids)
@@ -1767,95 +1594,8 @@ async def import_pgn(
 @app.get("/api/repertoires")
 def list_repertoires():
     from .repertoire_settings import SYSTEM_REPERTOIRES
-    system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
     with read_connection() as db:
-        rows = db.execute(
-            f"""
-            WITH line_counts AS (
-                SELECT repertoire_id,COUNT(*) AS line_count
-                FROM repertoire_lines
-                GROUP BY repertoire_id
-            ), card_counts AS (
-                SELECT repertoire_id,COUNT(*) AS card_count
-                FROM repertoire_cards
-                GROUP BY repertoire_id
-            ), active_prefix_counts AS (
-                SELECT step.repertoire_id,COUNT(DISTINCT card.id) AS active_prefix_count
-                FROM opening_graph_steps step
-                JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
-                JOIN cards card ON card.id=step.card_id
-                JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
-                WHERE card.kind='prefix' AND card.content_type='opening' AND card.archived=0
-                  AND card.state!='locked' AND card.pending_validation=0
-                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                 WHERE block.repertoire_id=step.repertoire_id AND block.card_id=card.id)
-                GROUP BY step.repertoire_id
-            ), due_counts AS (
-                SELECT rc.repertoire_id,COUNT(DISTINCT q.card_id) AS due_count
-                FROM daily_queue q
-                JOIN repertoire_cards rc ON rc.card_id=q.card_id
-                WHERE q.queue_date=? AND q.status='queued' AND NOT EXISTS(
-                    SELECT 1 FROM repertoire_integrity_card_blocks block
-                    WHERE block.repertoire_id=rc.repertoire_id AND block.card_id=q.card_id
-                )
-                GROUP BY rc.repertoire_id
-            ), blocked_counts AS (
-                SELECT block.repertoire_id,
-                       COUNT(DISTINCT block.card_id) AS blocked_card_count,
-                       COUNT(DISTINCT CASE WHEN card.due_date<=? AND card.state IN ('learning','mature')
-                                          THEN block.card_id END) AS blocked_due_count
-                FROM repertoire_integrity_card_blocks block
-                JOIN cards card ON card.id=block.card_id AND card.archived=0
-                GROUP BY block.repertoire_id
-            ), issue_counts AS (
-                SELECT repertoire_id,COUNT(*) AS issue_count,
-                       SUM(CASE WHEN kind IN ('missing_response','multiple_responses','invalid_source')
-                           THEN 1 ELSE 0 END) AS conflict_count
-                FROM repertoire_integrity_issues
-                GROUP BY repertoire_id
-            )
-            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,r.new_cards_per_day,
-                   r.canonical_prefix_moves_json,r.canonical_prefix_revision,
-                   COALESCE(r.new_cards_per_day,(SELECT new_cards_per_day FROM settings WHERE id=1)) effective_new_cards_per_day,
-                   COALESCE(rs.status,'unchecked') integrity_status,
-                   COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
-                   (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
-                   COALESCE(lc.line_count,0) AS line_count,
-                   COALESCE(cc.card_count,0) AS card_count,
-                   COALESCE(apc.active_prefix_count,0) AS active_prefix_count,
-                   (SELECT l2.trained_color FROM repertoire_lines l2 WHERE l2.repertoire_id=r.id ORDER BY l2.created_at LIMIT 1) AS trained_color,
-                   COALESCE(dc.due_count,0) AS due_count,
-                   COALESCE(bc.blocked_due_count,0) AS blocked_due_count,
-                   COALESCE(bc.blocked_card_count,0) AS blocked_card_count,
-                   COALESCE(ic.issue_count,0) AS integrity_issue_count,
-                   COALESCE(ic.conflict_count,0) AS conflict_count,
-                   COALESCE(graph.generation,0) AS graph_generation,
-                   graph.published_at AS graph_updated_at,
-                   CASE
-                     WHEN graph_task.state IN ('queued','leased','retrying') THEN 'refreshing'
-                     WHEN graph_task.state='failed' THEN 'failed'
-                     WHEN graph.generation IS NOT NULL THEN 'ready'
-                     ELSE 'refreshing'
-                   END AS graph_state,
-                   graph_task.last_error AS graph_error
-            FROM repertoires r
-            LEFT JOIN repertoire_integrity_state rs ON rs.repertoire_id=r.id
-            LEFT JOIN line_counts lc ON lc.repertoire_id=r.id
-            LEFT JOIN card_counts cc ON cc.repertoire_id=r.id
-            LEFT JOIN active_prefix_counts apc ON apc.repertoire_id=r.id
-            LEFT JOIN due_counts dc ON dc.repertoire_id=r.id
-            LEFT JOIN blocked_counts bc ON bc.repertoire_id=r.id
-            LEFT JOIN issue_counts ic ON ic.repertoire_id=r.id
-            LEFT JOIN opening_graph_publications graph ON graph.repertoire_id=r.id
-            LEFT JOIN background_tasks graph_task
-              ON graph_task.kind='opening_graph_rebuild'
-             AND graph_task.deduplication_key=r.id
-            WHERE r.id NOT IN ({system_placeholders}) OR (r.id='__retained_cards__' AND EXISTS(
-                SELECT 1 FROM cards retained WHERE retained.repertoire_id=r.id))
-            ORDER BY r.created_at DESC
-        """,
-            (date.today().isoformat(), date.today().isoformat(), *SYSTEM_REPERTOIRES),
-        ).fetchall()
+        rows = repertoire_http_storage.repertoire_rows(db, SYSTEM_REPERTOIRES, lambda: date.today().isoformat())
         repertoire_items = [
             {
                 **{key: value for key, value in dict(row).items() if key not in {"canonical_prefix_moves_json", "canonical_prefix_revision"}},
@@ -1882,10 +1622,7 @@ def repertoire_move_membership(identifier: str, fen: str = Query(max_length=128)
 @app.get("/api/repertoire/lines")
 def repertoire_lines():
     with read_connection() as db:
-        rows = db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
-                                  r.name repertoire_name,r.is_main
-                           FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
-                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY r.created_at,l.created_at""").fetchall()
+        rows = repertoire_http_storage.line_rows(db)
     return {
         "lines": [{**dict(row), "moves": json.loads(row["moves_json"])} for row in rows]
     }
@@ -1895,14 +1632,7 @@ def repertoire_lines():
 def comparison_cards():
     """Return saved opening routes; chess replay belongs outside the database read."""
     with read_connection() as db:
-        rows = db.execute("""SELECT c.id,c.start_fen,c.moves_json,c.state,c.kind,
-                                  c.trained_color,r.id repertoire_id,r.name repertoire_name
-                           FROM cards c
-                           JOIN repertoire_cards rc ON rc.card_id=c.id
-                           JOIN repertoires r ON r.id=rc.repertoire_id
-                           WHERE c.content_type='opening' AND c.archived=0 AND r.id<>'__retained_cards__'
-                             AND c.pending_validation=0
-                           ORDER BY c.id,r.id""").fetchall()
+        rows = repertoire_http_storage.comparison_card_rows(db)
         records = [dict(row) for row in rows]
     cards = []
     for record in records:
@@ -1959,10 +1689,7 @@ def resolve_repertoire_integrity(
             "integrity.issue.resolve", prepared, idempotency_key=idempotency_key,
         )
     with read_connection() as database:
-        issue = database.execute(
-            "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
-            (issue_id, identifier),
-        ).fetchone()
+        issue = repertoire_http_storage.integrity_issue_signature(database, issue_id, identifier)
     if not issue:
         raise HTTPException(404, "Integrity issue not found")
     if issue["signature"] != request.signature:
@@ -2001,20 +1728,12 @@ def fen_key(fen: str) -> str:
 @app.get("/api/repertoires/{identifier}/annotations")
 def list_annotations(identifier: str, fen: str | None = None):
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, identifier):
             raise HTTPException(404, "Repertoire not found")
         if fen:
-            rows = db.execute(
-                "SELECT * FROM position_annotations WHERE repertoire_id=? AND fen_key=?",
-                (identifier, fen_key(fen)),
-            ).fetchall()
+            rows = repertoire_http_storage.position_annotation_rows(db, identifier, fen_key(fen))
         else:
-            rows = db.execute(
-                "SELECT * FROM position_annotations WHERE repertoire_id=? ORDER BY updated_at",
-                (identifier,),
-            ).fetchall()
+            rows = repertoire_http_storage.annotation_rows(db, identifier)
     return {
         "annotations": [
             {
@@ -2045,29 +1764,12 @@ def save_annotation(identifier: str, request: PositionAnnotationRequest,
     arrows = [item.model_dump(by_alias=True) for item in request.arrows]
     squares = [item.model_dump() for item in request.squares]
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, identifier):
             raise HTTPException(404, "Repertoire not found")
         if not request.comment.strip() and not arrows and not squares:
-            db.execute(
-                "DELETE FROM position_annotations WHERE repertoire_id=? AND fen_key=?",
-                (identifier, key),
-            )
+            annotation_command_storage.delete_position_annotation(db, identifier, key)
         else:
-            db.execute(
-                """INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at)
-                          VALUES(?,?,?,?,?,?) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET
-                          comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
-                (
-                    identifier,
-                    key,
-                    request.comment.strip(),
-                    json.dumps(arrows),
-                    json.dumps(squares),
-                    now,
-                ),
-            )
+            repertoire_http_storage.save_annotation(db, identifier, key, request.comment.strip(), json.dumps(arrows), json.dumps(squares), now)
     return {
         "repertoireId": identifier,
         "fenKey": key,
@@ -2081,10 +1783,7 @@ def save_annotation(identifier: str, request: PositionAnnotationRequest,
 @app.get("/api/cards/{identifier}/teaching")
 def list_teaching_states(identifier: str):
     with connection() as db:
-        rows = db.execute(
-            "SELECT card_id,revision,ply,taught_at FROM teaching_states WHERE card_id=? ORDER BY revision,ply",
-            (identifier,),
-        ).fetchall()
+        rows = repertoire_http_storage.teaching_rows(db, identifier)
     return {
         "states": [
             {
@@ -2110,14 +1809,9 @@ def mark_teaching_state(identifier: str, request: TeachingStateRequest,
         )
     taught_at = datetime.now(timezone.utc).isoformat()
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM cards WHERE id=? AND archived=0", (identifier,)
-        ).fetchone():
+        if not repertoire_http_storage.active_card_presence(db, identifier):
             raise HTTPException(404, "Card not found")
-        db.execute(
-            "INSERT OR IGNORE INTO teaching_states(card_id,revision,ply,taught_at) VALUES(?,?,?,?)",
-            (identifier, request.revision, request.ply, taught_at),
-        )
+        repertoire_http_storage.record_teaching_state(db, identifier, request.revision, request.ply, taught_at)
     return {
         "cardId": identifier,
         "revision": request.revision,
@@ -2128,79 +1822,22 @@ def mark_teaching_state(identifier: str, request: TeachingStateRequest,
 
 @app.get("/api/migration/snapshot")
 def migration_snapshot():
-    table_names = [
-        "settings",
-        "repertoires",
-        "canonical_prefix_previews",
-        "canonical_prefix_results",
-        "canonical_prefix_positions",
-        "repertoire_lines",
-        "repertoire_cards",
-        "cards",
-        "reviews",
-        "daily_queue",
-        "queue_attempt_origins",
-        "review_attempt_receipts",
-        "review_schedule_snapshots",
-        "daily_queue_days",
-        "position_annotations",
-        "teaching_states",
-        "card_revisions",
-        "prefix_splits",
-        "tactic_progress",
-        "tactic_captures",
-        "endgame_templates",
-        "endgame_attempts",
-        "game_accounts",
-        "imported_games",
-        "game_move_analysis",
-        "game_move_analysis_candidates",
-        "game_analysis_jobs",
-        "game_sync_jobs",
-        "game_derivation_jobs",
-        "repertoire_game_scope",
-        "game_position_occurrences",
-        "gameplay_card_priorities",
-        "repertoire_comparisons",
-        "game_repertoire_matches",
-        "repertoire_decision_events",
-        "game_findings",
-        "threat_training_candidates",
-        "threat_analysis_requests",
-        "threat_candidate_requests",
-        "defense_attempts",
-        "guided_review_sessions",
-        "guided_review_attempts",
-        "gameplay_events",
-        "game_feature_rows",
-        "daily_chess_snapshots",
-        "daily_chess_insights",
-        "game_insight_recommendations",
-        "repertoire_coverage_runs",
-        "repertoire_coverage_nodes",
-        "repertoire_coverage_candidates",
-        "game_sync_state",
-    ]
     with read_connection() as db:
         # Automatic coverage and Explorer cache rows are rebuildable enrichment.
         # Keeping them out of a portable study snapshot preserves its checksum
         # across a restart while background work continues independently.
         automatic_coverage_run_ids = {
             row["id"]
-            for row in db.execute(
-                """SELECT id FROM repertoire_coverage_runs
-                   WHERE settings_json LIKE ?""",
-                ('%"automatic_priority": true%',),
-            )
+            for row in snapshot_http_storage.automatic_coverage_runs(db)
         }
         automatic_coverage_node_ids = {
             row["id"]
-            for row in db.execute("SELECT id,run_id FROM repertoire_coverage_nodes").fetchall()
+            for row in snapshot_http_storage.coverage_nodes(db)
             if row["run_id"] in automatic_coverage_run_ids
         }
         tables = {}
-        for name in table_names:
-            rows = [dict(row) for row in db.execute(f"SELECT * FROM {name}").fetchall()]
+        for name, source_rows in snapshot_http_storage.portable_table_rows(db):
+            rows = [dict(row) for row in source_rows]
             if name == "repertoire_coverage_runs":
                 rows = [row for row in rows if row["id"] not in automatic_coverage_run_ids]
             elif name == "repertoire_coverage_nodes":
@@ -2235,15 +1872,9 @@ def make_main_repertoire(identifier: str,
             idempotency_key=idempotency_key,
         )
     with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
-            (identifier,),
-        ).fetchone():
+        if not repertoire_http_storage.selectable_repertoire(db, identifier):
             raise HTTPException(404, "Repertoire not found")
-        db.execute(
-            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
-            (identifier,),
-        )
+        repertoire_http_storage.select_main_repertoire(db, identifier)
     return {"id": identifier, "is_main": True}
 
 
@@ -2266,20 +1897,13 @@ def requeue(db, day, cid, after, attempt):
 def queue_entry_state(entry_id: int):
     """Read one queue attempt without changing its position or review state."""
     with read_connection() as database:
-        entry = database.execute(
-            "SELECT queue_date,status,attempt_failed FROM daily_queue WHERE id=?",
-            (entry_id,),
-        ).fetchone()
+        entry = queue_projection_storage.entry_state(database, entry_id)
         if not entry or str(entry["queue_date"]) != date.today().isoformat():
             return {"state": "unavailable", "attempt_failed": False}
         if entry["status"] != "queued":
             return {"state": "completed" if entry["status"] == "complete" else "unavailable",
                     "attempt_failed": bool(entry["attempt_failed"])}
-        from .queue_commands import available_attempt_sql
-        active_entry = database.execute(
-            available_attempt_sql() + " ORDER BY q.position,q.id LIMIT 1",
-            (date.today().isoformat(),),
-        ).fetchone()
+        active_entry = queue_projection_storage.available_head(database, lambda: date.today().isoformat(), miss_reason=MISS_REASON)
     return {"state": "head" if active_entry and active_entry["id"] == entry_id else "queued",
             "attempt_failed": bool(entry["attempt_failed"])}
 
@@ -2296,12 +1920,7 @@ def mark_attempt_failed(entry_id: int,
         from .queue_commands import validate_available_attempt
         validate_available_attempt(db, entry_id, request.card_id if request else None,
                                    request.expected_revision if request else None)
-        if not db.execute(
-            """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
-               AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
-                    OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)""",
-            (entry_id,),
-        ).rowcount:
+        if not queue_projection_storage.mark_entry_failed(db, entry_id):
             raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     return {"attempt_failed": True}
 
@@ -2321,12 +1940,7 @@ def bury_queue_entry(entry_id: int,
                                    request.expected_revision if request else None)
         previous_order = capture_daily_queue_order(db, day)
         # Retained rows prevent same-day refreshes from readmitting the card.
-        db.execute(
-            """UPDATE daily_queue SET status='buried'
-               WHERE queue_date=? AND status!='complete'
-                 AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
-            (day, entry_id),
-        )
+        queue_projection_storage.bury_entry(db, day, entry_id)
         preserve_daily_queue_order(db, day, previous=previous_order)
     return {"buried": True, "queue_entry_id": entry_id}
 
@@ -2487,49 +2101,22 @@ def branch(request: BranchRequest,
     ).hexdigest()
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, request.repertoire_id):
             raise HTTPException(404, "Repertoire not found")
         validated_route = ensure_line_in_scope(db, request.repertoire_id, request.starting_fen, moves, remember=False)
         duplicate = (
-            db.execute("SELECT 1 FROM repertoire_lines WHERE id=?", (lid,)).fetchone()
+            line_authoring_storage.branch_line_presence(db, lid)
             is not None
         )
-        db.execute(
-            "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
-            (
-                lid,
-                request.repertoire_id,
-                request.name,
-                request.trained_color,
-                request.starting_fen,
-                json.dumps(moves),
-                now,
-            ),
-        )
-        depth = db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[
-            0
-        ]
-        db.execute(
-            """INSERT INTO repertoire_line_training_depths(
-                   line_id,learner_decision_count
-               ) VALUES(?,?) ON CONFLICT(line_id) DO UPDATE SET
-                   learner_decision_count=excluded.learner_decision_count""",
-            (lid, depth),
-        )
+        line_authoring_storage.insert_branch_line(db, lid, request.repertoire_id, request.name, request.trained_color, request.starting_fen, json.dumps(moves), now)
+        depth = line_authoring_storage.initial_depth(db)
+        line_authoring_storage.set_branch_line_depth(db, lid, depth)
         if request.source_gap_id:
             try:
                 gap_node_id, gap_move_uci = request.source_gap_id.split(":", 1)
             except ValueError as error:
                 raise HTTPException(422, "Invalid repertoire coverage gap") from error
-            gap = db.execute(
-                """SELECT c.node_id,c.move_uci,n.repertoire_id
-                   FROM repertoire_coverage_candidates c
-                   JOIN repertoire_coverage_nodes n ON n.id=c.node_id
-                   WHERE c.node_id=? AND c.move_uci=?""",
-                (gap_node_id, gap_move_uci),
-            ).fetchone()
+            gap = line_authoring_storage.source_gap(db, gap_node_id, gap_move_uci)
             if not gap or gap["repertoire_id"] != request.repertoire_id:
                 raise HTTPException(422, "Coverage gap does not belong to this repertoire")
             if not moves or moves[0] != gap_move_uci or len(moves) < 2:
@@ -2537,10 +2124,7 @@ def branch(request: BranchRequest,
                     422,
                     "A resolved gap must include the missing opponent move and your response",
                 )
-            db.execute(
-                "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
-                (gap_node_id, gap_move_uci),
-            )
+            line_authoring_storage.mark_source_gap_covered(db, gap_node_id, gap_move_uci)
         if not duplicate:
             certify_admitted_route(db, request.repertoire_id, validated_route)
         integrity = integrity_summary(db, request.repertoire_id)
@@ -2578,14 +2162,9 @@ def remove_branch(request: RemoveBranchRequest,
         raise HTTPException(422, "Branch contains an illegal move")
     position_key = " ".join(request.starting_fen.split()[:4])
     with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, request.repertoire_id):
             raise HTTPException(404, "Repertoire not found")
-        lines = db.execute(
-            "SELECT * FROM repertoire_lines WHERE repertoire_id=?",
-            (request.repertoire_id,),
-        ).fetchall()
+        lines = line_authoring_storage.removal_lines(db, request.repertoire_id)
         removed_lines = []
         for line in lines:
             if " ".join(line["start_fen"].split()[:4]) != position_key:
@@ -2607,7 +2186,7 @@ def remove_branch(request: RemoveBranchRequest,
                 "integrity": integrity,
             }
         for line in removed_lines:
-            db.execute("DELETE FROM repertoire_lines WHERE id=?", (line["id"],))
+            line_authoring_storage.remove_line(db, line["id"])
         deleted_cards = 0
         integrity = integrity_summary(db, request.repertoire_id)
     try:
@@ -2707,16 +2286,7 @@ def prefix_split_preview(identifier: str):
     with connection() as database:
         try:
             result = preview_prefix_split(database, identifier)
-            usage = database.execute(
-                """SELECT COUNT(DISTINCT step.line_id) line_count,
-                          COUNT(DISTINCT step.repertoire_id) repertoire_count
-                   FROM opening_graph_steps step
-                   JOIN opening_graph_publications publication
-                     ON publication.repertoire_id=step.repertoire_id
-                    AND publication.generation=step.generation
-                   WHERE step.card_id=?""",
-                (identifier,),
-            ).fetchone()
+            usage = card_authoring_storage.published_usage(database, identifier)
             return {
                 **result,
                 "shared_line_count": max(1, usage["line_count"]),
@@ -2743,26 +2313,11 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest,
             result = apply_prefix_split(database, identifier, request.expected_revision)
             repertoire_ids = [
                 row["repertoire_id"]
-                for row in database.execute(
-                    "SELECT repertoire_id FROM repertoire_cards WHERE card_id IN (?,?)",
-                    (result["parent"]["card_id"], result["continuation"]["card_id"]),
-                )
+                for row in card_authoring_storage.split_repertoire_rows(database, result["parent"]["card_id"], result["continuation"]["card_id"])
             ]
             if not result["idempotent"]:
-                database.execute(
-                    "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
-                    (result["parent"]["card_id"], result["continuation"]["card_id"]),
-                )
-            usage = database.execute(
-                """SELECT COUNT(DISTINCT step.line_id) line_count,
-                          COUNT(DISTINCT step.repertoire_id) repertoire_count
-                   FROM opening_graph_steps step
-                   JOIN opening_graph_publications publication
-                     ON publication.repertoire_id=step.repertoire_id
-                    AND publication.generation=step.generation
-                   WHERE step.card_id=?""",
-                (identifier,),
-            ).fetchone()
+                prefix_split_storage.mark_split_pending_validation(database, result["parent"]["card_id"], result["continuation"]["card_id"])
+            usage = card_authoring_storage.published_usage(database, identifier)
             result = {
                 **result,
                 "shared_line_count": max(1, usage["line_count"]),
@@ -2805,16 +2360,8 @@ def prefix_split_reject(identifier: str, request: PrefixSplitRequest,
             preview = preview_prefix_split(database, identifier)
             if preview["source_revision"] != request.expected_revision:
                 raise HTTPException(409, "The card changed; refresh it and try again")
-            latest_failed_review_id = database.execute(
-                """SELECT COALESCE(MAX(id),0) FROM reviews
-                   WHERE card_id=? AND rating='again' AND source_kind='study'
-                     AND invalidated_at IS NULL""",
-                (identifier,),
-            ).fetchone()[0]
-            database.execute(
-                "UPDATE cards SET prefix_split_rejected_after_review_id=? WHERE id=?",
-                (latest_failed_review_id, identifier),
-            )
+            latest_failed_review_id = card_authoring_storage.latest_failed_review_id(database, identifier)
+            prefix_split_storage.store_split_rejection(database, latest_failed_review_id, identifier)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
@@ -2835,59 +2382,25 @@ def revise_card(identifier: str, request: CardRevisionRequest,
     replacement = card_id(request.starting_fen, moves)
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
-        old = db.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()
+        old = opening_card_storage.card_row(db, identifier)
         from .card_deletion import require_card_not_deleted
         require_card_not_deleted(db, identifier)
         require_card_not_deleted(db, replacement)
         if not old:
             raise HTTPException(404, "Card not found")
-        affected_repertoire_ids = [row[0] for row in db.execute(
-            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? "
-            "UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id",
-            (identifier, identifier),
-        )]
+        affected_repertoire_ids = [row[0] for row in card_authoring_storage.affected_repertoire_rows(db, identifier)]
         validated_routes = {repertoire_id: ensure_line_in_scope(db, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in affected_repertoire_ids}
-        existing = db.execute(
-            "SELECT * FROM cards WHERE id=?", (replacement,)
-        ).fetchone()
+        existing = opening_card_storage.card_row(db, replacement)
         revision = int(old["revision"] or 1) + 1
-        db.execute(
-            "INSERT OR IGNORE INTO card_revisions(card_id,revision,start_fen,moves_json,history_mode,created_at) VALUES(?,?,?,?,?,?)",
-            (
-                identifier,
-                revision,
-                old["start_fen"],
-                old["moves_json"],
-                request.history_mode,
-                now,
-            ),
-        )
+        card_authoring_storage.record_revision(db, identifier, revision, old["start_fen"], old["moves_json"], request.history_mode, now)
         if replacement == identifier:
-            db.execute(
-                "UPDATE cards SET start_fen=?,moves_json=?,source_fen=?,revision=?,canonical_route_source=1 WHERE id=?",
-                (
-                    request.starting_fen,
-                    json.dumps(moves),
-                    request.source_fen,
-                    revision,
-                    identifier,
-                ),
-            )
+            card_authoring_storage.revise_existing_definition(db, request.starting_fen, json.dumps(moves), request.source_fen, revision, identifier)
         elif existing:
-            db.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (replacement,))
+            opening_card_storage.promote_card_source(db, replacement)
             if request.history_mode == "preserve":
-                db.execute(
-                    "UPDATE reviews SET card_id=? WHERE card_id=?",
-                    (replacement, identifier),
-                )
-            db.execute(
-                "UPDATE daily_queue SET status='complete' WHERE card_id=? AND status='queued'",
-                (identifier,),
-            )
-            db.execute(
-                "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
-                (replacement, identifier),
-            )
+                opening_card_storage.reassign_reviews(db, replacement, identifier)
+            card_authoring_storage.complete_queued_card(db, identifier)
+            opening_card_storage.archive_source_card(db, replacement, identifier)
         else:
             fields = dict(old)
             fields.update(
@@ -2920,40 +2433,21 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                         "recent_attempts_json": "[]",
                     }
                 )
-            columns = card_columns(db)
-            db.execute(
-                f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
-                tuple(fields.get(column) for column in columns),
-            )
+            opening_card_storage.copy_card(db, fields, {})
             if request.history_mode == "preserve":
-                db.execute(
-                    "UPDATE reviews SET card_id=? WHERE card_id=?",
-                    (replacement, identifier),
-                )
-            db.execute(
-                "UPDATE daily_queue SET card_id=? WHERE card_id=? AND status='queued'",
-                (replacement, identifier),
-            )
-            db.execute(
-                "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
-                (replacement, identifier),
-            )
+                opening_card_storage.reassign_reviews(db, replacement, identifier)
+            card_authoring_storage.reassign_queued_card(db, replacement, identifier)
+            opening_card_storage.archive_source_card(db, replacement, identifier)
         if replacement != identifier:
-            db.execute(
-                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) SELECT repertoire_id,?,1 FROM repertoire_cards WHERE card_id=? ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1",
-                (replacement, identifier),
-            )
-            db.execute("DELETE FROM repertoire_cards WHERE card_id=?", (identifier,))
+            card_authoring_storage.copy_source_memberships(db, replacement, identifier)
+            opening_card_storage.delete_source_memberships(db, identifier)
         for repertoire_id in affected_repertoire_ids:
-            db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, replacement))
+            card_authoring_storage.ensure_canonical_membership(db, repertoire_id, replacement)
         for repertoire_id, validated_route in validated_routes.items():
             certify_admitted_route(db, repertoire_id, validated_route)
         repertoire_ids = affected_repertoire_ids
         for repertoire_id in set(repertoire_ids):
-            db.execute(
-                "UPDATE cards SET pending_validation=1 WHERE id=?",
-                (replacement,),
-            )
+            card_authoring_storage.mark_pending_validation(db, replacement)
     for repertoire_id in set(repertoire_ids):
         try:
             enqueue_integrity_scans(repertoire_id)
@@ -2993,18 +2487,11 @@ def archive_card(identifier: str, permanent: bool = False, expected_revision: in
     with connection() as db, refreshing_game_scope(db):
         repertoire_ids = [
             row["repertoire_id"]
-            for row in db.execute(
-                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (identifier,)
-            )
+            for row in card_authoring_storage.archive_membership_rows(db, identifier)
         ]
-        if not db.execute(
-            "UPDATE cards SET archived=1 WHERE id=?", (identifier,)
-        ).rowcount:
+        if not card_authoring_storage.archive_card(db, identifier):
             raise HTTPException(404, "Card not found")
-        db.execute(
-            "UPDATE daily_queue SET status='complete' WHERE card_id=? AND status='queued'",
-            (identifier,),
-        )
+        card_authoring_storage.complete_queued_card(db, identifier)
         integrity = {
             repertoire_id: integrity_summary(db, repertoire_id)
             for repertoire_id in set(repertoire_ids)
@@ -3031,8 +2518,7 @@ def update_repertoire_settings(identifier: str, request: RepertoireSettingsReque
     from .repertoire_settings import repertoire_settings_response
     with connection() as db:
         repertoire_settings_response(db, identifier)
-        db.execute("UPDATE repertoires SET new_cards_per_day=? WHERE id=?",
-                   (request.new_cards_per_day, identifier))
+        repertoire_control_storage.store_daily_limit(db, request.new_cards_per_day, identifier)
         result = repertoire_settings_response(db, identifier)
     enqueue_daily_queue_refresh(foreground=True)
     return result
@@ -3048,28 +2534,15 @@ def rename_repertoire(identifier: str, request: RepertoireRenameRequest,
             idempotency_key=idempotency_key,
         )
     with connection() as db:
-        if not db.execute(
-            "UPDATE repertoires SET name=? WHERE id=?",
-            (request.name.strip(), identifier),
-        ).rowcount:
+        if not repertoire_control_storage.rename_repertoire(db, request.name.strip(), identifier):
             raise HTTPException(404, "Repertoire not found")
     return {"id": identifier, "name": request.name.strip()}
 
 
 def export_repertoires(repertoire_id: str | None = None):
     with connection() as db:
-        query = "SELECT l.*,r.name repertoire_name FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id"
-        rows = db.execute(
-            query
-            + (" WHERE l.repertoire_id=?" if repertoire_id else "")
-            + (" ORDER BY l.created_at"),
-            ((repertoire_id,) if repertoire_id else ()),
-        ).fetchall()
-        annotation_rows = db.execute(
-            "SELECT * FROM position_annotations"
-            + (" WHERE repertoire_id=?" if repertoire_id else ""),
-            ((repertoire_id,) if repertoire_id else ()),
-        ).fetchall()
+        rows = repertoire_http_storage.export_line_rows(db, repertoire_id)
+        annotation_rows = repertoire_http_storage.export_annotation_rows(db, repertoire_id)
     annotations = {
         (row["repertoire_id"], row["fen_key"]): row for row in annotation_rows
     }

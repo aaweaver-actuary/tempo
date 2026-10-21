@@ -198,7 +198,7 @@ JSON-schema validator used by the selected shared-contract dependency suite.
 Native and installed-artifact proofs have separate commands:
 
 ```sh
-services/content/.venv/bin/python services/content/integration/run_postgres.py /private/tmp/content-native-evidence
+services/content/.venv/bin/python database/tempo_content_database/tooling/run_postgres.py /private/tmp/content-native-evidence
 services/content/.venv/bin/python services/content/integration/qualify_artifacts.py /private/tmp/content-artifact-evidence
 ```
 
@@ -227,6 +227,14 @@ nonzero passing identities. Skips, deselection, duplicate identities, changed
 collection, or failed setup/call/teardown fail qualification. Artifact consumers
 have no copied production source, use isolated Python imports, exercise wheel
 and sdist installations on Python 3.12/3.14, and test the installed CLI.
+
+The native [runner/benchmark](../../database/tempo_content_database/tooling/README.md)
+and [test suite](../../database/tempo_content_database/tests/README.md) live under
+the single root database owner and retain Content's logical test ownership.
+They are included in the sdist, excluded from the production wheel. The
+application-facing pure suite, consumer probes, artifact qualifier and
+`run_suite.py` remain here. Historical commands in validation receipts retain
+their original paths; use the current native command above for discovery.
 
 Actual tested revisions, counts, timings, cleanup, and limitations belong in
 [VALIDATION.md](VALIDATION.md). A focused local pass does not establish hosted
@@ -310,4 +318,4 @@ validation runs whether evidence is retained or temporary.
 
 Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_content_database/README.md).
 
-Existing reconciliation and the complete route/exercise/binding phases live in the [Content worker application](src/tempo_content/worker/README.md); source decisions and inventory-status projection live in [Content source policy](src/tempo_content/policy/README.md), and build/admission plus construction/provenance live in [publication workflows](src/tempo_content/publication/README.md). The database adapter supplies owner-specific facts and operations. Source staging/admission remains extraction work; the [store responsibility audit](../../database/tempo_content_database/adapters/README.md#store-responsibility-audit) accounts for every method.
+Existing reconciliation and the complete route/exercise/binding phases live in the [Content worker application](src/tempo_content/worker/README.md); source decisions and inventory-status projection live in [Content source policy](src/tempo_content/policy/README.md), build/admission plus construction/provenance in [publication workflows](src/tempo_content/publication/README.md), and preflight/staging/manifest/admission sequencing in [source loading](src/tempo_content/source/README.md). The database adapter supplies fixed owner-specific facts and atomic operations. The [store responsibility audit](../../database/tempo_content_database/adapters/README.md#store-responsibility-audit) accounts for all 57 methods and four helpers, distinguishing native guards, read projections, storage lifecycle and composition from the moved workflows. Native tests and benchmark tooling have their own root database directories linked above.

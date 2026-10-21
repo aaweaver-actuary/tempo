@@ -20,6 +20,7 @@ from .study_grading import validate_exercise
 from .gateway import request_digest
 from .durable_tasks import enqueue_task_in_transaction
 from .clock import date
+from tempo_learning_database.adapters import publications as storage
 
 
 class ExecutionFacts(BaseModel):
@@ -208,31 +209,14 @@ def stage(database, payload, workspace_id):
     serialized = bundle.model_dump_json()
     digest = hashlib.sha256(serialized.encode()).hexdigest()
     publication = bundle.publication
-    database.execute_native(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-        ("learning:publication:" + publication.publication_id,),
-    )
-    existing = database.execute(
-        "SELECT digest FROM accepted_publications WHERE publication_id=? AND generation=?",
-        (publication.publication_id, publication.publication_generation),
-    ).fetchone()
+    storage.lock_publication(database, publication.publication_id)
+    existing = storage.accepted_digest(database, publication.publication_id, publication.publication_generation)
     if existing and existing[0] != digest:
         raise HTTPException(409, "Publication identity is immutable")
-    latest = database.execute(
-        "SELECT MAX(generation) FROM accepted_publications WHERE publication_id=?",
-        (publication.publication_id,),
-    ).fetchone()[0]
+    latest = storage.latest_generation(database, publication.publication_id)
     if latest and latest > publication.publication_generation:
         raise HTTPException(409, "Stale publication generation")
-    database.execute(
-        "INSERT INTO accepted_publications(publication_id,generation,digest,payload_json) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-        (
-            publication.publication_id,
-            publication.publication_generation,
-            digest,
-            serialized,
-        ),
-    )
+    storage.insert_accepted(database, publication.publication_id, publication.publication_generation, digest, serialized)
     return {
         "status": "accepted_pending",
         "publication_id": publication.publication_id,
@@ -249,10 +233,7 @@ def lock_opening_repertoires(database, publication_id, new_facts=()):
     """
     repertoires = {
         row[0]
-        for row in database.execute(
-            "SELECT rc.repertoire_id FROM repertoire_cards rc JOIN cards c ON c.id=rc.card_id WHERE c.publication_id=? AND c.content_type='opening' UNION SELECT repertoire_id FROM cards WHERE publication_id=? AND content_type='opening' AND repertoire_id IS NOT NULL",
-            (publication_id, publication_id),
-        ).fetchall()
+        for row in storage.opening_repertoires(database, publication_id)
     }
     repertoires.update(
         membership
@@ -261,10 +242,7 @@ def lock_opening_repertoires(database, publication_id, new_facts=()):
         for membership in fact.memberships
     )
     for repertoire_id in sorted(repertoires):
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-            ("learning:repertoire-owner:" + repertoire_id,),
-        )
+        storage.lock_repertoire(database, repertoire_id)
 
 
 def verify_opening_graph(database, bundle):
@@ -295,10 +273,7 @@ def verify_opening_graph(database, bundle):
     line_ids = sorted({step[2] for step in expected})
     actual = {
         (*tuple(row)[:7], tuple(json.loads(row[7])), row[8])
-        for row in database.execute(
-            "SELECT repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,starting_fen,moves_json,trained_color FROM opening_graph_steps WHERE generation=? AND line_id=ANY(?)",
-            (publication.publication_generation, line_ids),
-        ).fetchall()
+        for row in storage.opening_graph_steps(database, publication.publication_generation, line_ids)
     }
     if actual != expected:
         raise ValueError("Accepted opening graph does not match executable routes")
@@ -310,36 +285,21 @@ def activate(database, payload):
     expected = payload["expected_activation_revision"]
     operation_id = payload["activation_id"]
     digest = request_digest("publication.activate", payload)
-    database.execute_native(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-        ("learning:publication:" + identity,),
-    )
-    prior = database.execute(
-        "SELECT request_hash,result_json FROM activation_receipts WHERE operation_id=?",
-        (operation_id,),
-    ).fetchone()
+    storage.lock_publication(database, identity)
+    prior = storage.activation_receipt(database, operation_id)
     if prior:
         if prior[0] != digest:
             raise HTTPException(409, "Activation identity reused")
         return json.loads(prior[1])
-    serving = database.execute(
-        "SELECT generation,activation_revision FROM serving_publications WHERE publication_id=? FOR UPDATE",
-        (identity,),
-    ).fetchone()
+    serving = storage.serving_for_update(database, identity)
     if (serving[1] if serving else 0) != expected:
         raise HTTPException(409, "Activation revision changed")
     if serving and generation <= serving[0]:
         raise HTTPException(409, "Stale publication generation")
-    row = database.execute(
-        "SELECT payload_json,state FROM accepted_publications WHERE publication_id=? AND generation=? FOR UPDATE",
-        (identity, generation),
-    ).fetchone()
+    row = storage.accepted_for_update(database, identity, generation)
     if row is None or row[1] != "staged":
         raise HTTPException(409, "Publication is unavailable for activation")
-    latest = database.execute(
-        "SELECT MAX(generation) FROM accepted_publications WHERE publication_id=?",
-        (identity,),
-    ).fetchone()[0]
+    latest = storage.latest_generation(database, identity)
     if generation != latest:
         raise HTTPException(
             409, "A newer staged publication supersedes this generation"
@@ -351,30 +311,17 @@ def activate(database, payload):
     # Fence review and publication in the same stable card-before-queue lock order.
     old_ids = {
         item[0]
-        for item in database.execute(
-            "SELECT id FROM cards WHERE publication_id=?", (identity,)
-        ).fetchall()
+        for item in storage.publication_card_ids(database, identity)
     }
     new_ids = set(definitions)
     for identifier in sorted(old_ids | new_ids):
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-            ("tempo:card-edit:" + identifier,),
-        )
-        database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (identifier,))
-    if database.execute(
-        "SELECT 1 FROM deleted_cards WHERE card_id=ANY(?) LIMIT 1", (list(new_ids),)
-    ).fetchone():
+        storage.lock_card(database, identifier)
+    if storage.deleted_cards(database, list(new_ids)):
         raise HTTPException(409, "Publication contains permanently deleted content")
-    database.execute(
-        "UPDATE cards SET serving_active=0 WHERE publication_id=?", (identity,)
-    )
+    storage.deactivate_cards(database, identity)
     for fact in sorted(bundle.facts, key=lambda item: item.parent_card_id is not None):
         definition = definitions[fact.card_id]
-        conflicting = database.execute(
-            "SELECT publication_id,revision,content_type,study_exercise_id,source_ref FROM cards WHERE id=?",
-            (fact.card_id,),
-        ).fetchone()
+        conflicting = storage.card_identity(database, fact.card_id)
         if conflicting and (
             conflicting[0] != identity
             or definition.exercise_revision <= conflicting[1]
@@ -387,10 +334,7 @@ def activate(database, payload):
                 "Existing executable identity needs a newer revision in its owning publication",
             )
         if fact.defense:
-            previous_defense = database.execute(
-                "SELECT candidate_id FROM accepted_defense_exercises WHERE card_id=?",
-                (fact.card_id,),
-            ).fetchone()
+            previous_defense = storage.defense_identity(database, fact.card_id)
             if previous_defense and previous_defense[0] != fact.defense["candidate_id"]:
                 raise HTTPException(
                     409, "Defense identity changed within an executable card"
@@ -398,179 +342,64 @@ def activate(database, payload):
         for membership in fact.memberships:
             if (
                 fact.content_type == "opening"
-                and database.execute(
-                    "SELECT 1 FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.publication_id!=? AND c.serving_active=1 LIMIT 1",
-                    (membership, identity),
-                ).fetchone()
+                and storage.other_opening_owner(database, membership, identity)
             ):
                 raise HTTPException(
                     409, "Opening repertoire already has an active publication owner"
                 )
-            database.execute(
-                "INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,?, ?,?) ON CONFLICT(id) DO UPDATE SET new_cards_per_day=excluded.new_cards_per_day",
-                (
-                    membership,
-                    membership,
-                    "Accepted publication",
-                    now,
-                    bundle.repertoire_limits.get(membership),
-                ),
-            )
+            storage.upsert_repertoire(database, membership, membership, "Accepted publication", now, bundle.repertoire_limits.get(membership))
         if fact.content_type == "study_exercise":
-            database.execute(
-                "INSERT INTO studies(id,title) VALUES(?,?) ON CONFLICT DO NOTHING",
-                (fact.study_id, fact.study_id),
-            )
-            database.execute(
-                "INSERT INTO study_positions(id,fen) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET fen=excluded.fen",
-                (fact.exercise_id, definition.starting_fen),
-            )
-            database.execute(
-                "INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,sibling_group) VALUES(?,?,?,?,'published',?) ON CONFLICT(id) DO UPDATE SET current_revision=excluded.current_revision,status='published',sibling_group=excluded.sibling_group",
-                (
-                    fact.exercise_id,
-                    fact.study_id,
-                    fact.exercise_id,
-                    definition.exercise_revision,
-                    fact.sibling_group,
-                ),
-            )
+            storage.insert_study(database, fact.study_id, fact.study_id)
+            storage.upsert_study_position(database, fact.exercise_id, definition.starting_fen)
+            storage.upsert_study_exercise(database, fact.exercise_id, fact.study_id, fact.exercise_id, definition.exercise_revision, fact.sibling_group)
             encoded = json.dumps(fact.legacy_specification)
-            database.execute(
-                "INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
-                (
-                    fact.exercise_id,
-                    definition.exercise_revision,
-                    encoded,
-                    hashlib.sha256(encoded.encode()).hexdigest(),
-                    now,
-                ),
-            )
+            storage.insert_exercise_revision(database, fact.exercise_id, definition.exercise_revision, encoded, hashlib.sha256(encoded.encode()).hexdigest(), now)
         moves = (
             definition.specification.accepted_lines[0]
             if definition.specification.type == "move_line"
             else []
         )
-        database.execute(
-            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,revision,trained_color,study_exercise_id,source_ref,source_fen,publication_id,publication_generation,serving_active)
-           VALUES(?,?,?,?,?,'new',?,?,?,?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET
-             start_fen=excluded.start_fen,moves_json=excluded.moves_json,revision=excluded.revision,trained_color=excluded.trained_color,
-             publication_generation=excluded.publication_generation,serving_active=1""",
-            (
-                fact.card_id,
-                fact.memberships[0] if fact.memberships else None,
-                "exercise" if fact.content_type == "study_exercise" else "checkpoint",
-                definition.starting_fen,
-                json.dumps(moves),
-                fact.due_date,
-                fact.content_type,
-                definition.exercise_revision,
-                fact.trained_color,
-                fact.exercise_id,
-                fact.source_ref,
-                fact.source_fen,
-                identity,
-                generation,
-            ),
+        storage.upsert_card(
+            database, fact.card_id, fact.memberships[0] if fact.memberships else None,
+            "exercise" if fact.content_type == "study_exercise" else "checkpoint",
+            definition.starting_fen, json.dumps(moves), fact.due_date, fact.content_type,
+            definition.exercise_revision, fact.trained_color, fact.exercise_id,
+            fact.source_ref, fact.source_fen, identity, generation,
         )
-        database.execute(
-            "UPDATE cards SET pending_validation=? WHERE id=?",
-            (int(not fact.integrity_allowed), fact.card_id),
-        )
-        database.execute(
-            "DELETE FROM repertoire_cards WHERE card_id=?", (fact.card_id,)
-        )
-        database.execute(
-            "DELETE FROM repertoire_integrity_card_blocks WHERE card_id=?",
-            (fact.card_id,),
-        )
+        storage.update_validation(database, int(not fact.integrity_allowed), fact.card_id)
+        storage.remove_card_memberships(database, fact.card_id)
+        storage.remove_card_integrity_blocks(database, fact.card_id)
         for membership in fact.memberships:
-            database.execute(
-                "INSERT INTO repertoire_cards VALUES(?,?)", (membership, fact.card_id)
-            )
+            storage.insert_membership(database, membership, fact.card_id)
             if not fact.integrity_allowed:
-                database.execute(
-                    "INSERT INTO repertoire_integrity_card_blocks VALUES(?,?)",
-                    (membership, fact.card_id),
-                )
+                storage.insert_integrity_block(database, membership, fact.card_id)
             if fact.content_type == "opening":
                 line_id = identity + ":" + membership
-                database.execute(
-                    "INSERT INTO repertoire_lines(id,repertoire_id,trained_color,created_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-                    (line_id, membership, fact.trained_color, now),
-                )
-                database.execute(
-                    "INSERT INTO opening_graph_publications VALUES(?,?,'ready') ON CONFLICT(repertoire_id) DO UPDATE SET generation=excluded.generation,state='ready'",
-                    (membership, generation),
-                )
-                database.execute(
-                    "INSERT INTO opening_graph_steps VALUES(?,?,?,?,?,?,?,?,?)",
-                    (
-                        membership,
-                        generation,
-                        line_id,
-                        fact.route_order,
-                        fact.card_id,
-                        fact.parent_card_id,
-                        definition.starting_fen,
-                        json.dumps(moves),
-                        fact.trained_color,
-                    ),
-                )
+                storage.insert_line(database, line_id, membership, fact.trained_color, now)
+                storage.upsert_opening_publication(database, membership, generation)
+                storage.insert_opening_step(database, membership, generation, line_id, fact.route_order, fact.card_id, fact.parent_card_id, definition.starting_fen, json.dumps(moves), fact.trained_color)
         if fact.endgame:
             template = fact.endgame
-            database.execute(
-                "INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,white_material=excluded.white_material,black_material=excluded.black_material,trained_color=excluded.trained_color,goal_mix=excluded.goal_mix,enabled=1",
-                (
-                    fact.source_ref or fact.card_id,
-                    fact.card_id,
-                    template["name"],
-                    template["white_material"],
-                    template["black_material"],
-                    fact.trained_color,
-                    template.get("goal_mix", "both"),
-                    now,
-                ),
-            )
+            storage.upsert_endgame(database, fact.source_ref or fact.card_id, fact.card_id, template["name"], template["white_material"], template["black_material"], fact.trained_color, template.get("goal_mix", "both"), now)
         if fact.defense:
-            database.execute(
-                "INSERT INTO accepted_defense_exercises VALUES(?,?,?,?) ON CONFLICT(candidate_id) DO UPDATE SET exercise_revision=excluded.exercise_revision,definition_json=excluded.definition_json",
-                (
-                    fact.defense["candidate_id"],
-                    fact.card_id,
-                    definition.exercise_revision,
-                    json.dumps(fact.defense),
-                ),
-            )
+            storage.upsert_defense(database, fact.defense["candidate_id"], fact.card_id, definition.exercise_revision, json.dumps(fact.defense))
     verify_opening_graph(database, bundle)
     if bundle.frozen_order:
         from .frozen_maia_math import content_fingerprint
 
         frozen = bundle.frozen_order
-        database.execute(
-            "SELECT id FROM frozen_opening_activation WHERE id=1 FOR UPDATE"
-        )
-        if database.execute(
-            "SELECT 1 FROM frozen_opening_runs WHERE run_id=?", (frozen["run_id"],)
-        ).fetchone():
+        storage.lock_frozen_activation(database)
+        if storage.frozen_run(database, frozen["run_id"]):
             raise HTTPException(409, "Frozen publication identities are immutable")
-        database.execute(
-            "INSERT INTO frozen_opening_runs VALUES(?,?)",
-            (frozen["run_id"], frozen["reader_version"]),
-        )
+        storage.insert_frozen_run(database, frozen["run_id"], frozen["reader_version"])
         for rank in frozen["ranks"]:
             card = dict(
-                database.execute(
-                    "SELECT * FROM cards WHERE id=?", (rank["card_id"],)
-                ).fetchone()
+                storage.card(database, rank["card_id"])
             )
             memberships = sorted(
                 {
                     row[0]
-                    for row in database.execute(
-                        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?",
-                        (rank["card_id"],),
-                    ).fetchall()
+                    for row in storage.card_memberships(database, rank["card_id"])
                 }
             )
             fingerprint = content_fingerprint(card, memberships)
@@ -590,44 +419,19 @@ def activate(database, payload):
                 )
             }
             definition["membership_count"] = len(memberships)
-            database.execute(
-                "INSERT INTO frozen_opening_ranks VALUES(?,?,?,?,?,?)",
-                (
-                    frozen["run_id"],
-                    rank["card_id"],
-                    rank["ordinal"],
-                    fingerprint,
-                    json.dumps(memberships),
-                    json.dumps(definition),
-                ),
-            )
-        database.execute(
-            "UPDATE frozen_opening_activation SET run_id=?,epoch=epoch+1 WHERE id=1",
-            (frozen["run_id"],),
-        )
+            storage.insert_frozen_rank(database, frozen["run_id"], rank["card_id"], rank["ordinal"], fingerprint, json.dumps(memberships), json.dumps(definition))
+        storage.activate_frozen_run(database, frozen["run_id"])
     for identifier in old_ids - new_ids:
-        database.execute(
-            "UPDATE daily_queue SET status='superseded' WHERE card_id=? AND status='queued'",
-            (identifier,),
-        )
-    database.execute(
-        "UPDATE accepted_publications SET state='active' WHERE publication_id=? AND generation=?",
-        (identity, generation),
-    )
-    database.execute(
-        "INSERT INTO serving_publications VALUES(?,?,?) ON CONFLICT(publication_id) DO UPDATE SET generation=excluded.generation,activation_revision=excluded.activation_revision",
-        (identity, generation, expected + 1),
-    )
+        storage.supersede_card_queue(database, identifier)
+    storage.activate_accepted(database, identity, generation)
+    storage.upsert_serving(database, identity, generation, expected + 1)
     result = {
         "status": "activated",
         "publication_id": identity,
         "publication_generation": generation,
         "activation_revision": expected + 1,
     }
-    database.execute(
-        "INSERT INTO activation_receipts VALUES(?,?,?)",
-        (operation_id, digest, json.dumps(result)),
-    )
+    storage.insert_activation_receipt(database, operation_id, digest, json.dumps(result))
     enqueue_task_in_transaction(
         database, "daily_queue", "current", {"queue_date": date.today().isoformat()}
     )
@@ -637,51 +441,22 @@ def activate(database, payload):
 def retire(database, payload):
     identity = payload["publication_id"]
     generation = payload["publication_generation"]
-    database.execute_native(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-        ("learning:publication:" + identity,),
-    )
-    serving = database.execute(
-        "SELECT generation,activation_revision FROM serving_publications WHERE publication_id=? FOR UPDATE",
-        (identity,),
-    ).fetchone()
+    storage.lock_publication(database, identity)
+    serving = storage.serving_for_update(database, identity)
     if not serving or tuple(serving) != (
         generation,
         payload["expected_activation_revision"],
     ):
         raise HTTPException(409, "Retirement revision changed")
     lock_opening_repertoires(database, identity)
-    for row in database.execute(
-        "SELECT id FROM cards WHERE publication_id=? ORDER BY id", (identity,)
-    ).fetchall():
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-            ("tempo:card-edit:" + row[0],),
-        )
-        database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (row[0],))
-    database.execute(
-        "UPDATE cards SET serving_active=0 WHERE publication_id=?", (identity,)
-    )
-    database.execute(
-        "UPDATE study_exercises SET status='archived' WHERE id IN (SELECT study_exercise_id FROM cards WHERE publication_id=?)",
-        (identity,),
-    )
-    database.execute(
-        "UPDATE endgame_templates SET enabled=0 WHERE card_id IN (SELECT id FROM cards WHERE publication_id=?)",
-        (identity,),
-    )
-    database.execute(
-        "UPDATE daily_queue SET status='superseded' WHERE status='queued' AND card_id IN (SELECT id FROM cards WHERE publication_id=?)",
-        (identity,),
-    )
-    database.execute(
-        "UPDATE accepted_publications SET state='retired' WHERE publication_id=? AND generation=?",
-        (identity, generation),
-    )
-    database.execute(
-        "UPDATE serving_publications SET activation_revision=activation_revision+1 WHERE publication_id=?",
-        (identity,),
-    )
+    for row in storage.ordered_publication_cards(database, identity):
+        storage.lock_card(database, row[0])
+    storage.deactivate_cards(database, identity)
+    storage.archive_study_exercises(database, identity)
+    storage.disable_endgame_templates(database, identity)
+    storage.supersede_publication_queue(database, identity)
+    storage.retire_accepted(database, identity, generation)
+    storage.increment_activation_revision(database, identity)
     return {
         "status": "retired",
         "stale_attempts_fenced": True,

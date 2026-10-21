@@ -66,3 +66,9 @@
 
 
 [Priority preparation and retention](priority_lifecycle/README.md) contains existing source-epoch locks, preparation/staging/publication queries and native/SQLite retention statements. Application generation/lease/freshness checks, row budgets, clocks, slice progression and durable callbacks remain outside; complete operations reuse exact introduction-priority queries.
+
+
+[Queue refresh persistence](queue_refresh/README.md) starts with existing tactical/unseen/due/Study admission statements and eligibility constants. Eligibility/quota/selection/locks/callback composition stays with the caller; the remaining direct/bounded projections and SQL builder/reader bridges are unfinished extraction work.
+
+
+[Existing opening graph persistence](opening_graph/README.md) holds the graph worker's complete native queries, cursor batches and writer scopes. Existing traversal/planning/JSON/card defaults, budget/cleanup and generation/lease/callback/clock policy remain outside; recovery and compatibility graph extraction remain pending.

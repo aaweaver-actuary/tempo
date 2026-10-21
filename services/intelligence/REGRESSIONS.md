@@ -517,3 +517,33 @@ last. These cases use no real credential material or provider/network access.
 Existing synthetic worker slice cases retain off-thread storage and event-loop
 HTTP ownership; native lease/concurrency proofs remain separate and unexecuted
 by this move.
+
+## Credential workflow source-only composition
+
+`tests/test_credential_work.py` owns the relocated row projection, conditional
+configured-status flow and registration/revocation composition with fake rows,
+synthetic material and a substituted loader. Missing registration skips expiry;
+expiry clock evaluation retains its order before terminal-status filtering.
+The status read closes before the active-only late import/configuration/load
+branch. Generation conflict stops before registration lookup; replay returns
+under the same lock without incoming expiry. New registration keeps registration,
+head, waiting-cache resume and status order; revocation keeps the optional write
+and status inside its one context. No real loader, private file or provider is
+used. Existing complete inspection and source-claim fake cases continue to own
+the callbacks consuming this status. Native/private-file/security proofs remain
+unchanged and were not run for this source move.
+
+## Analysis read/cursor/export composition
+
+`tests/test_analysis_reads.py` owns the twelve relocated read/workspace/export
+blocks with actual fixed read operations, synthetic rows and the original owner
+read context. It preserves input flattening order, post-read public envelopes,
+in-read receipt/run-list responses and borrowed status count cursor iteration.
+Historical report paging retains canonical cursor bytes, filtered one-row
+lookahead, post-read encoding and late model import; pending legacy reports
+return inside the snapshot. Invalid/stale report cursors fail after scope reads
+before item reads, and remaining-work cursors retain the same revision fence.
+Finding visibility guards remain root-owned. Export consults finding/report
+capabilities lazily and returns the original proposal object. Existing packaged
+schema and legacy ReportPage contract cases remain the unchanged wire proofs;
+native read/isolation/publication proofs were not executed by this extraction.

@@ -263,8 +263,8 @@
           "owner": "content",
           "kind": "postgres",
           "cwd": "services/content",
-          "command": "python integration/run_postgres.py",
-          "inputs": ["integration/run_postgres.py", "integration/test_postgres.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"]
+          "command": "python ../../database/tempo_content_database/tooling/run_postgres.py",
+          "inputs": ["../../database/tempo_content_database/tooling/run_postgres.py", "../../database/tempo_content_database/tests/test_postgres.py", "../../database/tempo_content_database/tooling/benchmark.py", "run_suite.py", "src", "fixtures", "pyproject.toml", "uv.lock"]
         }
       ],
       "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"], "postgresql": "18"},

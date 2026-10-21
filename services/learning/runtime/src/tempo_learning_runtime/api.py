@@ -4,16 +4,17 @@ import asyncio, hmac, json, uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
-import chess, psycopg
+import chess
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from psycopg_pool import PoolTimeout
+from tempo_learning_database.adapters.api import psycopg, PoolTimeout
 from .config import Configuration
 from tempo_learning_database.connections import Database, connection
 from . import gateway, queue_commands, queue_application, study_attempt_commands
 from .clock import date
+from tempo_learning_database.adapters import api as storage
 from .models import (
     ReviewRequest,
     QueueAttemptFailureRequest,
@@ -45,43 +46,27 @@ from . import publication_bridge
 
 
 def reconcile(database, payload):
-    database.execute_native("SAVEPOINT review_reconciliation")
+    storage.begin_reconciliation(database)
     try:
         result = submit_legacy_review(database, payload)
     except ReviewConflict as error:
-        database.execute_native("ROLLBACK TO SAVEPOINT review_reconciliation")
+        storage.rollback_reconciliation(database)
         result = {"persisted": False, "conflict": error.information()}
-    database.execute_native("RELEASE SAVEPOINT review_reconciliation")
+    storage.release_reconciliation(database)
     return result
 
 
 def save_endgame_attempt(db, payload):
-    template = db.execute(
-        "SELECT * FROM endgame_templates WHERE id=? AND enabled=1",
-        (payload["template_id"],),
-    ).fetchone()
+    template = storage.active_endgame_template(db, payload["template_id"])
     if template is None:
         raise HTTPException(409, "Endgame template unavailable")
-    card = db.execute(
-        "SELECT serving_active FROM cards WHERE id=? FOR UPDATE", (template["card_id"],)
-    ).fetchone()
+    card = storage.lock_endgame_card(db, template["card_id"])
     # Retirement acquires this same card lock before disabling the template.
-    current = db.execute(
-        "SELECT enabled FROM endgame_templates WHERE id=?", (payload["template_id"],)
-    ).fetchone()
+    current = storage.endgame_enabled(db, payload["template_id"])
     if not card or not card[0] or not current[0]:
         raise HTTPException(409, "Endgame definition retired")
     attempt_id = uuid.uuid4().hex
-    db.execute(
-        "INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES(?,?,?,?,?)",
-        (
-            attempt_id,
-            payload["template_id"],
-            payload["fen"],
-            payload["target"],
-            datetime.now(timezone.utc).isoformat(),
-        ),
-    )
+    storage.insert_endgame_attempt(db, attempt_id, payload["template_id"], payload["fen"], payload["target"], datetime.now(timezone.utc).isoformat())
     return {
         "id": attempt_id,
         "fen": payload["fen"],
@@ -105,9 +90,7 @@ def register_handlers():
             p["candidate_id"],
             write_database=db,
             **p["request"],
-            light_first_interval_days=db.execute(
-                "SELECT light_first_interval_days FROM settings WHERE id=1"
-            ).fetchone()[0],
+            light_first_interval_days=storage.light_first_interval_days(db),
         ),
         "defense.recognition.submit": lambda db, p: submit_defense_recognition(
             p["candidate_id"],
@@ -278,14 +261,8 @@ def create_app(configuration: Configuration):
     def ready():
         try:
             with connection(read_only=True) as db:
-                from tempo_learning_database.ddl.migrate import expected_migrations
-
-                applied = dict(
-                    db.execute_native(
-                        "SELECT id,checksum FROM migration_history"
-                    ).fetchall()
-                )
-                if applied != expected_migrations():
+                applied, expected = storage.migration_state(db)
+                if applied != expected:
                     raise RuntimeError("Learning migration history is not current")
         except (psycopg.Error, PoolTimeout, RuntimeError):
             return JSONResponse(status_code=503, content={"status": "unavailable"})
@@ -426,15 +403,8 @@ def create_app(configuration: Configuration):
     @app.get("/api/queue/entries/{entry_id}/state")
     def entry_state(entry_id: int):
         with connection(read_only=True) as db:
-            row = db.execute(
-                "SELECT status,attempt_failed,queue_date FROM daily_queue WHERE id=?",
-                (entry_id,),
-            ).fetchone()
-            head = db.execute(
-                queue_application.available_attempt_sql()
-                + " ORDER BY q.position,q.id LIMIT 1",
-                (date.today().isoformat(),),
-            ).fetchone()
+            row = storage.queue_entry_state(db, entry_id)
+            head = storage.available_head(db, date.today().isoformat(), queue_application.MISS_REASON)
         return {
             "state": "unavailable"
             if not row or row["queue_date"] != date.today().isoformat()
@@ -516,19 +486,13 @@ def create_app(configuration: Configuration):
     @app.get("/api/opening-evidence/attempts/{attempt_id}")
     def checkpoint_status(attempt_id: str):
         with connection(read_only=True) as db:
-            attempt = db.execute(
-                "SELECT * FROM opening_evidence_attempts WHERE attempt_id=?",
-                (attempt_id,),
-            ).fetchone()
+            attempt = storage.opening_attempt(db, attempt_id)
         if attempt is None:
             raise HTTPException(404, "Opening attempt evidence not found")
         with connection(read_only=True) as db:
             events = [
                 json.loads(row[0])
-                for row in db.execute(
-                    "SELECT event_json FROM opening_evidence_events WHERE attempt_id=? ORDER BY sequence LIMIT 256",
-                    (attempt_id,),
-                ).fetchall()
+                for row in storage.opening_events(db, attempt_id)
             ]
         return {**dict(attempt), "events": events}
 
@@ -546,10 +510,7 @@ def create_app(configuration: Configuration):
     @app.get("/api/studies/{study_id}/exercises/{exercise_id}/present")
     def present(study_id: str, exercise_id: str):
         with connection(read_only=True) as db:
-            row = db.execute(
-                "SELECT e.*,p.fen,r.specification_json FROM study_exercises e JOIN study_positions p ON p.id=e.position_id JOIN study_exercise_revisions r ON r.exercise_id=e.id AND r.revision=e.current_revision WHERE e.id=? AND e.study_id=? AND e.status='published'",
-                (exercise_id, study_id),
-            ).fetchone()
+            row = storage.published_study_exercise(db, exercise_id, study_id)
         if row is None:
             raise HTTPException(404, "Exercise unavailable")
         specification = json.loads(row["specification_json"])
@@ -623,10 +584,7 @@ def create_app(configuration: Configuration):
     )
     def feedback(study_id: str, exercise_id: str, attempt_id: str):
         with connection(read_only=True) as db:
-            row = db.execute(
-                "SELECT r.specification_json FROM study_attempts a JOIN study_exercises e ON e.id=a.exercise_id JOIN study_exercise_revisions r ON r.exercise_id=e.id AND r.revision=a.revision WHERE a.id=? AND e.id=? AND e.study_id=?",
-                (attempt_id, exercise_id, study_id),
-            ).fetchone()
+            row = storage.committed_study_specification(db, attempt_id, exercise_id, study_id)
         if row is None:
             raise HTTPException(404, "Committed attempt not found")
         return {"specification": json.loads(row[0])}
@@ -727,7 +685,7 @@ def create_app(configuration: Configuration):
         if receipt["state"] == "failed":
             raise HTTPException(409, "Terminal publication failure")
         with connection(read_only=True) as db:
-            intent=db.execute('SELECT command_name,payload_json FROM operation_receipts WHERE operation_id=?',(operation_id,)).fetchone()
+            intent=storage.operation_intent(db, operation_id)
         if intent and intent[0]=='publication.activate.v2':
             return publication_bridge.dispatch_activation(json.loads(intent[1]),operation_id)
         gateway.execute(operation_id,publication=True)
