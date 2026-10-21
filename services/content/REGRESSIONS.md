@@ -1,5 +1,7 @@
 # Content regression ownership
 
+Native test paths below are repository-root paths. The [native suite](../../database/tempo_content_database/tests/README.md) retains Content ownership; its [runner and benchmark](../../database/tempo_content_database/tooling/README.md) are centralized alongside it. Historical validation receipts retain their original paths.
+
 `tests/test_execution_projection.py` owns original full-executable preservation
 with an explicit opponent prelude, invalid prelude rejection, exact interior
 decision reconstruction and absent-field byte compatibility. The installed
@@ -10,7 +12,7 @@ cross-component owner is Learning's
 
 `tests/test_bridge.py` owns source/rename/permutation mapping, explicit provenance
 and color, legal executable proposals, informational-context rejection, and the
-accepted-alternative board-copy regression. `integration/test_postgres.py` owns
+accepted-alternative board-copy regression. `database/tempo_content_database/tests/test_postgres.py` owns
 the named `test_A_*` approval-not-persisted, restart/replay, cancellation orders,
 source reservation/CAS, incomplete count/digest manifest, and conflicting-page
 replay cases. Existing source concurrency, failed-generation preservation,
@@ -29,7 +31,7 @@ migration-manifest, and import/CLI-without-service-initialization regressions.
 These same tests execute against source-free installed wheel and sdist consumers;
 they do not rely on a source checkout or ambient `PYTHONPATH`.
 
-`integration/test_postgres.py`, executed only by the owned disposable native
+`database/tempo_content_database/tests/test_postgres.py`, executed only by the owned disposable native
 runner, owns real migration/grants, persistence/restart, interrupted bounded
 reconciliation, semantic replay, stale leases/generations, concurrent publication,
 structural edits, shared membership safety, orphan cleanup/restart, failed
@@ -72,7 +74,7 @@ strict primitive types, reader/workspace/source identity, malformed/legacy token
 route composite keys and obsolete revision/generation rejection. These execute in
 every Python 3.12/3.14 wheel/sdist consumer.
 
-Native owners in `integration/test_postgres.py`:
+Native owners in `database/tempo_content_database/tests/test_postgres.py`:
 
 - R1: `test_coverage_snapshot_survives_generation_replacement_and_collection`
   pauses after the G1 occurrence, proves G2 completion and committed G1 membership,
@@ -100,7 +102,7 @@ publication, legal-reply, policy and consumer owners above remain selected.
 
 ## PR #294 repair regressions
 
-Regular native `integration/test_postgres.py` owns:
+Regular native `database/tempo_content_database/tests/test_postgres.py` owns:
 
 - `test_A_terminal_learning_rejection_releases_source_reservation`: durable failure, current source revision, corrected approval, restart and replay after successor reservation.
 - `test_A_terminal_outcomes_cannot_overwrite_each_other` and `test_A_terminal_failure_and_corrected_approval_serialize`: immutable outcomes and independent-session races.
@@ -116,7 +118,7 @@ Regular installed pure `tests/test_bridge.py::test_A_terminal_failure_requires_o
 
 ## PR #294 pre-activation recovery
 
-Native `integration/test_postgres.py` owns:
+Native `database/tempo_content_database/tests/test_postgres.py` owns:
 
 - `test_A_unsupported_bridge_exercise_does_not_authorize_application` and
   `test_A_general_content_explanation_remains_publishable`: A rejection without
@@ -163,28 +165,28 @@ both actual packed persistence and exact public export/replay after the repair.
 
 ## Reconciliation orchestration separation
 
-`tests/test_worker_application.py` owns the moved `work_once` orchestration's ordered claim/idle-collection/manifest/phase operations, unchanged manifest exception scope, domain and generic validation errors, unknown phase, stale authority, and propagation of unexpected failures. Synthetic storage-boundary cases require the original single transaction and fence before failure-write/error-text evaluation; the public `ContentService.work_once` composition is exercised without opening a database. Existing native worker, lease, lock-order, collector, rollback and failed-generation contracts remain with `integration/test_postgres.py`; synthetic cases do not establish actual PostgreSQL locking or resource isolation.
+`tests/test_worker_application.py` owns the moved `work_once` orchestration's ordered claim/idle-collection/manifest/phase operations, unchanged manifest exception scope, domain and generic validation errors, unknown phase, stale authority, and propagation of unexpected failures. Synthetic storage-boundary cases require the original single transaction and fence before failure-write/error-text evaluation; the public `ContentService.work_once` composition is exercised without opening a database. Existing native worker, lease, lock-order, collector, rollback and failed-generation contracts remain with `database/tempo_content_database/tests/test_postgres.py`; synthetic cases do not establish actual PostgreSQL locking or resource isolation.
 
 ## Route and publication preparation separation
 
-`tests/test_content_preparation.py` owns the moved 16-ply/terminal route-window decision, completed-cache reuse, exact publication/provenance fields, exercise-count rejection before construction, retained serialization/decode pass, inventory retirement/status/stale projection, and route/publication computation at the original read/hook/transaction points. Existing selected `tests/test_domain.py` checkpoint, illegal-route, publication identity/round-trip/permutation and retirement cases retain the underlying algorithm/contract invariants. Native epoch/fence/cache races and publication authority/rollback/replay contracts remain in `integration/test_postgres.py`; they were not replaced by synthetic timing tests.
+`tests/test_content_preparation.py` owns the moved 16-ply/terminal route-window decision, completed-cache reuse, exact publication/provenance fields, exercise-count rejection before construction, retained serialization/decode pass, inventory retirement/status/stale projection, and route/publication computation at the original read/hook/transaction points. Existing selected `tests/test_domain.py` checkpoint, illegal-route, publication identity/round-trip/permutation and retirement cases retain the underlying algorithm/contract invariants. Native epoch/fence/cache races and publication authority/rollback/replay contracts remain in `database/tempo_content_database/tests/test_postgres.py`; they were not replaced by synthetic timing tests.
 
 ## Complete binding phase separation
 
-`tests/test_binding_application.py` owns the full moved phase: exhaustion without reads, ordered binding/target/exercise reads, original hook/policy order, missing/incomplete target and missing exercise handling, hook failure before writes, target-query parameters/missing-route short circuit, and public phase composition. Synthetic storage-boundary cases require the same transaction for fence, response insert, cursor advance and `after_writes`, with rollback on a stale fence or failed after-write hook. Existing `tests/test_source_policy.py` binding completion/position/policy/accepted-response cases remain selected. These checks establish application/composition behavior, not actual native locking, leases or rollback; regular `integration/test_postgres.py` retains those contracts.
+`tests/test_binding_application.py` owns the full moved phase: exhaustion without reads, ordered binding/target/exercise reads, original hook/policy order, missing/incomplete target and missing exercise handling, hook failure before writes, target-query parameters/missing-route short circuit, and public phase composition. Synthetic storage-boundary cases require the same transaction for fence, response insert, cursor advance and `after_writes`, with rollback on a stale fence or failed after-write hook. Existing `tests/test_source_policy.py` binding completion/position/policy/accepted-response cases remain selected. These checks establish application/composition behavior, not actual native locking, leases or rollback; regular `database/tempo_content_database/tests/test_postgres.py` retains those contracts.
 
 ## Complete route phase separation
 
-`tests/test_route_application.py` adds only the missing moved-boundary cases: exhaustion without reads, valid/invalid new-artifact registration ordering and epoch-race result mapping. The existing `tests/test_content_preparation.py` route-window/cache-reuse/compute-hook cases and `tests/test_domain.py` checkpoint/illegal-route cases retain the underlying proof. The compute-hook test's monkeypatch follows the moved call in `worker.routes`; its event assertions are unchanged. One-time exact source comparison covers the full copied phase and both atomic write sections. Existing native artifact/collector/epoch/fence/lock-order contracts remain in `integration/test_postgres.py`; synthetic checks do not replace them.
+`tests/test_route_application.py` adds only the missing moved-boundary cases: exhaustion without reads, valid/invalid new-artifact registration ordering and epoch-race result mapping. The existing `tests/test_content_preparation.py` route-window/cache-reuse/compute-hook cases and `tests/test_domain.py` checkpoint/illegal-route cases retain the underlying proof. The compute-hook test's monkeypatch follows the moved call in `worker.routes`; its event assertions are unchanged. One-time exact source comparison covers the full copied phase and both atomic write sections. Existing native artifact/collector/epoch/fence/lock-order contracts remain in `database/tempo_content_database/tests/test_postgres.py`; synthetic checks do not replace them.
 
 ## Complete exercise phase separation
 
-`tests/test_exercise_application.py` adds four missing moved-boundary cases: exhaustion without reads, model parsing before dependent reads/hooks, and continuation/completion invocation order and result mapping. Existing selected `tests/test_source_policy.py` learner-turn and `tests/test_domain.py` 16-ply JSON checkpoint/resume and legality checks retain the underlying computation proof. One-time exact source comparison covers the complete moved phase and original atomic identity/predecessor/revision/write section. Native identity/fence/replay/rollback contracts remain in `integration/test_postgres.py`; they were not replaced by a new exhaustive phase test campaign.
+`tests/test_exercise_application.py` adds four missing moved-boundary cases: exhaustion without reads, model parsing before dependent reads/hooks, and continuation/completion invocation order and result mapping. Existing selected `tests/test_source_policy.py` learner-turn and `tests/test_domain.py` 16-ply JSON checkpoint/resume and legality checks retain the underlying computation proof. One-time exact source comparison covers the complete moved phase and original atomic identity/predecessor/revision/write section. Native identity/fence/replay/rollback contracts remain in `database/tempo_content_database/tests/test_postgres.py`; they were not replaced by a new exhaustive phase test campaign.
 
 ## Publication build/admission workflow separation
 
-`tests/test_publication_application.py` adds four missing workflow cases: build replay before task-state/build work, incomplete and empty-source preconditions before reservation/hydration, and replay admission still calling the original atomic guard. Existing selected preparation and publication contract/identity/permutation/retirement cases remain; the two preparation monkeypatches follow the moved calls into `publication.application` with unchanged function/assertion bodies. One-time exact source comparison covers both complete workflow bodies and original native reservation/immutable-insert sections, including the two invocation sites sharing one fixed payload SELECT implementation. Native concurrent publication/replay/provenance/current-generation/rollback contracts remain in `integration/test_postgres.py`; they were not replaced by a new exhaustive campaign.
+`tests/test_publication_application.py` adds four missing workflow cases: build replay before task-state/build work, incomplete and empty-source preconditions before reservation/hydration, and replay admission still calling the original atomic guard. Existing selected preparation and publication contract/identity/permutation/retirement cases remain; the two preparation monkeypatches follow the moved calls into `publication.application` with unchanged function/assertion bodies. One-time exact source comparison covers both complete workflow bodies and original native reservation/immutable-insert sections, including the two invocation sites sharing one fixed payload SELECT implementation. Native concurrent publication/replay/provenance/current-generation/rollback contracts remain in `database/tempo_content_database/tests/test_postgres.py`; they were not replaced by a new exhaustive campaign.
 
 ## Source staging/admission workflow separation
 
-`tests/test_source_application.py` adds four missing boundary cases: preflight replay skips staging/seal/hooks/admission, ordered 64-item pages before sealing and the staging hook, normal versus in-transaction replay receipts, and staging-hook failure before admission. Existing selected source-policy cases retain canonical payload/digest/stable identity and validation-before-canonicalization/hash behavior. One-time exact source comparison reconstructs the full original `load_source` workflow and its four native sections, including inside-transaction page slicing, late bridge scope import and all native queries/locks/guards/hooks. The regular native source concurrency, reservation/CAS, staged-input conflict and manifest/rollback contracts remain in `integration/test_postgres.py`; they were not rerun or replaced by these synthetic cases.
+`tests/test_source_application.py` adds four missing boundary cases: preflight replay skips staging/seal/hooks/admission, ordered 64-item pages before sealing and the staging hook, normal versus in-transaction replay receipts, and staging-hook failure before admission. Existing selected source-policy cases retain canonical payload/digest/stable identity and validation-before-canonicalization/hash behavior. One-time exact source comparison reconstructs the full original `load_source` workflow and its four native sections, including inside-transaction page slicing, late bridge scope import and all native queries/locks/guards/hooks. The regular native source concurrency, reservation/CAS, staged-input conflict and manifest/rollback contracts remain in `database/tempo_content_database/tests/test_postgres.py`; they were not rerun or replaced by these synthetic cases.

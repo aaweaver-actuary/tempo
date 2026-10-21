@@ -16,8 +16,11 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-SERVICE = Path(__file__).resolve().parents[1]
-ROOT = SERVICE.parents[1]
+DATABASE = Path(__file__).resolve().parents[1]
+ROOT = DATABASE.parents[1]
+SERVICE = ROOT / "services/content"
+if not (SERVICE / "run_suite.py").is_file():
+    SERVICE = ROOT  # The independent Content sdist places run_suite.py at its root.
 sys.path.insert(0, str(SERVICE))
 from run_suite import controlled_environment, junit_destination, run_pytest
 
@@ -69,6 +72,11 @@ def main(arguments=None):
         for name in ("pyproject.toml", "uv.lock", "run_suite.py"):
             path = SERVICE / name
             report["source_inputs"][name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        report["source_inputs"].update({
+            str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in DATABASE.rglob("*")
+            if path.is_file() and not any(part in {"__pycache__", "test-results", ".pytest_cache"} for part in path.parts)
+        })
         report["dependency_inputs"] = {
             str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for relative in ("packages/chess-core", "contracts/content-publication")
@@ -132,13 +140,13 @@ def main(arguments=None):
             TEMPO_CONTENT_TEST_FOREIGN_DATABASES=json.dumps({name: make_conninfo(runtime_url, dbname=name)
                                                            for name in ("learning", "game_evidence", "intelligence")}),
         )
-        result = run_pytest([SERVICE / "integration/test_postgres.py"], evidence / "cases",
+        result = run_pytest([DATABASE / "tests/test_postgres.py"], evidence / "cases",
                             cwd=SERVICE, environment=environment, external_junit=external_junit,
                             redactions=passwords)
         report.update(result)
         if options.benchmark:
             benchmark_path = evidence / "benchmark.json"
-            command = [sys.executable, "-I", str(SERVICE / "integration/benchmark.py"), str(benchmark_path)]
+            command = [sys.executable, "-I", str(DATABASE / "tooling/benchmark.py"), str(benchmark_path)]
             report["commands"].append(command)
             benchmark = subprocess.run(command, cwd=SERVICE, env=environment, capture_output=True, text=True)
             output = benchmark.stdout + benchmark.stderr

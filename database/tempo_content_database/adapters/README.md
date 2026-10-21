@@ -37,5 +37,6 @@ query parameter preparation, driver serialization, immutable identity/digest
 checks, cursor/response envelopes and atomic collector/transition result facts.
 Those are storage responsibilities, not undisclosed independent workflows. The
 runtime Content namespace contains no direct driver calls; its composition
-imports the concrete root adapter. Existing native test/benchmark harnesses
-outside the runtime namespace retain SQL and were not relocated in this slice.
+imports the concrete root adapter. Native [tests](../tests/README.md) and
+[tooling](../tooling/README.md) now reside in this root owner tree; their SQL and
+assertions are preserved and remain outside the production wheel.
