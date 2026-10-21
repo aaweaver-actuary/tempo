@@ -1,18 +1,13 @@
+import { authorityKey, persistPendingMutation, readPendingMutation, readLegacyPendingCommand, removeLegacyPendingCommand, clearPendingMutation } from '../../../database/browser/adapters/workbench/pending-command-storage.mjs';
 import { IntelligenceClient } from './client.js';
 import { commandSchema, runRequestSchema, runStatusSchema, type RunCreationRequest } from './contracts.js';
 
-const legacyKey = 'tempo-analysis-command-v1';
-// Retain the existing authority slot: commands and run creation must never compete.
-const prefix = 'tempo-analysis-command-v2:';
 type Command = {command_id:string;[key:string]:unknown};
 type SavedRequest = {origin:string;workspace:string;path:string;body:string;request_digest:string};
 type PendingCommand = SavedRequest & ({version:2;kind?:never}|{version:3;kind:'command'});
 type PendingRun = SavedRequest & {version:3;kind:'run_create';run_id:string};
 export type PendingMutation = PendingCommand | PendingRun;
 
-function authorityKey(client:IntelligenceClient) {
-  return prefix + JSON.stringify([client.connection.origin,client.connection.workspace]);
-}
 async function sha256(value:string) {
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
   return 'sha256:'+Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,'0')).join('');
@@ -43,24 +38,23 @@ export class PendingCommands {
 
   private persist(client:IntelligenceClient,saved:PendingMutation) {
     const key=authorityKey(client),serialized=JSON.stringify(saved);
-    this.storage.setItem(key,serialized);
-    if(this.storage.getItem(key)!==serialized)throw new Error('Unable to retain the request. Nothing was sent.');
+    persistPendingMutation(this.storage,key,serialized);
   }
 
   async pending(client:IntelligenceClient):Promise<PendingMutation|null> {
     const storageKey=authorityKey(client);
-    const legacyRaw=this.storage.getItem(legacyKey);
+    const legacyRaw=readLegacyPendingCommand(this.storage);
     if(legacyRaw) {
       const legacy=JSON.parse(legacyRaw) as {origin:string;workspace:string;path:string;command:Command};
       if(legacy.origin===client.connection.origin && legacy.workspace===client.connection.workspace) {
         const migrated:PendingCommand={version:3,kind:'command',origin:legacy.origin,workspace:legacy.workspace,path:legacy.path,body:JSON.stringify(legacy.command),request_digest:await requestDigest(legacy.path,legacy.command)};
-        const existing=this.storage.getItem(storageKey);
+        const existing=readPendingMutation(this.storage,storageKey);
         if(existing && existing!==JSON.stringify(migrated))throw new Error('Conflicting saved commands require receipt recovery. Both records retained.');
         this.persist(client,migrated);
-        this.storage.removeItem(legacyKey);
+        removeLegacyPendingCommand(this.storage);
       }
     }
-    const raw=this.storage.getItem(storageKey);
+    const raw=readPendingMutation(this.storage,storageKey);
     if(!raw)return null;
     const saved=JSON.parse(raw) as PendingMutation;
     if(!saved||saved.origin!==client.connection.origin||saved.workspace!==client.connection.workspace||typeof saved.body!=='string'||typeof saved.path!=='string'||typeof saved.request_digest!=='string')throw new Error('Invalid saved request authority. Pending evidence retained.');
@@ -97,8 +91,7 @@ export class PendingCommands {
 
   private clear(client:IntelligenceClient,saved:PendingMutation) {
     const storageKey=authorityKey(client);
-    if(this.storage.getItem(storageKey)!==JSON.stringify(saved))throw new Error('Saved request changed during recovery. Pending evidence retained.');
-    this.storage.removeItem(storageKey);
+    clearPendingMutation(this.storage,storageKey,saved);
   }
 
   private confirm(client:IntelligenceClient,saved:PendingCommand,receipt:ReturnType<typeof commandSchema.parse>) {

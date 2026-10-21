@@ -1,3 +1,7 @@
+import {
+  readPendingGuidedReviewStart, storePendingGuidedReviewStart, clearPendingGuidedReviewStart,
+  readPendingGuidedReviewAttempt, storePendingGuidedReviewAttempt, clearPendingGuidedReviewAttempt,
+} from "../../database/browser/adapters/games-analysis/guided-review";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -39,7 +43,7 @@ function parseAttemptResult(value: unknown, sessionId: string, findingId: string
 type PendingAttempt = { operationId: string; moveUci: string; findingId?: string };
 
 function readPendingAttempt(storageKey: string): PendingAttempt | null {
-  const saved = localStorage.getItem(storageKey);
+  const saved = readPendingGuidedReviewAttempt(storageKey);
   if (!saved) return null;
   const parsed: unknown = JSON.parse(saved);
   if (typeof parsed !== "object" || parsed === null ||
@@ -51,23 +55,23 @@ function readPendingAttempt(storageKey: string): PendingAttempt | null {
 
 export async function startGuidedReviewCommand(gameId: string) {
   const storageKey = `tempo-pending-guided-review-start-v1:${gameId}`;
-  let operationId = localStorage.getItem(storageKey);
+  let operationId = readPendingGuidedReviewStart(storageKey);
   if (operationId) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
     if (!status.ok) throw new PendingOperationError(operationId);
     const receipt = await status.json() as { state?: string; response?: unknown; error?: { message?: string } };
     if (receipt.state === "complete") {
-      localStorage.removeItem(storageKey);
+      clearPendingGuidedReviewStart(storageKey);
       return sessionResult.parse(receipt.response);
     }
     if (receipt.state === "failed") {
-      localStorage.removeItem(storageKey);
+      clearPendingGuidedReviewStart(storageKey);
       throw new Error(receipt.error?.message ?? "Guided review could not start.");
     }
     if (receipt.state !== "pending") throw new PendingOperationError(operationId);
   } else {
     operationId = crypto.randomUUID();
-    localStorage.setItem(storageKey, operationId);
+    storePendingGuidedReviewStart(storageKey, operationId);
   }
   let response = await fetch(
     `${API_URL}/api/games/${encodeURIComponent(gameId)}/guided-review`,
@@ -76,7 +80,7 @@ export async function startGuidedReviewCommand(gameId: string) {
   response = await confirmOperationResponse(response);
   const session = await readJsonResponse(response, sessionResult, "start guided review");
   if (session.game_id !== gameId) throw new Error("Guided review response did not match the game.");
-  localStorage.removeItem(storageKey);
+  clearPendingGuidedReviewStart(storageKey);
   return session;
 }
 
@@ -84,7 +88,7 @@ export async function submitGuidedReviewCommand(
   sessionId: string, currentIndex: number, moveUci: string, findingId: string,
 ) {
   const legacyStorageKey = `tempo-pending-guided-review-attempt-v1:${sessionId}:${currentIndex}`;
-  const storageKey = localStorage.getItem(legacyStorageKey) ? legacyStorageKey
+  const storageKey = readPendingGuidedReviewAttempt(legacyStorageKey) ? legacyStorageKey
     : `tempo-pending-guided-review-attempt-v2:${sessionId}:${findingId}`;
   let pending = readPendingAttempt(storageKey);
   if (pending) {
@@ -92,11 +96,11 @@ export async function submitGuidedReviewCommand(
     if (!status.ok) throw new PendingOperationError(pending.operationId);
     const receipt = await status.json() as { state?: string; response?: unknown; error?: { message?: string } };
     if (receipt.state === "complete") {
-      localStorage.removeItem(storageKey);
+      clearPendingGuidedReviewAttempt(storageKey);
       return parseAttemptResult(receipt.response, sessionId, findingId);
     }
     if (receipt.state === "failed") {
-      localStorage.removeItem(storageKey);
+      clearPendingGuidedReviewAttempt(storageKey);
       throw new Error(receipt.error?.message ?? "Correction attempt could not be saved.");
     }
     if (receipt.state !== "pending" || pending.moveUci !== moveUci || pending.findingId !== findingId)
@@ -104,7 +108,7 @@ export async function submitGuidedReviewCommand(
         "The earlier correction is unresolved. Check its operation before submitting another finding.");
   } else {
     pending = { operationId: crypto.randomUUID(), moveUci, findingId };
-    localStorage.setItem(storageKey, JSON.stringify(pending));
+    storePendingGuidedReviewAttempt(storageKey, pending);
   }
   let response = await fetch(`${API_URL}/api/guided-reviews/${encodeURIComponent(sessionId)}/attempt`, {
     method: "POST",
@@ -113,14 +117,14 @@ export async function submitGuidedReviewCommand(
   });
   response = await confirmOperationResponse(response);
   if (response.status === 404 || response.status === 409) {
-    localStorage.removeItem(storageKey);
+    clearPendingGuidedReviewAttempt(storageKey);
     throw new GuidedReviewChangedError();
   }
   if (!response.ok) return readJsonResponse(response, attemptResult, "save guided correction");
   const value: unknown = await response.json();
   // A committed rejection may arrive as an operation receipt after HTTP 202.
-  if (rejectedAttempt.safeParse(value).success) localStorage.removeItem(storageKey);
+  if (rejectedAttempt.safeParse(value).success) clearPendingGuidedReviewAttempt(storageKey);
   const result = parseAttemptResult(value, sessionId, findingId);
-  localStorage.removeItem(storageKey);
+  clearPendingGuidedReviewAttempt(storageKey);
   return result;
 }

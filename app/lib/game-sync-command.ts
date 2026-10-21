@@ -1,11 +1,11 @@
+import { readPendingGameSync, storePendingGameSync, clearPendingGameSync } from "../../database/browser/adapters/games-analysis/game-sync";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 
-const pendingKey = "tempo-pending-game-sync-command-v1";
 type PendingSync = { operationId: string; body: string };
 
 function pendingSync(): PendingSync | null {
-  const raw = localStorage.getItem(pendingKey);
+  const raw = readPendingGameSync();
   if (!raw) return null;
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null ||
@@ -34,11 +34,11 @@ export async function enqueueGameSyncCommand(
     if (receipt.state === "pending" && pending.body !== body)
       throw new PendingOperationError(pending.operationId);
     if (receipt.state === "failed") {
-      localStorage.removeItem(pendingKey);
+      clearPendingGameSync();
       throw new Error(receipt.error?.message ?? "The earlier game sync request failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(pendingKey);
+      clearPendingGameSync();
       if (pending.body === body) return Response.json(receipt.response, { status: 202 });
       pending = null;
     } else if (receipt.state !== "pending") {
@@ -47,7 +47,7 @@ export async function enqueueGameSyncCommand(
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(pendingKey, JSON.stringify(pending));
+    storePendingGameSync(pending);
   }
   let response = await requester(`${API_URL}/api/games/sync`, {
     method: "POST",
@@ -62,6 +62,6 @@ export async function enqueueGameSyncCommand(
     const result = await response.json().catch(() => ({})) as { detail?: string };
     throw new Error(result.detail ?? `Game sync returned HTTP ${response.status}.`);
   }
-  localStorage.removeItem(pendingKey);
+  clearPendingGameSync();
   return response;
 }

@@ -1,3 +1,4 @@
+import { readPendingTacticCapture, storePendingTacticCapture, clearPendingTacticCapture } from "../../database/browser/adapters/games-analysis/tactic-capture";
 import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL } from "../const";
@@ -14,11 +15,10 @@ export const tacticCaptureResultSchema = z.object({
 });
 export type TacticCaptureRequest = z.infer<typeof captureRequestSchema>;
 export type TacticCaptureDraft = Omit<TacticCaptureRequest, "capture_id">;
-const PENDING_KEY = "tempo-pending-tactic-capture-v1";
 const pendingSchema = z.object({ body: z.string() });
 
 export function pendingTacticCapture(): TacticCaptureRequest | null {
-  const stored = localStorage.getItem(PENDING_KEY);
+  const stored = readPendingTacticCapture();
   if (!stored) return null;
   try { return captureRequestSchema.parse(JSON.parse(pendingSchema.parse(JSON.parse(stored)).body)); }
   catch { throw new Error("The pending capture is unreadable. Restore browser data before capturing another tactic."); }
@@ -28,7 +28,7 @@ export function pendingTacticCapture(): TacticCaptureRequest | null {
 export async function saveTacticCapture(draft?: TacticCaptureDraft) {
   if (independentStudy) throw new Error("Tactic capture belongs to Workbench. No capture was saved.");
   let pending = pendingTacticCapture();
-  let requestBody = pending ? pendingSchema.parse(JSON.parse(localStorage.getItem(PENDING_KEY)!)).body : "";
+  let requestBody = pending ? pendingSchema.parse(JSON.parse(readPendingTacticCapture()!)).body : "";
   if (pending) {
     let receipt: { state?: string; response?: unknown; error?: { message?: string }; last_error?: { message?: string } } = { state: "unknown" };
     try {
@@ -41,11 +41,11 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
     if (receipt.state === "complete") {
       const result = tacticCaptureResultSchema.parse(receipt.response);
       if (result.capture_id !== pending.capture_id) throw new Error("The service returned a different capture identity. Retry to resolve this save.");
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingTacticCapture();
       return result;
     }
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingTacticCapture();
       throw new FailedOperationError(receipt.error?.message ?? "The capture failed. Edit it and try again.", pending.capture_id);
     }
     if (receipt.state === "blocked") throw new PendingOperationError(pending.capture_id, receipt.last_error?.message, true);
@@ -56,7 +56,7 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
     if (!draft) throw new Error("There is no pending capture to resolve.");
     pending = captureRequestSchema.parse({ ...draft, capture_id: crypto.randomUUID() });
     requestBody = JSON.stringify(pending);
-    localStorage.setItem(PENDING_KEY, JSON.stringify({ body: requestBody }));
+    storePendingTacticCapture(requestBody);
   }
   try {
     let response = await fetch(`${API_URL}/api/tactics/captures`, {
@@ -64,16 +64,16 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
     });
     // These terminal rejections have no queued business command. 5xx/transport errors stay unresolved.
     if ([400, 409, 422].includes(response.status)) {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingTacticCapture();
       await readJsonResponse(response, tacticCaptureResultSchema, "tactic capture");
     }
     response = await confirmOperationResponse(response);
     const result = await readJsonResponse(response, tacticCaptureResultSchema, "tactic capture");
     if (result.capture_id !== pending.capture_id) throw new Error("The service returned a different capture identity. Retry to resolve this save.");
-    localStorage.removeItem(PENDING_KEY);
+    clearPendingTacticCapture();
     return result;
   } catch (error) {
-    if (error instanceof FailedOperationError) localStorage.removeItem(PENDING_KEY);
+    if (error instanceof FailedOperationError) clearPendingTacticCapture();
     throw error;
   }
 }
