@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.games.derivation import priorities as storage, jobs
 from .durable_tasks import (
     advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,
@@ -21,22 +22,12 @@ def execute_game_priority_handoff_slice(task: dict[str, Any]) -> bool:
     version = int(payload["derivation_version"])
     after_repertoire_id = str(payload.get("after_repertoire_id", ""))
     with background_read_connection() as database:
-        game = database.execute(
-            "SELECT color FROM imported_games WHERE id=?", (game_id,),
-        ).fetchone()
-        repertoire = database.execute(
-            "SELECT DISTINCT repertoire_id FROM repertoire_lines "
-            "WHERE trained_color=? AND repertoire_id>? "
-            "ORDER BY repertoire_id LIMIT 1",
-            (game["color"], after_repertoire_id),
-        ).fetchone() if game else None
+        game = storage.game_color(database, game_id)
+        repertoire = storage.next_repertoire(database, game["color"], after_repertoire_id) if game else None
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
             return False
-        job = database.execute(
-            "SELECT derivation_version,completed_phases,status FROM game_derivation_jobs "
-            "WHERE game_id=? FOR UPDATE", (game_id,),
-        ).fetchone()
+        job = jobs.lock_job(database, game_id)
         if (job is None or int(job["derivation_version"]) != version
                 or int(job["completed_phases"]) != 6
                 or job["status"] not in {"queued", "running"}):
@@ -49,10 +40,5 @@ def execute_game_priority_handoff_slice(task: dict[str, Any]) -> bool:
                 database, task, next_phase="enqueueing_priorities",
                 next_payload={**payload, "after_repertoire_id": repertoire_id},
             )
-        database.execute(
-            "UPDATE game_derivation_jobs SET status='complete',phase=NULL,"
-            "completed_phases=7,last_error=NULL,next_attempt_at=NULL,updated_at=? "
-            "WHERE game_id=? AND derivation_version=?",
-            (datetime.now(timezone.utc).isoformat(), game_id, version),
-        )
+        storage.complete_derivation(database, game_id, version, datetime.now(timezone.utc).isoformat())
         return complete_task_slice_in_transaction(database, task)

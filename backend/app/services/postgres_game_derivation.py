@@ -9,6 +9,7 @@ from typing import Any
 import chess
 
 from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.games.derivation import positions as storage, jobs
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
@@ -59,9 +60,7 @@ def execute_game_position_index_slice(task: dict[str, Any]) -> bool:
     derivation_version = int(payload["derivation_version"])
     ply = int(payload.get("cursor", 0))
     with background_read_connection() as database:
-        game = database.execute(
-            "SELECT start_fen,moves_json FROM imported_games WHERE id=?", (game_id,),
-        ).fetchone()
+        game = storage.game_moves(database, game_id)
     if game is None:
         with connection(background=True) as database:
             if lock_current_slice(database, task):
@@ -73,35 +72,17 @@ def execute_game_position_index_slice(task: dict[str, Any]) -> bool:
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
             return False
-        job = database.execute(
-            "SELECT derivation_version,completed_phases,status FROM game_derivation_jobs "
-            "WHERE game_id=? FOR UPDATE", (game_id,),
-        ).fetchone()
+        job = jobs.lock_job(database, game_id)
         if (job is None or int(job["derivation_version"]) != derivation_version
                 or int(job["completed_phases"]) > 0
                 or job["status"] not in {"queued", "running"}):
             return complete_task_slice_in_transaction(database, task)
-        database.execute(
-            """INSERT INTO game_position_occurrences_staged(
-                   game_id,derivation_version,ply,fen_key,move_uci)
-               VALUES(?,?,?,?,?) ON CONFLICT(game_id,derivation_version,ply) DO UPDATE SET
-               fen_key=excluded.fen_key,move_uci=excluded.move_uci""",
-            (game_id, derivation_version, ply, prepared.fen_key, prepared.move_uci),
-        )
+        storage.stage_position(database, game_id, derivation_version, ply, prepared.fen_key, prepared.move_uci)
         if prepared.final_position:
-            staged_count = database.execute(
-                "SELECT COUNT(*) FROM game_position_occurrences_staged "
-                "WHERE game_id=? AND derivation_version=?",
-                (game_id, derivation_version),
-            ).fetchone()[0]
+            staged_count = storage.staged_position_count(database, game_id, derivation_version)
             if staged_count != ply + 1:
                 raise RuntimeError("Game position index is incomplete; publication was withheld")
-            database.execute(
-                "UPDATE game_derivation_jobs SET completed_phases=1,"
-                "phase='comparing_repertoire',published_position_version=? "
-                "WHERE game_id=? AND derivation_version=?",
-                (derivation_version, game_id, derivation_version),
-            )
+            storage.publish_position_generation(database, game_id, derivation_version)
             enqueue_compact_postgres_task_in_transaction(
                 database, "game_derivation_compare", game_id,
                 {"game_id": game_id, "derivation_version": derivation_version,

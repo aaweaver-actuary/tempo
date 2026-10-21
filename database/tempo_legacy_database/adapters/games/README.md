@@ -26,3 +26,6 @@ This is a physical/query separation within the existing legacy owner. The findin
 The [source-schema charts and complete field/key dictionaries](../../schema/README.md) remain authoritative for actual stored fields, keys and FKs. No table, column, FK, migration, constraint, view or stored JSON format changes here. No live schema or data was inspected. Table/view names in these queries retain their existing owner; logical queue/card/game identities are not extra FK constraints.
 
 Focused tests retain the existing game exclusion/sync admission, finding/card, manual publication, generation/lease fencing and rollback assertions, using fake connections or task-owned in-memory SQLite only. Native PostgreSQL proofs remain separate and unexecuted for this relocation. Source comparison confirms all distinct SQL literals match the pre-extraction source exactly; this is one-time relocation evidence, not a new SQL-literal test framework.
+
+
+[Derivation storage](derivation/README.md) owns the existing position/event stages, job projections, feature publication and miss/priority queries. Application workers keep chess/phase/task decisions and the same borrowed transactions.
