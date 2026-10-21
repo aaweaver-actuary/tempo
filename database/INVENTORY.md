@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **95 files**; one candidate is confirmed non-database application code, and **60 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **97 files**; one candidate is confirmed non-database application code, and **58 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -28,11 +28,11 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy authority/evidence storage split: [backend/app/game_evidence_commands.py](tempo_legacy_database/adapters/games/authority/README.md).
 - Completed legacy Games command SQL split: [backend/app/game_sync_commands.py](tempo_legacy_database/adapters/games/README.md).
 - Completed guided game-review storage split: [backend/app/guided_review_commands.py](tempo_legacy_database/adapters/games/guided_review/README.md).
-- [backend/app/integrity_repair_commands.py](../backend/app/integrity_repair_commands.py)
+- Completed authored discovery/integrity command storage split: [backend/app/integrity_repair_commands.py](tempo_legacy_database/adapters/authored_repertoires/README.md).
 - [backend/app/main.py](../backend/app/main.py)
 - Completed controls SQL split: [backend/app/opening_evidence_api.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/opening_segmentation_api.py](../backend/app/opening_segmentation_api.py)
-- [backend/app/opportunity_commands.py](../backend/app/opportunity_commands.py)
+- Completed authored discovery/integrity command storage split: [backend/app/opportunity_commands.py](tempo_legacy_database/adapters/authored_repertoires/README.md).
 - [backend/app/pgn_import_commands.py](../backend/app/pgn_import_commands.py)
 - Completed legacy bounded prefix-read projection split: [backend/app/prefix_diagnostics_api.py](tempo_legacy_database/adapters/prefix_reads/README.md).
 - [backend/app/prefix_evaluation_api.py](../backend/app/prefix_evaluation_api.py)
@@ -217,13 +217,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 68 | 0 | 52 |
+| Legacy backend | 70 | 0 | 50 |
 | Learning runtime | 18 | 0 | 8 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **95** | **1** | **60** |
+| **Total baseline** | **97** | **1** | **58** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 

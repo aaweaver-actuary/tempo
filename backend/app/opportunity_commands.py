@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from tempo_legacy_database.adapters.authored_repertoires import discovery_commands as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .services.postgres_integrity import invalidate_integrity_in_transaction
@@ -28,11 +29,7 @@ def dismiss_opportunity(database: PostgresConnection, payload: dict[str, Any]) -
     evidence = _active_state_action_opportunity(database, payload)
     if evidence is None:
         raise HTTPException(404, "Active opportunity not found")
-    database.execute_native(
-        "UPDATE repertoire_opportunities SET status='dismissed',"
-        "dismissed_evidence_json=%s,updated_at=%s WHERE id=%s",
-        (evidence["evidence_json"], datetime.now(timezone.utc).isoformat(), str(payload["opportunity_id"])),
-    )
+    storage.dismiss(database, evidence["evidence_json"], datetime.now(timezone.utc).isoformat(), str(payload["opportunity_id"]))
     return {"dismissed": True}
 
 
@@ -40,11 +37,7 @@ def acknowledge_opportunity(database: PostgresConnection, payload: dict[str, Any
     if _active_state_action_opportunity(database, payload) is None:
         raise HTTPException(404, "Active discovery not found")
     now = datetime.now(timezone.utc).isoformat()
-    saved = database.execute_native(
-        "UPDATE repertoire_opportunities SET seen_at=%s,snoozed_until=NULL,updated_at=%s "
-        "WHERE id=%s AND repertoire_id=%s AND status='active' RETURNING id",
-        (now, now, str(payload["opportunity_id"]), str(payload["repertoire_id"])),
-    ).fetchone()
+    saved = storage.acknowledge(database, now, now, str(payload["opportunity_id"]), str(payload["repertoire_id"]))
     if saved is None:
         raise HTTPException(404, "Active discovery not found")
     return {"acknowledged": True}
@@ -54,13 +47,7 @@ def snooze_opportunity(database: PostgresConnection, payload: dict[str, Any]) ->
     if _active_state_action_opportunity(database, payload) is None:
         raise HTTPException(404, "Active discovery not found")
     now = datetime.now(timezone.utc)
-    saved = database.execute_native(
-        "UPDATE repertoire_opportunities SET seen_at=COALESCE(seen_at,%s),"
-        "snoozed_until=%s,updated_at=%s "
-        "WHERE id=%s AND repertoire_id=%s AND status='active' RETURNING id",
-        (now.isoformat(), (now + timedelta(days=7)).isoformat(), now.isoformat(),
-         str(payload["opportunity_id"]), str(payload["repertoire_id"])),
-    ).fetchone()
+    saved = storage.snooze(database, now.isoformat(), (now + timedelta(days=7)).isoformat(), now.isoformat(), str(payload["opportunity_id"]), str(payload["repertoire_id"]))
     if saved is None:
         raise HTTPException(404, "Active discovery not found")
     return {"snoozed": True}
@@ -76,17 +63,11 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
     from .services.canonical_scope_freshness import game_scope_generation
     read_prefix(database, repertoire_id, lock=True)
     game_scope_generation(database, lock=True)
-    opportunity = database.execute_native(
-        "SELECT card_id FROM repertoire_opportunities "
-        "WHERE id=%s AND repertoire_id=%s FOR UPDATE",
-        (opportunity_id, repertoire_id),
-    ).fetchone()
+    opportunity = storage.locked_opportunity_card(database, opportunity_id, repertoire_id)
     if opportunity is None:
         raise HTTPException(404, "Discovery not found")
     source_card_id = opportunity[0]
-    source_card = database.execute_native(
-        "SELECT kind FROM cards WHERE id=%s FOR UPDATE", (source_card_id,),
-    ).fetchone() if source_card_id else None
+    source_card = storage.locked_card_kind(database, source_card_id) if source_card_id else None
     local_day = date.today().isoformat()
     lock_queue_date_for_position(database, local_day)
     try:
@@ -96,16 +77,10 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
     if source_card is not None and source_card[0] == "prefix" and not result["idempotent"]:
-        split = database.execute_native(
-            "SELECT shortened_card_id,continuation_card_id FROM prefix_splits "
-            "WHERE source_card_id=%s", (source_card_id,),
-        ).fetchone()
+        split = storage.prefix_split_cards(database, source_card_id)
         if split is None:
             raise RuntimeError("Prefix split was not saved with discovery training")
-        linked_repertoires = {str(row[0]) for row in database.execute_native(
-            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=ANY(%s::text[])",
-            ([split[0], split[1]],),
-        )}
+        linked_repertoires = {str(row[0]) for row in storage.linked_repertoire_rows(database, [split[0], split[1]])}
         for linked_repertoire_id in sorted(linked_repertoires):
             invalidate_integrity_in_transaction(database, linked_repertoire_id)
             request_graph_rebuild_in_transaction(database, linked_repertoire_id, local_day)
@@ -114,9 +89,7 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
 
 def refresh_opportunities(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
     repertoire_id = str(payload["repertoire_id"])
-    exists = database.execute_native(
-        "SELECT 1 FROM repertoires WHERE id=%s", (repertoire_id,),
-    ).fetchone()
+    exists = storage.repertoire(database, repertoire_id)
     if exists is None:
         raise HTTPException(404, "Repertoire not found")
     enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
