@@ -43,6 +43,8 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
 
 from tempo_legacy_database.adapters.queue_refresh.application import eligibility as eligibility_storage
 from tempo_legacy_database.adapters.queue_refresh.application import seeding as seeding_storage
+from tempo_legacy_database.adapters.queue_refresh.application import publication as publication_storage
+from tempo_legacy_database.adapters.queue_refresh.application import requeue as requeue_storage
 from tempo_legacy_database.adapters.queue_refresh.application.eligibility import (
     _OPENING_UNLOCK_ELIGIBILITY_SQL,
     _OPENING_UNLOCK_CANDIDATES_SQL,
@@ -162,9 +164,7 @@ def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None
     rows = presentation_rows(db, day)
     if not rows:
         return
-    saved = db.execute(
-        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
-    ).fetchone()
+    saved = presentation_storage.saved_plan(db, day)
     token = frozen_opening_order.activation(db)
     membership_hash = frozen_opening_order.queue_hash(_queue_membership_hash(rows), token)
     if saved and saved["membership_hash"] == membership_hash:
@@ -180,36 +180,12 @@ def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None
     if frozen_active:
         frozen_opening_order.record_queue_changes(db,day,[{'id':row['id'],'position':positions[index]} for index,row in enumerate(ordered)])
     for position, row in enumerate(ordered):
-        db.execute(
-            """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",
-            (
-                positions[position],
-                row["content_type"] or "opening",
-                row["admission_kind"],
-                row["id"],
-            ),
-        )
-    db.execute(
-        """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
-           VALUES(?,?,?,?) ON CONFLICT(queue_date) DO UPDATE SET
-           membership_hash=excluded.membership_hash,generated_at=excluded.generated_at""",
-        (day, seed, membership_hash, datetime.now(timezone.utc).isoformat()),
-    )
+        publication_storage.apply_position(db, positions[position], row["content_type"] or "opening", row["admission_kind"], row["id"])
+    publication_storage.save_plan(db, day, seed, membership_hash, datetime.now(timezone.utc).isoformat())
 
 
 def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]:
-    candidates = database.execute(
-        """SELECT q.id queue_entry_id,c.id,c.start_fen,c.moves_json,c.content_type,
-                          COALESCE(c.trained_color,(SELECT l.trained_color FROM repertoire_lines l
-                           WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1)) trained_color
-                   FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                   WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
-                     AND (c.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires r_ok
-                                WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
-                                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                                 WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id)))""",
-        (queue_date,),
-    ).fetchall()
+    candidates = publication_storage.quarantine_candidates(database, queue_date)
     diagnostics: list[dict] = []
     for candidate in candidates:
         if candidate["content_type"] != "opening" or candidate["trained_color"] not in {
@@ -225,11 +201,8 @@ def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]
             candidate["start_fen"], moves, candidate["trained_color"]
         ):
             continue
-        database.execute("UPDATE cards SET state='locked' WHERE id=?", (candidate["id"],))
-        database.execute(
-            "UPDATE daily_queue SET status='skipped' WHERE id=?",
-            (candidate["queue_entry_id"],),
-        )
+        publication_storage.lock_incomplete_card(database, candidate["id"])
+        publication_storage.skip_incomplete_entry(database, candidate["queue_entry_id"])
         diagnostics.append(
             {
                 "card_id": candidate["id"],
@@ -242,99 +215,36 @@ def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]
 def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry_id: int | None = None) -> None:
     """Publish one complete queue generation in a bounded writer transaction."""
 
-    database.execute(
-        """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-           VALUES(?,'refreshing',0,1)
-           ON CONFLICT(queue_date) DO UPDATE SET state='refreshing',refresh_pending=1,
-               last_error=NULL""",
-        (queue_date,),
-    )
+    publication_storage.begin_projection(database, queue_date)
     seed_queue(database, queue_date)
     randomize_daily_queue(database, queue_date, preserve_through_entry_id=preserve_through_entry_id)
     diagnostics = _quarantine_malformed_opening_cards(database, queue_date)
-    database.execute(
-        "DELETE FROM queue_projection_diagnostics WHERE queue_date=?", (queue_date,)
-    )
-    database.executemany(
-        "INSERT INTO queue_projection_diagnostics(queue_date,card_id,message) VALUES(?,?,?)",
-        [
+    publication_storage.clear_diagnostics(database, queue_date)
+    publication_storage.record_diagnostics(database, [
             (queue_date, diagnostic["card_id"], diagnostic["message"])
             for diagnostic in diagnostics
-        ],
-    )
+        ])
     now = datetime.now(timezone.utc).isoformat()
-    blocked_count = database.execute(
-        """SELECT COUNT(*) FROM (
-               SELECT q.card_id FROM daily_queue q
-               WHERE q.queue_date=? AND q.status='blocked'
-               UNION
-               SELECT c.id FROM cards c
-               WHERE c.content_type='opening' AND c.archived=0
-                 AND c.state IN ('learning','mature') AND c.due_date<=?
-                 AND EXISTS(
-                     SELECT 1 FROM repertoire_integrity_card_blocks block
-                     WHERE block.card_id=c.id
-                       AND (block.repertoire_id=c.repertoire_id OR EXISTS(
-                           SELECT 1 FROM repertoire_cards rc
-                           WHERE rc.card_id=c.id
-                             AND rc.repertoire_id=block.repertoire_id
-                       ))
-                 )
-           )""",
-        (queue_date, queue_date),
-    ).fetchone()[0]
-    database.execute(
-        """UPDATE queue_projections SET state='ready',generation=generation+1,
-               updated_at=?,refresh_pending=0,last_error=NULL,blocked_count=?
-           WHERE queue_date=?""",
-        (now, blocked_count, queue_date),
-    )
+    blocked_count = publication_storage.blocked_count(database, queue_date)
+    publication_storage.publish_projection(database, queue_date, now, blocked_count)
 
 
 def requeue(db, day, cid, after, attempt):
     from .review_service import capture_daily_queue_order
     previous_order = capture_daily_queue_order(db, day)
-    cycle = db.execute(
-        "SELECT COALESCE(MAX(cycle),-1)+1 FROM ("
-        "SELECT cycle FROM daily_queue WHERE queue_date=? AND card_id=? UNION ALL "
-        "SELECT cycle FROM queue_attempt_origins WHERE queue_date=? AND card_id=?) cycles",
-        (day, cid, day, cid),
-    ).fetchone()[0]
+    cycle = requeue_storage.next_cycle(db, day, cid)
     if after is None:
-        position = db.execute(
-            "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
-            (day,),
-        ).fetchone()[0]
+        position = requeue_storage.next_position(db, day)
     else:
-        row = db.execute(
-            available_attempt_sql().replace("SELECT q.id FROM", "SELECT q.position FROM", 1)
-            + " ORDER BY q.position,q.id LIMIT 1 OFFSET ?",
-            (day, max(0, after)),
-        ).fetchone()
+        row = requeue_storage.position_at_offset(db, day, MISS_REASON, max(0, after))
         position = (
             row[0]
             if row
-            else db.execute(
-                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
-                (day,),
-            ).fetchone()[0]
+            else requeue_storage.next_position(db, day)
         )
-        db.execute(
-            "UPDATE daily_queue SET position=position+1 WHERE queue_date=? AND status='queued' AND position>=?",
-            (day, position),
-        )
-    inserted_entry_id = db.execute(
-        "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) "
-        "VALUES(?,?,?,?,?) RETURNING id",
-        (day, cid, cycle, position, attempt),
-    ).fetchone()[0]
-    db.execute(
-        """UPDATE daily_queue SET
-               card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
-               admission_kind='review'
-           WHERE id=?""",
-        (inserted_entry_id,),
-    )
+        requeue_storage.shift_positions(db, day, position)
+    inserted_entry_id = requeue_storage.append_attempt(db, day, cid, cycle, position, attempt)
+    requeue_storage.set_review_admission(db, inserted_entry_id)
     preserve_daily_queue_order(db, day, previous=previous_order)
     return inserted_entry_id
 

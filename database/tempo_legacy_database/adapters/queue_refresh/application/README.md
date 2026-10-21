@@ -41,8 +41,38 @@ The linked schema READMEs are canonical for every field, primary/composite key,
 enforced FK, cardinality and delete action. This extraction changes no DDL,
 owner, storage format, policy, grants or persisted values.
 
-This first slice moves **21 direct calls plus the existing sparse-selector call**.
-The other 18 direct calls in queue application and the separate admission adapter
-remain pending; neither is an accepted permanent exception. Future simplification
-could consolidate the two legacy/native queue paths after separate behavioral
-review, but this move deliberately retains their current differences.
+[publication.py](publication.py) owns unchanged queue-position/bucket/kind writes,
+plan publication, quarantine candidate facts and lock/skip writes, diagnostic
+replacement, the blocked-count union and projection state/generation publication.
+The existing exact saved-plan read is reused from [presentation](../presentation.py).
+JSON parsing, chess validation, diagnostic text, randomization/frozen policy and
+the timestamp captured **before** the blocked-count read stay in application order.
+The byte-different original materialization start statement stays separate from
+[foreground.py](../foreground.py); its existing callers and constant are unchanged.
+
+[requeue.py](requeue.py) owns the original queue-plus-origin next-cycle query,
+append/offset position reads, same-day position shift, returning insert and review
+bucket assignment. The application still captures the prior order before its
+first read, chooses append versus offset, clamps the offset, preserves order
+only after all writes and returns the inserted identity. Same-date existing
+origin rows remain cycle authority even after projection deletion. The exact
+existing availability builder is reused from its root owner.
+
+| Additional stored facts/effects | Source fields and relationships |
+| --- | --- |
+| Saved order and projection | `daily_queue_days(queue_date text PK,seed bigint,membership_hash text,generated_at text)`; `queue_projections(queue_date text PK,state text,generation bigint,updated_at text nullable,refresh_pending bigint,last_error text nullable,blocked_count bigint)`. Date associations are logical; neither table has an enforced queue FK. [Canonical bounded ER view and full dictionaries](../README.md#opening-and-presentation-publication). |
+| Diagnostic replacement | `queue_projection_diagnostics` has composite PK `(queue_date text,card_id text)` and `message text`; no enforced FK. Existing whole-day replacement remains inside the caller transaction. [All fields and constraints](../../../schema/study-queue-review-1/README.md). |
+| Repeat attempt provenance | `queue_attempt_origins.queue_entry_id bigint PK`, queue date/card/cycle/revision facts and existing head-issuance evidence retain their original authority and constraints. Queue/origin date/card/cycle relationships are unchanged. [Canonical origin dictionary](../../../schema/study-queue-review-1/README.md). |
+
+All **39 original direct calls plus the existing sparse-selector call** from
+queue application now live in root operations. The application has zero direct
+DB calls, SQL literals or dialect checks; compatibility SQL names stay exported.
+The separate queue admission adapter remains pending, not an accepted exception.
+No connection or transaction lifecycle moved. Focused existing SQLite/fake cases
+and exact one-time source comparison establish this mechanical extraction, not
+native PostgreSQL execution, deployment or optional-feature resource isolation.
+
+Proposal only: the parallel native/legacy queue paths and byte-different
+projection statements could later share fewer fixed implementations after
+separate behavioral review. This move retains their differences; no policy,
+schema, storage or framework consolidation was implemented.
