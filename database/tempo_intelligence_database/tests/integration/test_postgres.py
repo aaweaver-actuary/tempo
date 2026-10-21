@@ -21,7 +21,7 @@ from tempo_intelligence_database.ddl.migrate import migrate
 from tempo_intelligence.models import RequestInput
 from tempo_intelligence_database.adapters.store import Store
 
-from .support import request_value, register, ready, maia_result, owner_execute
+from .support import request_value, register, ready, maia_result, owner_execute, FIXTURES
 
 
 def submit(store,value=None):
@@ -228,7 +228,7 @@ def test_read_freshness_is_independent_of_refresh_failure(state):
 def test_terminal_positions_do_not_queue_provider_or_maia_work(state):
     store,_,_=state
     value=request_value(sources=[{"kind":"lichess"},{"kind":"masters"}])
-    value["snapshot"]=json.loads((Path(__file__).parent.parent/"fixtures/terminal-position-v1.json").read_text())
+    value["snapshot"]=json.loads((FIXTURES/"terminal-position-v1.json").read_text())
     assert {source["state"] for source in submit(store,value)["sources"]}=={"terminal"}
     assert store.claim() is None
 
@@ -643,7 +643,7 @@ def test_model_version_mapping_cannot_change_and_removed_profile_cannot_request(
 
 def test_real_supported_maia_envelope_result_is_accepted_against_exact_persisted_job(state):
     store,configuration,_=state
-    fixture=json.loads((Path(__file__).parent.parent/"fixtures/maia-supported-envelope-v1.json").read_text())
+    fixture=json.loads((FIXTURES/"maia-supported-envelope-v1.json").read_text())
     requested=fixture["request"]
     source=requested["sources"][0]
     profile={key:source[key] for key in ("model_id","model_version","artifact_sha256")}

@@ -17,7 +17,10 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-SERVICE=Path(__file__).resolve().parent.parent
+DATABASE=Path(__file__).resolve().parents[1]
+PROJECT=DATABASE.parents[1]
+SERVICE=PROJECT/"services/intelligence" if (PROJECT/"services/intelligence").is_dir() else PROJECT
+NATIVE=DATABASE/"tests/integration"
 
 
 def docker(*arguments,check=True):
@@ -37,6 +40,10 @@ def main():
     report["source_inputs"]={str(path.relative_to(SERVICE)):hashlib.sha256(path.read_bytes()).hexdigest()
         for directory in (SERVICE/"src",SERVICE/"fixtures",SERVICE/"integration",SERVICE/"tests") for path in directory.rglob("*")
         if path.is_file() and "__pycache__" not in path.parts}
+    report["source_inputs"].update({"database/"+str(path.relative_to(DATABASE.parent)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in DATABASE.rglob("*") if path.is_file() and "__pycache__" not in path.parts})
+    report["source_inputs"].update({path.name:hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (SERVICE/"pyproject.toml",SERVICE/"hatch_build.py") if path.is_file()})
     created_container=created_volume=False
     private_values=[]
     try:
@@ -90,22 +97,22 @@ def main():
             TEMPO_INTELLIGENCE_TEST_UPGRADE_URL=make_conninfo(owner_url,dbname="intelligence_upgrade"),
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", TEMPO_C_BROWSER_FIXTURE_FILE=str(destination/"workbench-producer.json"))
         junit=destination/"native.xml"
-        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(SERVICE/"integration/test_analysis_postgres.py"),str(SERVICE/"integration/test_postgres.py"),str(SERVICE/"integration/test_provider_postgres.py"),str(SERVICE/"integration/test_server_postgres.py"),str(SERVICE/"integration/test_games_readonly_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
+        command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(NATIVE/"test_analysis_postgres.py"),str(NATIVE/"test_postgres.py"),str(NATIVE/"test_provider_postgres.py"),str(NATIVE/"test_server_postgres.py"),str(NATIVE/"test_games_readonly_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
         if os.environ.get("TEMPO_C_STOCKFISH_PROFILE"):
             environment["TEMPO_C_STOCKFISH_PROFILE"]=str(Path(os.environ["TEMPO_C_STOCKFISH_PROFILE"]).resolve())
-            command.insert(command.index("-q"),str(SERVICE/"integration/test_actual_analysis.py"))
+            command.insert(command.index("-q"),str(NATIVE/"test_actual_analysis.py"))
         if os.environ.get("TEMPO_C_A_EXPORT") or os.environ.get("TEMPO_C_GAME_IDS_FILE"):
             for name in ('TEMPO_C_A_EXPORT','TEMPO_C_GAME_IDS_FILE','TEMPO_C_STOCKFISH_PROFILE'):
                 if not os.environ.get(name):raise RuntimeError('explicit_actual_a_inputs_required')
                 environment[name]=str(Path(os.environ[name]).resolve())
-            command.insert(command.index('-q'),str(SERVICE/'integration/test_actual_a.py'))
+            command.insert(command.index('-q'),str(NATIVE/'test_actual_a.py'))
         selection=os.environ.get("TEMPO_C_NATIVE_SELECTION")
         if selection=="analysis":
             command=[argument for argument in command if not argument.endswith(("/test_postgres.py","/test_provider_postgres.py","/test_server_postgres.py"))]
         elif selection=="games-readonly":
             command=[argument for argument in command if not argument.endswith(("/test_analysis_postgres.py","/test_postgres.py","/test_provider_postgres.py","/test_server_postgres.py","/test_games_readonly_postgres.py"))]
-            command.insert(command.index('-q'),str(SERVICE/'integration/test_games_readonly_postgres.py')+'::test_games_readonly_http_and_transactions_preserve_all_state')
-            command.insert(command.index('-q'),str(SERVICE/'integration/test_analysis_postgres.py')+'::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free')
+            command.insert(command.index('-q'),str(NATIVE/'test_games_readonly_postgres.py')+'::test_games_readonly_http_and_transactions_preserve_all_state')
+            command.insert(command.index('-q'),str(NATIVE/'test_analysis_postgres.py')+'::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free')
         elif selection:
             raise RuntimeError("unknown_native_selection")
         command.extend(["-o","faulthandler_timeout=45","-vv"])

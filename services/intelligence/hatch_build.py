@@ -10,5 +10,9 @@ class CustomBuildHook(BuildHookInterface):
         source = local if local.is_dir() else repository
         if not source.is_dir():
             raise FileNotFoundError("Missing tempo_intelligence_database build input")
-        destination = "tempo_intelligence_database" if self.target_name == "wheel" else "database/tempo_intelligence_database"
-        build_data["force_include"][str(source)] = destination
+        if self.target_name == "wheel":
+            for path in source.iterdir():
+                if path.name not in {"tests", "tooling", "__pycache__"}:
+                    build_data["force_include"][str(path)] = "tempo_intelligence_database/" + path.name
+        else:
+            build_data["force_include"][str(source)] = "database/tempo_intelligence_database"

@@ -14,7 +14,9 @@ from tempo_intelligence.errors import DomainError
 from tempo_intelligence.identity import digest
 from tempo_intelligence.api import create_app
 
-FIXTURES=Path(__file__).resolve().parent.parent/'fixtures/analysis'
+from .support import FIXTURES as FIXTURE_ROOT
+
+FIXTURES=FIXTURE_ROOT/'analysis'
 
 def setup(state,budget=250,run_id='run'):
     store=AnalysisStore(state[0]);manifest=Manifest.model_validate_json((FIXTURES/'manifest.json').read_text());page=Page.model_validate_json((FIXTURES/'games-0.json').read_text())

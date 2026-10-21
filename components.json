@@ -440,13 +440,14 @@
           "owner": "intelligence",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/intelligence/integration/run_postgres.py",
+          "command": "python database/tempo_intelligence_database/tooling/run_postgres.py",
           "inputs": [
             "services/intelligence/integration",
             "services/intelligence/src",
             "services/intelligence/fixtures",
             "services/intelligence/pyproject.toml",
-            "services/intelligence/uv.lock"
+            "services/intelligence/uv.lock",
+            "database/tempo_intelligence_database"
           ]
         }
       ],

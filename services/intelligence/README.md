@@ -349,7 +349,7 @@ Run from the repository root:
 
 ```sh
 services/intelligence/.venv/bin/python -m pytest services/intelligence/tests -q
-services/intelligence/.venv/bin/python services/intelligence/integration/run_postgres.py /absolute/evidence/native
+services/intelligence/.venv/bin/python database/tempo_intelligence_database/tooling/run_postgres.py /absolute/evidence/native
 services/intelligence/.venv/bin/python services/intelligence/integration/qualify_artifacts.py /absolute/evidence/artifacts
 node tools/component-build/check-components.mjs --component intelligence
 node tools/component-build/test-lane.mjs --component intelligence --list
@@ -468,3 +468,11 @@ is now centralized with the same shared deadline context; application runner and
 shutdown/cancellation orchestration remain outside the root tree. These source
 moves do not establish whole-backend/domain independence or native/deployed
 qualification.
+
+Native database-specific qualification now lives in the single root
+[`database/tempo_intelligence_database/tests`](../../database/tempo_intelligence_database/tests/README.md)
+and [`tooling`](../../database/tempo_intelligence_database/tooling/README.md) trees.
+The source distribution includes that harness; runtime wheels exclude it. Pure/
+fake component tests and artifact qualification orchestration remain application-
+owned. Optional actual A/B tests remain intact native qualification, not a claim
+that a pure application or whole-backend independence proof was run.

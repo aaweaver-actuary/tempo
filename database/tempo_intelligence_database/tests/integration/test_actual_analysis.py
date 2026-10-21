@@ -8,13 +8,14 @@ from tempo_intelligence.analysis.models import Manifest,Page,RunRequest,Command
 from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
 from tempo_intelligence.analysis.worker import work
 from tempo_intelligence.identity import digest
+from .support import FIXTURES
 
 
 def test_actual_B_durable_same_root_result_acceptance(state):
     from tempo_analysis_pilot import connect
     owner=AnalysisStore(state[0])
     page=Page.model_validate({'schema_version':1,'input_id':'actual-B-synthetic-game','revision':1,'page_id':'games','games':[{'game_id':'missed-mate','source_revision':1,'source_digest':'explicit-synthetic-game','learner_color':'white','starting_fen':'7k/5Q2/6K1/8/8/8/8/8 w - - 0 1','moves':['f7e6'],'contexts':[]}]})
-    manifest=json.loads((Path(__file__).parents[1]/'fixtures/analysis/manifest.json').read_text());manifest.update(input_id=page.input_id,game_ids=['missed-mate'],pages=[{'page_id':'games','digest':digest(page.model_dump(mode='json')),'game_count':1}])
+    manifest=json.loads((FIXTURES/'analysis/manifest.json').read_text());manifest.update(input_id=page.input_id,game_ids=['missed-mate'],pages=[{'page_id':'games','digest':digest(page.model_dump(mode='json')),'game_count':1}])
     owner.manifest(Manifest.model_validate(manifest));owner.page(page);owner.finalize(page.input_id,Command(command_id='finalize-B',action='finalize',expected_revision=1))
     owner.submit(RunRequest(schema_version=1,workspace_id='fixture',run_id='actual-B',revision=1,input_id=page.input_id,input_revision=1,position_budget=1))
     output=Path(os.environ['TEMPO_C_BROWSER_FIXTURE_FILE']).parent/'actual-B.json'

@@ -9,7 +9,9 @@ import psycopg
 
 from tempo_intelligence.credentials import PrivateCredentials
 
-FIXTURES=Path(__file__).resolve().parent.parent/"fixtures"
+PROJECT=Path(__file__).resolve().parents[4]
+SERVICE=PROJECT/"services/intelligence" if (PROJECT/"services/intelligence").is_dir() else PROJECT
+FIXTURES=SERVICE/"fixtures"
 
 
 def request_value(sources=None,request_id="request"):
