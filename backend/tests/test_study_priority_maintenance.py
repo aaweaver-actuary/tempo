@@ -82,12 +82,12 @@ def test_owned_fixture_database_renews_private_policy_without_touching_parent_co
     import threading
     import time
     from types import SimpleNamespace
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.services import study_priority
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
-    fixtures = importlib.import_module('check_postgres_graph_retention')
-    migrations = importlib.import_module('apply_postgres_migrations')
+    fixtures = importlib.import_module('database.tests.check_postgres_graph_retention')
+    migrations = importlib.import_module('database.tooling.apply_postgres_migrations')
     clock = [1000.0]
     refreshed = threading.Event()
     parent_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY
@@ -171,7 +171,7 @@ def test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding
     from pathlib import Path
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
-    proof = importlib.import_module('check_postgres_daily_study_dispatch')
+    proof = importlib.import_module('database.tests.check_postgres_daily_study_dispatch')
     identifier = 'bounded-sparse-regression'
     locked = [f'{identifier}-locked-{index:05}' for index in range(15000)]
     eligible = set(locked[-21:])
@@ -221,7 +221,7 @@ def test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounde
     from app.services import redis_admission_gate, study_priority
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
-    proof = importlib.import_module('check_postgres_study_priority')
+    proof = importlib.import_module('database.tests.check_postgres_study_priority')
     monkeypatch.setenv('TEMPO_REDIS_URL', 'redis://127.0.0.1:1/0')
     # Construct only; neither client connects. Production poll/write deadlines
     # stay exactly as configured, including when this fixture is repaired.

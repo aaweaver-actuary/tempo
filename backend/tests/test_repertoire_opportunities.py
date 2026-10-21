@@ -11,7 +11,7 @@ import chess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app, queue_today, seed_queue
 from app.services.repertoire_opportunities import (
     dismiss_opportunity, execute_opportunity_slice,
@@ -22,7 +22,7 @@ from app.services.repertoire_opportunities import (
 from app.services.durable_tasks import (
     claim_task, complete_task, enqueue_task, enqueue_task_in_transaction,
 )
-from app.services.database_executor import database_writer
+from tempo_legacy_database.adapters.database_executor import database_writer
 from app.services import discovery_admission, repertoire_opportunities, threat_pipeline
 from app.services.discovery_admission import (
     create_admission_intent, execute_admission_intent_slice,

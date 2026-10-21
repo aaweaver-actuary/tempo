@@ -13,8 +13,8 @@ from tempo_learning_remediation import (AdmissionResult, AttemptAuthority, Candi
     LegacyAcceptedDecision, PostgresRepository, ReviewOutcome, accepted_storage_identity,
     apply_admission)
 
-from ..postgres_store import PostgresConnection
-from ..queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID, BRIDGE_MISS_REASON
 
 

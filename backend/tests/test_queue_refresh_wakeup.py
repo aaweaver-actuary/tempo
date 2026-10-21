@@ -9,7 +9,8 @@ from threading import Thread
 from kombu.exceptions import EncodeError, OperationalError as BrokerUnavailable
 import pytest
 
-from app import command_gateway, database
+from app import command_gateway
+from tempo_legacy_database import connections as database
 from app.services import durable_tasks, queue_refresh_wakeup
 
 

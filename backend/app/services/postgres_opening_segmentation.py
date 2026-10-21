@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from .. import postgres_store
-from ..database import background_read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.connections import background_read_connection
 from .durable_tasks import (advance_task_slice_in_transaction, complete_task_slice_in_transaction,
                             enqueue_task_in_transaction, lock_current_slice)
 from .redis_admission_gate import background_lease

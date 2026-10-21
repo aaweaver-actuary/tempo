@@ -1,8 +1,8 @@
 """Legacy call-site composition; the caller retains its command transaction."""
 from datetime import date
 
-from ..database import connection
-from ..storage.real_game_feedback import BorrowedFeedbackStore
+from tempo_legacy_database.connections import connection
+from tempo_legacy_database.adapters.real_game_feedback import BorrowedFeedbackStore
 from . import real_game_feedback as policy
 from .real_game_feedback import MISS_REASON
 from .activity_gate import activity_gate

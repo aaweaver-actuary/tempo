@@ -1,12 +1,12 @@
 import { expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
-import { closeStudyIntentStorage, initializeStudyIntentStorage, legacyStudyCutoverRequired, savedTeachingFacts, studyIntentRecords, studyIntentStore } from "../../app/lib/study-intent-storage";
+import { closeStudyIntentStorage, initializeStudyIntentStorage, legacyStudyCutoverRequired, savedTeachingFacts, studyIntentRecords, studyIntentStore } from "../../database/browser/study-intent-storage";
 import { executeStudyRequest, recoverStudyRequests } from "../../app/lib/study-command-client";
 import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../../app/lib/teaching-state-outbox";
 import { enqueueTrainingFailure, flushTrainingFailures, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { interceptIntentWrites } from "./support/study-intent-fixtures";
 import { completedRecoveryReceipt, deferred, enterRecovery, observe, recoveryCommand } from "./support/recovery-ownership-fixtures";
-import * as storage from "../../app/lib/study-intent-storage";
+import * as storage from "../../database/browser/study-intent-storage";
 import { notifications } from "../../app/lib/notifications";
 
 const legacyReview = (id: string) => ({ backendId: id, queueEntryId: id === "a" ? 1 : 2, attemptId: id,
@@ -345,7 +345,7 @@ it("pr285_rejected_answer_retains_terminal_validation_evidence", async () => {
 });
 it("pr285_storage_retry_reopens_after_successful_initialization_then_failed_refresh", async () => {
   const { waitFor } = await import("@testing-library/react");
-  const { studyIntentStorageReady } = await import("../../app/lib/study-intent-storage");
+  const { studyIntentStorageReady } = await import("../../database/browser/study-intent-storage");
   const store = await studyIntentStore();
   await store.put(repairCommand("retained"));
   const fault = vi.spyOn(store, "list").mockRejectedValue(new Error("refresh failed"));

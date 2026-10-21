@@ -1,7 +1,7 @@
 # Contract-local regression ownership — #264
 
 Regular owning command: `contracts/.venv/bin/python contracts/run_tests.py --typescript`.
-Native ownership is selected separately: `contracts/.venv/bin/python contracts/database-ownership/run.py`.
+Native ownership is selected separately: `contracts/.venv/bin/python database/ownership/run.py`.
 Every package also supports `python -m pytest contracts/<root>/tests`. Collection/execution counts are reported; skipped and zero-selected required tests fail. No application startup is involved.
 
 | Invariant | Named owning regression |

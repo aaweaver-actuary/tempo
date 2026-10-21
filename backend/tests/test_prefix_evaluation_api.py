@@ -289,7 +289,8 @@ def test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics(prep
 
 
 def test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only(monkeypatch):
-    from app import main, database
+    from app import main
+    from tempo_legacy_database import connections as database
     from starlette.requests import Request
     from starlette.responses import Response
     monkeypatch.setattr(api.postgres_store, 'configured', lambda: True)

@@ -4,7 +4,7 @@ Test suite for per-repertoire new cards per day setting.
 
 from fastapi.testclient import TestClient
 import json
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from helpers import wait_for_integrity
 

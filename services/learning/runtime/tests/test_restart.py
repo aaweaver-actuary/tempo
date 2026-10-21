@@ -5,7 +5,7 @@ from pathlib import Path
 import json, os, socket, subprocess, sys, time, uuid
 import httpx, psycopg
 from tempo_learning_runtime import gateway
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from test_runtime import activate, head, review_payload
 
 

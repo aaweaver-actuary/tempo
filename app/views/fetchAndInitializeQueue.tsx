@@ -1,7 +1,7 @@
 import { holdActiveStudyRequest } from "../lib/study-priority";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
-import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../lib/study-intent-storage";
+import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
 import { isIPhoneHomeScreen, usesLocalApi } from "../utils/local";
 import { learningDayKey as localDayKey } from "../lib/study-connection";
 import { useTrainingStore } from "../state/training-store";

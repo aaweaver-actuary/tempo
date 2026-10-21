@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .. import postgres_store
-from ..database import connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.connections import connection
 from .durable_tasks import enqueue_compact_postgres_task_in_transaction
 
 

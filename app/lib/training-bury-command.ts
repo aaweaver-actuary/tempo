@@ -1,7 +1,7 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse, retryBlockedOperation } from "./operation-status";
 import { executeStudyRequest, retainedStudyRequest } from "./study-command-client";
-import { studyIntentRecords } from "./study-intent-storage";
+import { studyIntentRecords } from "../../database/browser/study-intent-storage";
 
 export async function buryTrainingEntry(queueEntryId: number, retry = false, identity?: { card_id: string; expected_revision?: number }): Promise<void> {
   if (independentStudy) {

@@ -3,7 +3,7 @@ import StudySettingsView from './study-settings-view';
 import { canOpenWorkspace } from '../lib/study-workspace-policy';
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, studyConnection } from "../lib/study-connection";
 import { StudyStorageBoundary } from "../components/study-storage-boundary";
-import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../lib/study-intent-storage";
+import { rememberTeachingFact, savedTeachingFacts, subscribeTeachingFacts } from "../../database/browser/study-intent-storage";
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
 import { useStudyPriority } from "../hooks/use-study-priority";
 import { studyInteractionActive } from "../lib/study-priority";

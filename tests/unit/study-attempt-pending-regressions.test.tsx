@@ -1,4 +1,4 @@
-import { studyIntentStore } from "../../app/lib/study-intent-storage";
+import { studyIntentStore } from "../../database/browser/study-intent-storage";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -196,7 +196,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
 });
 
 it.each([false, true])("pr285_rejected_answer_can_be_corrected_with_fresh_identity (reload: %s)", async reload => {
-  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../app/lib/study-intent-storage");
+  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../database/browser/study-intent-storage");
   const submissions: Array<{ body: { attempt_id: string; answer: { moves: string[] } }; key: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -266,7 +266,7 @@ it("pr285_practice_generation_new_self_assessment_cannot_reuse_the_old_attempt",
 });
 
 it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_new_key (reload: %s)", async reload => {
-  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../app/lib/study-intent-storage");
+  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../database/browser/study-intent-storage");
   let parent = "", answerPosts = 0; const ratings: Array<{ key: string; rating: string }> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

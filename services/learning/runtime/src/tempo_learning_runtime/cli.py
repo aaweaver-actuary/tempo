@@ -3,7 +3,7 @@
 import argparse, json, os
 from pathlib import Path
 from .config import Configuration
-from .database import Database
+from tempo_learning_database.connections import Database
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
         print(json.dumps(PublicationBundleV2.model_json_schema(),sort_keys=True))
         return
     if arguments.command == "migrate":
-        from .migrate import migrate
+        from tempo_learning_database.ddl.migrate import migrate
 
         migrate(
             arguments.owner_url_file.read_text().strip(),
@@ -42,7 +42,7 @@ def main():
                 parser.error(
                     "Publication commands require the separate operator credential file"
                 )
-            from .database import connection
+            from tempo_learning_database.connections import connection
             from . import gateway, publications
             from .api import register_handlers
 

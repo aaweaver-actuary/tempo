@@ -6,7 +6,7 @@ prerequisites, quota, deduplication and frozen identity under card/queue locks.
 
 import json
 from .clock import date
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import frozen_opening_order
 from .real_game_feedback import MISS_REASON, has_outstanding_real_game_miss
 

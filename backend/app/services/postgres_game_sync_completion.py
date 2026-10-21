@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 
 from ..models import GameSyncRequest
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 
 
 def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> bool:

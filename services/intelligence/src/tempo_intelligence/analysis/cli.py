@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from .models import Manifest, Page, RunRequest, Command
-from .store import AnalysisStore
+from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
 
 
 def parser(commands):

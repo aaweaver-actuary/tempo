@@ -7,7 +7,7 @@ import pytest
 import os
 from psycopg.conninfo import make_conninfo
 from tempo_intelligence import create_app
-from tempo_intelligence.store import Store
+from tempo_intelligence_database.adapters.store import Store
 from .test_analysis_postgres import setup
 
 TABLES=('analysis_inputs','analysis_pages','analysis_runs','analysis_heads','analysis_positions',

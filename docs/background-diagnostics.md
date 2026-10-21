@@ -181,14 +181,14 @@ the counter hook; only exceptional ID-only calls require a kind lookup.
 Run the isolated compatibility measurement with:
 
 ```sh
-PYTHONPATH=backend backend/.venv/bin/python scripts/benchmark-background-diagnostics.py
+PYTHONPATH=backend backend/.venv/bin/python database/tests/benchmark-background-diagnostics.py
 ```
 
 It owns a temporary SQLite fixture, rejects configured PostgreSQL URLs and
 compares 1,000 current tasks with zero versus 100,000 raw events, plus 100 matched
 baseline/instrumented transitions. This is compatibility evidence only. The
 regular disposable PostgreSQL `background_diagnostics` scenario additionally invokes
-`scripts/check_postgres_background_diagnostics.py`: migration/replay, reclaim,
+`database/tests/check_postgres_background_diagnostics.py`: migration/replay, reclaim,
 concurrent additive counters, rollback, bounded retention and before/after query
 and transition timing in its own database. The transition measurement includes
 the complete known-kind raw-event/counter hook and commit flush, excluding

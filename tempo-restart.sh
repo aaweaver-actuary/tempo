@@ -23,7 +23,7 @@ if [ "$DB_HEALTH" != "PONG" ]; then
 fi
 
 # 4. Get the current schema version from the database and the schema version from the code
-PYTHON_SCHEMA_VERSION=$(cat backend/app/schema_version.py)
+PYTHON_SCHEMA_VERSION=$(cat database/tempo_legacy_database/ddl/schema_version.py)
 DB_SCHEMA_VERSION=$(docker compose exec -T postgres psql -U tempo -d tempo -c 'SELECT MAX(version) FROM tempo_schema_migrations;')
 
 if [ "$PYTHON_SCHEMA_VERSION" != "$DB_SCHEMA_VERSION" ]; then

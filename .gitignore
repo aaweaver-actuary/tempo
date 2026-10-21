@@ -64,3 +64,6 @@ tsconfig.tsbuildinfo
 /packages/*/dist/
 /packages/*/build/
 *.egg-info/
+
+# Centralized browser database package build output
+/database/browser-intents/dist/

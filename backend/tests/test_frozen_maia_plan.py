@@ -46,13 +46,13 @@ def provenance():
         *(f'public/maia3/parts/part-{index:02d}' for index in range(6))}
     return {'rating_self':1500,'rating_opponent':1500,'model':{'checksums':{path:'0'*64 for path in model_files},'runtime':'fixture','node':'v26'},
         'implementation_checksums':{'backend/app/services/frozen_maia_math.py':'1'*64,
-            'backend/app/services/frozen_maia_plan.py':'1'*64,'scripts/frozen-maia-order.py':'1'*64}}
+            'backend/app/services/frozen_maia_plan.py':'1'*64,'database/tooling/frozen-maia-order.py':'1'*64}}
 
 
 def plan_cli():
     import importlib.util
     from pathlib import Path
-    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'scripts/frozen-maia-order.py')
+    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'database/tooling/frozen-maia-order.py')
     cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
     return cli
 
@@ -113,7 +113,7 @@ def test_archived_superseded_pending_and_attempted_cards_are_never_activation_ta
 def test_effective_fen_cache_reuses_counter_variants_and_binds_model_identity(tmp_path):
     import importlib.util
     from pathlib import Path
-    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'scripts/frozen-maia-order.py')
+    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'database/tooling/frozen-maia-order.py')
     cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
     inference=object.__new__(cli.Inference)
     inference.rating=1500;inference.directory=tmp_path;inference.provenance={'model':'fixture'}
@@ -157,7 +157,7 @@ def test_invalid_prefix_evidence_cannot_supply_an_ancestry_guess():
 def test_capture_revalidation_rejects_concurrent_study_changes(monkeypatch):
     import importlib.util
     from pathlib import Path
-    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'scripts/frozen-maia-order.py')
+    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'database/tooling/frozen-maia-order.py')
     cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
     captures=iter([{'cutoff':'first','reviews':[]},{'cutoff':'second','reviews':[{'card_id':'studied'}]}])
     monkeypatch.setattr(cli,'_capture_once',lambda factory:next(captures))
@@ -194,7 +194,7 @@ def test_allow_unscored_tail_ranks_localized_unknown_cards_after_scored_backlog(
     assert plan['deferred_fraction']==pytest.approx(.01)
     import importlib.util
     from pathlib import Path
-    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'scripts/frozen-maia-order.py')
+    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'database/tooling/frozen-maia-order.py')
     cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
     cli.validate_plan(plan)
 
@@ -295,7 +295,7 @@ def test_adding_unscored_card_does_not_perturb_scored_order():
 def test_export_keeps_zero_marginal_score_distinct_from_unknown(tmp_path):
     import importlib.util
     from pathlib import Path
-    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'scripts/frozen-maia-order.py')
+    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'database/tooling/frozen-maia-order.py')
     cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
     data,config=localized_tail_snapshot(scored_count=1,deferred_count=1)
     data['observations']=[{'decision_id':decision} for decision in create_plan(data,config,fake_maia)['inventory'][0]['decisions']]

@@ -19,7 +19,7 @@ productTest("daily study opens on the workspace date while background analysis r
   const workspaceDate = (await queueResponse.json()).local_date as string;
   expect(workspaceDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const fixture = (action: string) => docker("run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
-    "schema", "python", "/source/scripts/check_postgres_daily_study_dispatch.py", action, fixtureId,
+    "schema", "python", "/source/database/tests/check_postgres_daily_study_dispatch.py", action, fixtureId,
     ...(action === 'seed' ? [workspaceDate] : []));
   try {
     docker("stop", "background-worker", "background-scheduler");

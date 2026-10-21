@@ -9,15 +9,15 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from .. import postgres_store
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from . import frozen_opening_order
 from .opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .pgn import ends_on_trained_move
 from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
 from .real_game_feedback import MISS_REASON
-from ..storage.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
+from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
 from .real_game_feedback_adapter import has_outstanding_real_game_miss, promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses
 from .review_service import preserve_daily_queue_order
 from .tactical_catalog import seed_tactical_introductions

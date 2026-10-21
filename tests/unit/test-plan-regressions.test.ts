@@ -26,7 +26,7 @@ it("full verification owns every test family once without repeating regular brow
   ]);
   expect(new Set(names).size).toBe(names.length);
   expect(full.find((stage) => stage.name === "postgres_docker")?.args)
-    .toEqual(["scripts/test-postgres-docker.mjs"]);
+    .toEqual(["database/tests/test-postgres-docker.mjs"]);
   expect(full.find((stage) => stage.name === "visual")?.args).toEqual(["run", "test:visual"]);
   expect(names).not.toContain("browser");
   expect(plannedStages("ui").map((stage) => stage.name)).toEqual(["capabilities", "postgres_docker", "visual"]);
@@ -136,7 +136,7 @@ it("PostgreSQL upgrade --plan validates identities and invokes no mutating Docke
     import {cliFixture} from './tests/runner/tempo-cli-fixture.mjs';
     const fixture=cliFixture('upgrade');
     try {
-      const result=spawnSync('sh',['scripts/upgrade-postgres-schema.sh','--plan'],{
+      const result=spawnSync('sh',['database/tooling/upgrade-postgres-schema.sh','--plan'],{
         encoding:'utf8',env:{...fixture.environment,NODE_OPTIONS:'--import='+fixture.hook},timeout:10000});
       assert.equal(result.status,0,result.stdout+result.stderr);
       assert(result.stdout.includes('No source, image, service, or database changes'));
@@ -173,8 +173,8 @@ it("focused browser and Docker Make targets preflight before launching tests", (
     const capabilityCheckIndex = commands.indexOf(`node scripts/check-test-capabilities.mjs ${checks}`);
     const browserLaunchIndex = commands.findIndex((command) =>
       command.startsWith("npm run test:") || command.startsWith("node scripts/test-docker.mjs")
-      || command.startsWith("node scripts/test-postgres-docker.mjs")
-      || command.startsWith("node scripts/run-focused-postgres-browser.mjs"));
+      || command.startsWith("node database/tests/test-postgres-docker.mjs")
+      || command.startsWith("node database/tests/run-focused-postgres-browser.mjs"));
     expect(capabilityCheckIndex, target).toBeGreaterThanOrEqual(0);
     expect(browserLaunchIndex, target).toBeGreaterThan(capabilityCheckIndex);
   }

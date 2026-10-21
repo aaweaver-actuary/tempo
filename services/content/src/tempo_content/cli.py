@@ -9,8 +9,8 @@ import psycopg
 from tempo_content_publication_contracts.v1 import serialize_contract
 
 from .domain import ContentError
-from .migrate import migrate, readiness
-from .store import ContentService
+from tempo_content_database.ddl.migrate import migrate, readiness
+from tempo_content_database.adapters.store import ContentService
 
 
 def parser():

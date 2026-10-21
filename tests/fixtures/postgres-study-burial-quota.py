@@ -3,7 +3,8 @@
 from datetime import date
 import json
 
-from app import postgres_store, queue_commands  # Registers the production bury handler.
+from tempo_legacy_database.adapters import postgres_store
+from app import queue_commands  # Registers the production bury handler.
 from app.command_gateway import execute_command
 from app.services import postgres_queue_refresh
 from app.services.review_service import preserve_daily_queue_order

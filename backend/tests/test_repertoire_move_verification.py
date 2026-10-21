@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 from app.services import repertoire_move_verification as verification
 from test_queue_attempt_issuance import queued_attempts, START_FEN
 

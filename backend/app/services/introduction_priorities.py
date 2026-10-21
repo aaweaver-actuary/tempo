@@ -284,7 +284,7 @@ def _personal_evidence_from_rows(
 
 def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -> dict[str, dict]:
     """Select one unstudied, non-excluded miss per card for a fixed bonus."""
-    from ..storage.real_game_feedback import BorrowedFeedbackStore
+    from tempo_legacy_database.adapters.real_game_feedback import BorrowedFeedbackStore
     from .real_game_feedback_ports import utc_instant
     rows = [row for batch in BorrowedFeedbackStore(database).repertoire_miss_batches(repertoire_id)
             for row in batch]
@@ -566,8 +566,8 @@ def calculate_priority_records(
 def _load_priority_calculation_input(
     repertoire_id: str, *, background: bool, calculated_at: datetime | None = None,
 ) -> PriorityCalculationInput:
-    from ..database import background_read_connection, connection
-    from .. import postgres_store
+    from tempo_legacy_database.connections import background_read_connection, connection
+    from tempo_legacy_database.adapters import postgres_store
 
     read_section = (background_read_connection if background and postgres_store.configured()
                     else lambda: connection(background=background))
@@ -733,7 +733,7 @@ def rebuild_introduction_priorities(
 def enqueue_priority_refresh(
     repertoire_id: str, *, background: bool = False, quiet_seconds: int = 5
 ) -> int:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
 
     with connection(background=background) as database:
         return enqueue_priority_refresh_in_transaction(
@@ -746,7 +746,7 @@ def enqueue_priority_refresh_in_transaction(
 ) -> int:
     """Advance a priority generation with the caller's existing receipt transaction."""
 
-    from .. import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
 
     from .refresh_requests import request_refresh, _now as refresh_clock
     scheduled_delay = request_refresh(database, 'repertoire_priority', repertoire_id,
@@ -792,7 +792,7 @@ def enqueue_priority_refresh_in_transaction(
 def enqueue_priority_refreshes_for_game(
     game_id: str, *, background: bool = False
 ) -> None:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
 
     with connection(background=background) as database:
         game = database.execute(
@@ -812,7 +812,7 @@ def enqueue_priority_refreshes_for_game(
 
 
 def claim_priority_refresh() -> dict | None:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
     from .background_activity import claimable, control_order
 
     activity_gate.wait_for_foreground()
@@ -848,7 +848,7 @@ def claim_priority_refresh() -> dict | None:
 
 
 def execute_priority_refresh(job: dict) -> None:
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
 
     repertoire_id = job["repertoire_id"]
     generation = int(job["generation"])
@@ -965,7 +965,7 @@ def load_priority_calculation_input(job: dict) -> PriorityCalculationInput:
 def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
     """Stage bounded chunks, then atomically publish the current generation."""
 
-    from ..database import connection
+    from tempo_legacy_database.connections import connection
     from .durable_tasks import enqueue_task_in_transaction
 
     repertoire_id = job["repertoire_id"]

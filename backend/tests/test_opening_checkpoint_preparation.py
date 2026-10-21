@@ -16,7 +16,8 @@ from app.services.opening_decision_evidence import EvidenceConflict, decision_ma
 
 @pytest.mark.parametrize('historical_preparation', [None, 'valid', 'obsolete'])
 def test_standalone_opening_checkpoint_reduces_outside_background_transaction(normal_study_mode, monkeypatch, historical_preparation):
-    from app import command_gateway, database, tasks
+    from app import command_gateway, tasks
+    from tempo_legacy_database import connections as database
     from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
     from app.services import postgres_opening_evidence as evidence
     manifest = json.loads((Path(__file__).resolve().parents[2] / "tests/fixtures/opening-evidence-manifest.json").read_text())
@@ -104,7 +105,7 @@ def source_header(request, **changes):
 
 @pytest.mark.parametrize('historical_manifest', [None, {'obsolete': True}])
 def test_standalone_checkpoint_preparation_uses_immutable_source_instead_of_historical_manifest(monkeypatch, historical_manifest):
-    from app import database
+    from tempo_legacy_database import connections as database
     from fastapi import HTTPException
     manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
     request = OpeningEvidenceCheckpoint(attempt_id='historical-payload', manifest=manifest,

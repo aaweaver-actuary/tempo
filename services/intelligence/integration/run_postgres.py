@@ -82,7 +82,7 @@ def main():
             database.execute("GRANT CONNECT ON DATABASE intelligence TO intelligence_runtime")
         owner_url=make_conninfo(admin,dbname="intelligence",user="intelligence_owner",password=owner_password)
         runtime_url=make_conninfo(admin,dbname="intelligence",user="intelligence_runtime",password=runtime_password)
-        from tempo_intelligence.migrate import migrate
+        from tempo_intelligence_database.ddl.migrate import migrate
         migrate(owner_url,"fixture","intelligence_runtime")
         environment={key:value for key,value in os.environ.items() if not key.startswith(("PG","TEMPO_","PYTHON","VIRTUAL_ENV","PYTEST_"))}
         environment.update(TEMPO_INTELLIGENCE_TEST_OWNER_URL=owner_url,TEMPO_INTELLIGENCE_TEST_RUNTIME_URL=runtime_url,

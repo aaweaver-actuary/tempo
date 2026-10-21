@@ -287,7 +287,7 @@ def test_capacity_pure_module_has_no_database_network_clock_chess_or_fsrs_depend
     script = """import builtins
 original_import = builtins.__import__
 def guarded_import(name, *args, **kwargs):
-    assert name not in ('os','datetime','time','chess','fsrs','socket','requests','app.database','app.main'), name
+    assert name not in ('os','datetime','time','chess','fsrs','socket','requests','tempo_legacy_database.connections','app.main'), name
     return original_import(name, *args, **kwargs)
 import dataclasses, json
 builtins.__import__ = guarded_import

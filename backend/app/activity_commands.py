@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.background_activity import set_control_in_transaction
 from .services.durable_tasks import serialize_task, update_queue_refresh_status_in_transaction
 

@@ -7,9 +7,9 @@ from datetime import date, datetime, timezone
 import json
 from typing import Any
 
-from ..database import background_read_connection
-from .. import postgres_store
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.connections import background_read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_task_in_transaction, lock_current_slice,

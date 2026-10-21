@@ -5,7 +5,7 @@ import logging
 import sqlite3
 import time
 
-from app import database
+from tempo_legacy_database import connections as database
 from app import main as main_module
 from app.main import app, enqueue_daily_queue_refresh
 from helpers import wait_for_daily_queue, wait_for_integrity

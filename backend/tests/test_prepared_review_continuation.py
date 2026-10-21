@@ -3,7 +3,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from app import database, main, review_commands
+from tempo_legacy_database import connections as database
+from app import main, review_commands
 from test_queue_attempt_issuance import queued_attempts
 
 

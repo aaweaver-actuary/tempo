@@ -25,7 +25,7 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
   const docker = (...args: string[]) => execute("docker", [...compose, ...args], { timeout: 30_000 });
   const fixture = async (action: string) => {
     const result = await docker("run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
-      "schema", "python", "/source/scripts/check_postgres_redis_admission.py", action, identity);
+      "schema", "python", "/source/database/tests/check_postgres_redis_admission.py", action, identity);
     return result.stdout.trim() ? JSON.parse(result.stdout) : null;
   };
   // There is no dispatched operation during either fault. Recovery can proceed

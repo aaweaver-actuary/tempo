@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 
-def check_python(root, dependencies, exports, artifact=None):
+def check_python(root, dependencies, exports, artifact=None, build_inputs=()):
     root = Path(root).resolve()
     sources = root / "src"
     allowed_external = set(dependencies)
@@ -16,6 +16,11 @@ def check_python(root, dependencies, exports, artifact=None):
     if len(package_directories) != 1:
         raise ValueError("Expected one owned import root")
     package = package_directories[0]
+    owned_packages = {package.name: package}
+    for item in build_inputs:
+        candidate = (root / item).resolve()
+        if candidate.is_dir() and candidate.parent.name == "database" and (candidate / "__init__.py").is_file():
+            owned_packages[candidate.name] = candidate
     problems = []
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     if artifact and any(metadata["project"][key] != artifact[key] for key in ("name", "version")):
@@ -23,12 +28,14 @@ def check_python(root, dependencies, exports, artifact=None):
     declared_dependencies = {re.split(r"[<>=!~;\[]", requirement)[0].replace("-", "_") for requirement in metadata["project"].get("dependencies", [])}
     if declared_dependencies != allowed_external:
         problems.append("Dependencies differ from manifest")
-    for source in sorted(package.rglob("*.py")):
-        if source.is_symlink() or not source.resolve().is_relative_to(package):
+    source_files = sorted(source for owner in owned_packages.values() for source in owner.rglob("*.py"))
+    for source in source_files:
+        owner = next(owner for owner in owned_packages.values() if source.is_relative_to(owner))
+        if source.is_symlink() or not source.resolve().is_relative_to(owner):
             problems.append(f"{source}: source escape")
             continue
         tree = ast.parse(source.read_text())
-        module_parts = source.relative_to(sources).with_suffix("").parts
+        module_parts = (owner.name, *source.relative_to(owner).with_suffix("").parts)
         current_package = module_parts[:-1]
         for node in ast.walk(tree):
             imported = []
@@ -51,8 +58,8 @@ def check_python(root, dependencies, exports, artifact=None):
                 import_root = imported_module.split(".")[0]
                 if import_root in {"importlib", "runpy"}:
                     problems.append(f"{source}:{node.lineno}: unresolved dynamic loader {imported_module}")
-                if import_root == package.name:
-                    module_path = sources.joinpath(*imported_module.split("."))
+                if import_root in owned_packages:
+                    module_path = owned_packages[import_root].joinpath(*imported_module.split(".")[1:])
                     if not module_path.with_suffix(".py").is_file() and not (module_path / "__init__.py").is_file():
                         problems.append(f"{source}:{node.lineno}: unavailable local module {imported_module}")
                 elif import_root not in standard_library and import_root not in allowed_external:
@@ -64,7 +71,7 @@ def check_python(root, dependencies, exports, artifact=None):
         problems.append("Python public exports differ from manifest")
     if problems:
         raise ValueError("\n".join(problems))
-    return {"files": len(list(package.rglob("*.py"))), "exports": declared_exports, "package": package.name}
+    return {"files": len(source_files), "exports": declared_exports, "package": package.name}
 
 
 def check_consumer(source, package_name, exports):
@@ -87,7 +94,7 @@ if __name__ == "__main__":
             check_consumer(Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(sys.argv[4]))
             print(json.dumps({"consumer": "valid"}))
         else:
-            print(json.dumps(check_python(sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), json.loads(sys.argv[4]) if len(sys.argv) > 4 else None)))
+            print(json.dumps(check_python(sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), json.loads(sys.argv[4]) if len(sys.argv) > 4 else None, json.loads(sys.argv[5]) if len(sys.argv) > 5 else ())))
     except (ValueError, SyntaxError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

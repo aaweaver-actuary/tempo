@@ -2,7 +2,8 @@
 
 from contextlib import contextmanager
 
-from app import main, postgres_store
+from app import main
+from tempo_legacy_database.adapters import postgres_store
 from app.services.activity_gate import activity_gate
 
 

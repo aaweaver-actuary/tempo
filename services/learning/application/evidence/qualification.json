@@ -7,7 +7,7 @@
     "backend/app/services/learning_review_adapter.py": "62d2be01f345345eb9feffad4fa759415111baa8f82a61c0ae92e92d9580973f",
     "backend/tests/test_opening_evidence_contracts.py": "5e4431cc5c6743869816dbf5ab07eefa3c5da61f568342e2386094f16a70acdb",
     "backend/tests/test_postgres_cutover.py": "cbf23cadcdbc687e9bcae2b17988140b7288f4f955cb4dd93457d9c55a67b150",
-    "scripts/check_postgres_training_transition.py": "5a8b935e140a92cfa0cc2f3e77ac866cb1602d90ae4c34d5872c07911430da8d",
+    "database/tests/check_postgres_training_transition.py": "5a8b935e140a92cfa0cc2f3e77ac866cb1602d90ae4c34d5872c07911430da8d",
     "services/learning/application/README.md": "3e5425faa1a133e72f600195999743bde6e1e640b4184d6cb365732ebc37ab0b",
     "services/learning/application/REGRESSIONS.md": "10eecf6894f445f4bd59d57d9909669a51800618ce53597f8980b8698919dacb",
     "services/learning/application/integration/run_postgres.py": "40225fac03f0a9fa5208b5201692e4376c22541040a24e82686bbdf0baf598ed",

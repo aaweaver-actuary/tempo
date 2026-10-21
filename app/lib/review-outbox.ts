@@ -2,7 +2,7 @@ import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connect
 import type { StudySession } from "@tempo/study-session";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 import type { IntentRecord } from "@tempo/browser-intents";
-import { studyIntentRecords, studyIntentStore, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "./study-intent-storage";
+import { studyIntentRecords, studyIntentStore, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "../../database/browser/study-intent-storage";
 import { confirmReviewSaveNotice, reportReviewSaveStatus } from "./review-save-notice";
 import type { PreparedNextIdentity, PreparedContinuation } from "./prepared-review-continuation";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";

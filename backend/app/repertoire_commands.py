@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .models import RepertoireSettingsRequest
 from .repertoire_settings import repertoire_settings_response
 from .queue_commands import request_queue_refresh_in_transaction

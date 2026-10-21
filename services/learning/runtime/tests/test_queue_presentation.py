@@ -1,6 +1,6 @@
 """Actual independent-runtime adapter for the shared presentation policy."""
 from collections import Counter
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime.maintenance import run_once
 from tempo_learning_runtime.queue_application import request_queue_refresh_in_transaction
 from tempo_learning_runtime.queue_ordering import PRESENTATION_VERSION

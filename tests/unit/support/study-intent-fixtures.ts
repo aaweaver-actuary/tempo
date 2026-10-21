@@ -1,6 +1,6 @@
 import { IDBFactory, IDBObjectStore } from "fake-indexeddb";
 import { vi } from "vitest";
-import { closeStudyIntentStorage, initializeStudyIntentStorage } from "../../../app/lib/study-intent-storage";
+import { closeStudyIntentStorage, initializeStudyIntentStorage } from "../../../database/browser/study-intent-storage";
 import type { IntentRecord } from "@tempo/browser-intents";
 
 /** POST-only transport fixtures explicitly model an absent receipt on recovery. */

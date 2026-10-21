@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .models import PositionAnnotationRequest
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 
 
 def save_position_annotation(

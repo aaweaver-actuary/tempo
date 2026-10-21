@@ -7,13 +7,13 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .database import read_connection
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.connections import read_connection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.discovery_acceptance_application import (
     DiscoveryAcceptanceError, accept_discovery as apply_discovery_acceptance,
 )
 from .services.discovery_acceptance_contracts import DiscoveryAcceptanceReason, DiscoveryChoice
-from .services.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
+from tempo_legacy_database.adapters.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
 from .services.discovery_admission import (
     admission_intent_id, recommend_missing_continuations,
 )

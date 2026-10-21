@@ -13,7 +13,7 @@ from app.services.activity_gate import ApplicationActivityGate
 
 @pytest.fixture
 def canonical_proof(monkeypatch):
-    path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_canonical_freshness.py'
+    path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_canonical_freshness.py'
     monkeypatch.syspath_prepend(str(path.parent))
     specification = importlib.util.spec_from_file_location('canonical_admission_proof', path)
     proof = importlib.util.module_from_spec(specification)
@@ -57,7 +57,7 @@ def test_canonical_task_driver_waits_for_real_local_policy_section_without_recla
                 publisher.result(timeout=2)
                 original_sleep(0)
             try:
-                import postgres_rehearsal_admission
+                import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
             except ModuleNotFoundError:
                 pass  # Original driver has no retry boundary; real denial must escape.
             else:
@@ -73,8 +73,8 @@ def test_canonical_task_driver_waits_for_real_local_policy_section_without_recla
 
 
 def test_canonical_admission_exhaustion_retains_original_task_and_cause(canonical_proof, monkeypatch):
-    from postgres_rehearsal_admission import admitted_call
-    import postgres_rehearsal_admission
+    from database.tooling.postgres_rehearsal_admission import admitted_call
+    import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
     clock = iter([0, 11])
     monkeypatch.setattr(postgres_rehearsal_admission.time, 'monotonic', lambda: next(clock))
     task = {'id': 17, 'generation': 4, 'lease_token': 'original-lease'}
@@ -114,7 +114,7 @@ def test_canonical_task_driver_preserves_original_120_slice_exhaustion(canonical
 
 @pytest.mark.parametrize('with_cause', [False, True])
 def test_native_rehearsal_propagates_unavailable_control_without_retry(canonical_proof, monkeypatch, with_cause):
-    import postgres_rehearsal_admission
+    import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
     failure = redis_admission_gate.BackgroundAdmissionDeferred(
         'Waiting for foreground activity' if with_cause else 'Foreground admission is unavailable')
     if with_cause:

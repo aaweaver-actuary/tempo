@@ -3,9 +3,10 @@
 from datetime import date
 import pytest
 from fastapi.testclient import TestClient
-from app import database, main, tasks
+from tempo_legacy_database import connections as database
+from app import main, tasks
 from app.services import durable_tasks, study_mode
-from app.services.database_executor import database_writer
+from tempo_legacy_database.adapters.database_executor import database_writer
 from test_queue_attempt_issuance import queued_attempts
 
 

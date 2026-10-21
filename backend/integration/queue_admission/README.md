@@ -20,8 +20,8 @@ window is retained and is not native qualification.
    are forbidden. Pin the already-present `postgres:18.6-trixie` image by observed
    image ID; no pull, build, dependency install or live credential reuse.
 3. Apply this tested tree's backend migrations through the existing
-   `scripts/apply_postgres_migrations.py`, provision the existing `tempo_reader`
-   and `tempo_writer` roles through `scripts/provision_postgres_roles.py`, and
+   `database/tooling/apply_postgres_migrations.py`, provision the existing `tempo_reader`
+   and `tempo_writer` roles through `database/tooling/provision_postgres_roles.py`, and
    insert default `settings(id=1)` in this new database only.
 4. Parent records the exact container ID, observed loopback mapping, database
    name/OID and PostgreSQL system identifier in its target receipt. Get the latter

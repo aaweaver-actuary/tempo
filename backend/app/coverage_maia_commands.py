@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
 from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .services.canonical_prefix import read_prefix

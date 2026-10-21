@@ -3,7 +3,7 @@ import { resolvePython } from "./resolve-python.mjs";
 
 const result = spawnSync(resolvePython(), ["backend/benchmarks/writer_latency.py"], {
   stdio: "inherit",
-  env: { ...process.env, PYTHONPATH: "backend" },
+  env: { ...process.env, PYTHONPATH: "backend:database" },
 });
 if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;

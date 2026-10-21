@@ -54,7 +54,8 @@ def test_study_control_unavailable_expired_or_refreshing_never_authorizes_option
 
 
 def test_study_control_poll_never_reads_postgres_and_old_refresh_cannot_override_new_policy(control, monkeypatch):
-    from app import database, main
+    from tempo_legacy_database import connections as database
+    from app import main
     monkeypatch.setattr(database, 'background_read_connection',
         lambda **kwargs: pytest.fail('A worker control poll queried the study database'))
     control.generation = 2
@@ -67,7 +68,7 @@ def test_study_control_poll_never_reads_postgres_and_old_refresh_cannot_override
 
 
 def test_study_control_refresh_reserves_generation_before_bounded_settings_read(control, monkeypatch):
-    from app import database
+    from tempo_legacy_database import connections as database
     @contextmanager
     def reader(**options):
         assert control.generation == 1
@@ -115,7 +116,7 @@ def test_study_priority_background_policy_poll_never_opens_database_and_unknown_
 
 def test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_teardown(monkeypatch):
     import threading
-    from app import database
+    from tempo_legacy_database import connections as database
 
     parent_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY
     private_keys = ('tempo:test:retained-owner:policy', 'tempo:test:retained-owner:generation')

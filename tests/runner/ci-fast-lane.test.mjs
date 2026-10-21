@@ -5,8 +5,8 @@ import { makeFastPlan, selectFastLane, validateFastGate, testIdentity, fastInven
 import { fastCommands } from '../../scripts/ci-fast-commands.mjs';
 import { verifySelection } from '../../scripts/ci-fast-run.mjs';
 import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verification-plan.mjs';
-import { postgresTestStages, executePostgresTestPlan } from '../../scripts/postgres-test-plan.mjs';
-import { parsePostgresTestOptions } from '../../scripts/postgres-test-options.mjs';
+import { postgresTestStages, executePostgresTestPlan } from '../../database/tests/postgres-test-plan.mjs';
+import { parsePostgresTestOptions } from '../../database/tests/postgres-test-options.mjs';
 import { certificate, readCertificateSources } from '../../scripts/ci-certified-tests.mjs';
 const context = {repository:'aaweaver-actuary/tempo',repositoryId:1,pullRequest:217,head:'a'.repeat(40),base:'b'.repeat(40),draft:false};
 const pr = {number:217,state:'open',draft:false,merge_commit_sha:'e'.repeat(40),head:{sha:context.head},base:{sha:context.base,repo:{id:1,full_name:context.repository}}};
@@ -55,7 +55,7 @@ test('issue239_javascript_fixture_consumers_invalidate_dependency_certificate', 
   } finally { if (consumerCreated) rmSync(consumerPath); }
 });
 test('issue239_fixture_selects_native_proof_and_owning_browser_without_FULL', () => {
-  const selection = selectFastLane(['scripts/check_postgres_redis_admission.py']);
+  const selection = selectFastLane(['database/tests/check_postgres_redis_admission.py']);
   assert.equal(selection.tier, 'STUDY');
   assert.deepEqual(selection.nativeChecks, ['redis-fixture-isolation']);
   assert(selection.backend.includes('backend/tests/test_redis_admission_fixture.py'));
@@ -64,14 +64,14 @@ test('issue239_fixture_selects_native_proof_and_owning_browser_without_FULL', ()
   assert(!selection.backend.includes('backend/tests/test_game_sync.py'));
 });
 test('issue239_shared_and_unknown_changes_expand_certified_selection', () => {
-  for (const path of ['scripts/test-postgres-docker.mjs', 'scripts/ci-fast-lane-inventory.json',
+  for (const path of ['database/tests/test-postgres-docker.mjs', 'scripts/ci-fast-lane-inventory.json',
     'backend/app/main.py', 'tests/browser/ui-fixtures.ts', 'scripts/unknown-fixture.py', 'backend/tests/test_ci_native_unittest.py']) {
-    assert.equal(selectFastLane(['scripts/check_postgres_redis_admission.py', path]).tier, 'FULL', path);
+    assert.equal(selectFastLane(['database/tests/check_postgres_redis_admission.py', path]).tier, 'FULL', path);
   }
 });
 test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_closed', () => {
   const sources = readCertificateSources();
-  const candidate = 'scripts/check_postgres_redis_admission.py';
+  const candidate = 'database/tests/check_postgres_redis_admission.py';
   for (const changed of [
     {...sources,'backend/app/new_consumer.py':'import check_postgres_redis_admission'},
     {...sources,[candidate]:sources[candidate]+'\nimport new_dependency\n'},
@@ -80,7 +80,7 @@ test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_c
     {...sources,[candidate]:sources[candidate]+'\nquery = "update unknown_shared_table set value=1"\n'},
     {...sources,[candidate]:sources[candidate]+"\nrelation_name = 'unknown_shared_table'\n"},
     {...sources,'tests/browser/redis-admission-recovery.spec.ts':sources['tests/browser/redis-admission-recovery.spec.ts']+'\ntest("new case", async () => {});\n'},
-    {...sources,'scripts/check_postgres_redis_fixture_isolation.py':sources['scripts/check_postgres_redis_fixture_isolation.py']+'\nclass UnexpectedFixture(unittest.TestCase):\n    pass\n'},
+    {...sources,'database/tests/check_postgres_redis_fixture_isolation.py':sources['database/tests/check_postgres_redis_fixture_isolation.py']+'\nclass UnexpectedFixture(unittest.TestCase):\n    pass\n'},
     {...sources,[candidate]:undefined},
   ]) assert.equal(selectFastLane([candidate],{certificateSources:changed}).tier,'FULL');
   assert(Object.keys(certificate.dependencies).includes(candidate));
@@ -92,7 +92,7 @@ test('issue239_mixed_certified_changes_union_evidence_and_complete_boundaries_st
   assert.equal(selection.browser.length,11); assert.deepEqual(selection.nativeChecks,['redis-fixture-isolation']);
   assert.equal(selectFastLane(selection.paths,{complete:true}).tier,'FULL');
   assert.equal(selectFastLane(selection.paths,{comparisonAvailable:false}).tier,'FULL');
-  assert.equal(selectFastLane(changedPathsFromNameStatus('R100\0scripts/check_postgres_redis_admission.py\0scripts/new-fixture.py\0')).tier,'FULL');
+  assert.equal(selectFastLane(changedPathsFromNameStatus('R100\0database/tests/check_postgres_redis_admission.py\0scripts/new-fixture.py\0')).tier,'FULL');
   const inventory=structuredClone(fastInventory);
   inventory.certifiedTests[0].frontend=['tests/unit/missing.test.ts'];
   assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts'],{inventory}).tier,'FULL');
@@ -100,7 +100,7 @@ test('issue239_mixed_certified_changes_union_evidence_and_complete_boundaries_st
   assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts'],{inventory}).tier,'FULL');
 });
 test('issue239_native_and_added_browser_evidence_is_mandatory_and_revision_bound', () => {
-  const candidate='scripts/check_postgres_redis_admission.py';
+  const candidate='database/tests/check_postgres_redis_admission.py';
   assert.deepEqual(failures(fixture(candidate)),[]);
   for (const mutate of [
     value => delete value.report.native,
@@ -145,7 +145,7 @@ test('emergency_tactics_grading_change_selects_STUDY', () => {
   assert.equal(selectFastLane(['app/views/tactics_view.tsx']).tier,'STUDY');
 });
 test('emergency_queue_persistence_change_selects_STUDY', () => assert.equal(selectFastLane(['backend/app/services/postgres_queue_refresh.py']).tier,'STUDY'));
-test('emergency_database_migration_selects_FULL', () => assert.equal(selectFastLane(['backend/migrations/999_emergency.sql']).tier,'FULL'));
+test('emergency_database_migration_selects_FULL', () => assert.equal(selectFastLane(['database/tempo_legacy_database/ddl/migrations/999_emergency.sql']).tier,'FULL'));
 test('emergency_qualification_validator_change_selects_FULL', () => assert.equal(selectFastLane(['scripts/ci-quality.mjs']).tier,'FULL'));
 test('emergency_unknown_or_ambiguous_change_fails_closed_to_FULL', () => {
   assert.equal(selectFastLane(['app/new-component.tsx']).tier,'FULL');
@@ -166,7 +166,7 @@ test('emergency_stale_other_head_evidence_cannot_qualify', () => {
   const current = fixture(); assert(validateFastGate(current.plan,current.report,current.needs,{...pr,head:{sha:'d'.repeat(40)}},execution).length);
 });
 test('emergency_rename_deletion_and_mixed_changes_preserve_highest_risk', () => {
-  const paths = changedPathsFromNameStatus('R100\0backend/migrations/999_old.sql\0docs/new.md\0D\0scripts/ci-quality.mjs\0');
+  const paths = changedPathsFromNameStatus('R100\0database/tempo_legacy_database/ddl/migrations/999_old.sql\0docs/new.md\0D\0scripts/ci-quality.mjs\0');
   assert.equal(selectFastLane(paths).tier,'FULL');
   assert.equal(selectFastLane(['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts']).tier,'STUDY');
 });
@@ -230,7 +230,7 @@ test('emergency_inactive_provider_adapter_selects_FAST_without_durability', () =
 });
 
 test('emergency_FULL_base_advancement_requires_fresh_integration', () => {
-  const plan = makeFastPlan(['backend/migrations/999_new.sql'],context);
+  const plan = makeFastPlan(['database/tempo_legacy_database/ddl/migrations/999_new.sql'],context);
   assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'success'}},{...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution).length);
 });
 

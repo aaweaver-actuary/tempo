@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import postgres_queue_refresh, queue_application, queue_ordering, study_mode
 from test_queue_attempt_issuance import queued_attempts
 

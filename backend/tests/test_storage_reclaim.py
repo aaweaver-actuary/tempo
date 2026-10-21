@@ -6,7 +6,7 @@ import sqlite3
 
 import chess
 
-from app import database
+from tempo_legacy_database import connections as database
 from scripts.reclaim_priority_storage import (
     compact, fingerprints, open_database, queue_order_checksum, reclaim,
 )

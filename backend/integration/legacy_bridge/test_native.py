@@ -187,8 +187,8 @@ def test_native_module_effect_and_complete_operation_receipt_roll_back_together(
 
 
 def feedback_store(raw):
-    from app.postgres_store import PostgresConnection, tempo_row_factory
-    from app.storage.real_game_feedback import BorrowedFeedbackStore
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+    from tempo_legacy_database.adapters.real_game_feedback import BorrowedFeedbackStore
     raw.row_factory = tempo_row_factory
     return BorrowedFeedbackStore(PostgresConnection(raw))
 
@@ -211,7 +211,7 @@ def insert_feedback_miss(raw, native, *, repertoire='ruy', suffix='weak', ply=5)
 
 
 def test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction(native):
-    from app.storage.real_game_feedback import BATCH_SIZE
+    from tempo_legacy_database.adapters.real_game_feedback import BATCH_SIZE
     card_id, game_id = native.identities['physical'], native.identities['game']
     with pytest.raises(RuntimeError, match='caller rollback'):
         with native.connection(role='tempo_writer') as raw:
@@ -264,7 +264,7 @@ def test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends(n
 
 def test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire(native):
     from datetime import date
-    from app.postgres_store import PostgresConnection
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     from app.services.queue_admission_adapter import QueueAdmissionAdapter
     from app.services.real_game_feedback import MISS_REASON
     card_id, day = native.identities['physical'], date.today().isoformat()

@@ -16,7 +16,7 @@ from app.services.activity_gate import ApplicationActivityGate
 
 @pytest.mark.parametrize('operation_name', ['prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice'])
 def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(monkeypatch, operation_name):
-    path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_graph_retention.py'
+    path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_graph_retention.py'
     monkeypatch.syspath_prepend(str(path.parent))
     specification = importlib.util.spec_from_file_location('graph_admission_proof', path)
     proof = importlib.util.module_from_spec(specification)
@@ -58,7 +58,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
         publisher = executor.submit(publisher_read)
         assert entered.wait(2)
         try:
-            import postgres_rehearsal_admission
+            import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
             original_sleep = postgres_rehearsal_admission.time.sleep
 
             def yield_to_policy(_seconds):
@@ -88,7 +88,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
 
 @pytest.mark.parametrize('filename', ['check_postgres_graph_retention.py', 'check_postgres_canonical_freshness.py'])
 def test_native_graph_direct_entry_calls_use_shared_admission_protocol(filename):
-    path = Path(__file__).resolve().parents[2] / 'scripts' / filename
+    path = Path(__file__).resolve().parents[2] / 'database' / 'tests' / filename
     tree = ast.parse(path.read_text())
     targets = {'prepare_obsolete_graph_cards', 'execute_graph_cleanup_slice', 'execute_priority_retention_slice'}
 

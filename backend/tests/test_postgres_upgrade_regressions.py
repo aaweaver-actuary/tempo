@@ -6,7 +6,7 @@ import subprocess
 import pytest
 import yaml
 
-from scripts.apply_postgres_migrations import validate_migration_history
+from database.tooling.apply_postgres_migrations import validate_migration_history
 
 
 def test_postgres_upgrade_rejects_newer_and_gapped_history():
@@ -51,7 +51,7 @@ writeFileSync(process.argv[1],JSON.stringify(calls));
 
 
 def test_postgres_cli_status_is_read_only_and_reports_pending_versions(monkeypatch):
-    from scripts import apply_postgres_migrations as migration
+    from database.tooling import apply_postgres_migrations as migration
     calls = []
 
     class Cursor:
@@ -82,7 +82,7 @@ def test_postgres_cli_status_is_read_only_and_reports_pending_versions(monkeypat
 
 
 def test_postgres_cli_status_rejects_uninitialized_data_and_missing_writer_role(monkeypatch):
-    from scripts import apply_postgres_migrations as migration
+    from database.tooling import apply_postgres_migrations as migration
 
     class Cursor:
         def __init__(self, rows): self.rows = rows
@@ -110,7 +110,7 @@ def cli_history_fixture(monkeypatch):
     import hashlib
     import json
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
-    from scripts import verify_postgres_cli_state as verification
+    import database.tooling.verify_postgres_cli_state as verification
     records = {
         "reviews": {"id": 1, "card_id": "legacy-tactic", "rating": "correct", "reviewed_at": "2000-01-01",
                     "previous_interval": 1, "next_interval": 2, "internal_rating": "good", "guided": 0,

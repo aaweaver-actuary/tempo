@@ -5,9 +5,9 @@ import json
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from .command_gateway import register_command
-from .database import connection, read_connection
+from tempo_legacy_database.connections import connection, read_connection
 from .services.canonical_prefix import parse_prefix, prefix_projection, read_prefix
 from .services.canonical_prefix_preview import preview_projection, request_preview
 from .services.durable_tasks import enqueue_task_in_transaction

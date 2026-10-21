@@ -39,7 +39,8 @@ class FixtureScorer:
 
 
 def test_shadow_evaluation_performs_no_writes_and_preserves_immutable_inputs(monkeypatch):
-    from app import database, postgres_store
+    from tempo_legacy_database import connections as database
+    from tempo_legacy_database.adapters import postgres_store
     def prohibited(*args, **kwargs):
         raise AssertionError("Pure evaluation attempted storage access")
     monkeypatch.setattr(database, "connection", prohibited)
@@ -237,7 +238,7 @@ def raw_capture_fixture():
 
 
 def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closure(monkeypatch):
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from app.services import opening_capacity_frontier
     from app.services import opening_ranking_snapshot as snapshot
     state = {"open": False}
@@ -511,7 +512,7 @@ def test_shadow_invalid_metadata_shape_and_naive_as_of_are_rejected():
 
 
 def test_shadow_pool_timeout_is_opt_in_and_preserves_existing_connection_defaults(monkeypatch):
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     acquired_options = []
     statements = []
     class RawConnection:
@@ -617,7 +618,7 @@ def test_shadow_capture_requires_shared_foreground_admission_before_sql(monkeypa
 @pytest.mark.parametrize("original_url", [None, "redis://owned-example:6379/2"])
 @pytest.mark.parametrize("failure", [False, True])
 def test_priority_recovery_shadow_proof_scopes_real_redis_configuration(monkeypatch, original_url, failure):
-    from scripts.check_postgres_priority_recovery import shadow_proof_admission_configuration
+    from database.tests.check_postgres_priority_recovery import shadow_proof_admission_configuration
     if original_url is None:
         monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     else:
@@ -774,7 +775,7 @@ def test_shadow_selected_capture_filters_shared_card_memberships_before_planning
 
 
 def test_shadow_selected_capture_rejects_conflicting_selection_before_sql(monkeypatch):
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from app.services import opening_ranking_snapshot as snapshot
     def forbidden(**options):
         pytest.fail("Conflicting selection opened SQL")
@@ -784,7 +785,7 @@ def test_shadow_selected_capture_rejects_conflicting_selection_before_sql(monkey
 
 
 def test_shadow_selected_capture_binds_policy_to_sql_and_offline_cli(monkeypatch, tmp_path):
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from app.services import opening_ranking_snapshot as snapshot
     fixture = raw_capture_fixture()
     calls = []

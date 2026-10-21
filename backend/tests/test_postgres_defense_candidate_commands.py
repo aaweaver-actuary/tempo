@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from app import command_dispatch, defense_commands, main, postgres_store
+from app import command_dispatch, defense_commands, main
+from tempo_legacy_database.adapters import postgres_store
 
 
 @pytest.mark.parametrize(

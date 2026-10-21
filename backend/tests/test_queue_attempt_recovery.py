@@ -5,7 +5,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 from app.models import ReviewRequest
 from app.services.postgres_queue_refresh import _reconcile_one_unseen_entry
 from app.review_conflicts import ReviewConflict
@@ -237,7 +238,7 @@ def test_sqlite_origin_backfill_runs_once_and_survives_reinitialization(admitted
 
 
 def test_study_migration_preserves_queue_attempt_provenance_and_triggers(tmp_path, monkeypatch):
-    from app import study_migration
+    from tempo_legacy_database.ddl import study_migration
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "legacy-study.db")
     with monkeypatch.context() as legacy_schema:
@@ -366,8 +367,8 @@ def test_pre_evidence_aggregate_receipt_replays_without_inventing_a_new_result(a
 
 def test_queue_origin_migration_follows_current_main_without_renumbering_published_versions():
     from pathlib import Path
-    from app.schema_version import POSTGRES_SCHEMA_VERSION
-    root = Path(__file__).resolve().parents[1]
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    root = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl'
     migrations = sorted((root/'migrations').glob('[0-9][0-9][0-9]_*.sql'))
     assert [int(path.name[:3]) for path in migrations] == list(range(1, POSTGRES_SCHEMA_VERSION+1))
     assert (root/'migrations/030_opening_decision_evidence.sql').is_file()

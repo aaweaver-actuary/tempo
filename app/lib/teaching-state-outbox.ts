@@ -1,7 +1,7 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
 import type { IntentRecord } from "@tempo/browser-intents";
 import { confirmOperationResponse, readOperationResponse, PendingOperationError } from "./operation-status";
-import { rememberTeachingFact, studyIntentRecords, studyIntentStore, refreshStudyIntents } from "./study-intent-storage";
+import { rememberTeachingFact, studyIntentRecords, studyIntentStore, refreshStudyIntents } from "../../database/browser/study-intent-storage";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 
 export type PendingTeachingState = { cardId: string; revision: number; ply: number };

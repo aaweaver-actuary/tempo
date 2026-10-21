@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { selectFastLane, fastInventory } from './ci-fast-lane.mjs';
 import { createPlan } from './ci-verification-plan.mjs';
-import { postgresTestStages } from './postgres-test-plan.mjs';
+import { postgresTestStages } from '../database/tests/postgres-test-plan.mjs';
 
 const baseline = process.argv[2] ?? 'c5f773b18c4a5b30a3abda84ecac01ab625a3902';
 function git(...args) {
@@ -34,7 +34,7 @@ function describe(selection) {
 const candidateSets = Object.fromEntries(fastInventory.certifiedTests.map(mapping => [mapping.paths[0],mapping.paths]));
 candidateSets.prose = ['docs/testing.md','tests/REGRESSIONS.md'];
 candidateSets.preparedRegression = ['tests/unit/prepared-review-continuation-regressions.test.ts','backend/tests/test_prepared_review_continuation.py'];
-candidateSets.sharedRegistration = ['scripts/test-postgres-docker.mjs','scripts/ci-verification-inventory.json'];
+candidateSets.sharedRegistration = ['database/tests/test-postgres-docker.mjs','scripts/ci-verification-inventory.json'];
 const report = {baseline,candidate:git('rev-parse','HEAD').trim(),
   note:'Same current checkout and path sets; historical-source replay only. FULL counts exclude pinned cases and auxiliary unit directories.',
   pinnedCases:complete.pinnedCollection.length,

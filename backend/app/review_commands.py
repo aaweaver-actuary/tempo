@@ -1,7 +1,7 @@
 """Legacy command assembly: explicit Learning registration and owned savepoint."""
 from tempo_learning_review import register_review_commands
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.learning_review_adapter import submit_legacy_review
 from typing import Any
 

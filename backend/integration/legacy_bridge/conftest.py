@@ -260,8 +260,8 @@ class NativeBackend:
             passfile = self.private / (role + '.pgpass')
             passfile.write_text(f'bridge-postgres:5432:{self.database_name}:{role}:{password}\n'); passfile.chmod(0o600)
             (self.private / (role + '.password')).chmod(0o600)
-        from apply_postgres_migrations import apply_migrations
-        from provision_postgres_roles import provision
+        from database.tooling.apply_postgres_migrations import apply_migrations
+        from database.tooling.provision_postgres_roles import provision
         os.environ['PGPASSFILE'] = str(self.private / 'postgres.pgpass')
         apply_migrations(self.admin_dsn)
         provision(self.admin_dsn, (self.private / 'tempo_reader.password').read_text(), (self.private / 'tempo_writer.password').read_text())

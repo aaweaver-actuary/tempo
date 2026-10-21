@@ -6,15 +6,16 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 
 FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
 
 def test_repertoire_limit_migration_has_unique_number_and_matches_schema_readiness():
-    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
-    migration_directory = Path(__file__).resolve().parents[1] / 'migrations'
+    migration_directory = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations'
     migration_paths = sorted(migration_directory.glob('[0-9][0-9][0-9]_*.sql'))
     migration_numbers = [int(path.name[:3]) for path in migration_paths]
     assert migration_numbers == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
@@ -42,7 +43,7 @@ def workspace(tmp_path, monkeypatch):
                                    (card_id, repertoire_id, FEN, date.today().isoformat()))
                 connection.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)',
                                    (repertoire_id, card_id))
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     database_writer.start()
     try:
         yield TestClient(main.app)
@@ -197,7 +198,8 @@ def test_postgres_repertoire_settings_write_invalidates_old_queue_checkpoint(wor
 
 
 def test_postgres_repertoire_settings_endpoint_dispatches_durable_command(workspace, monkeypatch):
-    from app import command_dispatch, postgres_store
+    from app import command_dispatch
+    from tempo_legacy_database.adapters import postgres_store
     submitted = []
     monkeypatch.setattr(postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda name, payload, **kwargs: submitted.append((name, payload, kwargs)) or {'operation_id': 'op', 'state': 'pending'})

@@ -23,7 +23,7 @@ node scripts/test-controlled-browser.mjs priority.spec.ts --project chromium
 node scripts/test-controlled-browser.mjs interaction.spec.ts phone.spec.ts --project chromium
 node --test tests/runner/inference-priority.test.mjs
 node scripts/check-inference-priority-images.mjs
-node scripts/development-budget.mjs backend/.venv/bin/python scripts/check_postgres_study_priority.py
+node scripts/development-budget.mjs backend/.venv/bin/python database/tests/check_postgres_study_priority.py
 ```
 
 The regular PostgreSQL study/schema scenarios invoke the native proof on a marked
@@ -61,7 +61,7 @@ candidate receipt. First capture a current backup and stop study/application wri
 and optional workers through the registered lifecycle, retaining PostgreSQL. Preserve
 all pending browser intents and server receipts. Confirm there is no later migration.
 
-Use `backend/rollbacks/049_study_priority_recovery.sql` in the stopped-writer maintenance
+Use `database/tempo_legacy_database/ddl/rollbacks/049_study_priority_recovery.sql` in the stopped-writer maintenance
 window. It requires the complete schema-49 history, removes only the three new
 indexes and version 49 marker, and leaves cards, reviews, scheduling, required evidence
 and receipts in place. The native proof validates 49 → 48 → 49 with identical study

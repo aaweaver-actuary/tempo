@@ -6,10 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.background_activity import list_activity, report_progress, set_control
-from app.services.database_executor import database_writer
+from tempo_legacy_database.adapters.database_executor import database_writer
 from app.services.durable_tasks import claim_task, complete_task, enqueue_task, requeue_interrupted_tasks
 from app.services import game_sync_coordinator
 

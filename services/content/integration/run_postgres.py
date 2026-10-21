@@ -116,7 +116,7 @@ def main(arguments=None):
             database.execute("GRANT CONNECT ON DATABASE content TO content_runtime")
         owner_url = make_conninfo(admin_url, dbname="content", user="content_owner", password=owner_password)
         runtime_url = make_conninfo(admin_url, dbname="content", user="content_runtime", password=runtime_password)
-        from tempo_content.migrate import migrate
+        from tempo_content_database.ddl.migrate import migrate
         workspace_id = "workspace-content-native"
         migrate(owner_url, workspace_id, "content_runtime")
         environment = {name: value for name, value in controlled_environment().items()

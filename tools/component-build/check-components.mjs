@@ -43,7 +43,8 @@ export function validateManifest(manifest, root = repository, options = {}) {
       if (!existsSync(resolve(root, component.root)) || !component.buildInputs.length) throw new Error("Unavailable implemented source/build inputs: " + component.id);
       for (const input of component.buildInputs) {
         const inputPath = resolve(root, component.root, input);
-        if (!inside(resolve(root, component.root), inputPath) || !existsSync(inputPath) || !inside(realpathSync(resolve(root, component.root)), realpathSync(inputPath))) throw new Error("Unavailable/escaping build input: " + input);
+        const inputOwner = inside(resolve(root, "database"), inputPath) ? resolve(root, "database") : resolve(root, component.root);
+        if (!inside(inputOwner, inputPath) || !existsSync(inputPath) || !inside(realpathSync(inputOwner), realpathSync(inputPath))) throw new Error("Unavailable/escaping build input: " + input);
       }
       if (component.testInventory && !existsSync(resolve(root, component.root, component.testInventory))) throw new Error("Unavailable component-local inventory");
       if (component.type === "contract") {
@@ -131,7 +132,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     else {
       const argumentsList = component.type === "contract"
         ? [resolve(repository, "tools/component-build/check-contract.py"), componentRoot, JSON.stringify(component), resolve(root, component.catalog ?? "contracts/catalog.json")]
-        : [resolve(repository, "tools/component-build/check-python.py"), componentRoot, JSON.stringify(component.dependencies), JSON.stringify(component.publicExports), JSON.stringify(component.artifact)];
+        : [resolve(repository, "tools/component-build/check-python.py"), componentRoot, JSON.stringify(component.dependencies), JSON.stringify(component.publicExports), JSON.stringify(component.artifact), JSON.stringify(component.buildInputs)];
       const result = spawnSync(python, argumentsList, { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
       if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
       results.push({ id: component.id, ...JSON.parse(result.stdout) });

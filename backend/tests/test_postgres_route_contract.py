@@ -10,7 +10,8 @@ import re
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app import main, postgres_store
+from app import main
+from tempo_legacy_database.adapters import postgres_store
 from app.main import app
 
 

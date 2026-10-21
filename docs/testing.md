@@ -215,16 +215,16 @@ The focused SQLite snapshot, validation, import-fidelity, source-nonmutation, de
 | SQLite runtime service/browser specifics | `make legacy-sqlite` |
 | SQLite snapshot integrity, import fidelity, and safety guards | Focused SQLite unit/backend regressions remain in `make full` |
 
-Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.
+Use `node database/tests/test-postgres-docker.mjs --list` or `node scripts/test-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.
 
 ## PostgreSQL execution modes and timings
 
 The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability, deployment lifecycle and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full, durability or lifecycle mode so a filtered run cannot masquerade as a full gate.
 
 ```sh
-node scripts/test-postgres-docker.mjs --list --mode browser
-node scripts/test-postgres-docker.mjs --list --mode durability
-node scripts/test-postgres-docker.mjs --list --mode lifecycle
+node database/tests/test-postgres-docker.mjs --list --mode browser
+node database/tests/test-postgres-docker.mjs --list --mode durability
+node database/tests/test-postgres-docker.mjs --list --mode lifecycle
 make ui-file FILE=games-board-context.spec.ts
 make docker-durability
 ```

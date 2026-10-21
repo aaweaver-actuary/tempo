@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any
 
-from ..database import background_read_connection, connection
+from tempo_legacy_database.connections import background_read_connection, connection
 from .canonical_scope_freshness import game_scope_generation
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,

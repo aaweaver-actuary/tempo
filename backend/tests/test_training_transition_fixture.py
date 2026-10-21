@@ -16,7 +16,7 @@ def test_training_fixture_cleanup_accounts_for_runtime_order_without_overwriting
 ):
     repository = Path(__file__).resolve().parents[2]
     monkeypatch.syspath_prepend(str(repository / "scripts"))
-    specification = importlib.util.spec_from_file_location("training_transition_fixture_cleanup", repository / "scripts/check_postgres_training_transition.py")
+    specification = importlib.util.spec_from_file_location("training_transition_fixture_cleanup", repository / "database/tests/check_postgres_training_transition.py")
     fixture = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(fixture)
     database = sqlite3.connect(":memory:")

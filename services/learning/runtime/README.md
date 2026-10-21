@@ -43,7 +43,7 @@ flowchart TB
 | Optional publication and cleanup | `HostActivity.start` starts its daemon without initial file I/O. The daemon releases the memory lock before publishing; `close` signals without joining publication or cleanup. An optional activity 200 acknowledges memory submission against the last healthy lease; missing/known-failed/stale publication or browser capacity returns 503. |
 | Explicit admission tradeoff and deployment prerequisite | The unchanged [native reader](../../../scripts/host-study-activity.mjs) can retain an idle snapshot until its 15-second producer lease expires. A new essential request may overlap admitted managed work during that remaining lease; asynchronous publication provides no immediate foreground exclusion. Present stale evidence is unavailable. Missing/startup/removed-source denial requires configuring protected workspace identities in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` before deployment; default `[]` accepts absence as idle. No live configuration or lease protocol changed. |
 | Removed calculation boundary (PROPOSED) | Probe and fresh anonymous attempt requests return 410 before DB/provider access. A supplied operation key permits only a saved receipt lookup; unknown keys return 410. The route can replay an already-recorded immutable FEN/payload through the unchanged canonical gateway. No position generation, cache lookup, provider fallback, optional daemon or optional pool remains. Legacy probe/template-generation/new-attempt triggers are likewise disabled. |
-| Saved state and connection ownership | [`endgame_store`](src/tempo_learning_runtime/endgame_store.py) retains saved template/receipt reads; cards, attempts, history and caches are not migrated, rewritten or deleted. Ordinary [`Database`](src/tempo_learning_runtime/database.py) foreground reader/writer pools plus maintenance remain; total maximum returns to `2 * pool_size + 1`. Study/review/receipt transactions retain their existing owners. |
+| Saved state and connection ownership | [`endgame_store`](../../../database/tempo_learning_database/adapters/endgame_store.py) retains saved template/receipt reads; cards, attempts, history and caches are not migrated, rewritten or deleted. Ordinary [`Database`](../../../database/tempo_learning_database/connections.py) foreground reader/writer pools plus maintenance remain; total maximum returns to `2 * pool_size + 1`. Study/review/receipt transactions retain their existing owners. |
 
 **Evidence and limits:** the owning removal regressions cover actual ASGI
 410/no-database behavior, immutable receipt recovery and legacy thin-trigger
@@ -123,7 +123,7 @@ Source owners: [`review-outbox`](../../../app/lib/review-outbox.ts) retains immu
 aggregate intent and adapts receipts;
 [`createStudySession`](../../../packages/study-session/src/index.ts) claims delivery,
 persists settlement, fences presentation generations and bounds next acquisition;
-[`IntentStore`](../../../packages/browser-intents/src/index.ts) owns browser
+[`IntentStore`](../../../database/browser-intents/src/index.ts) owns browser
 transactions. [`learningFetch`](../../../app/lib/study-connection.ts) restricts
 authority; the [HTTP review handler](src/tempo_learning_runtime/api.py)
 dispatches to [`gateway`](src/tempo_learning_runtime/gateway.py).
@@ -133,7 +133,7 @@ implemented by [`LearningReviewAdapter`](src/tempo_learning_runtime/review_adapt
 [Scheduling/review effects](src/tempo_learning_runtime/review_service.py)
 and [required settlement](src/tempo_learning_runtime/remediation_adapter.py)
 remain Learning-local under the borrowed transaction. The
-[`Database`](src/tempo_learning_runtime/database.py)
+[`Database`](../../../database/tempo_learning_database/connections.py)
 context commits/rolls back, not the application port.
 
 Transport idempotency and logical attempt identity are separate protections.
@@ -350,3 +350,5 @@ and component-local browser dependencies. It never takes an external database
 URL or converts a live profile. The minimal Learning runtime qualification remains
 separate and does not require frontend installation. See the
 [F2 acceptance map](../../../docs/validation/f2-study-learning.md).
+
+Database implementation, DDL and source-schema charts: [central database owner](../../../database/tempo_learning_database/README.md).

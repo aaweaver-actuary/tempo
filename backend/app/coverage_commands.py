@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
 
 

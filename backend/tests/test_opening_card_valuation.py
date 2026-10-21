@@ -307,10 +307,10 @@ def test_valuation_no_production_queue_admission_or_network_writes(monkeypatch):
     before = canonical_json(valuation._plain(current))
     def forbidden(*args, **kwargs):
         pytest.fail("Read-only valuation accessed storage, network, or scheduling mutation")
-    from app import database
+    from tempo_legacy_database import connections as database
     import socket
     from app.services import scheduler
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     monkeypatch.setattr(database, "connection", forbidden)
     monkeypatch.setattr(postgres_store, "connection", forbidden)
     monkeypatch.setattr(socket, "create_connection", forbidden)

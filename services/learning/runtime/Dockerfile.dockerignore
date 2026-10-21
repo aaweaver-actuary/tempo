@@ -17,8 +17,6 @@
 !services/learning/remediation/pyproject.toml
 !services/learning/remediation/src/
 !services/learning/remediation/src/**
-!services/learning/remediation/migrations/
-!services/learning/remediation/migrations/**
 !packages/
 !packages/scheduling/
 !packages/scheduling/pyproject.toml
@@ -46,3 +44,15 @@
 !contracts/game-evidence/fixtures/
 !contracts/game-evidence/fixtures/**
 **/__pycache__/
+
+!database/
+!database/tempo_learning_database/
+!database/tempo_learning_database/**
+!database/tempo_remediation_database/
+!database/tempo_remediation_database/**
+
+!services/learning/runtime/hatch_build.py
+!services/learning/remediation/hatch_build.py
+
+**/__pycache__/
+**/*.pyc

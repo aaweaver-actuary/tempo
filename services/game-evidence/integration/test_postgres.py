@@ -301,7 +301,7 @@ def test_native_pgn_findings_commit_with_outbox_and_empty_comparison(state):
 def test_duplicate_source_and_snapshot_refresh_reuse_verified_index(state,monkeypatch):
     store,workspace,value=state
     game=imported(state)
-    import tempo_game_evidence.store as storage
+    import tempo_game_evidence_database.adapters.store as storage
     def forbidden(*_args,**_kwargs):
         raise AssertionError("unchanged_source_was_reparsed")
     monkeypatch.setattr(storage,"normalize_pgn",forbidden)
@@ -627,7 +627,7 @@ def test_nonintersecting_snapshot_refresh_converges_without_replay(state,monkeyp
     game=store.import_pgn(workspace,'pgn','custom','Learner',raw)
     drain(store)
     assert store.report(workspace,game)['readiness']=='ready'
-    import tempo_game_evidence.store as storage
+    import tempo_game_evidence_database.adapters.store as storage
     def forbidden(*args,**kwargs):
         raise AssertionError('verified_index_replayed')
     monkeypatch.setattr(storage,'replay_positions',forbidden)
@@ -960,7 +960,7 @@ def test_version_one_migration_recovers_completed_history_in_bounded_pages(state
     upgrade_url=os.environ['TEMPO_GAME_EVIDENCE_TEST_UPGRADE_URL']
     upgrade=EvidenceStore(upgrade_url)
     with upgrade.connect() as database:
-        database.execute(files('tempo_game_evidence').joinpath('migrations/001.sql').read_text())
+        database.execute(files('tempo_game_evidence_database').joinpath('ddl/migrations/001.sql').read_text())
         database.execute('INSERT INTO workspace_inputs(workspace_id,snapshot_digest) VALUES(%s,%s)',(workspace,report['snapshot']['digest']))
         database.execute('INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s)',(report['snapshot']['digest'],workspace,value['snapshot_id'],1,Jsonb(value)))
         database.execute('INSERT INTO games(game_id,workspace_id,provider,provider_game_id,player,revision,input_digest,source_digest,raw_source,document,positions,index_receipt,report_revision) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,65)',

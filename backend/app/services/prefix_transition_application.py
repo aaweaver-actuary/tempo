@@ -7,7 +7,8 @@ import logging
 from fastapi import HTTPException
 from psycopg.errors import LockNotAvailable, SerializationFailure
 
-from .. import postgres_store, prefix_evaluation_api as structural, prefix_transition_api as planner_api
+from tempo_legacy_database.adapters import postgres_store
+from app import prefix_evaluation_api as structural, prefix_transition_api as planner_api
 from ..command_gateway import register_command
 from ..prefix_transition_contracts import PrefixTransitionApplyRequest, PrefixTransitionPlan
 from ..snapshot_reads import SnapshotRead, snapshot_rows

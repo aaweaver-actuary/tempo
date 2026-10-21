@@ -19,7 +19,7 @@ from tempo_intelligence.api import create_app
 from tempo_intelligence.credentials import CredentialMaterial, PrivateCredentials
 from tempo_intelligence.models import RequestInput
 from tempo_intelligence.provider import ExplorerClient
-from tempo_intelligence.store import Store
+from tempo_intelligence_database.adapters.store import Store
 from tempo_intelligence.worker import Worker
 
 from .support import maia_result, owner_execute, ready, register, request_value
@@ -636,7 +636,7 @@ def test_postgres_expired_registration_waits_without_http_or_failure_attempts(st
     material=CredentialMaterial(str(uuid4()),original.token,expiry)
     store.credential_reload(material,1)
     submit(state)
-    monkeypatch.setattr("tempo_intelligence.store.utcnow",lambda:expiry+timedelta(seconds=1))
+    monkeypatch.setattr("tempo_intelligence_database.adapters.store.utcnow",lambda:expiry+timedelta(seconds=1))
     with fake_provider() as (url,paths):
         assert not asyncio.run(worker(state,url).work_once())
         status=sources(store)["lichess"]

@@ -93,7 +93,8 @@ def test_defensive_control_uses_primary_api_reader_without_writer_credentials(
     monkeypatch, request_state, stored_lease_id, expected_allowed,
 ):
     from types import SimpleNamespace
-    from app import main, postgres_store
+    from app import main
+    from tempo_legacy_database.adapters import postgres_store
     monkeypatch.delenv('TEMPO_DATABASE_WRITE_URL', raising=False)
     monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
     monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
@@ -119,7 +120,8 @@ def test_defensive_control_uses_primary_api_reader_without_writer_credentials(
 def test_background_receipt_read_is_prompt_during_foreground_without_false_success(monkeypatch, receipt_exists):
     from contextlib import contextmanager
     from types import SimpleNamespace
-    from app import command_gateway, postgres_store
+    from app import command_gateway
+    from tempo_legacy_database.adapters import postgres_store
     from app.services.activity_gate import activity_gate
     monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
     monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
@@ -190,8 +192,9 @@ def control_command_store(normal_study_mode, monkeypatch):
     from datetime import datetime, timezone
     from types import SimpleNamespace
     from contextlib import nullcontext
-    from app import postgres_store, tasks
-    from app.services.background_metrics_schema import SCHEMA
+    from tempo_legacy_database.adapters import postgres_store
+    from app import tasks
+    from tempo_legacy_database.ddl.background_metrics_schema import SCHEMA
 
     database = sqlite3.connect(':memory:')
     database.row_factory = sqlite3.Row

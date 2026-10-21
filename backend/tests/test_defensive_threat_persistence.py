@@ -10,7 +10,7 @@ import chess
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app, materialize_daily_queue
 from app.services.threat_detection import find_defensive_knight_forks
 from app.services.threat_models import GameSnapshot, SourceLine
@@ -209,7 +209,7 @@ def test_reported_rc4_preview_grades_c4_only_after_proposed_move(tmp_path, monke
 
 def test_reported_rc4_audit_preserves_attempts_and_removes_invalid_review_effect(tmp_path, monkeypatch, request):
     from app.services.durable_tasks import enqueue_task_in_transaction
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.models import DefenseRecognitionRequest
     from app.services.review_service import apply_scheduling_review
     from app.services.threat_training import (
@@ -303,7 +303,7 @@ def test_defensive_preview_queue_blocks_unteachable_card_without_erasing_history
 
 def test_defensive_rubric_audit_yields_to_foreground_and_replays_after_restart(tmp_path, monkeypatch, request):
     from app.services import threat_training
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.services.durable_tasks import enqueue_task_in_transaction
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -900,7 +900,7 @@ def test_discoveries_report_repair_yields_to_foreground_and_replays_once(tmp_pat
 def test_discoveries_verified_defense_auto_admits_once_with_daily_cap(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     database_writer.start()
     try:
         candidate_id = seed_candidate()
@@ -937,7 +937,7 @@ def test_discoveries_verified_defense_auto_admits_once_with_daily_cap(tmp_path, 
 def test_defensive_auto_admission_holds_legacy_fork_without_immediate_preview(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.services.durable_tasks import claim_task
     from app.services.threat_training import enqueue_defense_admission, execute_defense_admission_slice
     database_writer.start()
@@ -973,7 +973,7 @@ def test_defensive_auto_admission_holds_legacy_fork_without_immediate_preview(tm
 def test_discoveries_backfill_restarts_after_one_game_without_duplicate_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.services.durable_tasks import claim_task
     database_writer.start()
     try:
@@ -1061,7 +1061,7 @@ def test_discoveries_validated_false_alarm_finishes_after_recognition_with_one_r
 def test_discoveries_auto_admission_includes_one_validated_control_under_daily_cap(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.services.durable_tasks import claim_task
     from app.services.threat_training import enqueue_defense_admission, execute_defense_admission_slice
     database_writer.start()
@@ -1143,7 +1143,7 @@ def test_discoveries_reanalysis_keeps_defense_card_and_genuine_review_history(tm
 def test_discoveries_auto_admission_prioritizes_recurring_position_before_recent_isolated_one(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.services.durable_tasks import claim_task
     from app.services.threat_training import enqueue_defense_admission, execute_defense_admission_slice
     database_writer.start()
@@ -1190,7 +1190,7 @@ def test_discoveries_auto_admission_prioritizes_recurring_position_before_recent
 
 def test_canonical_first_defense_collection_admits_game_refresh_and_replay_preserves_scope(tmp_path, monkeypatch):
     from app.services.canonical_scope_freshness import game_scope_generation
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     from app.services.threat_training import approve_defense_candidate
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'defense-membership.db')
     database.initialize()

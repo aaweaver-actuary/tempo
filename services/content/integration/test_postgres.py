@@ -20,10 +20,10 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 import pytest
-from tempo_content.migrate import migrate
+from tempo_content_database.ddl.migrate import migrate
 from tempo_content.domain import build_publication, canonical_position, stable_id
 from tempo_content.models import SourceSnapshot
-from tempo_content.store import ContentService
+from tempo_content_database.adapters.store import ContentService
 from tempo_content_publication_contracts.v1 import Publication, serialize_contract
 from tempo_content.bridge import Bridge, digest
 
@@ -875,7 +875,7 @@ def test_expired_persisted_lease_is_reclaimed_by_a_fresh_process(service, tmp_pa
     source = source_fixture()
     loaded = service.load_source(source, expected_revision=0)
     script = tmp_path / "crash_after_claim.py"
-    script.write_text("import os\nfrom tempo_content.store import ContentService\n"
+    script.write_text("import os\nfrom tempo_content_database.adapters.store import ContentService\n"
                       "def crash(event,context):\n    if event=='after_read': os._exit(71)\n"
                       "with ContentService(os.environ['TEMPO_CONTENT_DATABASE_URL'],os.environ['TEMPO_CONTENT_WORKSPACE']) as service:\n"
                       "    service.work_once(os.environ['TEMPO_CONTENT_LEASE_SOURCE'],hook=crash)\n")
@@ -1610,7 +1610,7 @@ def test_A_response_proposal_concurrency_and_restart(service, conflicting):
 
 
 def test_A_proposal_unique_index_rejects_legacy_duplicates_without_deletion(service):
-    from tempo_content.migrate import expected_migrations, readiness
+    from tempo_content_database.ddl.migrate import expected_migrations, readiness
     original = bridge_draft(service)
     proposal = {'workspace_id':service.workspace_id, 'source_key':original['source_key'], 'proposal_id':'legacy-duplicate'}
     first = Bridge(service).draft(original['document']['source'], original['document']['manifest'], 0, proposal)

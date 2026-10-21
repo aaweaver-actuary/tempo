@@ -9,9 +9,9 @@ from psycopg.conninfo import make_conninfo
 from psycopg import sql
 from fastapi.testclient import TestClient
 from tempo_intelligence import create_app,analysis_v1,run_analysis_work
-from tempo_intelligence.migrate import migrate
-from tempo_intelligence.store import Store
-from tempo_intelligence.analysis.store import AnalysisStore
+from tempo_intelligence_database.ddl.migrate import migrate
+from tempo_intelligence_database.adapters.store import Store
+from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
 from tempo_intelligence.errors import DomainError
 from tempo_analysis_pilot import normalize,connect
 

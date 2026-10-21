@@ -19,7 +19,7 @@ SCHEMA = [
 
 
 def activation(database, *, lock=False, exclusive=False):
-    from ..postgres_store import PostgresConnection
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     suffix = (' FOR UPDATE' if exclusive else ' FOR SHARE') if (
         lock and isinstance(database, PostgresConnection) and not database.read_only
     ) else ''
@@ -151,7 +151,7 @@ def activate_run(database, plan):
     current, _ = activation(database,lock=True,exclusive=True)
     if current == plan['run_id']:
         return False
-    from ..postgres_store import PostgresConnection
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     lock_clause=' FOR UPDATE' if isinstance(database,PostgresConnection) else ''
     saved = database.execute('SELECT previous_run_id,invalidated FROM frozen_opening_runs WHERE run_id=?'+lock_clause, (plan['run_id'],)).fetchone()
     if saved is not None and saved[1]:
@@ -202,7 +202,7 @@ def record_queue_changes(database, queue_date, entries):
 
 def restore_queue_changes(database, run_id):
     """Restore owned unchanged permutations; later study/content/order wins."""
-    from ..postgres_store import PostgresConnection
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     changes = database.execute('SELECT * FROM frozen_opening_queue_changes WHERE run_id=? ORDER BY queue_date,queue_id',(run_id,)).fetchall()
     safe = {}
     conflicts = []
@@ -287,7 +287,7 @@ def stale_queue_predicate():
 
 def legacy_queue_predicate():
     """Hold uncertain, unstarted legacy openings while a frozen run is active."""
-    from ..storage.real_game_miss_projection import outstanding_miss_sql
+    from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
 
     mandatory_miss = outstanding_miss_sql(
         columns="1", additional_where="AND card.id=c.id LIMIT 1",

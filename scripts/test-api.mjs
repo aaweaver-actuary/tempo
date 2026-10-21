@@ -10,7 +10,7 @@ const apiPort = process.env.TEMPO_BROWSER_API_PORT ?? "8001";
 const databasePath = join(directory, "tempo.db");
 const { createIsolatedTestEnvironment } = await import("./test-environment.mjs");
 const environment = createIsolatedTestEnvironment(process.env, {
-  PYTHONPATH: "backend",
+  PYTHONPATH: "backend:database",
   TEMPO_TEST_INSTANCE: "disposable",
   TEMPO_DB_PATH: databasePath,
 });

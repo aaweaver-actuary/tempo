@@ -62,7 +62,7 @@ class FakeStore:
 
 @pytest.fixture
 def local_store(monkeypatch):
-    import tempo_intelligence.store as store_module
+    import tempo_intelligence_database.adapters.store as store_module
 
     configured = Configuration("fixture", "postgresql://unused/intelligence", "c" * 40, "o" * 40, "w" * 40, worker_enabled=False)
     monkeypatch.setattr(Configuration, "environment", classmethod(lambda cls: configured))
@@ -122,7 +122,7 @@ def test_cli_errors_emit_fixed_codes_and_close_store(local_store, capsys, identi
 
 
 def test_owner_migration_does_not_load_runtime_configuration(monkeypatch, tmp_path, capsys):
-    import tempo_intelligence.migrate as migrations
+    import tempo_intelligence_database.ddl.migrate as migrations
 
     owner_file = tmp_path / "owner-url"
     owner_file.write_text("postgresql://OWNER_SECRET_ONLY_TEST/intelligence")

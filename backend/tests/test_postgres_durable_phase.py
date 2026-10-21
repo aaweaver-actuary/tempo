@@ -1,6 +1,6 @@
 """Leases and retries must not erase a PostgreSQL slice's saved phase."""
 
-from app import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from app.services import durable_tasks
 
 

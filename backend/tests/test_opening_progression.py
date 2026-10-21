@@ -119,7 +119,7 @@ def test_opening_progression_native_driver_replays_only_foreground_deferred_slic
     from pathlib import Path
     from app.services.activity_gate import BackgroundAdmissionDeferred
 
-    proof_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_progression.py'
+    proof_path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_opening_progression.py'
     spec = importlib.util.spec_from_file_location('opening_progression_proof', proof_path)
     proof = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(proof)

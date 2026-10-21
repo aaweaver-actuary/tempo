@@ -15,7 +15,7 @@ from tempo_game_evidence_contracts.legacy import (LegacyAuthorityToken, fingerpr
 from tempo_learning_remediation import LegacyAcceptedDecision, RemediationError
 from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
-from ..database import background_read_connection
+from tempo_legacy_database.connections import background_read_connection
 from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
 
 MAX_DECISION_ROUTES = 64

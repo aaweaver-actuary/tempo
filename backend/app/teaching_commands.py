@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .models import TeachingStateRequest
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 
 
 def record_teaching_state(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:

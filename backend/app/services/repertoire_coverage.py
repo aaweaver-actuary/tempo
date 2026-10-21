@@ -14,8 +14,8 @@ from statistics import median
 import chess
 import httpx
 
-from ..database import connection
-from .. import postgres_store
+from tempo_legacy_database.connections import connection
+from tempo_legacy_database.adapters import postgres_store
 from .redis_admission_gate import client as redis_client
 from .repertoire_comparison import canonical_fen
 from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity, latest_coverage_attempt_predicate, latest_coverage_run_id

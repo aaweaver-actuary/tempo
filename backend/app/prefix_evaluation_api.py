@@ -11,7 +11,7 @@ import psycopg
 from psycopg_pool import PoolTimeout
 import redis
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from .prefix_evaluation_contracts import PrefixEvaluationRequest, PrefixEvaluationResponse, SourceResponse
 from .services.activity_gate import activity_gate
 from .services import redis_admission_gate

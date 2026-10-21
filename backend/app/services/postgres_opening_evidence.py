@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 from psycopg.errors import SerializationFailure
 
-from .. import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from ..opening_evidence_contracts import OpeningEvidenceCheckpoint
 from .opening_decision_evidence import EvidenceConflict, decision_manifest, reduce_observations, validate_checkpoint
 
@@ -307,7 +307,7 @@ def _read_checkpoint_source(database, attempt_id: str, *, lock: bool = False) ->
 
 def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
     """Read one bounded source, release PostgreSQL, then validate/reduce it."""
-    from ..database import background_read_connection
+    from tempo_legacy_database.connections import background_read_connection
     request = OpeningEvidenceCheckpoint.model_validate(payload["checkpoint"])
     with background_read_connection(authoritative=True) as database:
         row = database.execute_native(

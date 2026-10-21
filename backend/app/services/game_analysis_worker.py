@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import chess
 
-from ..database import background_read_connection, connection, read_connection
-from .. import postgres_store
+from tempo_legacy_database.connections import background_read_connection, connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from .threat_pipeline import (ENGINE_VERSION, NETWORK_VERSION, report_from_json,
                               validate_analysis_report)

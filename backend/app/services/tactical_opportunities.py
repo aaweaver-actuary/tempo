@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from ..database import connection
-from .. import postgres_store
+from tempo_legacy_database.connections import connection
+from tempo_legacy_database.adapters import postgres_store
 
 
 def opportunity_id(game_id: str, analysis_version: int, ply: int, motif: str) -> str:

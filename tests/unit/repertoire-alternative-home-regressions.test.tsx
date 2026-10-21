@@ -1,4 +1,4 @@
-import { studyIntentStore } from "../../app/lib/study-intent-storage";
+import { studyIntentStore } from "../../database/browser/study-intent-storage";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Chess, type Square } from "chess.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -436,21 +436,21 @@ it("pr285_teaching_cross_tab_committed_facts_update_the_mounted_home", async () 
 });
 
 it("pr285_teaching_cross_tab_reload_keeps_indexeddb_only_facts_after_home_startup", async () => {
-  const { rememberTeachingFact } = await import("../../app/lib/study-intent-storage");
+  const { rememberTeachingFact } = await import("../../database/browser/study-intent-storage");
   await rememberTeachingFact({ key: "offline-only:3:5", cardId: "offline-only", revision: 3, ply: 5, kind: "seen" });
   await rememberTeachingFact({ key: "first-clean:offline-only", cardId: "offline-only", revision: 3, kind: "first-clean" });
   expect(localStorage.getItem("tempo-seen-moves")).toBeNull(); expect(localStorage.getItem("tempo-first-clean-passes")).toBeNull();
   const mounted = await readyHome();
   expect([...useTrainingStore.getState().seenMoves]).toContain("offline-only:3:5");
   mounted.unmount();
-  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../app/lib/study-intent-storage");
+  const { closeStudyIntentStorage, initializeStudyIntentStorage } = await import("../../database/browser/study-intent-storage");
   closeStudyIntentStorage(); await initializeStudyIntentStorage();
   await readyHome();
   expect([...useTrainingStore.getState().seenMoves]).toContain("offline-only:3:5");
   expect(useTrainingStore.getState().firstCleanPasses.has("offline-only")).toBe(true);
 });
 it("pr285_teaching_cross_tab_stale_server_snapshot_cannot_erase_committed_seen_fact", async () => {
-  const { rememberTeachingFact } = await import("../../app/lib/study-intent-storage");
+  const { rememberTeachingFact } = await import("../../database/browser/study-intent-storage");
   const key = `${card.backendId}:1:0`;
   await rememberTeachingFact({ key, cardId: String(card.backendId), revision: 1, ply: 0, kind: "seen" });
   let release!: (response: Response) => void, entered!: () => void;

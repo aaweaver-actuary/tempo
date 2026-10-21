@@ -11,6 +11,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'database'))
 from app.services.opening_graph_recovery import preflight, recover, capture_evidence, target_id, validate_staged_graph, scope_token, verify_preservation
 from app.services.opening_graph_recovery import QUEUED_REBUILD_MODE, preflight_queued_rebuild, finish_queued_rebuild
 from app.services.opening_graph_recovery import assert_selected_execution_not_started, _selected_scope_key
@@ -74,7 +75,7 @@ def selected_rebuild_main(args):
         before = capture_evidence(args.repertoire_id, args.day, selected_rebuild=True)
         (output / 'before.json').write_text(json.dumps(before, indent=2) + '\n')
     # Resume preflight checks the saved day/source/target without taking a task.
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from app.services.opening_graph_recovery import validate_selected_scope, background_lease
     with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
         validate_selected_scope(database, prepared, lock=False)

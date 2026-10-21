@@ -7,7 +7,7 @@ import os
 from .background_metrics import increment
 from typing import Any
 
-from ..database import connection
+from tempo_legacy_database.connections import connection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,

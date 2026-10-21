@@ -22,9 +22,9 @@ import pytest
 from app import command_dispatch
 from test_card_deletion import workspace as deletion_workspace
 from app.command_gateway import CommandConflict, request_digest
-from app.postgres_store import TempoRow, postgres_sql
+from tempo_legacy_database.adapters.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
-from app.services.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
+from tempo_legacy_database.ddl.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
 
 
 @pytest.fixture(autouse=True)
@@ -287,10 +287,10 @@ def test_postgres_versioned_game_analysis_import_targets_preserve_published_view
     scripts = Path(__file__).resolve().parents[2] / "scripts"
     sys.path.insert(0, str(scripts))
     try:
-        from migrate_sqlite_to_postgres import COPY_TARGETS
+        from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.pop(0)
-    migration = (Path(__file__).resolve().parents[1] / "migrations"
+    migration = (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
                  / "009_versioned_game_analysis.sql").read_text()
     assert COPY_TARGETS["game_move_analysis"] == "game_move_analysis_legacy"
     assert COPY_TARGETS["game_move_analysis_candidates"] == "game_move_analysis_candidates_legacy"
@@ -502,7 +502,8 @@ def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(mon
 @pytest.fixture
 def position_claim_receipt_route(monkeypatch):
     from fastapi.testclient import TestClient
-    from app import database, game_analysis_commands, main
+    from tempo_legacy_database import connections as database
+    from app import game_analysis_commands, main
 
     receipts = {}
     deliveries = []
@@ -1381,10 +1382,10 @@ def test_postgres_integrity_foreground_contention_restart_and_stale_replay(monke
 
 
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
-    from app import database
-    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_legacy_database import connections as database
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
-    migration_directory = Path(__file__).resolve().parents[1] / "migrations"
+    migration_directory = Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
     newest_migration = max(int(path.name[:3]) for path in migration_directory.glob("[0-9][0-9][0-9]_*.sql"))
     assert POSTGRES_SCHEMA_VERSION == newest_migration
 
@@ -2126,7 +2127,8 @@ def test_postgres_repertoire_delete_dispatches_idempotent_foreground_command(mon
 def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refresh(deletion_workspace):
     # Shared business rules run on the real compatibility database here; native
     # PostgreSQL persistence/replay is proved in check_postgres_deletion.py.
-    from app import database, repertoire_commands
+    from tempo_legacy_database import connections as database
+    from app import repertoire_commands
     with database.connection() as connection:
         assert repertoire_commands.delete_repertoire(connection, {"repertoire_id": "old"}) == {"deleted": True, "id": "old"}
         assert connection.execute("SELECT repertoire_id FROM cards WHERE id='shared'").fetchone()[0] == 'other'
@@ -2136,7 +2138,8 @@ def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refre
 
 
 def test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal(deletion_workspace):
-    from app import database, repertoire_commands
+    from tempo_legacy_database import connections as database
+    from app import repertoire_commands
     from app.services.durable_tasks import enqueue_task_in_transaction
     with database.connection() as connection:
         task = enqueue_task_in_transaction(connection, 'opening_graph_rebuild', 'old', {"repertoire_id": "old"})
@@ -3331,7 +3334,7 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
 def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-    from generate_postgres_schema import generate_schema
+    from database.tooling.generate_postgres_schema import generate_schema
 
     source = tmp_path / "source.db"
     with sqlite3.connect(source) as database:
@@ -3344,7 +3347,7 @@ def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
 def test_postgres_cutover_inventory_includes_native_postgres_queries():
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-    from audit_storage_cutover import inspect_python_file
+    from database.tooling.audit_storage_cutover import inspect_python_file
 
     source = Path(__file__).resolve().parents[1] / "app" / "services" / "postgres_queue_refresh.py"
     report = inspect_python_file(source)
@@ -4353,7 +4356,7 @@ def test_postgres_cutover_conflict_target_does_not_include_null_ordering():
 
 
 def test_postgres_cutover_card_copy_uses_backend_column_catalog(monkeypatch):
-    from app import database as database_module
+    from tempo_legacy_database import connections as database_module
 
     with sqlite3.connect(":memory:") as sqlite_database:
         sqlite_database.execute("CREATE TABLE cards(id TEXT PRIMARY KEY, due_date TEXT)")
@@ -4489,7 +4492,7 @@ def test_postgres_cutover_foreground_admission_blocks_background_slice(monkeypat
 
 
 def test_postgres_cutover_background_reads_respect_foreground_admission(monkeypatch):
-    from app import database
+    from tempo_legacy_database import connections as database
 
     connection_opened = threading.Event()
     read_finished = threading.Event()
@@ -6101,7 +6104,8 @@ def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch, unsc
 
 @pytest.mark.parametrize("remaining_nodes", [True, False])
 def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nodes, monkeypatch):
-    from app import coverage_maia_commands, postgres_store
+    from app import coverage_maia_commands
+    from tempo_legacy_database.adapters import postgres_store
     from app.services import refresh_requests
     monkeypatch.setattr(refresh_requests, 'request_refresh', lambda *_args, **_kwargs: 5)
 

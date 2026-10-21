@@ -2,7 +2,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json, uuid
 import chess, pytest
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime.threat_detection import defensive_fork_geometry
 from tempo_learning_runtime.threat_models import (
     ExerciseAnchor,

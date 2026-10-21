@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.scheduler import schedule_review
 from helpers import wait_for_integrity

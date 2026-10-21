@@ -7,11 +7,11 @@ import threading
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.main import lifespan
 from app.main import enqueue_daily_queue_refresh
-from app.services.database_executor import DatabaseWriter
+from tempo_legacy_database.adapters.database_executor import DatabaseWriter
 from app.services.durable_tasks import complete_task, enqueue_task
 
 

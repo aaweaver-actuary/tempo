@@ -1,0 +1,16 @@
+# Legacy backend adapters
+
+[Database overview](../README.md) · [Source schema charts and dictionary](../schema/README.md)
+
+| File | Role |
+| --- | --- |
+| [database_executor.py](database_executor.py) | Single-owner SQLite writer with foreground-priority scheduling. |
+| [discovery_acceptance_store.py](discovery_acceptance_store.py) | PostgreSQL Discovery acceptance adapter; never opens or completes a transaction. |
+| [legacy_game_evidence_scope.py](legacy_game_evidence_scope.py) | Native accepted-scope exclusion owned by feedback persistence. |
+| [postgres_store.py](postgres_store.py) | PostgreSQL connection and SQL compatibility seam for the cutover. |
+| [real_game_feedback.py](real_game_feedback.py) | Feedback persistence and legacy queue effects on a borrowed transaction. |
+| [real_game_miss_projection.py](real_game_miss_projection.py) | Persistence-only miss projections shared by explicit queue read adapters. |
+| [scheduling_review_store.py](scheduling_review_store.py) | Legacy adapter exports; Learning owns the shared implementation. |
+
+- [queue_position_lock.py](queue_position_lock.py): existing queue-position advisory lock boundary.
+- [postgres_readiness.py](postgres_readiness.py): existing PostgreSQL/worker readiness adapter.

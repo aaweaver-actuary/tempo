@@ -6,7 +6,7 @@ import hashlib
 import json
 from typing import Any
 
-from ..database import connection
+from tempo_legacy_database.connections import connection
 from .durable_tasks import (
     advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,

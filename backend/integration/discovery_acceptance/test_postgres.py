@@ -19,11 +19,12 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.errors import LockNotAvailable, UniqueViolation
 import pytest
 
-from app import discovery_commands, postgres_store
+from app import discovery_commands
+from tempo_legacy_database.adapters import postgres_store
 from app.command_gateway import CommandConflict, execute_command, read_operation
 from app.services.discovery_acceptance_application import accept_discovery
 from app.services.discovery_acceptance_contracts import DiscoveryChoice, NewDiscoveryIntent
-from app.services.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
+from tempo_legacy_database.adapters.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
 from app.services.discovery_admission import admission_intent_id
 
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

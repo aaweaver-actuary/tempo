@@ -1,6 +1,6 @@
 """Read-only PGN/Celery payload measurements; no broker or database connection.
 
-PYTHONPATH=backend backend/.venv/bin/python backend/benchmarks/pgn_payload.py \
+PYTHONPATH=backend:database backend/.venv/bin/python backend/benchmarks/pgn_payload.py \
   --pgn /path/to/opening.pgn --trained-color white --initial-depth 6 \
   --output test-results/performance/pgn-payload.json
 

@@ -10,8 +10,8 @@ import json
 
 import chess
 
-from ..database import background_read_connection, connection, read_connection
-from .. import postgres_store
+from tempo_legacy_database.connections import background_read_connection, connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from . import canonical_scope_freshness
 from .canonical_scope_freshness import opportunity_is_current, coverage_run_is_current, coverage_scope_predicate

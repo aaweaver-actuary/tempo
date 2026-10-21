@@ -54,7 +54,7 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
     # module configuration. Publish only to the identity that reserved this
     # generation; deleting that private generation must fence the late result.
     policy_key, generation_key = POLICY_KEY, GENERATION_KEY
-    from ..database import background_read_connection
+    from tempo_legacy_database.connections import background_read_connection
     from .activity_gate import activity_gate
     try:
         shared = redis_admission_gate.configured()

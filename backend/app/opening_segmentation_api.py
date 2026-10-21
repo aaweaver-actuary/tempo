@@ -6,9 +6,9 @@ from typing import Literal
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from .command_gateway import register_command
-from .database import read_connection
+from tempo_legacy_database.connections import read_connection
 from .services.opening_segmentation import RECOMMENDATION_VERSION, POLICY_VERSION, stable_key
 from .services.postgres_opening_segmentation import request_segmentation_in_transaction
 

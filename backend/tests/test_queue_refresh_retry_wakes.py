@@ -10,7 +10,8 @@ from types import SimpleNamespace
 import pytest
 from psycopg.errors import TransactionTimeout
 
-from app import command_gateway, database, tasks
+from app import command_gateway, tasks
+from tempo_legacy_database import connections as database
 from app.services import durable_tasks, queue_refresh_wakeup
 
 

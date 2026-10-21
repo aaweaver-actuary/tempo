@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 from tempo_learning_runtime import api
 from tempo_learning_runtime.config import Configuration
-from tempo_learning_runtime.database import current_database
+from tempo_learning_database.connections import current_database
 
 
 class SavedDatabase:
@@ -152,7 +152,7 @@ def test_legacy_removed_triggers_raise_before_any_adapter_or_generator():
 
 
 def test_learning_calculation_has_no_worker_pool_or_provider_composition():
-    import tempo_learning_runtime.database as database_module
+    import tempo_learning_database.connections as database_module
     import inspect
     source = inspect.getsource(api)
     assert "EndgameIO" not in source

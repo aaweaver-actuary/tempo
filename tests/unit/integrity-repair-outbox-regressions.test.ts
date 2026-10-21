@@ -62,7 +62,7 @@ const operationLifecycleCases = [
 const taskLifecycleStates = ["queued", "leased", "retrying", "complete", "failed", "superseded"] as const;
 
 function producerConstraintStates(tableName: "operation_receipts" | "background_tasks") {
-  const migrationDirectory = resolve("backend/migrations");
+  const migrationDirectory = resolve("database/tempo_legacy_database/ddl/migrations");
   let stateLiterals: string | undefined;
   for (const filename of readdirSync(migrationDirectory).filter(filename => /^\d+.*\.sql$/.test(filename)).sort()) {
     const sql = readFileSync(resolve(migrationDirectory, filename), "utf8");
@@ -80,7 +80,7 @@ it("repair outbox handles every backend receipt and task lifecycle state deliber
   expect(operationLifecycleCases.map(item => item.state).filter(state => state !== "unknown").sort())
     .toEqual(producerConstraintStates("operation_receipts"));
   expect([...taskLifecycleStates].sort()).toEqual(producerConstraintStates("background_tasks"));
-  const sqliteSchema = readFileSync(resolve("backend/app/database.py"), "utf8");
+  const sqliteSchema = readFileSync(resolve("database/tempo_legacy_database/connections.py"), "utf8");
   const sqliteTaskStates = sqliteSchema.match(/CREATE TABLE IF NOT EXISTS background_tasks[\s\S]*?CHECK\(state IN \(([^)]+)\)\)/);
   expect(sqliteTaskStates).not.toBeNull();
   expect(Array.from(sqliteTaskStates![1].matchAll(/'([^']+)'/g), match => match[1]).sort()).toEqual([...taskLifecycleStates].sort());

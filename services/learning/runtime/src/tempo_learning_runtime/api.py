@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from psycopg_pool import PoolTimeout
 from .config import Configuration
-from .database import Database, connection
+from tempo_learning_database.connections import Database, connection
 from . import gateway, queue_commands, queue_application, study_attempt_commands
 from .clock import date
 from .models import (
@@ -25,7 +25,7 @@ from .models import (
 from .study_contracts import StudyAttemptRequest, StudySelfAssessmentRequest
 from .review_adapter import submit_legacy_review
 from .review_conflicts import ReviewConflict
-from . import postgres_opening_evidence as evidence
+from tempo_learning_database.adapters import postgres_opening_evidence as evidence
 from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 from .maintenance import safe_run_once
 from .publications import PublicationBundle, stage, activate, retire
@@ -36,7 +36,7 @@ from .defense import (
     submit_defense_attempt,
     submit_defense_recognition,
 )
-from . import endgame_store
+from tempo_learning_database.adapters import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
 from . import study_bootstrap, teaching_commands
@@ -278,7 +278,7 @@ def create_app(configuration: Configuration):
     def ready():
         try:
             with connection(read_only=True) as db:
-                from .migrate import expected_migrations
+                from tempo_learning_database.ddl.migrate import expected_migrations
 
                 applied = dict(
                     db.execute_native(

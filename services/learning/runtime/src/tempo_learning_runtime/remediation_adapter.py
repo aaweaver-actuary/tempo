@@ -18,7 +18,7 @@ from tempo_learning_remediation import (
 )
 
 from .clock import date
-from .database import current_database
+from tempo_learning_database.connections import current_database
 from .durable_tasks import enqueue_task_in_transaction
 
 
@@ -327,7 +327,7 @@ class CandidateFacts:
 
 def maintain_one(database, payload):
     from .admission import admit_prelocked, lock_card
-    from .queue_position_lock import lock_queue_date_for_position
+    from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
     from .real_game_feedback import MISS_REASON
 
     owned = repository(database, background=True)

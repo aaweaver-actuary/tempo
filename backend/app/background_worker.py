@@ -10,7 +10,7 @@ import signal
 import httpx
 
 from .main import coordinator  # Registers every durable task handler.
-from .services.database_executor import database_writer
+from tempo_legacy_database.adapters.database_executor import database_writer
 
 
 async def wait_for_api() -> None:

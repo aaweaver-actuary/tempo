@@ -1,6 +1,6 @@
 """SQL evidence for a prepared command; no Python decoding/hashing under locks."""
 from dataclasses import dataclass
-from .postgres_store import TempoRow
+from tempo_legacy_database.adapters.postgres_store import TempoRow
 
 
 @dataclass(frozen=True)

@@ -8,12 +8,12 @@ import json
 
 from fastapi import HTTPException
 import tempo_learning_review as learning
-from . import postgres_store
-from .database import connection
+from tempo_learning_database.adapters import postgres_store
+from tempo_learning_database.connections import connection
 from .models import ReviewRequest
-from .postgres_store import PostgresConnection
+from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .review_conflicts import ReviewConflict
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import queue_application
 from .review_service import apply_scheduling_review, capture_daily_queue_order, preserve_daily_queue_order
 from .review_reconciliation import (
@@ -93,7 +93,7 @@ def translate_failure(error):
     if isinstance(error, learning.ReviewConflict):
         return ReviewConflict(error.code, error.message, retryable=error.retryable)
     if error.code == "opening_evidence_conflict":
-        from .postgres_opening_evidence import evidence_error
+        from tempo_learning_database.adapters.postgres_opening_evidence import evidence_error
 
         return evidence_error(error.message, error.code)
     return HTTPException(error.status_code, error.message)
@@ -468,7 +468,7 @@ class LearningReviewAdapter:
         )
 
     def persist_evidence(self, command):
-        from .postgres_opening_evidence import persist_checkpoint
+        from tempo_learning_database.adapters.postgres_opening_evidence import persist_checkpoint
 
         with training_timing_stage("completion_evidence"):
             persist_checkpoint(
@@ -481,7 +481,7 @@ class LearningReviewAdapter:
             )
 
     def complete_evidence(self, command, result):
-        from .postgres_opening_evidence import complete_review_evidence
+        from tempo_learning_database.adapters.postgres_opening_evidence import complete_review_evidence
 
         complete_review_evidence(
             self.database, self.request.opening_evidence_completion, result

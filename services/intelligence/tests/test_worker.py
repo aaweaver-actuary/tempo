@@ -455,7 +455,7 @@ def test_lifespan_shutdown_with_failed_cleanup_terminates_without_new_slice(monk
         store.errors["fail"] = RuntimeError("SECRET_DATABASE_CLEANUP_FAILURE")
         client = LocalClient(store, blocked=True)
         worker = Worker(store, LocalCredentials(), client)
-        import tempo_intelligence.store as store_module
+        import tempo_intelligence_database.adapters.store as store_module
         monkeypatch.setattr(store_module, "Store", lambda configuration: store)
         app = create_app(configuration(), worker=worker)
         lifespan = app.router.lifespan_context(app)
@@ -506,7 +506,7 @@ def test_lifespan_does_not_close_owned_store_until_inflight_operation_ends(monke
         store = LocalStore(blocked=operation, gate=gate)
         client = LocalClient(store, error=ProviderFailure("provider_unavailable", retryable=True) if operation == "fail" else None)
         worker = Worker(store, LocalCredentials(), client)
-        import tempo_intelligence.store as store_module
+        import tempo_intelligence_database.adapters.store as store_module
         monkeypatch.setattr(store_module, "Store", lambda configuration: store)
         app = create_app(configuration(), worker=worker)
         lifespan = app.router.lifespan_context(app)
@@ -659,7 +659,7 @@ def test_repeated_cancellation_during_final_executor_join_preserves_provider_can
 def test_lifespan_cancellation_during_owned_store_close_drains_and_joins_runner(monkeypatch):
     async def scenario():
         import tempo_intelligence.api as api_module
-        import tempo_intelligence.store as store_module
+        import tempo_intelligence_database.adapters.store as store_module
         from tempo_intelligence.runtime import DatabaseRunner
 
         gate = DatabaseGate()
@@ -710,7 +710,7 @@ def test_lifespan_cancellation_during_owned_store_close_drains_and_joins_runner(
 def test_lifespan_startup_cancellation_closes_eventually_created_store_and_runner(monkeypatch, operation):
     async def scenario():
         import tempo_intelligence.api as api_module
-        import tempo_intelligence.store as store_module
+        import tempo_intelligence_database.adapters.store as store_module
         from tempo_intelligence.runtime import DatabaseRunner
 
         gate = DatabaseGate()

@@ -13,8 +13,8 @@ def run_analysis_work(configuration,run_id,maximum=1,client=None):
     Intelligence owns startup, transactions and accepted results. The caller owns
     only its optional worker session; report serving has no worker dependency.
     """
-    from .store import Store
-    from .analysis.store import AnalysisStore
+    from tempo_intelligence_database.adapters.store import Store
+    from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
     from .analysis.worker import work
     store=None
     work_started=False

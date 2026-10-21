@@ -5,7 +5,7 @@ import os
 import pytest
 import chess
 from tempo_intelligence.analysis.models import Manifest,Page,RunRequest,Command
-from tempo_intelligence.analysis.store import AnalysisStore
+from tempo_intelligence_database.adapters.analysis_store import AnalysisStore
 from tempo_intelligence.analysis.worker import work
 from tempo_intelligence.identity import digest
 

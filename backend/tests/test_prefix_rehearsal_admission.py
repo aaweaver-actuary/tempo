@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from scripts.check_postgres_opening_segmentation import idle_prefix_response
-from scripts import check_postgres_opening_segmentation as rehearsal
+from database.tests.check_postgres_opening_segmentation import idle_prefix_response
+import database.tests.check_postgres_opening_segmentation as rehearsal
 from app.services import redis_admission_gate
 
 
@@ -34,8 +34,8 @@ def test_prefix_rehearsal_admission_is_bounded_and_retains_retry_header_contract
         idle_prefix_response(client, "GET", "/source")
     monkeypatch.setattr(redis_admission_gate, "foreground_present", lambda: True)
     clock = iter([0, 0, 11])
-    monkeypatch.setattr("scripts.check_postgres_opening_segmentation.time.monotonic", lambda: next(clock))
-    monkeypatch.setattr("scripts.check_postgres_opening_segmentation.time.sleep", lambda _: None)
+    monkeypatch.setattr("database.tests.check_postgres_opening_segmentation.time.monotonic", lambda: next(clock))
+    monkeypatch.setattr("database.tests.check_postgres_opening_segmentation.time.sleep", lambda _: None)
     client.reset_mock()
     with pytest.raises(AssertionError, match="within 10 seconds"):
         idle_prefix_response(client, "GET", "/source")

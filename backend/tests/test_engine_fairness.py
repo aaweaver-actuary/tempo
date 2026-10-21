@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 from app.services import threat_pipeline
 from test_defensive_analysis_pause import seed_exercise_requests
 

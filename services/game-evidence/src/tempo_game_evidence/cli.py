@@ -12,7 +12,7 @@ from .api import create_app
 from .delivery import AuthRetryRefused, deliver_one, learning_token, retry_auth_delivery
 from .providers import AccountImport, enqueue_import, import_one, cancel_import
 from .snapshot import ComparisonSnapshotV2, parse_snapshot
-from .store import EvidenceStore
+from tempo_game_evidence_database.adapters.store import EvidenceStore
 from .source import MAX_SOURCE_BYTES
 
 

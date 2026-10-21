@@ -7,8 +7,8 @@ import logging
 import sqlite3
 from fastapi import HTTPException
 
-from ..database import connection, read_connection
-from .. import postgres_store
+from tempo_legacy_database.connections import connection, read_connection
+from tempo_legacy_database.adapters import postgres_store
 
 
 from .defensive_analysis import analysis_enabled, recommendation_sql, search_admission_sql, task_admission_sql

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction

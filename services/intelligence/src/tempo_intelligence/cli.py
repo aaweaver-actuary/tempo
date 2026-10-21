@@ -81,7 +81,7 @@ def main(arguments=None):
     store = None
     try:
         if options.command == "migrate":
-            from .migrate import migrate
+            from tempo_intelligence_database.ddl.migrate import migrate
 
             migrate(private_text(options.owner_url_file), options.workspace, options.runtime_role)
             result = {"migration": "complete", "workspace_id": options.workspace}
@@ -92,7 +92,7 @@ def main(arguments=None):
 
                 uvicorn.run(create_app(configuration), host=options.host, port=options.port, access_log=False)
                 return 0
-            from .store import Store
+            from tempo_intelligence_database.adapters.store import Store
 
             store = Store(configuration)
             store.validate_startup()

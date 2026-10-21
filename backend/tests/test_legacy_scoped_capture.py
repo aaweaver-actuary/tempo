@@ -310,7 +310,7 @@ def test_read_only_source_inspection_needs_no_obligation_delivery_or_mutating_po
 
 def test_integrity_owner_read_projection_performs_only_one_select_and_no_readiness_work():
     from app.services.postgres_integrity import current_integrity_certificate
-    from app.postgres_store import TempoRow
+    from tempo_legacy_database.adapters.postgres_store import TempoRow
     statements = []
     row = integrity_row("needs_repair")
     class ReadOnly:

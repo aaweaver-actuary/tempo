@@ -1,5 +1,5 @@
 import { withMissingReceipts } from "./support/study-intent-fixtures";
-import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
+import { initializeStudyIntentStorage } from "../../database/browser/study-intent-storage";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   enqueueTrainingFailure,

@@ -24,7 +24,7 @@ The registered artifact is `tempo-learning-remediation` 0.1.0; Game Evidence
 | `TEMPO_COMPONENT_PYTHON=<contract-consumer>/bin/python node tools/component-build/test-lane.mjs --component game-evidence-contracts` | **89 passed**, zero failures/skips. |
 | Contract-only environment: `python contracts/export_schemas.py --check`; `python contracts/check_dependencies.py` | **31 schemas verified**; five packages retain their declared import boundaries. |
 | `node tools/component-build/check-components.mjs --component learning-remediation --component game-evidence-contracts` | **Passed**: actual metadata, public exports, migrations/build inputs and registered suites. |
-| `TEMPO_TEST_TIMING_DIR=test-results/remediation-browser-retry node scripts/test-postgres-docker.mjs --mode browser --browser-file frozen-opening-order.spec.ts` | **1 native Chromium case passed (4.1s)**; issued board/attempt survives frozen-order refresh/replacement. Owned stack cleanup passed. |
+| `TEMPO_TEST_TIMING_DIR=test-results/remediation-browser-retry node database/tests/test-postgres-docker.mjs --mode browser --browser-file frozen-opening-order.spec.ts` | **1 native Chromium case passed (4.1s)**; issued board/attempt survives frozen-order refresh/replacement. Owned stack cleanup passed. |
 | `npm run check:conflicts`; `git diff --check`; byte-preservation diff against base for v1 models/schemas/fixtures/producer | **Passed**, v1 wire inputs unchanged. |
 
 The final native image identity was

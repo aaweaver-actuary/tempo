@@ -8,8 +8,8 @@ import uuid
 
 import chess
 
-from ..database import connection
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.connections import connection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 
 
 FINDING_PRIORITY = {

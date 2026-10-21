@@ -5,14 +5,14 @@ import importlib.util
 from pathlib import Path
 import pytest
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.canonical_prefix_api import save_prefix
 from app.services import canonical_prefix_preview as previews
 from app.services.durable_tasks import claim_task, requeue_interrupted_tasks
 from test_canonical_repertoire_prefix import prefix_database
 
 # CI collects from a script entrypoint without the repository root on sys.path.
-retention_proof_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_canonical_retention.py'
+retention_proof_path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_canonical_retention.py'
 retention_proof_specification = importlib.util.spec_from_file_location('canonical_retention_proof', retention_proof_path)
 retention_proof = importlib.util.module_from_spec(retention_proof_specification)
 retention_proof_specification.loader.exec_module(retention_proof)
@@ -173,7 +173,7 @@ def test_canonical_prefix_retention_partial_batch_restart_and_stale_replay_are_i
     with database.connection() as connection:
         checkpoint = connection.execute('SELECT payload_json FROM background_tasks WHERE id=?', (interrupted['id'],)).fetchone()[0]
         connection.execute("UPDATE background_tasks SET lease_expires_at='2000-01-01' WHERE id=?", (interrupted['id'],))
-    from app.services.database_executor import database_writer
+    from tempo_legacy_database.adapters.database_executor import database_writer
     database_writer.stop()
     database_writer.start()
     requeue_interrupted_tasks()
@@ -217,7 +217,7 @@ def test_canonical_prefix_retention_limits_victims_even_when_children_are_empty(
 def test_canonical_retention_keeps_admission_deferral_evidence_without_spending_three_admitted_slices(retention_fixture, monkeypatch):
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / 'scripts'))
-    import postgres_rehearsal_admission
+    import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
     original = previews.execute_prefix_preview_slice
     denied, claimed = [], []
 

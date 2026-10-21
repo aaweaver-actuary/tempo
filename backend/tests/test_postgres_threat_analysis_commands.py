@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app import command_dispatch, main, postgres_store, threat_analysis_commands
+from app import command_dispatch, main, threat_analysis_commands
+from tempo_legacy_database.adapters import postgres_store
 from app.models import GameAnalysisLeaseRequest, ThreatAnalysisFailureRequest, ThreatAnalysisSubmission
 
 

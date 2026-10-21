@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { initializeStudyIntentStorage, legacyStudyCutoverRequired, studyIntentStorageError, studyIntentStorageReady, subscribeStudyIntents } from "../lib/study-intent-storage";
+import { initializeStudyIntentStorage, legacyStudyCutoverRequired, studyIntentStorageError, studyIntentStorageReady, subscribeStudyIntents } from "../../database/browser/study-intent-storage";
 import { Button } from "./buttons/BaseButton";
 
 /** No Study callbacks mount until durable storage has committed its current hydration. */

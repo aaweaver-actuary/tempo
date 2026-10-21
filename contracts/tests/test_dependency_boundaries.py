@@ -20,7 +20,7 @@ SPECIFICATION.loader.exec_module(BOUNDARY)
         "if False:\n    import celery",
         "from numpy import array",
         "import importlib\nimportlib.import_module('backend.app.tasks')",
-        "module = __import__('backend.app.database')",
+        "module = __import__('tempo_legacy_database.connections')",
         "import sys\nsys.path.append('/repository')",
         "from ...backend import models",
         "from .unavailable import private",

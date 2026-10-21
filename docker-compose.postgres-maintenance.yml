@@ -28,7 +28,7 @@ services:
         mode: 0400
     depends_on:
       postgres: {condition: service_healthy}
-    command: ["scripts/apply_postgres_migrations.py"]
+    command: ["database/tooling/apply_postgres_migrations.py"]
 
 secrets:
   reader_password:

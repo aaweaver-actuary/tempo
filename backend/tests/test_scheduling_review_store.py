@@ -92,7 +92,7 @@ def test_scheduling_wrapper_missing_source_replay_card_preserves_error(schedulin
 
 
 def test_scheduling_store_never_commits_outside_command_owner(scheduling_database):
-    from app.services.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
     class BorrowedConnection:
         def execute(self, *args):
             return scheduling_database.execute(*args)
@@ -111,7 +111,7 @@ def test_scheduling_store_never_commits_outside_command_owner(scheduling_databas
 
 def test_scheduling_store_maturity_filters_invalidated_history_and_preserves_seed_and_ties(scheduling_database):
     from app.services.scheduling_review_application import MaturityFacts, OpeningSeedFacts
-    from app.services.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
     for rating, timestamp, invalidated in [('correct','2026-01-01T10:00:00',None),
         ('correct','2026-01-01T12:00:00',None),('correct','2026-01-02T10:00:00',None),
         ('again','2026-01-02T10:00:00',None),('again','2026-01-03T10:00:00','retired')]:

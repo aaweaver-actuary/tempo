@@ -427,7 +427,7 @@ def test_selected_handoff_upsert_uses_prior_fence_and_checks_the_owner_result(se
 
 @pytest.mark.parametrize('fence,placeholder_count', [('existing', 14), ('absent', 10)])
 def test_selected_handoff_fence_retains_native_parameter_binding(fence, placeholder_count):
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from app.services import durable_tasks
     predicate = durable_tasks._SELECTED_REBUILD_UPSERT_FENCE if fence == 'existing' else ' WHERE FALSE'
     translated = postgres_store.postgres_sql(durable_tasks._TASK_UPSERT_SQL + predicate + ' RETURNING *')
@@ -517,7 +517,7 @@ def test_selected_execution_baseline_requires_an_authoritatively_unstarted_graph
 
 
 def native_recovery_fixture_module():
-    path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_graph_recovery.py'
+    path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_opening_graph_recovery.py'
     spec = importlib.util.spec_from_file_location('native_recovery_fixture_isolation', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

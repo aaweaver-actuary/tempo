@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { planHash, collectCases } from './ci-verification-plan.mjs';
 import { frontendInventory, frontendResults, browserResults } from './ci-run-layer.mjs';
 import { resolvePython } from './resolve-python.mjs';
-import { postgresTestStages } from './postgres-test-plan.mjs';
+import { postgresTestStages } from '../database/tests/postgres-test-plan.mjs';
 import { testIdentity } from './ci-fast-lane.mjs';
 import { fastCommands } from './ci-fast-commands.mjs';
 
@@ -26,7 +26,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   mkdirSync('test-results/fast-lane',{recursive:true});
   function run(name, command, args, env = {}) {
     const start = performance.now();
-    const result = spawnSync(command,args,{stdio:name === 'browser_inventory' ? ['ignore','pipe','inherit'] : 'inherit',encoding:'utf8',maxBuffer:16*1024*1024,env:{...process.env,PYTHONPATH:'backend',...(name === 'browser_inventory' ? {TEMPO_DOCKER_URL:'http://127.0.0.1:4173'} : {}),...env}});
+    const result = spawnSync(command,args,{stdio:name === 'browser_inventory' ? ['ignore','pipe','inherit'] : 'inherit',encoding:'utf8',maxBuffer:16*1024*1024,env:{...process.env,PYTHONPATH:'backend:database',...(name === 'browser_inventory' ? {TEMPO_DOCKER_URL:'http://127.0.0.1:4173'} : {}),...env}});
     if (name === 'browser_inventory' && result.status === 0) writeFileSync('test-results/fast-lane/browser-inventory.json',result.stdout);
     report.commands.push({name,command,args,exit_code:result.status,error:result.error?.message ?? null,duration_seconds:(performance.now()-start)/1000});
     if (result.status !== 0 || result.error) throw new Error(`${name} failed`);

@@ -6,7 +6,8 @@ import json
 from fastapi import HTTPException
 import pytest
 
-from app import command_dispatch, game_analysis_publication, main, postgres_store
+from app import command_dispatch, game_analysis_publication, main
+from tempo_legacy_database.adapters import postgres_store
 from app.models import GameAnalysisRequest
 
 

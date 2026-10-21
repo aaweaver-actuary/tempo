@@ -29,10 +29,10 @@ PUBLIC database/schema grants are revoked. Owner default privileges grant runtim
 Run from the checkout root after installing the dedicated fixture dependencies:
 
 ```sh
-uv pip install --python contracts/.venv/bin/python -r contracts/database-ownership/requirements-test.txt
-contracts/.venv/bin/python contracts/database-ownership/run.py
+uv pip install --python contracts/.venv/bin/python -r database/ownership/requirements-test.txt
+contracts/.venv/bin/python database/ownership/run.py
 ```
 
 Docker/loopback access is required; use Codex's elevated execution path. Missing Docker/image/database capability fails the selected proof; it is never a skip/pass. The fixture owns teardown and verifies its container disappeared; it creates no persistent volume. Abrupt host termination may leave only its uniquely labelled container, which requires ownership verification before cleanup.
 
-A passing fixture proves the tested authorization configuration. It does **not** prove production role adoption, deployed isolation, production migrations, crash recovery, worker preemption, or independence from shared PostgreSQL resource pressure. The legacy `scripts/provision_postgres_roles.py` provisions shared reader/writer roles and is not changed here.
+A passing fixture proves the tested authorization configuration. It does **not** prove production role adoption, deployed isolation, production migrations, crash recovery, worker preemption, or independence from shared PostgreSQL resource pressure. The legacy `database/tooling/provision_postgres_roles.py` provisions shared reader/writer roles and is not changed here.

@@ -9,7 +9,7 @@ import time
 import pytest
 from pydantic import ValidationError
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import durable_tasks, background_diagnostics, background_runtime
 from app.services.background_metrics import increment, BackgroundDiagnostics
 from app.services.engine_diagnostics import record_engine_outcome
@@ -440,7 +440,7 @@ def test_background_metric_outcomes_roll_back_with_their_transaction(diagnostic_
 
 
 def test_postgres_background_counter_flush_follows_domain_writes_and_sorts_locks():
-    from app.postgres_store import PostgresConnection
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
     statements=[]
     class Raw:
         def execute(self,statement,parameters=()):
@@ -592,7 +592,7 @@ def test_background_delivery_preflight_is_classified_and_measured_before_handler
 
 
 def test_background_delivery_preflight_uses_primary_and_read_only_transaction(diagnostic_database,monkeypatch):
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
     from types import SimpleNamespace
     task()
     claimed=durable_tasks.claim_task('daily_queue')
@@ -722,7 +722,7 @@ def test_background_admission_timing_excludes_diagnostic_publication(monkeypatch
 def test_background_postgres_snapshot_disables_jit_before_budgeted_classification(diagnostic_database, monkeypatch):
     """Canonical freshness predicates must not spend the snapshot budget compiling SQL."""
     from contextlib import contextmanager
-    from app import postgres_store
+    from tempo_legacy_database.adapters import postgres_store
 
     statements = []
 

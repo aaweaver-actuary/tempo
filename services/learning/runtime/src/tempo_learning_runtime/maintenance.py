@@ -5,7 +5,7 @@ import json, logging
 import psycopg
 from tempo_learning_remediation import RemediationError
 from psycopg_pool import PoolTimeout
-from .database import connection
+from tempo_learning_database.connections import connection
 from .durable_tasks import claim
 from .admission import admit, next_candidates
 from . import frozen_opening_order, queue_ordering, queue_application
@@ -117,7 +117,7 @@ def apply_task(task):
             payload["after_order_key"] = candidates[0]["sort_key"]
             finish_slice(database, task, payload, True)
         else:
-            from .queue_position_lock import lock_queue_date_for_position
+            from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 
             token = frozen_opening_order.activation(database, lock=True)
             lock_queue_date_for_position(database, day)

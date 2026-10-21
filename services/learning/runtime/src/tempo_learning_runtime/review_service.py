@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from .clock import date
 import hashlib, json
-from .postgres_store import PostgresConnection
+from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .scheduler import schedule_review, unlock_ready
 from .opening_progression import unlock_legacy_children_after_review
 
@@ -131,7 +131,7 @@ def apply_scheduling_review(
     from .scheduling_review_application import (
         apply_scheduling_review as apply_review_to_store,
     )
-    from .scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_learning_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
 
     result = apply_review_to_store(
         OwnedConnectionSchedulingReviewStore(database),
@@ -211,7 +211,7 @@ def ensure_card_queued_after(
             current_miss_sql,
             order_candidates,
         )
-        from .database import current_database
+        from tempo_learning_database.connections import current_database
 
         rows = database.execute_native(
             """SELECT q.id,q.position,q.card_id,q.gameplay_priority_reason,q.admission_repertoire_id,

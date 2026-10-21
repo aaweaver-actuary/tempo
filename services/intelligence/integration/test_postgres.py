@@ -17,9 +17,9 @@ from tempo_analysis_jobs_contracts.v1 import MaiaResult, JobStatus
 from tempo_intelligence.api import create_app
 from tempo_intelligence.errors import DomainError
 from tempo_intelligence.identity import digest, source_descriptor
-from tempo_intelligence.migrate import migrate
+from tempo_intelligence_database.ddl.migrate import migrate
 from tempo_intelligence.models import RequestInput
-from tempo_intelligence.store import Store
+from tempo_intelligence_database.adapters.store import Store
 
 from .support import request_value, register, ready, maia_result, owner_execute
 
@@ -45,7 +45,7 @@ def test_fresh_and_idempotent_migrations_and_workspace_rebind_refusal(state):
     with pytest.raises(ValueError,match="workspace_rebind_refused"):
         migrate(upgrade,"different")
     with psycopg.connect(upgrade) as database:
-        assert database.execute("SELECT count(*) FROM intelligence.migration_history").fetchone()[0]==len(__import__("tempo_intelligence.migrate",fromlist=["expected_migrations"]).expected_migrations())
+        assert database.execute("SELECT count(*) FROM intelligence.migration_history").fetchone()[0]==len(__import__("tempo_intelligence_database.ddl.migrate",fromlist=["expected_migrations"]).expected_migrations())
 
 
 @pytest.mark.parametrize("statement",[
@@ -82,7 +82,7 @@ def test_startup_checks_workspace_migration_checksums_and_runtime_authority(stat
         with pytest.raises(DomainError,match="migration_state_mismatch"):
             store.validate_startup()
     finally:
-        from tempo_intelligence.migrate import expected_migrations
+        from tempo_intelligence_database.ddl.migrate import expected_migrations
         for identity,checksum in expected_migrations().items():
             owner_execute("UPDATE intelligence.migration_history SET checksum=%s WHERE id=%s",(checksum,identity))
     privileged=Store(replace(config,database_url=os.environ["TEMPO_INTELLIGENCE_TEST_OWNER_URL"]))
@@ -592,7 +592,7 @@ def test_provider_origin_mismatch_is_ineligible_without_blocking_maia_retry(stat
 
 
 def test_legacy_maia_retry_preserves_persisted_constraints_and_refresh_uses_current_budget(state,monkeypatch):
-    from tempo_intelligence import store as store_module
+    from tempo_intelligence_database.adapters import store as store_module
     store,_,_=state
     current_builder=store_module.build_maia_job
     def legacy_builder(*arguments):

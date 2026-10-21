@@ -23,7 +23,7 @@ from app.services import stalemate_swindles as swindles
 from app.services.study_grading import evaluate_answer
 from app.services.study_portable import import_bundle, validate_bundle
 from app.study_contracts import MoveAnswer
-from app.study_migration import STUDY_TABLES
+from tempo_legacy_database.ddl.study_migration import STUDY_TABLES
 
 
 TRAP_FEN = "8/4p3/8/3k4/7R/1q6/8/K7 w - - 0 1"
@@ -810,7 +810,7 @@ def test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated
 ])
 @pytest.mark.parametrize("previous_configuration", [None, "postgresql://previous-proof.invalid/unused"])
 def test_stalemate_postgres_proofs_configure_and_restore_database_environment(monkeypatch, proof_name, previous_configuration):
-    specification = importlib.util.spec_from_file_location("stalemate_postgres_proof", ROOT / "scripts/check_postgres_stalemate_swindles.py")
+    specification = importlib.util.spec_from_file_location("stalemate_postgres_proof", ROOT / "database/tests/check_postgres_stalemate_swindles.py")
     proof_module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(proof_module)
     monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
@@ -838,7 +838,7 @@ def test_stalemate_postgres_proofs_configure_and_restore_database_environment(mo
 
 
 def test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances(monkeypatch):
-    specification = importlib.util.spec_from_file_location("stalemate_postgres_context", ROOT / "scripts/check_postgres_stalemate_swindles.py")
+    specification = importlib.util.spec_from_file_location("stalemate_postgres_context", ROOT / "database/tests/check_postgres_stalemate_swindles.py")
     proof_module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(proof_module)
     pool_closures = []

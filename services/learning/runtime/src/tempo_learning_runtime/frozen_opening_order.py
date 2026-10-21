@@ -5,7 +5,7 @@ from .real_game_feedback import MISS_REASON
 
 
 def activation(database, *, lock=False, exclusive=False):
-    from .postgres_store import PostgresConnection
+    from tempo_learning_database.adapters.postgres_store import PostgresConnection
 
     suffix = (
         (" FOR UPDATE" if exclusive else " FOR SHARE")

@@ -14,7 +14,7 @@ import psycopg
 from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
 from fastapi import HTTPException
 
-from . import postgres_store
+from tempo_legacy_database.adapters import postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 
 
@@ -74,7 +74,7 @@ def request_digest(command_name: str, payload: dict[str, Any]) -> str:
 
 def _writer_connection(background: bool):
     if background:
-        from .database import background_connection
+        from tempo_legacy_database.connections import background_connection
         return background_connection()
     return postgres_store.connection(read_only=False)
 
@@ -385,7 +385,7 @@ def read_operation(
     position_claim_request_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if background:
-        from .database import background_read_connection
+        from tempo_legacy_database.connections import background_read_connection
         from .services.activity_gate import activity_gate
         receipt_connection = background_read_connection()
         receipt_control = activity_gate.background_control()

@@ -11,8 +11,8 @@ from fastapi import HTTPException
 from . import queue_application
 from .gateway import register_command
 from .review_conflicts import ReviewConflict
-from .postgres_store import PostgresConnection
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.adapters.postgres_store import PostgresConnection
+from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .durable_tasks import enqueue_task_in_transaction
 from .review_service import capture_daily_queue_order, preserve_daily_queue_order
 

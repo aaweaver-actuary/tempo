@@ -20,6 +20,7 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT / "database"))
 
 
 async def sample_reads(app, store: str, concurrent_clients: int, samples: list[dict]) -> None:
@@ -50,7 +51,7 @@ def percentile(values: list[float], fraction: float) -> float:
 
 async def main_async(arguments) -> None:
     os.environ["TEMPO_DB_PATH"] = str(arguments.sqlite_path)
-    from app import database
+    from tempo_legacy_database import connections as database
     from app.main import app
 
     database.DB_PATH = arguments.sqlite_path

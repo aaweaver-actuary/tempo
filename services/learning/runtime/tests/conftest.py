@@ -6,7 +6,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from fastapi.testclient import TestClient
 from tempo_learning_runtime import Configuration, create_app
-from tempo_learning_runtime.migrate import migrate, grant_runtime
+from tempo_learning_database.ddl.migrate import migrate, grant_runtime
 
 
 @dataclass

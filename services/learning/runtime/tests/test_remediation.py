@@ -10,7 +10,7 @@ import chess, pytest
 from fastapi import HTTPException
 from tempo_chess_core import canonical_fen_key
 from tempo_learning_runtime import receivers, review_adapter
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from tempo_learning_runtime.remediation_adapter import BorrowedConnection, repository
 from tempo_learning_runtime.maintenance import run_once, finish_slice, SupersededWork
 from tempo_learning_runtime.durable_tasks import claim
@@ -96,7 +96,7 @@ def test_repeated_refreshes_do_not_starve_later_remediation_card(case):
 
 @pytest.mark.parametrize('restart', [False, True], ids=['continuing-client', 'recreated-client'])
 def test_remediation_arrival_behind_cursor_is_found_by_followup_pass(case, restart):
-    from tempo_learning_runtime.database import Database
+    from tempo_learning_database.connections import Database
     payload = opening_definitions(['e2e4', 'd2d4'])
     payload['repertoire_limits'] = {'repertoire-a': 0}
     activate(case, payload)

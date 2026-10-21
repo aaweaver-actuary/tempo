@@ -210,7 +210,8 @@ def test_postgres_resurfaced_acceptance_keeps_revision_identity_and_same_choice_
 
 
 def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
-    from app import command_dispatch, discovery_commands, main, postgres_store
+    from app import command_dispatch, discovery_commands, main
+    from tempo_legacy_database.adapters import postgres_store
     from app.command_gateway import request_digest
     from app.models import DiscoveryAcceptanceRequest
     calls = []

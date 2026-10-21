@@ -1,5 +1,5 @@
 import { advanceStudyTimers, settleStudyStorageTasks, interceptIntentWrites } from "./support/study-intent-fixtures";
-import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
+import { initializeStudyIntentStorage } from "../../database/browser/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -865,7 +865,7 @@ it("PR105 non-replay replacement save failure keeps diagnostics off the prior sa
 });
 
 it("pr285_teaching_cross_tab_demo_first_clean_does_not_write_the_legacy_cutover_source", async () => {
-  const local = await import("../../app/utils/local"); const { savedTeachingFacts } = await import("../../app/lib/study-intent-storage");
+  const local = await import("../../app/utils/local"); const { savedTeachingFacts } = await import("../../database/browser/study-intent-storage");
   vi.spyOn(local, "usesLocalApi").mockReturnValue(false);
   render(<Home />);
   await waitFor(() => expect(trainingProps?.card.backendId).toBeUndefined());

@@ -23,7 +23,7 @@ def imports(path):
 
 
 def test_native_recovery_consumer_binds_database_operations_to_feedback_adapter():
-    bound = imports('scripts/check_postgres_queue_attempt_recovery.py')
+    bound = imports('database/tests/check_postgres_queue_attempt_recovery.py')
     assert bound['MISS_REASON'] == ('app.services.real_game_feedback', 'MISS_REASON')
     for name in ('promote_real_game_card', 'has_outstanding_real_game_miss'):
         assert bound[name] == ('app.services.real_game_feedback_adapter', name)

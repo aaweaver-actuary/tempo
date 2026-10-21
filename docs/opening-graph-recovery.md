@@ -45,7 +45,7 @@ Focused checks:
 
 ```sh
 PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_opening_graph_recovery.py backend/tests/test_frozen_opening_order.py backend/tests/test_postgres_durable_phase.py backend/tests/test_opening_progression.py -q --rootdir=.
-PYTHONPATH=backend backend/.venv/bin/python scripts/check_postgres_opening_graph_recovery.py --disposable
+PYTHONPATH=backend backend/.venv/bin/python database/tests/check_postgres_opening_graph_recovery.py --disposable
 ```
 
 The native proof is also registered in the regular PostgreSQL durability suite.

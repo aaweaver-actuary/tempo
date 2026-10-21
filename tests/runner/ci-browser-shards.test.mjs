@@ -193,7 +193,7 @@ test("shard diagnostic success preserves the original failed qualification", () 
 });
 
 test("separate shard resources artifacts and cleanup retain isolated runner ownership", () => {
-  const source = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
+  const source = readFileSync("database/tests/test-postgres-docker.mjs", "utf8");
   const declaration = source.match(/const project = [^;]+;/)[0];
   const first = runInNewContext(`${declaration} project`, { process: { pid: 100 }, randomBytes });
   const second = runInNewContext(`${declaration} project`, { process: { pid: 100 }, randomBytes });

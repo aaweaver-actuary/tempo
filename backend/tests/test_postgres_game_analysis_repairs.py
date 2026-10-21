@@ -1,6 +1,7 @@
 """Legacy Stockfish repairs remain one-row, receipt-backed PostgreSQL commands."""
 
-from app import command_dispatch, game_analysis_commands, main, postgres_store
+from app import command_dispatch, game_analysis_commands, main
+from tempo_legacy_database.adapters import postgres_store
 
 
 class Cursor:

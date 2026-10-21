@@ -26,7 +26,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     throw new Error("A fixed fixture requires one condition in a fresh disposable invocation");
   const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
   const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
-  const fixture = (action: string, ...args: string[]) => docker("run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_training_transition.py", action, identifier, ...args);
+  const fixture = (action: string, ...args: string[]) => docker("run", "--rm", "--no-deps", "schema", "python", "/source/database/tests/check_postgres_training_transition.py", action, identifier, ...args);
   await expect.poll(async () => {
     const health = await request.get(`${api}/health`);
     return health.ok() ? "ready" : await health.text();

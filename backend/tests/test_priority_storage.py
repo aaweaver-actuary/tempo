@@ -8,10 +8,10 @@ from types import SimpleNamespace
 
 import chess
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.services import introduction_priorities as priorities
 from app.services.activity_gate import activity_gate
-from app.services.database_executor import database_writer
+from tempo_legacy_database.adapters.database_executor import database_writer
 from app.services.durable_tasks import claim_task, requeue_interrupted_tasks
 
 

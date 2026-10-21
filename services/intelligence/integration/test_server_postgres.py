@@ -76,7 +76,7 @@ print("installed_loopback_guards_ready", flush=True)
 scenario = sys.argv[2] if len(sys.argv) > 2 else "normal"
 if scenario != "normal":
     from pathlib import Path
-    from tempo_intelligence.store import Store
+    from tempo_intelligence_database.adapters.store import Store
     original_claim, original_fail, original_close = Store.claim, Store.fail, Store.close
     active_claims = 0
 

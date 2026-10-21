@@ -1,7 +1,7 @@
 import { setImmediate } from "node:timers";
 import { vi } from "vitest";
 import type { IntentEnvelope } from "@tempo/browser-intents";
-import * as storage from "../../../app/lib/study-intent-storage";
+import * as storage from "../../../database/browser/study-intent-storage";
 import * as commands from "../../../app/lib/study-command-client";
 
 export function deferred<Value>() {

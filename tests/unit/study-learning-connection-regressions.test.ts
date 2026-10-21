@@ -293,7 +293,7 @@ it("pr291 disconnect fences an unresolved bootstrap", async () => {
 
 it("pr291 R2 registered foreign offline work stays isolated during original resumption", async () => {
   const { client } = await connected(); await client.connectStudy("http://b.test", "workspace-a", credential);
-  const { offlineTrainingDatabase } = await import("../../app/lib/offline-training-storage"); const database = await offlineTrainingDatabase();
+  const { offlineTrainingDatabase } = await import("../../database/browser/offline-training-storage"); const database = await offlineTrainingDatabase();
   await new Promise<void>((resolve, reject) => { const transaction = database.transaction("training", "readwrite"); transaction.objectStore("training").put({ cards: [], attempts: [{ localEntryId: 1, completedAt: "original-time", outcome: "again" }] }, "prepared-daily-queue"); transaction.oncomplete = () => resolve(); transaction.onabort = () => reject(transaction.error); }); database.close();
   const before = await client.retainedStudyData();
   sessionStorage.setItem("tempo-learning-connection-v1", JSON.stringify({ origin: "http://learning.test:8001", workspace: "workspace-a", credential, bootstrap })); vi.resetModules();

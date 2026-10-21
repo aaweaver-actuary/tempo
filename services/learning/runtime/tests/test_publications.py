@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from tempo_chess_core import card_id
 from tempo_learning_runtime.frozen_maia_math import content_fingerprint
 from tempo_learning_runtime import gateway, publications
-from tempo_learning_runtime.database import connection
+from tempo_learning_database.connections import connection
 from concurrency_helpers import extend_gate_budget, wait_for_lock
 from test_runtime import activate, bundle, head, review_payload, submit
 
@@ -291,7 +291,7 @@ def test_old_staged_duplicate_memberships_record_replayable_terminal_failure(cas
 
 
 def test_graph_completeness_failure_rolls_back_activation(case, monkeypatch):
-    from tempo_learning_runtime.postgres_store import PostgresConnection
+    from tempo_learning_database.adapters.postgres_store import PostgresConnection
 
     payload = opening_bundle()
     assert stage(case, payload).status_code == 200

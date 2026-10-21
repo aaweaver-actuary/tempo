@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Header, HTTPException, Path
 from tempo_game_evidence_contracts.v3 import EvidenceDelivery
 
-from . import postgres_store
-from .database import read_connection
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.connections import read_connection
 from .command_dispatch import dispatch_command
 
 router = APIRouter()

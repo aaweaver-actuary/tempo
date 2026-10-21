@@ -291,7 +291,7 @@ def enqueue_opening_graph_rebuild(
 
 
 def load_graph_input(repertoire_id: str) -> GraphInput:
-    from ..database import read_connection
+    from tempo_legacy_database.connections import read_connection
 
     with read_connection() as database:
         lines = tuple(
@@ -330,7 +330,7 @@ def load_graph_input(repertoire_id: str) -> GraphInput:
 
 
 def _load_legacy_snapshot(repertoire_id: str) -> tuple[tuple[dict, ...], dict[str, list[dict]], set[str]]:
-    from ..database import read_connection
+    from tempo_legacy_database.connections import read_connection
 
     with read_connection() as database:
         cards = tuple(
@@ -529,7 +529,7 @@ def prepare_opening_graph_rebuild(task: dict) -> GraphRebuildInput:
     local_day = task["payload"].get("local_day") or date.today().isoformat()
     graph_input = load_graph_input(repertoire_id)
     legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
-    from ..database import background_read_connection
+    from tempo_legacy_database.connections import background_read_connection
     with background_read_connection() as database:
         deleted_ids = frozenset(row[0] for row in database.execute("SELECT card_id FROM deleted_cards"))
     return GraphRebuildInput(
@@ -569,7 +569,7 @@ def publish_opening_graph_rebuild(
 ) -> None:
     """Stage bounded writes and atomically publish a current graph generation."""
 
-    from .database_executor import submit_background_write
+    from tempo_legacy_database.adapters.database_executor import submit_background_write
 
     repertoire_id = task["payload"]["repertoire_id"]
     local_day = task["payload"].get("local_day") or date.today().isoformat()

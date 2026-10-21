@@ -37,7 +37,9 @@ export function restrictedBuild(options) {
   function copyInput(component, input, destination) {
     const source = resolve(root, component.root, input);
     if (!existsSync(source)) throw new Error("Missing declared input: " + source);
-    const target = resolve(destination, input);
+    const target = source.startsWith(resolve(root, "database") + "/")
+      ? resolve(destination, "database", source.slice(resolve(root, "database").length + 1))
+      : resolve(destination, input);
     mkdirSync(resolve(target, ".."), { recursive: true });
     cpSync(source, target, { recursive: true, filter: path => !/[\\/](__pycache__|\.pytest_cache|node_modules|dist|\.venv)([\\/]|$)/.test(path) });
   }

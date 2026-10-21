@@ -11,8 +11,8 @@ from fastapi import HTTPException
 from .services import queue_application
 from .command_gateway import register_command
 from .review_conflicts import ReviewConflict
-from .postgres_store import PostgresConnection
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction
 from .services.review_service import capture_daily_queue_order, preserve_daily_queue_order
 
@@ -23,7 +23,7 @@ _QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL
 def warm_queue_refresh_sql() -> None:
     """Prepare the queue-refresh statement outside a bounded transaction."""
 
-    from .postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
     from .services.durable_tasks import warm_completion_sql
 
     warm_completion_sql()

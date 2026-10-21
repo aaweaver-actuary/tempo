@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ..postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .repertoire_coverage import CoverageCandidate, blend_probabilities, required_reply_moves
 
 

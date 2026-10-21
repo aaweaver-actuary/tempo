@@ -10,8 +10,8 @@ import threading
 
 import chess
 
-from ..database import background_read_connection, connection
-from .. import postgres_store
+from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from .canonical_prefix import game_in_scope
 from .canonical_scope_freshness import game_scope_generation

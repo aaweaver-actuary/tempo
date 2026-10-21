@@ -3,7 +3,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.activity_gate import activity_gate
 

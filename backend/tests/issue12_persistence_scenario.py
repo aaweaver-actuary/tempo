@@ -4,7 +4,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 
-from app import database, postgres_store
+from tempo_legacy_database import connections as database
+from tempo_legacy_database.adapters import postgres_store
 from app.services.durable_tasks import enqueue_task_in_transaction
 from app.services.threat_detection import find_defensive_knight_forks
 from app.services.threat_models import GameSnapshot, SourceLine

@@ -1,5 +1,5 @@
 import { IDBFactory } from "fake-indexeddb";
-import { closeStudyIntentStorage, initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
+import { closeStudyIntentStorage, initializeStudyIntentStorage } from "../../database/browser/study-intent-storage";
 import { afterEach, beforeEach, vi } from "vitest";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { cleanup, configure } from "@testing-library/react";

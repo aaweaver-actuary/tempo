@@ -9,7 +9,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.models import GameSyncRequest, GameSyncJob
 from app.main import app
 import app.main as main_module

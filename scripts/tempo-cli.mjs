@@ -121,7 +121,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   if (source.changes) detail(`Local changes:\n${source.changes}`);
   detail(`Verified deployment: ${previous?.revision ?? "not yet recorded"}`);
   let localSchemaSource, requiredSchema;
-  try { localSchemaSource = readFileSync(join(target.root, "backend/app/schema_version.py"), "utf8"); }
+  try { localSchemaSource = readFileSync(join(target.root, "database/tempo_legacy_database/ddl/schema_version.py"), "utf8"); }
   catch (error) {
     if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EIO"].includes(error.code)) throw error;
     detail(`Local schema evidence: unavailable (${error.code})`);

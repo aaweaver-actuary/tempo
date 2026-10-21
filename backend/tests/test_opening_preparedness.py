@@ -283,7 +283,7 @@ def test_probability_priority_fresh_import_and_scoring_need_no_database_network_
 import importlib.abc, sys
 class DenyRuntimeImports(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname in {'app.database', 'app.main', 'app.postgres_store'} or fullname.split('.')[0] in {'chess', 'fsrs', 'httpx', 'psycopg', 'redis', 'celery'}:
+        if fullname in {'tempo_legacy_database.connections', 'app.main', 'tempo_legacy_database.adapters.postgres_store'} or fullname.split('.')[0] in {'chess', 'fsrs', 'httpx', 'psycopg', 'redis', 'celery'}:
             raise AssertionError('Unexpected runtime import: ' + fullname)
 sys.meta_path.insert(0, DenyRuntimeImports())
 sys.path.insert(0, sys.argv[1])

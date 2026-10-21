@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
-import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
-import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
+import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
+import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
+  readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
 import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redis-readiness.mjs";
@@ -104,7 +104,7 @@ test("training_transition_cleanup_waits_for_restored_background_readiness", asyn
 });
 
 function studyImportPollingFixture(queueResponses, { integrityStatus = "clean", systemResponse } = {}) {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const getSource = source.slice(source.indexOf("async function get("), source.indexOf("async function postCommand("));
   const pollingSource = source.slice(source.indexOf("async function pollForStudyableImport("), source.indexOf("function stableStudyState("));
   const observed = { polls: 0, waits: [], queueReads: 0 };
@@ -182,7 +182,7 @@ function temporaryDirectory(testContext) {
 }
 
 test("import readiness preserves its bound and settled samples across pending queue-head issuance", async () => {
-  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const pollStart = runnerSource.indexOf("async function pollForStudyableImport(");
   const pollEnd = runnerSource.indexOf("\nfunction stableStudyState", pollStart);
   const queue = { projection: { state: "ready", refresh_pending: false } };
@@ -228,7 +228,7 @@ test("queue publication polling propagates service failures instead of reporting
 });
 
 test("preview retention timing succeeds promptly and reports scoped checkpoints at the unchanged deadline", async () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  const retentionDeadline =");
   const finish = source.indexOf('  console.log("PASS PostgreSQL deleted-route', start);
   const retention = source.slice(start, finish);
@@ -314,7 +314,7 @@ test("standalone lifecycle mode requires the complete rehearsal without parent s
 });
 
 test("standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons", async () => {
-  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
@@ -358,7 +358,7 @@ test("standalone lifecycle prepares only missing dependency images on cold and w
 });
 
 test("standalone lifecycle propagates missing dependency acquisition failures with cleanup armed", async () => {
-  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
@@ -374,7 +374,7 @@ test("standalone lifecycle propagates missing dependency acquisition failures wi
 });
 
 test("maintenance image cleanup is armed before build timing publication can fail", async () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  maintenance_cli: async () => {");
   const end = source.indexOf("  startup: async () => {", start);
   const publicationFailure = new Error("Timing publication failed after the image was built");
@@ -386,7 +386,7 @@ test("maintenance image cleanup is armed before build timing publication can fai
 });
 
 test("maintenance cleanup accepts only an absent owned image and preserves other removal failures", async () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const helperStart = source.indexOf("function isMissingMaintenanceImage(result) {");
   const helperEnd = source.indexOf("\n}\n", helperStart) + 2;
   const isMissingMaintenanceImage = runInNewContext(`(${source.slice(helperStart, helperEnd)})`, { maintenanceImage: "owned-maintenance" });
@@ -413,7 +413,7 @@ test("maintenance cleanup accepts only an absent owned image and preserves other
 });
 
 test("lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent", async () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  deployment_lifecycle: async () => {");
   const end = source.indexOf("  background_workloads: async () => {", start);
   assert(start >= 0 && end > start);
@@ -465,12 +465,12 @@ test("repertoire limit recreation fixture includes its final White response", ()
   const board = new Chess();
   board.loadPgn(repertoireLimitRecreationPgn);
   assert.equal(board.turn(), "b", "Recreation must reach study admission without a missing White response");
-  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   assert.match(runnerSource, /importFixture\("repertoire-limit-recreation\.pgn", repertoireLimitRecreationPgn\)/);
 });
 
 test("repertoire limit recreation fixture survives backup then leaves unrelated study state intact", async () => {
-  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const scenarioStart = runnerSource.indexOf('  command_recreation: async () => {');
   const scenarioEnd = runnerSource.indexOf('  browser: async () => {', scenarioStart);
   assert(scenarioStart > 0 && scenarioEnd > scenarioStart);
@@ -518,7 +518,7 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
       return {};
     },
     run: (command, argumentsList) => {
-      if (argumentsList.includes('/source/scripts/verify_postgres_backup.py')) {
+      if (argumentsList.includes('/source/database/tooling/verify_postgres_backup.py')) {
         assert.equal(fixtureRows.get('recreation').new_cards_per_day, 11);
         backupVerified = true;
       }
@@ -575,7 +575,7 @@ test("file focus is explicit, discrete, and restricted to an existing browser ba
 for (const mode of ["full", "browser", "durability", "lifecycle", "priority-benchmark"]) {
   test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
     const directory = temporaryDirectory(context);
-    const result = spawnSync(process.execPath, [resolve(root, "scripts/test-postgres-docker.mjs"), "--list", "--mode", mode], {
+    const result = spawnSync(process.execPath, [resolve(root, "database/tests/test-postgres-docker.mjs"), "--list", "--mode", mode], {
       cwd: directory, encoding: "utf8", timeout: 5_000,
       env: { PATH: "", TEMPO_TEST_TIMING_DIR: join(directory, "timings") },
     });
@@ -752,9 +752,9 @@ test("PostgreSQL command timings classify fixed operations without retaining arg
     [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
     [["compose", "up", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"],
       { label: "postgres_ready", category: "readiness" }],
-    [["run", "migration", "scripts/apply_postgres_migrations.py", "--writer-passfile", "secret-canary"],
+    [["run", "migration", "database/tooling/apply_postgres_migrations.py", "--writer-passfile", "secret-canary"],
       { label: "apply_postgres_migrations", category: "migration" }],
-    [["run", "schema", "/source/scripts/check_postgres_deletion.py"],
+    [["run", "schema", "/source/database/tests/check_postgres_deletion.py"],
       { label: "check_postgres_deletion", category: "scenario" }],
     [["exec", "sh", "pg_dump --password=secret-canary"], { label: "backup_restore", category: "backup" }],
     [["inspect", "secret-canary"], { label: "resource_inspection", category: "inspection" }],
@@ -810,22 +810,22 @@ test("full tier remains unfiltered while UI and browser tiers use browser-only P
     const postgres = stages.filter((stage) => stage.name === "postgres_docker");
     assert.equal(postgres.length, 1);
     assert.deepEqual(postgres[0].args, tier === "full"
-      ? ["scripts/test-postgres-docker.mjs"]
-      : ["scripts/test-postgres-docker.mjs", "--mode", "browser"]);
+      ? ["database/tests/test-postgres-docker.mjs"]
+      : ["database/tests/test-postgres-docker.mjs", "--mode", "browser"]);
   }
 });
 
 test("Make browser and durability select different scopes without changing the release entry point", () => {
   for (const [target, expected] of [
-    ["browser", "node scripts/test-postgres-docker.mjs --mode browser"],
-    ["docker-durability", "node scripts/test-postgres-docker.mjs --mode durability"],
+    ["browser", "node database/tests/test-postgres-docker.mjs --mode browser"],
+    ["docker-durability", "node database/tests/test-postgres-docker.mjs --mode durability"],
     ["full", "node scripts/test-all.mjs full"],
   ]) {
     const result = spawnSync("make", ["-n", target], { cwd: root, encoding: "utf8", timeout: 5_000 });
     assert.equal(result.status, 0, result.stderr);
     assert(result.stdout.includes(expected));
   }
-  const focusedWrapper = readFileSync(join(root, "scripts/run-focused-postgres-browser.mjs"), "utf8");
+  const focusedWrapper = readFileSync(join(root, "database/tests/run-focused-postgres-browser.mjs"), "utf8");
   assert(focusedWrapper.includes('"--mode", "browser", flag, value'));
 });
 
@@ -884,7 +884,7 @@ test("real worker signal verification retains the existing stop boundary and rej
 });
 
 test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   assert.equal(source.split("await managedComposeBuild(").length - 1, 1);
   assert.equal(source.includes('[...compose, "up", "--build"'), false);
   assert.equal(source.includes('[...compose, "up", "-d"'), false);
@@ -953,7 +953,7 @@ test("background workload prevents scheduler claims and restores dispatch after 
 
 for (const failWorkload of [false, true]) {
   test(`background workload isolates consumers and restores them after ${failWorkload ? "failure" : "success"}`, async () => {
-    const { executeIsolatedBackgroundWorkload } = await import("../../scripts/postgres-test-plan.mjs");
+    const { executeIsolatedBackgroundWorkload } = await import("../../database/tests/postgres-test-plan.mjs");
     const events = [];
     const benchmarkFailure = new Error("benchmark failed");
     const result = executeIsolatedBackgroundWorkload({
@@ -971,7 +971,7 @@ for (const failWorkload of [false, true]) {
 }
 
 test("background workload restores partially stopped consumers without masking the isolation failure", async () => {
-  const { executeIsolatedBackgroundWorkload } = await import("../../scripts/postgres-test-plan.mjs");
+  const { executeIsolatedBackgroundWorkload } = await import("../../database/tests/postgres-test-plan.mjs");
   const events = [];
   const isolationFailure = new Error("consumer stop failed");
   await assert.rejects(executeIsolatedBackgroundWorkload({
@@ -983,7 +983,7 @@ test("background workload restores partially stopped consumers without masking t
 });
 
 test("background workload preserves benchmark and consumer restoration failures", async () => {
-  const { executeIsolatedBackgroundWorkload } = await import("../../scripts/postgres-test-plan.mjs");
+  const { executeIsolatedBackgroundWorkload } = await import("../../database/tests/postgres-test-plan.mjs");
   const benchmarkFailure = new Error("benchmark failed");
   const restorationFailure = new Error("consumer restoration failed");
   await assert.rejects(executeIsolatedBackgroundWorkload({
@@ -995,7 +995,7 @@ test("background workload preserves benchmark and consumer restoration failures"
 });
 
 test("issue80 durable application proofs cover recreation and restored pre/post activation state", () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const recreate = source.slice(source.indexOf('  command_recreation: async () => {'), source.indexOf('  backup_restore: async () => {'));
   assert(recreate.indexOf('runPrefixApplicationProof("--seed-retained")') < recreate.indexOf('...compose, "down"'));
   assert(recreate.indexOf('...compose, "up"') < recreate.indexOf('runPrefixApplicationProof("--verify-retained")'));
@@ -1031,7 +1031,7 @@ test("pr102 background restoration recovers API health before starting dependent
   });
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     ["defense-engine", "maia-worker"], "verified all running"]);
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
 });
 
@@ -1049,7 +1049,7 @@ test("pr102 background restoration preserves readiness rejection before engine s
 
 
 test("study_opening_server_restart_quiesces_all_database_clients_before_restart", () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const restartProof = source.slice(source.indexOf("async function verifyStudyOpeningAdmission()"),
     source.indexOf("function verifyProjectIsUnused()"));
   assert(restartProof.includes("executeIsolatedBackgroundWorkload"),
@@ -1064,7 +1064,7 @@ test("study_opening_server_restart_quiesces_all_database_clients_before_restart"
 });
 
 test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const restartProof = source.slice(source.indexOf("async function verifyStudyOpeningAdmission()"),
     source.indexOf("function verifyProjectIsUnused()"));
   const restoreClients = restartProof.indexOf('"up", "--no-build", "-d", "--no-deps", ...postgresClients');
@@ -1075,7 +1075,7 @@ test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () 
 });
 
 test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
-  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  priority_recovery: async () => {"));
   assert(upgradeAction.includes("check_postgres_next_opponent.py"));
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
@@ -1084,12 +1084,12 @@ test("issue107 process restart and foreground profile proof runs in regular dura
 
 
 test("redis_fixture_native_isolation_regressions_run_in_regular_durability", () => {
-  const runner = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
-  assert(runner.includes('"/source/scripts/check_postgres_redis_fixture_isolation.py"'));
+  const runner = readFileSync("database/tests/test-postgres-docker.mjs", "utf8");
+  assert(runner.includes('"/source/database/tests/check_postgres_redis_fixture_isolation.py"'));
 });
 
 test('study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup_checks',async()=>{
-  const {allocatedNativeProofSource}=await import('../../scripts/postgres-maintenance-proof.mjs');
+  const {allocatedNativeProofSource}=await import('../../database/tests/postgres-maintenance-proof.mjs');
   const directory=mkdtempSync(join(tmpdir(),'tempo-native-proof-import-'));
   try{
     writeFileSync(join(directory,'sibling.py'),'VALUE = 173\n');
@@ -1110,7 +1110,7 @@ test('study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup
 });
 
 test('study_priority_restoration_captures_output_and_checks_every_owned_consumer',async()=>{
-  const {verifyRestoredPostgresConsumers}=await import('../../scripts/postgres-maintenance-proof.mjs');
+  const {verifyRestoredPostgresConsumers}=await import('../../database/tests/postgres-maintenance-proof.mjs');
   const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
   const execute=present=>(command,args,options)=>{
     assert.equal(command,'docker');assert.deepEqual(args,['compose','-p','owned','ps','--format','json']);
@@ -1138,9 +1138,9 @@ test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_
   rows.push({Id:'maia',Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':'maia-worker'}},
     HostConfig:{NanoCpus:maia.cpus*1e9,Memory:maia.memoryMiB*1024*1024}});
   assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic),/exceed the aggregate/);
-  const runner=readFileSync(join(root,'scripts/test-postgres-docker.mjs'),'utf8');
-  assert.match(runner,/runAllocatedDiagnosticProof\("\/source\/scripts\/check_postgres_opening_segmentation\.py"/);
-  const original=readFileSync(join(root,'scripts/check_postgres_opening_segmentation.py'),'utf8');
+  const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
+  assert.match(runner,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_opening_segmentation\.py"/);
+  const original=readFileSync(join(root,'database/tests/check_postgres_opening_segmentation.py'),'utf8');
   assert(original.includes("'50ms'"));
   assert(original.includes('assert replay.status_code == 200, replay.text'));
 });
@@ -1156,7 +1156,7 @@ test('study_priority_background_isolation_stops_maia_and_restores_it_after_api_r
 });
 
 test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps', async () => {
-  const {postgresProofAllocations}=await import('../../scripts/postgres-maintenance-proof.mjs');
+  const {postgresProofAllocations}=await import('../../database/tests/postgres-maintenance-proof.mjs');
   assert.equal(typeof postgresProofAllocations,'function');
   const budgets={developmentServices:{schema:{cpus:0.2}},priorityRehearsalServices:{schema:{cpus:1.5}},
     diagnosticRehearsalServices:{schema:{cpus:0.95}}};
@@ -1168,12 +1168,12 @@ test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps'
 });
 
 test('study_priority_large_transition_planning_uses_bounded_diagnostic_allocation_without_retrying_read_failures', () => {
-  const runner=readFileSync(join(root,'scripts/test-postgres-docker.mjs'),'utf8');
+  const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
   const workload=runner.slice(runner.indexOf('  background_workloads: async () => {'),
     runner.indexOf('  priority_benchmark: async () => {'));
-  assert.match(workload,/runAllocatedDiagnosticProof\("\/source\/scripts\/check_postgres_prefix_transition_application\.py"/,
+  assert.match(workload,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_prefix_transition_application\.py"/,
     'The 128/512-line planning proof must not use the 0.2 CPU helper');
-  const proof=readFileSync(join(root,'scripts/check_postgres_prefix_transition_application.py'),'utf8');
+  const proof=readFileSync(join(root,'database/tests/check_postgres_prefix_transition_application.py'),'utf8');
   assert.match(proof,/for obsolete_count in \(128, 512\):/);
   assert.match(proof,/len\(set\(obsolete_ids\)\) == obsolete_count/);
   assert.match(proof,/len\(set\(created_ids\)\) == 2 \* obsolete_count/);
@@ -1198,7 +1198,7 @@ for (const [runnerName, functionEnd] of [
       const lease = await acquireDevelopmentBudget({ directory });
       const admissionLane = join(directory, 'admission-lane');
       const builderLane = join(directory, 'builder-lane');
-      const source = readFileSync(join(root, 'scripts', runnerName), 'utf8');
+      const source = readFileSync(join(root, runnerName === 'test-postgres-docker.mjs' ? 'database/tests' : 'scripts', runnerName), 'utf8');
       const start = source.indexOf('function run(command,');
       const end = source.indexOf(functionEnd, start);
       assert(start >= 0 && end > start, 'Execute the actual owning runner command path');
@@ -1344,7 +1344,7 @@ test('native_startup_rejects_inherited_lease_mismatch_before_any_external_effect
 }));
 
 test('native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation',()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
-  const source=readFileSync(join(root,'scripts/test-postgres-docker.mjs'),'utf8'),name=project+'-maintenance-help',commands=[];
+  const source=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8'),name=project+'-maintenance-help',commands=[];
   const begin=source.indexOf('  maintenance_cli: async () => {'),end=source.indexOf('  startup: async () => {',begin);
   const action=runInNewContext(`({${source.slice(begin,end)}})`,{maintenanceImageCleanupRequired:false,maintenanceImage:'owned-maintenance',maintenanceHelpContainer:name,project,
     candidateRevision:'test-revision',process:{env:{TEMPO_DEVELOPMENT_BUDGET_TOKEN:options.token}},console:{log(){}},managedBuild:async build=>build('owned-builder'),run:(_command,args)=>commands.push(Array.from(args))});

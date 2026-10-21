@@ -105,7 +105,7 @@ def test_A_complete_large_publication_measured_without_truncation(case,count,tmp
 
 def test_A_metadata_successor_preserves_issued_attempt_under_measured_foreground_load(case,monkeypatch):
     from tempo_learning_runtime.maintenance import run_once
-    from tempo_learning_runtime.postgres_store import PostgresConnection
+    from tempo_learning_database.adapters.postgres_store import PostgresConnection
     payload=content_bundle(2048)
     activate_v2(case,payload)
     with case.database.scope():
@@ -504,7 +504,7 @@ def test_A_publication_abort_serializes_with_activation(case, monkeypatch, first
     from threading import Event
     from contextvars import ContextVar
     from tempo_learning_runtime import gateway, publication_bridge
-    from tempo_learning_runtime.postgres_store import PostgresConnection
+    from tempo_learning_database.adapters.postgres_store import PostgresConnection
     payload = content_bundle()
     assert stage_v2(case, payload).status_code == 200
     request = request_for(payload)

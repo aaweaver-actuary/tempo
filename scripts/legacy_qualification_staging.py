@@ -11,16 +11,16 @@ import tempfile
 import uuid
 import zipfile
 
-PACKAGE_PARTS = {'src', 'schemas', 'fixtures', 'examples', 'tests', 'integration', 'migrations',
+PACKAGE_PARTS = {'hatch_build.py', 'database', 'src', 'schemas', 'fixtures', 'examples', 'tests', 'integration', 'migrations',
                  'run_suite.py', 'pyproject.toml', 'uv.lock', 'README.md', 'REGRESSIONS.md'}
 SOURCE_FILES = {'scripts/qualify_legacy_bridge.py', 'scripts/qualify_legacy_backend.py',
-                'scripts/legacy_qualification_staging.py', 'scripts/apply_postgres_migrations.py',
-                'scripts/provision_postgres_roles.py',
+                'scripts/legacy_qualification_staging.py', 'database/tooling/apply_postgres_migrations.py',
+                'database/tooling/provision_postgres_roles.py',
                 'contracts/requirements-test.lock', 'services/learning/application/qualification.py',
                 'packages/scheduling/pyproject.toml', 'services/learning/application/pyproject.toml',
                 'services/learning/runtime/pyproject.toml',
                 'backend/pyproject.toml'}
-SOURCE_TREES = ('contracts/database-ownership/', 'backend/app/', 'backend/migrations/',
+SOURCE_TREES = ('database/ownership/', 'backend/app/', 'database/',
                 'backend/integration/legacy_bridge/', 'public/data/')
 MAX_BYTES, MAX_FILES = 2 * 1024**3, 100000
 BACKEND_WHEELS = {'tempo_scheduling': '0.2.0', 'tempo_learning_review': '0.1.0', 'tempo_learning_runtime': '0.1.0'}

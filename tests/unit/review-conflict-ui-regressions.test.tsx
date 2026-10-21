@@ -1,5 +1,5 @@
 import { withMissingReceipts } from "./support/study-intent-fixtures";
-import { closeStudyIntentStorage, initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
+import { closeStudyIntentStorage, initializeStudyIntentStorage } from "../../database/browser/study-intent-storage";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { OfflineReviewConflicts } from "../../app/components/offline-review-conflicts";

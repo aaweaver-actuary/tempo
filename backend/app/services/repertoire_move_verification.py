@@ -8,7 +8,7 @@ import time
 import chess
 from fastapi import HTTPException
 
-from ..database import read_connection
+from tempo_legacy_database.connections import read_connection
 from .repertoire_comparison import canonical_fen
 
 SOURCE_PAGE_SIZE = 64

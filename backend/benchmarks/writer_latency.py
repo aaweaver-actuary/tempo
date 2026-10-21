@@ -17,8 +17,8 @@ from tempfile import TemporaryDirectory
 import threading
 import time
 
-from app import database as database_module
-from app.services.database_executor import DatabaseWriter
+from tempo_legacy_database import connections as database_module
+from tempo_legacy_database.adapters.database_executor import DatabaseWriter
 
 
 class WriterPhaseCapture(logging.Handler):

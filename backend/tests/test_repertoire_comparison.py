@@ -4,7 +4,7 @@ import threading
 
 from fastapi.testclient import TestClient
 
-from app import database
+from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.repertoire_comparison import compare_all_games
 import app.services.repertoire_comparison as repertoire_comparison

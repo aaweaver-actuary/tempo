@@ -23,9 +23,8 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, 
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import (background_read_connection, card_columns, connection, initialize,
-                       query_only_request, read_connection)
-from . import postgres_store
+from tempo_legacy_database.connections import background_read_connection, card_columns, connection, initialize, query_only_request, read_connection
+from tempo_legacy_database.adapters import postgres_store
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
@@ -99,7 +98,7 @@ from .services.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .services.real_game_feedback import MISS_REASON
 from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
-from .storage.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
+from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
 from .services.game_analysis import classify_swings
 from .services.game_analysis_worker import (
     EVIDENCE_VERSION as GAME_WORKER_EVIDENCE_VERSION,
@@ -131,11 +130,7 @@ from .services.game_sync_coordinator import (
     register_maintenance_handler,
     serialize_job,
 )
-from .services.database_executor import (
-    database_writer,
-    submit_background_write,
-    submit_foreground_write,
-)
+from tempo_legacy_database.adapters.database_executor import database_writer, submit_background_write, submit_foreground_write
 from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import claimable, control_order, list_activity, report_progress, set_control
 from .services.background_metrics import BackgroundDiagnostics
@@ -858,7 +853,7 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 @app.get("/api/health")
 def health():
     if postgres_store.configured():
-        from .postgres_readiness import postgres_health
+        from tempo_legacy_database.adapters.postgres_readiness import postgres_health
         response = postgres_health()
         from .services.frozen_maia_math import READER_VERSION
         response["frozen_opening_reader_version"] = READER_VERSION

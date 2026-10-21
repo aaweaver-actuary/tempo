@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 from psycopg.errors import TransactionTimeout
 
-from app import database
+from tempo_legacy_database import connections as database
 from app import activity_commands, queue_commands
 from app.services import durable_tasks
 

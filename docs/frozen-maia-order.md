@@ -13,7 +13,7 @@ Work in an isolated checkout. Use the existing prescribed Python setup and
 `npm ci` for the shared Maia helper. From the checkout root:
 
 ```sh
-backend/.venv/bin/python scripts/frozen-maia-order.py plan \
+backend/.venv/bin/python database/tooling/frozen-maia-order.py plan \
   --config scripts/frozen-maia-order.json \
   --docker-container tempo-postgres-1 \
   --foreground-url http://127.0.0.1:3000/api/system/foreground-requests-active \
@@ -153,12 +153,12 @@ Before applying, inspect the plan's scoring policy, scored/deferred/excluded/
 protected counts, diagnostics, complete scope and exact target identifier.
 
 ```sh
-backend/.venv/bin/python scripts/frozen-maia-order.py apply \
+backend/.venv/bin/python database/tooling/frozen-maia-order.py apply \
   --plan /Users/andy/tempo/test-results/frozen-maia-order/plan.json \
   --target <target-from-plan-command> \
   --reader-url http://127.0.0.1:3000
 
-backend/.venv/bin/python scripts/frozen-maia-order.py verify \
+backend/.venv/bin/python database/tooling/frozen-maia-order.py verify \
   --plan /Users/andy/tempo/test-results/frozen-maia-order/plan.json \
   --target <target-from-plan-command> \
   --reader-url http://127.0.0.1:3000
@@ -209,7 +209,7 @@ refresh separately from actual reader consumption.
 ## Rollback
 
 ```sh
-backend/.venv/bin/python scripts/frozen-maia-order.py rollback \
+backend/.venv/bin/python database/tooling/frozen-maia-order.py rollback \
   --run-id <run-id-from-plan-command> \
   --target <target-from-plan-command>
 ```
@@ -230,7 +230,7 @@ Run the new `backend/tests/test_frozen_maia_*.py` and
 files, the Maia helper/parity unit files, and:
 
 ```sh
-backend/.venv/bin/python scripts/test-frozen-postgres.py
+backend/.venv/bin/python database/tests/test-frozen-postgres.py
 make ui-file FILE=frozen-opening-order.spec.ts
 ```
 
@@ -267,10 +267,10 @@ against their projected columns. Capture fails with the relation name if a
 stable key cannot be established; it does not fall back to a full table scan or
 all-column ordering. Pages remain bounded at 128 rows, and two complete passes
 must agree. The SELECT-only `tempo_reader` role is exercised by
-`backend/.venv/bin/python scripts/test-frozen-postgres.py`.
+`backend/.venv/bin/python database/tests/test-frozen-postgres.py`.
 
 The full disposable command proof is
-`backend/.venv/bin/python scripts/test-frozen-cli.py`. It creates a unique
+`backend/.venv/bin/python database/tests/test-frozen-cli.py`. It creates a unique
 PostgreSQL/Redis Compose project, starts the API and foreground/background
 workers, uses separate reader and writer roles, runs real Maia plan/apply,
 repeats apply, waits for ordinary queue refresh, fetches the actual queue to

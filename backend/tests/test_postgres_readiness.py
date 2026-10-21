@@ -9,8 +9,10 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 import pytest
 
-from app import command_dispatch, main, postgres_readiness, postgres_store
-from app.schema_version import POSTGRES_SCHEMA_VERSION
+from app import command_dispatch, main
+from tempo_legacy_database.adapters import postgres_readiness
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 class Cursor:

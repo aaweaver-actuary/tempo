@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 const postgresTestUrl = process.env.TEMPO_DOCKER_URL;
 if (!postgresTestUrl) {
-  throw new Error("Regular Playwright tests require an isolated PostgreSQL stack; use make browser or scripts/test-postgres-docker.mjs");
+  throw new Error("Regular Playwright tests require an isolated PostgreSQL stack; use make browser or database/tests/test-postgres-docker.mjs");
 }
 // Keep Node-authored fixture dates and browser dates on the disposable API's clock.
 const postgresTestTimezone = "America/New_York";

@@ -11,8 +11,8 @@ import psycopg, pytest
 from fastapi import HTTPException
 from tempo_game_evidence_contracts.v1 import EvidenceAcknowledgement
 from tempo_learning_runtime import receivers
-from tempo_learning_runtime.database import connection
-from tempo_learning_runtime.migrate import migrate, grant_runtime, expected_migrations
+from tempo_learning_database.connections import connection
+from tempo_learning_database.ddl.migrate import migrate, grant_runtime, expected_migrations
 from psycopg.conninfo import make_conninfo, conninfo_to_dict
 from test_runtime import activate, head, review_payload, submit
 from concurrency_helpers import extend_gate_budget, wait_for_lock
@@ -428,7 +428,7 @@ def test_evidence_frontier_survives_service_restart(case, tmp_path):
 def test_revision_migration_backfills_legacy_receipts_and_preserves_replay(case):
     from pathlib import Path
     from tempo_game_evidence_contracts.v1 import EvidenceDelivery
-    import tempo_learning_runtime.migrate as migrations
+    import tempo_learning_database.ddl.migrate as migrations
 
     payload = delivery("unused", 4, obligations=False)
     original = EvidenceAcknowledgement(

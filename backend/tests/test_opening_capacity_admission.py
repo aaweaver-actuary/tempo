@@ -7,7 +7,8 @@ import json
 import chess
 import pytest
 
-from app import database, main
+from tempo_legacy_database import connections as database
+from app import main
 from app.services.opening_graph import GraphInput, build_graph
 
 
@@ -654,7 +655,7 @@ def test_capacity_worker_full_allowance_avoids_frontier_queries(
 def test_capacity_ready_publication_checks_translate_to_postgres_without_new_storage_contract(
     capacity_database, monkeypatch
 ):
-    from app.postgres_store import postgres_sql
+    from tempo_legacy_database.adapters.postgres_store import postgres_sql
     from app.services.opening_capacity_admission import read_capacity_routes
 
     connection, day, _ = capacity_database

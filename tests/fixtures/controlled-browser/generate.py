@@ -12,7 +12,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from fastapi.encoders import jsonable_encoder
-from app import database, main, postgres_store, command_gateway
+from tempo_legacy_database import connections as database
+from app import main, command_gateway
+from tempo_legacy_database.adapters import postgres_store
 from app.models import ReviewRequest
 
 

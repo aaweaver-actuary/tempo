@@ -6,8 +6,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 
-from ..database import connection
-from .. import postgres_store
+from tempo_legacy_database.connections import connection
+from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import (
     enqueue_compact_postgres_task_in_transaction,

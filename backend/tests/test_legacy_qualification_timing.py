@@ -220,6 +220,12 @@ class NativePrerequisiteTests(unittest.TestCase):
         source = self.root / 'repository'; source.mkdir()
         files = set(runner.staging.SOURCE_FILES)
         files.update(package + '/src/owned/__init__.py' for package in runner.BACKEND_DEPENDENCIES)
+        database_owners = {
+            'services/learning/runtime': 'tempo_learning_database',
+            'services/learning/remediation': 'tempo_remediation_database',
+            'services/game-evidence': 'tempo_game_evidence_database',
+        }
+        files.update('database/' + name + '/__init__.py' for name in database_owners.values())
         files.add('unrelated/src/private.py')
         for name in files:
             path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('tracked ' + name)
@@ -230,6 +236,11 @@ class NativePrerequisiteTests(unittest.TestCase):
         for package in runner.BACKEND_DEPENDENCIES:
             name = package + '/src/owned/__init__.py'
             self.assertEqual((restricted / name).read_bytes(), (source / name).read_bytes())
+        for package, name in database_owners.items():
+            self.assertEqual(
+                (restricted / package / 'database' / name / '__init__.py').read_bytes(),
+                (source / 'database' / name / '__init__.py').read_bytes(),
+            )
         self.assertFalse((restricted / 'unrelated').exists())
 
     def test_current_dependency_wheels_verify_every_installed_file(self):

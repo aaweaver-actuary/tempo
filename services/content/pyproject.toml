@@ -30,8 +30,11 @@ tempo-content-publication-contracts = { path = "../../contracts/content-publicat
 packages = ["src/tempo_content"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "integration", "fixtures", "run_suite.py", "pyproject.toml", "uv.lock", "README.md", "INTERFACES.md", "REGRESSIONS.md", "VALIDATION.md"]
+include = ["hatch_build.py", "src", "tests", "integration", "fixtures", "run_suite.py", "pyproject.toml", "uv.lock", "README.md", "INTERFACES.md", "REGRESSIONS.md", "VALIDATION.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib -ra"
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"

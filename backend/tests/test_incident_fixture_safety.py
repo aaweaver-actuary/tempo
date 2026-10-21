@@ -9,7 +9,7 @@ import pytest
 
 @pytest.fixture
 def incident_fixture_script():
-    script_path = Path(__file__).resolve().parents[2] / "scripts/check_postgres_graph_retention.py"
+    script_path = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_graph_retention.py"
     specification = spec_from_file_location("incident_fixture_safety_script", script_path)
     module = module_from_spec(specification)
     specification.loader.exec_module(module)
@@ -67,7 +67,7 @@ def test_incident_fixture_refuses_unmarked_database_without_writes_or_cleanup(
     monkeypatch, tmp_path, incident_fixture_script,
 ):
     schema = max(int(path.name.split("_", 1)[0]) for path in
-                 (Path(__file__).resolve().parents[1] / "migrations").glob("[0-9]*.sql"))
+                 (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations").glob("[0-9]*.sql"))
     verify_guard_refusal(monkeypatch, tmp_path, incident_fixture_script, marker=None, schema=schema,
                          error_match="lacks the disposable bootstrap marker")
 

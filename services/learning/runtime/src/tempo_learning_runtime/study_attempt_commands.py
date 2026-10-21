@@ -12,9 +12,9 @@ from fastapi import HTTPException
 from pydantic import TypeAdapter
 
 from .gateway import register_command
-from .postgres_store import PostgresConnection
+from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
-from .queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .study_grading import GRADER_VERSION, evaluate_answer
 from .study_attempts import finish_study_attempt
 from .study_contracts import (

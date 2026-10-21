@@ -157,7 +157,7 @@ def legacy_study_order_has_no_accepted_snapshot(monkeypatch):
     original_reader = worker.background_read_connection
     @contextmanager
     def metadata_compatible_reader():
-        from app import postgres_store
+        from tempo_legacy_database.adapters import postgres_store
         import os
         if postgres_store.configured() and not os.getenv('TEMPO_DATABASE_READ_URL'):
             yield object()

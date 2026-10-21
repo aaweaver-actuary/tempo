@@ -157,7 +157,8 @@ def test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_c
 
 
 def test_issue79_runtime_guard_is_background_query_only_without_command_dispatch(monkeypatch):
-    from app import main, database
+    from app import main
+    from tempo_legacy_database import connections as database
     from starlette.requests import Request
     from starlette.responses import Response
     monkeypatch.setattr(api.postgres_store, 'configured', lambda: True)
@@ -185,7 +186,7 @@ def test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejecti
     from types import SimpleNamespace
     from app.services import redis_admission_gate
 
-    script_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_segmentation.py'
+    script_path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_opening_segmentation.py'
     specification = importlib.util.spec_from_file_location('issue79_postgres_rehearsal', script_path)
     rehearsal = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(rehearsal)
@@ -212,7 +213,7 @@ def test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_
     from types import SimpleNamespace
     from app.services import redis_admission_gate
 
-    script_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_segmentation.py'
+    script_path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_opening_segmentation.py'
     specification = importlib.util.spec_from_file_location('issue79_started_plan_rehearsal', script_path)
     rehearsal = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(rehearsal)
@@ -240,7 +241,7 @@ def test_issue79_rehearsal_retries_foreground_preemption_with_a_new_review_ident
     import fastapi.testclient
     from app import prefix_evaluation_api
 
-    script_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_segmentation.py'
+    script_path = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_opening_segmentation.py'
     specification = importlib.util.spec_from_file_location('issue79_review_identity_rehearsal', script_path)
     rehearsal = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(rehearsal)
@@ -342,7 +343,7 @@ def test_pr102_native_snapshot_batch_preserves_digest_evidence_and_read_order():
     from contextlib import contextmanager
     from decimal import Decimal
     from types import SimpleNamespace
-    from app.postgres_store import PostgresConnection, TempoRow
+    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, TempoRow
     from app.snapshot_reads import RecordingReader
 
     pipeline_active = False

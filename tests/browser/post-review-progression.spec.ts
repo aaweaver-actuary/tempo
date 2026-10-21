@@ -19,7 +19,7 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout", "
     const docker = (...arguments_: string[]) => promisify(execFile)("docker", ["compose", "-p", project,
       "-f", "docker-compose.postgres.test.yml", ...arguments_], { encoding: "utf8", timeout: 60_000 });
     const fixture = async (action: string, ...arguments_: string[]) => JSON.parse((await docker("run", "--rm", "--no-deps", "schema",
-      "python", "/source/scripts/check_postgres_training_transition.py", action, identifier, ...arguments_)).stdout);
+      "python", "/source/database/tests/check_postgres_training_transition.py", action, identifier, ...arguments_)).stdout);
     let displaced: number[][] = [];
     let blockQueue = false;
     let queueFailures = 0;
