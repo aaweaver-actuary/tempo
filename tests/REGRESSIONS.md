@@ -5117,3 +5117,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Queue application eligibility and seeding storage
 
 `backend/tests/test_queue_application_database_split.py` owns complete-query capture/selection and boundary delegation for the first application slice. Existing adapter/unlock/reset/Study allowance/reconciliation/seeding checks retain assertions. It does not imply closure of the remaining18 direct calls, native behavior or full-system acceptance.
+
+
+## Legacy Learning review persistence
+
+`backend/tests/test_legacy_review_storage_separation.py` owns eighteen semantic boundaries for review facts, original card locks/scope/deferred effects and shared queue-projection wiring. Source-snapshot import checks deny sockets/SQLite infrastructure and verify module origins; no backend wheel or native behavior is claimed.

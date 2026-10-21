@@ -82,3 +82,5 @@
 Readiness facts use [runtime metadata](../schema/runtime-metadata/README.md) and [queue projection fields](../schema/study-queue-review-2/README.md): maximum migration version, required settings identity, queue state/refresh_pending/last_error and task state/payload. These are source-schema read projections; no table/field/key/FK/ownership changes, and no live schema verification. Application JSON/date/readiness decisions remain outside this tree.
 
 [Borrowed Study review storage](study/review/README.md) owns existing schedule facts/write, queue order receipts and requeue positions/classification. Replay/scheduling/provenance/seed/clock/requeue policy stays outside. Existing feedback coupling is explicitly retained, not accepted as a completed Study isolation boundary.
+
+[Legacy Learning review bridge storage](learning_bridge/README.md) owns complete review/card/attempt/scheduling/evidence/queue projection queries on original borrowed or owned scopes. Review command/recognition/grade/scheduling/deferred compatibility policy stays outside; the shared foreground projection operation retains one SQL home.
