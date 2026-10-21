@@ -262,6 +262,11 @@ statement/lock/transaction and pool bounds still apply. The accepted manifest
 bounds identity metadata to 1000 games. Database work may scan accepted pages,
 under the timeout; this is not a new precomputed comparison or engine operation.
 
+The [reader/storage source map](src/tempo_intelligence/analysis/README.md#games-reader-storage-boundary)
+shows the existing transaction composition and cursor policy. Its complete SELECT
+queries now live under the single root Intelligence database directory; stored
+data, wire responses and transaction ownership are unchanged.
+
 Study does not import/call/wait for this adapter and never participates in its
 shutdown. The optional producer may be unavailable while Study consumes its
 normal Learning-owned queue. Any future practice influence must use that owner's

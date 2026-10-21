@@ -42,3 +42,49 @@ def test_C3_game_read_bound_cannot_expand_or_accept_boolean(value):
 
 def test_C3_malformed_game_cursor_is_explicit():
     with pytest.raises(DomainError,match='invalid_analysis_game_cursor'):Reader().games('run','bad-cursor')
+
+
+def test_game_projection_keeps_bounded_reads_in_one_owning_read_transaction():
+    run={'run_id':'run','revision':1,'input_id':'input','input_revision':2}
+    source={'state':'accepted','game_ids':['a','b'],'selections':[]}
+    responses=iter([run,source,[{'payload':{'game_id':'a'}},{'payload':{'game_id':'b'}}]])
+    parameters=[]
+    transactions=[]
+    def execute(_statement,bound=()):
+        parameters.append(bound)
+        value=next(responses)
+        return SimpleNamespace(fetchone=lambda:value,fetchall=lambda:value)
+    @contextmanager
+    def transaction(**options):
+        transactions.append(options)
+        yield SimpleNamespace(execute=execute)
+    reader=GamesReader(SimpleNamespace(workspace_id='workspace',transaction=transaction))
+    result=reader.games('run',limit=1)
+    assert result['items']==[{'game_id':'a'}] and result['next_after']
+    assert result['game_count']==2 and result['input_revision']==2
+    assert parameters==[('run',),('input',2),('input',2,'',2)]
+    assert transactions==[{'read_only':True}]
+
+
+@pytest.mark.parametrize('operation',['scope','scopes'])
+def test_game_projection_scope_envelopes_retain_the_owner_read_boundary(operation):
+    run={'run_id':'run','revision':1,'input_id':'input','input_revision':2}
+    transactions=[]
+    parameters=[]
+    def execute(_statement,bound=()):
+        parameters.append(bound)
+        return SimpleNamespace(fetchone=lambda:run,fetchall=lambda:[run])
+    @contextmanager
+    def transaction(**options):
+        transactions.append(options)
+        yield SimpleNamespace(execute=execute)
+    reader=GamesReader(SimpleNamespace(workspace_id='workspace',transaction=transaction))
+    result=reader.scope('run') if operation=='scope' else reader.scopes()
+    assert result['workspace_id']=='workspace' and result['schema_version']==1
+    if operation=='scope':
+        assert result['run_id']=='run'
+        assert parameters==[('run',)]
+    else:
+        assert result['items']==[run]
+        assert parameters==[()]
+    assert transactions==[{'read_only':True}]
