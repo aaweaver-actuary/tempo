@@ -5179,3 +5179,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Threat pipeline storage
 
 `backend/tests/test_threat_pipeline_storage_separation.py` owns thirteen semantic source/snapshot boundaries for candidate facts,ranking/upsert decisions,claim fairness,lease/fingerprint guards,clock/resource/callback sequencing and borrowed writes. Existing validation/backfill cases retain assertions; no native engine or PostgreSQL qualification is claimed.
+
+
+## Command receipt storage boundary
+
+`backend/tests/test_command_receipt_storage_boundary.py` owns eight fake boundaries for receipt state/fences,savepoints,raw-writer capture and lease/clock/error parameter order. Existing transport and receipt-replay queue-wake checks retain assertions; two Main-dependent transport cases remain unselected and native transaction behavior remains unverified.

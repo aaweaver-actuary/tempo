@@ -10,8 +10,11 @@ import json
 import uuid
 from typing import Any
 
-import psycopg
-from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
+from tempo_legacy_database.adapters.commands.receipts import storage
+from tempo_legacy_database.adapters.commands.receipts.storage import (
+    psycopg, DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
+    _writer_connection,
+)
 from fastapi import HTTPException
 
 from tempo_legacy_database.adapters import postgres_store
@@ -72,13 +75,6 @@ def request_digest(command_name: str, payload: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
-def _writer_connection(background: bool):
-    if background:
-        from tempo_legacy_database.connections import background_connection
-        return background_connection()
-    return postgres_store.connection(read_only=False)
-
-
 def record_operation_attempt(
     operation_id: str, command_name: str, payload: dict[str, Any], *, background: bool,
     expected_retry_cycle: int | None = None,
@@ -86,18 +82,9 @@ def record_operation_attempt(
     """Persist retry identity before work; a crash can then be recovered."""
     request_hash = request_digest(command_name, payload)
     with _writer_connection(background) as database:
-        raw = database.raw
-        raw.execute(
-            "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background) "
-            "VALUES(%s,%s,%s,'queued',%s,%s) ON CONFLICT(operation_id) DO NOTHING",
-            (operation_id, command_name, request_hash,
-             json.dumps(payload, separators=(",", ":")), background),
-        )
-        receipt = raw.execute(
-            "SELECT command_name,request_hash,state,payload_json,next_retry_at,lease_expires_at,"
-            "attempt_count,cycle_attempt_count,retry_cycle "
-            "FROM operation_receipts WHERE operation_id=%s FOR UPDATE", (operation_id,),
-        ).fetchone()
+        raw = storage.receipt_writer(database)
+        storage.insert_queued(raw, operation_id, command_name, request_hash, payload, background)
+        receipt = storage.locked_attempt(raw, operation_id)
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         saved_payload = json.loads(receipt[3]) if receipt[3] else payload
@@ -105,17 +92,10 @@ def record_operation_attempt(
         if receipt[2] in {"complete", "failed"}:
             return False, saved_payload, None, receipt[7]
         if receipt[3] is None:
-            raw.execute(
-                "UPDATE operation_receipts SET payload_json=%s,background=%s WHERE operation_id=%s",
-                (json.dumps(saved_payload, separators=(",", ":")), background, operation_id),
-            )
+            storage.save_missing_payload(raw, saved_payload, background, operation_id)
         now = datetime.now(timezone.utc)
         if receipt[2] == "blocked" and expected_retry_cycle == receipt[8]:
-            raw.execute(
-                "UPDATE operation_receipts SET state='queued',retry_cycle=retry_cycle+1,"
-                "cycle_attempt_count=0,next_retry_at=NULL,updated_at=NOW() "
-                "WHERE operation_id=%s", (operation_id,),
-            )
+            storage.restart_blocked(raw, operation_id)
             cycle_attempts = 0
         elif expected_retry_cycle is not None:
             return False, saved_payload, None, receipt[7]
@@ -126,28 +106,16 @@ def record_operation_attempt(
         ) or (receipt[2] == "executing" and receipt[5] and receipt[5] > now):
             return False, saved_payload, None, cycle_attempts
         if background and cycle_attempts >= MAX_BACKGROUND_CYCLE_ATTEMPTS:
-            raw.execute(
-                "UPDATE operation_receipts SET state='blocked',attempt_token=NULL,"
-                "lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() "
-                "WHERE operation_id=%s", (operation_id,),
-            )
+            storage.block_exhausted(raw, operation_id)
             return False, saved_payload, None, cycle_attempts
         attempt_token = uuid.uuid4().hex
-        raw.execute(
-            "UPDATE operation_receipts SET state='executing',attempt_count=attempt_count+1,"
-            "cycle_attempt_count=cycle_attempt_count+1,attempt_token=%s,"
-            "next_retry_at=NULL,lease_expires_at=%s,updated_at=NOW() WHERE operation_id=%s",
-            (attempt_token, now + timedelta(minutes=5 if not background else 1), operation_id),
-        )
+        storage.start_attempt(raw, attempt_token, lambda: now + timedelta(minutes=5 if not background else 1), operation_id)
         return True, saved_payload, attempt_token, cycle_attempts + 1
 
 
 def load_blocked_operation(operation_id: str) -> dict[str, Any] | None:
-    with postgres_store.connection(read_only=True) as database:
-        row = database.raw.execute(
-            "SELECT command_name,payload_json,background,retry_cycle FROM operation_receipts "
-            "WHERE operation_id=%s AND state='blocked'", (operation_id,),
-        ).fetchone()
+    with storage.foreground_receipt_reader() as database:
+        row = storage.blocked_operation(database, operation_id)
     if row is None or row[1] is None:
         return None
     return {"operation_id": operation_id, "command_name": row[0],
@@ -159,25 +127,13 @@ def record_operation_retry(
     retryable: bool, background: bool,
 ) -> tuple[bool, float | None]:
     with _writer_connection(background) as database:
-        receipt = database.raw.execute(
-            "SELECT cycle_attempt_count FROM operation_receipts WHERE operation_id=%s "
-            "AND state='executing' AND attempt_token=%s FOR UPDATE",
-            (operation_id, attempt_token),
-        ).fetchone()
+        receipt = storage.locked_retry(database, operation_id, attempt_token)
         if receipt is None:
             return True, None
         cycle_attempts = int(receipt[0])
         exhausted = not retryable or (background and cycle_attempts >= MAX_BACKGROUND_CYCLE_ATTEMPTS)
         delay_seconds = None if exhausted else min(30.0, 0.5 * 2 ** (cycle_attempts - 1))
-        database.raw.execute(
-            "UPDATE operation_receipts SET state=%s,next_retry_at=%s,lease_expires_at=NULL,"
-            "attempt_token=NULL,last_error_json=%s,updated_at=NOW() "
-            "WHERE operation_id=%s AND state='executing' AND attempt_token=%s",
-            ("blocked" if exhausted else "retrying",
-             None if exhausted else datetime.now(timezone.utc) + timedelta(seconds=delay_seconds),
-             json.dumps({"class": type(error).__name__, "message": str(error)[:500]}),
-             operation_id, attempt_token),
-        )
+        storage.save_retry(database, "blocked" if exhausted else "retrying", lambda: None if exhausted else datetime.now(timezone.utc) + timedelta(seconds=delay_seconds), lambda: json.dumps({"class": type(error).__name__, "message": str(error)[:500]}), operation_id, attempt_token)
         return exhausted, delay_seconds
 
 
@@ -185,57 +141,16 @@ def defer_operation_for_foreground(operation_id: str, attempt_token: str) -> boo
     """A fenced admission denial is waiting, not a failed command attempt."""
     from .services.activity_gate import activity_gate
     with activity_gate.background_control(), _writer_connection(True) as database:
-        return bool(database.raw.execute(
-            "UPDATE operation_receipts SET state='retrying',"
-            "attempt_count=GREATEST(0,attempt_count-1),"
-            "cycle_attempt_count=GREATEST(0,cycle_attempt_count-1),"
-            "next_retry_at=NOW()+INTERVAL '1 second',lease_expires_at=NULL,"
-            "attempt_token=NULL,updated_at=NOW() "
-            "WHERE operation_id=%s AND state='executing' AND attempt_token=%s",
-            (operation_id, attempt_token),
-        ).rowcount)
+        return storage.defer_for_foreground(database, operation_id, attempt_token)
 
 
 def claim_recoverable_operation(*, allowed_background_commands=None, paused_commands=()) -> dict[str, Any] | None:
     """Reserve one abandoned operation for broker redelivery."""
     with _writer_connection(True) as database:
-        admission_clause = ''
-        admission_parameters = ()
-        if allowed_background_commands is not None:
-            admission_clause = ' AND (NOT background OR command_name=ANY(%s))'
-            admission_parameters = (sorted(allowed_background_commands),)
-        if paused_commands:
-            admission_clause += ' AND NOT (command_name=ANY(%s))'
-            admission_parameters += (sorted(paused_commands),)
-        # Each state owns an indexed due-time stream. Lock at most one eligible
-        # head per stream, then prefer the oldest waiting head across streams.
-        # Terminal history and future leases are never materialized or sorted.
-        streams = []
-        for state, due_column, deadline in (
-            ('retrying', 'next_retry_at', 'NOW()'),
-            ('executing', 'lease_expires_at', 'NOW()'),
-            ('queued', 'updated_at', "NOW()-INTERVAL '30 seconds'"),
-        ):
-            streams.append(
-                f"{state} AS MATERIALIZED (SELECT operation_id,updated_at FROM operation_receipts "
-                f"WHERE state='{state}' AND payload_json IS NOT NULL AND {due_column}<={deadline}"
-                + admission_clause + f" ORDER BY {due_column},updated_at,operation_id "
-                "LIMIT 1 FOR UPDATE SKIP LOCKED)")
-        row = database.raw.execute(
-            'WITH ' + ','.join(streams) +
-            " SELECT receipt.operation_id,receipt.command_name,receipt.payload_json,receipt.background "
-            "FROM operation_receipts receipt JOIN (SELECT * FROM retrying UNION ALL "
-            "SELECT * FROM executing UNION ALL SELECT * FROM queued) candidate "
-            "ON candidate.operation_id=receipt.operation_id "
-            "ORDER BY candidate.updated_at,candidate.operation_id LIMIT 1",
-            admission_parameters * 3,
-        ).fetchone()
+        row = storage.recoverable_receipt(database, allowed_background_commands, paused_commands)
         if row is None:
             return None
-        database.raw.execute(
-            "UPDATE operation_receipts SET state='queued',next_retry_at=NOW()+INTERVAL '30 seconds',"
-            "lease_expires_at=NULL,attempt_token=NULL,updated_at=NOW() WHERE operation_id=%s", (row[0],),
-        )
+        storage.reserve_recovery(database, row[0])
         return {"operation_id": row[0], "command_name": row[1],
                 "payload": json.loads(row[2]), "background": row[3]}
 
@@ -278,9 +193,7 @@ def _execute_command(
     if command_name in _preparers:
         try:
             prepared = _preparers[command_name](payload)
-        except (psycopg.OperationalError, psycopg.InterfaceError,
-                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
-                BackgroundAdmissionDeferred):
+        except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             raise
         except Exception as error:
             from .prefix_evaluation_api import PrefixEvaluationForegroundDeferred
@@ -293,19 +206,11 @@ def _execute_command(
     from .services.activity_gate import activity_gate
     write_admission = activity_gate.foreground() if command_name == 'repertoire.prefix_transition.apply' else nullcontext()
     with write_admission, command_connection as database:
-        raw = database.raw
+        raw = storage.receipt_writer(database)
         # Serialize two deliveries of one command across worker processes.
-        raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (operation_id,))
-        raw.execute(
-            "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) "
-            "VALUES (%s,%s,%s,'pending') ON CONFLICT(operation_id) DO NOTHING",
-            (operation_id, command_name, request_hash),
-        )
-        receipt = raw.execute(
-            "SELECT command_name,request_hash,state,response_json,error_json,attempt_token "
-            "FROM operation_receipts WHERE operation_id=%s FOR UPDATE",
-            (operation_id,),
-        ).fetchone()
+        storage.lock_operation(raw, operation_id)
+        storage.insert_pending(raw, operation_id, command_name, request_hash)
+        receipt = storage.locked_publication(raw, operation_id)
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         if receipt[2] == "complete":
@@ -314,7 +219,7 @@ def _execute_command(
             raise RuntimeError(json.loads(receipt[4])["message"])
         if attempt_token is not None and (receipt[2] != "executing" or receipt[5] != attempt_token):
             return None
-        raw.execute("SAVEPOINT command_handler")
+        storage.begin_handler(raw)
         try:
             if preparation_error is not None:
                 if (command_name == 'repertoire.prefix_transition.apply' and
@@ -322,16 +227,14 @@ def _execute_command(
                     raise SerializationFailure('Transition preparation yielded to foreground work; retry its durable operation') from preparation_error
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
-        except (psycopg.OperationalError, psycopg.InterfaceError,
-                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
-                BackgroundAdmissionDeferred):
+        except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             # The broker will redeliver; an uncertain commit must not be
             # converted into a permanent failed receipt.
             raise
         except Exception as error:
-            raw.execute("ROLLBACK TO SAVEPOINT command_handler")
-            if isinstance(error, psycopg.Error) and error.sqlstate == 'P0080':
-                error = HTTPException(409, {'code': 'prefix_transition_in_progress', 'message': error.diag.message_primary})
+            storage.rollback_handler(raw)
+            if storage.is_transition_in_progress(error):
+                error = HTTPException(409, {'code': 'prefix_transition_in_progress', 'message': storage.primary_error_message(error)})
             committed_transition = False
             if command_name == 'repertoire.prefix_transition.apply':
                 from .services.prefix_transition_application import reject_unactivated_application
@@ -340,7 +243,7 @@ def _execute_command(
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
             }
-            if getattr(getattr(error, "diag", None), "constraint_name", None) == "deleted_card_content":
+            if storage.is_deleted_card_content(error):
                 error_payload.update(status_code=409, message="This card was permanently deleted. Refresh the workspace before retrying.")
             error_payload.update({"code": error.code, "retryable": error.retryable} if hasattr(error, "code") and hasattr(error, "retryable") else {})
             if isinstance(error, HTTPException):
@@ -356,26 +259,16 @@ def _execute_command(
                     pass
             error_json = json.dumps(error_payload)
             if committed_transition:
-                raw.execute("UPDATE operation_receipts SET state='blocked',last_error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
+                storage.block_transition(raw, error_json, operation_id)
                 return None
-            raw.execute(
-                "UPDATE operation_receipts SET state='failed',error_json=%s,"
-                "attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() "
-                "WHERE operation_id=%s",
-                (error_json, operation_id),
-            )
+            storage.fail_operation(raw, error_json, operation_id)
             return None
-        raw.execute("RELEASE SAVEPOINT command_handler")
+        storage.release_handler(raw)
         if command_name == 'repertoire.prefix_transition.apply' and result.get('status') == 'pending':
-            raw.execute("UPDATE operation_receipts SET state='pending',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+            storage.keep_transition_pending(raw, operation_id)
             return result
         response_json = json.dumps(result, sort_keys=True, separators=(",", ":"))
-        raw.execute(
-            "UPDATE operation_receipts SET state='complete',response_json=%s,"
-            "attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() "
-            "WHERE operation_id=%s",
-            (response_json, operation_id),
-        )
+        storage.complete_operation(raw, response_json, operation_id)
         return result
 
 
@@ -390,18 +283,13 @@ def read_operation(
         receipt_connection = background_read_connection()
         receipt_control = activity_gate.background_control()
     else:
-        receipt_connection = postgres_store.connection(read_only=True)
+        receipt_connection = storage.foreground_receipt_reader()
         receipt_control = nullcontext()
     with receipt_control, receipt_connection as database:
-        receipt = database.raw.execute(
-            "SELECT command_name,request_hash,state,response_json,error_json,attempt_count,"
-            "next_retry_at,last_error_json,lease_expires_at,payload_json,retry_cycle,cycle_attempt_count "
-            "FROM operation_receipts WHERE operation_id=%s",
-            (operation_id,),
-        ).fetchone()
+        receipt = storage.operation_status(database, operation_id)
         transition_progress = None
         if receipt and receipt[0] == 'repertoire.prefix_transition.apply':
-            progress = database.execute_native('SELECT state,graph_generation,staging_task_id,graph_task_id,integrity_task_id,integrity_generation,queue_task_id,queue_generation,queue_date,last_error FROM prefix_transition_applications WHERE operation_id=%s', (operation_id,)).fetchone()
+            progress = storage.transition_progress(database, operation_id)
             transition_progress = dict(progress) if progress else None
     if receipt is None:
         return {"operation_id": operation_id, "state": "unknown",
