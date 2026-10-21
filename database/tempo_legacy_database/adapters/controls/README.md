@@ -22,3 +22,6 @@ The linked schema READMEs are canonical for all stored types, primary/composite 
 All 11 SQL/savepoint strings match the previous application source. The six originals now contain no direct SQL/cursor calls, while their existing lifecycle/policy composition remains explicit legacy coupling on the [unfinished extraction checklist](../../../INVENTORY.md). No generic SQL execution interface or new dispatch framework is introduced.
 
 Fourteen focused cases pass: seven existing evidence/reconciliation/Study-policy cases, six boundary/settings/coverage/savepoint cases in `backend/tests/test_legacy_control_database_split.py`, and the existing single-run Explorer recovery case. Only fake controls and in-memory SQLite ran; native PostgreSQL locking/execution and full-system behavior remain unverified. The known stale migration-directory assertion in `test_repertoire_settings.py` is owned by a separate PR334 repair and was neither edited nor claimed as passing here.
+
+
+[claim_sql.py](claim_sql.py) contains the two existing shared `claimable`/`control_order` SQL builders, moved intact. `background_activity.py` re-exports their original names; its remaining operations are still on the extraction checklist.

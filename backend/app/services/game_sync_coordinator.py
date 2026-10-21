@@ -15,6 +15,7 @@ import uuid
 import chess
 
 from tempo_legacy_database.connections import connection, read_connection
+from tempo_legacy_database.adapters.games.coordinator import storage
 from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
 from .real_game_feedback_adapter import apply_real_game_misses
@@ -72,40 +73,24 @@ def _now() -> str:
 def enqueue_sync(request: GameSyncRequest, *, background: bool = False) -> str:
     """Persist work before returning so navigation cannot cancel it."""
     with connection(background=background) as database:
-        existing = database.execute(
-            """SELECT id FROM game_sync_jobs
-               WHERE status IN ('queued','running','paused','retrying')
-               ORDER BY created_at LIMIT 1"""
-        ).fetchone()
+        existing = storage.active_sync_job(database)
         if existing:
             return existing["id"]
         job_id = str(uuid.uuid4())
         now = _now()
-        database.execute(
-            """INSERT INTO game_sync_jobs(id,request_json,status,created_at,updated_at)
-               VALUES(?,?,'queued',?,?)""",
-            (job_id, request.model_dump_json(), now, now),
-        )
+        storage.insert_sync_job(database, job_id, request.model_dump_json(), now)
     return job_id
 
 
 def _claim_job() -> dict | None:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute("BEGIN IMMEDIATE")
-        row = database.execute(
-            f"""SELECT * FROM game_sync_jobs WHERE status IN ('queued','retrying')
-               AND {claimable('sync', 'game_sync_jobs.id')}
-               ORDER BY {control_order('sync', 'game_sync_jobs.id')}created_at LIMIT 1"""
-        ).fetchone()
+        storage.begin_claim(database)
+        row = storage.claimable_sync_job(database)
         if not row:
             return None
         now = _now()
-        changed = database.execute(
-            """UPDATE game_sync_jobs SET status='running',started_at=COALESCE(started_at,?),updated_at=?
-               WHERE id=? AND status IN ('queued','retrying')""",
-            (now, now, row["id"]),
-        ).rowcount
+        changed = storage.mark_sync_running(database, row["id"], now)
         return dict(row) if changed else None
 
 
@@ -113,22 +98,14 @@ def _finish_job(job_id: str, result: dict) -> None:
     now = _now()
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute(
-            """UPDATE game_sync_jobs SET status='complete',result_json=?,error=NULL,
-                      completed_at=?,updated_at=? WHERE id=?""",
-            (json.dumps(result), now, now, job_id),
-        )
+        storage.complete_sync_job(database, job_id, json.dumps(result), now)
 
 
 def _fail_job(job_id: str, error: Exception) -> None:
     now = _now()
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute(
-            """UPDATE game_sync_jobs SET status='failed',error=?,completed_at=?,updated_at=?
-               WHERE id=?""",
-            (str(error), now, now, job_id),
-        )
+        storage.fail_sync_job(database, job_id, str(error), now)
 
 
 def _retry_sync_database_write(operation: Callable[[], None]) -> None:
@@ -162,23 +139,13 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
-        database.execute(
-            """INSERT INTO game_derivation_jobs(game_id,status,updated_at)
-               VALUES(?,'queued',?)
-               ON CONFLICT(game_id) DO UPDATE SET status='queued',last_error=NULL,
-                   derivation_version=game_derivation_jobs.derivation_version+1,
-                   completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
-            (game_id, _now()),
-        )
+        storage.queue_derivation(database, game_id, _now())
 
 
 def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
     enqueue_priority_refreshes_for_game(game_id, background=True)
     with connection(background=True) as database:
-        repertoire_ids = [row[0] for row in database.execute(
-            "SELECT DISTINCT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?",
-            (game_id,),
-        )]
+        repertoire_ids = storage.matching_repertoire_ids(database, game_id)
     for repertoire_id in repertoire_ids:
         activity_gate.wait_for_foreground()
         enqueue_opportunity_refresh(repertoire_id, background=True)
@@ -187,32 +154,19 @@ def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
 def _claim_derivation() -> str | None:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute("BEGIN IMMEDIATE")
-        row = database.execute(
-            f"""SELECT game_id FROM game_derivation_jobs WHERE status='queued'
-               AND (next_attempt_at IS NULL OR next_attempt_at<=?)
-               AND {claimable('derivation', 'game_derivation_jobs.game_id')}
-               ORDER BY {control_order('derivation', 'game_derivation_jobs.game_id')}updated_at LIMIT 1"""
-            , (_now(),)
-        ).fetchone()
+        storage.begin_claim(database)
+        row = storage.claimable_derivation(database, _now)
         if not row:
             return None
-        changed = database.execute(
-            """UPDATE game_derivation_jobs SET status='running',phase='claimed',attempts=attempts+1,updated_at=?
-               WHERE game_id=? AND status='queued'""",
-            (_now(), row["game_id"]),
-        ).rowcount
+        changed = storage.mark_derivation_running(database, row["game_id"], _now())
         return row["game_id"] if changed else None
 
 
 def _set_derivation_phase(game_id: str, phase: str) -> None:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute(
-            "UPDATE game_derivation_jobs SET phase=?,updated_at=? WHERE game_id=? AND status='running'",
-            (phase, _now(), game_id),
-        )
-        row = database.execute("SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?", (game_id,)).fetchone()
+        storage.set_derivation_phase(database, game_id, phase, _now())
+        row = storage.derivation_version(database, game_id)
     phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
               "applying_real_game_misses", "refreshing_events", "refreshing_features",
               "enqueueing_priorities")
@@ -228,9 +182,7 @@ def _run_derivation_phase(
               "enqueueing_priorities")
     phase_index = phases.index(phase)
     with read_connection() as database:
-        current = database.execute(
-            "SELECT completed_phases,status FROM game_derivation_jobs WHERE game_id=?", (game_id,)
-        ).fetchone()
+        current = storage.derivation_phase_status(database, game_id)
     if not current or current["status"] != "running":
         raise _DerivationStopped()
     if current["completed_phases"] > phase_index:
@@ -241,14 +193,8 @@ def _run_derivation_phase(
     try:
         operation()
         with connection(background=True) as database:
-            changed = database.execute(
-                """UPDATE game_derivation_jobs SET completed_phases=?,updated_at=?
-                   WHERE game_id=? AND status='running' AND completed_phases=?""",
-                (phase_index + 1, _now(), game_id, phase_index),
-            ).rowcount
-            version = database.execute(
-                "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?", (game_id,)
-            ).fetchone()[0]
+            changed = storage.advance_derivation_phase(database, game_id, phase_index + 1, phase_index, _now())
+            version = storage.derivation_version(database, game_id)[0]
         if not changed:
             raise _DerivationStopped()
         emit_progress("derivation", game_id, str(version), phase, phase_index + 1, len(phases))
@@ -264,18 +210,11 @@ def _run_derivation_phase(
 
 def _pause_derivation_if_requested(game_id: str) -> None:
     with read_connection() as database:
-        paused = database.execute(
-            "SELECT paused FROM background_activity WHERE source='derivation' AND work_id=?",
-            (game_id,),
-        ).fetchone()
+        paused = storage.derivation_pause_state(database, game_id)
     if not paused or not paused[0]:
         return
     with connection(background=True) as database:
-        database.execute(
-            """UPDATE game_derivation_jobs SET status='queued',phase='paused',updated_at=?
-               WHERE game_id=? AND status='running'""",
-            (_now(), game_id),
-        )
+        storage.pause_running_derivation(database, game_id, _now())
     raise _DerivationStopped()
 
 
@@ -283,22 +222,9 @@ def _execute_derivation(game_id: str) -> None:
     with activity_gate.background_job("game_derivation", game_id):
         try:
             with connection(background=True) as database:
-                database.execute(
-                    """INSERT OR IGNORE INTO game_derivation_jobs(game_id,status,updated_at)
-                       VALUES(?,'running',?)""",
-                    (game_id, _now()),
-                )
-                database.execute(
-                    """UPDATE game_derivation_jobs SET status='running',updated_at=?
-                       WHERE game_id=? AND status='queued' AND NOT EXISTS(
-                           SELECT 1 FROM background_activity a
-                           WHERE a.source='derivation' AND a.work_id=? AND a.paused=1
-                       )""",
-                    (_now(), game_id, game_id),
-                )
-                current_status = database.execute(
-                    "SELECT status FROM game_derivation_jobs WHERE game_id=?", (game_id,)
-                ).fetchone()
+                storage.ensure_running_derivation(database, game_id, _now())
+                storage.resume_unpaused_derivation(database, game_id, _now())
+                current_status = storage.derivation_status(database, game_id)
             if not current_status or current_status[0] != "running":
                 return
             _run_derivation_phase(
@@ -336,14 +262,8 @@ def _execute_derivation(game_id: str) -> None:
             )
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
-                changed = database.execute(
-                    """UPDATE game_derivation_jobs SET status='complete',phase=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=?
-                       WHERE game_id=? AND status='running'""",
-                    (_now(), game_id),
-                ).rowcount
-                version = database.execute(
-                    "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?", (game_id,)
-                ).fetchone()[0]
+                changed = storage.complete_running_derivation(database, game_id, _now())
+                version = storage.derivation_version(database, game_id)[0]
             if changed:
                 emit_progress("derivation", game_id, str(version), "Finished", 7, 7)
         except _DerivationStopped:
@@ -353,10 +273,7 @@ def _execute_derivation(game_id: str) -> None:
                 activity_gate.wait_for_foreground()
                 try:
                     with connection(background=True) as database:
-                        attempts = database.execute(
-                            "SELECT attempts FROM game_derivation_jobs WHERE game_id=?",
-                            (game_id,),
-                        ).fetchone()
+                        attempts = storage.derivation_attempts(database, game_id)
                         delay_seconds = min(
                             60, 2 ** min(5, attempts[0] if attempts else 1)
                         )
@@ -364,11 +281,7 @@ def _execute_derivation(game_id: str) -> None:
                             datetime.now(timezone.utc)
                             + timedelta(seconds=delay_seconds)
                         ).isoformat()
-                        database.execute(
-                            """UPDATE game_derivation_jobs SET status='queued',phase=NULL,last_error=?,next_attempt_at=?,updated_at=?
-                               WHERE game_id=?""",
-                            (str(error), retry_at, _now(), game_id),
-                        )
+                        storage.retry_derivation(database, game_id, str(error), retry_at, _now())
                     break
                 except sqlite3.OperationalError:
                     if retry_number == 4:
@@ -379,18 +292,12 @@ def _execute_derivation(game_id: str) -> None:
                         time.sleep(0.05 * (retry_number + 1))
         except Exception as error:
             with connection(background=True) as database:
-                database.execute(
-                    """UPDATE game_derivation_jobs SET status='failed',phase=NULL,last_error=?,updated_at=?
-                       WHERE game_id=?""",
-                    (str(error), _now(), game_id),
-                )
+                storage.fail_derivation(database, game_id, str(error), _now())
 
 
 def _index_game_positions(game_id: str) -> None:
     with connection(background=True) as database:
-        game_row = database.execute(
-            "SELECT start_fen,moves_json FROM imported_games WHERE id=?", (game_id,)
-        ).fetchone()
+        game_row = storage.position_source_game(database, game_id)
         game = dict(game_row) if game_row else None
     if not game:
         return
@@ -409,12 +316,8 @@ def _index_game_positions(game_id: str) -> None:
     )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute("DELETE FROM game_position_occurrences WHERE game_id=?", (game_id,))
-        database.executemany(
-            """INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci)
-               VALUES(?,?,?,?)""",
-            occurrences,
-        )
+        storage.delete_game_positions(database, game_id)
+        storage.insert_position_values(database, occurrences)
 
 
 class GameSyncCoordinator:
@@ -610,36 +513,12 @@ class GameSyncCoordinator:
 def _requeue_interrupted_background_work() -> None:
     now = _now()
     with connection() as database:
-        database.execute(
-            """UPDATE game_sync_jobs SET status='queued',started_at=NULL,updated_at=?
-               WHERE status IN ('running','paused')""",
-            (now,),
-        )
-        database.execute(
-            """UPDATE game_derivation_jobs SET status='queued',phase=NULL,updated_at=?
-               WHERE status='running'""",
-            (now,),
-        )
-        database.execute(
-            """UPDATE repertoire_coverage_nodes SET explorer_status='queued',updated_at=?
-               WHERE explorer_status='running'""",
-            (now,),
-        )
-        database.execute(
-            """UPDATE repertoire_integrity_jobs SET status='queued',updated_at=?
-               WHERE status IN ('running','finalizing')""",
-            (now,),
-        )
-        database.execute(
-            """UPDATE repertoire_integrity_state SET scan_status='queued'
-               WHERE scan_status IN ('running','retrying')"""
-        )
-        database.execute(
-            """UPDATE repertoire_priority_jobs
-               SET status='queued',next_attempt_at=?,updated_at=?
-               WHERE status='running'""",
-            (now, now),
-        )
+        storage.requeue_interrupted_syncs(database, now)
+        storage.requeue_interrupted_derivations(database, now)
+        storage.requeue_interrupted_coverage(database, now)
+        storage.requeue_interrupted_integrity_jobs(database, now)
+        storage.requeue_interrupted_integrity_state(database)
+        storage.requeue_interrupted_priorities(database, now)
 
 
 coordinator = GameSyncCoordinator()

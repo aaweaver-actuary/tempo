@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **65 files**; one candidate is confirmed non-database application code, and **90 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **66 files**; one candidate is confirmed non-database application code, and **89 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -59,7 +59,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/game_analysis_worker.py](../backend/app/services/game_analysis_worker.py)
 - [backend/app/services/game_findings.py](../backend/app/services/game_findings.py)
 - Completed legacy Games imports storage split: [backend/app/services/game_sync.py](tempo_legacy_database/adapters/games/imports/README.md).
-- [backend/app/services/game_sync_coordinator.py](../backend/app/services/game_sync_coordinator.py)
+- Completed legacy Games coordinator storage split: [backend/app/services/game_sync_coordinator.py](tempo_legacy_database/adapters/games/coordinator/README.md).
 - Completed legacy Games evidence storage split: [backend/app/services/gameplay_events.py](tempo_legacy_database/adapters/games/evidence/README.md).
 - [backend/app/services/guided_review.py](../backend/app/services/guided_review.py)
 - [backend/app/services/introduction_priorities.py](../backend/app/services/introduction_priorities.py)
@@ -170,12 +170,16 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 ## Additional storage candidates found after the baseline
 
-The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Two additional real Redis mixed files were found while reviewing control storage; they do not alter the baseline arithmetic above and must also be extracted:
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Six additional storage/tooling sources were found by checking Redis operations and SQL constants outside the original call scan. They do not alter baseline arithmetic and must also be extracted or relocated:
 
 | Pending source | Database operations | Application responsibility to retain outside database |
 | --- | --- | --- |
 | [background_wakes.py](../backend/app/services/background_wakes.py) | Cached Redis factory and four ownership/reserve/publish/consume/abort Lua execution sites. | Existing wake lifecycle, identity, callback and queue orchestration. |
 | [background_runtime.py](../backend/app/services/background_runtime.py) | Short-timeout Redis factory, worker-slot SET with 15-second TTL, bounded MGET of sixteen slots. | Runtime snapshot/lease timing and presentation; its ContextVar `.set` calls are not Redis. |
+| [legacy_game_observation.py](../backend/app/legacy_game_observation.py) | Accepted-head and imported-game SELECTs passed through the existing reader. | One-game capture scope, legal decision plies and export authority/format. |
+| [legacy_game_capture.py](../backend/app/services/legacy_game_capture.py) | Existing metadata, finite stream/count/high-water/page SQL fragments. | Capture budget/digest/selection and finite traversal; extract with its authority/observation callers. |
+| [writer_latency.py](../backend/benchmarks/writer_latency.py) | Disposable SQLite connection/schema/inserts and writer contention tooling. | Existing benchmark reporting; whole dedicated benchmark may relocate intact. |
+| [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) | Existing native fixture setup statements, including two test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
 
 The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis operations/key/value layout must move along with SQL while preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 
@@ -213,15 +217,15 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 45 | 0 | 75 |
+| Legacy backend | 46 | 0 | 74 |
 | Learning runtime | 11 | 0 | 15 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **65** | **1** | **90** |
+| **Total baseline** | **66** | **1** | **89** |
 
-The two additional Redis sources above and application computation inside originally moved adapters are additional unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
+The six additional storage/tooling sources above and application computation inside originally moved adapters are additional unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 
 ### Application blocks removed from originally moved adapters
 

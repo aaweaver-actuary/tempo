@@ -35,3 +35,6 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 
 
 [Legacy provider import storage](imports/README.md) and [event/finding storage](evidence/README.md) hold the existing imported-game/state, gameplay-event and staged finding/publication operations. Provider/chess/classification, task/retry and publication decisions remain at the original application seams.
+
+
+[Coordinator storage](coordinator/README.md) contains the original recovery/claim/status/settlement queries; the coordinator retains process/async/provider/task lifecycle. Shared claim SQL builders remain available through their old composition names.

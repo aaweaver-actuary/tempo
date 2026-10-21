@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from tempo_legacy_database.connections import connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.controls.claim_sql import claimable, control_order
 
 
 from .defensive_analysis import analysis_enabled, recommendation_sql, search_admission_sql, task_admission_sql
@@ -28,18 +29,6 @@ SOURCES = {
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def control_order(source: str, id_expression: str) -> str:
-    """SQL order expression shared by every claim path in one queue."""
-    return ("COALESCE((SELECT promoted FROM background_activity a WHERE "
-            f"a.source='{source}' AND a.work_id={id_expression}),0) DESC,")
-
-
-def claimable(source: str, id_expression: str) -> str:
-    mode_clause = "" if source == 'durable' else " AND (SELECT study_only_mode FROM settings WHERE id=1)=0"
-    return ("(COALESCE((SELECT paused FROM background_activity a WHERE "
-            f"a.source='{source}' AND a.work_id={id_expression}),0)=0{mode_clause})")
 
 
 def report_progress(
