@@ -51,8 +51,40 @@ erDiagram
 | Tactical reservation and rotation | `tactic_introductions(puzzle_id text PK,pack_id text,introduction_date text)`, `tactic_pack_activation(pack_id text PK,active bigint)`, `tactic_rotation(id bigint PK,last_pack_id text)` retain their existing logical associations without FKs. The application still applies the source-neutral daily introduction counter. |
 | Card introduction facts | Existing `state`, `introduced_at`, content/source FEN and move JSON fields are unchanged. Advisory keys and queue position locks are transaction-scoped controls, not stored relational constraints. |
 
-The first slice delegates 29 direct database call sites in four admission functions to 24 fixed operations; five repeated calls share the same existing operation. All original query/parameter/result expressions, eligibility constants, deletion/lock order, quota decisions, replay behavior, queue-position allocation and writer transaction authority are preserved. No new generic execution interface or queue authority was added.
+## Opening and presentation publication
 
-**Still unfinished in the original file:** 26 direct database sites, 24 bounded SQL-read sites, opening SQL construction/constants and existing reader callback bridges. The source remains pending in the [extraction inventory](../../../INVENTORY.md). This directory does not yet mean that the complete queue-refresh implementation has been centralized.
+[openings.py](openings.py) owns the original published-route/order/priority SQL constants and the complete route occurrence, parent-review, allowance, current-opportunity, locked-card, safe-route, opening append/introduction and opportunity-resolution operations. Application code still validates exact content/route, frozen proposal state, allowance/miss/capacity decisions and the original post-lock rechecks. The [opening graph dictionary](../../schema/opening-graph/README.md) records its actual `(repertoire_id,generation,line_id,decision_index)` step PK and enforced repertoire/line FKs. Its card, parent-card and publication-generation associations are logical without additional constraints.
 
-Focused evidence covers Study quota/burial/replay and post-lock rechecks, due-card eligibility/order, deleted tactical publication, saved-attempt recovery, plus a task-owned SQLite tactical reservation/replay/rotation/quota case and an admission-only SQL boundary guard. One selected existing unseen-reconciliation parity test fails in its reference fixture because `frozen_opening_activation` is absent, **before any extracted writer runs**; executing the original pre-extraction module in memory reproduces the same failure. That fixture is unchanged. Source comparison verifies all 29 moved operations and restored application functions. No native PostgreSQL, live storage, full-system, resource-isolation or deployment check ran; existing legacy component coupling remains unchanged.
+[presentation.py](presentation.py) owns saved-plan/current-membership/locked-hash reads, the same affected-row-count randomization update and plan write, locked quarantine facts and skip/diagnostic writes, projection publication and diagnostic reset. Application code retains presentation/attempt/membership/frozen-state comparisons, exact admitted-head protection, generated list/clock evaluation, affected-row decisions, quarantine content comparison, task completion and prefix-transition callbacks in their original order and transactions.
+
+```mermaid
+erDiagram
+  daily_queue_days {
+    text queue_date PK
+    bigint seed
+    text membership_hash
+    text generated_at
+  }
+  queue_projections {
+    text queue_date PK
+    text state
+    bigint generation
+    text updated_at
+    bigint refresh_pending
+    text last_error
+    bigint blocked_count
+  }
+  queue_projection_diagnostics {
+    text queue_date PK
+    text card_id PK
+    text message
+  }
+```
+
+These three tables have **no enforced FK** connecting them to each other or to queue/card rows: their date/card associations are logical. All fields are non-null except projection `updated_at` and `last_error`. The canonical [day/diagnostic dictionary](../../schema/study-queue-review-1/README.md) and [projection dictionary](../../schema/study-queue-review-2/README.md) retain DDL links and full constraints. Publication still increments the existing projection generation, records the blocked count/status/timestamp, and commits only with successful task completion; lost-receipt exceptions roll back that transaction. No schema, new publication/queue authority, storage format or owner permission changed.
+
+All 55 original direct database sites are now delegated: admission writers cover 29 sites and opening/presentation operations cover 26. The latter use 21 fixed new operations and reuse five call sites from an existing fixed operation; all seven SQL constants remain compatibility exports under their original application names, including `_PRIORITY_OPENING_PAGE_SQL` consumed by the ranking snapshot. All original query/parameter/result expressions, deletion/lock order, quotas, replay, admitted-head/position allocation and transaction authority are preserved. No new generic execution interface was added.
+
+**Still unfinished in the original file:** 24 bounded SQL-read sites, SQL construction, the existing timeout/dialect reader and reader callback bridges. The 55 direct attribute-call sites have moved, which is not a claim that all database code has moved. The source remains pending in the [extraction inventory](../../../INVENTORY.md). This directory does not yet mean that the complete queue-refresh implementation has been centralized.
+
+Focused evidence covers Study quota/burial/replay and post-lock rechecks, due-card eligibility/order, deleted tactical publication, saved-attempt recovery, plus a task-owned SQLite tactical reservation/replay/rotation/quota case and an admission-only SQL boundary guard. One selected existing unseen-reconciliation parity test fails in its reference fixture because `frozen_opening_activation` is absent, **before any extracted writer runs**; executing the original pre-extraction module in memory reproduces the same failure. That fixture is unchanged. Source comparison now verifies all 55 moved direct operations, seven SQL constants and restored application functions. Four selected existing opening/presentation/quarantine cases and two new boundary/projection rollback cases pass. Three additional selected fixtures fail before the moved operations: one lacks frozen activation storage; two omit the frozen metadata reader while selecting the PostgreSQL branch. The original module reproduces those early failures, with a task-only reader sentinel preventing native access for the missing-reader cases. Those fixtures are unchanged. No native PostgreSQL, live storage, full-system, resource-isolation or deployment check ran; existing legacy component coupling remains unchanged.

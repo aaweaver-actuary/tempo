@@ -28,3 +28,8 @@ The focused prefix diagnostics/transition API selection reports35passes and3fail
 ## Queue unseen reconciliation parity fixture
 
 The selected `test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering` fails in its SQLite reference `reconcile_unseen_queue` before a changed PostgreSQL writer is called: its explicit schema lacks `frozen_opening_activation`, already required by existing frozen eligibility. A single controlled original `postgres_queue_refresh` module reproduction in memory fails with the same missing-table path. `/tmp/tempo-db-queue-admissions-baseline.py` and baseline/current logs preserve the evidence. No fixture, assertion or runtime behavior was repaired, weakened or skipped; this is not a passing parity result or native qualification. Separate issue publication remains unposted.
+
+
+## Queue opening/quarantine/projection fixtures
+
+Three selected existing queue-refresh cases fail before changed operations: the opening-publication fixture lacks `frozen_opening_activation`; quarantine-yield and projection-atomic fixtures configure native mode without the required background frozen-metadata reader. The initial missing-URL error opens no connection. One controlled original-module comparison reproduces all three early paths; task-only reader sentinels prevent any native-pool attempt in the missing-reader baseline. Fixtures/assertions remain unchanged. See `/tmp/tempo-db-queue-publication-{baseline.py,baseline-tests.log,existing-tests.log}` for exact nodes/evidence; these are unverified fixture paths, not passing native qualification or an issue-publication retry.
