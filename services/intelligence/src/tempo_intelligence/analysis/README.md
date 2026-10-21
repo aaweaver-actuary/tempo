@@ -81,8 +81,8 @@ lookup order. Existing packaged schemas and legacy report contracts remain
 selected owning checks. No DDL, foreign key, write workflow, deadline, provider,
 engine, private credential or live resource behavior is changed or exercised.
 The [complete method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-continues to identify four mixed Analysis methods; this is a bounded read slice,
-not completion of the whole owner.
+records all completed AnalysisStore method splits and the separate remaining
+runtime driver edge; this read slice does not establish whole-owner completion.
 
 ## Input admission and finalization boundary
 
@@ -121,7 +121,8 @@ page-digest cases remain unchanged. Real locking, rollback durability and native
 concurrency are separate proofs and were not run. This adds no new schema,
 model, generic query API, transaction/receipt writer or engine/provider dependency.
 The [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-retains four mixed methods; completion of input admission is a bounded slice.
+records the completed AnalysisStore splits and the separate runtime driver edge;
+completion of input admission alone does not establish whole-owner completion.
 
 ## Run, command and dismissal boundary
 
@@ -162,7 +163,8 @@ composition, position-order and packaged-schema cases remain selected checks.
 Real atomicity/concurrency, engine work and live resource isolation remain
 unverified; no schema/model/provider/security behavior is changed. The
 [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-identifies four remaining mixed methods; whole-owner separation is unfinished.
+records completed AnalysisStore method splits; the separate runtime driver edge
+keeps whole-owner centralization unfinished.
 
 ## Capture, derivation and publication boundary
 
@@ -209,6 +211,59 @@ conditional reopen propagation, legacy metadata/evidence preservation and next-r
 read closure. Existing finding/schema/legacy contracts remain selected proofs.
 Native atomicity, concurrent publication and live resource isolation remain
 unverified. This slice changes no schema/FK, model, engine/provider or security
-behavior. The [complete 39-method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-retains four mixed engine workflows: `claim`, `accept`, `failure` and
-`mark_engine_unavailable`.
+behavior. The [complete 40-method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+records completed engine workflow splits and the separate runtime driver edge;
+whole-owner centralization remains unfinished.
+
+## Engine work state boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`engine_work.py`](engine_work.py) owns the existing claim/result/failure/unavailable
+application workflows: pure job callback and public model validation, worker
+compatibility, root/played comparison, failure/status/cancel/retry/backoff decisions,
+UUID/hash preparation and response projection. The existing pure helpers and
+public Analysis Jobs contracts are reused; no client, executable, model artifact
+or provider is loaded or called by this module.
+
+```mermaid
+flowchart LR
+  store[AnalysisStore transaction composition] --> app[Engine work application]
+  app -->|unchanged background write context| fixed[Fixed engine-work operations and atomic guards]
+  fixed --> guards[Head / row / capacity / lease / replay / execution guards]
+  fixed --> tables[(Intelligence run / position / execution / result / event tables)]
+  app -->|same callback and nested import points| pure[Pure builder / wire models / comparison / hash]
+  app -->|same parameter evaluation points| binding[Existing transition / event digest / backoff expressions]
+  binding --> fixed
+```
+
+[`AnalysisEngineOperations`](../../../../../database/tempo_intelligence_database/adapters/analysis_engine.py)
+borrows the same `owner.transaction(background=True)` context. Claim keeps locked
+head → cancellation recovery/legacy check → eligible-position lock → capacity
+read/advisory lock/recheck → pure job/model/input validation → UUID → execution and
+60-second lease writes. The shared head capability binds before dynamic claim
+arguments are read. Result validation/digest still precede the write; guarded
+replay returns before the original lease/clock/execution checks, then ordered
+result/stage/recovery/generation writes. The clock remains in its original atomic
+lease guard and retains every short circuit. Failure validates the active lease
+before status, writes the event before retry/backoff effects and settles cancelled
+runs only after the existing running-row read. Unavailable marking requests a
+fresh generation only when the fixed update returns changed rows.
+
+Fixed transition/event/backoff bindings contain only the original application
+expressions and execute at their original query-parameter points. All complete
+SQL, locks, immutable replay/lease guards and writes remain root; no generic query
+port, framework, dispatch layer, extra transaction or new settlement writer is
+introduced. No public signature, model, lease duration or engine/provider/security
+behavior changes.
+
+`tests/test_analysis_engine_work.py` uses synthetic row scripts, a fake clock and
+pure wire models to preserve claim capacity/recovery/validation order, result
+replay/clock/execution fences, root/played writes, failure/status/backoff/cancel
+order and unavailable generation updates. Existing fake worker lifecycle, profile
+compatibility/quality and packaged-schema cases remain selected owning checks.
+The [complete 40-method audit](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+contains three fixed and 37 composition methods, with no remaining mixed method
+in the original AnalysisStore audit. The separate pre-existing runtime Psycopg
+subclass remains an unfinished owner file move. Native locking/concurrency,
+engine/provider execution and deployment/resource independence remain unverified;
+this is no claim of whole-backend or sibling-domain independence.

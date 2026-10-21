@@ -589,3 +589,17 @@ finding assembly and packaged-schema/legacy report cases remain owning proofs.
 This move preserves complete SQL/parameters and every atomic guard under its
 original owner context. It does not replace the retained native Analysis
 publication/concurrency contracts, which were not run for this source move.
+
+## Analysis engine-work composition
+
+`tests/test_analysis_engine_work.py` owns the moved claim/accept/failure/unavailable
+boundary. Synthetic fixed-row scripts, fake clock and pure Analysis Jobs models
+preserve capacity read/lock/recheck, cancellation recovery, pure job validation
+before lease writes, prewrite result validation, replay before lease/clock/execution
+checks, root/played result ordering, lease guard before failure/status/event work,
+retry/backoff/cancel settlement and conditional unavailable generation changes.
+The same 24 cases pass against the saved original adapter. Existing fake worker
+lifecycle, profile/quality and public schema checks remain selected proofs.
+Complete SQL/parameters, locks, clock short circuits and transaction/lease authority
+remain unchanged. Retained native PostgreSQL lease/replay/concurrency proofs were
+not run; no actual engine, provider or live database participates in these tests.

@@ -4,11 +4,12 @@
 
 | File | Role |
 | --- | --- |
-| [analysis_store.py](analysis_store.py) | Intelligence-owned durable analysis composition and remaining mixed write workflows. Network/engine work never holds a transaction. |
+| [analysis_store.py](analysis_store.py) | Intelligence-owned durable analysis composition and fixed head/evidence reads. Network/engine work never holds a transaction. |
 | [analysis_reads.py](analysis_reads.py) | Fixed Analysis read queries, cursor-row limits, row/count extraction and missing/visible-generation guards on the owner's snapshot. |
 | [analysis_inputs.py](analysis_inputs.py) | Fixed manifest/page admission and locked page-set finalization guards/writes; borrows the owner's input write and existing receipt authority. |
 | [analysis_runs.py](analysis_runs.py) | Fixed run staging, command/receipt/user-state queries and atomic guards/writes on the owner's unchanged write contexts. |
 | [analysis_publication.py](analysis_publication.py) | Fixed report snapshots, legacy/next reads, staged findings, user-state locking, publication/dismissal fences, conditional reopen propagation and report/head writes on borrowed owner contexts. |
+| [analysis_engine.py](analysis_engine.py) | Fixed engine-work queries and writes, atomic capacity/lease/replay/execution guards on the unchanged owning background transaction; no engine execution. |
 | [games_read_projection.py](games_read_projection.py) | Existing bounded Games-view reads over Intelligence-owned run/head/input/page tables; [reader policy and transaction composition](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#games-reader-storage-boundary). |
 | [request_inspection.py](request_inspection.py) | Fixed request/cache/evidence/credential/provider-control reads on the owner's initial read-only snapshot. No transaction creation or application response policy. |
 | [request_commands.py](request_commands.py) | Fixed refresh/retry command writes and atomic lock/replay/revision guards on the caller's existing write transaction. |
@@ -25,8 +26,11 @@ with [composition and focused proof](../../../services/intelligence/src/tempo_in
 and then merges the captured facts in that order. SQL and transaction ownership
 remain here.
 
-This is a bounded extraction, not a complete removal of application policy from
-these two older adapters. Complete request admission, including snapshot preparation,
+The initial mixed-method audit of Store and AnalysisStore is now closed at source
+level, with fixed authority and composition explicitly retained below. A separate
+pre-existing driver subclass in application runtime remains to be moved; this is
+not whole-owner centralization or deployed independence. Complete request admission,
+including snapshot preparation,
 sorted cache work and expired-cache refresh, now lives in `source_requests.submit_request`.
 `inspect` now only composes the complete application inspection workflow with
 the fixed `RequestInspection` reader and existing retry/credential/clock
@@ -37,8 +41,9 @@ and the evidence response lives in `source_requests.read_evidence`. Source claim
 publication workflows now live in [`provider_work.py`](../../../services/intelligence/src/tempo_intelligence/provider_work.py);
 credential status/registration workflows now live in
 [`credential_work.py`](../../../services/intelligence/src/tempo_intelligence/credential_work.py);
-`AnalysisStore` still mixes engine execution state transitions with their queries;
-capture/derivation/publication application work now lives in
+Engine execution application workflows now live in
+[`analysis/engine_work.py`](../../../services/intelligence/src/tempo_intelligence/analysis/engine_work.py);
+capture/derivation/publication application work lives in
 [`analysis/publication_work.py`](../../../services/intelligence/src/tempo_intelligence/analysis/publication_work.py). Read/status/cursor/export application work now lives in
 [`analysis/read_work.py`](../../../services/intelligence/src/tempo_intelligence/analysis/read_work.py);
 manifest/page/finalize application work lives in
@@ -69,8 +74,9 @@ The four previously inventoried mixed Store credential workflows now delegate
 the existing status/expiry/configuration and registration orchestration outside
 this tree. Store retains transaction composition, startup/workspace validation,
 fixed guards/writers and the existing ordered failure effects. This is not
-completion of all Intelligence separation: AnalysisStore remains substantially
-mixed, as the full method audit below shows.
+completion of all Intelligence centralization: the driver-specific runtime edge
+below remains. The full Store/Analysis method audits distinguish retained fixed
+authority/composition from the completed application moves.
 
 `RequestCommands` retains six fixed SQL operations and the existing receipt and
 request-revision guards. It delegates request-head lookup, generation changes and
@@ -145,76 +151,97 @@ resource isolation.
 
 ## Complete AnalysisStore source audit
 
-All 39 current methods are accounted for (the original 33 plus read, input, run
-and three publication transaction contexts). Existing read, input, run/command/
-dismissal and capture/derivation/publication application workflows now live
-outside this tree. Fixed operations retain full queries, atomic guards and
-canonical writers on the original owner contexts; no generic query API,
-dispatcher or new transaction authority was introduced.
+All 40 current methods are accounted for (the original 33 plus seven transaction
+contexts). Existing read, input, run/command/dismissal, capture/derivation/publication
+and engine application workflows now live outside this tree. Fixed operations
+retain full queries, atomic guards and canonical writers on the original owner
+contexts. No generic query API, dispatcher, new transaction/lease authority or
+engine/provider execution was introduced.
 
 Receipt advisory locking and payload binding remain root; response digest mutation
-still precedes the canonical writer's own digest binding. Private receipt/writer
-and status/head methods bind in the original order before argument evaluation.
-Commands retain replay before revision/effect work. Dismissal retains receipt-only
-write → finding read → user-state-locked write, including both replay return points.
-Publication keeps capture read → separate input read → legacy read or evidence
-assembly → 64-finding write batches → metadata → optional callback → user-state-
-locked publication. Its revision/generation and captured-dismissal guards,
-conditional reopen/other-run invalidation and report/head writes stay root.
-Application finding hashes, model validation, dismissal decisions and final state
-choice execute at their original call points. No schema/FK, public signature,
-hash format, transaction, lock or publication/receipt authority changed.
+still precedes the canonical writer's own digest binding. Commands retain replay
+before revision/effect work. Dismissal retains receipt-only write → finding read →
+user-state-locked write, including both replay return points. Publication retains
+snapshot/evidence reads → 64-finding staging → metadata/callback → guarded
+publication. Engine work retains head lock, cancellation recovery, eligible-row
+lock, workspace capacity read/lock/recheck, pure job callback, model/input checks,
+UUID and execution/lease writes. Result validation/digest remain before the
+background write; replay precedes lease/clock/execution guards and stage writes.
+Failure retains its lease/generation guard before status validation, event write
+before attempts/backoff/transition writes, and final cancellation settlement.
+Application transition/hash/backoff bindings evaluate only at their original
+query-parameter points. Public signatures, clock short circuits, locks, complete
+SQL/parameters and transaction authority are preserved.
 
-The four remaining mixed methods below are unfinished engine workflow work,
-not permanent exceptions. See the
+No mixed application/SQL method remains in this original Store/Analysis audit.
+Retained fixed read/identity/lease/replay guards and startup/workspace/grant checks
+are database authority; the source table below names composition explicitly. This
+is not a whole-owner or whole-backend completion claim: the pre-existing runtime
+driver edge remains below. See the
 [read](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#read-cursor-and-export-boundary),
 [input](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#input-admission-and-finalization-boundary),
-[run](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#run-command-and-dismissal-boundary)
-and [publication](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#capture-derivation-and-publication-boundary)
+[run](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#run-command-and-dismissal-boundary),
+[publication](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#capture-derivation-and-publication-boundary)
+and [engine](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#engine-work-state-boundary)
 boundaries.
 
 | Method / source lines | Classification | Remaining application or retained responsibility |
 | --- | --- | --- |
-| [`__init__`](analysis_store.py#L23) (23–25) | fixed | Owner/workspace binding only; retain adapter binding. |
-| [`_workspace`](analysis_store.py#L27) (27–28) | composition | Delegates existing application logic to analysis/read_work.require_workspace through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`input_transaction`](analysis_store.py#L31) (31–33) | composition | Lends unchanged owner write context to fixed AnalysisInputs; finalize retains its prior separate input read and receipt replay return point. |
-| [`manifest`](analysis_store.py#L35) (35–36) | composition | Delegates existing model/hash/admission/response workflow to analysis/input_work.admit_manifest; fixed AnalysisInputs retains original SQL/immutability/page-set guards and owner receipt/writer callbacks. |
-| [`page`](analysis_store.py#L38) (38–39) | composition | Delegates existing model/hash/admission/response workflow to analysis/input_work.admit_page; fixed AnalysisInputs retains original SQL/immutability/page-set guards and owner receipt/writer callbacks. |
-| [`read_transaction`](analysis_store.py#L42) (42–44) | composition | Lends unchanged owner read_only=True context to fixed AnalysisReads; no independent connection/commit. |
-| [`inputs`](analysis_store.py#L46) (46–47) | composition | Delegates existing application logic to analysis/read_work.read_inputs through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`_input`](analysis_store.py#L49) (49–50) | composition | Delegates existing application logic to analysis/read_work.read_input through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`finalize`](analysis_store.py#L52) (52–53) | composition | Delegates existing model/hash/admission/response workflow to analysis/input_work.finalize_input; fixed AnalysisInputs retains original SQL/immutability/page-set guards and owner receipt/writer callbacks. |
-| [`_head`](analysis_store.py#L55) (55–59) | fixed | Fixed optional-lock run/head lookup and not-found guard. |
-| [`run_transaction`](analysis_store.py#L62) (62–64) | composition | Lends unchanged owner write context for run staging, commands and dismissal; no new commit authority or lifecycle. |
-| [`submit`](analysis_store.py#L66) (66–68) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.submit_run; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
-| [`_status`](analysis_store.py#L70) (70–71) | composition | Delegates existing application logic to analysis/read_work.run_status through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`status`](analysis_store.py#L73) (73–75) | composition | Existing read-only head/status composition; wire relocated projection at the same point. |
-| [`runs`](analysis_store.py#L77) (77–78) | composition | Delegates existing application logic to analysis/read_work.read_runs through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`games`](analysis_store.py#L80) (80–82) | composition | Already delegates existing GamesReader; late import and owner stay fixed. |
-| [`_receipt`](analysis_store.py#L84) (84–85) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.receipt_result; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
-| [`_save_receipt`](analysis_store.py#L87) (87–88) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.save_receipt_result; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
-| [`receipt`](analysis_store.py#L90) (90–91) | composition | Delegates existing application logic to analysis/read_work.read_receipt through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`command`](analysis_store.py#L93) (93–94) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.command_run; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
-| [`capture_transaction`](analysis_store.py#L97) (97–99) | composition | Lends unchanged owner foreground read_only=True context to fixed AnalysisPublicationOperations; no independent connection/commit or new publication authority. |
-| [`publication_read_transaction`](analysis_store.py#L102) (102–104) | composition | Lends unchanged owner background=True,read_only=True context to fixed AnalysisPublicationOperations; no independent connection/commit or new publication authority. |
-| [`publication_transaction`](analysis_store.py#L107) (107–109) | composition | Lends unchanged owner background=True write context to fixed AnalysisPublicationOperations; no independent connection/commit or new publication authority. |
-| [`capture`](analysis_store.py#L111) (111–112) | composition | Delegates complete existing capture/publication application flow to analysis/publication_work.capture_run; fixed AnalysisPublicationOperations retains snapshot queries, publication guards and ordered writes in the original contexts. |
-| [`_derive_evidence`](analysis_store.py#L114) (114–118) | composition | Existing classify -> late findings import -> accepted evidence read -> merge wiring; pure merge already moved. |
-| [`derive`](analysis_store.py#L120) (120–122) | composition | Delegates complete existing capture/publication application flow to analysis/publication_work.derive_report; fixed AnalysisPublicationOperations retains snapshot queries, publication guards and ordered writes in the original contexts. |
-| [`report`](analysis_store.py#L124) (124–126) | composition | Delegates existing application logic to analysis/read_work.read_report through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`finding`](analysis_store.py#L128) (128–129) | composition | Delegates existing application logic to analysis/read_work.read_finding through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`dismiss`](analysis_store.py#L131) (131–132) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.dismiss_finding; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
-| [`export`](analysis_store.py#L134) (134–135) | composition | Delegates existing application logic to analysis/read_work.export_finding through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`claim`](analysis_store.py#L137) (137–178) | mixed | Cancellation/recovery/legacy decisions, depth/worker compatibility, pure job callback and wire/input validation, lease response; retain global capacity lock and lease writes root. |
-| [`accept`](analysis_store.py#L180) (180–208) | mixed | Result validation/digest, root-versus-played stage decisions/pair comparison and response; retain replay/lease/execution guards and ordered result/position/run writes root. |
-| [`failure`](analysis_store.py#L210) (210–235) | mixed | Failure-code/status event projection, attempts/cancel/retry/backoff decisions; retain fencing/event insertion/position/run writes root. |
-| [`remaining`](analysis_store.py#L237) (237–238) | composition | Delegates existing application logic to analysis/read_work.read_remaining through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`derive_next`](analysis_store.py#L240) (240–241) | composition | Delegates complete existing capture/publication application flow to analysis/publication_work.derive_next_report; fixed AnalysisPublicationOperations retains snapshot queries, publication guards and ordered writes in the original contexts. |
-| [`mark_engine_unavailable`](analysis_store.py#L243) (243–250) | mixed | Legacy admission and conditional requested-generation effect; retain fixed writes root. |
-| [`engine_result`](analysis_store.py#L252) (252–253) | composition | Delegates existing application logic to analysis/read_work.read_engine_result through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
-| [`evidence_records`](analysis_store.py#L255) (255–261) | fixed | Empty-input short circuit, complete ordered owner evidence read and identity-set completeness guard; retain as fixed owner projection. |
-| [`input_status`](analysis_store.py#L263) (263–264) | composition | Delegates existing application logic to analysis/read_work.read_input_status through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`__init__`](analysis_store.py#L19) (19–21) | fixed | Owner/workspace binding only; retain adapter binding. |
+| [`_workspace`](analysis_store.py#L23) (23–24) | composition | Delegates existing application logic to analysis/read_work.require_workspace through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`input_transaction`](analysis_store.py#L27) (27–29) | composition | Lends unchanged owner write context to fixed AnalysisInputs; finalize retains its prior separate input read and receipt replay return point. |
+| [`manifest`](analysis_store.py#L31) (31–32) | composition | Delegates existing model/hash/admission/response workflow to analysis/input_work.admit_manifest; fixed AnalysisInputs retains original SQL/immutability/page-set guards and owner receipt/writer callbacks. |
+| [`page`](analysis_store.py#L34) (34–35) | composition | Delegates existing model/hash/admission/response workflow to analysis/input_work.admit_page; fixed AnalysisInputs retains original SQL/immutability/page-set guards and owner receipt/writer callbacks. |
+| [`read_transaction`](analysis_store.py#L38) (38–40) | composition | Lends unchanged owner read_only=True context to fixed AnalysisReads; no independent connection/commit. |
+| [`inputs`](analysis_store.py#L42) (42–43) | composition | Delegates existing application logic to analysis/read_work.read_inputs through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`_input`](analysis_store.py#L45) (45–46) | composition | Delegates existing application logic to analysis/read_work.read_input through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`finalize`](analysis_store.py#L48) (48–49) | composition | Delegates existing model/hash/admission/response workflow to analysis/input_work.finalize_input; fixed AnalysisInputs retains original SQL/immutability/page-set guards and owner receipt/writer callbacks. |
+| [`_head`](analysis_store.py#L51) (51–55) | fixed | Fixed optional-lock run/head lookup and not-found guard. |
+| [`run_transaction`](analysis_store.py#L58) (58–60) | composition | Lends unchanged owner write context for run staging, commands and dismissal; no new commit authority or lifecycle. |
+| [`submit`](analysis_store.py#L62) (62–64) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.submit_run; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
+| [`_status`](analysis_store.py#L66) (66–67) | composition | Delegates existing application logic to analysis/read_work.run_status through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`status`](analysis_store.py#L69) (69–71) | composition | Existing read-only head/status composition; wire relocated projection at the same point. |
+| [`runs`](analysis_store.py#L73) (73–74) | composition | Delegates existing application logic to analysis/read_work.read_runs through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`games`](analysis_store.py#L76) (76–78) | composition | Already delegates existing GamesReader; late import and owner stay fixed. |
+| [`_receipt`](analysis_store.py#L80) (80–81) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.receipt_result; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
+| [`_save_receipt`](analysis_store.py#L83) (83–84) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.save_receipt_result; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
+| [`receipt`](analysis_store.py#L86) (86–87) | composition | Delegates existing application logic to analysis/read_work.read_receipt through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`command`](analysis_store.py#L89) (89–90) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.command_run; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
+| [`capture_transaction`](analysis_store.py#L93) (93–95) | composition | Lends unchanged owner foreground read_only=True context to fixed AnalysisPublicationOperations; no independent connection/commit or new publication authority. |
+| [`publication_read_transaction`](analysis_store.py#L98) (98–100) | composition | Lends unchanged owner background=True,read_only=True context to fixed AnalysisPublicationOperations; no independent connection/commit or new publication authority. |
+| [`publication_transaction`](analysis_store.py#L103) (103–105) | composition | Lends unchanged owner background=True write context to fixed AnalysisPublicationOperations; no independent connection/commit or new publication authority. |
+| [`capture`](analysis_store.py#L107) (107–108) | composition | Delegates complete existing capture/publication application flow to analysis/publication_work.capture_run; fixed AnalysisPublicationOperations retains snapshot queries, publication guards and ordered writes in the original contexts. |
+| [`_derive_evidence`](analysis_store.py#L110) (110–114) | composition | Existing classify -> late findings import -> accepted evidence read -> merge wiring; pure merge already moved. |
+| [`derive`](analysis_store.py#L116) (116–118) | composition | Delegates complete existing capture/publication application flow to analysis/publication_work.derive_report; fixed AnalysisPublicationOperations retains snapshot queries, publication guards and ordered writes in the original contexts. |
+| [`report`](analysis_store.py#L120) (120–122) | composition | Delegates existing application logic to analysis/read_work.read_report through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`finding`](analysis_store.py#L124) (124–125) | composition | Delegates existing application logic to analysis/read_work.read_finding through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`dismiss`](analysis_store.py#L127) (127–128) | composition | Delegates complete existing application/receipt response logic to analysis/run_work.dismiss_finding; fixed AnalysisRunOperations retains atomic guards, SQL and canonical writing on the same connection. |
+| [`export`](analysis_store.py#L130) (130–131) | composition | Delegates existing application logic to analysis/read_work.export_finding through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`engine_transaction`](analysis_store.py#L134) (134–136) | composition | Lends unchanged owner background=True write context to fixed AnalysisEngineOperations; no independent commit, engine/provider execution or new lease authority. |
+| [`claim`](analysis_store.py#L138) (138–140) | composition | Delegates complete existing job/result/status/transition application workflow to analysis/engine_work.claim_engine_work; fixed AnalysisEngineOperations retains full SQL, atomic capacity/lease/replay/execution guards and ordered writes on the same background transaction. |
+| [`accept`](analysis_store.py#L142) (142–143) | composition | Delegates complete existing job/result/status/transition application workflow to analysis/engine_work.accept_engine_result; fixed AnalysisEngineOperations retains full SQL, atomic capacity/lease/replay/execution guards and ordered writes on the same background transaction. |
+| [`failure`](analysis_store.py#L145) (145–146) | composition | Delegates complete existing job/result/status/transition application workflow to analysis/engine_work.fail_engine_work; fixed AnalysisEngineOperations retains full SQL, atomic capacity/lease/replay/execution guards and ordered writes on the same background transaction. |
+| [`remaining`](analysis_store.py#L148) (148–149) | composition | Delegates existing application logic to analysis/read_work.read_remaining through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`derive_next`](analysis_store.py#L151) (151–152) | composition | Delegates complete existing capture/publication application flow to analysis/publication_work.derive_next_report; fixed AnalysisPublicationOperations retains snapshot queries, publication guards and ordered writes in the original contexts. |
+| [`mark_engine_unavailable`](analysis_store.py#L154) (154–155) | composition | Delegates complete existing job/result/status/transition application workflow to analysis/engine_work.mark_engine_work_unavailable; fixed AnalysisEngineOperations retains full SQL, atomic capacity/lease/replay/execution guards and ordered writes on the same background transaction. |
+| [`engine_result`](analysis_store.py#L157) (157–158) | composition | Delegates existing application logic to analysis/read_work.read_engine_result through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
+| [`evidence_records`](analysis_store.py#L160) (160–166) | fixed | Empty-input short circuit, complete ordered owner evidence read and identity-set completeness guard; retain as fixed owner projection. |
+| [`input_status`](analysis_store.py#L168) (168–169) | composition | Delegates existing application logic to analysis/read_work.read_input_status through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
 
-The remaining mechanical batch is engine claim/result/failure/unavailable. No
-actual engine/provider, live state, migration or schema operation was performed
-by these source moves.
+## Remaining runtime driver edge
+
+A bounded source scan found [`runtime.py`](../../../services/intelligence/src/tempo_intelligence/runtime.py#L15)
+`BackgroundConnection(Connection)` (lines 15–33), with its Psycopg import at line 8,
+still outside the root tree. It shares a file with application `DatabaseRunner`
+and deadline orchestration. This was outside the original two-entry SQL checklist
+(`games_reader.py`, now split; `worker.py`, whose execute is an engine-client call).
+It is unfinished physical organization, not an accepted exception. The next small
+split should move the existing driver subclass root and retain runner/context
+orchestration outside, preserving the single shared deadline and wait/close/error
+behavior. No runtime split was included in this engine workflow batch.
+
+The retained Store is byte-identical to its credential-workflow integration: all
+38 methods remain classified as 11 database authority/fixed and 27 composition/
+ordered fixed effects. Neither audit proves whole-backend/domain independence,
+native concurrency or deployment/resource isolation. No actual engine/provider,
+live state, migration or schema operation was performed by these source moves.
