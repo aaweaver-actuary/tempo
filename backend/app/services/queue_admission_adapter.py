@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from . import frozen_opening_order
 from .real_game_feedback import MISS_REASON
+from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query
 from .real_game_feedback_adapter import has_outstanding_real_game_miss
 
 from .queue_admission import IntroductionCountPage, OpeningCandidatePage

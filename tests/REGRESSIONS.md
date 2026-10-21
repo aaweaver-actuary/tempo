@@ -5139,3 +5139,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Queue admission fixed storage and capacity route policy
 
 `backend/tests/test_queue_admission_database_split.py` owns five fake/boundary cases for complete borrowed-query operations, two-clock order and lazy row/route policy interleaving. Existing selection has41passes/two previously recorded native-SQL-in-SQLite fixture failures; no fixtures/assertions or native behavior are repaired or certified by this move.
+
+
+## Queue admission feedback projection compatibility export
+
+`backend/tests/test_feedback_boundary_integration.py::test_combined_queue_uses_feedback_projection_and_semantic_store[False]` and `[True]` preserve the existing `outstanding_miss_query` identity, miss reason and semantic-store consumer behavior. The admission extraction briefly removed that export; restoring the exact root-factory import repairs the regression without duplicate SQL or behavior changes.
