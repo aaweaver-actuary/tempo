@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.commands import threat_analysis as storage
+from tempo_legacy_database.adapters.commands.threat_analysis import _ELIGIBLE_THREAT_REQUEST
 from .services.engine_diagnostics import record_engine_outcome
 from .services.background_metrics import increment
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
