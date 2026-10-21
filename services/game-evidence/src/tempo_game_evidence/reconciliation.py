@@ -27,6 +27,11 @@ def request_reconciliation(database, workspace, game_id):
     storage.request_reconciliation(database, workspace, game_id)
 
 
+def reconcile_comparison(database, job, game, store):
+    request_reconciliation(database, job["workspace_id"], game["game_id"])
+    finalize(database, game["game_id"], snapshot_loader=store.comparison_snapshot)
+
+
 def apply_completed(database, row):
     receipt = validate_receipt(row['payload'],row['acknowledgement'])
     if receipt.status != 'completed':

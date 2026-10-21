@@ -7,44 +7,26 @@ This adapter belongs to the legacy assembly, not the broker-independent Learning
 """
 
 from contextlib import contextmanager
-from functools import lru_cache
 import json
 import logging
-import os
 import threading
 import time
 
 import redis
-from redis.backoff import NoBackoff
-from redis.retry import Retry
+
+from tempo_legacy_database.adapters.redis_control import policy as storage
+from tempo_legacy_database.adapters.redis_control.policy import (
+    POLICY_KEY, GENERATION_KEY, _PUBLISH, _READ, control_client,
+)
 
 from . import redis_admission_gate
 
 POLICY_SECONDS = 15
 REFRESH_SECONDS = 5
-POLICY_KEY = redis_admission_gate._ADMISSION_NAMESPACE + ':study-policy'
-GENERATION_KEY = POLICY_KEY + ':generation'
 _logger = logging.getLogger('tempo.study_priority')
 _local_lock = threading.Lock()
 _local_generation = 0
 _local_policy = None
-
-_PUBLISH = """
-if tonumber(redis.call('GET', KEYS[2])) ~= tonumber(ARGV[1]) then return 0 end
-redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
-return 1
-"""
-_READ = """
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
-return {redis.call('ZCARD', KEYS[1]), redis.call('GET', KEYS[2]) or '',
-        redis.call('GET', KEYS[3]) or ''}
-"""
-
-
-@lru_cache(maxsize=1)
-def control_client():
-    return redis.Redis.from_url(os.environ['TEMPO_REDIS_URL'],
-        socket_connect_timeout=0.05, socket_timeout=0.05, retry=Retry(NoBackoff(), 0))
 
 
 def refresh_policy(*, invalidate: bool = True) -> bool:
@@ -59,22 +41,24 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
     try:
         shared = redis_admission_gate.configured()
         if shared:
-            generation = int(control_client().incr(generation_key) if invalidate else
-                control_client().eval("return redis.call('GET',KEYS[1]) or redis.call('INCR',KEYS[1])", 1, generation_key))
+            generation = int(storage.advance_generation(control_client(), generation_key) if invalidate else
+                storage.existing_or_initial_generation(control_client(), generation_key))
         else:
             with _local_lock:
                 if invalidate or not _local_generation: _local_generation += 1
                 generation = _local_generation
         with activity_gate.background_job('study_policy', 'refresh', yielding=True), activity_gate.background_control():
             with background_read_connection(pool_timeout_seconds=0.1) as database:
-                row = database.execute('SELECT study_only_mode FROM settings WHERE id=1').fetchone()
+                row = storage.study_mode_setting(database)
         if row is None:
             return False
         policy = {'generation': generation, 'study_only_mode': bool(row[0]),
                   'expires_at_ms': int((time.time() + POLICY_SECONDS) * 1000)}
         if shared:
-            return bool(control_client().eval(_PUBLISH, 2, policy_key, generation_key,
-                                              generation, json.dumps(policy), POLICY_SECONDS))
+            return bool(storage.publish_policy(
+                control_client(), policy_key, generation_key,
+                generation, json.dumps(policy), POLICY_SECONDS,
+            ))
         with _local_lock:
             if generation == _local_generation:
                 _local_policy = policy
@@ -91,9 +75,10 @@ def control_snapshot() -> dict:
                    'policy_generation': None}
     try:
         if redis_admission_gate.configured():
-            active, encoded, current_generation = control_client().eval(
-                _READ, 3, redis_admission_gate._FOREGROUND_KEY, POLICY_KEY, GENERATION_KEY,
-                int(time.time() * 1000))
+            active, encoded, current_generation = storage.policy_snapshot(
+                control_client(), redis_admission_gate._FOREGROUND_KEY, POLICY_KEY, GENERATION_KEY,
+                int(time.time() * 1000),
+            )
             policy = json.loads(encoded) if encoded else None
             generation = int(current_generation) if current_generation else None
         else:

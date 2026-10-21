@@ -36,9 +36,11 @@ checkpoint invariants. These checks and installed artifact closure do not prove
 native locking, leases, deployment or resource isolation; no native PostgreSQL
 or previously denied loopback HTTP case ran for this slice.
 
-Remaining adapter work is concrete phase and I/O coordination: route/exercise/
-binding reads and bounded writes, source staging across short transactions,
+Remaining adapter work is concrete phase and I/O coordination: route/exercise
+reads and bounded writes, source staging across short transactions,
 and publication replay/build-time/snapshot/write sequencing. Atomic identity,
 fence, epoch, manifest, provenance and generation checks belong to persistence.
 The inventory-status projection lives in [source policy](../policy/README.md).
 These splits do not claim the entire root adapter is application-free.
+The complete binding phase lives in the [worker application](../worker/README.md#binding-phase);
+its target read and atomic commit remain root-owned storage operations.

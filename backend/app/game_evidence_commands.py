@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from psycopg.rows import tuple_row
 from tempo_game_evidence_contracts import v3
 from tempo_learning_remediation import PostgresRepository, ReceiveContext, RemediationError
 from tempo_learning_remediation.validation import digest
+from tempo_legacy_database.adapters.games.authority import acceptance as storage
+from tempo_legacy_database.adapters.games.authority import driver, headers
+from tempo_legacy_database.adapters.games.authority.driver import BorrowedTupleConnection
 
 from .command_gateway import register_command
 from .services import legacy_game_authority as authority_owner
@@ -25,17 +27,6 @@ class PreparedDelivery:
     decisions: dict
     error: RemediationError | None = None
     replay: bool = False
-
-
-class BorrowedTupleConnection:
-    def __init__(self, database):
-        if database.read_only:
-            raise RuntimeError("Legacy evidence requires the command writer transaction")
-        self.raw = database.raw
-        self.info = self.raw.info
-
-    def execute(self, statement, parameters=()):
-        return self.raw.cursor(row_factory=tuple_row).execute(statement, parameters)
 
 
 class CurrentLegacyAuthority:
@@ -62,8 +53,7 @@ def prepare_legacy_delivery(payload):
     # A completed/stale module transport receipt wins even after source edits.
     # This read grants no permission; receive rechecks immutable identity under
     # its own lock in the command writer transaction.
-    prior = authority_owner.read_rows("SELECT payload_hash,response_json FROM remediation_deliveries "
-        "WHERE workspace_id=%s AND delivery_id=%s", (LEGACY_WORKSPACE_ID, delivery.delivery_id))
+    prior = headers.delivery_receipt(authority_owner.read_rows, LEGACY_WORKSPACE_ID, delivery.delivery_id)
     if prior and prior[0]["response_json"]["status"] in {"completed", "stale_revision"}:
         error = None if prior[0]["payload_hash"] == digest(delivery.model_dump(mode="json")) else RemediationError(
             "conflict", "delivery_id_reused")
@@ -84,50 +74,39 @@ def _lock_and_recheck(database, prepared):
     delivery, captured = prepared.delivery, prepared.captured
     if prepared.error:
         return prepared.error
-    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-        ("tempo:imported-game:" + delivery.game_source.provider + ":" + delivery.game_source.provider_game_id,))
-    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
-    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))",
-        ("tempo:opening-graph:" + delivery.authority.repertoire_id,))
+    storage.lock_imported_source(database, delivery.game_source.provider, delivery.game_source.provider_game_id)
+    storage.lock_prefix_reservations(database)
+    storage.lock_opening_graph(database, delivery.authority.repertoire_id)
     obligation_cards = {item.card_id for item in delivery.obligations}
     authority_cards = ({row["card_id"] for row in captured.graphs}
         if isinstance(captured, authority_owner.Capture) else set())
     affected = obligation_cards | authority_cards
     for withdrawal in delivery.withdrawals:
-        row = database.execute_native("""SELECT contribution.card_id,contribution.payload_json,
-                contribution.evidence_id,contribution.game_id,contribution.obligation_revision
-            FROM remediation_obligation_heads head JOIN remediation_contributions contribution
-            USING(workspace_id,obligation_id,obligation_revision)
-            WHERE head.workspace_id=%s AND head.obligation_id=%s""",
-            (LEGACY_WORKSPACE_ID, withdrawal.obligation_id)).fetchone()
+        row = storage.retained_contribution(database, LEGACY_WORKSPACE_ID, withdrawal.obligation_id)
         try:
             authority_owner.validate_withdrawal_lineage(delivery, withdrawal, row)
         except RemediationError as error:
             return error
         affected.add(row["card_id"])
     for card_id in sorted(affected):
-        database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:card-edit:" + card_id,))
-        database.execute_native("SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,))
+        storage.lock_card_edit(database, card_id)
+        storage.lock_card_row(database, card_id)
     if captured is None:
         return RemediationError("terminal_failure", "legacy_capture_required")
-    identity = database.execute_native("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1 FOR SHARE").fetchone()
+    identity = storage.backend_identity(database)
     if (not identity or tuple(identity) != (captured.target_id, LEGACY_WORKSPACE_ID)
             or identity["target_id"] != delivery.authority.target_id):
         return RemediationError("stale_revision", "legacy_backend_identity_changed")
     if isinstance(captured, authority_owner.WithdrawalCapture):
-        game = database.execute_native("SELECT " + authority_owner._GAME_HEADER_COLUMNS +
-            " FROM imported_games WHERE id=%s FOR SHARE", (delivery.game_id,)).fetchone()
+        game = storage.imported_game_header(database, delivery.game_id)
         current = {key: game[key] for key in authority_owner._GAME_HEADER_COLUMNS.split(",")} if game else None
         if current != captured.game:
             return RemediationError("stale_revision", "legacy_withdrawal_game_changed_before_acceptance")
         return None
-    repertoire = database.execute_native("SELECT scope_source_revision,canonical_prefix_revision FROM repertoires WHERE id=%s FOR SHARE",
-        (delivery.authority.repertoire_id,)).fetchone()
-    scope = database.execute_native("SELECT generation FROM repertoire_game_scope WHERE id=1 FOR SHARE").fetchone()
-    graph = database.execute_native("SELECT generation,state FROM opening_graph_publications WHERE repertoire_id=%s FOR SHARE",
-        (delivery.authority.repertoire_id,)).fetchone()
-    integrity = database.execute_native("SELECT status,scan_status,scan_generation FROM repertoire_integrity_state WHERE repertoire_id=%s FOR SHARE",
-        (delivery.authority.repertoire_id,)).fetchone()
+    repertoire = storage.repertoire_revisions(database, delivery.authority.repertoire_id)
+    scope = storage.scope_generation(database)
+    graph = storage.graph_generation(database, delivery.authority.repertoire_id)
+    integrity = storage.integrity_status(database, delivery.authority.repertoire_id)
     expected = captured.metadata
     if (not scope or not repertoire or not graph or not integrity or
             (scope[0], repertoire[0], repertoire[1], graph[0], graph[1], *tuple(integrity)) != (
@@ -139,20 +118,18 @@ def _lock_and_recheck(database, prepared):
     certificate = current_integrity_certificate(database, delivery.authority.repertoire_id, expected["graph_generation"])
     if certificate is None or certificate != expected.get("integrity_certificate"):
         return RemediationError("stale_revision", "legacy_integrity_certificate_changed_before_acceptance")
-    game = database.execute_native("SELECT " + authority_owner._GAME_COLUMNS + " FROM imported_games WHERE id=%s FOR SHARE",
-        (delivery.game_id,)).fetchone()
+    game = storage.imported_game(database, delivery.game_id)
     if not game or dict(game) != captured.game:
         return RemediationError("stale_revision", "legacy_game_changed_before_acceptance")
     captured_cards = {row["id"]: row for row in captured.tables["cards"]}
     for card_id in obligation_cards | authority_cards:
-        row = database.execute_native("SELECT " + authority_owner._CARD_COLUMNS + " FROM cards WHERE id=%s", (card_id,)).fetchone()
+        row = storage.physical_card(database, card_id)
         before = captured_cards.get(card_id)
-        memberships = database.execute_native("SELECT repertoire_id,canonical_route_source FROM repertoire_cards "
-            "WHERE card_id=%s ORDER BY repertoire_id LIMIT 101 FOR SHARE", (card_id,)).fetchall()
+        memberships = storage.card_memberships(database, card_id)
         expected_memberships = sorted((item["repertoire_id"], item.get("canonical_route_source"))
             for item in captured.tables["repertoire_cards"] if item["card_id"] == card_id)
-        deleted = bool(database.execute_native("SELECT 1 FROM deleted_cards WHERE card_id=%s", (card_id,)).fetchone())
-        blocked = bool(database.execute_native("SELECT 1 FROM repertoire_integrity_card_blocks WHERE card_id=%s", (card_id,)).fetchone())
+        deleted = bool(storage.deleted_card(database, card_id))
+        blocked = bool(storage.blocked_card(database, card_id))
         if before is None and card_id not in obligation_cards:
             if row is None or row["content_type"] != "opening" or deleted:
                 continue  # Still unavailable; a newly eligible owner must be recaptured.
@@ -169,8 +146,7 @@ def _lock_and_recheck(database, prepared):
 
 
 def receive_legacy_delivery(database, prepared):
-    if database.read_only:
-        raise RuntimeError("Legacy evidence requires the command writer transaction")
+    driver.require_writer(database)
     # Pure receipt replay cannot write an obligation and needs no new source
     # binding. New effects acquire encompassing locks before the module lock.
     error = prepared.error if prepared.replay else _lock_and_recheck(database, prepared)

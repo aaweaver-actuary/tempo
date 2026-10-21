@@ -12,8 +12,8 @@ from psycopg_pool import ConnectionPool
 from tempo_content_publication_contracts.v1 import Publication, serialize_contract
 
 from tempo_content.models import SourceSnapshot, SourceExercise
-from tempo_content.policy import prepare_source, exercise_continuation, binding_responses, publication_report, coverage_reply, inventory_report
-from tempo_content.worker import reconcile_once, route_segment
+from tempo_content.policy import prepare_source, exercise_continuation, publication_report, coverage_reply, inventory_report
+from tempo_content.worker import reconcile_once, reconcile_binding, route_segment
 from tempo_content.publication import prepare_publication, publication_authority
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
@@ -433,21 +433,20 @@ class ContentService:
         return {'worked':True,'status':'pending','phase':'exercises','validated':exercise.key}
 
     def _binding_slice(self,task,manifest,hook):
-        if task['cursor']>=manifest['counts']['bindings']:
-            return self._transition(task,'complete',state='complete',hook=hook)
-        binding = self._item(manifest['stage_id'],'bindings',task['cursor'])
+        return reconcile_binding(task,manifest,hook,transition=self._transition,read_item=self._item,
+                                 read_target=self._binding_target,commit_binding=self._commit_binding,notify=_hook)
+
+    def _binding_target(self,task,binding):
         route = self._one('SELECT r.*,a.complete FROM content.generation_routes r JOIN content.artifacts a ON a.id=r.artifact_id WHERE r.source_id=%s AND r.generation=%s AND r.route_key=%s AND r.policy_key=%s',(task['source_id'],task['generation'],binding['route_key'],binding['policy_key']))
         occurrence = self._one('SELECT * FROM content.occurrences WHERE artifact_id=%s AND ply=%s',(route['artifact_id'],binding['ply'])) if route else None
-        exercise = self._item(manifest['stage_id'],'exercises',key=binding['exercise_key'])
-        _hook(hook,'after_read',task=task)
-        accepted = binding_responses(exercise,binding,route,occurrence)
-        _hook(hook,'before_commit',task=task)
+        return route, occurrence
+
+    def _commit_binding(self,task,binding,occurrence,accepted,hook):
         with self._transaction() as database:
             self._fence(database,task,hook)
             database.execute('INSERT INTO content.responses VALUES(%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(task['source_id'],task['generation'],binding['route_key'],binding['policy_key'],binding['ply'],binding['exercise_key'],occurrence['position_key'],Jsonb(accepted)))
             self._advance(database,task,cursor=task['cursor']+1)
             _hook(hook,'after_writes',task=task)
-        return {'worked':True,'status':'pending','phase':'bindings','validated':binding['exercise_key']}
 
     def collect_once(self,hook=None):
         with self._transaction() as database:

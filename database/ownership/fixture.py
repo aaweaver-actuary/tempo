@@ -260,3 +260,22 @@ def assert_component_credential(connection, domain):
         "SELECT has_database_privilege(current_user,current_database(),'CREATE'),has_database_privilege(current_user,current_database(),'TEMP'),has_schema_privilege(current_user,'public','CREATE'),has_schema_privilege(current_user,'public','USAGE'),has_schema_privilege(current_user,'domain','CREATE')"
     ).fetchone() != (False, False, False, False, False):
         raise ValueError("unexpected database or schema privilege")
+
+
+def prepare_remediation_learning(fixture, schema):
+    """Apply the existing remediation native-test setup to its owned Learning target."""
+    with fixture.admin("learning") as database:
+        database.execute("SET statement_timeout=5000")
+        database.execute("SET ROLE learning_owner")
+        database.execute("SET search_path=domain,pg_catalog")
+        database.execute(schema.decode())
+        database.execute("CREATE TABLE remediation_test_schedule(workspace_id text,card_id text,fsrs_json text NOT NULL,history_json text NOT NULL,PRIMARY KEY(workspace_id,card_id));"
+            "CREATE TABLE remediation_test_queue(workspace_id text,card_id text,position integer,protected boolean DEFAULT false,PRIMARY KEY(workspace_id,card_id));")
+
+
+class BoundedFixture(OwnershipFixture):
+    def connection(self, database, role, password):
+        import psycopg
+        return psycopg.connect(host="127.0.0.1", port=self.port, dbname=database,
+            user=role, password=password, autocommit=True, connect_timeout=3,
+            options="-c statement_timeout=5000 -c lock_timeout=1000")

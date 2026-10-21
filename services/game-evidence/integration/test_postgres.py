@@ -301,12 +301,12 @@ def test_native_pgn_findings_commit_with_outbox_and_empty_comparison(state):
 def test_duplicate_source_and_snapshot_refresh_reuse_verified_index(state,monkeypatch):
     store,workspace,value=state
     game=imported(state)
-    import tempo_game_evidence_database.adapters.store as storage
+    from tempo_game_evidence import comparison as comparison_owner
     from tempo_game_evidence import source as source_owner
     def forbidden(*_args,**_kwargs):
         raise AssertionError("unchanged_source_was_reparsed")
     monkeypatch.setattr(source_owner,"normalize_pgn",forbidden)
-    monkeypatch.setattr(storage,"replay_positions",forbidden)
+    monkeypatch.setattr(comparison_owner,"replay_positions",forbidden)
     assert store.import_pgn(workspace,"pgn","miss","Learner",(FIXTURES/"miss.pgn").read_bytes())==game
     value["revision"]=2
     store.load_snapshot(value)
@@ -628,11 +628,11 @@ def test_nonintersecting_snapshot_refresh_converges_without_replay(state,monkeyp
     game=store.import_pgn(workspace,'pgn','custom','Learner',raw)
     drain(store)
     assert store.report(workspace,game)['readiness']=='ready'
-    import tempo_game_evidence_database.adapters.store as storage
+    from tempo_game_evidence import comparison as comparison_owner
     from tempo_game_evidence import source as source_owner
     def forbidden(*args,**kwargs):
         raise AssertionError('verified_index_replayed')
-    monkeypatch.setattr(storage,'replay_positions',forbidden)
+    monkeypatch.setattr(comparison_owner,'replay_positions',forbidden)
     monkeypatch.setattr(source_owner,'normalize_pgn',forbidden)
     value.update(revision=2,routes=[])
     store.load_snapshot(value)

@@ -1,8 +1,28 @@
 """Policy-aware observations. A repertoire deviation is not an engine error."""
 from tempo_chess_core import canonical_fen_key
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
-from .source import identity
+from .source import INDEX_VERSION, identity, replay_positions
 from .snapshot import projected_definition
+
+
+def prepare_game_comparison(row, inputs, snapshot_row, store, before_publish):
+    game = row["document"]
+    receipt = row["index_receipt"]
+    reusable = (receipt and receipt == {"input_digest": row["input_digest"], "version": INDEX_VERSION,
+                "position_count": len(game.get("moves", []))+1, "complete": True}
+                and row["positions"] is not None and len(row["positions"]) == receipt["position_count"])
+    positions = row["positions"] if reusable else replay_positions(game) if "source_error" not in game else []
+    snapshot = store.comparison_snapshot(inputs["snapshot_digest"], snapshot_row["document"]) if snapshot_row else None
+    findings = compare_game(game, positions, snapshot) if snapshot and positions else []
+    token = identity(row["revision"],row["input_digest"],inputs["epoch"],inputs["snapshot_digest"],INDEX_VERSION)
+    if before_publish:
+        before_publish()
+    return game, positions, snapshot, findings, token
+
+
+def comparison_index_receipt(row, game, positions):
+    return {"input_digest": row["input_digest"], "version": INDEX_VERSION,
+            "position_count": len(positions), "complete": "source_error" not in game}
 
 
 def compare_game(game, positions, snapshot):

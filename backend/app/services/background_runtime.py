@@ -1,4 +1,4 @@
-"""Best-effort, fixed-slot live worker stages and monotonic timing; no DB writes."""
+"""Best-effort worker-stage presentation and monotonic timing."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -6,15 +6,15 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
-import redis
-from redis.backoff import NoBackoff
-from redis.retry import Retry
 import hashlib
 import json
 import logging
 import os
 import socket
 import time
+
+from tempo_legacy_database.adapters.redis_control.wake_runtime import runtime as storage
+from tempo_legacy_database.adapters.redis_control.wake_runtime.runtime import _diagnostic_client
 
 # Bounded spans extend existing diagnostics; disable explicitly for paired probes.
 _training_timing: ContextVar[dict | None] = ContextVar("training_timing", default=None)
@@ -97,12 +97,6 @@ class RuntimeSnapshot(BaseModel):
 
 _PROCESS_STARTED = datetime.now(timezone.utc).isoformat()
 
-@lru_cache(maxsize=1)
-def _diagnostic_client():
-    # Telemetry must never inherit the admission client's one-second network waits.
-    return redis.Redis.from_url(os.environ["TEMPO_REDIS_URL"], socket_connect_timeout=0.005,
-                               socket_timeout=0.005, retry=Retry(NoBackoff(), 0))
-
 
 def _worker_slot() -> int:
     return int.from_bytes(hashlib.blake2s(f"{socket.gethostname()}:{os.getpid()}".encode(), digest_size=2).digest(), "big") % 16
@@ -139,8 +133,9 @@ class RuntimeMeasurement:
         self.last_publish = now
         if redis_admission_gate.configured():
             try:
-                _diagnostic_client().set(f"tempo:diagnostics:worker:{_worker_slot()}",
-                                                 self.sample().model_dump_json(), ex=15)
+                storage.publish_worker_stage(
+                    _diagnostic_client(), _worker_slot(), self.sample().model_dump_json(),
+                )
             except Exception:
                 # Telemetry availability never changes admission or execution outcomes.
                 _LOGGER.warning("worker diagnostic record unavailable")
@@ -216,7 +211,7 @@ def snapshot() -> RuntimeSnapshot:
     if not redis_admission_gate.configured():
         return RuntimeSnapshot()
     try:
-        values = _diagnostic_client().mget([f"tempo:diagnostics:worker:{slot}" for slot in range(16)])
+        values = storage.worker_stage_values(_diagnostic_client())
         now = datetime.now(timezone.utc)
         workers = []
         for value in values:

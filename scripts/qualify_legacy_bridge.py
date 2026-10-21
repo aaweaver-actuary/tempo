@@ -412,13 +412,7 @@ def controller(args):
                     arguments = ("run", "--memory-swap", "256m", *arguments[1:])
                 return timer.capture(["docker", *arguments], check=check)
             fixture_module.docker = bounded_docker
-            class BoundedFixture(fixture_module.OwnershipFixture):
-                def connection(self, database, role, password):
-                    import psycopg
-                    return psycopg.connect(host="127.0.0.1", port=self.port, dbname=database,
-                        user=role, password=password, autocommit=True, connect_timeout=3,
-                        options="-c statement_timeout=5000 -c lock_timeout=1000")
-            fixture = BoundedFixture()
+            fixture = fixture_module.BoundedFixture()
             report["fixture"] = dict(identity=fixture.identity, container=fixture.container, image_id=None)
             write(directory / "host.json", report)
             fixture.start()
@@ -434,13 +428,7 @@ def controller(args):
             wheel = next((root / "wheels").glob("tempo_learning_remediation-0.1.0-*.whl"))
             with zipfile.ZipFile(wheel) as bundle: schema = bundle.read("tempo_remediation_database/ddl/migrations/001_remediation.sql")
             if hashlib.sha256(schema).hexdigest() != MODULE_SHA: raise RuntimeError("Qualified module schema checksum changed")
-            with fixture.admin("learning") as database:
-                database.execute("SET statement_timeout=5000")
-                database.execute("SET ROLE learning_owner")
-                database.execute("SET search_path=domain,pg_catalog")
-                database.execute(schema.decode())
-                database.execute("CREATE TABLE remediation_test_schedule(workspace_id text,card_id text,fsrs_json text NOT NULL,history_json text NOT NULL,PRIMARY KEY(workspace_id,card_id));"
-                    "CREATE TABLE remediation_test_queue(workspace_id text,card_id text,position integer,protected boolean DEFAULT false,PRIMARY KEY(workspace_id,card_id));")
+            fixture_module.prepare_remediation_learning(fixture, schema)
             from psycopg.conninfo import make_conninfo
             dsn = make_conninfo(host="native-db", dbname="learning", user="learning_runtime", password=fixture.passwords["learning"], options="-c search_path=domain,pg_catalog")
             env_file.write_text("TEMPO_REMEDIATION_OWNED=" + fixture.identity + "\nTEMPO_REMEDIATION_DATABASE=" + dsn +

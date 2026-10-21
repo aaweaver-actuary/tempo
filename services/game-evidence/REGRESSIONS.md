@@ -43,6 +43,15 @@ failure-write exceptions. It uses installed store/application wiring and synthet
 capabilities; actual leases, contention, persistence and restart remain native
 suite responsibilities.
 
+`tests/test_comparison_preparation.py` owns exact index-reuse/replay, snapshot
+lookup, findings, token and callback order over captured facts; source-error and
+missing-snapshot paths; unchanged receipt fields; the reconciliation pair's
+borrowed transaction and loader-lookup order; and list input validation before
+connection acquisition. `test_reporting.py` additionally retains the existing
+report/positions/receipt `Jsonb` evaluation order and locked publication fences.
+Native replay monkeypatches now target the comparison application module; those
+files are statically parsed/reference-audited without claiming native execution.
+
 `tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
 legacy observation: exact original physical card/interior offset, played/expected
 move, deterministic immutable identity, unknown/no-miss without an envelope,

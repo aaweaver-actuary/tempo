@@ -21,16 +21,24 @@ semantics, and [REGRESSIONS.md](REGRESSIONS.md) for owning tests.
 
 **Implemented source in this unmerged extraction; deployment unverified.**
 [`source_requests.py`](src/tempo_intelligence/source_requests.py) owns existing
-source descriptor preparation, cache identity and retry eligibility.
+request/revision admission, snapshot preparation, source descriptor/cache identity,
+captured-source inspection and retry/failure decisions.
 [`serialization.py`](src/tempo_intelligence/serialization.py) owns nested public
-JSON value conversion. These helpers use existing request/configuration facts;
-they have no database, transaction, provider or worker capability.
+JSON value conversion. The pure decisions use existing request/configuration
+facts. The complete `inspect_request` application workflow consumes the fixed
+owner read-transaction and credential-status capabilities supplied by Store;
+application code has no driver/query API, provider call or worker dependency.
 
 ```mermaid
 flowchart LR
-  store[Intelligence Store composition] -->|prepare descriptors and cache identity| policy[Source request policy]
-  store -->|retry decision at existing call points| policy
+  store[Intelligence Store composition] -->|request admission and identity| policy[Source request policy]
+  store -->|retry and failure decisions at existing call points| policy
   store -->|query and transaction authority| tables[(Intelligence tables)]
+  store --> inspection[Request inspection application]
+  inspection -->|one initial owner read snapshot| reader[Fixed request inspection reader]
+  reader --> tables
+  inspection -->|after initial snapshot closes| credentials[Existing credential status capability]
+  inspection --> serializer
   store --> serializer[Public JSON serialization]
   analysis[AnalysisStore responses] --> serializer
 ```
@@ -38,10 +46,25 @@ flowchart LR
 The centralized Store still prepares descriptors, initializes bindings, sorts,
 then locks/processes each cache and appends its binding in the existing order.
 Provider-origin lookup remains inside the existing descriptor loop and retry
-short-circuit predicate. SQL, transactions, locks, clock calls, command receipts
+short-circuit predicate. Source inspection and failure decisions receive the
+existing clock/retry callbacks; freshness still calls the clock only with accepted
+evidence, then retry evaluation uses its own clock observation. Provider-supplied
+deadlines, waiting/cancellation and exhausted attempts retain their original
+deadline/clock behavior. SQL, transactions, locks, clock calls, command receipts
 and public wire shapes are unchanged. Analysis responses and the retained native
 fixture import serialization directly from this application module.
+The [fixed inspection projection](../../database/tempo_intelligence_database/adapters/request_inspection.py)
+contains the existing cache/evidence/provider-control SELECTs and delegates the
+existing request-head and credential-row reads. It never opens or commits a
+transaction. Store supplies its existing `read_only=True` snapshot, and the
+application retains per-source read/clock/credential order, serialization inside
+that snapshot and the existing credential refresh after it closes. That final
+capability retains its own existing read/I/O lifecycle; this is not a claim of
+only one transaction for a provider-containing request.
 `tests/test_source_requests.py` owns the pure policy/serialization cases.
+Its two complete inspection cases also exercise the actual projection and
+transaction composition with a fake driver; no private credential or native
+database is accessed.
 The [adapter inventory](../../database/tempo_intelligence_database/adapters/README.md)
 still names the mixed workflows awaiting later extraction; this bounded move
 does not establish complete separation or live resource isolation.
