@@ -576,3 +576,16 @@ response object. Private status/head lookup order precedes argument evaluation.
 Existing input-finalization cases exercise these same moved receipt helpers;
 position-order and public-schema cases remain unchanged. Native locking,
 publication concurrency and real engine/provider work were not run.
+
+## Analysis capture, derivation and publication composition
+
+`tests/test_analysis_publication.py` names the moved capture/derive/derive-next
+boundary. Synthetic owner transactions and fixed-row responses preserve cursor
+iteration, capture/input read closure, already-current return, 64-item staging,
+metadata/callback timing, revision/generation and captured-dismissal fences,
+conditional reopen/other-run invalidation, legacy evidence/metadata and next-run
+closure. The same 13 cases pass against the saved original adapter. Existing
+finding assembly and packaged-schema/legacy report cases remain owning proofs.
+This move preserves complete SQL/parameters and every atomic guard under its
+original owner context. It does not replace the retained native Analysis
+publication/concurrency contracts, which were not run for this source move.

@@ -81,7 +81,7 @@ lookup order. Existing packaged schemas and legacy report contracts remain
 selected owning checks. No DDL, foreign key, write workflow, deadline, provider,
 engine, private credential or live resource behavior is changed or exercised.
 The [complete method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-continues to identify seven mixed Analysis methods; this is a bounded read slice,
+continues to identify four mixed Analysis methods; this is a bounded read slice,
 not completion of the whole owner.
 
 ## Input admission and finalization boundary
@@ -121,7 +121,7 @@ page-digest cases remain unchanged. Real locking, rollback durability and native
 concurrency are separate proofs and were not run. This adds no new schema,
 model, generic query API, transaction/receipt writer or engine/provider dependency.
 The [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-retains seven mixed methods; completion of input admission is a bounded slice.
+retains four mixed methods; completion of input admission is a bounded slice.
 
 ## Run, command and dismissal boundary
 
@@ -162,4 +162,53 @@ composition, position-order and packaged-schema cases remain selected checks.
 Real atomicity/concurrency, engine work and live resource isolation remain
 unverified; no schema/model/provider/security behavior is changed. The
 [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-identifies seven remaining mixed methods; whole-owner separation is unfinished.
+identifies four remaining mixed methods; whole-owner separation is unfinished.
+
+## Capture, derivation and publication boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`publication_work.py`](publication_work.py) owns the existing capture-to-input
+composition, legacy/current derivation, incident grouping, finding hashes/model
+validation, dismissal/reopen decisions, completeness/metadata and final state
+projection. The existing `_derive_evidence` composition still classifies source,
+reads evidence and merges facts in that order. No query/driver API enters the
+application workflow.
+
+```mermaid
+flowchart LR
+  store[AnalysisStore transaction composition] --> app[Capture and report derivation application]
+  app -->|same capture and legacy read contexts| fixed[Fixed publication snapshots and operations]
+  app -->|same 64-finding stage contexts| fixed
+  app -->|callback before final write context| callback[Existing optional before-publish capability]
+  app -->|same final publication context| fixed
+  fixed --> guard[User-state lock / revision and dismissal guards / reopen propagation]
+  fixed --> tables[(Intelligence positions / results / dismissals / reports / items / runs)]
+  app --> pure[Existing finding merge / digest / Finding model]
+```
+
+[`AnalysisPublicationOperations`](../../../../../database/tempo_intelligence_database/adapters/analysis_publication.py)
+retains complete bound queries and fixed row extraction. Capture keeps its one
+foreground read snapshot, result/dismissal cursor iteration and separate input
+read after closure. Legacy report/item reads retain their background snapshot;
+current derivation retains the existing evidence capability. Finding staging
+commits in the same 64-item batches. Metadata and the optional callback remain
+after staging and before the final background write begins.
+
+The final write still takes the user-state advisory lock before the locked head
+read, verifies revision/generation and captured dismissal revisions, requests a
+fresh generation on dismissal drift, then performs conditional automatic-reopen
+writes and sibling-run invalidation, report insertion and head publication in
+that order. Final state is projected after report insertion, at its original
+call point. Every lock, guard and complete SQL statement stays root on the same
+owning transaction; no new receipt, lease or publication writer is introduced.
+
+`tests/test_analysis_publication.py` exercises fixed operations and composition
+with synthetic rows: capture cursor/read closure, already-current early exit,
+65-finding staging, callback timing, revision/generation/dismissal fences,
+conditional reopen propagation, legacy metadata/evidence preservation and next-run
+read closure. Existing finding/schema/legacy contracts remain selected proofs.
+Native atomicity, concurrent publication and live resource isolation remain
+unverified. This slice changes no schema/FK, model, engine/provider or security
+behavior. The [complete 39-method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+retains four mixed engine workflows: `claim`, `accept`, `failure` and
+`mark_engine_unavailable`.

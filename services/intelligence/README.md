@@ -126,7 +126,7 @@ or model execution. `tests/test_maia_work.py` exercises these moved boundaries
 with the actual composition/fixed operations and fake rows; existing contract
 validation and native durability/concurrency proofs retain their separate owners.
 The [full Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
-accounts for the retained Store authority/composition and all 36 AnalysisStore
+accounts for the retained Store authority/composition and all 39 AnalysisStore
 methods; the latter still contains substantial application work.
 
 ## Provider-source claim and publication boundary
@@ -450,3 +450,10 @@ and host/database resource allocation remain necessary before claiming operation
 failure isolation; no such live rollout is performed by this change.
 
 Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_intelligence_database/README.md).
+
+The [capture/derivation/publication boundary](src/tempo_intelligence/analysis/README.md#capture-derivation-and-publication-boundary)
+keeps finding/dismissal/model/metadata/callback policy outside the database tree;
+fixed operations retain snapshots, guarded publication, conditional reopen
+propagation and writes at the original call points. The complete Analysis audit
+still identifies four mixed engine workflows; source separation and deployed
+resource isolation remain distinct claims.
