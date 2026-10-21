@@ -12,6 +12,8 @@ from psycopg.errors import TransactionTimeout
 
 from tempo_legacy_database.connections import background_read_connection, connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.queue_refresh import admissions
+from tempo_legacy_database.adapters.queue_refresh.eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import queue_application, queue_ordering, frozen_opening_order
 from .opening_capacity_frontier import plan_prioritized_opening_admissions
@@ -350,77 +352,35 @@ def _publish_tactical_introduction(database, queue_date: str,
 
     if prepared is None:
         return False
-    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{prepared['card_id']}",))
+    admissions.lock_tactical_card_edit(database, prepared['card_id'])
     from ..card_deletion import is_card_deleted
     if is_card_deleted(database, prepared["card_id"]):
         return True
     lock_daily_tactic_admission(database, queue_date)
-    limit = database.execute_native("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
+    limit = admissions.tactical_daily_limit(database)
     reserved = count_daily_tactic_introductions(database, queue_date)
     if reserved >= limit:
         return False
-    cursor = database.execute_native(
-        "SELECT last_pack_id FROM tactic_rotation WHERE id=1 FOR UPDATE",
-    ).fetchone()[0]
-    active = database.execute_native(
-        "SELECT active FROM tactic_pack_activation WHERE pack_id=%s",
-        (prepared["pack_id"],),
-    ).fetchone()
+    cursor = admissions.locked_rotation_cursor(database)
+    active = admissions.pack_activation(database, prepared["pack_id"])
     if cursor != prepared["rotation_cursor"] or active is None or not active[0]:
         return True
-    progress = database.execute_native(
-        "SELECT admitted_at FROM tactic_progress WHERE puzzle_id=%s FOR UPDATE",
-        (prepared["puzzle_id"],),
-    ).fetchone()
+    progress = admissions.locked_puzzle_progress(database, prepared["puzzle_id"])
     if progress is not None and progress[0] is not None:
         return True
-    database.execute_native(
-        "INSERT INTO repertoires(id,name,source_name,created_at) "
-        "VALUES('__tactics__','Tactics','Lichess puzzle database',%s) "
-        "ON CONFLICT(id) DO NOTHING",
-        (queue_date,),
-    )
-    database.execute_native(
-        "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,"
-        "content_type,scheduling_mode,source_ref,source_fen,introduced_at) "
-        "VALUES(%s,'__tactics__','checkpoint',%s,%s,'learning',%s,'tactic','light',%s,%s,%s) "
-        "ON CONFLICT(id) DO NOTHING",
-        (prepared["card_id"], prepared["training_fen"], prepared["solution_json"],
-         queue_date, prepared["puzzle_id"], prepared["source_fen"], queue_date),
-    )
-    database.execute_native("SELECT id FROM cards WHERE id=%s FOR UPDATE", (prepared["card_id"],))
-    database.execute_native(
-        "INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,admitted_at,admission_mode) "
-        "VALUES(%s,%s,%s,%s,%s) ON CONFLICT(puzzle_id) DO UPDATE SET "
-        "card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at)",
-        (prepared["puzzle_id"], prepared["pack_id"], prepared["card_id"], queue_date, "light"),
-    )
-    database.execute_native(
-        "INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(%s,%s,%s)",
-        (prepared["puzzle_id"], prepared["pack_id"], queue_date),
-    )
-    queued = database.execute_native(
-        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
-        (queue_date, prepared["card_id"]),
-    ).fetchone()
+    admissions.ensure_tactics_repertoire(database, queue_date)
+    admissions.insert_tactical_card(database, prepared["card_id"], prepared["training_fen"], prepared["solution_json"], queue_date, prepared["puzzle_id"], prepared["source_fen"])
+    admissions.lock_tactical_card_row(database, prepared["card_id"])
+    admissions.upsert_tactical_progress(database, prepared["puzzle_id"], prepared["pack_id"], prepared["card_id"], queue_date)
+    admissions.insert_tactical_introduction(database, prepared["puzzle_id"], prepared["pack_id"], queue_date)
+    queued = admissions.queued_card(database, queue_date, prepared["card_id"])
     if queued is None:
         lock_queue_date_for_position(database, queue_date)
-        queued_after_lock = database.execute_native(
-            "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
-            (queue_date, prepared["card_id"]),
-        ).fetchone()
+        queued_after_lock = admissions.queued_card(database, queue_date, prepared["card_id"])
         if queued_after_lock is None:
-            next_position = database.execute_native(
-                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
-                (queue_date,),
-            ).fetchone()[0]
-            database.execute_native(
-                "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)",
-                (queue_date, prepared["card_id"], next_position),
-            )
-    database.execute_native(
-        "UPDATE tactic_rotation SET last_pack_id=%s WHERE id=1", (prepared["pack_id"],),
-    )
+            next_position = admissions.next_queue_position(database, queue_date)
+            admissions.append_card(database, queue_date, prepared["card_id"], next_position)
+    admissions.set_rotation_cursor(database, prepared["pack_id"])
     return True
 
 
@@ -464,53 +424,21 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
                                 introduced_count: int) -> bool:
     """Apply the original per-repertoire admission rule to one locked entry."""
 
-    current = database.execute_native(
-        """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.id=%s AND q.queue_date=%s AND q.status='queued'
-             AND c.content_type='opening' AND COALESCE(q.admission_kind,'')!='explicit'
-             AND c.repertoire_id<>'__retained_cards__'
-             AND (c.introduced_at IS NULL OR c.introduced_at=%s)
-             AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-           FOR UPDATE OF q,c""",
-        (candidate["id"], queue_date, queue_date),
-    ).fetchone()
+    current = admissions.locked_unseen_entry(database, candidate["id"], queue_date)
     if current is None:
         return False
     limit = _current_opening_limit(database, candidate["repertoire_id"])
     if limit is None:
         return False
     if introduced_count < limit or has_outstanding_real_game_miss(database, candidate["card_id"]):
-        database.execute_native(
-            "UPDATE cards SET introduced_at=%s,state='learning' WHERE id=%s",
-            (queue_date, candidate["card_id"]),
-        )
+        admissions.keep_unseen_introduction(database, queue_date, candidate["card_id"])
         return True
-    database.execute_native("DELETE FROM daily_queue WHERE id=%s", (candidate["id"],))
-    database.execute_native(
-        "UPDATE cards SET introduced_at=NULL,state='new' WHERE id=%s",
-        (candidate["card_id"],),
-    )
+    admissions.remove_unseen_entry(database, candidate["id"])
+    admissions.reset_unseen_introduction(database, candidate["card_id"])
     return False
 
 
-_DUE_CARD_ELIGIBILITY = """c.due_date<=%s AND c.state IN ('learning','mature')
-    AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
-    AND (c.content_type!='opening' OR EXISTS(
-        SELECT 1 FROM repertoires repertoire
-        WHERE (repertoire.id=c.repertoire_id OR EXISTS(
-            SELECT 1 FROM repertoire_cards link
-            WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
-          AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                         WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
-    AND (c.content_type!='study_exercise' OR (
-        EXISTS(SELECT 1 FROM study_exercises exercise JOIN studies study
-               ON study.id=exercise.study_id
-               WHERE exercise.id=c.study_exercise_id AND exercise.status='published'
-                 AND study.archived=0)
-        AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
-                       WHERE burial.exercise_id=c.study_exercise_id AND burial.study_day=%s)))
-    AND NOT EXISTS(SELECT 1 FROM daily_queue queue
-                   WHERE queue.card_id=c.id AND queue.queue_date=%s)"""
+
 
 
 def _prepare_due_card(queue_date: str) -> str | None:
@@ -523,25 +451,14 @@ def _prepare_due_card(queue_date: str) -> str | None:
 
 
 def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
-    if database.execute_native(
-        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,),
-    ).fetchone() is None:
+    if admissions.locked_card(database, card_id) is None:
         return False
     lock_queue_date_for_position(database, queue_date)
-    eligible = database.execute_native(
-        "SELECT 1 FROM cards c WHERE c.id=%s AND " + _DUE_CARD_ELIGIBILITY,
-        (card_id, queue_date, queue_date, queue_date),
-    ).fetchone()
+    eligible = admissions.due_card_eligibility(database, card_id, queue_date)
     if eligible is None:
         return False
-    next_position = database.execute_native(
-        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
-        (queue_date,),
-    ).fetchone()[0]
-    database.execute_native(
-        "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)",
-        (queue_date, card_id, next_position),
-    )
+    next_position = admissions.next_queue_position(database, queue_date)
+    admissions.append_card(database, queue_date, card_id, next_position)
     return True
 
 
@@ -730,13 +647,7 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
     return True
 
 
-_STUDY_NEW_ELIGIBILITY = """c.content_type='study_exercise' AND c.state='new'
-    AND c.archived=0 AND COALESCE(c.pending_validation,0)=0 AND c.due_date<=%s
-    AND exercise.status='published' AND study.archived=0
-    AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
-                   WHERE burial.exercise_id=exercise.id AND burial.study_day=%s)
-    AND NOT EXISTS(SELECT 1 FROM daily_queue queue
-                   WHERE queue.card_id=c.id AND queue.queue_date=%s)"""
+
 
 
 def _prepare_study_admission(queue_date: str) -> str | None:
@@ -763,39 +674,18 @@ def _prepare_study_admission(queue_date: str) -> str | None:
 def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool:
     """Recheck the quota and candidate while the task and card are locked."""
 
-    if database.execute_native(
-        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (study_card_id,),
-    ).fetchone() is None:
+    if admissions.locked_card(database, study_card_id) is None:
         return False
     lock_queue_date_for_position(database, queue_date)
-    allowance = database.execute_native(
-        "SELECT study_new_per_day FROM settings WHERE id=1",
-    ).fetchone()[0]
-    admitted = database.execute_native(
-        """SELECT COUNT(*) FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
-           WHERE queue.queue_date=%s AND card.content_type='study_exercise'
-             AND card.state='new' AND queue.status IN ('queued','complete','buried')""",
-        (queue_date,),
-    ).fetchone()[0]
+    allowance = admissions.study_daily_allowance(database)
+    admitted = admissions.admitted_study_count(database, queue_date)
     if admitted >= allowance:
         return False
-    eligible = database.execute_native(
-        "SELECT 1 FROM cards c JOIN study_exercises exercise ON exercise.id=c.study_exercise_id "
-        "JOIN studies study ON study.id=exercise.study_id WHERE c.id=%s AND "
-        + _STUDY_NEW_ELIGIBILITY,
-        (study_card_id, queue_date, queue_date, queue_date),
-    ).fetchone()
+    eligible = admissions.study_card_eligibility(database, study_card_id, queue_date)
     if eligible is None:
         return False
-    position = database.execute_native(
-        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
-        (queue_date,),
-    ).fetchone()[0]
-    database.execute_native(
-        """INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_kind)
-           VALUES(%s,%s,%s,'study_exercise','new')""",
-        (queue_date, study_card_id, position),
-    )
+    position = admissions.next_queue_position(database, queue_date)
+    admissions.append_study_card(database, queue_date, study_card_id, position)
     return True
 
 

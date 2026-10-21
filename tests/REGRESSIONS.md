@@ -5087,3 +5087,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Legacy priority preparation and retention extraction
 
 `backend/tests/test_priority_lifecycle_database_split.py` owns focused direct-driver/dialect delegation, lease→source→job→task lock sequencing, absent-source fencing and task-SQLite epoch identity. Existing preparation fixtures and two SQLite retention cases retain generation, row-budget/publication and task assertions. Native PostgreSQL locking/translation and deployed isolation remain unverified.
+
+
+## Queue refresh admission storage slice
+
+`backend/tests/test_queue_refresh_admission_database_split.py` owns the four selected writer boundaries and existing eligibility constant delegation. Existing admission/due/deletion/recovery cases retain assertions; the selected unseen parity fixture fails before the changed writer because its reference schema lacks frozen_opening_activation. Original-source reproduction is recorded without editing/skipping that fixture. Whole-file/native/full-system acceptance remains unfinished.
