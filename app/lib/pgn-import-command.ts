@@ -1,10 +1,10 @@
+import { readPendingPgnImportBytes, decodePendingPgnImportRecord, writePendingPgnImportRecord, clearPendingPgnImportRecord } from "../../database/browser/adapters/authoring/pgn-import";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { importResultSchema } from "../domain/schemas";
 import { FailedOperationError, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-pgn-import-v1";
 const RESOLUTION_BUDGET_MS = 30_000;
 const POLL_INTERVAL_MS = 1_000;
 const pendingImportSchema = z.object({ operationId: z.string().min(1).max(128), fingerprint: z.string().min(1) });
@@ -30,13 +30,13 @@ function blockedImport(pending: PendingImport, receipt: ImportReceipt) {
     `Import is blocked: ${receipt.last_error?.message ?? receipt.message ?? "Check the local service."} After resolving the problem, retry this blocked import.`, true);
 }
 export function readPendingPgnImport(): PendingImport | null {
-  const stored = localStorage.getItem(PENDING_KEY);
+  const stored = readPendingPgnImportBytes();
   if (!stored) return null;
-  try { return pendingImportSchema.parse(JSON.parse(stored)); }
+  try { return pendingImportSchema.parse(decodePendingPgnImportRecord(stored)); }
   catch { throw new Error("The pending PGN import is unreadable. Restore browser data before importing another file."); }
 }
 function clearPendingImport(operationId: string) {
-  if (readPendingPgnImport()?.operationId === operationId) localStorage.removeItem(PENDING_KEY);
+  if (readPendingPgnImport()?.operationId === operationId) clearPendingPgnImportRecord();
 }
 async function inspectReceipt(pending: PendingImport, signal: AbortSignal, discarding = false): Promise<ImportReceipt> {
   let rawReceipt: unknown;
@@ -166,7 +166,7 @@ export async function savePgnImportCommand(
       if (newerPendingImport) throw new PendingOperationError(newerPendingImport.operationId,
         "The pending PGN import changed. Reopen the dialog to check or discard it.");
       pending = { operationId: crypto.randomUUID(), fingerprint };
-      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+      writePendingPgnImportRecord(pending);
     }
     const currentImport = pending;
     let posted = false;

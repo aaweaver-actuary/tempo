@@ -1,3 +1,4 @@
+import { writeTacticProgress as writeStoredTacticProgress } from "../../database/browser/adapters/practice/tactics-progress";
 import { tacticProgressSchema } from "../domain/schemas";
 import { readStoredValue } from "./validated-data";
 export type TacticProgress = Record<
@@ -26,7 +27,7 @@ export function readTacticProgress(): TacticProgress {
 }
 
 export function writeTacticProgress(progress: TacticProgress) {
-  localStorage.setItem("tempo-tactics-progress-v2", JSON.stringify(progress));
+  writeStoredTacticProgress(progress);
 }
 
 export function advanceTacticProgress(

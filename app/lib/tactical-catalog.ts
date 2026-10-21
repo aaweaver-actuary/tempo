@@ -1,3 +1,5 @@
+import { readPendingPackActivation, writePendingPackActivation, removePendingPackActivation } from "../../database/browser/adapters/practice/tactical-activation";
+import { writeTacticProgress as writeStoredTacticProgress, readTacticProgressMigration, markTacticProgressMigrated } from "../../database/browser/adapters/practice/tactics-progress";
 import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL, assetUrl } from "../const";
@@ -46,8 +48,8 @@ export async function setPackActivation(packIds: string[], active: boolean) {
     const pendingKey = `tempo-tactics-activation-pending-v1:${[...packIds].sort().join(",")}:${active}`;
     let operationId: string;
     try {
-      operationId = localStorage.getItem(pendingKey) ?? crypto.randomUUID();
-      localStorage.setItem(pendingKey, operationId);
+      operationId = readPendingPackActivation(pendingKey) ?? crypto.randomUUID();
+      writePendingPackActivation(pendingKey, operationId);
     } catch {
       operationId = crypto.randomUUID();
     }
@@ -65,7 +67,7 @@ export async function setPackActivation(packIds: string[], active: boolean) {
     const updatedCatalog = wasPending
       ? await loadTacticalCatalog()
       : tacticalCatalogSchema.parse(await confirmedResponse.json());
-    try { localStorage.removeItem(pendingKey); } catch { /* Storage is optional. */ }
+    try { removePendingPackActivation(pendingKey); } catch { /* Storage is optional. */ }
     return updatedCatalog;
   }
   const current: string[] = JSON.parse(
@@ -103,7 +105,7 @@ export async function migrateDemoProgress(
   catalog: TacticalCatalog,
   progress: TacticProgress,
 ) {
-  if (localStorage.getItem("tempo-tactic-progress-pack-migration-v1"))
+  if (readTacticProgressMigration())
     return progress;
   const migrated = { ...progress };
   for (const pack of catalog.packs) {
@@ -131,7 +133,7 @@ export async function migrateDemoProgress(
       discoveredIds,
     };
   }
-  localStorage.setItem("tempo-tactics-progress-v2", JSON.stringify(migrated));
-  localStorage.setItem("tempo-tactic-progress-pack-migration-v1", "true");
+  writeStoredTacticProgress(migrated);
+  markTacticProgressMigrated();
   return migrated;
 }

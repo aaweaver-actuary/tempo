@@ -1,9 +1,10 @@
+import { readPendingCardRevisionRecord, writePendingCardRevisionRecord, clearPendingCardRevisionRecord } from "../../database/browser/adapters/authoring/card-revision";
+import { readPendingCardDeletionBytes } from "../../database/browser/adapters/authoring/card-delete";
 import { API_URL } from "../const";
 import { cardRevisionResultSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-card-revision-v1";
 type CardRevision = {
   cardId: string;
   startingFen: string;
@@ -14,9 +15,8 @@ type CardRevision = {
 type PendingRevision = { operationId: string; request: string };
 
 function readPending(): PendingRevision | null {
-  const stored = localStorage.getItem(PENDING_KEY);
-  if (!stored) return null;
-  const parsed: unknown = JSON.parse(stored);
+  const parsed = readPendingCardRevisionRecord();
+  if (parsed === undefined) return null;
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("request" in parsed) || typeof parsed.request !== "string")
@@ -25,7 +25,7 @@ function readPending(): PendingRevision | null {
 }
 
 export async function reviseCardCommand(revision: CardRevision) {
-  if (localStorage.getItem("tempo-pending-card-delete-v1"))
+  if (readPendingCardDeletionBytes())
     throw new Error("Resolve the pending card deletion before editing a card.");
   const request = JSON.stringify(revision);
   let pending = readPending();
@@ -36,11 +36,11 @@ export async function reviseCardCommand(revision: CardRevision) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingCardRevisionRecord();
       throw new Error(receipt.error?.message ?? "The earlier card revision failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingCardRevisionRecord();
       if (pending.request === request) return cardRevisionResultSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "pending") {
@@ -49,7 +49,7 @@ export async function reviseCardCommand(revision: CardRevision) {
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), request };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    writePendingCardRevisionRecord(pending);
   }
   let response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(revision.cardId)}`, {
     method: "PUT",
@@ -61,6 +61,6 @@ export async function reviseCardCommand(revision: CardRevision) {
   });
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, cardRevisionResultSchema, "card revision");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingCardRevisionRecord();
   return result;
 }

@@ -1,3 +1,4 @@
+import { readPendingRepertoireSettingsBytes, decodePendingRepertoireSettingsRecord, writePendingRepertoireSettingsRecord, clearPendingRepertoireSettingsRecord } from "../../database/browser/adapters/authoring/repertoire-settings";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
@@ -11,13 +12,12 @@ export const repertoireSettingsResponseSchema = z.strictObject({
 });
 const pendingSchema = z.strictObject({ operationId: z.uuid(), body: z.string() });
 const requestSchema = z.strictObject({ new_cards_per_day: dailyLimitSchema.nullable() });
-const pendingKey = (repertoireId: string) => `tempo-pending-repertoire-settings-v1:${repertoireId}`;
 
 function readPending(repertoireId: string) {
-  const stored = localStorage.getItem(pendingKey(repertoireId));
+  const stored = readPendingRepertoireSettingsBytes(repertoireId);
   if (!stored) return null;
   try {
-    const pending = pendingSchema.parse(JSON.parse(stored));
+    const pending = pendingSchema.parse(decodePendingRepertoireSettingsRecord(stored));
     requestSchema.parse(JSON.parse(pending.body));
     return pending;
   } catch { throw new Error("The pending repertoire save is unreadable. Restore browser data before retrying."); }
@@ -34,7 +34,7 @@ export async function saveRepertoireLimit(repertoireId: string, limit: number | 
     const result = repertoireSettingsResponseSchema.parse(raw);
     if (result.repertoire_id !== repertoireId || result.new_cards_per_day !== JSON.parse(pending!.body).new_cards_per_day)
       throw new Error("The service returned different repertoire settings. Retry to confirm this save.");
-    localStorage.removeItem(pendingKey(repertoireId));
+    clearPendingRepertoireSettingsRecord(repertoireId);
     return result;
   }
   if (pending) {
@@ -45,27 +45,27 @@ export async function saveRepertoireLimit(repertoireId: string, limit: number | 
     } catch { /* Replaying the saved identity and bytes is safe after a lost receipt. */ }
     if (receipt.state === "complete") return validateResult(receipt.response);
     if (receipt.state === "failed") {
-      localStorage.removeItem(pendingKey(repertoireId));
+      clearPendingRepertoireSettingsRecord(repertoireId);
       throw new FailedOperationError(receipt.error?.message ?? "The repertoire save failed.", pending.operationId);
     }
     if (receipt.state === "blocked") throw new PendingOperationError(pending.operationId, "The repertoire save is blocked. Resolve its operation error before retrying.", true);
   } else {
     const request = requestSchema.parse({ new_cards_per_day: limit });
     pending = { operationId: crypto.randomUUID(), body: JSON.stringify(request) };
-    localStorage.setItem(pendingKey(repertoireId), JSON.stringify(pending));
+    writePendingRepertoireSettingsRecord(repertoireId, pending);
   }
   try {
     let response = await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/settings`, {
       method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId }, body: pending.body,
     });
     if ([400, 404, 409, 422].includes(response.status)) {
-      localStorage.removeItem(pendingKey(repertoireId));
+      clearPendingRepertoireSettingsRecord(repertoireId);
       await readJsonResponse(response, repertoireSettingsResponseSchema, "repertoire settings");
     }
     response = await confirmOperationResponse(response);
     return validateResult(await readJsonResponse(response, repertoireSettingsResponseSchema, "repertoire settings"));
   } catch (error) {
-    if (error instanceof FailedOperationError) localStorage.removeItem(pendingKey(repertoireId));
+    if (error instanceof FailedOperationError) clearPendingRepertoireSettingsRecord(repertoireId);
     throw error;
   }
 }

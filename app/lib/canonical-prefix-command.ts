@@ -1,3 +1,4 @@
+import { readPendingCanonicalPrefixRecord, writePendingCanonicalPrefixRecord, clearPendingCanonicalPrefixRecord } from "../../database/browser/adapters/authoring/canonical-prefix";
 import * as z from "zod";
 import { API_URL } from "../const";
 import { canonicalPrefixSchema, canonicalPrefixPreviewAdmissionSchema } from "../domain/canonical-prefix";
@@ -6,12 +7,10 @@ import { confirmOperationResponse, FailedOperationError, PendingOperationError }
 
 const pendingSchema = z.strictObject({ operationId: z.string().min(1), body: z.record(z.string(), z.union([z.string(), z.number()])) });
 type PrefixAction = "preview" | "save";
-const storageKey = (repertoireId: string, action: PrefixAction) => `tempo-canonical-prefix-${action}-v1:${repertoireId}`;
 
 async function sendPrefixCommand(repertoireId: string, action: PrefixAction, body: z.infer<typeof pendingSchema>["body"]): Promise<Response> {
-  const key = storageKey(repertoireId, action);
-  const rawPending = localStorage.getItem(key);
-  let pending = rawPending ? pendingSchema.parse(JSON.parse(rawPending)) : null;
+  const record = readPendingCanonicalPrefixRecord(repertoireId, action);
+  let pending = record === undefined ? null : pendingSchema.parse(record);
   if (pending) {
     let receipt: { state?: string; response?: unknown; error?: { message?: string }; last_error?: { message?: string } } = { state: "unknown" };
     try {
@@ -21,11 +20,11 @@ async function sendPrefixCommand(repertoireId: string, action: PrefixAction, bod
       // A lost send may have no receipt. Replay the original identity and payload.
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(key);
+      clearPendingCanonicalPrefixRecord(repertoireId, action);
       if (JSON.stringify(pending.body) === JSON.stringify(body)) return Response.json(receipt.response);
       pending = null;
     } else if (receipt.state === "failed") {
-      localStorage.removeItem(key);
+      clearPendingCanonicalPrefixRecord(repertoireId, action);
       throw new Error(receipt.error?.message ?? "The earlier prefix operation failed. Check the prefix again.");
     } else if (receipt.state === "blocked") {
       throw new PendingOperationError(pending.operationId, receipt.last_error?.message, true);
@@ -35,7 +34,7 @@ async function sendPrefixCommand(repertoireId: string, action: PrefixAction, bod
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(key, JSON.stringify(pending));
+    writePendingCanonicalPrefixRecord(repertoireId, action, pending);
   }
   try {
     const sent = await fetch(
@@ -47,10 +46,10 @@ async function sendPrefixCommand(repertoireId: string, action: PrefixAction, bod
     );
     if (sent.status >= 500) throw new PendingOperationError(pending.operationId, "The service could not confirm this prefix operation. Retry to recover its result.");
     const response = await confirmOperationResponse(sent);
-    localStorage.removeItem(key);
+    clearPendingCanonicalPrefixRecord(repertoireId, action);
     return response;
   } catch (error) {
-    if (error instanceof FailedOperationError) localStorage.removeItem(key);
+    if (error instanceof FailedOperationError) clearPendingCanonicalPrefixRecord(repertoireId, action);
     throw error;
   }
 }
@@ -62,15 +61,15 @@ export async function saveCanonicalPrefixCommand(repertoireId: string, previewId
   return readJsonResponse(await sendPrefixCommand(repertoireId, "save", { preview_id: previewId, expected_revision: expectedRevision }), canonicalPrefixSchema, "canonical prefix save");
 }
 export async function recoverCanonicalPrefixSave(repertoireId: string): Promise<void> {
-  const rawPending = localStorage.getItem(storageKey(repertoireId, "save"));
-  if (!rawPending) return;
-  const pending = pendingSchema.parse(JSON.parse(rawPending));
+  const record = readPendingCanonicalPrefixRecord(repertoireId, "save");
+  if (record === undefined) return;
+  const pending = pendingSchema.parse(record);
   await readJsonResponse(await sendPrefixCommand(repertoireId, "save", pending.body), canonicalPrefixSchema, "canonical prefix save");
 }
 
 export async function recoverCanonicalPrefixPreview(repertoireId: string) {
-  const rawPending = localStorage.getItem(storageKey(repertoireId, "preview"));
-  if (!rawPending) return undefined;
-  const pending = pendingSchema.parse(JSON.parse(rawPending));
+  const record = readPendingCanonicalPrefixRecord(repertoireId, "preview");
+  if (record === undefined) return undefined;
+  const pending = pendingSchema.parse(record);
   return readJsonResponse(await sendPrefixCommand(repertoireId, "preview", pending.body), canonicalPrefixPreviewAdmissionSchema, "canonical prefix preview");
 }

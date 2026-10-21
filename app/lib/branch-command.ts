@@ -1,9 +1,9 @@
+import { readPendingBranchRecord, writePendingBranchRecord, clearPendingBranchRecord } from "../../database/browser/adapters/authoring/branch";
 import { API_URL } from "../const";
 import { branchResultSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-repertoire-branch-v1";
 type BranchPayload = {
   repertoire_id: string;
   starting_fen: string;
@@ -15,9 +15,8 @@ type BranchPayload = {
 type PendingBranch = { operationId: string; body: string };
 
 function readPending(): PendingBranch | null {
-  const value = localStorage.getItem(PENDING_KEY);
-  if (!value) return null;
-  const parsed: unknown = JSON.parse(value);
+  const parsed = readPendingBranchRecord();
+  if (parsed === undefined) return null;
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("body" in parsed) || typeof parsed.body !== "string")
@@ -35,11 +34,11 @@ export async function saveBranchCommand(payload: BranchPayload) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingBranchRecord();
       throw new Error(receipt.error?.message ?? "The earlier branch save failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingBranchRecord();
       if (pending.body === body) return branchResultSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "pending") {
@@ -48,7 +47,7 @@ export async function saveBranchCommand(payload: BranchPayload) {
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    writePendingBranchRecord(pending);
   }
   let response = await fetch(`${API_URL}/api/repertoire/branches`, {
     method: "POST",
@@ -58,6 +57,6 @@ export async function saveBranchCommand(payload: BranchPayload) {
   response = await confirmOperationResponse(response);
   if (!response.ok) throw new Error("Could not save this repertoire branch.");
   const result = await readJsonResponse(response, branchResultSchema, "saved repertoire branch");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingBranchRecord();
   return result;
 }
