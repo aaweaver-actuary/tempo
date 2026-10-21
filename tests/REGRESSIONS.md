@@ -5194,3 +5194,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Threat training storage
 
 `backend/tests/test_threat_training_storage_separation.py` owns fourteen semantic source/snapshot boundaries for rubric repair/admission,approval,exercise/report facts,recognition/attempt replay,card/day/receipt locking,grading and queue/scheduling/clock/resource order. The existing admission case remains unchanged. Native races,actual engine and optional-feature independence remain unverified.
+
+
+## Content storage-owned pure unit placement
+
+The root `database/tempo_content_database/tests/unit` suite owns cursor-token integrity and the four fixed target/commit/failure/readiness-context storage cases. Component policy and semantic boundary tests retain Content ownership. Pure discovery explicitly excludes native parent tests; assertion-preserving source/archive checks do not qualify the full artifact or denied loopback paths.

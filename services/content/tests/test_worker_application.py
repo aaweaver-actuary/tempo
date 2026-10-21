@@ -1,5 +1,4 @@
 """Content reconciliation keeps ordered semantic operations and failure authority."""
-from contextlib import contextmanager
 
 import pytest
 
@@ -132,42 +131,6 @@ def test_worker_unexpected_failure_propagates_without_marking_generation_failed(
         reconcile_once('source-key', hook, **capabilities)
     assert raised.value is error
     assert events == ['claim', 'manifest', 'routes']
-
-
-@pytest.mark.parametrize('stale', [False, True])
-def test_worker_failure_storage_keeps_one_transaction_and_fence_before_update(stale):
-    events = []
-    task = {'source_id': 'source-id', 'generation': 4}
-
-    class Failure(ValueError):
-        def __str__(self):
-            events.append('error text')
-            return 'Malformed content'
-
-    class Transaction:
-        def execute(self, query, parameters):
-            events.append('update')
-            assert parameters[0].obj == {'code': 'invalid_content', 'message': 'Malformed content'}
-            assert parameters[1:] == ('source-id', 4)
-
-    @contextmanager
-    def section():
-        events.append('begin')
-        yield Transaction()
-        events.append('commit')
-
-    def fence(database, supplied_task):
-        assert isinstance(database, Transaction) and supplied_task is task
-        events.append('fence')
-        if stale:
-            raise ContentError('stale_generation', 'Lease lost')
-
-    service = ContentService.__new__(ContentService)
-    service._transaction = section
-    service._fence = fence
-    assert service._fail_task(task, 'invalid_content', Failure()) is (not stale)
-    assert events == (['begin', 'fence', 'commit'] if stale else [
-        'begin', 'fence', 'error text', 'update', 'commit'])
 
 
 def test_worker_public_entry_wires_existing_methods_without_opening_a_database():

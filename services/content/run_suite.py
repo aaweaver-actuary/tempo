@@ -14,6 +14,9 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 SERVICE = Path(__file__).resolve().parent
+DATABASE_UNIT_RELATIVE = Path("database/tempo_content_database/tests/unit")
+DATABASE_UNIT_TESTS = (SERVICE / DATABASE_UNIT_RELATIVE if (SERVICE / DATABASE_UNIT_RELATIVE).is_dir()
+                       else SERVICE.parents[1] / DATABASE_UNIT_RELATIVE)
 
 
 def controlled_environment(environment=None):
@@ -136,11 +139,11 @@ def main(arguments=None):
     try:
         junit_destination(os.environ.get("PYTEST_ADDOPTS", ""))
         if options.evidence:
-            result = run_pytest([SERVICE / "tests"], options.evidence, cwd=SERVICE,
+            result = run_pytest([SERVICE / "tests", DATABASE_UNIT_TESTS], options.evidence, cwd=SERVICE,
                                 external_junit=options.junitxml)
         else:
             with tempfile.TemporaryDirectory(prefix="tempo-content-suite-") as directory:
-                result = run_pytest([SERVICE / "tests"], directory, cwd=SERVICE,
+                result = run_pytest([SERVICE / "tests", DATABASE_UNIT_TESTS], directory, cwd=SERVICE,
                                     external_junit=options.junitxml)
         print(json.dumps({"suite": options.suite, **result}))
         return 0

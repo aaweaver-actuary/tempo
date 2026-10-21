@@ -257,7 +257,7 @@
           "kind": "python",
           "cwd": "services/content",
           "command": "python run_suite.py pure",
-          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock"]
+          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"]
         },
         {
           "owner": "content",

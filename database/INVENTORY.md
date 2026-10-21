@@ -183,7 +183,7 @@ The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive pr
 
 Three Content native-only files discovered after the runtime audit are also relocated intact: [the PostgreSQL suite](tempo_content_database/tests/test_postgres.py), [its runner](tempo_content_database/tooling/run_postgres.py) and [benchmark](tempo_content_database/tooling/benchmark.py). Native assertions and benchmark are byte-identical; only runner/build/discovery/source-hash paths change. Application-facing synthetic tests and source-free consumer tooling retain Content ownership. These three additional relocations do not alter the original156-row arithmetic.
 
-### Further native harness and storage-test placement — pending
+### Further native harness and storage-test placement — current status
 
 These concrete source-placement/discovery items remain even though the original156-row checklist is closed. All work is mechanical; no native suite,restore,provisioning or live service is run. Application policy/contract tests remain outside database where they do not implement database-specific fixtures. Historical qualification receipts retain original paths.
 
@@ -193,7 +193,7 @@ These concrete source-placement/discovery items remain even though the original1
 | Intelligence | Ten native integration runner/test/fixture/support files,including actual-A/Analysis qualification; owner artifact/discovery references. | Whole database-specific native harness,not a new installed native product; no actual engine/provider run. |
 | Learning / remediation / legacy review | Seven native/restore files plus a mixed remediation guard scope; mixed qualification-policy cases stay outside. | Preserve resource/target/cleanup guards and pure/native discovery; native/restore tooling is sdist-only. |
 | Legacy backend | Native bridge,discovery-acceptance and queue-admission fixtures/tests; associated database-native qualification tooling under inspection. | One stale acceptance-class import is being repaired; import/plan checks only,not actual native proof. |
-| Content | Whole cursor unit suite and four direct storage-only test functions; pure runner/artifact inputs updated explicitly. | Native tests stay excluded from pure discovery; source-free application checks retain component ownership. |
+| Completed Content | [Cursor suite and four storage-only functions](tempo_content_database/tests/unit/README.md) now reside root; pure runner/artifact/registry inputs explicitly include only unit tests. | Seventy focused cases and source/discovery/archive checks pass; native parent stays excluded. Runtime wheel resources are unchanged; source-free full qualifier and five denied loopback cases remain unverified. |
 
 The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis factories/Lua/pipeline/operations and Study-settings query now live under [redis_control](tempo_legacy_database/adapters/redis_control/README.md), preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 

@@ -69,7 +69,7 @@ Source-bound results and any remaining gaps are recorded in `VALIDATION.md`.
 
 ## PR #288 correctness repairs
 
-`tests/test_inventory_cursors.py` owns canonical round trips, every missing field,
+[Root inventory cursor unit tests](../../database/tempo_content_database/tests/unit/test_inventory_cursors.py) own canonical round trips, every missing field,
 strict primitive types, reader/workspace/source identity, malformed/legacy tokens,
 route composite keys and obsolete revision/generation rejection. These execute in
 every Python 3.12/3.14 wheel/sdist consumer.
@@ -156,7 +156,7 @@ both actual packed persistence and exact public export/replay after the repair.
 
 ## Root database bridge extraction
 
-`tests/test_bridge_storage_boundary.py` owns semantic approval facts and source-scope-before-row-check ordering on the same opaque borrowed transaction, plus unchanged CLI/readiness configuration and connection-context composition. The existing bridge/export, execution projection and cursor assertions remain. Bridge public composition now lives in `src/tempo_content/bridge/__init__.py`, application logic in `bridge/application.py`, and concrete SQL in `database/tempo_content_database/adapters/bridge.py` at repository root. The installed migration-resource regression follows that root database package's `ddl/migrations`, preserving all manifest/checksum assertions.
+`tests/test_bridge_storage_boundary.py` owns semantic approval facts and source-scope-before-row-check ordering on the same opaque borrowed transaction, plus unchanged CLI/readiness configuration. The [root pure storage guards](../../database/tempo_content_database/tests/unit/test_storage_guards.py) own readiness connection-context composition. The existing bridge/export, execution projection and cursor assertions remain. Bridge public composition now lives in `src/tempo_content/bridge/__init__.py`, application logic in `bridge/application.py`, and concrete SQL in `database/tempo_content_database/adapters/bridge.py` at repository root. The installed migration-resource regression follows that root database package's `ddl/migrations`, preserving all manifest/checksum assertions.
 
 
 ## Source application helper separation
@@ -165,7 +165,7 @@ both actual packed persistence and exact public export/replay after the repair.
 
 ## Reconciliation orchestration separation
 
-`tests/test_worker_application.py` owns the moved `work_once` orchestration's ordered claim/idle-collection/manifest/phase operations, unchanged manifest exception scope, domain and generic validation errors, unknown phase, stale authority, and propagation of unexpected failures. Synthetic storage-boundary cases require the original single transaction and fence before failure-write/error-text evaluation; the public `ContentService.work_once` composition is exercised without opening a database. Existing native worker, lease, lock-order, collector, rollback and failed-generation contracts remain with `database/tempo_content_database/tests/test_postgres.py`; synthetic cases do not establish actual PostgreSQL locking or resource isolation.
+`tests/test_worker_application.py` owns the moved `work_once` orchestration's ordered claim/idle-collection/manifest/phase operations, unchanged manifest exception scope, domain and generic validation errors, unknown phase, stale authority, and propagation of unexpected failures. [Root pure storage guards](../../database/tempo_content_database/tests/unit/test_storage_guards.py) require the original single transaction and fence before failure-write/error-text evaluation; the public `ContentService.work_once` composition is exercised without opening a database. Existing native worker, lease, lock-order, collector, rollback and failed-generation contracts remain with `database/tempo_content_database/tests/test_postgres.py`; synthetic cases do not establish actual PostgreSQL locking or resource isolation.
 
 ## Route and publication preparation separation
 
@@ -173,7 +173,7 @@ both actual packed persistence and exact public export/replay after the repair.
 
 ## Complete binding phase separation
 
-`tests/test_binding_application.py` owns the full moved phase: exhaustion without reads, ordered binding/target/exercise reads, original hook/policy order, missing/incomplete target and missing exercise handling, hook failure before writes, target-query parameters/missing-route short circuit, and public phase composition. Synthetic storage-boundary cases require the same transaction for fence, response insert, cursor advance and `after_writes`, with rollback on a stale fence or failed after-write hook. Existing `tests/test_source_policy.py` binding completion/position/policy/accepted-response cases remain selected. These checks establish application/composition behavior, not actual native locking, leases or rollback; regular `database/tempo_content_database/tests/test_postgres.py` retains those contracts.
+`tests/test_binding_application.py` owns the full moved phase: exhaustion without reads, ordered binding/target/exercise reads, original hook/policy order, missing/incomplete target and missing exercise handling, hook failure before writes and public phase composition. The [root pure storage guards](../../database/tempo_content_database/tests/unit/test_storage_guards.py) own target-query parameters/missing-route short circuit and require the same transaction for fence, response insert, cursor advance and `after_writes`, with rollback on a stale fence or failed after-write hook. Existing `tests/test_source_policy.py` binding completion/position/policy/accepted-response cases remain selected. These checks establish application/composition behavior, not actual native locking, leases or rollback; regular `database/tempo_content_database/tests/test_postgres.py` retains those contracts.
 
 ## Complete route phase separation
 

@@ -15,7 +15,7 @@ import time
 SERVICE = Path(__file__).resolve().parents[1]
 ROOT = SERVICE.parents[1]
 sys.path.insert(0, str(SERVICE))
-from run_suite import controlled_environment, junit_destination, validate_inventory
+from run_suite import DATABASE_UNIT_RELATIVE, controlled_environment, junit_destination, validate_inventory
 
 PACKAGES = ("packages/chess-core", "contracts/content-publication", "services/content")
 IGNORED = {".venv", "__pycache__", "test-results", "dist", ".pytest_cache", ".git"}
@@ -159,6 +159,8 @@ def main(arguments=None):
             test_inputs = workspace / "test-inputs"
             test_inputs.mkdir()
             shutil.copytree(build_service / "tests", test_inputs / "tests", ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copytree(context / DATABASE_UNIT_RELATIVE, test_inputs / DATABASE_UNIT_RELATIVE,
+                            ignore=shutil.ignore_patterns("__pycache__"))
             shutil.copytree(build_service / "fixtures", test_inputs / "fixtures")
             shutil.copy2(build_service / "run_suite.py", test_inputs / "run_suite.py")
             shutil.rmtree(context)
@@ -175,6 +177,7 @@ def main(arguments=None):
                     run(["uv", "pip", "install", "--python", python, "-r", requirements, *dependencies], consumer, label + "-dependencies")
                     run(["uv", "pip", "install", "--python", python, "--no-deps", "--no-build-isolation", selected], consumer, label + "-install")
                     shutil.copytree(test_inputs / "tests", consumer / "tests")
+                    shutil.copytree(test_inputs / DATABASE_UNIT_RELATIVE, consumer / DATABASE_UNIT_RELATIVE)
                     shutil.copytree(test_inputs / "fixtures", consumer / "fixtures")
                     shutil.copy2(test_inputs / "run_suite.py", consumer / "run_suite.py")
                     guard = ("import pathlib,sys,tempo_content; "
@@ -188,7 +191,7 @@ def main(arguments=None):
                                          ("executed", ["-q", "--junitxml=" + str(junit)])):
                         receipt = destination / (label + "-" + stage + ".json")
                         run([python, "-I", consumer / "run_suite.py", "_pytest", receipt, "--import-mode=importlib",
-                             "--rootdir", consumer, "-p", "no:cacheprovider", consumer / "tests", *extra], consumer, label + "-" + stage)
+                             "--rootdir", consumer, "-p", "no:cacheprovider", consumer / "tests", consumer / DATABASE_UNIT_RELATIVE, *extra], consumer, label + "-" + stage)
                         receipts[stage] = json.loads(receipt.read_text())
                     identities = validate_inventory(receipts["collected"], receipts["executed"], junit)
                     if required_identities is not None and identities != required_identities:
@@ -196,7 +199,7 @@ def main(arguments=None):
                     required_identities = identities
                     report["consumers"][label] = {"passed": len(identities), "identities": identities}
                     run([python, "-I", consumer / "run_suite.py", "_pytest", destination / (label + "-zero.json"),
-                         consumer / "tests", "-k", "no_such_content_test_108", "-q"], consumer, label + "-zero-selected", expected=5)
+                         consumer / "tests", consumer / DATABASE_UNIT_RELATIVE, "-k", "no_such_content_test_108", "-q"], consumer, label + "-zero-selected", expected=5)
                     run([consumer / ".venv/bin/tempo-content", "--help"], consumer, label + "-cli")
                     run(["uv", "pip", "freeze", "--python", python], consumer, label + "-installed-dependencies")
             if options.consumers:

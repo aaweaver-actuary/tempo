@@ -1,4 +1,12 @@
-# Content native database tests
+# Content database tests
+
+[Pure storage unit tests](unit/README.md) use synthetic driver/context facts and
+are explicitly selected by Content's pure runner and installed artifact consumer
+inventory. They are separate from the native suite below; no pure runner selects
+this whole directory. Both test groups retain Content logical ownership and stay
+out of the production wheel.
+
+## Native persistence contracts
 
 [test_postgres.py](test_postgres.py) is the unchanged native suite moved from
 `services/content/integration/test_postgres.py`. Its logical regression owner is
@@ -17,7 +25,7 @@ are not copied production application logic or substitute pure-policy tests.
 Use only the [owned native runner](../tooling/README.md) for this suite. Its
 disposable-resource guards and test environment are unchanged. The suite is
 included in the independent Content sdist and excluded from the production
-wheel. Pure application and source-free consumer tests remain under
+wheel. Application-facing pure tests and independent consumer probes remain under
 `services/content`; their existing [regression inventory](../../../services/content/REGRESSIONS.md)
 links here for native proof.
 
