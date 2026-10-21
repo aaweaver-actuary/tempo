@@ -8,6 +8,7 @@ from functools import wraps
 
 from tempo_legacy_database.connections import connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.repertoire_scope import game_refresh as storage
 from .activity_gate import activity_gate
 from .durable_tasks import (
     enqueue_compact_postgres_task_in_transaction,
@@ -27,7 +28,7 @@ def refreshing_game_scope(database):
     previous_generation = game_scope_generation(database)
     yield
     if game_scope_generation(database) != previous_generation:
-        if hasattr(database, "execute_native"):
+        if storage.uses_native_queries(database):
             enqueue_compact_postgres_task_in_transaction(
                 database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90,
             )
@@ -50,35 +51,20 @@ def execute_repertoire_game_refresh_slice(task: dict) -> bool:
     """Queue one derivation, then persist a cursor for the following slice."""
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        if postgres_store.configured():
+        if storage.postgres_is_configured():
             if not lock_current_slice(database, task):
                 return False
         else:
-            current = database.execute(
-                "SELECT 1 FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'",
-                (task["id"], task["generation"], task["lease_token"]),
-            ).fetchone()
+            current = storage.leased_local_task(database, task["id"], task["generation"], task["lease_token"])
             if not current:
                 return False
-        game = database.execute(
-            "SELECT id FROM imported_games WHERE id>? ORDER BY id LIMIT 1",
-            (task["payload"].get("after_game_id", ""),),
-        ).fetchone()
+        game = storage.next_game(database, task["payload"].get("after_game_id", ""))
         if not game:
             return False
         now = datetime.now(timezone.utc).isoformat()
-        database.execute(
-            """INSERT INTO game_derivation_jobs(game_id,status,updated_at) VALUES(?,'queued',?)
-               ON CONFLICT(game_id) DO UPDATE SET status='queued',last_error=NULL,
-                 derivation_version=game_derivation_jobs.derivation_version+1,
-                 completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
-            (game["id"], now),
-        )
-        if postgres_store.configured():
-            derivation_job = database.execute(
-                "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
-                (game["id"],),
-            ).fetchone()
+        storage.queue_derivation(database, game["id"], now)
+        if storage.postgres_is_configured():
+            derivation_job = storage.derivation_version(database, game["id"])
             enqueue_compact_postgres_task_in_transaction(
                 database, "game_derivation_positions", game["id"],
                 {"game_id": game["id"],
