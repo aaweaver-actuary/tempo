@@ -5112,3 +5112,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Borrowed Study review storage
 
 `backend/tests/test_review_service_storage_boundary.py` owns six fake borrowed-transaction boundaries for schedule replay, clock/receipt/provenance/seed and lazy requeue/position/classification ordering. The existing feedback canonical-writer consumer guard remains selected; no native/SQLite integration or Study independence claim follows from these checks.
+
+
+## Queue application eligibility and seeding storage
+
+`backend/tests/test_queue_application_database_split.py` owns complete-query capture/selection and boundary delegation for the first application slice. Existing adapter/unlock/reset/Study allowance/reconciliation/seeding checks retain assertions. It does not imply closure of the remaining18 direct calls, native behavior or full-system acceptance.
