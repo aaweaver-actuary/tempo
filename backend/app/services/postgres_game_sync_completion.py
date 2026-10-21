@@ -7,36 +7,21 @@ import json
 
 from ..models import GameSyncRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.games.sync import completion as storage
 
 
 def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> bool:
-    job = database.execute(
-        "SELECT status,request_json,result_json FROM game_sync_jobs WHERE id=? FOR UPDATE",
-        (job_id,),
-    ).fetchone()
+    job = storage.lock_sync_job(database, job_id)
     if job is None or job["status"] not in {"queued", "running"}:
         return False
-    unfinished_window = database.execute(
-        """SELECT 1 FROM game_sync_windows WHERE job_id=?
-           AND status NOT IN ('complete','split') LIMIT 1""",
-        (job_id,),
-    ).fetchone()
-    unfinished_record = database.execute(
-        """SELECT 1 FROM background_tasks WHERE kind='game_sync_record'
-           AND deduplication_key LIKE ? AND state!='complete' LIMIT 1""",
-        (f"{job_id}:%",),
-    ).fetchone()
+    unfinished_window = storage.unfinished_window(database, job_id)
+    unfinished_record = storage.unfinished_record(database, job_id)
     if unfinished_window or unfinished_record:
         return False
     request = GameSyncRequest.model_validate_json(job["request_json"])
     current_result = json.loads(job["result_json"]) if job["result_json"] else {}
     current_providers = current_result.get("providers", {})
-    window_counts = database.execute(
-        """SELECT provider,SUM(fetched_count) fetched,SUM(filtered_count) filtered,
-                  SUM(rejected_count) rejected,MIN(window_start_ms) earliest_ms
-           FROM game_sync_windows WHERE job_id=? GROUP BY provider""",
-        (job_id,),
-    ).fetchall()
+    window_counts = storage.provider_window_counts(database, job_id)
     now = datetime.now(timezone.utc).isoformat()
     providers = {}
     for window_count in window_counts:
@@ -60,16 +45,9 @@ def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> b
         }
         providers[provider] = provider_result
         since = datetime.fromtimestamp(window_count["earliest_ms"] / 1000, timezone.utc)
-        database.execute(
-            """INSERT INTO game_sync_state(provider,username,status,cursor,last_success_at,
-                   last_error,retry_after,last_result_json)
-               VALUES(?,?,'idle',?,?,NULL,NULL,?)
-               ON CONFLICT(provider) DO UPDATE SET username=excluded.username,
-                   status='idle',cursor=excluded.cursor,
-                   last_success_at=excluded.last_success_at,last_error=NULL,
-                   retry_after=NULL,last_result_json=excluded.last_result_json""",
-            (provider, username, since.isoformat(), now,
-             json.dumps(provider_result, separators=(",", ":"))),
+        storage.save_provider_result(
+            database, provider, username, since.isoformat(), now,
+            json.dumps(provider_result, separators=(",", ":")),
         )
     result = {
         "imported": sum(item["inserted"] for item in providers.values()),
@@ -78,10 +56,8 @@ def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> b
         "synced_at": now,
         "providers": providers,
     }
-    database.execute(
-        """UPDATE game_sync_jobs SET status='complete',result_json=?,error=NULL,
-           completed_at=?,updated_at=? WHERE id=?""",
-        (json.dumps(result, separators=(",", ":")), now, now, job_id),
+    storage.complete_sync_job(
+        database, job_id, json.dumps(result, separators=(",", ":")), now,
     )
     if "lichess" in providers:
         from .postgres_next_opponent import request_profile_refresh

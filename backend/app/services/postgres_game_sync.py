@@ -7,6 +7,8 @@ import json
 from typing import Any
 
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
+from tempo_legacy_database.adapters.games.mutations import restart_derivation
+from tempo_legacy_database.adapters.games.sync import records as storage
 from .durable_tasks import (
     complete_task_slice_in_transaction, enqueue_compact_postgres_task_in_transaction,
     lock_current_slice,
@@ -16,35 +18,18 @@ from .postgres_game_sync_completion import finish_game_sync_if_complete
 from .redis_admission_gate import background_lease
 
 
-_GAME_COLUMNS = (
-    "provider_game_id", "content_hash", "username", "played_at", "speed",
-    "rated", "color", "result", "start_fen", "moves_json", "game_url",
-    "opening_name", "player_rating", "opponent_rating", "rating_change",
-    "time_control",
-)
-
-
 def persist_game_record_in_transaction(
     database: PostgresConnection, record: GameRecord,
 ) -> tuple[str, str]:
     """Publish one normalized game with its follow-up intents atomically."""
 
     identity = f"{record.provider}:{record.provider_game_id}"
-    database.raw.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-        (f"tempo:imported-game:{identity}",),
-    )
-    existing = database.execute(
-        "SELECT * FROM imported_games WHERE provider=? AND provider_game_id=? FOR UPDATE",
-        (record.provider, record.provider_game_id),
-    ).fetchone()
+    storage.lock_import_identity(database, identity)
+    existing = storage.imported_provider_game(database, record.provider, record.provider_game_id)
     if existing is None:
-        existing = database.execute(
-            """SELECT * FROM imported_games WHERE provider=?
-               AND lower(username)=lower(?) AND content_hash=?
-               AND provider_game_id IS NULL FOR UPDATE""",
-            (record.provider, record.username, record.content_hash),
-        ).fetchone()
+        existing = storage.imported_legacy_game(
+            database, record.provider, record.username, record.content_hash,
+        )
     values = (
         record.provider_game_id, record.content_hash, record.username,
         record.played_at, record.speed, int(record.rated), record.color,
@@ -56,56 +41,26 @@ def persist_game_record_in_transaction(
     if existing:
         game_id = existing["id"]
         changed = any(existing[column_name] != value for column_name, value in zip(
-            _GAME_COLUMNS, values,
+            storage.GAME_COLUMNS, values,
         ))
         if changed:
-            database.execute(
-                "UPDATE imported_games SET "
-                + ",".join(f"{column_name}=?" for column_name in _GAME_COLUMNS)
-                + " WHERE id=?",
-                (*values, game_id),
-            )
+            storage.update_imported_game(database, game_id, values)
         outcome = "updated" if changed else "duplicate"
     else:
         game_id = identity
-        database.execute(
-            "INSERT INTO imported_games(id,provider," + ",".join(_GAME_COLUMNS)
-            + ") VALUES(" + ",".join("?" for _ in range(len(_GAME_COLUMNS) + 2)) + ")",
-            (game_id, record.provider, *values),
-        )
+        storage.insert_imported_game(database, game_id, record.provider, values)
         outcome = "inserted"
-    database.execute(
-        "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?) "
-        "ON CONFLICT(game_id) DO NOTHING",
-        (game_id, now),
-    )
+    storage.ensure_analysis_job(database, game_id, now)
     if outcome != "duplicate":
-        database.execute(
-            """INSERT INTO game_derivation_jobs(game_id,status,updated_at)
-               VALUES(?,'queued',?) ON CONFLICT(game_id) DO UPDATE SET
-               status='queued',last_error=NULL,
-               derivation_version=game_derivation_jobs.derivation_version+1,
-               completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
-            (game_id, now),
-        )
-        derivation = database.execute(
-            "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
-            (game_id,),
-        ).fetchone()
+        derivation = restart_derivation(database, game_id, now)
         enqueue_compact_postgres_task_in_transaction(
             database, "game_derivation_positions", game_id,
             {"game_id": game_id, "derivation_version": derivation["derivation_version"],
              "cursor": 0},
             priority=125,
         )
-        database.execute(
-            "DELETE FROM daily_chess_snapshots WHERE local_day=?",
-            (record.played_at[:10],),
-        )
-        database.execute(
-            "DELETE FROM daily_chess_insights WHERE local_day=?",
-            (record.played_at[:10],),
-        )
+        storage.invalidate_day_snapshot(database, record.played_at[:10])
+        storage.invalidate_day_insights(database, record.played_at[:10])
     return outcome, game_id
 
 
@@ -118,10 +73,7 @@ def execute_game_sync_record_slice(claimed_task: dict[str, Any]) -> bool:
         with connection(read_only=False, background=True) as database:
             if not lock_current_slice(database, claimed_task):
                 return False
-            job = database.execute(
-                "SELECT status,result_json FROM game_sync_jobs WHERE id=? FOR UPDATE",
-                (job_id,),
-            ).fetchone()
+            job = storage.lock_sync_progress(database, job_id)
             if job is None or job["status"] not in {"queued", "running"}:
                 complete_task_slice_in_transaction(database, claimed_task)
                 return False
@@ -136,10 +88,9 @@ def execute_game_sync_record_slice(claimed_task: dict[str, Any]) -> bool:
                 int(provider_counts.get("inserted", 0))
                 for provider_counts in result["providers"].values()
             )
-            database.execute(
-                "UPDATE game_sync_jobs SET status='running',result_json=?,updated_at=? WHERE id=?",
-                (json.dumps(result, separators=(",", ":")),
-                 datetime.now(timezone.utc).isoformat(), job_id),
+            storage.save_sync_progress(
+                database, job_id, json.dumps(result, separators=(",", ":")),
+                datetime.now(timezone.utc).isoformat(),
             )
             if not complete_task_slice_in_transaction(database, claimed_task):
                 raise RuntimeError("Game sync lease changed before publication")

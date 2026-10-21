@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **49 files**; one candidate is confirmed non-database application code, and **106 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **53 files**; one candidate is confirmed non-database application code, and **102 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -82,10 +82,10 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/postgres_game_findings.py](../backend/app/services/postgres_game_findings.py)
 - Completed Games derivation storage split: [backend/app/services/postgres_game_misses.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_priorities.py](tempo_legacy_database/adapters/games/derivation/README.md).
-- [backend/app/services/postgres_game_repertoire.py](../backend/app/services/postgres_game_repertoire.py)
-- [backend/app/services/postgres_game_sync.py](../backend/app/services/postgres_game_sync.py)
-- [backend/app/services/postgres_game_sync_completion.py](../backend/app/services/postgres_game_sync_completion.py)
-- [backend/app/services/postgres_game_sync_windows.py](../backend/app/services/postgres_game_sync_windows.py)
+- Completed legacy Games repertoire storage split: [backend/app/services/postgres_game_repertoire.py](tempo_legacy_database/adapters/games/repertoire/README.md).
+- Completed legacy Games sync storage split: [backend/app/services/postgres_game_sync.py](tempo_legacy_database/adapters/games/sync/README.md).
+- Completed legacy Games sync storage split: [backend/app/services/postgres_game_sync_completion.py](tempo_legacy_database/adapters/games/sync/README.md).
+- Completed legacy Games sync storage split: [backend/app/services/postgres_game_sync_windows.py](tempo_legacy_database/adapters/games/sync/README.md).
 - [backend/app/services/postgres_integrity.py](../backend/app/services/postgres_integrity.py)
 - [backend/app/services/postgres_next_opponent.py](../backend/app/services/postgres_next_opponent.py)
 - [backend/app/services/postgres_opening_evidence.py](../backend/app/services/postgres_opening_evidence.py)

@@ -29,3 +29,6 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 
 
 [Derivation storage](derivation/README.md) owns the existing position/event stages, job projections, feature publication and miss/priority queries. Application workers keep chess/phase/task decisions and the same borrowed transactions.
+
+
+[Provider synchronization](sync/README.md) and [repertoire staging](repertoire/README.md) contain complete original sync/claim/window/comparison queries. Worker normalization, fetch, phase, task/lease and publication decisions remain outside database with their existing transaction authority.
