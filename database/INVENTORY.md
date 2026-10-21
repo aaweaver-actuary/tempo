@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **115 files**; one candidate is confirmed non-database application code, and **40 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **117 files**; one candidate is confirmed non-database application code, and **38 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -148,8 +148,8 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed Learning gateway/remediation storage split: [services/learning/runtime/src/tempo_learning_runtime/gateway.py](tempo_learning_database/adapters/gateway-remediation/README.md).
 - Completed Learning essential-work storage split: [services/learning/runtime/src/tempo_learning_runtime/maintenance.py](tempo_learning_database/adapters/essential-work/README.md).
 - Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/opening_progression.py](tempo_learning_database/adapters/opening_progression.py).
-- [services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py](../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py)
-- [services/learning/runtime/src/tempo_learning_runtime/publications.py](../services/learning/runtime/src/tempo_learning_runtime/publications.py)
+- Completed existing Learning publication execution storage split: [services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py](tempo_learning_database/adapters/publication-execution/README.md).
+- Completed existing Learning publication execution storage split: [services/learning/runtime/src/tempo_learning_runtime/publications.py](tempo_learning_database/adapters/publication-execution/README.md).
 - Completed Learning queue storage split: [services/learning/runtime/src/tempo_learning_runtime/queue_application.py](tempo_learning_database/adapters/queue/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/queue_attempt_origins.py](tempo_learning_database/adapters/README.md).
 - Completed Learning queue storage split: [services/learning/runtime/src/tempo_learning_runtime/queue_commands.py](tempo_learning_database/adapters/queue/README.md).
@@ -218,12 +218,12 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
 | Legacy backend | 84 | 0 | 36 |
-| Learning runtime | 22 | 0 | 4 |
+| Learning runtime | 24 | 0 | 2 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **115** | **1** | **40** |
+| **Total baseline** | **117** | **1** | **38** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 
