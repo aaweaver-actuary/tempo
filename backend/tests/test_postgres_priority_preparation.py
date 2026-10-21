@@ -12,7 +12,7 @@ from app.services import introduction_priorities, postgres_priority, priority_re
 
 
 def test_priority_miss_source_triggers_target_tables_and_publication():
-    migration = (Path(__file__).parents[1] / "migrations"
+    migration = (Path(__file__).parents[2] / "database/tempo_legacy_database/ddl/migrations"
                  / "021_priority_preparations.sql").read_text()
     assert "ON repertoire_decision_events\n" not in migration
     assert "ON repertoire_decision_events_legacy\n" in migration

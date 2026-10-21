@@ -356,19 +356,23 @@ def test_native_role_provisioning_dependency_is_required_and_hash_verified(tmp_p
 def test_remediation_migrations_survive_both_source_allowlists(tmp_path):
     module = qualification.staging
     package = 'services/learning/remediation'
+    migrations = 'database/tempo_remediation_database/ddl/migrations'
+    databases = ('database/tempo_remediation_database', 'database/tempo_game_evidence_database',
+                 'database/tempo_learning_database')
     names = [*module.SOURCE_FILES, *[path.relative_to(ROOT).as_posix()
-        for path in (ROOT / package / 'migrations').rglob('*') if path.is_file()]]
+        for directory in databases for path in (ROOT / directory).rglob('*')
+        if path.is_file() and '__pycache__' not in path.parts]]
     assert any(name.endswith('.sql') for name in names)
     stage = module.OwnedStaging('required-migrations', 'head', base=tmp_path)
     stage.stage_source(ROOT, names, qualification.PACKAGES)
     restricted = tmp_path / 'artifact-source'
     qualification.copy_artifact_source(stage.source, restricted)
     for name in names:
-        if name.startswith(package + '/migrations/'):
-            assert (restricted / name).read_bytes() == (ROOT / name).read_bytes()
+        if name.startswith(migrations + '/'):
+            assert (restricted / package / name).read_bytes() == (ROOT / name).read_bytes()
     assert not module.source_allowed(package + '/unreviewed/config.json', qualification.PACKAGES)
-    assert not module.source_allowed(package + '/migrations/private/password', qualification.PACKAGES)
-    changed = next((stage.source / package / 'migrations').glob('*.sql'))
+    assert not module.source_allowed(migrations + '/private/password', qualification.PACKAGES)
+    changed = next((stage.source / migrations).glob('*.sql'))
     changed.write_text('changed migration')
     with pytest.raises(ValueError, match='Staged source bytes changed'):
         module.verify_source(stage.source, stage.record['source_manifest_sha256'])

@@ -73,7 +73,7 @@ TEMPO_PYTHON=backend/.venv/bin/python make python-file FILE=backend/tests/test_o
 TEMPO_PYTHON=backend/.venv/bin/python make python-file FILE=backend/tests/test_opening_progression.py
 TEMPO_PYTHON=backend/.venv/bin/python make python-file FILE=backend/tests/test_postgres_cutover.py
 node --test tests/runner/postgres-test-speedups.test.mjs
-node --check scripts/test-postgres-docker.mjs
+node --check database/tests/test-postgres-docker.mjs
 git diff --check
 ```
 
@@ -85,7 +85,7 @@ container at `127.0.0.1:56543` with no analysis/API/worker containers:
 ```sh
 TEMPO_TEST_INSTANCE=disposable \
 TEMPO_STUDY_INTRO_TEST_ADMIN_URL=postgresql://postgres@127.0.0.1:56543/postgres \
-backend/.venv/bin/python scripts/check_postgres_study_opening_admission.py
+backend/.venv/bin/python database/tests/check_postgres_study_opening_admission.py
 ```
 
 Use `--restart-stage prepare --restart-database tempo_study_intros_restart_<32 hex characters>`,

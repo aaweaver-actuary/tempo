@@ -37,7 +37,7 @@ the durable task state records whether product work is retrying or failed. An
 `idle` worker sample records handler exit and does not prove useful completion.
 
 The regular `make docker-durability` background-workload stage runs
-`scripts/check_postgres_graph_retention.py` with real PostgreSQL and Redis.
+`database/tests/check_postgres_graph_retention.py` with real PostgreSQL and Redis.
 The rehearsal verifies the disposable bootstrap marker and current schema
 through a read-only connection before creating its own helper database. It
 covers 64,000-card current/stale generations, shared cards and unchanged history,
