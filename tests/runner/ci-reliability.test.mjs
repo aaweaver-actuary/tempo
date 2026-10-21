@@ -97,7 +97,7 @@ test("foreground_redis_admission_native_regression_is_registered_and_selected", 
 test("lifecycle-sensitive changes require deployment lifecycle verification", () => {
   for (const path of ["scripts/tempo-runtime.mjs", "scripts/tempo-deployment.mjs", "scripts/tempo-cli.mjs",
     "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",
-    "database/tooling/verify_postgres_backup.py", "scripts/check-redis-readiness.mjs", "database/tempo_legacy_database/adapters/postgres_store.py",
+    "database/tooling/verify_postgres_backup.py", "database/tests/redis/check-redis-readiness.mjs", "database/tempo_legacy_database/adapters/postgres_store.py",
     "tests/runner/tempo-cli-fixture.mjs", "tests/unit/tempo-cli-regressions.test.ts", "backend/Dockerfile", "package-lock.json",
     ...inventory.lifecycle.sensitivePaths]) {
     const planned = plan({ paths: [path, "tests/REGRESSIONS.md"] });

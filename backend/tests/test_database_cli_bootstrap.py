@@ -13,8 +13,8 @@ ENTRYPOINTS = (
     "scripts/evaluate_opening_rankings.py",
     "scripts/show_opening_frontier.py",
     "scripts/stalemate_swindles.py",
-    "scripts/check_redis_background_wakes.py",
-    "scripts/check_redis_socket_deadlines.py",
+    "database/tests/redis/check_redis_background_wakes.py",
+    "database/tests/redis/check_redis_socket_deadlines.py",
 )
 
 
@@ -94,4 +94,53 @@ print("isolated direct CLI database discovery passed")
         text=True,
         timeout=10,
     )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_learning_study_launcher_discovers_relocated_runner_before_native_effects(tmp_path):
+    probe = r'''
+from importlib.abc import MetaPathFinder
+from importlib.machinery import PathFinder
+from pathlib import Path
+import runpy
+import sys
+from types import ModuleType
+
+repository = Path(sys.argv[1])
+package = ModuleType("tempo_learning_database")
+package.__path__ = [str(repository / "database/tempo_learning_database")]
+tooling = ModuleType("tempo_learning_database.tooling")
+tooling.__path__ = [str(repository / "database/tempo_learning_database/tooling")]
+sys.modules[package.__name__] = package
+sys.modules[tooling.__name__] = tooling
+class CanonicalRunnerReached(BaseException):
+    pass
+class StopBeforeNativeTooling(MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "tempo_learning_database.tooling.run_postgres":
+            assert str(repository / "database") in sys.path
+            owner = PathFinder.find_spec("tempo_learning_database")
+            assert owner is not None
+            assert Path(owner.origin) == repository / "database/tempo_learning_database/__init__.py"
+            spec = PathFinder.find_spec(fullname, path)
+            assert spec is not None
+            assert Path(spec.origin) == repository / "database/tempo_learning_database/tooling/run_postgres.py"
+            raise CanonicalRunnerReached()
+def prohibit_effects(event, arguments):
+    if event in {"socket.connect", "socket.bind", "sqlite3.connect", "subprocess.Popen"}:
+        raise AssertionError("launcher bootstrap attempted an external effect: " + event)
+sys.meta_path.insert(0, StopBeforeNativeTooling())
+sys.addaudithook(prohibit_effects)
+try:
+    runpy.run_path(str(repository / "services/learning/runtime/integration/run_study.py"), run_name="study_launcher_bootstrap_probe")
+except CanonicalRunnerReached:
+    pass
+else:
+    raise AssertionError("launcher did not resolve its canonical runner")
+assert sys.modules["tempo_learning_database"] is package
+assert "tempo_learning_database.tooling.run_postgres" not in sys.modules
+assert "run_postgres" not in sys.modules
+'''
+    result = subprocess.run([sys.executable, "-I", "-c", probe, str(ROOT)], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr

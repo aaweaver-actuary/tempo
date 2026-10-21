@@ -8,3 +8,11 @@ Application/contract tests that exercise storage alongside feature behavior rema
 
 
 [Disposable writer benchmark](benchmarks/README.md) retains its original entry point and measurement behavior. Its one-table fixture is documented separately from production schemas; import/discovery checks do not execute the benchmark.
+
+## Additional fixed proof operations
+
+- [Redis native proofs](redis/README.md): dedicated background wake, socket deadline and persisted readiness scripts now live entirely here; no old-path shims.
+- [CLI lifecycle fixtures](cli/README.md): existing fixed PostgreSQL setup/read operations; CLI scenario/lifecycle decisions remain in the caller.
+- [Learning browser fixtures](browser/README.md): existing serialized IndexedDB setup/inspection/fault callback expressions; qualifier scenario policy remains outside.
+
+These are source/discovery moves. No actual Redis, PostgreSQL, browser or resource qualification was run. Application-facing SQLite/fake-storage assertions retain their regular feature suite owners; the supplemental test-factory inventory distinguishes fixture organization from runtime storage implementation.
