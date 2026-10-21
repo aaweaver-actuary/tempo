@@ -292,7 +292,7 @@ def test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budg
 
 def test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows():
     import hashlib
-    from app.snapshot_reads import RecordingReader, snapshot_rows
+    from tempo_legacy_database.adapters.snapshot_reads import RecordingReader, snapshot_rows
     reads = []
     query = "SELECT ordinal AS id,CASE WHEN ordinal %% 2 = 0 THEN 'éclair' ELSE 'zebra' END AS name FROM generate_series(1,128) ordinal"
     with postgres_store.connection(read_only=True) as database:
@@ -314,7 +314,7 @@ def advisory_lock_measurement(database):
 
 def test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer():
     import hashlib
-    from app.snapshot_reads import RecordingReader, snapshot_rows
+    from tempo_legacy_database.adapters.snapshot_reads import RecordingReader, snapshot_rows
     query = "SELECT ordinal,repeat('r',524288) provenance,TIMESTAMPTZ '2026-10-08T12:00:00Z' observed_at FROM generate_series(1,2) ordinal"
     reads = []
     with postgres_store.connection(read_only=True) as database:
@@ -545,7 +545,7 @@ def test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after
 
 def test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets():
     from app import card_commands  # Register the actual foreground deletion command.
-    from app.snapshot_reads import snapshot_rows
+    from tempo_legacy_database.adapters.snapshot_reads import snapshot_rows
     with fixture('deletion-fences') as (rep, other, lines, steps):
         plan, payload = ready_plan(rep, lines)
         target = next(card.card_id for card in plan.cards if card.lifecycle == 'create')
@@ -733,7 +733,7 @@ def historical_transition_database():
 
 
 def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity():
-    from app.snapshot_reads import snapshot_rows
+    from tempo_legacy_database.adapters.snapshot_reads import snapshot_rows
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root))
     from database.tooling.apply_postgres_migrations import apply_migrations

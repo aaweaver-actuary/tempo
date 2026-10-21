@@ -105,6 +105,8 @@
       "backend/app/services/real_game_feedback.py",
       "backend/app/services/repertoire_comparison.py",
       "backend/app/services/repertoire_conflicts.py",
+      "backend/app/studies/repertoire_conflicts.py",
+      "database/tempo_legacy_database/adapters/repertoire_lines.py",
       "backend/app/services/repertoire_coverage.py",
       "backend/app/services/repertoire_game_refresh.py",
       "backend/app/services/repertoire_integrity.py",

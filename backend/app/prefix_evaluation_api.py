@@ -88,7 +88,7 @@ def load_snapshot(identifier, deadline, *, capture=None, reads=None):
     # No chess, JSON interpretation or application fingerprinting inside this transaction.
     with postgres_store.connection(read_only=True, background=True, repeatable_read=True) as database:
         if reads is not None:
-            from .snapshot_reads import RecordingReader
+            from tempo_legacy_database.adapters.snapshot_reads import RecordingReader
             database = RecordingReader(database, reads)
         if database.execute_native('SELECT id FROM repertoires WHERE id=%s', (identifier,)).fetchone() is None:
             raise diagnostic_error('repertoire_not_found', 'Repertoire not found.', 404)

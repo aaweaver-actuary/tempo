@@ -344,7 +344,7 @@ def test_pr102_native_snapshot_batch_preserves_digest_evidence_and_read_order():
     from decimal import Decimal
     from types import SimpleNamespace
     from tempo_legacy_database.adapters.postgres_store import PostgresConnection, TempoRow
-    from app.snapshot_reads import RecordingReader
+    from tempo_legacy_database.adapters.snapshot_reads import RecordingReader
 
     pipeline_active = False
     pipeline_events = []

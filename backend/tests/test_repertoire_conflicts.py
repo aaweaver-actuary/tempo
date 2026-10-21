@@ -78,6 +78,29 @@ def test_conflict_fast_position_key_preserves_en_passant_distinction():
     }
 
 
+def test_authored_studies_conflict_policy_imports_without_database_or_sibling_domains():
+    from pathlib import Path
+    import subprocess
+    import sys
+    probe = r'''
+from importlib.abc import MetaPathFinder
+import sys
+sys.path.insert(0, sys.argv[1])
+class RejectInfrastructure(MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if (fullname.startswith(('tempo_', 'psycopg', 'sqlite3', 'redis', 'celery', 'fastapi')) or
+                (fullname.startswith('app.') and not
+                 (fullname == 'app.studies' or fullname == 'app.studies.repertoire_conflicts'))):
+            raise AssertionError('Authored Studies imported outside its boundary: ' + fullname)
+sys.meta_path.insert(0, RejectInfrastructure())
+from app.studies.repertoire_conflicts import conflicts_from_snapshot
+assert conflicts_from_snapshot(()) == ()
+'''
+    result = subprocess.run([sys.executable, '-I', '-c', probe, str(Path(__file__).resolve().parents[1])],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_new_conflicting_branch_enters_integrity_repair(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:

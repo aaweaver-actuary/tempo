@@ -5017,3 +5017,9 @@ retained incomplete inventory. They do not execute a real tool, build or Docker.
 ## Database browser connection-storage relocation
 
 Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-regressions.test.tsx` and `study-composition-regressions.test.ts` retain their assertions after IndexedDB inspection and Web Storage operations move to `database/browser/study-connection-storage.ts`. They continue to own retained records, authority fences, storage failures, cached startup and the Study loaded-graph boundary. The application wrapper keeps its public signatures; no live browser storage is read by these fake-IndexedDB tests.
+
+
+## Database command-reader and authored-Studies extraction
+
+- `backend/tests/test_repertoire_conflicts.py::test_authored_studies_conflict_policy_imports_without_database_or_sibling_domains` imports the extracted policy in an isolated interpreter that rejects infrastructure/sibling modules. Existing `test_conflict_fast_position_key_preserves_en_passant_distinction` retains algorithm proof. Other legacy API/cache/repair cases remain unchanged and separately owned.
+- Existing `backend/tests/test_prefix_transition_api.py` snapshot, digest/native-value, collation, bounded-batch and response-fence assertions follow the intact relocated snapshot reader. Existing `backend/tests/test_postgres_threat_analysis_commands.py` fake borrowed-transaction checks cover defensive setting/predicate composition after its SQL moves; no native PostgreSQL is implied.
