@@ -16,6 +16,8 @@
 | [study_attempts.py](study_attempts.py) | Existing Study exercise completion facts and finalization/queue/sibling writes; [attempt decisions/composition](practice-attempts/README.md). |
 | [study_attempt_commands.py](study_attempt_commands.py) | Existing Study identity/card/queue/attempt locks, source facts and answer insertion; grading/replay/conflicts stay in application. |
 | [tactic_commands.py](tactic_commands.py) | Existing puzzle/receipt/progress/card/queue/result persistence; light/guided scheduling decisions stay in application. |
+| [queue_application.py](queue_application.py) | Existing queue availability/presentation/window facts, requeue writes and pending-projection SQL; [queue decisions/composition](queue/README.md). |
+| [queue_commands.py](queue_commands.py) | Existing queue command facts, dialect/locks, issuance/failure/burial and task/projection storage; conflicts/refresh decisions stay in runtime. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
 | [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |

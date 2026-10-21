@@ -15,23 +15,11 @@ from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .durable_tasks import enqueue_task_in_transaction
 from .review_service import capture_daily_queue_order, preserve_daily_queue_order
+from tempo_learning_database.adapters import queue_commands as storage
+from .real_game_feedback import MISS_REASON
 
 
-def _lock_attempt_card(database, entry_id: int) -> None:
-    """Follow review's card-before-queue lock order for retained commands."""
-    if not isinstance(database, PostgresConnection):
-        return
-    entry = database.execute(
-        "SELECT card_id FROM daily_queue WHERE id=?", (entry_id,)
-    ).fetchone()
-    if entry:
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-            (f"tempo:card-edit:{entry['card_id']}",),
-        )
-        database.execute(
-            "SELECT id FROM cards WHERE id=? FOR UPDATE", (entry["card_id"],)
-        )
+_lock_attempt_card = storage.lock_attempt_card
 
 
 def available_attempt_sql() -> str:
@@ -43,17 +31,7 @@ def validate_available_attempt(
 ) -> None:
     """A retained, identified attempt remains operable after queue promotion."""
     identified = card_id is not None and expected_revision is not None
-    lock_clause = (
-        " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
-    )
-    available = database.execute(
-        f"""{available_attempt_sql()}
-              {"AND q.id=?" if identified else ""}
-            ORDER BY q.position,q.id LIMIT 1{lock_clause}""",
-        (date.today().isoformat(), entry_id)
-        if identified
-        else (date.today().isoformat(),),
-    ).fetchone()
+    available = storage.available_attempt(database, date.today().isoformat(), entry_id, identified, MISS_REASON)
     if not available or available["id"] != entry_id:
         raise ReviewConflict(
             "queue_attempt_inactive", "This queue attempt is no longer active"
@@ -62,15 +40,8 @@ def validate_available_attempt(
 
     validate_failure_marker(database, entry_id, card_id, expected_revision)
     if identified:
-        head = database.execute(
-            f"{available_attempt_sql()} ORDER BY q.position,q.id LIMIT 1",
-            (date.today().isoformat(),),
-        ).fetchone()
-        issued_origin = database.execute(
-            "SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=? "
-            "AND revision=? AND issued_as_head=1",
-            (entry_id, card_id, expected_revision),
-        ).fetchone()
+        head = storage.queue_head(database, date.today().isoformat(), MISS_REASON)
+        issued_origin = storage.issued_origin(database, entry_id, card_id, expected_revision)
         if (not head or head["id"] != entry_id) and not issued_origin:
             raise ReviewConflict(
                 "queue_attempt_inactive",
@@ -84,12 +55,8 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
     if payload["queue_date"] != date.today().isoformat():
         return {"issued": False}
     _lock_attempt_card(database, entry_id)
-    if isinstance(database, PostgresConnection):
-        lock_queue_date_for_position(database, payload["queue_date"])
-    head = database.execute(
-        f"{available_attempt_sql()} ORDER BY q.position,q.id LIMIT 1",
-        (payload["queue_date"],),
-    ).fetchone()
+    storage.lock_issue_queue_position(database, payload["queue_date"])
+    head = storage.queue_head(database, payload["queue_date"], MISS_REASON)
     if not head or head["id"] != entry_id:
         return {"issued": False}
     try:
@@ -98,16 +65,11 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
         )
     except ReviewConflict:
         return {"issued": False}
-    prior = database.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=? AND revision=?",
-        (entry_id, payload["card_id"], payload["expected_revision"])).fetchone()
+    prior = storage.issued_head_flag(database, entry_id, payload["card_id"], payload["expected_revision"])
     if prior and not prior[0]:
         from .remediation_adapter import bind_issued_attempt
         bind_issued_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
-    changed = database.execute(
-        "UPDATE queue_attempt_origins SET issued_as_head=1 "
-        "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-        (entry_id, payload["card_id"], payload["expected_revision"]),
-    ).rowcount
+    changed = storage.mark_head_issued(database, entry_id, payload["card_id"], payload["expected_revision"])
     return {"issued": bool(changed)}
 
 
@@ -119,10 +81,7 @@ def mark_attempt_failed(
     validate_available_attempt(
         database, entry_id, payload.get("card_id"), payload.get("expected_revision")
     )
-    changed = database.execute(
-        "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
-        (entry_id,),
-    ).rowcount
+    changed = storage.mark_attempt_failed(database, entry_id)
     if not changed:
         raise ReviewConflict(
             "queue_attempt_inactive", "This queue attempt is no longer active"
@@ -143,12 +102,7 @@ def bury_queue_entry(
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
     previous_order = capture_daily_queue_order(database, queue_date)
-    database.execute(
-        """UPDATE daily_queue SET status='buried'
-           WHERE queue_date=? AND status!='complete'
-             AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
-        (queue_date, entry_id),
-    )
+    storage.bury_card_entries(database, queue_date, entry_id)
     preserve_daily_queue_order(database, queue_date, previous=previous_order)
     return {"buried": True, "queue_entry_id": entry_id}
 
@@ -162,26 +116,10 @@ def ensure_current_queue(
         queue_date = date.fromisoformat(str(payload["queue_date"])).isoformat()
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, "A valid queue_date is required") from error
-    # Every task/projection write locks the task first, including timeout recovery.
-    current_task_lock_sql = """SELECT id,state,payload_json,last_error FROM background_tasks
-           WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE"""
-    active_task = database.execute(current_task_lock_sql).fetchone()
-    if active_task is None and isinstance(database, PostgresConnection):
-        # Serialize first ensures without owning a projection while waiting for
-        # task creation. Recheck after the creator's transaction has committed.
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-            ("tempo:daily-queue:current:ensure",),
-        )
-        active_task = database.execute(current_task_lock_sql).fetchone()
+    active_task = storage.current_refresh_task(database)
     # An absent task cannot be locked: let refresh enqueue it before locking the
     # projection. A ready projection still needs no new task.
-    projection_lock_clause = " FOR UPDATE" if active_task else ""
-    projection = database.execute(
-        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?"
-        + projection_lock_clause,
-        (queue_date,),
-    ).fetchone()
+    projection = storage.refresh_projection(database, queue_date, bool(active_task))
     if (
         projection
         and projection["state"] == "ready"
@@ -193,12 +131,7 @@ def ensure_current_queue(
         and active_task["state"] in {"queued", "leased", "retrying"}
         and json.loads(active_task["payload_json"]).get("queue_date") == queue_date
     ):
-        database.execute(
-            """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,last_error)
-               VALUES(?,'refreshing',0,1,?) ON CONFLICT(queue_date) DO UPDATE SET
-               state='refreshing',refresh_pending=1,last_error=excluded.last_error""",
-            (queue_date, active_task["last_error"]),
-        )
+        storage.retain_refreshing_projection(database, queue_date, active_task["last_error"])
         return {
             "queue_date": queue_date,
             "refresh_pending": True,
