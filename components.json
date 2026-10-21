@@ -2127,6 +2127,8 @@
         "public",
         "scripts/prove-study-learning.mjs",
         "scripts/offline-shell-assets.ts",
+        "scripts/maia-cache-asset.ts",
+        "database/browser",
         "vite.static.config.ts",
         "module-resolution.ts",
         "package.json",

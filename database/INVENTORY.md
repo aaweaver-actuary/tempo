@@ -202,9 +202,21 @@ The original `redis_admission_gate.py` and `study_priority.py` entries are also 
 
 The scan excludes the centralized tree and tests. Historical evidence/qualification receipts retain their recorded source paths; current active references were relocated. Redis orchestration and host resource coordination remain in their existing infrastructure owners.
 
-### Newly confirmed browser remainder — source review pending extraction
+### Additional browser source classification and minimal plan
 
-The final outside-tree source scan found actual IndexedDB transaction/read/write operations in `app/lib/offline-training.ts`, `app/lib/opening-evidence-journal.ts` and `public/maia-worker.js`, despite their existing root connection adapters. These are additional mixed-file splits, not completed original entries or permanent exceptions. Keep application replay/evidence/model policy outside and move complete existing storage operations into the root browser category, preserving transaction callbacks and worker delivery/build paths. LocalStorage and tooling matches are still being classified; names/text matches alone are not declared storage operations or unused code. Native placement completion above therefore does not establish complete database centralization.
+The PR350 closure scan identified three actual IndexedDB mixed-file remainders, now separated in this follow-up: [prepared training](browser/prepared-training-storage.ts), [opening journal](browser/opening-evidence-journal-storage.ts) and [legacy Maia model cache](browser/maia-worker-cache.js). Existing capture/replay/download/inference decisions stay outside; transaction callbacks, stored keys, schema versions and public worker URL remain unchanged. The Maia cache's canonical source is emitted as a build asset, with no maintained duplicate or new runtime framework.
+
+A separate browser API scan at PR350 found 58 runtime files / 357 bound WebStorage calls. This is a **classification inventory, not 58 database files or an instruction to add an adapter for every preference read**. Keep the following categories distinct before additional edits:
+
+| Category | Existing sources / minimal organization | Current scope |
+| --- | --- | --- |
+| Actual database / IndexedDB | Prepared queue, opening attempt/event journal and model Blob cache above. | Complete existing operations move root; policy stays outside. Source/fake/build proof does not qualify a real browser or failure isolation. |
+| Durable browser mutation outboxes | Sixteen authoring/Discovery journals, nine Games/Tactics/Endgames journals, practice/settings/activity receipts, immutable workbench command journal, and the authored-Studies retry key. | Move only existing fixed persistence operations and storage record facts; retain separate implementations, keys, immutable payloads, validation/error/receipt/timing and caller ownership. No new generic storage/dispatch framework. Owner README dictionaries describe keys and payloads. These splits are still in progress. |
+| Saved practice/annotation records | Existing burial state, tactic progress and authored annotations with pending mutation identities. | Review the specific stored authority and move only a concrete cohesive persistence responsibility; preserve existing policy/defaults and distinct concepts. |
+| Ordinary browser preferences / display state | Board/layout/tabs/sound/view settings, notification display history, selected-pack preference, Lichess connection/OAuth session metadata. | Retain with the logical domain or browser action. Their use of local/sessionStorage alone does not justify a database adapter or storage redesign. |
+| Rebuildable browser asset/response caches | Existing workspace/Explorer response caches and `public/sw.js` CacheStorage shell assets. | Retain existing logical cache owner and operations. CacheStorage is separately inventoried browser asset delivery, not an unfinished relational/IndexedDB extraction requirement. |
+
+The generic `validated-data` helper remains unchanged; this task does not introduce callback-expanded validation wrappers. Mixed UI files are classified by exact key/responsibility, not moved wholesale. Actual DB/Redis diagnostic/backup tooling and source-level native fixture candidates are tracked separately from ordinary browser state and from the closed original 156-row checklist. No live browser data, sessions, credentials or services are inspected.
 
 ## Handoff for the separately coordinated domain move
 
