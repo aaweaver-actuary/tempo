@@ -5,25 +5,16 @@ import hashlib, json
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .scheduler import schedule_review, unlock_ready
 from tempo_learning_database.adapters.opening_progression import unlock_legacy_children_after_review
+from tempo_learning_database.adapters import review_service as storage
 
 
 def rebuild_defense_schedule(
     database: PostgresConnection, card_id: str, light_first_interval_days: int
 ) -> None:
     """Replay only valid reviews after a defective recognition rubric is retired."""
-    rows = database.execute(
-        """SELECT rating,reviewed_at FROM reviews WHERE card_id=? AND invalidated_at IS NULL
-           ORDER BY reviewed_at,id""",
-        (card_id,),
-    ).fetchall()
+    rows = storage.valid_defense_reviews(database, card_id)
     if not rows:
-        database.execute(
-            """UPDATE cards SET due_date=?,interval_days=0,fsrs_card_json=NULL,
-               first_correct_at=NULL,reinforcement_pending=0,stability=0,
-               guided_review=0,state='learning',scheduling_mode='normal',
-               hard_correct_streak=0,recent_attempts_json='[]' WHERE id=? AND content_type='defense'""",
-            (date.today().isoformat(), card_id),
-        )
+        storage.reset_defense_schedule(database, date.today().isoformat(), card_id)
         return
     interval_days = 0
     fsrs_card_json = None
@@ -63,34 +54,20 @@ def rebuild_defense_schedule(
         if unlock_ready(schedule.stability, successful_days, recent_outcomes)
         else "learning"
     )
-    database.execute(
-        """UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,
-           reinforcement_pending=?,stability=?,guided_review=0,state=?,scheduling_mode=?,
-           hard_correct_streak=?,recent_attempts_json=? WHERE id=? AND content_type='defense'""",
-        (
-            schedule.due_date.isoformat(),
-            schedule.interval_days,
-            schedule.fsrs_card_json,
-            schedule.first_correct_at,
-            int(schedule.reinforcement_pending),
-            schedule.stability,
-            state,
-            schedule.scheduling_mode,
-            schedule.hard_correct_streak,
-            json.dumps(schedule.recent_attempts),
-            card_id,
-        ),
+    storage.write_defense_schedule(
+        database, due_date=schedule.due_date.isoformat(), interval_days=schedule.interval_days,
+        fsrs_card_json=schedule.fsrs_card_json, first_correct_at=schedule.first_correct_at,
+        reinforcement_pending=int(schedule.reinforcement_pending), stability=schedule.stability,
+        state=state, scheduling_mode=schedule.scheduling_mode,
+        hard_correct_streak=schedule.hard_correct_streak,
+        recent_attempts_json=json.dumps(schedule.recent_attempts), card_id=card_id,
     )
 
 
 def _queue_order_inputs(database, queue_date):
-    entries = database.execute(
-        """SELECT id,card_id FROM daily_queue
-           WHERE queue_date=? AND status='queued' ORDER BY id""",
-        (queue_date,),
-    ).fetchall()
+    entries = storage.queue_order_entries(database, queue_date)
     from .frozen_opening_order import activation
-    saved = database.execute("SELECT membership_hash FROM daily_queue_days WHERE queue_date=?", (queue_date,)).fetchone()
+    saved = storage.saved_order_membership(database, queue_date)
     return entries, saved, activation(database)
 
 
@@ -105,12 +82,7 @@ def preserve_daily_queue_order(database: PostgresConnection, queue_date: str, *,
     from .queue_ordering import _preserved_queue_fingerprint
     membership_hash = _preserved_queue_fingerprint(*_queue_order_inputs(database, queue_date), previous=previous)
     seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
-    database.execute(
-        """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
-           VALUES(?,?,?,?) ON CONFLICT(queue_date) DO UPDATE SET
-           membership_hash=excluded.membership_hash,generated_at=excluded.generated_at""",
-        (queue_date, seed, membership_hash, datetime.now(timezone.utc).isoformat()),
-    )
+    storage.retain_daily_order(database, queue_date, seed, membership_hash, datetime.now(timezone.utc).isoformat())
 
 
 def apply_scheduling_review(
@@ -148,9 +120,7 @@ def apply_scheduling_review(
         return result
     from .receivers import settle
 
-    review = database.execute(
-        "SELECT MAX(id) FROM reviews WHERE card_id=?", (card_id,)
-    ).fetchone()[0]
+    review = storage.latest_review_id(database, card_id)
     if source_kind == "study":
         settle(
             database,
@@ -179,51 +149,25 @@ def ensure_card_queued_after(
 ) -> None:
     day = queue_date or date.today().isoformat()
     previous_order = capture_daily_queue_order(database, day) if preserve_order else None
-    entry = database.execute(
-        "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",
-        (day, card_id),
-    ).fetchone()
+    entry = storage.queued_entry(database, day, card_id)
     if not entry:
-        cycle = database.execute(
-            "SELECT COALESCE(MAX(cycle),-1)+1 FROM (SELECT cycle FROM daily_queue WHERE queue_date=? AND card_id=? UNION ALL SELECT cycle FROM queue_attempt_origins WHERE queue_date=? AND card_id=?) cycles",
-            (day, card_id, day, card_id),
-        ).fetchone()[0]
+        cycle = storage.next_cycle(database, day, card_id)
         append_position = (
-            database.execute(
-                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
-                (day,),
-            ).fetchone()[0]
+            storage.append_position(database, day)
             if protected_ids is not None
             else 2_000_000_000
         )
-        entry = database.execute(
-            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?) RETURNING id",
-            (day, card_id, cycle, append_position, attempt_state, priority_reason),
-        ).fetchone()
+        entry = storage.insert_queued_entry(database, day, card_id, cycle, append_position, attempt_state, priority_reason)
     elif priority_reason:
-        database.execute(
-            "UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",
-            (priority_reason, entry["id"]),
-        )
+        storage.retain_priority_reason(database, priority_reason, entry["id"])
     if protected_ids is not None:
         from tempo_learning_remediation import (
             Candidate,
-            current_miss_sql,
             order_candidates,
         )
         from tempo_learning_database.connections import current_database
 
-        rows = database.execute_native(
-            """SELECT q.id,q.position,q.card_id,q.gameplay_priority_reason,q.admission_repertoire_id,
-                      card.revision,card.publication_id,card.publication_generation,
-                      CASE WHEN q.gameplay_priority_reason IS NOT NULL THEN """
-            + current_miss_sql("card")
-            + """
-                      ELSE FALSE END AS current_miss
-               FROM daily_queue q JOIN cards card ON card.id=q.card_id
-               WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.position,q.id""",
-            (current_database.get().configuration.workspace_id, day),
-        ).fetchall()
+        rows = storage.priority_queue_rows(database, current_database.get().configuration.workspace_id, day)
         if entry["id"] not in protected_ids:
             misses = [
                 row
@@ -268,35 +212,16 @@ def ensure_card_queued_after(
             for row in rows:
                 target = row["id"] if row["id"] in protected_ids else next(movable)
                 updates.append((row["position"], target))
-            database.executemany(
-                "UPDATE daily_queue SET position=? WHERE id=?", updates
-            )
+            storage.update_queue_positions(database, updates)
     else:
         _position_requeued_card(database, day, entry["id"], after_cards)
-    database.execute(
-        """UPDATE daily_queue SET
-               card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
-               admission_kind=CASE WHEN admission_kind='explicit' THEN 'explicit'
-                   WHEN EXISTS(SELECT 1 FROM reviews review
-                   WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
-                     AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
-           WHERE id=?""",
-        (entry["id"],),
-    )
+    storage.refresh_entry_metadata(database, entry["id"])
     if preserve_order:
         preserve_daily_queue_order(database, day, previous=previous_order)
 
 
 def _position_requeued_card(database, day, entry_id, after_cards):
-    ordered_ids = [
-        row[0]
-        for row in database.execute(
-            "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
-            (day, entry_id),
-        )
-    ]
+    ordered_ids = storage.other_queued_ids(database, day, entry_id)
     ordered_ids.insert(min(after_cards, len(ordered_ids)), entry_id)
     for position, entry_id in enumerate(ordered_ids):
-        database.execute(
-            "UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id)
-        )
+        storage.set_queue_position(database, position, entry_id)

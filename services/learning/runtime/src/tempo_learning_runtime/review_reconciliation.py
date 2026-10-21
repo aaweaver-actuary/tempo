@@ -8,44 +8,13 @@ import json
 
 from tempo_learning_database.adapters.opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
+from tempo_learning_database.adapters import review_reconciliation as storage
 
 
-SCHEDULE_COLUMNS = (
-    "due_date",
-    "interval_days",
-    "fsrs_card_json",
-    "first_correct_at",
-    "reinforcement_pending",
-    "stability",
-    "guided_review",
-    "state",
-    "scheduling_mode",
-    "hard_correct_streak",
-    "recent_attempts_json",
-)
-
-
-def card_schedule_state(database, card_id: str) -> dict | None:
-    row = database.execute(
-        f"SELECT {','.join(SCHEDULE_COLUMNS)} FROM cards WHERE id=?",
-        (card_id,),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def save_schedule_snapshot(database, review_id: int, state: dict) -> None:
-    database.execute(
-        "INSERT INTO review_schedule_snapshots(review_id,state_json) VALUES(?,?) "
-        "ON CONFLICT(review_id) DO UPDATE SET state_json=excluded.state_json",
-        (review_id, json.dumps(state)),
-    )
-
-
-def _write_card_state(database, card_id: str, state: dict) -> None:
-    database.execute(
-        f"UPDATE cards SET {','.join(f'{column}=?' for column in SCHEDULE_COLUMNS)} WHERE id=?",
-        (*[state[column] for column in SCHEDULE_COLUMNS], card_id),
-    )
+SCHEDULE_COLUMNS = storage.SCHEDULE_COLUMNS
+card_schedule_state = storage.card_schedule_state
+save_schedule_snapshot = storage.save_schedule_snapshot
+_write_card_state = storage.write_card_state
 
 
 def _review_day(moment: datetime, timezone_name: str) -> date:
@@ -71,9 +40,7 @@ def _next_state(
     review_id: int,
     timezone_name: str,
 ) -> tuple[dict, int]:
-    settings = database.execute(
-        "SELECT light_first_interval_days FROM settings WHERE id=1"
-    ).fetchone()
+    settings = storage.light_interval_setting(database)
     schedule = schedule_review(
         outcome,
         interval_days=state["interval_days"],
@@ -89,10 +56,7 @@ def _next_state(
     )
     history = [
         dict(row)
-        for row in database.execute(
-            "SELECT id,rating,reviewed_at FROM reviews WHERE card_id=? AND invalidated_at IS NULL",
-            (card_id,),
-        )
+        for row in storage.valid_review_history(database, card_id)
         if (
             datetime.fromisoformat(row["reviewed_at"]).astimezone(timezone.utc),
             row["id"],
@@ -108,10 +72,7 @@ def _next_state(
     successful_days = len(
         {row["reviewed_at"][:10] for row in history if row["rating"] == "correct"}
     )
-    seed = database.execute(
-        "SELECT baseline_successful_days,baseline_recent_clean FROM opening_card_schedule_seeds WHERE card_id=?",
-        (card_id,),
-    ).fetchone()
+    seed = storage.baseline_schedule_seed(database, card_id)
     successful_days += int(seed["baseline_successful_days"] if seed else 0)
     recent_outcomes = [row["rating"] for row in reversed(history[-2:])]
     if seed:
@@ -150,11 +111,7 @@ def reconcile_completed_review(
     timezone_name: str,
     competing_review: dict | None = None,
 ) -> dict:
-    prior = database.execute(
-        "SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json "
-        "FROM review_attempt_receipts WHERE attempt_id=?",
-        (attempt_id,),
-    ).fetchone()
+    prior = storage.review_attempt_receipt(database, attempt_id)
     if prior:
         if (
             prior["card_id"] != card_id
@@ -172,9 +129,7 @@ def reconcile_completed_review(
         return json.loads(prior["result_json"])
 
     current = card_schedule_state(database, card_id)
-    revision_row = database.execute(
-        "SELECT revision FROM cards WHERE id=?", (card_id,)
-    ).fetchone()
+    revision_row = storage.card_revision(database, card_id)
     warning = None
     review_id = None
     status = "chronological"
@@ -188,11 +143,7 @@ def reconcile_completed_review(
         scheduled_outcome = "again" if guided else outcome
         later = [
             dict(row)
-            for row in database.execute(
-                "SELECT id,rating,guided,reviewed_at FROM reviews "
-                "WHERE card_id=? AND invalidated_at IS NULL ORDER BY reviewed_at,id",
-                (card_id,),
-            )
+            for row in storage.ordered_valid_reviews(database, card_id)
             if datetime.fromisoformat(row["reviewed_at"]).astimezone(timezone.utc)
             > review_time
         ]
@@ -203,10 +154,7 @@ def reconcile_completed_review(
             )
         )
         first_snapshot = (
-            database.execute(
-                "SELECT state_json FROM review_schedule_snapshots WHERE review_id=?",
-                (later[0]["id"],),
-            ).fetchone()
+            storage.review_snapshot(database, later[0]["id"])
             if later
             else None
         )
@@ -219,25 +167,14 @@ def reconcile_completed_review(
             if later or completed_at is None:
                 status = "computer_fallback"
                 warning = "The earlier scheduling state or review time is unavailable. Both results are credited; the computer schedule was kept with a near-term review. Review this card again when it appears to establish an updated schedule."
-        database.execute(
-            "INSERT INTO reviews(card_id,rating,internal_rating,guided,reviewed_at,previous_interval,next_interval,source_kind,source_ref) "
-            "VALUES(?,?,?,?,?,?,?,?,?)",
-            (
-                card_id,
-                scheduled_outcome,
-                "good" if scheduled_outcome == "correct" else "again",
-                int(guided),
-                review_time.isoformat(),
-                initial_interval,
-                initial_interval,
-                "study",
-                f"attempt:{attempt_id}",
-            ),
+        storage.insert_independent_review(
+            database, card_id=card_id, rating=scheduled_outcome,
+            internal_rating="good" if scheduled_outcome == "correct" else "again",
+            guided=int(guided), reviewed_at=review_time.isoformat(),
+            previous_interval=initial_interval, next_interval=initial_interval,
+            source_kind="study", source_ref=f"attempt:{attempt_id}",
         )
-        review_id = database.execute(
-            "SELECT id FROM reviews WHERE source_kind='study' AND source_ref=?",
-            (f"attempt:{attempt_id}",),
-        ).fetchone()[0]
+        review_id = storage.independent_review_id(database, f"attempt:{attempt_id}")
         if status == "chronological":
             events = [(review_id, scheduled_outcome, guided, review_time)] + [
                 (
@@ -261,20 +198,14 @@ def reconcile_completed_review(
                     event_review_id,
                     timezone_name,
                 )
-                database.execute(
-                    "UPDATE reviews SET previous_interval=?,next_interval=? WHERE id=?",
-                    (previous_interval, next_interval, event_review_id),
-                )
+                storage.update_review_intervals(database, previous_interval, next_interval, event_review_id)
             _write_card_state(database, card_id, state)
         else:
             conservative_due = min(
                 date.fromisoformat(current["due_date"]),
                 date.today() + timedelta(days=1),
             )
-            database.execute(
-                "UPDATE cards SET due_date=? WHERE id=?",
-                (conservative_due.isoformat(), card_id),
-            )
+            storage.set_conservative_due(database, conservative_due.isoformat(), card_id)
 
     if review_id is not None:
         legacy_day = (
@@ -298,20 +229,9 @@ def reconcile_completed_review(
         "warning": warning,
         "competing_review": competing_review,
     }
-    database.execute(
-        "INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (
-            attempt_id,
-            card_id,
-            queue_entry_id,
-            outcome,
-            int(guided),
-            completed_at.isoformat() if completed_at else None,
-            review_id,
-            status,
-            warning,
-            json.dumps(result),
-        ),
+    storage.retain_attempt_receipt(
+        database, attempt_id=attempt_id, card_id=card_id, queue_entry_id=queue_entry_id,
+        outcome=outcome, guided=int(guided), completed_at=completed_at.isoformat() if completed_at else None,
+        review_id=review_id, scheduling_status=status, warning=warning, result_json=json.dumps(result),
     )
     return result
