@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **150 files**; one candidate is confirmed non-database application code, and **5 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **155 files**; one candidate is confirmed non-database application code, and **zero original entries remain for review/extraction**. The original checklist is closed; complete centralization remains unfinished while the additional native harness/test placement and technical composition work below is unresolved. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -17,7 +17,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed authored-repertoire command storage split: [backend/app/canonical_prefix_api.py](tempo_legacy_database/adapters/authored_repertoires/README.md).
 - Completed authored card edit/archive storage split: [backend/app/card_commands.py](tempo_legacy_database/adapters/authored_repertoires/card_edits/README.md).
 - Completed card/repertoire deletion storage split: [backend/app/card_deletion.py](tempo_legacy_database/adapters/authored_repertoires/card_deletion/README.md).
-- [backend/app/command_gateway.py](../backend/app/command_gateway.py)
+- Completed command receipt persistence split: [backend/app/command_gateway.py](tempo_legacy_database/adapters/commands/receipts/README.md).
 - Completed legacy coverage Maia command storage split: [backend/app/coverage_maia_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - Completed commands SQL split: [backend/app/endgame_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - Completed legacy Games command SQL split: [backend/app/finding_card_commands.py](tempo_legacy_database/adapters/games/README.md).
@@ -44,7 +44,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed controls SQL split: [backend/app/repertoire_settings.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed controls SQL split: [backend/app/review_commands.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed pasted-analysis storage split: [backend/app/services/analysis_paste.py](tempo_legacy_database/adapters/authored_repertoires/README.md).
-- [backend/app/services/background_activity.py](../backend/app/services/background_activity.py)
+- Completed background activity control storage split: [backend/app/services/background_activity.py](tempo_legacy_database/adapters/controls/activity/README.md).
 - Completed background diagnostic query/scope split: [backend/app/services/background_diagnostics.py](tempo_legacy_database/adapters/background_diagnostics/README.md).
 - Completed queue/lifecycle storage split: [backend/app/services/background_metrics.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - Completed existing canonical-prefix implementation storage split: [backend/app/services/canonical_prefix.py](tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/README.md).
@@ -70,7 +70,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed existing compatibility graph storage split: [backend/app/services/opening_graph.py](tempo_legacy_database/adapters/opening_graph/README.md).
 - Completed existing legacy opening graph recovery storage split: [backend/app/services/opening_graph_recovery.py](tempo_legacy_database/adapters/opening_graph/README.md).
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/opening_progression.py](tempo_legacy_database/adapters/opening_progression.py).
-- [backend/app/services/opening_ranking_snapshot.py](../backend/app/services/opening_ranking_snapshot.py)
+- Completed opening ranking snapshot storage split: [backend/app/services/opening_ranking_snapshot.py](tempo_legacy_database/adapters/opening_ranking/README.md).
 - Completed controls SQL split: [backend/app/services/postgres_coverage_candidates.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed coverage build storage split: [backend/app/services/postgres_coverage_explorer.py](tempo_legacy_database/adapters/coverage/README.md).
 - Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).
@@ -119,13 +119,13 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy tactic persistence split: [backend/app/services/tactical_catalog.py](tempo_legacy_database/adapters/tactics/README.md).
 - Completed legacy read/publication projection split: [backend/app/services/tactical_opportunities.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed existing threat pipeline storage split: [backend/app/services/threat_pipeline.py](tempo_legacy_database/adapters/threats/README.md).
-- [backend/app/services/threat_training.py](../backend/app/services/threat_training.py)
+- Completed existing threat training storage split: [backend/app/services/threat_training.py](tempo_legacy_database/adapters/threats/README.md).
 - Completed foreground control storage split: [backend/app/settings_commands.py](tempo_legacy_database/adapters/foreground_controls/README.md).
 - Completed intact database snapshot/evidence reader move: [backend/app/snapshot_reads.py](tempo_legacy_database/adapters/snapshot_reads.py).
 - Completed commands SQL split: [backend/app/statistics_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - Completed legacy exercise-attempt storage split: [backend/app/study_attempt_commands.py](tempo_legacy_database/adapters/study_attempts/README.md).
 - Completed authored-Studies command storage split: [backend/app/study_commands.py](tempo_legacy_database/adapters/commands/studies/README.md).
-- [backend/app/study_routes.py](../backend/app/study_routes.py)
+- Completed authored-Studies route storage split: [backend/app/study_routes.py](tempo_legacy_database/adapters/commands/studies/README.md).
 - Completed legacy tactic persistence split: [backend/app/tactic_commands.py](tempo_legacy_database/adapters/tactics/README.md).
 - Completed legacy daily rollover readiness storage split: [backend/app/tasks.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - Completed commands SQL split: [backend/app/teaching_commands.py](tempo_legacy_database/adapters/commands/README.md).
@@ -170,7 +170,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 ## Additional storage candidates found after the baseline
 
-The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Nine additional storage/tooling sources were found by checking Redis operations, SQL constants and database-specific native harnesses outside the original call scan. They do not alter baseline arithmetic; their status is shown below:
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. The first nine additional storage/tooling sources were resolved by checking Redis operations, SQL constants and Content native harnesses outside the original call scan. Further closure scans found the separately pending native/test groups below. None alter baseline arithmetic.
 
 | Additional source / status | Database operations | Application responsibility to retain outside database |
 | --- | --- | --- |
@@ -182,6 +182,18 @@ The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive pr
 | Extracted [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) fixture operations | Five existing native setup statements now live in [ownership fixture.py](ownership/fixture.py), including the two unchanged test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
 
 Three Content native-only files discovered after the runtime audit are also relocated intact: [the PostgreSQL suite](tempo_content_database/tests/test_postgres.py), [its runner](tempo_content_database/tooling/run_postgres.py) and [benchmark](tempo_content_database/tooling/benchmark.py). Native assertions and benchmark are byte-identical; only runner/build/discovery/source-hash paths change. Application-facing synthetic tests and source-free consumer tooling retain Content ownership. These three additional relocations do not alter the original156-row arithmetic.
+
+### Further native harness and storage-test placement — pending
+
+These concrete source-placement/discovery items remain even though the original156-row checklist is closed. All work is mechanical; no native suite,restore,provisioning or live service is run. Application policy/contract tests remain outside database where they do not implement database-specific fixtures. Historical qualification receipts retain original paths.
+
+| Owner / current pending scope | Required placement or reference work | Current validation limit |
+| --- | --- | --- |
+| Game Evidence | Two native test/runner files and one database source-fingerprint test scope; qualifier must fingerprint the root owner. | Native files move whole; runtime wheel must exclude tests/tooling and source fingerprint pure discovery remains explicit. |
+| Intelligence | Ten native integration runner/test/fixture/support files,including actual-A/Analysis qualification; owner artifact/discovery references. | Whole database-specific native harness,not a new installed native product; no actual engine/provider run. |
+| Learning / remediation / legacy review | Seven native/restore files plus a mixed remediation guard scope; mixed qualification-policy cases stay outside. | Preserve resource/target/cleanup guards and pure/native discovery; native/restore tooling is sdist-only. |
+| Legacy backend | Native bridge,discovery-acceptance and queue-admission fixtures/tests; associated database-native qualification tooling under inspection. | One stale acceptance-class import is being repaired; import/plan checks only,not actual native proof. |
+| Content | Whole cursor unit suite and four direct storage-only test functions; pure runner/artifact inputs updated explicitly. | Native tests stay excluded from pure discovery; source-free application checks retain component ownership. |
 
 The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis factories/Lua/pipeline/operations and Study-settings query now live under [redis_control](tempo_legacy_database/adapters/redis_control/README.md), preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 
@@ -219,13 +231,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 115 | 0 | 5 |
+| Legacy backend | 120 | 0 | 0 |
 | Learning runtime | 26 | 0 | 0 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **150** | **1** | **5** |
+| **Total baseline** | **155** | **1** | **0** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 

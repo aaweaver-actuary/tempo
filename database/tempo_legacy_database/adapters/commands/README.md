@@ -69,3 +69,5 @@ simplified later after separate behavior review; this move retains their current
 SQL and authority boundaries.
 
 [Authored Studies command persistence](studies/README.md) owns original chapter/exercise/revision/link/enrollment/card/attempt queries and locks. Existing content grading,models/HTTP,identity/time/JSON/hash,membership/revision/reset and practice/queue callback decisions remain outside. Authored Studies content and ordinary Study practice remain distinct owners; current shared effects are disclosed legacy coupling.
+
+[Command receipt persistence](receipts/README.md) owns complete attempt/replay/fence/retry/savepoint/status queries and original writer/error-driver definitions. Registration,preparation,handler/HTTP translation,state/retry/clock policy,activity admission and post-commit queue wake remain in application composition with original transaction authority.

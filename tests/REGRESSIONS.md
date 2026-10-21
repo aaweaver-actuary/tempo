@@ -5179,3 +5179,18 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Threat pipeline storage
 
 `backend/tests/test_threat_pipeline_storage_separation.py` owns thirteen semantic source/snapshot boundaries for candidate facts,ranking/upsert decisions,claim fairness,lease/fingerprint guards,clock/resource/callback sequencing and borrowed writes. Existing validation/backfill cases retain assertions; no native engine or PostgreSQL qualification is claimed.
+
+
+## Command receipt storage boundary
+
+`backend/tests/test_command_receipt_storage_boundary.py` owns eight fake boundaries for receipt state/fences,savepoints,raw-writer capture and lease/clock/error parameter order. Existing transport and receipt-replay queue-wake checks retain assertions; two Main-dependent transport cases remain unselected and native transaction behavior remains unverified.
+
+
+## Authored Studies route storage and cursor timing
+
+`backend/tests/test_study_route_database_split.py` owns three focused boundaries for eager query/lazy cursor acquisition and per-exercise projection order,complete fixed delegation and source boundaries. Existing route/API/fake-dispatch assertions remain intact. The custom-iterator acquisition regression was caught and fixed before integration; no native or domain-isolation qualification is implied.
+
+
+## Threat training storage
+
+`backend/tests/test_threat_training_storage_separation.py` owns fourteen semantic source/snapshot boundaries for rubric repair/admission,approval,exercise/report facts,recognition/attempt replay,card/day/receipt locking,grading and queue/scheduling/clock/resource order. The existing admission case remains unchanged. Native races,actual engine and optional-feature independence remain unverified.
