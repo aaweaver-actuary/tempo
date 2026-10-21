@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.games import mutations as storage
 from .services.durable_tasks import enqueue_task_in_transaction
 from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 
@@ -16,48 +17,23 @@ from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_tr
 def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     game_id = str(payload["game_id"])
     excluded = bool(payload["excluded"])
-    game = database.execute(
-        "SELECT id FROM imported_games WHERE id=? FOR UPDATE", (game_id,),
-    ).fetchone()
+    game = storage.lock_game(database, game_id)
     if game is None:
         raise HTTPException(404, "Game not found")
-    database.execute(
-        "UPDATE imported_games SET adaptive_excluded=? WHERE id=?",
-        (int(excluded), game_id),
-    )
+    storage.set_adaptive_exclusion(database, game_id, excluded)
     now = datetime.now(timezone.utc).isoformat()
     if excluded:
-        database.execute(
-            "UPDATE game_findings SET status='excluded',updated_at=? "
-            "WHERE game_id=? AND status='pending'", (now, game_id),
-        )
+        storage.exclude_pending_findings(database, game_id, now)
     else:
-        database.execute(
-            "UPDATE game_findings SET status='pending',updated_at=? "
-            "WHERE game_id=? AND status='excluded'", (now, game_id),
-        )
-    database.execute(
-        """INSERT INTO game_derivation_jobs(game_id,status,updated_at)
-           VALUES(?,'queued',?) ON CONFLICT(game_id) DO UPDATE SET
-           status='queued',last_error=NULL,
-           derivation_version=game_derivation_jobs.derivation_version+1,
-           completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
-        (game_id, now),
-    )
-    derivation = database.execute(
-        "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
-        (game_id,),
-    ).fetchone()
+        storage.restore_excluded_findings(database, game_id, now)
+    derivation = storage.restart_derivation(database, game_id, now)
     enqueue_task_in_transaction(
         database, "game_derivation_positions", game_id,
         {"game_id": game_id, "derivation_version": derivation["derivation_version"],
          "cursor": 0},
         priority=125,
     )
-    affected_repertoire_ids = [row[0] for row in database.execute(
-        "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?",
-        (game_id,),
-    )]
+    affected_repertoire_ids = storage.affected_repertoire_ids(database, game_id)
     for repertoire_id in sorted(set(affected_repertoire_ids)):
         enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     from .services.postgres_next_opponent import request_profile_refresh
@@ -69,10 +45,7 @@ def request_defensive_threat_scan(
     database: PostgresConnection, payload: dict[str, Any],
 ) -> dict[str, Any]:
     game_id = str(payload["game_id"])
-    game = database.execute(
-        "SELECT analysis_version FROM imported_games WHERE id=? AND analysis_state='ready'",
-        (game_id,),
-    ).fetchone()
+    game = storage.analyzed_game(database, game_id)
     if game is None:
         raise HTTPException(404, "Analyzed game not found")
     analysis_version = int(game["analysis_version"])
