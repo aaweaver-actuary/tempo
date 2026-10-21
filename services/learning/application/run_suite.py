@@ -19,6 +19,7 @@ def suite_inputs(suite):
     if suite == 'application':
         return HERE, [HERE/'tests']
     return ROOT, [HERE/'integration/test_qualification_runners.py',
+                  ROOT/'database/tempo_legacy_database/tests/learning_review/test_native_runner.py',
                   ROOT/'backend/tests/test_learning_package_installation.py']
 
 

@@ -1,0 +1,5 @@
+# Learning review legacy database proofs
+
+[test_postgres.py](test_postgres.py) owns actual installed-application/legacy-adapter transaction, replay, locking, rollback and prepared-continuation proofs. Use the [invocation-owned harness](../../tooling/learning_review/run_postgres.py); direct external database targets remain forbidden. Source schema is documented in the [legacy database overview](../../README.md); live schema is unverified.
+
+[test_native_runner.py](test_native_runner.py) contains the existing 18 mocked native-runner lifecycle cases. It creates no real cluster. Normal qualification policy, collection/JUnit checks and component wrapper tests remain in the [application policy guard file](../../../../services/learning/application/integration/test_qualification_runners.py); the original shared loader is reused rather than duplicated. `services/learning/application/run_suite.py tooling` explicitly discovers both files, plus the unchanged backend installation proof. Native test/tooling sources are included in source distributions only; runtime wheels are unchanged.

@@ -45,3 +45,7 @@ The final selected existing group has56 passes and three failures: `test_postgre
 ## Intelligence artifact qualifier guard name (source inspection)
 
 The embedded installed guard in `services/intelligence/integration/qualify_artifacts.py` retains two existing `pathlib.Path` references without a matching embedded `pathlib` import. Source inspection identifies a potential NameError when the full artifact qualifier reaches that block; the full workflow was not executed in this task. An incidental repair was reverted before native-placement integration because it was unnecessary for relocation. Current source/wheel guarded collection,archive and path proofs are separately recorded and do not qualify this full workflow. No issue was published.
+
+## Learning application native-runner resource-cap fake (relocation selection)
+
+The100 existing mocked native/qualification-policy cases partition into82 retained application cases and18 moved native-runner cases. Current selection reports93 passes/seven failures. The same seven failure families reproduce against captured original runner/test bodies: the unchanged NativeHarness.docker fake lacks the runner's pre-existing container-inspection resource-cap response. Assertions/helpers were not redesigned or weakened. Initial equal-basename collection selected zero cases; the relocated native guard now has its unique test_native_runner.py name and all100 identities collect. No native contract,container or service ran; these failures do not become native passes or full artifact qualification. No issue was published.

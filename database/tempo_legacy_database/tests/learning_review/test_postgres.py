@@ -15,7 +15,7 @@ import psycopg
 import pytest
 
 if not os.environ.get("TEMPO224_FIXTURE", "").startswith("tempo224-"):
-    raise RuntimeError("Run integration/run_postgres.py; external databases are forbidden")
+    raise RuntimeError("Run database/tempo_legacy_database/tooling/learning_review/run_postgres.py; external databases are forbidden")
 
 from tempo_legacy_database.adapters import postgres_store
 from app import review_commands, queue_commands

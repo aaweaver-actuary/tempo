@@ -11,7 +11,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
+APPLICATION = ROOT / "services/learning/application"
+sys.path.insert(0, str(APPLICATION))
 from qualification import controlled_environment, junit_destination, validate_inventory, write_json
 
 
@@ -55,7 +56,7 @@ def provision_owned_cluster(identity, password):
             if time.monotonic() > deadline:
                 raise RuntimeError('Owned PostgreSQL TCP endpoint did not become ready') from None
             time.sleep(.1)
-    sys.path[:0] = [str(ROOT), str(ROOT/'scripts'), str(ROOT/'backend')]
+    sys.path[:0] = [str(ROOT), str(ROOT/'scripts'), str(ROOT/'backend'), str(ROOT/'database')]
     from database.tooling.apply_postgres_migrations import apply_migrations
     from database.tooling.provision_postgres_roles import provision
     apply_migrations(admin)
@@ -70,20 +71,20 @@ def provision_owned_cluster(identity, password):
         TEMPO_DATABASE_WRITE_URL=make_conninfo(admin,user='tempo_writer',password=writer_password),
         TEMPO_TEST_INSTANCE='disposable', TEMPO_POSTGRES_POOL_SIZE='8',
         TEMPO_REDIS_URL='redis://127.0.0.1:1/0',
-        PYTHONPATH=os.pathsep.join((str(ROOT/'backend'),str(ROOT/'scripts'))))
+        PYTHONPATH=os.pathsep.join((str(ROOT/'backend'),str(ROOT/'scripts'),str(ROOT/'database'),str(ROOT))))
     return environment
 
 
 def run_required_tests(environment, run_directory, external_junit, report):
     junit = external_junit or run_directory/'native.xml'
     junit.parent.mkdir(parents=True, exist_ok=True)
-    arguments = ['-c',str(HERE.parent/'pyproject.toml'),'-o','addopts=',
-                 '-p','no:cacheprovider',str(HERE/'test_postgres.py')]
+    arguments = ['-c',str(APPLICATION/'pyproject.toml'),'-o','addopts=',
+                 '-p','no:cacheprovider',str(ROOT/'database/tempo_legacy_database/tests/learning_review/test_postgres.py')]
     receipts = {}
     for stage, extra in (('collected',['--collect-only','-q']),
                          ('executed',['-v','--tb=short','--junitxml='+str(junit)])):
         receipt = run_directory/('native-'+stage+'.json')
-        command = [sys.executable,str(HERE.parent/'qualification.py'),str(receipt),*arguments,*extra]
+        command = [sys.executable,str(APPLICATION/'qualification.py'),str(receipt),*arguments,*extra]
         result = subprocess.run(command, env=environment, cwd=ROOT, capture_output=True,text=True)
         (run_directory/('native-'+stage+'.log')).write_text(result.stdout+result.stderr)
         report['commands'].append(command)

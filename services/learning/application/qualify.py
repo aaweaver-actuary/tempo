@@ -12,7 +12,10 @@ from qualification import controlled_environment, junit_destination, validate_in
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-INPUTS = ("pyproject.toml","uv.lock","src","README.md","REGRESSIONS.md","tests","qualify.py","qualification.py")
+INPUTS = ("pyproject.toml","uv.lock","src","README.md","REGRESSIONS.md","tests","qualify.py","qualification.py",
+          "hatch_build.py","integration","run_suite.py",
+          "database/tempo_legacy_database/tooling/learning_review",
+          "database/tempo_legacy_database/tests/learning_review")
 
 
 def main():
@@ -41,6 +44,8 @@ def main():
             build.mkdir()
             for name in INPUTS:
                 source = HERE/name
+                if name.startswith("database/") and not source.is_dir():
+                    source = ROOT/name
                 if source.is_dir():
                     # Never copy interpreter caches or test-run artifacts.
                     shutil.copytree(source,build/name,ignore=shutil.ignore_patterns("__pycache__",".pytest_cache"))
