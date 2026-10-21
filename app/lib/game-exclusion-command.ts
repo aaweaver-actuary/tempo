@@ -1,3 +1,4 @@
+import { readPendingGameExclusion, storePendingGameExclusion, clearPendingGameExclusion } from "../../database/browser/adapters/games-analysis/game-exclusion";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -8,7 +9,7 @@ const savedResult = z.strictObject({ game_id: z.string(), excluded: z.boolean() 
 type PendingExclusion = { operationId: string; excluded: boolean };
 
 function readPending(storageKey: string): PendingExclusion | null {
-  const saved = localStorage.getItem(storageKey);
+  const saved = readPendingGameExclusion(storageKey);
   if (!saved) return null;
   const parsed: unknown = JSON.parse(saved);
   if (typeof parsed !== "object" || parsed === null ||
@@ -29,11 +30,11 @@ export async function setGameExclusion(gameId: string, excluded: boolean): Promi
     };
     if (receipt.state === "complete") {
       const result = savedResult.parse(receipt.response);
-      localStorage.removeItem(storageKey);
+      clearPendingGameExclusion(storageKey);
       if (result.game_id === gameId && result.excluded === excluded) return;
       pending = null;
     } else if (receipt.state === "failed") {
-      localStorage.removeItem(storageKey);
+      clearPendingGameExclusion(storageKey);
       throw new Error(receipt.error?.message ?? "The earlier game decision failed.");
     } else if (receipt.state === "pending") {
       if (pending.excluded !== excluded) throw new PendingOperationError(pending.operationId);
@@ -41,7 +42,7 @@ export async function setGameExclusion(gameId: string, excluded: boolean): Promi
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), excluded };
-    localStorage.setItem(storageKey, JSON.stringify(pending));
+    storePendingGameExclusion(storageKey, pending);
   }
   let response = await fetch(`${API_URL}/api/games/${encodeURIComponent(gameId)}/exclusion`, {
     method: "POST",
@@ -52,5 +53,5 @@ export async function setGameExclusion(gameId: string, excluded: boolean): Promi
   const result = await readJsonResponse(response, savedResult, "save game exclusion");
   if (result.game_id !== gameId || result.excluded !== excluded)
     throw new Error("The game decision response did not match the request.");
-  localStorage.removeItem(storageKey);
+  clearPendingGameExclusion(storageKey);
 }

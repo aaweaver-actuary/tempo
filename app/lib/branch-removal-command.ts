@@ -1,16 +1,15 @@
+import { readPendingBranchRemovalRecord, writePendingBranchRemovalRecord, clearPendingBranchRemovalRecord } from "../../database/browser/adapters/authoring/branch-removal";
 import { API_URL } from "../const";
 import { removeBranchResultSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-branch-removal-v1";
 type BranchRemoval = { repertoire_id: string; starting_fen: string; moves: string[] };
 type PendingRemoval = { operationId: string; body: string };
 
 function readPending(): PendingRemoval | null {
-  const stored = localStorage.getItem(PENDING_KEY);
-  if (!stored) return null;
-  const parsed: unknown = JSON.parse(stored);
+  const parsed = readPendingBranchRemovalRecord();
+  if (parsed === undefined) return null;
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("body" in parsed) || typeof parsed.body !== "string")
@@ -28,11 +27,11 @@ export async function removeBranchCommand(payload: BranchRemoval) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingBranchRemovalRecord();
       throw new Error(receipt.error?.message ?? "The earlier branch removal failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingBranchRemovalRecord();
       if (pending.body === body) return removeBranchResultSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "pending") {
@@ -41,7 +40,7 @@ export async function removeBranchCommand(payload: BranchRemoval) {
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    writePendingBranchRemovalRecord(pending);
   }
   let response = await fetch(`${API_URL}/api/repertoire/branches/remove`, {
     method: "POST",
@@ -50,6 +49,6 @@ export async function removeBranchCommand(payload: BranchRemoval) {
   });
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, removeBranchResultSchema, "remove repertoire branch");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingBranchRemovalRecord();
   return result;
 }

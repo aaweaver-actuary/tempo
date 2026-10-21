@@ -10,8 +10,10 @@ const report={complete:false,commands:[],source_removed:false};
 const environment=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('TEMPO_')&&!key.startsWith('PG')&&!['NODE_OPTIONS','NODE_PATH','PYTHONPATH'].includes(key)));
 function run(args,cwd,label,expected=0){const result=spawnSync(args[0],args.slice(1),{cwd,env:environment,encoding:'utf8',maxBuffer:16*1024*1024});report.commands.push({label,args,status:result.status});return writeFile(join(destination,label+'.log'),(result.stdout??'')+(result.stderr??'')).then(()=>{if(result.status!==expected)throw new Error(label+'_failed');return result.stdout;});}
 try{
- const build=join(temporary,'build');await mkdir(build);
+ const buildRoot=join(temporary,'build'),build=join(buildRoot,'apps/workbench-web');await mkdir(build,{recursive:true});
  for(const path of ['src','public','index.html','package.json','package-lock.json','tsconfig.json','vite.config.ts','test.mjs','tests'])await cp(join(source,path),join(build,path),{recursive:true});
+ // Preserve the finite source layout for the single canonical outbox storage adapter.
+ await cp(resolve(source,'../../database/browser/adapters/workbench'),join(buildRoot,'database/browser/adapters/workbench'),{recursive:true});
  await run(['npm','ci','--workspaces=false','--ignore-scripts'],build,'install');
  await run(['node','tests/public-build-config.mjs'],build,'public-build-settings');
  // Explicit non-secret fixture routing; no live Study service is contacted.
@@ -23,7 +25,7 @@ try{
  await cp(join(build,'tests'),join(consumer,'tests'),{recursive:true});await cp(join(build,'test.mjs'),join(consumer,'test.mjs'));await cp(join(consumer,'node_modules/@tempo/workbench-web/dist'),join(consumer,'dist'),{recursive:true});
  // Tests use only the public installed entry; fixture JSON is actual native C output.
 
- await rm(build,{recursive:true});report.source_removed=true;
+ await rm(buildRoot,{recursive:true});report.source_removed=true;
  await run(['node','test.mjs'],consumer,'installed-tests');await run(['node','test.mjs','no-such-test-identity'],consumer,'zero-selected',1);
  await run(['node','tests/browser.mjs',join(consumer,'tests/fixtures/producer.json'),join(destination,'browser')],consumer,'native-browser');
  report.complete=true;

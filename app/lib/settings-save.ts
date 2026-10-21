@@ -1,11 +1,11 @@
+import { readPendingSettingsSave, writePendingSettingsSave, removePendingSettingsSave } from "../../database/browser/adapters/practice/settings-save";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 
-const pendingKey = "tempo-pending-settings-save-v1";
 type PendingSettingsSave = { operationId: string; body: string };
 
 function pendingSave(): PendingSettingsSave | null {
-  const stored = localStorage.getItem(pendingKey);
+  const stored = readPendingSettingsSave();
   if (!stored) return null;
   const parsed: unknown = JSON.parse(stored);
   if (typeof parsed !== "object" || parsed === null ||
@@ -27,11 +27,11 @@ export async function saveLocalSettings(settings: Record<string, unknown>): Prom
     if (receipt.state === "pending" && pending.body !== body)
       throw new PendingOperationError(pending.operationId);
     if (receipt.state === "failed") {
-      localStorage.removeItem(pendingKey);
+      removePendingSettingsSave();
       throw new Error(receipt.error?.message ?? "The earlier settings save failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(pendingKey);
+      removePendingSettingsSave();
       if (pending.body === body) return;
       pending = null;
     } else if (receipt.state !== "pending") {
@@ -40,7 +40,7 @@ export async function saveLocalSettings(settings: Record<string, unknown>): Prom
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(pendingKey, JSON.stringify(pending));
+    writePendingSettingsSave(pending);
   }
   let response = await fetch(`${API_URL}/api/settings`, {
     method: "PUT",
@@ -57,5 +57,5 @@ export async function saveLocalSettings(settings: Record<string, unknown>): Prom
     // HTTP 503. Keep the operation ID until a receipt proves its state.
     throw new Error(result.detail ?? `Settings save returned HTTP ${response.status}.`);
   }
-  localStorage.removeItem(pendingKey);
+  removePendingSettingsSave();
 }

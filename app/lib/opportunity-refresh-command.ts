@@ -1,14 +1,13 @@
+import { readPendingOpportunityRefreshIdentity, writePendingOpportunityRefreshIdentity, clearPendingOpportunityRefreshIdentity } from "../../database/browser/adapters/authoring/opportunity-refresh";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_PREFIX = "tempo-pending-opportunity-refresh-v1:";
 const queuedResult = z.strictObject({ queued: z.literal(true) });
 
 export async function requestOpportunityRefresh(repertoireId: string): Promise<void> {
-  const pendingKey = `${PENDING_PREFIX}${repertoireId}`;
-  let operationId = localStorage.getItem(pendingKey);
+  let operationId = readPendingOpportunityRefreshIdentity(repertoireId);
   if (operationId) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
     if (!status.ok) throw new PendingOperationError(operationId);
@@ -17,17 +16,17 @@ export async function requestOpportunityRefresh(repertoireId: string): Promise<v
     };
     if (receipt.state === "complete") {
       queuedResult.parse(receipt.response);
-      localStorage.removeItem(pendingKey);
+      clearPendingOpportunityRefreshIdentity(repertoireId);
       return;
     }
     if (receipt.state === "failed") {
-      localStorage.removeItem(pendingKey);
+      clearPendingOpportunityRefreshIdentity(repertoireId);
       throw new Error(receipt.error?.message ?? "The discovery refresh failed.");
     }
     if (receipt.state !== "pending") throw new PendingOperationError(operationId);
   } else {
     operationId = crypto.randomUUID();
-    localStorage.setItem(pendingKey, operationId);
+    writePendingOpportunityRefreshIdentity(repertoireId, operationId);
   }
   let response = await fetch(
     `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/opportunities/refresh`,
@@ -36,5 +35,5 @@ export async function requestOpportunityRefresh(repertoireId: string): Promise<v
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, queuedResult, "refresh discoveries");
   queuedResult.parse(result);
-  localStorage.removeItem(pendingKey);
+  clearPendingOpportunityRefreshIdentity(repertoireId);
 }

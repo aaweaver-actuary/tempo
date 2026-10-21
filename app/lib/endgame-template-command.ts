@@ -1,10 +1,10 @@
+import { readPendingEndgameTemplate, storePendingEndgameTemplate, clearPendingEndgameTemplate } from "../../database/browser/adapters/games-analysis/endgame-template";
 import { independentStudy } from "./study-connection";
 import { API_URL } from "../const";
 import { endgameCreatedSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-endgame-template-v1";
 type TemplateRequest = {
   name: string; white_material: string; black_material: string;
   trained_color: string; goal_mix: string;
@@ -12,7 +12,7 @@ type TemplateRequest = {
 type PendingTemplate = { operationId: string; body: string };
 
 function readPending(): PendingTemplate | null {
-  const value = localStorage.getItem(PENDING_KEY);
+  const value = readPendingEndgameTemplate();
   if (!value) return null;
   const parsed: unknown = JSON.parse(value);
   if (typeof parsed !== "object" || parsed === null ||
@@ -33,11 +33,11 @@ export async function admitEndgameTemplate(request: TemplateRequest) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingEndgameTemplate();
       throw new Error(receipt.error?.message ?? "The earlier endgame admission failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingEndgameTemplate();
       if (pending.body === body) return endgameCreatedSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "pending") {
@@ -46,7 +46,7 @@ export async function admitEndgameTemplate(request: TemplateRequest) {
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    storePendingEndgameTemplate(pending);
   }
   let response = await fetch(`${API_URL}/api/endgames/templates`, {
     method: "POST",
@@ -56,6 +56,6 @@ export async function admitEndgameTemplate(request: TemplateRequest) {
   response = await confirmOperationResponse(response);
   if (!response.ok) throw new Error("Could not add this material set to training.");
   const result = await readJsonResponse(response, endgameCreatedSchema, "endgame admission");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingEndgameTemplate();
   return result;
 }

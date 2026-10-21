@@ -1,14 +1,13 @@
+import { readPendingCoverageRefreshIdentity, writePendingCoverageRefreshIdentity, clearPendingCoverageRefreshIdentity } from "../../database/browser/adapters/authoring/coverage-refresh";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_PREFIX = "tempo-pending-coverage-refresh-v1:";
 const queuedResult = z.strictObject({ run_id: z.string(), status: z.literal("queued") });
 
 export async function requestCoverageRefresh(repertoireId: string): Promise<void> {
-  const pendingKey = `${PENDING_PREFIX}${repertoireId}`;
-  let operationId = localStorage.getItem(pendingKey);
+  let operationId = readPendingCoverageRefreshIdentity(repertoireId);
   if (operationId) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
     if (!status.ok) throw new PendingOperationError(operationId);
@@ -17,17 +16,17 @@ export async function requestCoverageRefresh(repertoireId: string): Promise<void
     };
     if (receipt.state === "complete") {
       queuedResult.parse(receipt.response);
-      localStorage.removeItem(pendingKey);
+      clearPendingCoverageRefreshIdentity(repertoireId);
       return;
     }
     if (receipt.state === "failed") {
-      localStorage.removeItem(pendingKey);
+      clearPendingCoverageRefreshIdentity(repertoireId);
       throw new Error(receipt.error?.message ?? "The coverage refresh failed.");
     }
     if (receipt.state !== "pending") throw new PendingOperationError(operationId);
   } else {
     operationId = crypto.randomUUID();
-    localStorage.setItem(pendingKey, operationId);
+    writePendingCoverageRefreshIdentity(repertoireId, operationId);
   }
   let response = await fetch(
     `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/coverage/refresh`,
@@ -36,5 +35,5 @@ export async function requestCoverageRefresh(repertoireId: string): Promise<void
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, queuedResult, "refresh coverage");
   queuedResult.parse(result);
-  localStorage.removeItem(pendingKey);
+  clearPendingCoverageRefreshIdentity(repertoireId);
 }

@@ -1,18 +1,18 @@
+import { readPendingPrefixSplitRecord, writePendingPrefixSplitRecord, clearPendingPrefixSplitRecord } from "../../database/browser/adapters/authoring/prefix-split";
+import { readPendingCardDeletionBytes } from "../../database/browser/adapters/authoring/card-delete";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { prefixSplitResponseSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-prefix-split-v1";
 const rejectionSchema = z.strictObject({ rejected_after_review_id: z.number().int() });
 type Decision = "accept" | "reject";
 type PendingDecision = { operationId: string; decision: Decision; cardId: string; revision: number };
 
 function readPending(): PendingDecision | null {
-  const stored = localStorage.getItem(PENDING_KEY);
-  if (!stored) return null;
-  const parsed: unknown = JSON.parse(stored);
+  const parsed = readPendingPrefixSplitRecord();
+  if (parsed === undefined) return null;
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("decision" in parsed) || (parsed.decision !== "accept" && parsed.decision !== "reject") ||
@@ -23,7 +23,7 @@ function readPending(): PendingDecision | null {
 }
 
 async function decidePrefixSplit(cardId: string, revision: number, decision: Decision) {
-  if (localStorage.getItem("tempo-pending-card-delete-v1"))
+  if (readPendingCardDeletionBytes())
     throw new Error("Resolve the pending card deletion before editing a card.");
   let pending = readPending();
   if (pending) {
@@ -31,11 +31,11 @@ async function decidePrefixSplit(cardId: string, revision: number, decision: Dec
     if (!status.ok) throw new PendingOperationError(pending.operationId);
     const receipt = await status.json() as { state?: string; response?: unknown; error?: { message?: string } };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingPrefixSplitRecord();
       throw new Error(receipt.error?.message ?? "The earlier prefix split decision failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingPrefixSplitRecord();
       if (pending.cardId === cardId && pending.revision === revision && pending.decision === decision)
         return decision === "accept"
           ? prefixSplitResponseSchema.parse(receipt.response)
@@ -48,7 +48,7 @@ async function decidePrefixSplit(cardId: string, revision: number, decision: Dec
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), decision, cardId, revision };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    writePendingPrefixSplitRecord(pending);
   }
   let response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}/prefix-split${decision === "reject" ? "/reject" : ""}`, {
     method: "POST",
@@ -59,7 +59,7 @@ async function decidePrefixSplit(cardId: string, revision: number, decision: Dec
   const result = decision === "accept"
     ? await readJsonResponse(response, prefixSplitResponseSchema, "accepted prefix split")
     : await readJsonResponse(response, rejectionSchema, "rejected prefix split");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingPrefixSplitRecord();
   return result;
 }
 

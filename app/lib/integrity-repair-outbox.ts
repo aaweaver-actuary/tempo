@@ -1,3 +1,4 @@
+import { writeIntegrityRepairRecord, readLegacyRepairQueueBytes, readLegacyRepairCommandBytes, decodeLegacyRepairQueue, decodeLegacyRepairCommand, readIntegrityRepairBytes, decodeIntegrityRepairRecord, clearLegacyRepairQueue, clearLegacyRepairCommand, integrityRepairRecordKeys, readIntegrityRepairRecordForKey, integrityRepairStorageKey, clearIntegrityRepairRecord } from "../../database/browser/adapters/authoring/integrity-repair";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { integrityRepairSubmissionSchema, repertoireIntegritySchema, repertoiresResponseSchema } from "../domain/schemas";
@@ -6,9 +7,6 @@ import { readJsonResponse } from "./validated-data";
 
 export const INTEGRITY_REPAIRS_CHANGED = "tempo-integrity-repairs-changed";
 export const INTEGRITY_REPAIR_CONFIRMED = "tempo-integrity-repair-confirmed";
-const storagePrefix = "tempo-pending-integrity-repairs-v3:";
-const legacyQueueKey = "tempo-pending-integrity-repairs-v2";
-const legacyCommandKey = "tempo-pending-integrity-repair-v1";
 const retrySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("operation"), baselineRetryCycle: z.number().int().nonnegative(),
     baselineAttemptCount: z.number().int().nonnegative(), deliveryAccepted: z.boolean() }),
@@ -43,19 +41,19 @@ export function subscribeIntegrityRepairs(listener: () => void) {
   };
 }
 function persist(repair: PendingIntegrityRepair) {
-  localStorage.setItem(storagePrefix + repair.operationId, JSON.stringify(repairSchema.parse(repair)));
+  writeIntegrityRepairRecord(repair, () => repairSchema.parse(repair));
 }
 function sameRepairChoice(left: RepairChoice, right: RepairChoice) {
   return left.repertoireId === right.repertoireId && left.issueId === right.issueId
     && left.signature === right.signature && left.selectedMoveUci === right.selectedMoveUci;
 }
 function migrateLegacyRepairs() {
-  const oldQueue = localStorage.getItem(legacyQueueKey);
-  const oldCommand = localStorage.getItem(legacyCommandKey);
+  const oldQueue = readLegacyRepairQueueBytes();
+  const oldCommand = readLegacyRepairCommandBytes();
   if (!oldQueue && !oldCommand) return;
-  const recovered = oldQueue ? z.array(repairSchema).parse(JSON.parse(oldQueue)) : [];
+  const recovered = oldQueue ? z.array(repairSchema).parse(decodeLegacyRepairQueue(oldQueue)) : [];
   if (oldCommand) {
-    const command = z.object({ operationId: z.string(), fingerprint: z.string() }).parse(JSON.parse(oldCommand));
+    const command = z.object({ operationId: z.string(), fingerprint: z.string() }).parse(decodeLegacyRepairCommand(oldCommand));
     const [repertoireId, issueId, body] = z.tuple([z.string(), z.string(), z.string()]).parse(JSON.parse(command.fingerprint));
     const choice = z.object({ signature: z.string(), selected_move_uci: z.string() }).parse(JSON.parse(body));
     const commandRepair = repairSchema.parse({
@@ -68,27 +66,26 @@ function migrateLegacyRepairs() {
   }
   recovered.forEach((repair, index) => {
     // Never overwrite progress already recovered by another tab or an earlier migration attempt.
-    const existingRecord = localStorage.getItem(storagePrefix + repair.operationId);
+    const existingRecord = readIntegrityRepairBytes(repair.operationId);
     if (!existingRecord) persist({ ...repair, queuedAt: repair.queuedAt || index });
     else {
-      const existing = repairSchema.parse(JSON.parse(existingRecord));
+      const existing = repairSchema.parse(decodeIntegrityRepairRecord(existingRecord));
       if (existing.operationId !== repair.operationId || !sameRepairChoice(existing, repair)
         || repair.taskId && existing.taskId !== repair.taskId
         || (existing.taskGeneration ?? 1) < (repair.taskGeneration ?? 1)) throw new Error("Recovered repair identity or task progress conflicts with its original journal.");
     }
   });
   // All writes must succeed before either original journal is removed.
-  if (oldQueue) localStorage.removeItem(legacyQueueKey);
-  if (oldCommand) localStorage.removeItem(legacyCommandKey);
+  if (oldQueue) clearLegacyRepairQueue();
+  if (oldCommand) clearLegacyRepairCommand();
 }
 export function pendingIntegrityRepairs(): PendingIntegrityRepair[] {
   try {
     migrateLegacyRepairs();
-    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-      .filter((key): key is string => Boolean(key?.startsWith(storagePrefix)));
+    const keys = integrityRepairRecordKeys();
     return keys.map(key => {
-      const repair = repairSchema.parse(JSON.parse(localStorage.getItem(key)!));
-      if (key !== storagePrefix + repair.operationId) throw new Error("Repair identity does not match its journal");
+      const repair = repairSchema.parse(readIntegrityRepairRecordForKey(key));
+      if (key !== integrityRepairStorageKey(repair.operationId)) throw new Error("Repair identity does not match its journal");
       return repair;
     }).sort((left, right) => left.queuedAt - right.queuedAt || left.operationId.localeCompare(right.operationId));
   } catch (cause) {
@@ -100,7 +97,7 @@ function updateRepair(operationId: string, change: (repair: PendingIntegrityRepa
   if (!repair) return;
   const updated = change(repair);
   if (updated) persist(updated);
-  else localStorage.removeItem(storagePrefix + operationId);
+  else clearIntegrityRepairRecord(operationId);
   changed();
 }
 export function enqueueIntegrityRepair(choice: RepairChoice) {
@@ -110,7 +107,7 @@ export function enqueueIntegrityRepair(choice: RepairChoice) {
   const repair = repairSchema.parse({ ...choice, operationId: crypto.randomUUID(), phase: "queued",
     queuedAt: existing?.queuedAt ?? Math.max(Date.now(), ...storedRepairs.map(repair => repair.queuedAt + 1)) });
   persist(repair);
-  if (existing) localStorage.removeItem(storagePrefix + existing.operationId);
+  if (existing) clearIntegrityRepairRecord(existing.operationId);
   changed();
   return repair;
 }
@@ -357,7 +354,7 @@ export function retryIntegrityRepair(operationId: string): Promise<void> {
       if (!await stillCurrent(repair)) return;
       const replacement = { ...repair, operationId: crypto.randomUUID(), phase: "queued" as const,
         terminalOperationFailure: false, error: undefined, attempts: 0, nextAttemptAt: 0 };
-      persist(replacement); localStorage.removeItem(storagePrefix + operationId); changed();
+      persist(replacement); clearIntegrityRepairRecord(operationId); changed();
     } else updateRepair(operationId, current => ({ ...current, phase: current.taskId ? "validating" : "saving",
       error: undefined, attempts: 0, nextAttemptAt: 0 }));
     await flushIntegrityRepairs();

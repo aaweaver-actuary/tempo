@@ -1,14 +1,14 @@
+import { readPendingEndgameAttempt, storePendingEndgameAttempt, clearPendingEndgameAttempt } from "../../database/browser/adapters/games-analysis/endgame-attempt";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { endgameAttemptSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 import { executeStudyRequest, retainedStudyRequest } from "./study-command-client";
 
-const PENDING_KEY = "tempo-pending-endgame-attempt-v1";
 type PendingAttempt = { operationId: string; templateId: string };
 
 function readPending(): PendingAttempt | null {
-  const value = localStorage.getItem(PENDING_KEY);
+  const value = readPendingEndgameAttempt();
   if (!value) return null;
   const parsed: unknown = JSON.parse(value);
   if (typeof parsed !== "object" || parsed === null ||
@@ -35,11 +35,11 @@ export async function startEndgameAttempt(templateId: string) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingEndgameAttempt();
       throw new Error(receipt.error?.message ?? "The earlier endgame attempt failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingEndgameAttempt();
       if (pending.templateId === templateId) return endgameAttemptSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "pending") {
@@ -48,7 +48,7 @@ export async function startEndgameAttempt(templateId: string) {
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), templateId };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    storePendingEndgameAttempt(pending);
   }
   let response = await fetch(
     `${API_URL}/api/endgames/templates/${encodeURIComponent(templateId)}/attempt`,
@@ -57,6 +57,6 @@ export async function startEndgameAttempt(templateId: string) {
   response = await confirmOperationResponse(response);
   if (!response.ok) throw new Error("Could not generate the endgame position.");
   const result = await readJsonResponse(response, endgameAttemptSchema, "endgame attempt");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingEndgameAttempt();
   return result;
 }

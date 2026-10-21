@@ -1,9 +1,9 @@
+import { readPendingOpportunityRecord, writePendingOpportunityRecord, clearPendingOpportunityRecord } from "../../database/browser/adapters/authoring/opportunity";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_PREFIX = "tempo-pending-opportunity-v1:";
 type Action = "dismiss" | "acknowledge" | "snooze" | "train";
 type PendingAction = { operationId: string; repertoireId: string; action: Action; evidenceFingerprint?: string };
 const responseSchemas = {
@@ -13,10 +13,9 @@ const responseSchemas = {
   train: z.strictObject({ card_id: z.string(), queued: z.literal(true), idempotent: z.boolean() }),
 };
 
-function readPending(key: string): PendingAction | null {
-  const stored = localStorage.getItem(key);
-  if (!stored) return null;
-  const parsed: unknown = JSON.parse(stored);
+function readPending(opportunityId: string): PendingAction | null {
+  const parsed = readPendingOpportunityRecord(opportunityId);
+  if (parsed === undefined) return null;
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("repertoireId" in parsed) || typeof parsed.repertoireId !== "string" ||
@@ -42,10 +41,9 @@ export async function applyOpportunityCommand(
 ): Promise<void> {
   if (action === "train" && !evidenceFingerprint?.trim())
     throw new Error("Training requires the evidence revision you reviewed.");
-  const key = `${PENDING_PREFIX}${opportunityId}`;
-  let pending = readPending(key);
+  let pending = readPending(opportunityId);
   if (pending?.action === "train" && !pending.evidenceFingerprint?.trim()) {
-    localStorage.removeItem(key);
+    clearPendingOpportunityRecord(opportunityId);
     throw new Error("Review the current evidence and click Train again. The earlier action has no evidence revision.");
   }
   if (pending) {
@@ -55,11 +53,11 @@ export async function applyOpportunityCommand(
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(key);
+      clearPendingOpportunityRecord(opportunityId);
       throw new Error(receipt.error?.message ?? "The earlier discovery action failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(key);
+      clearPendingOpportunityRecord(opportunityId);
       if (pending.repertoireId === repertoireId && pending.action === action &&
           pending.evidenceFingerprint === evidenceFingerprint) {
         validateResult(action, receipt.response);
@@ -75,7 +73,7 @@ export async function applyOpportunityCommand(
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), repertoireId, action,
       ...(evidenceFingerprint ? { evidenceFingerprint } : {}) };
-    localStorage.setItem(key, JSON.stringify(pending));
+    writePendingOpportunityRecord(opportunityId, pending);
   }
   let response = await fetch(
     `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/opportunities/${encodeURIComponent(opportunityId)}/${action}`,
@@ -86,5 +84,5 @@ export async function applyOpportunityCommand(
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, z.unknown(), `${action} discovery`);
   validateResult(action, result);
-  localStorage.removeItem(key);
+  clearPendingOpportunityRecord(opportunityId);
 }

@@ -1,3 +1,4 @@
+import { readBurialOperation, writeBurialOperation, removeBurialOperation, readBurialIdentity, writeBurialIdentity, removeBurialIdentity, readPendingBurialEntry, writePendingBurialEntry, removePendingBurialEntry, readKnownBurialOperation } from "../../database/browser/adapters/practice/training-burial-command";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse, retryBlockedOperation } from "./operation-status";
 import { executeStudyRequest, retainedStudyRequest } from "./study-command-client";
@@ -13,14 +14,14 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false, ide
     await validateTrainingBurial(response, queueEntryId); return;
   }
   const operationKey = `tempo-bury-operation-${queueEntryId}`;
-  const existingOperationId = localStorage.getItem(operationKey);
+  const existingOperationId = readBurialOperation(operationKey);
   const operationId = existingOperationId ?? crypto.randomUUID();
   const identityKey = `tempo-bury-identity-${queueEntryId}`;
-  const savedIdentity = localStorage.getItem(identityKey);
+  const savedIdentity = readBurialIdentity(identityKey);
   const requestBody = savedIdentity ?? (!existingOperationId && identity ? JSON.stringify(identity) : undefined);
-  if (requestBody) localStorage.setItem(identityKey, requestBody);
-  localStorage.setItem(operationKey, operationId);
-  localStorage.setItem("tempo-pending-burial-entry", String(queueEntryId));
+  if (requestBody) writeBurialIdentity(identityKey, requestBody);
+  writeBurialOperation(operationKey, operationId);
+  writePendingBurialEntry(queueEntryId);
   try {
     if (retry) {
       let confirmed: Response | undefined;
@@ -63,16 +64,16 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false, ide
 
 export function finishTrainingBurial(queueEntryId: number): void {
   if (independentStudy) return;
-  localStorage.removeItem(`tempo-bury-operation-${queueEntryId}`);
-  localStorage.removeItem(`tempo-bury-identity-${queueEntryId}`);
-  if (localStorage.getItem("tempo-pending-burial-entry") === String(queueEntryId))
-    localStorage.removeItem("tempo-pending-burial-entry");
+  removeBurialOperation(queueEntryId);
+  removeBurialIdentity(queueEntryId);
+  if (readPendingBurialEntry() === String(queueEntryId))
+    removePendingBurialEntry();
 }
 
 
 export function hasPendingTrainingBurial(queueEntryId: number): boolean {
   if (independentStudy) return studyIntentRecords("burial-command").some(record => record.key.startsWith(`burial:${queueEntryId}:`) && record.state !== "discarded" && record.state !== "committed");
-  return localStorage.getItem(`tempo-bury-operation-${queueEntryId}`) !== null;
+  return readKnownBurialOperation(queueEntryId) !== null;
 }
 
 
@@ -84,7 +85,7 @@ async function validateTrainingBurial(response: Response, queueEntryId: number):
 
 export async function recoverTrainingBurial(queueEntryId: number): Promise<void> {
   if (independentStudy) { await buryTrainingEntry(queueEntryId, true); return; }
-  const operationId = localStorage.getItem(`tempo-bury-operation-${queueEntryId}`);
+  const operationId = readKnownBurialOperation(queueEntryId);
   if (!operationId) throw new Error("The burial operation identity is unavailable.");
   try { await validateTrainingBurial(await readOperationResponse(operationId), queueEntryId); }
   catch (error) {
@@ -100,13 +101,13 @@ export function pendingTrainingBurialEntry(knownEntries: number[] = []): number 
     const record = studyIntentRecords("burial-command").find(record => record.state !== "committed" && record.state !== "discarded");
     return record ? Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1]) : undefined;
   }
-  const marker = localStorage.getItem("tempo-pending-burial-entry");
+  const marker = readPendingBurialEntry();
   const entryId = marker === null ? undefined : Number(marker);
   if (entryId !== undefined && Number.isSafeInteger(entryId) && entryId > 0 && hasPendingTrainingBurial(entryId))
     return entryId;
-  if (marker !== null) localStorage.removeItem("tempo-pending-burial-entry");
+  if (marker !== null) removePendingBurialEntry();
   const knownEntryId = knownEntries.find(hasPendingTrainingBurial);
   if (knownEntryId !== undefined)
-    localStorage.setItem("tempo-pending-burial-entry", String(knownEntryId));
+    writePendingBurialEntry(knownEntryId);
   return knownEntryId;
 }

@@ -1,6 +1,6 @@
 # Browser persistence
 
-Current source definitions; existing browser data/version state was not inspected. Owners: the Study/browser client and the separately labeled optional Maia model cache. These are IndexedDB object stores and serialized JavaScript records, not PostgreSQL tables. Key paths are enforced by IndexedDB; field shapes are TypeScript/runtime validation contracts. IndexedDB declares **no foreign keys**.
+Current source definitions; existing browser data/version state was not inspected. Owners are named per entry: Study/practice, authoring, optional feature command journals, Workbench and the optional Maia model cache. These are IndexedDB object stores and serialized JavaScript records, not PostgreSQL tables. Key paths are enforced by IndexedDB; field shapes are TypeScript/runtime validation contracts. IndexedDB declares **no foreign keys**.
 
 | File | Data / authority |
 | --- | --- |
@@ -91,6 +91,29 @@ erDiagram
 | Existing legacy pending-operation keys in `localStorage` | The existing inspection reads nonempty values matching `tempo-pending-*`, `tempo-bury-operation*`, `tempo-bury-identity*`, `tempo-seen-moves*` and `tempo-first-clean-passes*`; values remain the original serialized strings. Exact matching stays in the linked helper. Inspection does not rewrite, delete, import or upgrade them. |
 
 The read-only inspector enumerates known/discovered `tempo-offline-training:*` databases plus `tempo-study-intents` and `tempo-offline-training`, retaining the existing version/key/index checks. Application decisions about retained/foreign authority data stay outside this directory. This relocation changes no stored names, payload formats, schema versions, credential handling or live browser data.
+
+## Durable command journals and retained practice records
+
+These owner-specific directories contain existing fixed WebStorage operations,
+not a shared runtime journal or dispatcher. The application retains payload
+validation, immutable request selection, replay/receipt decisions, HTTP,
+notifications and clocks. Keys and payload versions are unchanged. Each owning
+README lists actual keys/formulas, payload field types and logical server
+identities; WebStorage provides no foreign keys or multi-record transactions.
+
+| Logical owner | Single persistence source / dictionary | Existing application responsibility |
+| --- | --- | --- |
+| Repertoire authoring and Discovery | [Sixteen journals](adapters/authoring/README.md) | Source/card/branch/coverage/Discovery mutation preparation and reconciliation. |
+| Games, Tactics and Endgames | [Nine command journals](adapters/games-analysis/README.md) | Optional feature commands and receipt recovery; each journal retains its separate implementation. |
+| Practice, teaching settings and authored annotations | [Eight specific stores](adapters/practice/README.md) | Review archive, burial state, tactic progress, pending settings/activity/activation/annotation requests. Active-pack preferences remain outside. |
+| Authored Studies | [Pending command key ledger](adapters/authored-studies/README.md) | Session-lifetime UUID retry key; request fingerprint, UUID creation and HTTP retry/poll decisions stay in the view. It is not an offline payload outbox. |
+| Independent Workbench package | [Authority-scoped pending mutation](adapters/workbench/README.md) | Immutable command/run identity, digest, conflict/replay and transport policy. The standard package artifact contains its one compiled root adapter; no checkout dependency. |
+
+Ordinary preferences, notification display history, session/OAuth metadata and
+rebuildable workspace/Explorer/asset caches remain with their existing logical
+owners. A browser storage API call alone is not evidence for another database
+adapter. No preference framework, generic validation wrapper or consolidation
+is introduced by this organization.
 
 ## Optional legacy Maia worker model cache
 

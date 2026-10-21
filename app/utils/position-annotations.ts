@@ -1,3 +1,4 @@
+import { readPendingPositionAnnotation, writePendingPositionAnnotation, removePendingPositionAnnotation, writePositionAnnotations } from "../../database/browser/adapters/practice/position-annotations";
 import * as z from "zod";
 import { annotationSchema, annotationsResponseSchema } from "../domain/schemas";
 import { readStoredValue, validRecords, readJsonResponse } from "../lib/validated-data";
@@ -11,11 +12,10 @@ import { usesLocalApi } from "./local";
 import { confirmOperationResponse, PendingOperationError } from "../lib/operation-status";
 
 const STORAGE_KEY = "tempo-position-annotations";
-const PENDING_KEY = "tempo-pending-position-annotation-v1";
 type PendingAnnotation = { operationId: string; body: string; repertoireId: string };
 
 function pendingAnnotation(): PendingAnnotation | null {
-  const raw = localStorage.getItem(PENDING_KEY);
+  const raw = readPendingPositionAnnotation();
   if (!raw) return null;
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null ||
@@ -32,7 +32,7 @@ function storeConfirmedAnnotation(annotation: PositionAnnotation): void {
   );
   if (annotation.comment || annotation.arrows.length || annotation.squares.length)
     remaining.push(annotation);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
+  writePositionAnnotations(remaining);
 }
 
 function localAnnotations(): PositionAnnotation[] {
@@ -90,11 +90,11 @@ export async function savePositionAnnotation(
           pending.repertoireId !== normalized.repertoireId))
         throw new PendingOperationError(pending.operationId);
       if (receipt.state === "failed") {
-        localStorage.removeItem(PENDING_KEY);
+        removePendingPositionAnnotation();
         throw new Error(receipt.error?.message ?? "The earlier position note save failed.");
       }
       if (receipt.state === "complete") {
-        localStorage.removeItem(PENDING_KEY);
+        removePendingPositionAnnotation();
         if (pending.body === body && pending.repertoireId === normalized.repertoireId) {
           const saved = annotationSchema.parse(receipt.response);
           storeConfirmedAnnotation(saved);
@@ -108,7 +108,7 @@ export async function savePositionAnnotation(
     if (!pending) {
       pending = { operationId: crypto.randomUUID(), body,
         repertoireId: normalized.repertoireId };
-      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+      writePendingPositionAnnotation(pending);
     }
     let response = await fetch(
       `${API_URL}/api/repertoires/${encodeURIComponent(normalized.repertoireId)}/annotations`,
@@ -122,7 +122,7 @@ export async function savePositionAnnotation(
     if (!response.ok) throw new Error("Could not save this position note");
     const saved = await readJsonResponse(response, annotationSchema, "saved annotation");
     storeConfirmedAnnotation(saved);
-    localStorage.removeItem(PENDING_KEY);
+    removePendingPositionAnnotation();
     return saved;
   }
   storeConfirmedAnnotation(normalized);

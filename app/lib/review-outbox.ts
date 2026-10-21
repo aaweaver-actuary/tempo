@@ -1,3 +1,4 @@
+import { readRejectedOpeningReviews, writeRejectedOpeningReviews } from "../../database/browser/adapters/practice/review-archive";
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
 import type { StudySession } from "@tempo/study-session";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
@@ -37,7 +38,6 @@ export type PendingReview = {
 export type ReviewFlushResult = { persistedAttemptIds: string[]; conflictedAttemptIds: string[];
   preparedContinuations?: Record<string, PreparedContinuation> };
 
-const rejectedOpeningReviewStorageKey = "tempo-rejected-opening-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
 const evidenceStorageErrors = new WeakSet<object>();
 const reviewStorageErrors = new WeakSet<object>();
@@ -106,8 +106,8 @@ function savedReviews(): PendingReview[] {
     });
 }
 
-function readStoredReviews(key: string): PendingReview[] {
-  const stored = localStorage.getItem(key);
+function readStoredReviews(): PendingReview[] {
+  const stored = readRejectedOpeningReviews();
   if (!stored) return [];
   const parsed: unknown = JSON.parse(stored);
   if (!Array.isArray(parsed) || parsed.some(item => !validLegacyReview(item)))
@@ -287,11 +287,11 @@ async function sendReview(review: PendingReview, verifyReceiptFirst = false, par
       }
       try {
         const rejected = updated.find((item) => item.attemptId === attemptId);
-        const archived = readStoredReviews(rejectedOpeningReviewStorageKey);
+        const archived = readStoredReviews();
         // Best effort: keep the full rejected envelope after the outbox drains,
         // even when the separate IndexedDB journal is unavailable.
         if (rejected && !archived.some((item) => item.attemptId === attemptId))
-          localStorage.setItem(rejectedOpeningReviewStorageKey, JSON.stringify([...archived, rejected]));
+          writeRejectedOpeningReviews(archived, rejected);
       } catch {
         try {
           publishNotification({ severity: "warning", source: "opening evidence",
