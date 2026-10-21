@@ -89,4 +89,3 @@ def test_artifact_source_fingerprints_cover_relocated_database_owner(tmp_path):
         current=fingerprints()
         assert current[relative]!=previous[relative]
         previous=current
-

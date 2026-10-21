@@ -83,7 +83,7 @@ sequenceDiagram
     B-->>S: pending intent committed<br/>locally
     S->>A: POST card review with same<br/>Idempotency-Key
     Note over A: Authenticate workspace/origin before<br/>DB access
-    Note over A: MAIN host accounting: bounded-memory<br/>request accounting; daemon owns file I/O
+    Note over A: MAIN host accounting: bounded-memory<br/>request accounting,<br/>daemon owns file I/O
     A->>D: record_intent in its own<br/>transaction
     D-->>A: queued intent committed (or<br/>matching identity found)
     Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
