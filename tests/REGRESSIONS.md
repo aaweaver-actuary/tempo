@@ -5067,3 +5067,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Maintenance-wake and runtime Redis storage
 
 `backend/tests/test_legacy_wake_runtime_database_split.py` guards the two selected application modules against direct storage operations and preserves factory caching, runtime serialization/slot/read/clock order. Existing `test_background_wakes.py` retains all coalescing, token fencing, queue/ack/recovery and failure assertions; two diagnostic reservation/timing cases retain their boundaries. Native Redis/Lua/Kombu and deployed resource isolation remain unverified.
+
+
+## Legacy derived-publication storage
+
+`backend/tests/test_legacy_derived_publication_database_split.py` guards direct storage operations and preserves profile account/clock order, daily missing-watermark early return and insight/publication fences through fixed fake capabilities. Existing next-opponent and daily-statistics cases retain their assertions; native PostgreSQL/deployment remains unverified.

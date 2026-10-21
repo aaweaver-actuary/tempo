@@ -36,3 +36,6 @@
 
 
 [Redis admission and policy storage](redis_control/README.md) owns the original cached clients, control keys/Lua/pipelines and Study-mode query. Lifecycle, clocks, identity, cancellation, local fallback and policy validation stay at their existing application composition points.
+
+
+[Derived publications](derived_publications/README.md) contains the next-opponent profile and daily-chess-statistics reads and guarded writes. Existing time/eligibility/math/insight/presentation decisions remain in their application compositions.
