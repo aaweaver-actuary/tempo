@@ -8,7 +8,7 @@ this plan. The source checkout is retained for qualification.
 
 ## Exact owning cases
 
-`backend/integration/legacy_bridge/test_native.py` mirrors the existing two-case
+`database/tempo_legacy_database/tests/legacy_bridge/test_native.py` mirrors the existing two-case
 source vertical scenario and adds one rollback control. It is outside the
 documented `pytest backend/tests` selection. Collection must find exactly these
 three cases:
@@ -70,14 +70,14 @@ their focused owners and require additional evidence when selected.
 Pure preparation inspection (no resource access):
 
 ```sh
-python scripts/qualify_legacy_backend.py --describe
+python database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_backend.py --describe
 ```
 
 After a separately approved helper diagnostic, successful same-head284-case
 artifact run, review and a **new explicit backend-native grant**, use:
 
 ```sh
-node scripts/legacy-bridge-window.mjs \
+node database/tempo_legacy_database/tooling/legacy_bridge/legacy-bridge-window.mjs \
   --python /Users/andy/Documents/Codex/2026-10-18/task-2/tempo/backend/.venv/bin/python \
   --mode backend-native --approved-window \
   --artifact-run EXACT_SUCCESSFUL_ARTIFACT_RUN_DIRECTORY \

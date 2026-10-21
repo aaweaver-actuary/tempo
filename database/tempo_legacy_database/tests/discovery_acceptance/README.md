@@ -1,5 +1,14 @@
 # Discovery acceptance ownership and native proof
 
+**Current source after file relocation; live schema/native execution unverified.**
+These proofs now reside in the single root database tree. The existing
+[application acceptance composition](../../../../backend/app/services/discovery_acceptance_store.py)
+retains `PostgresDiscoveryAcceptanceStore`; its complete fixed SQL operations live
+in [root acceptance storage](../../adapters/discovery_acceptance_store.py). The native
+import follows that class move. [Stored fields, keys and relationships](../../schema/discovery-priority/README.md)
+remain unchanged. The stale import was checked by guarded collection only; no
+fixture or PostgreSQL connection ran during relocation.
+
 `backend/app/services/discovery_acceptance_application.py` owns freshness/choice
 validation, replay, terminal readmission and the post-lock duplicate recheck.
 `DiscoveryAcceptanceStore` is a semantic protocol following Learning's existing
@@ -29,7 +38,7 @@ No schema, queue, feedback, gateway or connection infrastructure changes.
 Run these with the backend test interpreter and existing declared dependencies:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend:database \
   python -B -m pytest backend/tests/test_postgres_discovery_acceptance.py \
   backend/tests/test_discovery_acceptance_boundary.py -q -p no:cacheprovider --rootdir=.
 ```
@@ -82,11 +91,11 @@ The PostgreSQL pool may use at most eight connections; run pytest serially.
 With the fixture granted and environment injected, collect and execute exactly:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend \
-  python -B -m pytest backend/integration/discovery_acceptance/test_postgres.py \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend:database \
+  python -B -m pytest database/tempo_legacy_database/tests/discovery_acceptance/test_postgres.py \
   --collect-only -q -p no:cacheprovider --rootdir=.
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend \
-  python -B -m pytest backend/integration/discovery_acceptance/test_postgres.py \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend:database \
+  python -B -m pytest database/tempo_legacy_database/tests/discovery_acceptance/test_postgres.py \
   -v -p no:cacheprovider --rootdir=. --junitxml=/absolute/task-evidence/native.xml
 ```
 

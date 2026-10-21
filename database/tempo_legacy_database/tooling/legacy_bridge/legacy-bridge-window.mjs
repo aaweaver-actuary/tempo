@@ -4,8 +4,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {runWithDevelopmentBudget} from './development-budget.mjs';
-import {managedDockerEnvironment} from './development-docker.mjs';
+import {runWithDevelopmentBudget} from '../../../../scripts/development-budget.mjs';
+import {managedDockerEnvironment} from '../../../../scripts/development-docker.mjs';
 
 const args=process.argv.slice(2);
 if(args[0]!=='--managed-child') {

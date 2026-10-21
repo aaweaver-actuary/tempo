@@ -23,7 +23,7 @@ import zipfile
 import platform
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[4]
 PACKAGES = ("contracts/content-publication", "contracts/game-evidence", "packages/chess-core",
             "services/learning/remediation", "services/game-evidence", "tools/analysis-restoration/a_bridge")
 BACKEND_DEPENDENCIES = ("packages/scheduling", "services/learning/application", "services/learning/runtime")
@@ -111,7 +111,7 @@ def load(name, path):
     return module
 
 
-staging = load("legacy_qualification_staging", ROOT / "scripts/legacy_qualification_staging.py")
+staging = load("legacy_qualification_staging", ROOT / "database/tempo_legacy_database/tooling/legacy_bridge/legacy_qualification_staging.py")
 
 
 def write(path, value):
@@ -140,7 +140,7 @@ def helper_arguments(image, name, evidence, mode, *, source, source_sha256, netw
         "--env", "CARGO_BUILD_JOBS=1", "--env", "RAYON_NUM_THREADS=1", "--env", "OMP_NUM_THREADS=1"]
     if env_file: args += ["--env-file", str(env_file)]
     python = "python" if mode == "artifacts" else "/evidence/work/environment/bin/python"
-    return [*args, "--entrypoint", python, image, "/source/scripts/qualify_legacy_bridge.py", "--inside", mode,
+    return [*args, "--entrypoint", python, image, "/source/database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_bridge.py", "--inside", mode,
             "--report-relative", report_relative]
 
 
@@ -344,7 +344,7 @@ def inside(mode, relative):
             sys.dont_write_bytecode = True
             sys.pycache_prefix = '/tmp/legacy-module-native-verified-bytecode'
             report['installed_wheels'] = staging.verify_owned_environment(root)
-            nodes = tuple("integration/test_postgres.py::" + name for name in NATIVE_NAMES)
+            nodes = tuple("database/tempo_remediation_database/tests/native/test_postgres.py::" + name for name in NATIVE_NAMES)
             report["tests"] = run_suite(timer, python, destination, "native", root / "work/source/services/learning/remediation",
                                          nodes, 5, True)
         report["complete"] = True

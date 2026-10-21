@@ -10,7 +10,7 @@ import zipfile
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('legacy_backend_native_plan', ROOT / 'scripts/qualify_legacy_backend.py')
+spec = importlib.util.spec_from_file_location('legacy_backend_native_plan', ROOT / 'database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_backend.py')
 plan = importlib.util.module_from_spec(spec); spec.loader.exec_module(plan)
 
 
@@ -102,7 +102,7 @@ def test_exact_native_node_inventory_accepts_required_parameterized_identity():
 
 @pytest.mark.parametrize('result', [0, 1, 'timeout'])
 def test_native_recovery_publishes_the_supported_task_in_a_bounded_owned_process(result):
-    fixture = plan.shared.load('native_fixture_unit_recovery', ROOT / 'backend/integration/legacy_bridge/conftest.py')
+    fixture = plan.shared.load('native_fixture_unit_recovery', ROOT / 'database/tempo_legacy_database/tests/legacy_bridge/conftest.py')
     native = fixture.NativeBackend.__new__(fixture.NativeBackend)
     native.processes, native.calls = {}, []
     started, stopped, waits = [], [], []
@@ -130,7 +130,7 @@ def test_native_recovery_publishes_the_supported_task_in_a_bounded_owned_process
 
 
 def test_native_operation_monitoring_is_background_without_changing_operation_identity():
-    fixture = plan.shared.load('native_fixture_unit_monitor', ROOT / 'backend/integration/legacy_bridge/conftest.py')
+    fixture = plan.shared.load('native_fixture_unit_monitor', ROOT / 'database/tempo_legacy_database/tests/legacy_bridge/conftest.py')
     native = fixture.NativeBackend.__new__(fixture.NativeBackend)
     calls = []
     original = dict(operation_id='original:operation', state='complete', response=dict(saved=True))
@@ -231,7 +231,7 @@ def test_native_feedback_fixture_publishes_through_writable_storage_not_read_onl
     """
     import ast
     import sqlite3
-    source = ast.parse((ROOT / 'backend/integration/legacy_bridge/test_native.py').read_text())
+    source = ast.parse((ROOT / 'database/tempo_legacy_database/tests/legacy_bridge/test_native.py').read_text())
     helper = next(node for node in source.body if isinstance(node, ast.FunctionDef) and node.name == 'insert_feedback_miss')
     namespace = {}
     exec(compile(ast.Module(body=[helper], type_ignores=[]), '<native-feedback-fixture>', 'exec'), namespace)
@@ -260,3 +260,29 @@ def test_native_feedback_fixture_publishes_through_writable_storage_not_read_onl
         assert first == 'fixture-weak' and second == 'fixture-other'
         assert database.execute('SELECT game_id,derivation_version,published_repertoire_version FROM game_derivation_jobs').fetchall() == [('game', 1, 1)]
         assert database.execute('SELECT id,repertoire_id FROM current_repertoire_decision_events ORDER BY ply').fetchall() == [(first, 'ruy'), (second, 'italian')]
+
+
+@pytest.mark.parametrize('outside_path', [None, '/outside', '/source', '/source/database/private', '/source/database-neighbor'])
+def test_native_fixture_accepts_exact_controlled_database_import_path_and_rejects_outside_paths(monkeypatch, outside_path):
+    fixture = plan.shared.load('native_fixture_import_path_plan', ROOT / 'database/tempo_legacy_database/tests/legacy_bridge/conftest.py')
+    identity = 'tempo-bridge-backend-' + 'a' * 32
+    manifest = dict(identity=identity, postgres_host='bridge-postgres', redis_host='bridge-redis',
+        pgpass='/evidence/private/pgpass', bytecode_prefix='/tmp/' + identity + '-verified-bytecode',
+        admin_dsn='user=postgres dbname=postgres host=bridge-postgres port=5432',
+        import_paths=['/qualified/work/environment/lib/python3.12/site-packages',
+                      '/source/backend', '/source/database', '/source/scripts'])
+    if outside_path is not None:
+        manifest['import_paths'].append(outside_path)
+    real_path = fixture.Path
+    def manifest_path(value):
+        if value == '/evidence/native-manifest.json':
+            return SimpleNamespace(read_text=lambda: json.dumps(manifest))
+        return real_path(value)
+    monkeypatch.setattr(fixture, 'Path', manifest_path)
+    monkeypatch.setattr(fixture, 'os', SimpleNamespace(environ={'TEMPO_BRIDGE_NATIVE_OWNED': identity}))
+    monkeypatch.setattr(fixture.psycopg, 'connect', lambda *args, **kwargs: pytest.fail('Import path validation opened a database'))
+    if outside_path is None:
+        assert fixture.owned_manifest() == manifest
+    else:
+        with pytest.raises(RuntimeError, match='import path escaped'):
+            fixture.owned_manifest()

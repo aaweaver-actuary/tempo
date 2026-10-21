@@ -1,7 +1,7 @@
 # Prepared finite qualification windows — unexecuted
 
 The parent/resource coordinator must grant each window before the commands below
-run. No grant is assumed. `python3 scripts/qualify_legacy_bridge.py --describe`
+run. No grant is assumed. `python3 database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_bridge.py --describe`
 prints the frozen plan without reading Docker or starting resources.
 
 Prerequisites: a clean pinned feature head; a coordinator-approved **already local
@@ -24,7 +24,7 @@ After coordinator approval, use its actual local image ID as
 `TEMPO_BRIDGE_HELPER_IMAGE_ID` (literal `sha256:` plus64hex digits):
 
 ```sh
-node scripts/legacy-bridge-window.mjs \
+node database/tempo_legacy_database/tooling/legacy_bridge/legacy-bridge-window.mjs \
   --python /Users/andy/Documents/Codex/2026-10-18/task-2/tempo/backend/.venv/bin/python \
   --mode artifacts --approved-window \
   --evidence /Users/andy/Documents/Codex/2026-10-18/task-3/evidence/qualification \
@@ -93,7 +93,7 @@ artifact run. A coordinator-approved actual local image ID is still required.
 Only after the artifact run passes, use its exact emitted directory:
 
 ```sh
-node scripts/legacy-bridge-window.mjs \
+node database/tempo_legacy_database/tooling/legacy_bridge/legacy-bridge-window.mjs \
   --python /Users/andy/Documents/Codex/2026-10-18/task-2/tempo/backend/.venv/bin/python \
   --mode native --approved-window \
   --evidence /Users/andy/Documents/Codex/2026-10-18/task-3/evidence/qualification \

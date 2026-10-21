@@ -37,7 +37,7 @@ def owned_manifest():
             or conninfo_to_dict(value['admin_dsn']) != dict(user='postgres', dbname='postgres',
                 host='bridge-postgres', port='5432')):
         raise RuntimeError('Explicit disposable backend manifest required; ambient targets refused')
-    if not all(Path(item).is_relative_to('/qualified') or item in ('/source/backend', '/source/scripts')
+    if not all(Path(item).is_relative_to('/qualified') or item in ('/source/backend', '/source/database', '/source/scripts')
                for item in value['import_paths']):
         raise RuntimeError('Native import path escaped qualified artifacts/backend source')
     return value

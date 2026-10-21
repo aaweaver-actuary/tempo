@@ -1,5 +1,12 @@
 # Queue adapter native window: awaiting explicit parent go
 
+**Current source after file relocation; no native rerun occurred.** This directory
+and its exact target guard moved together into the root database tree. Existing
+SQL, fixture markers/endpoint validation, receipt identity checks, assertions and
+cleanup requirements are unchanged. [Queue stored fields and relationships](../../schema/study-queue-review-1/README.md)
+remain canonical; these tests create no schema or new storage ownership. Historical
+window results below remain historical and are not upgraded by source collection.
+
 This is a four-case source-adapter proof on actual PostgreSQL. It is not an
 installed-artifact, full durable-worker, PR311-hook or full-system qualification.
 The coordinator owns the resource lifecycle. This directory contains no Docker
@@ -102,19 +109,19 @@ private validated fixture environment injected, run these sequentially under the
 parent watchdog:
 
 ```sh
-PYTHONPATH=backend PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+PYTHONPATH=backend:database PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   .venv/bin/python -B services/learning/application/qualification.py \
   "$QUEUE_NATIVE_EVIDENCE/native-collected.json" \
   -c services/learning/application/pyproject.toml -o addopts= \
   -p no:cacheprovider --rootdir=. \
-  backend/integration/queue_admission/test_postgres.py --collect-only -q
+  database/tempo_legacy_database/tests/queue_admission/test_postgres.py --collect-only -q
 
-PYTHONPATH=backend PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+PYTHONPATH=backend:database PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   .venv/bin/python -B services/learning/application/qualification.py \
   "$QUEUE_NATIVE_EVIDENCE/native-executed.json" \
   -c services/learning/application/pyproject.toml -o addopts= \
   -p no:cacheprovider --rootdir=. \
-  backend/integration/queue_admission/test_postgres.py \
+  database/tempo_legacy_database/tests/queue_admission/test_postgres.py \
   -v --tb=short --junitxml="$QUEUE_NATIVE_EVIDENCE/native.xml"
 ```
 

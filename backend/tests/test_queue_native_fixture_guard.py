@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-NATIVE = Path(__file__).resolve().parents[1] / 'integration/queue_admission'
+NATIVE = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/tests/queue_admission'
 sys.path.insert(0, str(NATIVE))
 import queue_fixture_guard as guard
 

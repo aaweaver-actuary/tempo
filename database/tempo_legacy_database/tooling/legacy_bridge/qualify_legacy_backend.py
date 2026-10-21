@@ -21,18 +21,18 @@ import time
 import uuid
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('bridge_qualification', ROOT / 'scripts/qualify_legacy_bridge.py')
+ROOT = Path(__file__).resolve().parents[4]
+spec = importlib.util.spec_from_file_location('bridge_qualification', ROOT / 'database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_bridge.py')
 shared = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shared)
 WORK_SECONDS, CLEANUP_SECONDS = 900, 300
 CASES = (
-    'integration/legacy_bridge/test_native.py::test_native_generated_accept_replay_restart_and_normal_study',
-    'integration/legacy_bridge/test_native.py::test_native_prior_issued_attempt_cannot_settle_later_acceptance[prior]',
-    'integration/legacy_bridge/test_native.py::test_native_module_effect_and_complete_operation_receipt_roll_back_together',
-    'integration/legacy_bridge/test_native.py::test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction',
-    'integration/legacy_bridge/test_native.py::test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends',
-    'integration/legacy_bridge/test_native.py::test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire',
+    'database/tempo_legacy_database/tests/legacy_bridge/test_native.py::test_native_generated_accept_replay_restart_and_normal_study',
+    'database/tempo_legacy_database/tests/legacy_bridge/test_native.py::test_native_prior_issued_attempt_cannot_settle_later_acceptance[prior]',
+    'database/tempo_legacy_database/tests/legacy_bridge/test_native.py::test_native_module_effect_and_complete_operation_receipt_roll_back_together',
+    'database/tempo_legacy_database/tests/legacy_bridge/test_native.py::test_native_feedback_typed_projection_and_priority_effect_borrow_caller_transaction',
+    'database/tempo_legacy_database/tests/legacy_bridge/test_native.py::test_native_feedback_card_and_day_locks_live_until_caller_transaction_ends',
+    'database/tempo_legacy_database/tests/legacy_bridge/test_native.py::test_native_feedback_accepted_scope_exclusion_does_not_hide_other_repertoire',
 )
 IMAGES = dict(helper='sha256:a095f09e905ecb00635b80387e17d195560a5752df83d970f94f1ada902ba3e2',
               postgres=shared.POSTGRES_IMAGE_ID,
@@ -194,8 +194,8 @@ def inside():
     checker = ROOT / 'services/learning/application/qualification.py'
     bootstrap = ('import sys,runpy;sys.pycache_prefix=' + repr(sys.pycache_prefix) + ';sys.path[:0]=' + repr(paths) + ';'
         'sys.argv=[' + repr(str(checker)) + ',*sys.argv[1:]];runpy.run_path(' + repr(str(checker)) + ",run_name='__main__')")
-    common = ['-c', str(ROOT / 'backend/pyproject.toml'), '-o', 'addopts=', '--import-mode=importlib',
-              '-p', 'no:cacheprovider', '--maxfail=1', str(ROOT / 'backend/integration/legacy_bridge/test_native.py')]
+    common = ['-c', str(ROOT / 'backend/pyproject.toml'), '-o', 'addopts=', '--import-mode=importlib', '--rootdir=' + str(ROOT),
+              '-p', 'no:cacheprovider', '--maxfail=1', str(ROOT / 'database/tempo_legacy_database/tests/legacy_bridge/test_native.py')]
     try:
         receipts = {}
         for stage, tail in [('collection', ['--collect-only', '-q']),
@@ -300,7 +300,7 @@ def host(options):
             '--env', 'TEMPO_QUALIFICATION_SOURCE_SHA256=' + stage.record['source_manifest_sha256'],
             '--env', 'TEMPO_BRIDGE_NATIVE_OWNED=' + identity, '--env', 'PYTHONDONTWRITEBYTECODE=1',
             '--env', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD=1', '--entrypoint', 'python', options.helper_image_id,
-            '/source/scripts/qualify_legacy_backend.py', '--inside']
+            '/source/database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_backend.py', '--inside']
         timer.run(['docker', *arguments], log=directory / 'helper.log')
         container = json.loads(timer.capture(['docker', 'inspect', names['helper']]).stdout)[0]
         observe_container('helper', container, 'containers')
