@@ -164,10 +164,11 @@ def test_C3_shared_policy_prefix_is_unknown_before_authoritative_anchor():
 
 def test_C3_worker_reuses_only_byte_identical_validated_snapshot(monkeypatch):
     from tempo_game_evidence_database.adapters import store as module
+    from tempo_game_evidence import snapshot as snapshot_owner
     parsed=[]
     def parse(document):
         value=object();parsed.append((document,value));return value
-    monkeypatch.setattr(module,'parse_snapshot',parse)
+    monkeypatch.setattr(snapshot_owner,'parse_snapshot',parse)
     worker=module.EvidenceStore('explicit-test-only')
     first=worker.comparison_snapshot('one',{'revision':1})
     assert worker.comparison_snapshot('one',{'revision':1}) is first
@@ -176,3 +177,19 @@ def test_C3_worker_reuses_only_byte_identical_validated_snapshot(monkeypatch):
     worker.comparison_snapshot('two',{'revision':2})
     assert len(parsed)==3
     assert worker._validated_snapshot[0][0]=='two'
+
+
+def test_invalid_snapshot_does_not_replace_existing_worker_cache(monkeypatch):
+    from tempo_game_evidence_database.adapters.store import EvidenceStore
+    from tempo_game_evidence import snapshot as snapshot_owner
+    worker = EvidenceStore('explicit-test-only')
+    existing = (('prior', 'fingerprint'), object())
+    worker._validated_snapshot = existing
+
+    def invalid(_document):
+        raise ValueError('synthetic invalid snapshot')
+
+    monkeypatch.setattr(snapshot_owner, 'parse_snapshot', invalid)
+    with pytest.raises(ValueError, match='^synthetic invalid snapshot$'):
+        worker.comparison_snapshot('next', {'revision': 3})
+    assert worker._validated_snapshot is existing

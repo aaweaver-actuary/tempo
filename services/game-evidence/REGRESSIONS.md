@@ -1,5 +1,25 @@
 # Game Evidence regression ownership
 
+`tests/test_api_storage_boundary.py` owns readiness delegation to the existing
+store's schema-access capability and unchanged unavailable-storage HTTP
+translation, without opening a connection in HTTP composition. Existing
+`test_analysis_packing.py`, `test_analysis_deviations.py`,
+`test_analysis_schema.py`, `test_providers.py`, `test_credentials.py` and
+`test_boundary.py` retain their policy, input, authentication and installed-import
+assertions after SQL extraction into the root database owner tree. Native storage
+proofs remain in `integration/test_postgres.py`; no native proof is implied by
+these unit cases.
+
+`tests/test_application_preparation.py` owns import preparation and read-response
+shaping after their mechanical move out of the root database store: cheap input
+guards, unchanged replay before normalization/writing, normalization between the
+reader and writer scopes, original error documents, response object identity,
+pending fallback and source-revision-before-snapshot readiness precedence.
+`test_invalid_snapshot_does_not_replace_existing_worker_cache` complements
+`test_C3_worker_reuses_only_byte_identical_validated_snapshot`: validation failure
+retains the prior per-worker tuple, while digest/document changes still invalidate
+it. These are application/installed-wiring checks, not native transaction proof.
+
 `tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
 legacy observation: exact original physical card/interior offset, played/expected
 move, deterministic immutable identity, unknown/no-miss without an envelope,

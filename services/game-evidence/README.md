@@ -375,3 +375,31 @@ canonical four-boundary drawing lives in the shared values README. No worker or
 live adoption is implied by extraction.
 
 Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_game_evidence_database/README.md).
+
+## Database operation location
+
+**Implemented in this unmerged mechanical extraction; deployment unverified.** Existing SQL from `analysis_export.py`, `api.py`, `delivery.py`, `providers.py` and `reconciliation.py` now lives in the single root [Game Evidence database owner](../../database/tempo_game_evidence_database/adapters/README.md). There is one implementation of each moved operation; no shared runtime database or generic SQL-dispatch interface is introduced.
+
+```mermaid
+flowchart LR
+  application[Game Evidence application composition and decisions] --> operations[Owner database operation functions]
+  application --> connection[Existing EvidenceStore connection scope]
+  connection --> preparation[Application import, snapshot cache and report helpers]
+  operations --> transaction[Borrowed caller transaction]
+  connection --> transaction
+  transaction --> tables[Game Evidence owned tables]
+```
+
+The outer composition retains existing transaction boundaries and operation order. Chess/deviation traversal, page packing, immutable-export and cursor validation, receipt/lease decisions, provider requests and HTTP error translation remain in the application. The [category adapters](../../database/tempo_game_evidence_database/adapters/README.md) own complete bound SQL queries, `Jsonb` adaptation, cursor batches, row locks and the accepted-history savepoint. Readiness delegates the original query to `EvidenceStore.check_schema_access`; it retains the original behavior rather than adding a new schema qualification rule.
+
+The existing `EvidenceStore` methods also invoke these application helpers at their original call points:
+
+| Store method | Application owner | Preserved ordering/state |
+| --- | --- | --- |
+| `import_pgn` | [`source.prepare_import_identity` and `prepare_import_document`](src/tempo_game_evidence/source.py) | Cheap identity checks precede the replay read; an unchanged replay returns before PGN normalization. Normalization remains after that read closes and before opening the writer. |
+| `comparison_snapshot` | [`snapshot.validated_snapshot_cache`](src/tempo_game_evidence/snapshot.py) | The same private tuple remains on one store/worker instance. Digest or document-byte changes trigger validation; failed validation leaves the prior tuple intact. |
+| `report` | [`reporting.comparison_report_response`](src/tempo_game_evidence/reporting.py) | Read/delivery inspection closes before response shaping; source-revision mismatch retains precedence over snapshot mismatch. Existing response object identities and fields are retained. |
+
+Root-store separation remains unfinished: `load_snapshot` still computes publication staleness and affected positions inside its transaction; `process_one` still dispatches work and applies failure retry handling; `_compare` still computes replay reuse/findings and builds the comparison response. Those are remaining mechanical extraction candidates, not accepted permanent database responsibilities. This bounded change leaves their code, queries and lock order untouched.
+
+No schema, table/field relationship, migration, public wire contract, credential handling or grants change. Existing [schema diagrams and data dictionaries](../../database/tempo_game_evidence_database/schema/README.md) therefore remain authoritative for the same source schema. Application composition still wires the existing component-owned store; this move does not claim complete domain-interface adoption or live resource/failure isolation, and gives Study no new Game Evidence dependency.

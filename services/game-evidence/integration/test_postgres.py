@@ -302,9 +302,10 @@ def test_duplicate_source_and_snapshot_refresh_reuse_verified_index(state,monkey
     store,workspace,value=state
     game=imported(state)
     import tempo_game_evidence_database.adapters.store as storage
+    from tempo_game_evidence import source as source_owner
     def forbidden(*_args,**_kwargs):
         raise AssertionError("unchanged_source_was_reparsed")
-    monkeypatch.setattr(storage,"normalize_pgn",forbidden)
+    monkeypatch.setattr(source_owner,"normalize_pgn",forbidden)
     monkeypatch.setattr(storage,"replay_positions",forbidden)
     assert store.import_pgn(workspace,"pgn","miss","Learner",(FIXTURES/"miss.pgn").read_bytes())==game
     value["revision"]=2

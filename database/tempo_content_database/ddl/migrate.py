@@ -6,6 +6,8 @@ from pathlib import Path
 import psycopg
 from psycopg import sql
 
+DatabaseError = psycopg.Error
+
 
 # One ownership contract drives both owner grants and runtime verification.
 RUNTIME_TABLE_PRIVILEGES = {
@@ -89,3 +91,9 @@ def readiness(database, workspace_id):
     if database.execute("SELECT has_database_privilege(current_user,current_database(),'CREATE,TEMPORARY')").fetchone()[0]:
         raise ValueError('Content runtime has database creation privileges')
     return {'status':'ready','workspace_id':workspace_id,'runtime_role':role,'migrations':list(expected_migrations())}
+
+
+def readiness_from_url(database_url, workspace_id):
+    """Explicit CLI readiness connection; checks use the unchanged owner function."""
+    with psycopg.connect(database_url) as database:
+        return readiness(database, workspace_id)

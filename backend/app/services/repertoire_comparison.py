@@ -11,6 +11,7 @@ import threading
 import chess
 
 from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.projections import repertoire_comparison as storage
 from tempo_legacy_database.adapters import postgres_store
 from .activity_gate import activity_gate
 from .canonical_prefix import game_in_scope
@@ -23,20 +24,6 @@ _cached_repertoires: list[dict] = []
 _cached_graphs_by_repertoire: dict[str, tuple[dict[str, set[str]], set[str]]] = {}
 _cached_colors_by_repertoire: dict[str, set[str]] = {}
 _cached_card_positions: dict[tuple[str, str, str], str] = {}
-
-_REPERTOIRE_LINE_SIGNATURE_SQL = (
-    "SELECT md5(COALESCE(string_agg(md5(row_to_json(item)::text),'' "
-    "ORDER BY item.id),'')) FROM ("
-    "SELECT id,repertoire_id,trained_color,start_fen,moves_json "
-    "FROM repertoire_lines) item"
-)
-_CARD_SIGNATURE_SQL = (
-    "SELECT md5(COALESCE(string_agg(md5(row_to_json(item)::text),'' "
-    "ORDER BY item.repertoire_id,item.id),'')) FROM ("
-    "SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c "
-    "JOIN repertoire_cards rc ON rc.card_id=c.id "
-    "WHERE c.archived=0 AND c.content_type='opening') item"
-)
 
 
 def canonical_fen(fen: str) -> str:
@@ -81,9 +68,9 @@ def _card_position_index(rows: list[dict]) -> dict[tuple[str, str, str], str]:
 
 def _postgres_repertoire_source_signature(repertoires: list[dict]) -> str:
     with background_read_connection() as database:
-        line_digest = database.execute_native(_REPERTOIRE_LINE_SIGNATURE_SQL).fetchone()[0]
+        line_digest = storage.repertoire_line_digest(database)
     with background_read_connection() as database:
-        card_digest = database.execute_native(_CARD_SIGNATURE_SQL).fetchone()[0]
+        card_digest = storage.opening_card_digest(database)
     return hashlib.sha256(
         json.dumps([repertoires, line_digest, card_digest], sort_keys=True).encode()
     ).hexdigest()
@@ -91,19 +78,12 @@ def _postgres_repertoire_source_signature(repertoires: list[dict]) -> str:
 
 def _postgres_repertoire_input_rows() -> tuple[list[dict], list[dict], list[dict]]:
     with background_read_connection() as database:
-        repertoires = [dict(row) for row in database.execute(
-            "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
-            "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
-        )]
+        repertoires = storage.repertoire_rows(database)
     line_rows: list[dict] = []
     line_cursor = ""
     while True:
         with background_read_connection() as database:
-            page = [dict(row) for row in database.execute(
-                "SELECT id,repertoire_id,trained_color,start_fen,moves_json "
-                "FROM repertoire_lines WHERE id>? ORDER BY id LIMIT 64",
-                (line_cursor,),
-            )]
+            page = storage.line_page(database, line_cursor)
         line_rows.extend(page)
         if len(page) < 64:
             break
@@ -112,14 +92,7 @@ def _postgres_repertoire_input_rows() -> tuple[list[dict], list[dict], list[dict
     card_cursor = ("", "")
     while True:
         with background_read_connection() as database:
-            page = [dict(row) for row in database.execute_native(
-                "SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c "
-                "JOIN repertoire_cards rc ON rc.card_id=c.id "
-                "WHERE c.archived=0 AND c.content_type='opening' "
-                "AND (rc.repertoire_id,c.id)>(%s,%s) "
-                "ORDER BY rc.repertoire_id,c.id LIMIT 64",
-                card_cursor,
-            )]
+            page = storage.card_page(database, card_cursor)
         card_rows.extend(page)
         if len(page) < 64:
             break
@@ -132,10 +105,7 @@ def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, l
     global _cached_colors_by_repertoire, _cached_card_positions
     if background and postgres_store.configured():
         with background_read_connection() as database:
-            repertoires = [dict(row) for row in database.execute(
-                "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
-                "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
-            )]
+            repertoires = storage.repertoire_rows(database)
         signature = _postgres_repertoire_source_signature(repertoires)
         with _index_lock:
             if signature == _cached_signature:
@@ -146,18 +116,9 @@ def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, l
             raise RuntimeError("Repertoire changed during index loading; retry the slice")
     else:
         with connection(background=background) as database:
-            repertoires = [dict(row) for row in database.execute(
-                "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
-            )]
-            line_rows = [dict(row) for row in database.execute(
-                "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"
-            )]
-            card_rows = [dict(row) for row in database.execute(
-                """SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c
-                   JOIN repertoire_cards rc ON rc.card_id=c.id
-                   WHERE c.archived=0 AND c.content_type='opening'
-                   ORDER BY rc.repertoire_id,c.id"""
-            )]
+            repertoires = storage.repertoire_rows(database)
+            line_rows = storage.all_line_rows(database)
+            card_rows = storage.all_card_rows(database)
         signature = hashlib.sha256(
             json.dumps([repertoires, line_rows, card_rows], sort_keys=True).encode()
         ).hexdigest()
@@ -329,11 +290,7 @@ def compare_games(
         scope_generation = game_scope_generation(database)
     repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions = _load_repertoire_index(background=background)
     with connection(background=background) as database:
-        where = "" if game_ids is None else f" WHERE id IN ({','.join('?' for _ in game_ids)})"
-        games = [
-            {**dict(row), "moves": json.loads(row["moves_json"])}
-            for row in database.execute(f"SELECT * FROM imported_games{where}", game_ids or [])
-        ]
+        games = storage.comparison_game_rows(database, game_ids)
     computed: list[tuple[dict, list[dict]]] = []
     for game in games:
         matches, evidence_owner = prepare_game_comparisons(
@@ -344,26 +301,14 @@ def compare_games(
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
-        database.execute("BEGIN IMMEDIATE")
+        storage.begin_comparison_write(database)
         if game_scope_generation(database, lock=True) != scope_generation:
             raise RuntimeError("Repertoire membership changed during game comparison; retry")
         for game, matches in computed:
-            database.execute("UPDATE imported_games SET repertoire_scope_generation=? WHERE id=?", (scope_generation, game["id"]))
-            database.execute("DELETE FROM game_repertoire_matches WHERE game_id=?", (game["id"],))
-            database.execute("DELETE FROM repertoire_decision_events WHERE game_id=?", (game["id"],))
+            storage.clear_game_comparison(database, game, scope_generation)
             for index, match in enumerate(matches):
                 deviation = match["deviation"]
-                database.execute(
-                    """INSERT INTO game_repertoire_matches VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        match["game_id"], match["repertoire_id"], int(index == 0), match["classification"],
-                        match["matched"], match["opportunities"], match["deepest"],
-                        deviation["ply"] if deviation else None, deviation["fen"] if deviation else None,
-                        json.dumps(deviation["expected"] if deviation else []), deviation["actual"] if deviation else None,
-                        match["deviation_card_id"], match["opponent_gap"], match["out_of_book"],
-                        json.dumps(match["timeline"]), now,
-                    ),
-                )
+                storage.insert_repertoire_match(database, match, int(index == 0), deviation, now)
             primary = matches[0] if matches else None
             evidence_owner = game["decision_evidence_owner"]
             if evidence_owner:
@@ -371,30 +316,13 @@ def compare_games(
                     event_id = hashlib.sha256(
                         f"{game['id']}\0{evidence_owner['repertoire_id']}\0{event['ply']}".encode()
                     ).hexdigest()
-                    database.execute(
-                        """INSERT INTO repertoire_decision_events(
-                               id,game_id,repertoire_id,card_id,ply,fen_key,
-                               expected_uci,actual_uci,outcome,played_at,updated_at
-                           ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                        (
-                            event_id, game["id"], evidence_owner["repertoire_id"],
-                            event["card_id"], event["ply"], event["fen_key"],
-                            event["expected_uci"], event["actual_uci"],
-                            event["outcome"], game["played_at"], now,
-                        ),
-                    )
+                    storage.insert_decision_event(database, event_id, game, evidence_owner, event, now)
             deviation = primary["deviation"] if primary else None
-            database.execute(
-                """INSERT INTO repertoire_comparisons(game_id,repertoire_id,classification,divergence_ply,divergence_fen,expected_json,actual_uci,updated_at)
-                   VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET repertoire_id=excluded.repertoire_id,
-                   classification=excluded.classification,divergence_ply=excluded.divergence_ply,divergence_fen=excluded.divergence_fen,
-                   expected_json=excluded.expected_json,actual_uci=excluded.actual_uci,updated_at=excluded.updated_at""",
-                (
-                    game["id"], primary["repertoire_id"] if primary else None,
-                    primary["classification"] if primary else "no applicable repertoire",
-                    deviation["ply"] if deviation else None, deviation["fen"] if deviation else None,
-                    json.dumps(deviation["expected"] if deviation else []), deviation["actual"] if deviation else None, now,
-                ),
+            storage.save_primary_comparison(
+                database, game["id"], primary["repertoire_id"] if primary else None,
+                primary["classification"] if primary else "no applicable repertoire",
+                deviation["ply"] if deviation else None, deviation["fen"] if deviation else None,
+                deviation["expected"] if deviation else [], deviation["actual"] if deviation else None, now,
             )
 
 

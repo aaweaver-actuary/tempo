@@ -8,7 +8,7 @@ import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from tempo_legacy_database.connections import read_connection
-from tempo_legacy_database.adapters.opening_progression import PRACTICED_OPENING_PARENT_SQL
+from tempo_legacy_database.adapters.projections import repertoire_statistics as storage
 
 
 WINDOWS = {"30d": 30, "90d": 90, "all": None}
@@ -40,72 +40,24 @@ def _study_day(timestamp: str, configured_timezone: str) -> str:
 
 def repertoire_statistics(repertoire_id: str, window: str) -> dict:
     with read_connection() as database:
-        repertoire = database.execute("SELECT id,name FROM repertoires WHERE id=?", (repertoire_id,)).fetchone()
+        repertoire = storage.repertoire_identity(database, repertoire_id)
         if not repertoire or repertoire_id.startswith("__"):
             raise KeyError("Repertoire not found")
-        publication = database.execute("SELECT generation,published_at FROM opening_graph_publications WHERE repertoire_id=?", (repertoire_id,)).fetchone()
-        task = database.execute("SELECT state,last_error FROM background_tasks WHERE kind='opening_graph_rebuild' AND deduplication_key=?", (repertoire_id,)).fetchone()
-        refresh = database.execute("SELECT state,last_error FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'", ()).fetchone()
-        pending_derivations = database.execute("SELECT COUNT(*) FROM game_derivation_jobs WHERE status IN ('queued','running')").fetchone()[0]
-        failed_derivations = database.execute("SELECT COUNT(*) FROM game_derivation_jobs WHERE status='failed'").fetchone()[0]
-        cards = [dict(row) for row in database.execute(
-            """SELECT DISTINCT card.* FROM opening_graph_steps step
-               JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
-               JOIN cards card ON card.id=step.card_id
-               JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
-               WHERE step.repertoire_id=? AND card.content_type='opening' AND card.archived=0""", (repertoire_id,),
-        )]
+        publication = storage.opening_publication(database, repertoire_id)
+        task = storage.opening_graph_task(database, repertoire_id)
+        refresh = storage.game_refresh_task(database)
+        pending_derivations = storage.pending_derivation_count(database)
+        failed_derivations = storage.failed_derivation_count(database)
+        cards = storage.published_card_rows(database, repertoire_id)
         card_ids = {card["id"] for card in cards}
-        blocked_ids = {row[0] for row in database.execute("SELECT card_id FROM repertoire_integrity_card_blocks WHERE repertoire_id=?", (repertoire_id,))}
-        review_rows = [dict(row) for row in database.execute(
-            """SELECT review.id,review.card_id,review.rating,review.reviewed_at,review.source_kind
-               FROM reviews review JOIN cards card ON card.id=review.card_id
-               JOIN repertoire_cards link ON link.card_id=card.id
-               WHERE link.repertoire_id=? AND review.invalidated_at IS NULL
-               ORDER BY review.reviewed_at,review.id""", (repertoire_id,),
-        )]
-        timezone_name = database.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
+        blocked_ids = storage.blocked_card_ids(database, repertoire_id)
+        review_rows = storage.valid_review_rows(database, repertoire_id)
+        timezone_name = storage.study_timezone(database)
         cutoff = _cutoff(window, timezone_name)
-        game_rows = [dict(row) for row in database.execute(
-            """SELECT game.id,game.played_at,game.result,game.color FROM current_game_repertoire_matches match
-               JOIN imported_games game ON game.id=match.game_id
-               WHERE match.repertoire_id=? AND match.is_primary=1 AND game.adaptive_excluded=0""", (repertoire_id,),
-        )]
-        decision_rows = [dict(row) for row in database.execute(
-            """SELECT event.game_id,event.card_id,event.fen_key,event.outcome,event.played_at
-               FROM current_repertoire_decision_events event JOIN imported_games game ON game.id=event.game_id
-               JOIN current_game_repertoire_matches match ON match.game_id=event.game_id
-                 AND match.repertoire_id=event.repertoire_id AND match.is_primary=1
-               WHERE event.repertoire_id=? AND game.adaptive_excluded=0""", (repertoire_id,),
-        )]
-        position_total = database.execute(
-            """SELECT COUNT(DISTINCT position.value) FROM opening_graph_steps step
-               JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
-               JOIN cards card ON card.id=step.card_id AND card.content_type='opening' AND card.archived=0
-               JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
-               JOIN json_each(step.decision_fen_keys_json) position
-               WHERE step.repertoire_id=?""", (repertoire_id,),
-        ).fetchone()[0]
-        frontier = [dict(row) for row in database.execute(
-            f"""SELECT DISTINCT child.card_id,child.parent_card_id,line.name line_name,
-                      parent.state,parent.due_date,parent.pending_validation,
-                      parent.archived parent_archived,candidate.pending_validation child_pending_validation,
-                      CASE WHEN EXISTS(
-                          SELECT 1 FROM opening_graph_steps incoming_route
-                          JOIN opening_graph_publications incoming_publication
-                            ON incoming_publication.repertoire_id=incoming_route.repertoire_id
-                           AND incoming_publication.generation=incoming_route.generation
-                          JOIN cards parent ON parent.id=incoming_route.parent_card_id
-                          WHERE incoming_route.card_id=child.card_id AND {PRACTICED_OPENING_PARENT_SQL}
-                      ) THEN 1 ELSE 0 END parent_practiced
-               FROM opening_graph_steps child
-               JOIN opening_graph_publications published ON published.repertoire_id=child.repertoire_id AND published.generation=child.generation
-               JOIN cards candidate ON candidate.id=child.card_id AND candidate.state IN ('locked','new')
-                   AND candidate.introduced_at IS NULL AND candidate.archived=0
-               JOIN cards parent ON parent.id=child.parent_card_id
-               JOIN repertoire_lines line ON line.id=child.line_id
-               WHERE child.repertoire_id=? AND parent.state!='locked'""", (repertoire_id,),
-        )]
+        game_rows = storage.primary_game_rows(database, repertoire_id)
+        decision_rows = storage.primary_decision_rows(database, repertoire_id)
+        position_total = storage.published_position_count(database, repertoire_id)
+        frontier = storage.frontier_rows(database, repertoire_id)
 
     valid_study_reviews = [row for row in review_rows if row["source_kind"] == "study" and row["card_id"] in card_ids]
     studied_ids = {row["card_id"] for row in valid_study_reviews}
@@ -170,33 +122,13 @@ def repertoire_positions(repertoire_id: str, window: str, sort: str, cursor: str
     if not 1 <= limit <= 50:
         raise ValueError("Position limit must be between 1 and 50")
     with read_connection() as database:
-        if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)).fetchone():
+        if not storage.repertoire_presence(database, repertoire_id):
             raise KeyError("Repertoire not found")
-        timezone_name = database.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
+        timezone_name = storage.study_timezone(database)
         cutoff = _cutoff(window, timezone_name)
-        known_positions = {row[0] for row in database.execute(
-            """SELECT DISTINCT position.value FROM opening_graph_steps step
-               JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
-               JOIN cards card ON card.id=step.card_id AND card.content_type='opening' AND card.archived=0
-               JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
-               JOIN json_each(step.decision_fen_keys_json) position WHERE step.repertoire_id=?""", (repertoire_id,),
-        )}
-        current_card_ids = {row[0] for row in database.execute(
-            """SELECT DISTINCT step.card_id FROM opening_graph_steps step
-               JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
-               JOIN cards card ON card.id=step.card_id AND card.content_type='opening' AND card.archived=0
-               JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
-               WHERE step.repertoire_id=?""", (repertoire_id,),
-        )}
-        events = [dict(row) for row in database.execute(
-            """SELECT event.fen_key,event.expected_uci,event.actual_uci,event.outcome,event.card_id,
-                      event.game_id,event.ply,event.played_at
-               FROM current_repertoire_decision_events event
-               JOIN imported_games game ON game.id=event.game_id
-               JOIN current_game_repertoire_matches match ON match.game_id=event.game_id
-                 AND match.repertoire_id=event.repertoire_id AND match.is_primary=1
-               WHERE event.repertoire_id=? AND game.adaptive_excluded=0""", (repertoire_id,),
-        )]
+        known_positions = storage.known_position_keys(database, repertoire_id)
+        current_card_ids = storage.published_card_ids(database, repertoire_id)
+        events = storage.position_decision_rows(database, repertoire_id)
     positions: dict[str, dict] = {}
     for event in events:
         if event["fen_key"] not in known_positions or event["card_id"] not in current_card_ids or not _in_window(_study_day(event["played_at"], timezone_name), cutoff):

@@ -1,5 +1,6 @@
 """Incremental teaching facts, borrowed from the gateway's transaction."""
 
+from tempo_learning_database.adapters import teaching_states as storage
 from datetime import datetime, timezone
 import json
 import chess
@@ -22,17 +23,13 @@ def fact(row):
 
 def read_teaching(database, card_id):
     # Historical facts remain readable when their serving definition is retired.
-    return {"states": [fact(row) for row in database.execute(
-        "SELECT card_id,revision,ply,taught_at FROM teaching_states "
-        "WHERE card_id=? ORDER BY revision,ply", (card_id,)).fetchall()]}
+    return {"states": [fact(row) for row in storage.teaching_rows(database, card_id)]}
 
 
 def record_teaching(database, payload):
     card_id = payload["card_id"]
     request = TeachingStateRequest.model_validate(payload["teaching_state"])
-    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                            (f"tempo:card-edit:{card_id}",))
-    card = database.execute("SELECT * FROM cards WHERE id=? FOR UPDATE", (card_id,)).fetchone()
+    card = storage.lock_teaching_card(database, card_id)
     if card is None:
         raise HTTPException(404, "Card not found")
     require_card_not_deleted(database, card_id)
@@ -52,10 +49,5 @@ def record_teaching(database, payload):
         board.push_uci(move)
     if board.turn != (card["trained_color"] == "white"):
         raise HTTPException(422, "Teaching position is not a learner move")
-    database.execute(
-        "INSERT INTO teaching_states(card_id,revision,ply,taught_at) VALUES(?,?,?,?) "
-        "ON CONFLICT(card_id,revision,ply) DO NOTHING",
-        (card_id, request.revision, request.ply, datetime.now(timezone.utc).isoformat()))
-    return fact(database.execute(
-        "SELECT * FROM teaching_states WHERE card_id=? AND revision=? AND ply=?",
-        (card_id, request.revision, request.ply)).fetchone())
+    return fact(storage.record_teaching_state(
+        database, card_id, request.revision, request.ply, datetime.now(timezone.utc).isoformat()))

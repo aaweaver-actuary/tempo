@@ -9,6 +9,7 @@ import chess
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
 from tempo_chess_core import canonical_fen_key
 from tempo_content_publication_contracts.v1 import Publication, ActivationAcknowledgement
+from .source import identity
 
 
 class StrictModel(BaseModel):
@@ -352,3 +353,11 @@ def parse_snapshot(value):
     if type(version) is not int or version not in (1, 2):
         raise ValueError("unsupported_snapshot_version")
     return (ComparisonSnapshotV2 if version == 2 else ComparisonSnapshot).model_validate(value)
+
+
+def validated_snapshot_cache(previous, digest, document):
+    """Choose the existing per-worker cache tuple without owning its lifetime."""
+    key = (digest, identity(document))
+    if previous is None or previous[0] != key:
+        return (key, parse_snapshot(document))
+    return previous

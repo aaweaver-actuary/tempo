@@ -10,8 +10,7 @@ def create_app(store: EvidenceStore):
     @app.get("/healthz")
     def health():
         try:
-            with store.connect() as database:
-                database.execute("SELECT 1 FROM evidence_schema_migrations WHERE version=1")
+            store.check_schema_access()
             return {"status":"ready"}
         except Exception:
             raise HTTPException(503,"game_evidence_database_unavailable") from None

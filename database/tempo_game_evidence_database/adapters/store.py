@@ -1,5 +1,4 @@
 """Game Evidence's transaction owner. No cross-domain database access."""
-import hashlib
 from pathlib import Path
 import uuid
 
@@ -8,8 +7,9 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from tempo_game_evidence.comparison import compare_game
-from tempo_game_evidence.snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage
-from tempo_game_evidence.source import INDEX_VERSION, MAX_SOURCE_BYTES, identity, normalize_pgn, replay_positions, utc_now
+from tempo_game_evidence.snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage, validated_snapshot_cache
+from tempo_game_evidence.source import INDEX_VERSION, identity, prepare_import_identity, prepare_import_document, replay_positions, utc_now
+from tempo_game_evidence.reporting import comparison_report_response
 
 
 from tempo_game_evidence.payloads import make_delivery
@@ -26,14 +26,16 @@ class EvidenceStore:
     def comparison_snapshot(self, digest, document):
         # One immutable snapshot per worker, with changed bytes invalidating the
         # cache even under a reused identity. Epoch fencing still governs publish.
-        key = (digest, identity(document))
-        if self._validated_snapshot is None or self._validated_snapshot[0] != key:
-            self._validated_snapshot = (key, parse_snapshot(document))
+        self._validated_snapshot = validated_snapshot_cache(self._validated_snapshot, digest, document)
         return self._validated_snapshot[1]
 
     def connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row, connect_timeout=3,
                                options="-c statement_timeout=5000 -c lock_timeout=1000")
+
+    def check_schema_access(self):
+        with self.connect() as database:
+            database.execute("SELECT 1 FROM evidence_schema_migrations WHERE version=1")
 
     def migrate(self):
         with self.connect() as database:
@@ -46,25 +48,15 @@ class EvidenceStore:
                     database.execute(migration.read_text())
 
     def import_pgn(self, workspace, provider, source_id, player, raw, *, played_at=None, database=None):
-        if len(raw)>MAX_SOURCE_BYTES:
-            raise ValueError("source_byte_bound_exceeded")
-        if not all(isinstance(value, str) and value.strip() for value in (workspace, provider, source_id, player)):
-            raise ValueError("explicit_source_identity_required")
-        game_id = identity(workspace, provider, source_id, player.casefold())
-        raw_digest = hashlib.sha256(raw).hexdigest()
-        input_digest = identity(raw_digest, str(played_at) if played_at else None)
+        game_id, raw_digest, input_digest = prepare_import_identity(
+            workspace, provider, source_id, player, raw, played_at=played_at)
         if database is None:
             with self.connect() as reading_database:
                 previous = reading_database.execute("SELECT input_digest FROM games WHERE game_id=%s", (game_id,)).fetchone()
             if previous and previous["input_digest"] == input_digest:
                 return game_id
-        try:
-            document = normalize_pgn(raw, player, played_at=played_at)
-        except (ValueError, UnicodeError) as error:
-            document = {"source_error": str(error) if isinstance(error, ValueError) else "invalid_utf8",
-                        "player": player.casefold(), "played_at": None}
-        document.update(workspace_id=workspace, game_id=game_id, provider=provider,
-                        provider_game_id=source_id, source_digest=raw_digest)
+        document = prepare_import_document(workspace, provider, source_id, player, raw,
+                                           raw_digest, game_id, played_at=played_at)
         if database is None:
             with self.connect() as owned_database:
                 return self._import(owned_database, workspace, provider, source_id, player, raw,
@@ -249,15 +241,7 @@ class EvidenceStore:
                 raise KeyError(game_id)
             from tempo_game_evidence.delivery import inspect_delivery
             delivery = inspect_delivery(database,game_id,row['report_revision'],row['reconciliation_status'],row['reconciliation_reason'],has_report=row['report'] is not None)
-        report = row["report"] or {"schema_version":1,"game":row["document"],"readiness":"pending","findings":[]}
-        report['delivery'] = delivery
-        if report["game"]["revision"] != row["document"]["revision"]:
-            report["readiness"] = "pending"
-            report["reason"] = "source_revision_changed"
-        elif (report.get("snapshot") or {}).get("digest") != row["current_snapshot_digest"]:
-            report["readiness"] = "pending"
-            report["reason"] = "snapshot_changed"
-        return report
+        return comparison_report_response(row, delivery)
 
     def list_games(self, workspace, after="", limit=64):
         if not 1 <= limit <= 100:

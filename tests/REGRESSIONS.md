@@ -5042,3 +5042,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Legacy command/control database extraction
 
 `backend/tests/test_legacy_command_database_split.py` and `backend/tests/test_legacy_control_database_split.py` own the moved command/control boundaries: no SQL/cursor calls in the selected application modules; caller rollback and teaching replay; original retry event/wakeup ordering; savepoint containment, post-close JSON decoding, coverage math and Redis settings behavior. Existing corresponding command cases retain their assertions. These focused fakes/in-memory SQLite checks do not establish native PostgreSQL execution or whole-backend domain isolation.
+
+
+## Legacy projection database extraction
+
+`backend/tests/test_legacy_projection_database_split.py` owns the three selected application SQL boundaries and SQLite/PostgreSQL tactical filter binding/query order. Existing comparison foreground-concurrency, transposition/publication, fake PostgreSQL paging/cache-scope and tactical/read-budget cases retain behavior assertions. These checks do not establish native PostgreSQL or whole-backend isolation.

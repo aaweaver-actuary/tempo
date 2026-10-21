@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **28 files**; one candidate is confirmed non-database application code, and **127 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **49 files**; one candidate is confirmed non-database application code, and **106 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -76,12 +76,12 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/postgres_coverage_seed.py](../backend/app/services/postgres_coverage_seed.py)
 - [backend/app/services/postgres_daily_statistics.py](../backend/app/services/postgres_daily_statistics.py)
-- [backend/app/services/postgres_game_derivation.py](../backend/app/services/postgres_game_derivation.py)
-- [backend/app/services/postgres_game_events.py](../backend/app/services/postgres_game_events.py)
-- [backend/app/services/postgres_game_features.py](../backend/app/services/postgres_game_features.py)
+- Completed Games derivation storage split: [backend/app/services/postgres_game_derivation.py](tempo_legacy_database/adapters/games/derivation/README.md).
+- Completed Games derivation storage split: [backend/app/services/postgres_game_events.py](tempo_legacy_database/adapters/games/derivation/README.md).
+- Completed Games derivation storage split: [backend/app/services/postgres_game_features.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - [backend/app/services/postgres_game_findings.py](../backend/app/services/postgres_game_findings.py)
-- [backend/app/services/postgres_game_misses.py](../backend/app/services/postgres_game_misses.py)
-- [backend/app/services/postgres_game_priorities.py](../backend/app/services/postgres_game_priorities.py)
+- Completed Games derivation storage split: [backend/app/services/postgres_game_misses.py](tempo_legacy_database/adapters/games/derivation/README.md).
+- Completed Games derivation storage split: [backend/app/services/postgres_game_priorities.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - [backend/app/services/postgres_game_repertoire.py](../backend/app/services/postgres_game_repertoire.py)
 - [backend/app/services/postgres_game_sync.py](../backend/app/services/postgres_game_sync.py)
 - [backend/app/services/postgres_game_sync_completion.py](../backend/app/services/postgres_game_sync_completion.py)
@@ -100,14 +100,14 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/queue_application.py](../backend/app/services/queue_application.py)
 - [backend/app/services/redis_admission_gate.py](../backend/app/services/redis_admission_gate.py)
 - [backend/app/services/refresh_requests.py](../backend/app/services/refresh_requests.py)
-- [backend/app/services/repertoire_comparison.py](../backend/app/services/repertoire_comparison.py)
+- Completed legacy read/publication projection split: [backend/app/services/repertoire_comparison.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed authored-Studies policy / database line-projection split: [backend/app/services/repertoire_conflicts.py](../backend/app/studies/README.md).
 - [backend/app/services/repertoire_coverage.py](../backend/app/services/repertoire_coverage.py)
 - [backend/app/services/repertoire_game_refresh.py](../backend/app/services/repertoire_game_refresh.py)
 - [backend/app/services/repertoire_integrity.py](../backend/app/services/repertoire_integrity.py)
 - [backend/app/services/repertoire_move_verification.py](../backend/app/services/repertoire_move_verification.py)
 - [backend/app/services/repertoire_opportunities.py](../backend/app/services/repertoire_opportunities.py)
-- [backend/app/services/repertoire_statistics.py](../backend/app/services/repertoire_statistics.py)
+- Completed legacy read/publication projection split: [backend/app/services/repertoire_statistics.py](tempo_legacy_database/adapters/projections/README.md).
 - [backend/app/services/review_service.py](../backend/app/services/review_service.py)
 - [backend/app/services/statistics.py](../backend/app/services/statistics.py)
 - [backend/app/services/study_attempts.py](../backend/app/services/study_attempts.py)
@@ -117,7 +117,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/tactic_admission.py](tempo_legacy_database/adapters/tactic_admission.py).
 - [backend/app/services/tactic_capture.py](../backend/app/services/tactic_capture.py)
 - [backend/app/services/tactical_catalog.py](../backend/app/services/tactical_catalog.py)
-- [backend/app/services/tactical_opportunities.py](../backend/app/services/tactical_opportunities.py)
+- Completed legacy read/publication projection split: [backend/app/services/tactical_opportunities.py](tempo_legacy_database/adapters/projections/README.md).
 - [backend/app/services/threat_pipeline.py](../backend/app/services/threat_pipeline.py)
 - [backend/app/services/threat_training.py](../backend/app/services/threat_training.py)
 - [backend/app/settings_commands.py](../backend/app/settings_commands.py)
@@ -130,30 +130,30 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/tasks.py](../backend/app/tasks.py)
 - Completed commands SQL split: [backend/app/teaching_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - [backend/app/threat_analysis_commands.py](../backend/app/threat_analysis_commands.py)
-- [services/content/src/tempo_content/bridge.py](../services/content/src/tempo_content/bridge.py)
-- [services/content/src/tempo_content/cli.py](../services/content/src/tempo_content/cli.py)
-- [services/game-evidence/src/tempo_game_evidence/analysis_export.py](../services/game-evidence/src/tempo_game_evidence/analysis_export.py)
-- [services/game-evidence/src/tempo_game_evidence/api.py](../services/game-evidence/src/tempo_game_evidence/api.py)
-- [services/game-evidence/src/tempo_game_evidence/delivery.py](../services/game-evidence/src/tempo_game_evidence/delivery.py)
-- [services/game-evidence/src/tempo_game_evidence/providers.py](../services/game-evidence/src/tempo_game_evidence/providers.py)
-- [services/game-evidence/src/tempo_game_evidence/reconciliation.py](../services/game-evidence/src/tempo_game_evidence/reconciliation.py)
+- Completed Content bridge split: [application/public composition](../services/content/src/tempo_content/bridge/README.md) and [database operations](tempo_content_database/adapters/bridge.py).
+- Completed Content CLI readiness split: [cli.py](../services/content/src/tempo_content/cli.py) retains parsing/commands; [readiness connection](tempo_content_database/ddl/migrate.py) stays with DDL.
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/analysis_export.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/api.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/delivery.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/providers.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/reconciliation.py](tempo_game_evidence_database/adapters/README.md).
 - Completed Intelligence read-projection split: [games_reader.py](../services/intelligence/src/tempo_intelligence/analysis/games_reader.py) retains cursor/limit/envelope/read-transaction composition; [complete owner queries](tempo_intelligence_database/adapters/games_read_projection.py) live in database.
 - Reviewed non-database false positive: [Intelligence analysis worker](../services/intelligence/src/tempo_intelligence/analysis/worker.py). Its only `execute` call is `client.execute(claim["job"])`, an engine-client operation; the file has no SQL/driver/cursor operations. Keep this application dispatcher with Analysis.
 - [services/learning/runtime/src/tempo_learning_runtime/admission.py](../services/learning/runtime/src/tempo_learning_runtime/admission.py)
 - [services/learning/runtime/src/tempo_learning_runtime/api.py](../services/learning/runtime/src/tempo_learning_runtime/api.py)
-- [services/learning/runtime/src/tempo_learning_runtime/card_deletion.py](../services/learning/runtime/src/tempo_learning_runtime/card_deletion.py)
+- Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/card_deletion.py](tempo_learning_database/adapters/README.md).
 - [services/learning/runtime/src/tempo_learning_runtime/defense.py](../services/learning/runtime/src/tempo_learning_runtime/defense.py)
 - [services/learning/runtime/src/tempo_learning_runtime/durable_tasks.py](../services/learning/runtime/src/tempo_learning_runtime/durable_tasks.py)
-- [services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py](../services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py)
+- Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py](tempo_learning_database/adapters/README.md).
 - [services/learning/runtime/src/tempo_learning_runtime/gateway.py](../services/learning/runtime/src/tempo_learning_runtime/gateway.py)
 - [services/learning/runtime/src/tempo_learning_runtime/maintenance.py](../services/learning/runtime/src/tempo_learning_runtime/maintenance.py)
 - Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/opening_progression.py](tempo_learning_database/adapters/opening_progression.py).
 - [services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py](../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py)
 - [services/learning/runtime/src/tempo_learning_runtime/publications.py](../services/learning/runtime/src/tempo_learning_runtime/publications.py)
 - [services/learning/runtime/src/tempo_learning_runtime/queue_application.py](../services/learning/runtime/src/tempo_learning_runtime/queue_application.py)
-- [services/learning/runtime/src/tempo_learning_runtime/queue_attempt_origins.py](../services/learning/runtime/src/tempo_learning_runtime/queue_attempt_origins.py)
+- Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/queue_attempt_origins.py](tempo_learning_database/adapters/README.md).
 - [services/learning/runtime/src/tempo_learning_runtime/queue_commands.py](../services/learning/runtime/src/tempo_learning_runtime/queue_commands.py)
-- [services/learning/runtime/src/tempo_learning_runtime/real_game_feedback.py](../services/learning/runtime/src/tempo_learning_runtime/real_game_feedback.py)
+- Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/real_game_feedback.py](tempo_learning_database/adapters/README.md).
 - [services/learning/runtime/src/tempo_learning_runtime/receivers.py](../services/learning/runtime/src/tempo_learning_runtime/receivers.py)
 - [services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py](../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py)
 - [services/learning/runtime/src/tempo_learning_runtime/review_adapter.py](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py)
@@ -161,10 +161,10 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [services/learning/runtime/src/tempo_learning_runtime/review_service.py](../services/learning/runtime/src/tempo_learning_runtime/review_service.py)
 - [services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py](../services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py)
 - [services/learning/runtime/src/tempo_learning_runtime/study_attempts.py](../services/learning/runtime/src/tempo_learning_runtime/study_attempts.py)
-- [services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py](../services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py)
+- Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py](tempo_learning_database/adapters/README.md).
 - Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/tactic_admission.py](tempo_learning_database/adapters/tactic_admission.py).
 - [services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py](../services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py)
-- [services/learning/runtime/src/tempo_learning_runtime/teaching_commands.py](../services/learning/runtime/src/tempo_learning_runtime/teaching_commands.py)
+- Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/teaching_commands.py](tempo_learning_database/adapters/README.md).
 
 </details>
 
@@ -204,3 +204,12 @@ Completed first slice: `backend/app/services/frozen_opening_order.py` now contai
 This removes 29 database-call sites from one 315-line application module. All SQL literals and the three DDL/guard assignment ASTs match the baseline exactly. PostgreSQL migration files, transaction authority, lock order and reader/fingerprint formats are unchanged. Existing legacy callers still import the composition seam: that dependency remains a next-phase domain move, not a claim of complete strict isolation. Two more baseline paths, `opening_progression.py` and `tactic_admission.py`, contain only persistence queries/locks. They moved intact into this owner’s `adapters/` directory; imports, native proof references and existing runner source maps follow their new paths. Their source bytes are unchanged and they add no application policy or shared runtime. The independent Learning runtime versions of those two SQL-only helpers also moved intact to its own `database/tempo_learning_database/adapters/` package, without sharing a runtime implementation with the backend. Its sdist-to-wheel build, installed deferred-import/authentication guard and artifact path/byte checks pass. Browser connection inspection and session/authority storage operations now live in `database/browser/study-connection-storage.ts`; its application wrapper supplies registered database names at the original point in inspection. Intelligence’s analysis worker was a confirmed engine-client `execute` false positive and needs no database move. The subsequent command-reader/repertoire/defensive batch moves the SQL-only snapshot reader intact, separates authored Studies conflict algorithms from their line query, and moves defensive setting/predicate SQL while leaving task policy and HTTP errors outside database. Intelligence’s Games reader also delegates its four complete parameter-bound queries to its own database projection, retaining its original single owning read transaction and cursor decisions. Two six-file legacy commands/controls batches move complete queries, locks and savepoint operations to their owner adapter subdirectories, while application guards, clocks, callback order, JSON decode timing and math stay outside database. Six Games command/publication files also delegate complete queries to `adapters/games/`, retaining existing lease/generation decisions and legacy queue/feedback orchestration. Twenty-eight baseline files are extracted/relocated and one is cleared as non-database; the 127 remaining baseline paths are still pending; false positives require inspection rather than blind movement.
 
 Other checklist families include legacy queue/review/attempt commands, Games/analysis projections, authored Studies/PGN operations, Content bridge orchestration and Learning runtime application paths. Close and verify a bounded owning slice at a time. Inline SQL/DDL is not accepted as a permanent exception, and moving a whole mixed module into `database/` will not by itself separate application policy.
+
+
+Learning’s six-file deletion/miss/frozen-order and recovery/bootstrap/teaching batches preserve their original caller-owned transactions. Frozen preference computation lives in the Learning application `study/frozen_order/` directory; the other existing application modules remain composition seams. Eighteen Learning candidates and further legacy/domain coupling remain unfinished.
+
+
+Content’s additional five existing source/exercise/binding/publication/coverage decisions now live in its application `policy/` folder. Worker dispatch, route traversal and publication orchestration still inside the database store are further extraction work beyond the original mixed-file checklist, not permanent exceptions.
+
+
+Game Evidence’s root store additionally delegates import preparation, snapshot-cache choice and response shaping to its own application helpers. Snapshot staleness/affected-position computation, worker dispatch/retry, comparison computation/report construction and import-status formatting remain unfinished extraction candidates inside that store. Persistence replay guards, lock/lease fences, atomic writes and cursor batches remain database operations.

@@ -6,14 +6,14 @@ import json
 import time
 import uuid
 
-import chess
 from psycopg.rows import dict_row, tuple_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
-from tempo_content_publication_contracts.v1 import Publication, PublicationValidation, serialize_contract
+from tempo_content_publication_contracts.v1 import Publication, serialize_contract
 
 from tempo_content.models import SourceSnapshot, SourceExercise
-from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position, inventory_segment, validate_exercise_step, build_publication, project_move_line
+from tempo_content.policy import prepare_source, exercise_continuation, binding_responses, publication_report, coverage_reply
+from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position, inventory_segment, build_publication
 from tempo_content_database.ddl.migrate import readiness
 
 INVENTORY_VERSION = 'content-legal-v1/chess-1.11.2'
@@ -171,17 +171,8 @@ class ContentService:
             after = page[-1]['exercise_key']
 
     def load_source(self,snapshot,expected_revision=0,hook=None,operation_id=None):
-        if type(expected_revision) is not int or expected_revision<0:
-            raise ContentError('invalid_source_revision','Expected revision must be a nonnegative integer')
-        snapshot = SourceSnapshot.model_validate(snapshot)
-        if snapshot.workspace_id != self.workspace_id:
-            raise ContentError('workspace_mismatch','Source belongs to another workspace')
-        canonical = canonical_source(snapshot)
-        payload = json.loads(canonical)
-        digest = _digest(canonical)
-        source_id = stable_id(self.workspace_id,snapshot.source_key,'source',snapshot.source_key)
-        publication_id = stable_id(self.workspace_id,snapshot.source_key,'publication','source')
-        stage_id = stable_id(self.workspace_id,snapshot.source_key,'stage',digest)
+        snapshot, payload, digest, source_id, publication_id, stage_id = prepare_source(
+            snapshot, expected_revision, self.workspace_id, digest_text=_digest)
         with self._read_snapshot() as database:
             current = database.execute('SELECT s.requested_revision,r.digest,t.generation,t.state FROM content.sources s LEFT JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision LEFT JOIN LATERAL (SELECT generation,state FROM content.tasks WHERE source_id=s.id AND revision=s.requested_revision ORDER BY generation DESC LIMIT 1) t ON true WHERE s.id=%s',(source_id,)).fetchone()
             if current and (current['digest'] is None or current['generation'] is None):
@@ -213,7 +204,7 @@ class ContentService:
                 raise ContentError('source_manifest_conflict','Immutable source manifest differs from accepted content')
         _hook(hook,'after_staging',source_id=source_id,stage_id=stage_id)
         with self._transaction() as database:
-            from tempo_content.bridge import lock_scope
+            from .bridge import lock_scope
             lock_scope(database,source_id,operation_id)
             if operation_id is not None:
                 authority = database.execute('SELECT state,source_id FROM content.bridge_operations WHERE id=%s FOR UPDATE', (operation_id,)).fetchone()
@@ -425,9 +416,7 @@ class ContentService:
         policy = self._item(manifest['stage_id'],'policies',key=exercise.policy_key)
         repertoire = self._item(manifest['stage_id'],'repertoires',key=policy['repertoire_key'])
         _hook(hook,'after_read',task=task)
-        continuation = validate_exercise_step(exercise,task['exercise_state'])
-        if exercise.specification.type=='move_line' and chess.Board(exercise.starting_fen).turn!=(repertoire['learner_color']=='white'):
-            raise ContentError('exercise_learner_color_mismatch','Move exercise must start on its policy learner turn')
+        continuation = exercise_continuation(exercise,task['exercise_state'],repertoire['learner_color'])
         _hook(hook,'before_commit',task=task)
         with self._transaction() as database:
             self._fence(database,task,hook)
@@ -463,14 +452,7 @@ class ContentService:
         occurrence = self._one('SELECT * FROM content.occurrences WHERE artifact_id=%s AND ply=%s',(route['artifact_id'],binding['ply'])) if route else None
         exercise = self._item(manifest['stage_id'],'exercises',key=binding['exercise_key'])
         _hook(hook,'after_read',task=task)
-        if not occurrence or not route['complete']:
-            raise ContentError('incomplete_binding','Route occurrence is not complete')
-        decision_fen,specification=project_move_line(exercise['starting_fen'],exercise['specification'],binding.get('exercise_ply',0))
-        if occurrence['opponent'] or occurrence['position_key']!=canonical_position(decision_fen):
-            raise ContentError('invalid_binding','Binding must match the declared learner decision in its exercise')
-        accepted = [line[0] for line in specification['accepted_lines']] if specification['type']=='move_line' else []
-        if accepted and occurrence['authored_move'] and specification['grading_policy']=='reference' and occurrence['authored_move'] not in accepted:
-            raise ContentError('route_policy_conflict','Authored response differs from executable policy')
+        accepted = binding_responses(exercise,binding,route,occurrence)
         _hook(hook,'before_commit',task=task)
         with self._transaction() as database:
             self._fence(database,task,hook)
@@ -594,9 +576,7 @@ class ContentService:
     def publication_status(self,source_key):
         status = self.inventory_status(source_key)
         manifest = self._manifest(status['source_id'],status['revision'])
-        validation = 'validated' if status['last_complete_revision']==status['requested_revision'] else 'rejected' if status['state']=='failed' else 'retryable_failure'
-        errors = [] if validation=='validated' else [status['error']['code'] if status['error'] else 'retirement_required' if not manifest['counts']['exercises'] else 'inventory_incomplete']
-        return {'publication_id':status['publication_id'],'publication_generation':status['generation'],'source_revision':status['revision'],'last_complete_generation':status['last_complete_generation'],'stale':status['stale'],'validation':PublicationValidation(contract_version=1,workspace_id=self.workspace_id,publication_id=status['publication_id'],publication_generation=status['generation'],status=validation,errors=errors).model_dump(mode='json'),'learning_compatibility':{'definition_count':manifest['counts']['exercises'],'bundle_limit':128,'status':'definition_limit_exceeded' if manifest['counts']['exercises']>128 else 'requires_execution_adapter','activation':'not_requested'}}
+        return publication_report(self.workspace_id,status,manifest['counts']['exercises'])
 
     def _page(self,limit):
         if type(limit) is not int or not 1<=limit<=256:
@@ -660,5 +640,5 @@ class ContentService:
                 authored = reply['move_uci']==occurrence['authored_move']
                 direct = database.execute('SELECT 1 FROM content.responses p JOIN content.occurrences o ON o.artifact_id=%s AND o.ply=p.ply WHERE p.source_id=%s AND p.generation=%s AND p.route_key=%s AND p.policy_key=%s AND p.ply=%s AND p.position_key=%s AND jsonb_array_length(p.accepted_moves)>0 AND (o.authored_move IS NULL OR p.accepted_moves ? o.authored_move)',(route['artifact_id'],status['source_id'],status['generation'],route_key,policy_key,ply+1,reply['resulting_position_key'])).fetchone() if authored else None
                 transposed = database.execute('SELECT 1 FROM content.responses p JOIN content.generation_routes r USING(source_id,generation,route_key,policy_key) WHERE p.source_id=%s AND p.generation=%s AND p.policy_key=%s AND r.repertoire_key=%s AND p.position_key=%s AND (p.route_key,p.ply)<>(%s,%s) AND jsonb_array_length(p.accepted_moves)>0 LIMIT 1',(status['source_id'],status['generation'],policy_key,route['repertoire_key'],reply['resulting_position_key'],route_key,ply+1)).fetchone()
-                result.append({**reply,'legal':True,'authored':authored,'covered':bool(direct),'transposition_supported':bool(transposed) and not bool(direct),'status':'covered' if direct else 'transposition_supported' if transposed else 'uncovered'})
+                result.append(coverage_reply(reply,authored,direct,transposed))
             return {**metadata,'status':'complete','position_key':occurrence['position_key'],'items':result,'stale':False}
