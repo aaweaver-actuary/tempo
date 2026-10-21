@@ -45,3 +45,15 @@
 
 
 [Repertoire scope and saved moves](repertoire_scope/README.md) contains existing generation/freshness SQL, game-refresh queries and bounded line/digest/dialect operations. Application freshness validation, chess/deadline/cursor and task policy remain outside.
+
+
+[Authored repertoire commands](authored_repertoires/README.md) contains existing canonical-prefix/branch reads, locks and writes. Payload/chess/HTTP validation, revision/route/callback policy and responses remain in the original command compositions.
+
+
+[Statistics storage](statistics/README.md) contains existing game-feature/dimension projections, daily snapshot/insight writes and job claims. Math/chess/time-zone/day/threshold and response decisions remain in the original application source; the whitelisted projection is captured once before its clock/read scope.
+
+
+[Authored exercise attempts](study_attempts/README.md) holds existing attempt/replay/card/queue/exercise/review/burial operations. Grading, guided/self-assessed outcomes, dates, requeue and refresh composition stay outside database; legacy Studies content and Study practice boundaries remain distinct.
+
+
+[Bounded prefix reads](prefix_reads/README.md) contains existing diagnostic graph/evidence projections and the complete native-typed transition state capture, preserving one read-only MVCC scope, query/size/payload order and resource/stale-link guards. Algorithms, typed responses and existing planning authority remain unchanged outside database.

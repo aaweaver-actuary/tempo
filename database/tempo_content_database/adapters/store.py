@@ -11,9 +11,9 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 from tempo_content_publication_contracts.v1 import Publication, serialize_contract
 
-from tempo_content.models import SourceSnapshot, SourceExercise
-from tempo_content.policy import prepare_source, exercise_continuation, publication_report, coverage_reply, inventory_report
-from tempo_content.worker import reconcile_once, reconcile_binding, reconcile_route
+from tempo_content.models import SourceSnapshot
+from tempo_content.policy import prepare_source, publication_report, coverage_reply, inventory_report
+from tempo_content.worker import reconcile_once, reconcile_binding, reconcile_exercise, reconcile_route
 from tempo_content.publication import prepare_publication, publication_authority
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
@@ -394,21 +394,16 @@ class ContentService:
             database.execute('INSERT INTO content.occurrences VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',(artifact_id,occurrence['ply'],occurrence['fen'],key,occurrence['opponent'],occurrence['authored_move']))
 
     def _exercise_slice(self,task,manifest,hook):
-        if task['cursor']>=manifest['counts']['exercises']:
-            return self._transition(task,'bindings',hook=hook)
-        payload = self._item(manifest['stage_id'],'exercises',task['cursor'])
-        exercise = SourceExercise.model_validate(payload)
-        policy = self._item(manifest['stage_id'],'policies',key=exercise.policy_key)
-        repertoire = self._item(manifest['stage_id'],'repertoires',key=policy['repertoire_key'])
-        _hook(hook,'after_read',task=task)
-        continuation = exercise_continuation(exercise,task['exercise_state'],repertoire['learner_color'])
-        _hook(hook,'before_commit',task=task)
+        return reconcile_exercise(task,manifest,hook,transition=self._transition,read_item=self._item,
+                                  commit_exercise=self._commit_exercise,notify=_hook)
+
+    def _commit_exercise(self,task,payload,exercise,continuation,hook):
         with self._transaction() as database:
             self._fence(database,task,hook)
             if continuation is not None:
                 self._advance(database,task,exercise_state=continuation)
                 _hook(hook,'after_writes',task=task)
-                return {'worked':True,'status':'pending','phase':'exercises','validation_pending':True}
+                return False
             identity = database.execute('SELECT * FROM content.exercise_identities WHERE source_id=%s AND exercise_key=%s',(task['source_id'],exercise.key)).fetchone()
             semantics = (exercise.policy_key,exercise.decision_key,exercise.specification.type)
             if identity and (identity['policy_key'],identity['decision_key'],identity['kind'])!=semantics:
@@ -427,7 +422,7 @@ class ContentService:
             database.execute('INSERT INTO content.generation_exercises VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING',(task['source_id'],task['generation'],exercise.key,revision))
             self._advance(database,task,cursor=task['cursor']+1)
             _hook(hook,'after_writes',task=task)
-        return {'worked':True,'status':'pending','phase':'exercises','validated':exercise.key}
+        return True
 
     def _binding_slice(self,task,manifest,hook):
         return reconcile_binding(task,manifest,hook,transition=self._transition,read_item=self._item,

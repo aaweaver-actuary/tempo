@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.authored_repertoires import prefix_commands as storage
 from .command_gateway import register_command
 from tempo_legacy_database.connections import connection, read_connection
 from .services.canonical_prefix import parse_prefix, prefix_projection, read_prefix
@@ -36,41 +37,33 @@ def preview_command(database, payload: dict) -> dict:
 def save_prefix(database, payload: dict) -> dict:
     repertoire_id = payload["repertoire_id"]
     request = CanonicalPrefixSaveRequest.model_validate(payload["request"])
-    if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)).fetchone():
+    if not storage.repertoire_presence(database, repertoire_id):
         raise HTTPException(404, "Repertoire not found")
     current = read_prefix(database, repertoire_id, lock=True)
-    preview = database.execute(
-        "SELECT * FROM canonical_prefix_previews WHERE id=? AND repertoire_id=?",
-        (request.preview_id, repertoire_id),
-    ).fetchone()
+    preview = storage.prefix_preview(database, request.preview_id, repertoire_id)
     if (not preview or preview["state"] != "ready" or current["revision"] != request.expected_revision
             or preview["expected_revision"] != current["revision"]
             or preview["source_revision"] != current["source_revision"]):
         raise HTTPException(409, "Resolve conflicting lines and check the current prefix again before saving.")
     moves = json.loads(preview["moves_json"])
     if moves == current["moves"] and not moves:
-        database.execute("UPDATE repertoires SET canonical_prefix_preview_id=? WHERE id=?",
-                         (request.preview_id, repertoire_id))
+        storage.set_empty_prefix_preview(database, request.preview_id, repertoire_id)
         return prefix_projection(moves, current["revision"])
     revision = current["revision"] + int(moves != current["moves"])
-    database.execute(
-        "UPDATE repertoires SET canonical_prefix_moves_json=?,canonical_prefix_revision=?,canonical_prefix_preview_id=? WHERE id=?",
-        (json.dumps(moves), revision, request.preview_id, repertoire_id),
-    )
+    storage.save_prefix_values(database, json.dumps(moves), revision, request.preview_id, repertoire_id)
     if moves != current["moves"]:
         enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
     from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
     enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
-    if not postgres_store.configured():
-        database.execute("UPDATE repertoire_coverage_runs SET status='failed',last_error='Opening scope changed; refresh coverage' WHERE repertoire_id=? AND status IN ('queued','running')", (repertoire_id,))
-    if postgres_store.configured():
+    if not storage.postgres_is_configured():
+        storage.fail_active_local_coverage(database, repertoire_id)
+    if storage.postgres_is_configured():
         from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
         from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
-        database.execute("INSERT INTO priority_repertoire_source_epochs(repertoire_id,version) VALUES(?,1) "
-                         "ON CONFLICT(repertoire_id) DO UPDATE SET version=priority_repertoire_source_epochs.version+1", (repertoire_id,))
+        storage.advance_priority_source_epoch(database, repertoire_id)
         request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
-        database.execute("DELETE FROM repertoire_priority_publications WHERE repertoire_id=?", (repertoire_id,))
-        database.execute("DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?", (repertoire_id,))
+        storage.delete_priority_publication(database, repertoire_id)
+        storage.delete_introduction_priorities(database, repertoire_id)
         enqueue_priority_refresh_in_transaction(database, repertoire_id)
     return prefix_projection(moves, revision)
 
@@ -82,7 +75,7 @@ register_command("repertoire.canonical_prefix.save", save_prefix)
 @router.get("/api/repertoires/{identifier}/canonical-prefix")
 def canonical_prefix_read(identifier: str):
     with read_connection() as database:
-        if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+        if not storage.repertoire_presence(database, identifier):
             raise HTTPException(404, "Repertoire not found")
         prefix = read_prefix(database, identifier)
     return prefix_projection(prefix["moves"], prefix["revision"])
@@ -96,7 +89,7 @@ def canonical_prefix_preview(identifier: str, request: CanonicalPrefixPreviewReq
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
     payload = {"repertoire_id": identifier, "moves": moves}
-    if postgres_store.configured():
+    if storage.postgres_is_configured():
         from .command_dispatch import dispatch_command
         return dispatch_command("repertoire.canonical_prefix.preview", payload, idempotency_key=idempotency_key)
     with connection() as database:
@@ -119,7 +112,7 @@ def canonical_prefix_preview_read(identifier: str, preview_id: str, after: str =
 def canonical_prefix_save(identifier: str, request: CanonicalPrefixSaveRequest,
                           idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     payload = {"repertoire_id": identifier, "request": request.model_dump()}
-    if postgres_store.configured():
+    if storage.postgres_is_configured():
         from .command_dispatch import dispatch_command
         return dispatch_command("repertoire.canonical_prefix.save", payload, idempotency_key=idempotency_key)
     with connection() as database:

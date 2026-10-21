@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
+from tempo_legacy_database.adapters.authored_repertoires import integrity_commands as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_integrity import invalidate_integrity_in_transaction
@@ -41,26 +42,11 @@ def _replace_repertoire_line(
     ).hexdigest()
     if new_line_id == source_line["id"]:
         return False
-    database.execute_native(
-        "INSERT INTO repertoire_lines("
-        "id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
-        "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING",
-        (new_line_id, source_line["repertoire_id"], source_line["name"],
+    storage.insert_replacement_line(database, (new_line_id, source_line["repertoire_id"], source_line["name"],
          source_line["trained_color"], source_line["start_fen"],
-         json.dumps(moves), source_line["created_at"]),
-    )
-    database.execute_native(
-        "INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) "
-        "SELECT %s,learner_decision_count FROM repertoire_line_training_depths "
-        "WHERE line_id=%s ON CONFLICT(line_id) DO UPDATE SET "
-        "learner_decision_count=GREATEST("
-        "repertoire_line_training_depths.learner_decision_count,"
-        "excluded.learner_decision_count)",
-        (new_line_id, source_line["id"]),
-    )
-    database.execute_native(
-        "DELETE FROM repertoire_lines WHERE id=%s", (source_line["id"],),
-    )
+         json.dumps(moves), source_line["created_at"]))
+    storage.copy_training_depth(database, new_line_id, source_line["id"])
+    storage.delete_replaced_line(database, source_line["id"])
     if certify:
         certify_admitted_route(database, source_line["repertoire_id"], validated_route)
     return True
@@ -77,15 +63,9 @@ def resolve_integrity_issue(
     graph_task = request_graph_rebuild_in_transaction(
         database, repertoire_id, date.today().isoformat(),
     )
-    if database.execute_native(
-        "SELECT 1 FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),
-    ).fetchone() is None:
+    if storage.locked_repertoire(database, repertoire_id) is None:
         raise HTTPException(404, "Repertoire not found")
-    issue = database.execute_native(
-        "SELECT signature FROM repertoire_integrity_issues "
-        "WHERE id=%s AND repertoire_id=%s FOR UPDATE",
-        (prepared.issue_id, repertoire_id),
-    ).fetchone()
+    issue = storage.locked_issue_signature(database, prepared.issue_id, repertoire_id)
     if issue is None:
         raise HTTPException(404, "Integrity issue not found")
     if issue[0] != prepared.signature:
@@ -98,23 +78,15 @@ def resolve_integrity_issue(
     line_changes = []
     card_changes = []
     for source_id, moves in prepared.changed_lines.items():
-        source_line = database.execute_native(
-            "SELECT * FROM repertoire_lines WHERE id=%s AND repertoire_id=%s FOR UPDATE",
-            (source_id, repertoire_id),
-        ).fetchone()
+        source_line = storage.locked_source_line(database, source_id, repertoire_id)
         if source_line is None or source_line["moves_json"] != prepared.expected_line_moves[source_id]:
             raise HTTPException(409, "A repertoire line changed during repair; refresh and try again")
         line_changes.append((source_line, moves, ensure_line_in_scope(database, repertoire_id, source_line["start_fen"], moves, remember=False)))
     for source_id, moves in prepared.changed_cards.items():
-        source_card = database.execute_native(
-            "SELECT * FROM cards WHERE id=%s FOR UPDATE", (source_id,),
-        ).fetchone()
+        source_card = storage.locked_source_card(database, source_id)
         if source_card is None or source_card["moves_json"] != prepared.expected_card_moves[source_id]:
             raise HTTPException(409, "A repertoire card changed during repair; refresh and try again")
-        linked = database.execute_native(
-            "SELECT 1 FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s",
-            (repertoire_id, source_id),
-        ).fetchone()
+        linked = storage.repertoire_card_link(database, repertoire_id, source_id)
         if source_card["repertoire_id"] != repertoire_id and linked is None:
             raise HTTPException(409, "A repertoire card was detached during repair")
         card_changes.append((source_card, moves, ensure_line_in_scope(database, repertoire_id, source_card["start_fen"], moves, remember=False)))

@@ -176,3 +176,7 @@ both actual packed persistence and exact public export/replay after the repair.
 ## Complete route phase separation
 
 `tests/test_route_application.py` adds only the missing moved-boundary cases: exhaustion without reads, valid/invalid new-artifact registration ordering and epoch-race result mapping. The existing `tests/test_content_preparation.py` route-window/cache-reuse/compute-hook cases and `tests/test_domain.py` checkpoint/illegal-route cases retain the underlying proof. The compute-hook test's monkeypatch follows the moved call in `worker.routes`; its event assertions are unchanged. One-time exact source comparison covers the full copied phase and both atomic write sections. Existing native artifact/collector/epoch/fence/lock-order contracts remain in `integration/test_postgres.py`; synthetic checks do not replace them.
+
+## Complete exercise phase separation
+
+`tests/test_exercise_application.py` adds four missing moved-boundary cases: exhaustion without reads, model parsing before dependent reads/hooks, and continuation/completion invocation order and result mapping. Existing selected `tests/test_source_policy.py` learner-turn and `tests/test_domain.py` 16-ply JSON checkpoint/resume and legality checks retain the underlying computation proof. One-time exact source comparison covers the complete moved phase and original atomic identity/predecessor/revision/write section. Native identity/fence/replay/rollback contracts remain in `integration/test_postgres.py`; they were not replaced by a new exhaustive phase test campaign.

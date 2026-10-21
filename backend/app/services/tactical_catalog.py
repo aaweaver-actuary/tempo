@@ -8,6 +8,7 @@ from pathlib import Path
 from .cards import card_id
 from .puzzles import validate_puzzle_record
 from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions, lock_daily_tactic_admission
+from tempo_legacy_database.adapters.tactics import catalog as storage
 
 DATA_ROOT = Path(os.getenv('TEMPO_CATALOG_ROOT', str(Path(__file__).resolve().parents[3] / 'public')))
 
@@ -39,9 +40,9 @@ def progress_pack_id(puzzle_id, legacy_deck):
 
 def catalog_status(db, day=None):
     day = day or date.today().isoformat()
-    active = {row[0] for row in db.execute('SELECT pack_id FROM tactic_pack_activation WHERE active=1')}
-    progress = {row['puzzle_id']: row for row in db.execute('SELECT puzzle_id,clean_pass_at,admitted_at,card_id FROM tactic_progress')}
-    due = {row[0] for row in db.execute("SELECT source_ref FROM cards WHERE content_type='tactic' AND archived=0 AND state IN ('learning','mature') AND due_date<=?",(day,))}
+    active = {row[0] for row in storage.active_pack_rows(db)}
+    progress = {row['puzzle_id']: row for row in storage.progress_rows(db)}
+    due = {row[0] for row in storage.due_tactic_rows(db, day)}
     packs = []
     for pack in catalog()['packs']:
         identities = [record['PuzzleId'] for record in pack_records(pack['id'])]
@@ -58,22 +59,22 @@ def activate(db, pack_ids, active):
     known = {pack['id'] for pack in catalog()['packs']}
     if not pack_ids or not set(pack_ids) <= known:
         raise ValueError('Select known tactical packs')
-    db.executemany('INSERT INTO tactic_pack_activation(pack_id,active) VALUES(?,?) ON CONFLICT(pack_id) DO UPDATE SET active=excluded.active',[(pack_id,int(active)) for pack_id in set(pack_ids)])
+    storage.set_activation(db, [(pack_id,int(active)) for pack_id in set(pack_ids)])
 
 
 def seed_tactical_introductions(db, day):
     lock_daily_tactic_admission(db, day)
-    limit = db.execute('SELECT tactics_new_per_day FROM settings WHERE id=1').fetchone()[0]
+    limit = storage.daily_introduction_limit(db)
     reserved = count_daily_tactic_introductions(db, day)
     if reserved >= limit:
         return
-    active = sorted(row[0] for row in db.execute('SELECT pack_id FROM tactic_pack_activation WHERE active=1'))
+    active = sorted(row[0] for row in storage.active_pack_rows(db))
     if not active:
         return
-    cursor = db.execute('SELECT last_pack_id FROM tactic_rotation WHERE id=1').fetchone()[0]
-    seen = {row[0] for row in db.execute('SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL')}
-    maximum = db.execute('SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?',(day,)).fetchone()[0]
-    db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__tactics__','Tactics','Lichess puzzle database',?)",(day,))
+    cursor = storage.rotation_cursor(db)
+    seen = {row[0] for row in storage.introduced_puzzle_rows(db)}
+    maximum = storage.last_queue_position(db, day)
+    storage.ensure_tactic_repertoire(db, day)
     while count_daily_tactic_introductions(db, day) < limit:
         ordered = [pack for pack in active if pack > cursor] + [pack for pack in active if pack <= cursor]
         selection = next(((pack,record) for pack in ordered for record in pack_records(pack) if record['PuzzleId'] not in seen),None)
@@ -86,12 +87,12 @@ def seed_tactical_introductions(db, day):
         if is_card_deleted(db, cid):
             seen.add(record['PuzzleId'])
             continue
-        db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,scheduling_mode,source_ref,source_fen,introduced_at) VALUES(?,'__tactics__','checkpoint',?,?,'learning',?,'tactic','light',?,?,?)",(cid,fen,json.dumps(solution),day,record['PuzzleId'],record['FEN'],day))
-        db.execute('INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,admitted_at,admission_mode) VALUES(?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at)',(record['PuzzleId'],pack,cid,day,'light'))
-        db.execute('INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(?,?,?)',(record['PuzzleId'],pack,day))
-        if not db.execute('SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=?',(day,cid)).fetchone():
+        storage.create_introduction_card(db, cid, fen, json.dumps(solution), day, record['PuzzleId'], record['FEN'])
+        storage.save_introduction_progress(db, record['PuzzleId'], pack, cid, day, 'light')
+        storage.save_introduction(db, record['PuzzleId'], pack, day)
+        if not storage.existing_queue_entry(db, day, cid):
             maximum += 1
-            db.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)',(day,cid,maximum))
+            storage.append_queue_entry(db, day, cid, maximum)
         seen.add(record['PuzzleId'])
         cursor = pack
-        db.execute('UPDATE tactic_rotation SET last_pack_id=? WHERE id=1',(cursor,))
+        storage.save_rotation_cursor(db, cursor)

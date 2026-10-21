@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.games.guided_review import storage
 from .services.guided_review import (
     _impact, _public_item, read_session_from_database,
     reconcile_guided_review_session, guided_review_error,
@@ -20,25 +21,13 @@ from .services.guided_review import (
 
 def start_review(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     game_id = str(payload["game_id"])
-    game = database.execute(
-        "SELECT id,analysis_version FROM imported_games WHERE id=? FOR UPDATE", (game_id,),
-    ).fetchone()
+    game = storage.locked_game(database, game_id)
     if game is None:
         raise HTTPException(404, "Game not found")
-    existing = database.execute(
-        """SELECT * FROM guided_review_sessions
-           WHERE game_id=? AND analysis_version=? AND status='active'
-           ORDER BY updated_at DESC LIMIT 1 FOR UPDATE""",
-        (game_id, game["analysis_version"]),
-    ).fetchone()
+    existing = storage.locked_active_session(database, game_id, game["analysis_version"])
     if existing:
         return read_session_from_database(database, existing["id"])
-    findings = database.execute(
-        """SELECT * FROM current_game_findings game_findings WHERE game_id=?
-           AND analysis_version=? AND kind!='defensive tactical threat'
-           AND status NOT IN ('ignored','excluded') ORDER BY ply""",
-        (game_id, game["analysis_version"]),
-    ).fetchall()
+    findings = storage.command_findings(database, game_id, game["analysis_version"])
     strongest_by_ply = {}
     for finding in findings:
         current = strongest_by_ply.get(finding["ply"])
@@ -48,22 +37,15 @@ def start_review(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     finding_ids = [finding["id"] for finding in ranked[:5]]
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    database.execute(
-        """INSERT INTO guided_review_sessions(
-           id,game_id,analysis_version,finding_ids_json,current_index,status,created_at,updated_at)
-           VALUES(?,?,?,?,0,?,?,?)""",
-        (session_id, game_id, game["analysis_version"], json.dumps(finding_ids),
-         "active" if finding_ids else "complete", now, now),
-    )
+    storage.create_command_session_values(database, (session_id, game_id, game["analysis_version"], json.dumps(finding_ids),
+         "active" if finding_ids else "complete", now, now))
     return read_session_from_database(database, session_id)
 
 
 def submit_review_attempt(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     session_id = str(payload["session_id"])
     move_uci = str(payload["move_uci"])
-    session = database.execute(
-        "SELECT * FROM guided_review_sessions WHERE id=? FOR UPDATE", (session_id,),
-    ).fetchone()
+    session = storage.locked_session(database, session_id)
     if session is None:
         raise HTTPException(404, "Active guided review not found")
     session = reconcile_guided_review_session(database, session)
@@ -89,18 +71,9 @@ def submit_review_attempt(database: PostgresConnection, payload: dict[str, Any])
         expected_moves.add(evidence["best_move_uci"])
     correct = move_uci in expected_moves
     now = datetime.now(timezone.utc).isoformat()
-    database.execute(
-        """INSERT INTO guided_review_attempts(
-           session_id,finding_id,move_uci,correct,attempted_at)
-           VALUES(?,?,?,?,?) ON CONFLICT(session_id,finding_id) DO NOTHING""",
-        (session_id, finding["id"], move_uci, int(correct), now),
-    )
+    storage.insert_command_attempt_values(database, (session_id, finding["id"], move_uci, int(correct), now))
     next_index = current_index + 1
-    database.execute(
-        "UPDATE guided_review_sessions SET current_index=?,status=?,updated_at=? WHERE id=?",
-        (next_index, "complete" if next_index >= len(finding_ids) else "active",
-         now, session_id),
-    )
+    storage.advance_session(database, next_index, "complete" if next_index >= len(finding_ids) else "active", now, session_id)
     return {"correct": correct, "revealed": _public_item(finding, reveal=True),
             "session": read_session_from_database(database, session_id)}
 
