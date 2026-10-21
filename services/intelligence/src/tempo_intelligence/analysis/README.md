@@ -42,3 +42,44 @@ publication order, public wire contract or cross-owner dependency changes.
 proposal enrichment, ranking, unknown repertoire association and incompatible
 engine identity, plus fake composition to preserve that operation order.
 Existing native Analysis report and publication proofs remain unexecuted here.
+
+## Read, cursor and export boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`read_work.py`](read_work.py) owns existing workspace admission, input/status/run/
+receipt/report/finding/result responses, input-page flattening, cursor policy and
+context/proposal export. Public wire models, canonical JSON/cursor encoding and
+nested ReportPage import remain unchanged. It has no database driver, cursor or
+query API.
+
+```mermaid
+flowchart LR
+  store[AnalysisStore composition] --> app[Analysis read and export application]
+  app -->|unchanged owner read-only context or borrowed status connection| fixed[Fixed Analysis read projections and storage guards]
+  fixed --> tables[(Intelligence input / page / run / head / position / command / report / result tables)]
+  app --> wire[Existing public serialization and read contracts]
+  app -->|export consults lazily in original order| capabilities[Finding and report capabilities]
+```
+
+The [fixed reader](../../../../../database/tempo_intelligence_database/adapters/analysis_reads.py)
+retains full bound SQL, row/count extraction, missing-record and visible-generation
+guards and existing one-row lookahead. The original state-count cursor iteration
+is preserved inside this projection. `AnalysisStore.read_transaction` lends the
+same `owner.transaction(read_only=True)` context; `_status` borrows its caller's
+connection and never opens another one. Input flattening, input-list/result/
+input-status envelopes, report cursor encoding and ReportPage validation retain
+their original post-read points; pending reports and receipt/run-list responses
+retain their original in-read points. Cursor scope/revision/history filters,
+malformed/stale rejection timing, row limits/order and lazy workspace/finding/
+report lookups are unchanged. Proposal export returns the original proposal
+object; this move grants no publishing, activation or Learning authority.
+
+`tests/test_analysis_reads.py` uses actual fixed reads/Store composition with
+synthetic rows to prove these boundaries, historical paging/cursor bytes and
+lookahead, borrowed run-status reads, visible-generation rejection and export
+lookup order. Existing packaged schemas and legacy report contracts remain
+selected owning checks. No DDL, foreign key, write workflow, deadline, provider,
+engine, private credential or live resource behavior is changed or exercised.
+The [complete method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+continues to identify 15 mixed Analysis methods; this is a bounded read slice,
+not completion of the whole owner.

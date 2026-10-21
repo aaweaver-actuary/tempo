@@ -692,3 +692,72 @@ unchanged Analysis source hashes are in
 retained for integration; the shared review environment is unchanged. No git,
 global-doc, native/live, actual private credential/provider, config/security/grant,
 full-system, CI, deployment, issue or merge action was performed.
+
+## Analysis read/cursor/export workflow move — October 21, 2026
+
+Twelve existing AnalysisStore methods now delegate application work to
+`analysis/read_work.py`: `_workspace`, `inputs`, `_input`, `_status`, `runs`,
+`receipt`, `report`, `finding`, `export`, `remaining`, `engine_result` and
+`input_status`. Fixed `AnalysisReads` keeps complete reads, missing-record and
+accepted-generation guards, existing row limits and count-cursor extraction.
+Store lends the unchanged owner read-only context; `_status` borrows its caller's
+same connection. This changes two module paths and no schema, actual foreign key,
+write workflow, deadline, public signature, wire contract, provider or engine.
+
+**18 selected current-source cases passed**: 16 new fixed-row/composition cases,
+the existing packaged public-schema check and existing legacy ReportPage contract
+case. The same 16 new cases also passed against the saved original AnalysisStore
+(comparison evidence, not 34 distinct current cases). They preserve input/page
+flattening order, original in-read versus post-read return points, borrowed
+run-status cursor iteration, historical filtered paging/canonical cursor bytes,
+lookahead, malformed/stale rejection timing, pending legacy behavior, finding
+visibility and lazy export lookup/original proposal object identity.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_analysis_reads.py services/intelligence/tests/test_analysis.py::test_packaged_analysis_v1_schemas_match_public_models services/intelligence/tests/test_repairs.py::test_R1_R2_legacy_report_contract_retains_historical_fields -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest /tmp/tempo_intelligence_analysis_reads_original_test.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+python3 /tmp/tempo-intelligence-analysis-reads-source-proof.py
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-analysis-reads-build
+python3 /tmp/tempo-intelligence-analysis-reads-artifact-proof.py
+python3 /tmp/tempo-intelligence-analysis-reads-audit.py
+```
+
+Exact fixed-read expansion matches all twelve original complete method sequences,
+public signatures, sixteen moved query call points/fifteen distinct strings,
+guards, cursor/serialization/hash behavior, nested ReportPage import and lazy
+workspace/finding/report lookup. The other 21 AnalysisStore methods and the
+optional-lock head query/guard remain AST-identical. Count extraction retains the
+original cursor comprehension; no `fetchall` replacement or cursor/query port is
+introduced. The existing input read is shared at its two original call points.
+
+The fresh source distribution rebuilds its wheel. Five current implementation/doc
+files match wheel bytes; eight current implementation/test/doc files match source
+distribution bytes, with no Python caches. Isolated import smoke loads all three
+moved/wired modules from the wheel with declared pure source dependencies and no
+pool/connection initialization. An initial smoke assertion incorrectly assumed
+read models were absent before the method-level late import; the saved original
+adapter also loads them through the existing public `analysis_v1` export. That
+assertion was corrected to module-origin discovery; no production change was
+required. Original/current method-level import-order proof remains valid. Three
+Analysis owner Mermaid blocks parse; scoped syntax, whitespace/conflicts and local
+Markdown links pass. GitHub rendering was not inspected.
+
+The current [34-method Analysis audit](../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+now identifies 15 mixed methods, three fixed owner/read operations and sixteen
+composition methods. Remaining batches are input/page admission/finalization;
+run commands/dismissal and receipt digest/response helpers; capture/derivation/
+publication; and engine claim/result/failure. `_receipt` / `_save_receipt` retain
+existing command guards/writes and their unfinished response assembly is counted
+explicitly. No whole-owner completion is claimed. Remaining estimate: about four
+coherent batches / 4–6 hours; next input admission group about 45–75 minutes.
+
+Original files remain under `/tmp/tempo-intelligence-analysis-reads-before/`.
+Logs/proof scripts/distributions remain in the matching
+`/tmp/tempo-intelligence-analysis-reads-*` paths, including the import proof log.
+The updated full method audit is `/tmp/tempo-intelligence-analysis-reads-audit.json`;
+exact final file/artifact hashes are in
+`/tmp/tempo-intelligence-analysis-reads-evidence.json`. The preceding 33-method
+source audit is preserved unchanged as historical evidence. Task-owned artifacts
+remain for integration; the shared toolchain is unchanged. No git/global-doc,
+native/live, actual engine/provider/private credential, config/security/grant,
+full-system, CI, deployment, issue or merge action was performed.

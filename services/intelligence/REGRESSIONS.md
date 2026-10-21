@@ -532,3 +532,18 @@ and status inside its one context. No real loader, private file or provider is
 used. Existing complete inspection and source-claim fake cases continue to own
 the callbacks consuming this status. Native/private-file/security proofs remain
 unchanged and were not run for this source move.
+
+## Analysis read/cursor/export composition
+
+`tests/test_analysis_reads.py` owns the twelve relocated read/workspace/export
+blocks with actual fixed read operations, synthetic rows and the original owner
+read context. It preserves input flattening order, post-read public envelopes,
+in-read receipt/run-list responses and borrowed status count cursor iteration.
+Historical report paging retains canonical cursor bytes, filtered one-row
+lookahead, post-read encoding and late model import; pending legacy reports
+return inside the snapshot. Invalid/stale report cursors fail after scope reads
+before item reads, and remaining-work cursors retain the same revision fence.
+Finding visibility guards remain root-owned. Export consults finding/report
+capabilities lazily and returns the original proposal object. Existing packaged
+schema and legacy ReportPage contract cases remain the unchanged wire proofs;
+native read/isolation/publication proofs were not executed by this extraction.

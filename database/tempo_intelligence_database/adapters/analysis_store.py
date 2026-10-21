@@ -1,16 +1,17 @@
 """Intelligence-owned durable analysis. Network/engine work never holds a transaction."""
-import base64
+from contextlib import contextmanager
 from collections import defaultdict
 from datetime import datetime, timezone
-import json
 import uuid
 from psycopg.types.json import Jsonb
 from tempo_intelligence.errors import DomainError
-from tempo_intelligence.identity import digest, canonical_json
-from tempo_intelligence.serialization import public
+from tempo_intelligence.identity import digest
 from tempo_intelligence.analysis.models import Manifest, Page, RunRequest, payload_digest
 from tempo_intelligence.analysis.classify import ordered_positions, source_findings
 from tempo_intelligence.analysis.engine import validate_result, comparison, compatible_worker, validate_pair_jobs
+from tempo_intelligence.analysis.read_work import (require_workspace, read_inputs, read_input, run_status, read_runs,
+    read_receipt, read_report, read_finding, export_finding, read_remaining, read_engine_result, read_input_status)
+from tempo_intelligence_database.adapters.analysis_reads import AnalysisReads
 
 
 class AnalysisStore:
@@ -19,8 +20,7 @@ class AnalysisStore:
         self.workspace = owner.workspace_id
 
     def _workspace(self, workspace):
-        if workspace != self.workspace:
-            raise DomainError("workspace_mismatch",403)
+        return require_workspace(workspace,lambda:self.workspace)
 
     def manifest(self, value):
         self._workspace(value.workspace_id)
@@ -49,18 +49,16 @@ class AnalysisStore:
                 raise DomainError("immutable_page_conflict")
         return {"schema_version":1,"workspace_id":self.workspace,"accepted":True,"page_id":value.page_id}
 
-    def inputs(self):
+    @contextmanager
+    def read_transaction(self):
         with self.owner.transaction(read_only=True) as db:
-            rows = db.execute("SELECT input_id,revision,state,payload->'completeness' AS completeness,payload->'game_ids' AS game_ids,payload->'selections' AS selections FROM analysis_inputs ORDER BY input_id,revision DESC LIMIT 100").fetchall()
-        return public({"schema_version":1,"workspace_id":self.workspace,"items":rows})
+            yield AnalysisReads(self,db)
+
+    def inputs(self):
+        return read_inputs(lambda:self.workspace,self.read_transaction)
 
     def _input(self,input_id,revision):
-        with self.owner.transaction(read_only=True) as db:
-            row = db.execute("SELECT * FROM analysis_inputs WHERE input_id=%s AND revision=%s",(input_id,revision)).fetchone()
-            if not row:
-                raise DomainError("analysis_input_not_found",404)
-            pages = db.execute("SELECT payload FROM analysis_pages WHERE input_id=%s AND revision=%s ORDER BY page_id",(input_id,revision)).fetchall()
-        return row,[g for p in pages for g in p["payload"]["games"]]
+        return read_input(input_id,revision,self.read_transaction)
 
     def finalize(self,input_id,command):
         if command.action!="finalize":
@@ -133,17 +131,14 @@ class AnalysisStore:
             return self._status(db,self._head(db,value.run_id))
 
     def _status(self,db,run):
-        counts={r["state"]:r["count"] for r in db.execute("SELECT state,count(*) FROM analysis_positions WHERE run_id=%s AND revision=%s GROUP BY state",(run["run_id"],run["revision"]))}
-        return public({"schema_version":1,"workspace_id":self.workspace,"run_id":run["run_id"],"revision":run["revision"],"state":run["state"],"scope":{key:value for key,value in run["payload"].items() if key!="derivation_version"},"derivation_version":run["payload"].get("derivation_version",1),"recovery_required":"legacy_analysis_revision_required" if run["payload"].get("derivation_version",1)!=2 else None,"progress":counts,"requested_generation":run["requested_generation"],"published_generation":run["published_generation"],"last_complete_generation":run["last_complete_generation"],"engine_scan_complete":sum(v for k,v in counts.items() if k!="complete")==0})
+        return run_status(run,lambda:self.workspace,AnalysisReads(self,db))
 
     def status(self,run_id):
         with self.owner.transaction(read_only=True) as db:
             return self._status(db,self._head(db,run_id))
 
     def runs(self):
-        with self.owner.transaction(read_only=True) as db:
-            rows=db.execute("SELECT r.* FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) ORDER BY r.created_at DESC,r.run_id LIMIT 100").fetchall()
-            return {"schema_version":1,"workspace_id":self.workspace,"items":[self._status(db,r) for r in rows]}
+        return read_runs(lambda:self.workspace,self.read_transaction)
 
     def games(self,run_id,after=None,limit=10):
         from tempo_intelligence.analysis.games_reader import GamesReader
@@ -161,11 +156,7 @@ class AnalysisStore:
         db.execute("INSERT INTO analysis_commands VALUES(%s,%s,%s)",(command_id,digest(payload),Jsonb(result)))
 
     def receipt(self,command_id):
-        with self.owner.transaction(read_only=True) as db:
-            row=db.execute("SELECT payload,digest FROM analysis_commands WHERE command_id=%s",(command_id,)).fetchone()
-            if not row:
-                raise DomainError("analysis_command_not_found",404)
-            return {**row["payload"], "request_digest": row["digest"]}
+        return read_receipt(command_id,self.read_transaction)
 
     def command(self,run_id,command):
         payload={"run_id":run_id,**command.model_dump(mode="json")}
@@ -287,53 +278,11 @@ class AnalysisStore:
         return True
 
     def report(self,run_id,*,after=None,limit=50,category=None,dismissal=None,generation=None):
-        if not 1<=limit<=100 or category not in (None,"repertoire_miss","practical_gap","engine_opportunity") or dismissal not in (None,"open","dismissed"):
-            raise DomainError("invalid_analysis_filter",422)
-        with self.owner.transaction(read_only=True) as db:
-            run=self._head(db,run_id)
-            selected=generation or run["published_generation"]
-            report_revision=run["revision"]
-            if selected is None:
-                previous=db.execute("SELECT revision,published_generation FROM analysis_runs WHERE run_id=%s AND revision<%s AND published_generation IS NOT NULL ORDER BY revision DESC LIMIT 1",(run_id,run["revision"])).fetchone()
-                if previous:
-                    selected=previous["published_generation"];report_revision=previous["revision"]
-            elif generation is not None:
-                historical=db.execute("SELECT revision FROM analysis_reports WHERE run_id=%s AND generation=%s",(run_id,selected)).fetchone()
-                if historical:report_revision=historical["revision"]
-            if selected is None:
-                return {"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"status":"pending","items":[],"next_cursor":None,"generation":None,"derivation_version":run["payload"].get("derivation_version",1),"reasons":["legacy_analysis_revision_required"] if run["payload"].get("derivation_version",1)!=2 else []}
-            report=db.execute("SELECT payload FROM analysis_reports WHERE run_id=%s AND revision=%s AND generation=%s",(run_id,report_revision,selected)).fetchone()
-            if not report:
-                raise DomainError("analysis_generation_not_found",404)
-            cursor_scope={"version":1,"workspace":self.workspace,"run":run_id,"revision":report_revision,"head_revision":run["revision"],"generation":selected,"category":category,"dismissal":dismissal,"ordering":report["payload"].get("ordering","category-source-rank-semantic-v1")}
-            last=-1
-            if after:
-                try:
-                    if len(after)>4096:raise ValueError()
-                    cursor=json.loads(base64.urlsafe_b64decode(after.encode()))
-                    last=cursor.pop("last")
-                    if type(last) is not int or last<0:
-                        raise ValueError()
-                except Exception:
-                    raise DomainError("invalid_analysis_cursor",422) from None
-                if cursor!=cursor_scope:
-                    raise DomainError("stale_analysis_cursor")
-            rows=db.execute("SELECT ordinal,payload FROM analysis_report_items WHERE run_id=%s AND revision=%s AND generation=%s AND ordinal>%s AND (%s::text IS NULL OR payload->>'category'=%s) AND (%s::text IS NULL OR payload->>'dismissal_state'=%s) ORDER BY ordinal LIMIT %s",(run_id,report_revision,selected,last,category,category,dismissal,dismissal,limit+1)).fetchall()
-        next_cursor=base64.urlsafe_b64encode(canonical_json({**cursor_scope,"last":rows[limit-1]["ordinal"]}).encode()).decode() if len(rows)>limit else None
-        from tempo_intelligence.analysis.read_models import ReportPage
-        return ReportPage.model_validate({**report["payload"],"status":"current" if report_revision==run["revision"] and selected==run["requested_generation"] else "stale","items":[r["payload"] for r in rows[:limit]],"next_cursor":next_cursor}).model_dump(mode="json")
+        return read_report(run_id,lambda:self.workspace,self.read_transaction,after=after,limit=limit,
+            category=category,dismissal=dismissal,generation=generation)
 
     def finding(self,run_id,finding_id,generation):
-        with self.owner.transaction(read_only=True) as db:
-            run=self._head(db,run_id)
-            visible=run["published_generation"]
-            if visible is None:
-                previous=db.execute("SELECT published_generation FROM analysis_runs WHERE run_id=%s AND revision<%s AND published_generation IS NOT NULL ORDER BY revision DESC LIMIT 1",(run_id,run["revision"])).fetchone()
-                visible=previous["published_generation"] if previous else None
-            row=db.execute("SELECT payload FROM analysis_report_items WHERE run_id=%s AND generation=%s AND finding_id=%s",(run_id,generation,finding_id)).fetchone()
-            if not row or generation!=visible:
-                raise DomainError("stale_analysis_finding")
-        return {"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"generation":generation,"finding":row["payload"]}
+        return read_finding(run_id,finding_id,generation,lambda:self.workspace,self.read_transaction)
 
     def dismiss(self,run_id,finding_id,generation,command):
         payload={"run_id":run_id,"finding_id":finding_id,"generation":generation,**command.model_dump(mode="json")}
@@ -358,15 +307,7 @@ class AnalysisStore:
         return result
 
     def export(self,run_id,finding_id,generation,kind):
-        item=self.finding(run_id,finding_id,generation)["finding"]
-        if kind=="response-proposal" and self.report(run_id,generation=generation)["derivation_version"]!=2:
-            raise DomainError("legacy_analysis_revision_required")
-        if kind=="response-proposal" and item["actions"]["response_proposal"]["available"]:
-            return item["response_proposal"]
-        if kind!="context":
-            raise DomainError("validated_A_proposal_unavailable",422)
-        context={key:value for key,value in item.items() if key not in {"engine","response_proposal","actions"}}
-        return {"schema_version":1,"workspace_id":self.workspace,"kind":"informational_gap_context" if item["category"]=="practical_gap" else "informational_finding_context","status":"proposal_only","finding":context,"authority":"No approval, publication, activation or Learning effect"}
+        return export_finding(run_id,finding_id,generation,kind,lambda:self.finding,lambda:self.report,lambda:self.workspace)
 
     def claim(self,run_id,build_job,worker_identity=None):
         """build_job is a pure B client helper; it performs no process/network I/O."""
@@ -469,22 +410,7 @@ class AnalysisStore:
         return True
 
     def remaining(self,run_id,after=None,limit=64):
-        if not 1<=limit<=100:
-            raise DomainError("invalid_analysis_limit",422)
-        with self.owner.transaction(read_only=True) as db:
-            run=self._head(db,run_id)
-            scope={"workspace":self.workspace,"run":run_id,"revision":run["revision"],"ordering":"remaining-ordinal-v1"}
-            last=-1
-            if after:
-                try:
-                    if len(after)>4096:raise ValueError()
-                    cursor=json.loads(base64.urlsafe_b64decode(after.encode()));last=cursor.pop("last")
-                    if type(last) is not int or last<0:raise ValueError()
-                except Exception:raise DomainError("invalid_remaining_cursor",422) from None
-                if cursor!=scope:raise DomainError("stale_remaining_cursor")
-            rows=db.execute("SELECT ordinal,position_id,state,error_code,payload->'game_id' AS game_id,payload->'ply' AS ply FROM analysis_positions WHERE run_id=%s AND revision=%s AND ordinal>%s AND (state<>'complete' OR error_code='insufficient_quality') ORDER BY ordinal LIMIT %s",(run_id,run["revision"],last,limit+1)).fetchall()
-        cursor=base64.urlsafe_b64encode(canonical_json({**scope,"last":rows[limit-1]["ordinal"]}).encode()).decode() if len(rows)>limit else None
-        return {"schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"revision":run["revision"],"items":rows[:limit],"next_after":cursor}
+        return read_remaining(run_id,lambda:self.workspace,self.read_transaction,after,limit)
 
     def derive_next(self):
         with self.owner.transaction(background=True,read_only=True) as db:
@@ -501,11 +427,7 @@ class AnalysisStore:
                 db.execute("UPDATE analysis_runs SET requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
 
     def engine_result(self,result_id):
-        with self.owner.transaction(read_only=True) as db:
-            row=db.execute("SELECT r.payload AS result,e.payload AS job FROM analysis_results r JOIN analysis_executions e USING(job_id,execution_generation) WHERE r.result_id=%s",(result_id,)).fetchone()
-            if not row:
-                raise DomainError("analysis_result_not_found",404)
-        return {"schema_version":1,"workspace_id":self.workspace,"result_id":result_id,**row}
+        return read_engine_result(result_id,lambda:self.workspace,self.read_transaction)
 
     def evidence_records(self,identities,background=False):
         if not identities:return []
@@ -516,8 +438,4 @@ class AnalysisStore:
         return rows
 
     def input_status(self,input_id,revision):
-        with self.owner.transaction(read_only=True) as db:
-            row=db.execute("SELECT * FROM analysis_inputs WHERE input_id=%s AND revision=%s",(input_id,revision)).fetchone()
-            if not row:raise DomainError("analysis_input_not_found",404)
-            pages=db.execute("SELECT page_id,digest FROM analysis_pages WHERE input_id=%s AND revision=%s ORDER BY page_id",(input_id,revision)).fetchall()
-        return {"schema_version":1,"workspace_id":self.workspace,"manifest":row["payload"],"digest":row["digest"],"state":row["state"],"accepted_pages":pages}
+        return read_input_status(input_id,revision,lambda:self.workspace,self.read_transaction)
