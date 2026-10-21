@@ -33,11 +33,14 @@ from tempo_legacy_database.adapters.http_composition import (
     repertoires as repertoire_http_storage,
     snapshots as snapshot_http_storage,
     line_authoring as line_authoring_storage,
+    card_authoring as card_authoring_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
 from tempo_legacy_database.adapters.foreground_controls import repertoires as repertoire_control_storage
 from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
+from tempo_legacy_database.adapters.foreground_controls import prefix_splits as prefix_split_storage
+from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as opening_card_storage
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
@@ -2283,16 +2286,7 @@ def prefix_split_preview(identifier: str):
     with connection() as database:
         try:
             result = preview_prefix_split(database, identifier)
-            usage = database.execute(
-                """SELECT COUNT(DISTINCT step.line_id) line_count,
-                          COUNT(DISTINCT step.repertoire_id) repertoire_count
-                   FROM opening_graph_steps step
-                   JOIN opening_graph_publications publication
-                     ON publication.repertoire_id=step.repertoire_id
-                    AND publication.generation=step.generation
-                   WHERE step.card_id=?""",
-                (identifier,),
-            ).fetchone()
+            usage = card_authoring_storage.published_usage(database, identifier)
             return {
                 **result,
                 "shared_line_count": max(1, usage["line_count"]),
@@ -2319,26 +2313,11 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest,
             result = apply_prefix_split(database, identifier, request.expected_revision)
             repertoire_ids = [
                 row["repertoire_id"]
-                for row in database.execute(
-                    "SELECT repertoire_id FROM repertoire_cards WHERE card_id IN (?,?)",
-                    (result["parent"]["card_id"], result["continuation"]["card_id"]),
-                )
+                for row in card_authoring_storage.split_repertoire_rows(database, result["parent"]["card_id"], result["continuation"]["card_id"])
             ]
             if not result["idempotent"]:
-                database.execute(
-                    "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
-                    (result["parent"]["card_id"], result["continuation"]["card_id"]),
-                )
-            usage = database.execute(
-                """SELECT COUNT(DISTINCT step.line_id) line_count,
-                          COUNT(DISTINCT step.repertoire_id) repertoire_count
-                   FROM opening_graph_steps step
-                   JOIN opening_graph_publications publication
-                     ON publication.repertoire_id=step.repertoire_id
-                    AND publication.generation=step.generation
-                   WHERE step.card_id=?""",
-                (identifier,),
-            ).fetchone()
+                prefix_split_storage.mark_split_pending_validation(database, result["parent"]["card_id"], result["continuation"]["card_id"])
+            usage = card_authoring_storage.published_usage(database, identifier)
             result = {
                 **result,
                 "shared_line_count": max(1, usage["line_count"]),
@@ -2381,16 +2360,8 @@ def prefix_split_reject(identifier: str, request: PrefixSplitRequest,
             preview = preview_prefix_split(database, identifier)
             if preview["source_revision"] != request.expected_revision:
                 raise HTTPException(409, "The card changed; refresh it and try again")
-            latest_failed_review_id = database.execute(
-                """SELECT COALESCE(MAX(id),0) FROM reviews
-                   WHERE card_id=? AND rating='again' AND source_kind='study'
-                     AND invalidated_at IS NULL""",
-                (identifier,),
-            ).fetchone()[0]
-            database.execute(
-                "UPDATE cards SET prefix_split_rejected_after_review_id=? WHERE id=?",
-                (latest_failed_review_id, identifier),
-            )
+            latest_failed_review_id = card_authoring_storage.latest_failed_review_id(database, identifier)
+            prefix_split_storage.store_split_rejection(database, latest_failed_review_id, identifier)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
@@ -2411,59 +2382,25 @@ def revise_card(identifier: str, request: CardRevisionRequest,
     replacement = card_id(request.starting_fen, moves)
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
-        old = db.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()
+        old = opening_card_storage.card_row(db, identifier)
         from .card_deletion import require_card_not_deleted
         require_card_not_deleted(db, identifier)
         require_card_not_deleted(db, replacement)
         if not old:
             raise HTTPException(404, "Card not found")
-        affected_repertoire_ids = [row[0] for row in db.execute(
-            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? "
-            "UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id",
-            (identifier, identifier),
-        )]
+        affected_repertoire_ids = [row[0] for row in card_authoring_storage.affected_repertoire_rows(db, identifier)]
         validated_routes = {repertoire_id: ensure_line_in_scope(db, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in affected_repertoire_ids}
-        existing = db.execute(
-            "SELECT * FROM cards WHERE id=?", (replacement,)
-        ).fetchone()
+        existing = opening_card_storage.card_row(db, replacement)
         revision = int(old["revision"] or 1) + 1
-        db.execute(
-            "INSERT OR IGNORE INTO card_revisions(card_id,revision,start_fen,moves_json,history_mode,created_at) VALUES(?,?,?,?,?,?)",
-            (
-                identifier,
-                revision,
-                old["start_fen"],
-                old["moves_json"],
-                request.history_mode,
-                now,
-            ),
-        )
+        card_authoring_storage.record_revision(db, identifier, revision, old["start_fen"], old["moves_json"], request.history_mode, now)
         if replacement == identifier:
-            db.execute(
-                "UPDATE cards SET start_fen=?,moves_json=?,source_fen=?,revision=?,canonical_route_source=1 WHERE id=?",
-                (
-                    request.starting_fen,
-                    json.dumps(moves),
-                    request.source_fen,
-                    revision,
-                    identifier,
-                ),
-            )
+            card_authoring_storage.revise_existing_definition(db, request.starting_fen, json.dumps(moves), request.source_fen, revision, identifier)
         elif existing:
-            db.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (replacement,))
+            opening_card_storage.promote_card_source(db, replacement)
             if request.history_mode == "preserve":
-                db.execute(
-                    "UPDATE reviews SET card_id=? WHERE card_id=?",
-                    (replacement, identifier),
-                )
-            db.execute(
-                "UPDATE daily_queue SET status='complete' WHERE card_id=? AND status='queued'",
-                (identifier,),
-            )
-            db.execute(
-                "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
-                (replacement, identifier),
-            )
+                opening_card_storage.reassign_reviews(db, replacement, identifier)
+            card_authoring_storage.complete_queued_card(db, identifier)
+            opening_card_storage.archive_source_card(db, replacement, identifier)
         else:
             fields = dict(old)
             fields.update(
@@ -2496,40 +2433,21 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                         "recent_attempts_json": "[]",
                     }
                 )
-            columns = card_columns(db)
-            db.execute(
-                f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
-                tuple(fields.get(column) for column in columns),
-            )
+            opening_card_storage.copy_card(db, fields, {})
             if request.history_mode == "preserve":
-                db.execute(
-                    "UPDATE reviews SET card_id=? WHERE card_id=?",
-                    (replacement, identifier),
-                )
-            db.execute(
-                "UPDATE daily_queue SET card_id=? WHERE card_id=? AND status='queued'",
-                (replacement, identifier),
-            )
-            db.execute(
-                "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
-                (replacement, identifier),
-            )
+                opening_card_storage.reassign_reviews(db, replacement, identifier)
+            card_authoring_storage.reassign_queued_card(db, replacement, identifier)
+            opening_card_storage.archive_source_card(db, replacement, identifier)
         if replacement != identifier:
-            db.execute(
-                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) SELECT repertoire_id,?,1 FROM repertoire_cards WHERE card_id=? ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1",
-                (replacement, identifier),
-            )
-            db.execute("DELETE FROM repertoire_cards WHERE card_id=?", (identifier,))
+            card_authoring_storage.copy_source_memberships(db, replacement, identifier)
+            opening_card_storage.delete_source_memberships(db, identifier)
         for repertoire_id in affected_repertoire_ids:
-            db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, replacement))
+            card_authoring_storage.ensure_canonical_membership(db, repertoire_id, replacement)
         for repertoire_id, validated_route in validated_routes.items():
             certify_admitted_route(db, repertoire_id, validated_route)
         repertoire_ids = affected_repertoire_ids
         for repertoire_id in set(repertoire_ids):
-            db.execute(
-                "UPDATE cards SET pending_validation=1 WHERE id=?",
-                (replacement,),
-            )
+            card_authoring_storage.mark_pending_validation(db, replacement)
     for repertoire_id in set(repertoire_ids):
         try:
             enqueue_integrity_scans(repertoire_id)
@@ -2569,18 +2487,11 @@ def archive_card(identifier: str, permanent: bool = False, expected_revision: in
     with connection() as db, refreshing_game_scope(db):
         repertoire_ids = [
             row["repertoire_id"]
-            for row in db.execute(
-                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (identifier,)
-            )
+            for row in card_authoring_storage.archive_membership_rows(db, identifier)
         ]
-        if not db.execute(
-            "UPDATE cards SET archived=1 WHERE id=?", (identifier,)
-        ).rowcount:
+        if not card_authoring_storage.archive_card(db, identifier):
             raise HTTPException(404, "Card not found")
-        db.execute(
-            "UPDATE daily_queue SET status='complete' WHERE card_id=? AND status='queued'",
-            (identifier,),
-        )
+        card_authoring_storage.complete_queued_card(db, identifier)
         integrity = {
             repertoire_id: integrity_summary(db, repertoire_id)
             for repertoire_id in set(repertoire_ids)
