@@ -202,6 +202,10 @@ The original `redis_admission_gate.py` and `study_priority.py` entries are also 
 
 The scan excludes the centralized tree and tests. Historical evidence/qualification receipts retain their recorded source paths; current active references were relocated. Redis orchestration and host resource coordination remain in their existing infrastructure owners.
 
+### Newly confirmed browser remainder — source review pending extraction
+
+The final outside-tree source scan found actual IndexedDB transaction/read/write operations in `app/lib/offline-training.ts`, `app/lib/opening-evidence-journal.ts` and `public/maia-worker.js`, despite their existing root connection adapters. These are additional mixed-file splits, not completed original entries or permanent exceptions. Keep application replay/evidence/model policy outside and move complete existing storage operations into the root browser category, preserving transaction callbacks and worker delivery/build paths. LocalStorage and tooling matches are still being classified; names/text matches alone are not declared storage operations or unused code. Native placement completion above therefore does not establish complete database centralization.
+
 ## Handoff for the separately coordinated domain move
 
 | Proposed owner | Current source to sort (examples, not a move in this PR) | Boundary to preserve |
