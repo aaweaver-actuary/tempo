@@ -116,3 +116,9 @@ def command_request(request_id,command_id,expected_revision,retry,transaction,el
         result={"schema_version":1,"request_id":request_id,"request_revision":request["revision"],"command_id":command_id,"accepted":True}
         commands.save(command_id,payload,result)
         return result
+
+
+def read_evidence(evidence_id,workspace,transaction):
+    with transaction() as reader:
+        row=reader.evidence(evidence_id)
+        return public({"schema_version":1,"workspace_id":workspace(),**row})

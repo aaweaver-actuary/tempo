@@ -480,3 +480,23 @@ no engine-position privileges. Scope listing/page reads must still work; mutable
 Analysis status is not registered in this mode. Pure configuration requires no
 operator/worker files and the registered route inventory contains only Games
 reads/health. These enforce architecture boundaries, not just hidden controls.
+
+## Maia work and accepted-evidence composition
+
+`tests/test_maia_work.py` owns the relocated profile/job/list/result/status and
+evidence-response boundary with actual Store/fixed operations and fake rows.
+The named cases retain configured-profile evaluation before its fixed read (even
+when rejected), same-transaction job creation, persisted retry constraints without
+new default/workspace lookup, binding-order job listing and evidence serialization
+inside the read snapshot. Result acceptance serializes before entering the write
+context, binds the existing evidence writer before building its payload and
+appends before job completion; replay performs no cache read/write. Status
+serialization follows the job lock, replay skips cache/writes and failed status
+updates the cache only after the job update. Existing `test_maia_validation.py`
+continues to own wire/model/input/legal-universe validation without execution.
+
+The existing native `integration/test_postgres.py` proofs retain atomic replay,
+stale/transition rejection, historical retry constraints and current-budget
+refresh; the historical fixture now patches the builder at its moved application
+lookup. Those native proofs were preserved in source and were not executed by
+the bounded extraction checks.

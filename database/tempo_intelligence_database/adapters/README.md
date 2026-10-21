@@ -8,6 +8,7 @@
 | [games_read_projection.py](games_read_projection.py) | Existing bounded Games-view reads over Intelligence-owned run/head/input/page tables; [reader policy and transaction composition](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#games-reader-storage-boundary). |
 | [request_inspection.py](request_inspection.py) | Fixed request/cache/evidence/credential/provider-control reads on the owner's initial read-only snapshot. No transaction creation or application response policy. |
 | [request_commands.py](request_commands.py) | Fixed refresh/retry command writes and atomic lock/replay/revision guards on the caller's existing write transaction. |
+| [maia_operations.py](maia_operations.py) | Fixed profile/job/evidence reads and writes, job/cache locks and atomic replay/stale/transition guards on the owner's existing transaction. |
 | [store.py](store.py) | Intelligence owns every transaction here; no provider executes inside this boundary. |
 
 The existing finding merge/ranking block now lives in the component's
@@ -19,12 +20,14 @@ remain here.
 
 This is a bounded extraction, not a complete removal of application policy from
 these two older adapters. Remaining `Store.submit` policy includes request and
-snapshot replay validation, expired-cache refresh and Maia profile/job decisions.
+snapshot replay validation and expired-cache refresh.
 `inspect` now only composes the complete application inspection workflow with
 the fixed `RequestInspection` reader and existing retry/credential/clock
 capabilities. `_command` now composes the complete application refresh/retry
-workflow with fixed guarded writes; credential/provider workflows and Maia
-generation/admission still mix decisions with SQL;
+workflow with fixed guarded writes. Maia profile/job/result/status application
+workflows now live in [`maia_work.py`](../../../services/intelligence/src/tempo_intelligence/maia_work.py),
+and the evidence response lives in `source_requests.read_evidence`; credential/provider
+workflows still mix decisions with SQL;
 `AnalysisStore` still mixes manifest/page/finalize/run admission, status and command
 responses, report publication/pagination/dismissal/export, and engine execution
 state transitions with their queries. Response serialization and retry policy
@@ -48,14 +51,13 @@ its connection to this projection. The application builds the envelope before
 that context closes and invokes the existing final credential status capability
 afterward. It has no generic query/execute port or cross-owner table access.
 
-Remaining Store application blocks are specifically `_profile`, `submit`,
-`_maia_job`, `_credential_status` / `credential_status` / credential
-reload/revoke, provider claim/publication decisions, `accept_maia` / `maia_status`,
-and the public `evidence` envelope. Initial inspection and refresh/retry command
-orchestration are no longer mixed blocks. Database startup validation, workspace binding checks,
-transaction settings, lease/replay atomic guards and fixed writers remain
-database responsibilities; this inventory does not propose relocating those
-guards or changing their authority.
+Remaining Store application blocks are specifically `submit`,
+`_credential_status` / `credential_status` / credential reload/revoke and provider
+claim/publication decisions. Inspection, refresh/retry, Maia work and evidence
+response orchestration are no longer mixed blocks. Database startup validation,
+workspace binding checks, transaction settings, lease/replay atomic guards and
+fixed writers remain database responsibilities; this inventory does not propose
+relocating those guards or changing their authority.
 
 `RequestCommands` retains six fixed SQL operations and the existing receipt and
 request-revision guards. It delegates request-head lookup, generation changes and
@@ -67,21 +69,37 @@ caches in the same order and writes the receipt last. The eligibility callback
 contains the original private-method/clock expression, preserving lazy lookup and
 evaluation order. There is no generic execute/query capability.
 
+`MaiaOperations` borrows the same connection for profile admission and job creation
+inside existing submit/command transactions. Store's `maia_read_transaction` and
+`maia_write_transaction` lend the existing read/write contexts for job/evidence
+reads and result/status acceptance. Configuration is consulted before the fixed
+profile read, even when configuration rejects the descriptor. An execution retry
+revalidates the persisted job payload instead of consulting new workspace/default
+inputs. Result serialization precedes the write transaction; status serialization
+follows the locked job read. The application keeps binding iteration, semantic
+validation, evidence construction and failed/cancelled cache decisions at their
+original call points. The adapter retains unknown/stale/replay/transition guards,
+job-before-cache locking and append-before-completion writes. Its bound append
+property resolves the existing writer before application payload construction.
+The shared fixed job lookup serves both original lock call points; no generic
+SQL/execute port or new transaction authority is introduced. See the
+[Maia/evidence boundary](../../../services/intelligence/README.md#maia-work-and-evidence-boundary).
+
 ## Complete Store responsibility inventory
 
-This source audit accounts for all 32 current Store methods. Mixed rows remain
-unfinished extraction work, not permanent exceptions or a completed-split claim.
+This source audit accounts for all 34 current Store methods (the original 32 plus
+two transaction composition contexts). Mixed rows remain unfinished extraction
+work, not permanent exceptions or a completed-split claim.
 
 | Classification | Methods / remaining responsibility |
 | --- | --- |
-| Database authority and fixed operations | `__init__`, `read_only`, `transaction`, `validate_startup`, `close`, `health`, `_head`, `_new_generation`, `_fenced`, `_release_provider`, `_append`: connection settings, schema/grant/workspace checks, guarded reads and atomic writes. |
-| Composition / fixed effects | `inspection_transaction`, `inspect`, `_retry_eligible`, `command_transaction`, `_command`, `refresh`, `retry`, `fail`: wire existing application decisions/workflows to owning transactions and fixed effects. |
-| Mixed source admission / generation | `_profile`, `submit`, `_maia_job`: configured profile acceptance, request/snapshot replay, expired-cache refresh and Maia generation/immutable request construction. |
-| Mixed evidence response | `evidence`: public response envelope over the guarded evidence lookup. |
-| Mixed credential workflows | `_credential_status`, `credential_status`, `credential_reload`, `credential_revoke`: expiry/status projection, configured material/status handling and registration/revocation orchestration. |
-| Mixed provider workflows | `claim`, `publish`: credential/cooldown admission, source claim/publication and retrieval metadata decisions around the fixed lease/write operations. |
-| Mixed Maia workflows | `maia_jobs`, `accept_maia`, `maia_status`: job-list response, result validation/evidence construction and status transitions around existing atomic guards/writes. |
+| Database authority and fixed operations (11) | `__init__`, `read_only`, `transaction`, `validate_startup`, `close`, `health`, `_head`, `_new_generation`, `_fenced`, `_release_provider`, `_append`: connection settings, schema/grant/workspace checks, guarded reads and atomic writes. |
+| Composition / fixed effects (16) | `inspection_transaction`, `inspect`, `_retry_eligible`, `command_transaction`, `_command`, `refresh`, `retry`, `fail`, `_profile`, `_maia_job`, `maia_read_transaction`, `maia_write_transaction`, `evidence`, `maia_jobs`, `accept_maia`, `maia_status`: wire existing application decisions/workflows to owning transactions and fixed effects. |
+| Mixed source admission (1) | `submit`: request/snapshot replay and expired-cache refresh decisions around cache admission and request/head writes. |
+| Mixed credential workflows (4) | `_credential_status`, `credential_status`, `credential_reload`, `credential_revoke`: expiry/status projection, configured material/status handling and registration/revocation orchestration. |
+| Mixed provider workflows (2) | `claim`, `publish`: credential/cooldown admission, source claim/publication and retrieval metadata decisions around the fixed lease/write operations. |
 
 The separate `AnalysisStore` inventory above is still outstanding. No security,
 credential, grant, lease/replay guard or transaction-authority change is proposed
-by this classification; this batch changes only command code location/wiring.
+by this classification; this batch changes only Maia/profile/evidence code
+location and wiring.

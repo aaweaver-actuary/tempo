@@ -83,6 +83,44 @@ The [adapter inventory](../../database/tempo_intelligence_database/adapters/READ
 still names the mixed workflows awaiting later extraction; this bounded move
 does not establish complete separation or live resource isolation.
 
+## Maia work and evidence boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`maia_work.py`](src/tempo_intelligence/maia_work.py) owns the existing configured
+profile decision, immutable job construction/retry, job-list response, result
+validation/evidence construction and status workflow. The existing
+[`maia.py`](src/tempo_intelligence/maia.py) builder/validator remains unchanged;
+no model executes here. `source_requests.read_evidence` owns the accepted-evidence
+public envelope.
+
+```mermaid
+flowchart LR
+  store[Store composition and transaction owner] --> app[Maia work application]
+  store --> envelope[Evidence response application]
+  app -->|profile and work creation borrow caller transaction| fixed[Fixed Maia operations and atomic guards]
+  app -->|job reads or result/status owner context| fixed
+  envelope -->|owner read context| fixed
+  fixed --> tables[(Intelligence profile / job / cache / evidence tables)]
+  app --> validator[Existing pure Maia builder and wire validator]
+  envelope --> serializer[Public JSON conversion]
+```
+
+The [fixed adapter](../../database/tempo_intelligence_database/adapters/maia_operations.py)
+retains complete bound SQL, profile binding and unknown/stale/replay/transition
+guards, job-before-cache locks and append-before-completion writes. Store lends
+its unchanged read/write transactions. Profile configuration is checked before
+the fixed read; persisted retry payloads retain their constraints without looking
+up new workspace/default inputs. Result serialization stays before its transaction,
+status serialization stays after the job lock, job lists retain binding order,
+and evidence serialization remains inside its read snapshot. The existing writer
+is bound before constructing the result-evidence payload, preserving method
+lookup order. There is no generic query port, independent commit, provider call
+or model execution. `tests/test_maia_work.py` exercises these moved boundaries
+with the actual composition/fixed operations and fake rows; existing contract
+validation and native durability/concurrency proofs retain their separate owners.
+The [full Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
+still identifies seven mixed methods and the separate unfinished Analysis audit.
+
 ## Install and run
 
 Install only this component and its declared package dependencies:

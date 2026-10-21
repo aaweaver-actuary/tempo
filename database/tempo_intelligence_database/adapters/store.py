@@ -7,18 +7,19 @@ import time
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
-from tempo_analysis_jobs_contracts.v1 import MaiaJob, MaiaResult, JobStatus, serialize_contract
+from tempo_analysis_jobs_contracts.v1 import MaiaResult, JobStatus
 
 from tempo_intelligence.errors import DomainError
 from tempo_intelligence.identity import canonical_json, digest
-from tempo_intelligence.maia import build_maia_job, validate_maia_result
+from tempo_intelligence.maia_work import accept_maia, create_maia_job, maia_jobs, maia_status, require_profile
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
 from tempo_intelligence.serialization import public
 from tempo_intelligence.source_requests import (admit_request, cache_identity, command_request, failure_transition, inspect_request,
-    request_descriptors, request_snapshot, retry_eligible, validate_request_revision)
+    read_evidence, request_descriptors, request_snapshot, retry_eligible, validate_request_revision)
 from tempo_intelligence_database.adapters.request_inspection import RequestInspection
 from tempo_intelligence_database.adapters.request_commands import RequestCommands
+from tempo_intelligence_database.adapters.maia_operations import MaiaOperations
 
 
 def utcnow():
@@ -120,10 +121,7 @@ class Store:
         return row
 
     def _profile(self,database,descriptor):
-        configured=any(profile["model_id"]==descriptor["model_id"] and profile["model_version"]==descriptor["model_version"] and profile["artifact_sha256"]==descriptor["artifact_sha256"] and descriptor["rating"] in profile["ratings"] for profile in self.configuration.model_profiles)
-        row=database.execute("SELECT * FROM model_profiles WHERE model_id=%s AND model_version=%s",(descriptor["model_id"],descriptor["model_version"])).fetchone()
-        if not configured or not row or row["artifact_sha256"] != descriptor["artifact_sha256"] or descriptor["rating"] not in row["ratings"]:
-            raise DomainError("unsupported_model_context",422)
+        return require_profile(descriptor,lambda:self.configuration.model_profiles,MaiaOperations(self,database))
 
     def submit(self,request):
         payload=admit_request(request,self.workspace_id)
@@ -164,15 +162,7 @@ class Store:
         return self.inspect(request.request_id)
 
     def _maia_job(self,database,cache):
-        execution=cache["execution_generation"]+1
-        previous=database.execute("SELECT payload FROM maia_jobs WHERE cache_id=%s AND request_revision=%s ORDER BY execution_generation DESC LIMIT 1",(cache["cache_id"],cache["generation"])).fetchone()
-        # Worker request contents, including constraints, are immutable within
-        # a work generation. New defaults apply only to a new work generation.
-        job=(MaiaJob.model_validate({**previous["payload"],"execution_generation":execution}) if previous else
-             build_maia_job(cache["descriptor"],self.workspace_id,cache["cache_id"],cache["generation"],execution))
-        payload=job.model_dump(mode="json")
-        database.execute("INSERT INTO maia_jobs(job_id,request_revision,execution_generation,cache_id,payload) VALUES(%s,%s,%s,%s,%s)",(job.job_id,job.request_revision,execution,cache["cache_id"],Jsonb(payload)))
-        database.execute("UPDATE caches SET execution_generation=%s,state='awaiting_result',error_code=NULL,next_attempt_at=NULL,updated_at=now() WHERE cache_id=%s",(execution,cache["cache_id"]))
+        return create_maia_job(cache,lambda:self.workspace_id,MaiaOperations(self,database))
 
     def _new_generation(self,database,cache):
         database.execute("UPDATE caches SET generation=generation+1,state='queued',attempts=0,retryable=true,error_code=NULL,next_attempt_at=NULL,lease_token=NULL,leased_until=NULL,updated_at=now() WHERE cache_id=%s",(cache["cache_id"],))
@@ -186,12 +176,18 @@ class Store:
         return inspect_request(request_id,self.workspace_id,self.configuration,self.inspection_transaction,
             self._retry_eligible,self.credential_status,utcnow)
 
-    def evidence(self,evidence_id):
+    @contextmanager
+    def maia_read_transaction(self):
         with self.transaction(read_only=True) as database:
-            row=database.execute("SELECT * FROM evidence WHERE evidence_id=%s",(evidence_id,)).fetchone()
-            if not row:
-                raise DomainError("evidence_not_found",404)
-            return public({"schema_version":1,"workspace_id":self.workspace_id,**row})
+            yield MaiaOperations(self,database)
+
+    @contextmanager
+    def maia_write_transaction(self):
+        with self.transaction() as database:
+            yield MaiaOperations(self,database)
+
+    def evidence(self,evidence_id):
+        return read_evidence(evidence_id,lambda:self.workspace_id,self.maia_read_transaction)
 
     def _retry_eligible(self,cache,now):
         return retry_eligible(cache,now,self.configuration)
@@ -322,56 +318,10 @@ class Store:
             return True
 
     def maia_jobs(self,request_id):
-        with self.transaction(read_only=True) as database:
-            request=self._head(database,request_id)
-            result=[]
-            for binding in request["bindings"]:
-                if binding["kind"] == "maia":
-                    rows=database.execute("SELECT j.payload FROM maia_jobs j JOIN caches c ON j.cache_id=c.cache_id AND j.request_revision=c.generation AND j.execution_generation=c.execution_generation WHERE j.cache_id=%s AND j.status IN ('pending','running')",(binding["cache_id"],)).fetchall()
-                    result.extend(row["payload"] for row in rows)
-            return {"schema_version":1,"jobs":result}
+        return maia_jobs(request_id,self.maia_read_transaction)
 
     def accept_maia(self,result:MaiaResult):
-        if result.workspace_id != self.workspace_id:
-            raise DomainError("workspace_mismatch",403)
-        wire=result.model_dump(mode="json")
-        with self.transaction() as database:
-            job=database.execute("SELECT * FROM maia_jobs WHERE job_id=%s AND request_revision=%s AND execution_generation=%s FOR UPDATE",(result.job_id,result.request_revision,result.execution_generation)).fetchone()
-            if not job:
-                raise DomainError("unknown_maia_execution")
-            if job["result_payload"] is not None:
-                if serialize_contract(MaiaResult.model_validate(job["result_payload"])) != serialize_contract(result):
-                    raise DomainError("maia_result_replay_conflict")
-                return {"schema_version":1,"evidence_id":job["evidence_id"],"replayed":True}
-            cache=database.execute("SELECT * FROM caches WHERE cache_id=%s FOR UPDATE",(job["cache_id"],)).fetchone()
-            if cache["generation"] != result.request_revision or cache["execution_generation"] != result.execution_generation or job["status"] in ("failed","cancelled") or cache["state"] != "awaiting_result":
-                raise DomainError("stale_maia_execution")
-            try:
-                validate_maia_result(MaiaJob.model_validate(job["payload"]),result)
-            except ValueError:
-                raise DomainError("maia_result_mismatch",422) from None
-            evidence_id=self._append(database,cache,{"schema_version":1,"source":"maia","job":job["payload"],"result":wire,"artifact_sha256":cache["descriptor"]["artifact_sha256"],"limitations":["v1_artifact_identity_is_configured_version_binding"]})
-            database.execute("UPDATE maia_jobs SET status='completed',result_payload=%s,evidence_id=%s WHERE job_id=%s AND request_revision=%s AND execution_generation=%s",(Jsonb(wire),evidence_id,result.job_id,result.request_revision,result.execution_generation))
-            return {"schema_version":1,"evidence_id":evidence_id,"replayed":False}
+        return accept_maia(result,lambda:self.workspace_id,self.maia_write_transaction)
 
     def maia_status(self,status:JobStatus):
-        if status.workspace_id != self.workspace_id:
-            raise DomainError("workspace_mismatch",403)
-        with self.transaction() as database:
-            job=database.execute("SELECT * FROM maia_jobs WHERE job_id=%s AND request_revision=%s AND execution_generation=%s FOR UPDATE",(status.job_id,status.request_revision,status.execution_generation)).fetchone()
-            if not job:
-                raise DomainError("unknown_maia_execution")
-            wire=status.model_dump(mode="json")
-            if job["status_payload"] == wire:
-                return {"schema_version":1,"status":status.status}
-            cache=database.execute("SELECT * FROM caches WHERE cache_id=%s FOR UPDATE",(job["cache_id"],)).fetchone()
-            if cache["generation"] != status.request_revision or cache["execution_generation"] != status.execution_generation or job["evidence_id"]:
-                raise DomainError("stale_maia_execution")
-            if status.status not in ("pending","running","failed","cancelled"):
-                raise DomainError("verified_result_required",422)
-            if job["status"] in ("failed","cancelled") or job["status"]=="running" and status.status=="pending":
-                raise DomainError("maia_status_transition_conflict")
-            database.execute("UPDATE maia_jobs SET status=%s,status_payload=%s WHERE job_id=%s AND request_revision=%s AND execution_generation=%s",(status.status,Jsonb(wire),status.job_id,status.request_revision,status.execution_generation))
-            if status.status in ("failed","cancelled"):
-                database.execute("UPDATE caches SET state='failed',error_code=%s,retryable=%s WHERE cache_id=%s",("maia_"+status.status,status.retryable,cache["cache_id"]))
-            return {"schema_version":1,"status":status.status}
+        return maia_status(status,lambda:self.workspace_id,self.maia_write_transaction)
