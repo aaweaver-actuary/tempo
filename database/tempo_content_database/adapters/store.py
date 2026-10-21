@@ -13,6 +13,7 @@ from tempo_content_publication_contracts.v1 import Publication, serialize_contra
 
 from tempo_content.models import SourceSnapshot, SourceExercise
 from tempo_content.policy import prepare_source, exercise_continuation, binding_responses, publication_report, coverage_reply
+from tempo_content.worker import reconcile_once
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position, inventory_segment, build_publication
 from tempo_content_database.ddl.migrate import readiness
 
@@ -304,29 +305,19 @@ class ContentService:
         database.execute('UPDATE content.tasks SET phase=%s,cursor=%s,exercise_state=%s,state=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s',(phase or task['phase'],task['cursor'] if cursor is None else cursor,Jsonb(exercise_state),state,task['source_id'],task['generation']))
 
     def work_once(self,source_key=None,hook=None):
-        task = self._claim(source_key,hook)
-        if not task:
-            return self.collect_once(hook=hook)
-        manifest = self._manifest(task['source_id'],task['revision'])
-        try:
-            if task['phase']=='routes':
-                return self._route_slice(task,manifest,hook)
-            if task['phase']=='exercises':
-                return self._exercise_slice(task,manifest,hook)
-            if task['phase']=='bindings':
-                return self._binding_slice(task,manifest,hook)
-            raise ContentError('unknown_task_phase',task['phase'])
-        except ValueError as error:
-            code = error.code if isinstance(error,ContentError) else 'invalid_content'
-            if code=='stale_generation':
-                return {'worked':False,'status':'stale_generation','phase':task['phase']}
-            with self._transaction() as database:
-                try:
-                    self._fence(database,task)
-                except ContentError:
-                    return {'worked':False,'status':'stale_generation','phase':task['phase']}
-                database.execute("UPDATE content.tasks SET state='failed',error=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s",(Jsonb({'code':code,'message':str(error)}),task['source_id'],task['generation']))
-            return {'worked':True,'status':'failed','phase':task['phase'],'error':{'code':code,'message':str(error)}}
+        return reconcile_once(source_key,hook,claim_task=self._claim,collect=self.collect_once,
+                              read_manifest=self._manifest,route_slice=self._route_slice,
+                              exercise_slice=self._exercise_slice,binding_slice=self._binding_slice,
+                              fail_task=self._fail_task)
+
+    def _fail_task(self,task,code,error):
+        with self._transaction() as database:
+            try:
+                self._fence(database,task)
+            except ContentError:
+                return False
+            database.execute("UPDATE content.tasks SET state='failed',error=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s",(Jsonb({'code':code,'message':str(error)}),task['source_id'],task['generation']))
+        return True
 
     def _transition(self,task,phase,state='pending',hook=None):
         _hook(hook,'after_read',task=task)

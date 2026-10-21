@@ -309,3 +309,5 @@ For retained regular-suite receipts, add `--evidence DIRECTORY` to
 validation runs whether evidence is retained or temporary.
 
 Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_content_database/README.md).
+
+Existing reconciliation orchestration lives in the [Content worker application](src/tempo_content/worker/README.md); source decisions live in [Content source policy](src/tempo_content/policy/README.md). The database adapter wires their owner-specific facts and operations. Route traversal and publication build/orchestration remain extraction work.

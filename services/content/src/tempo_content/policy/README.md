@@ -21,4 +21,4 @@ The [adapter](../../../../../database/tempo_content_database/adapters/store.py) 
 
 `tests/test_source_policy.py` exercises the moved decisions with synthetic facts. Existing storage-boundary and installed import/help/resource checks retain ownership of composition and packaging. Native PostgreSQL and the five unchanged loopback transport cases were not run for this slice. The public Content package still eagerly exports its concrete `ContentService`, so this is not a claim that importing the entire package is driver-free.
 
-Further extraction remains explicit work: worker dispatch/route traversal and publication build/orchestration still share `store.py` with persistence operations. This small split does not certify that whole file as application-free or establish a permanent exception.
+Worker dispatch now lives in the [Content worker application](../worker/README.md). Further extraction remains explicit work: route traversal and publication build/orchestration still share `store.py` with persistence operations. These bounded splits do not certify that whole file as application-free or establish a permanent exception.
