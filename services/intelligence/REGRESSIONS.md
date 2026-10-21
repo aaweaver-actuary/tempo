@@ -1,5 +1,18 @@
 # Intelligence regression ownership
 
+## Database-free source requests and serialization
+
+`tests/test_source_requests.py` owns non-mutating nested datetime serialization,
+unchanged source order and provider-only origin stamping, stable cache identity
+across legal-universe metadata with workspace/provider/semantic separation, and
+retry state/deadline/provider fences including Maia without provider metadata.
+The private Store retry entry point delegates to that same application helper.
+Existing request-validation, canonical source identities and bounded HTTP
+refresh/retry cases retain their assertions. The store keeps descriptor
+preparation, binding initialization, sorting, cache lock/queries and binding
+append in the original order. Native request/cache/replay and transaction proofs
+remain required separately; these pure/fake checks do not execute them.
+
 ## Database-free finding assembly
 
 `tests/test_findings.py` owns synthetic advice identity merge/deduplication,

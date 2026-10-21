@@ -254,3 +254,10 @@ PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backe
 ```
 
 Logs/proof: `/tmp/tempo-db-foreground-{control-tests,source-proof}.log`. Eight changed/new Python sources parse; owner Mermaid/links and whitespace pass. Only fake connections/task-owned SQLite ran. No schema/migration, wire, grants, lifecycle or live-resource change occurred; native PostgreSQL/full-system and effective independent-resource behavior remain unverified.
+
+
+## Intelligence serialization and source-request helpers
+
+Existing recursive public serialization moved to application `serialization.py`; descriptor preparation, cache identity and retry eligibility moved to `source_requests.py`. Serializer consumers import that application owner. Inlining the fixed helpers restores the original complete submit statement order, including binding initialization/sort, queries and append order; the serializer/retry bodies, other Store methods and every SQL literal are unchanged. Lazy provider-origin access remains inside the same short-circuit predicate. Twenty-three distinct focused pure/fake cases pass, including seventeen new cases; the final lazy-lookup case adds one identity beyond the initial twenty-two.
+
+Sdist→wheel artifacts contain current helpers/adapters/tests with matching source; exact commands/hashes and remaining mixed methods are in `services/intelligence/VALIDATION.md` and `/tmp/tempo-intelligence-source-requests-evidence.json`. Owner diagram parsing, links, syntax and whitespace pass. The native fixture only changes its serializer import; native, installed-consumer runtime and full-system qualification remain unexecuted. No schema/contract, provider, credential/security, live service or CI behavior changed.

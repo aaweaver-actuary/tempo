@@ -17,6 +17,35 @@ client, cross-domain SQL or model-execution dependency.
 See [INTERFACES.md](INTERFACES.md) for exact input, lifecycle, cache and credential
 semantics, and [REGRESSIONS.md](REGRESSIONS.md) for owning tests.
 
+## Request and cache policy boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`source_requests.py`](src/tempo_intelligence/source_requests.py) owns existing
+source descriptor preparation, cache identity and retry eligibility.
+[`serialization.py`](src/tempo_intelligence/serialization.py) owns nested public
+JSON value conversion. These helpers use existing request/configuration facts;
+they have no database, transaction, provider or worker capability.
+
+```mermaid
+flowchart LR
+  store[Intelligence Store composition] -->|prepare descriptors and cache identity| policy[Source request policy]
+  store -->|retry decision at existing call points| policy
+  store -->|query and transaction authority| tables[(Intelligence tables)]
+  store --> serializer[Public JSON serialization]
+  analysis[AnalysisStore responses] --> serializer
+```
+
+The centralized Store still prepares descriptors, initializes bindings, sorts,
+then locks/processes each cache and appends its binding in the existing order.
+Provider-origin lookup remains inside the existing descriptor loop and retry
+short-circuit predicate. SQL, transactions, locks, clock calls, command receipts
+and public wire shapes are unchanged. Analysis responses and the retained native
+fixture import serialization directly from this application module.
+`tests/test_source_requests.py` owns the pure policy/serialization cases.
+The [adapter inventory](../../database/tempo_intelligence_database/adapters/README.md)
+still names the mixed workflows awaiting later extraction; this bounded move
+does not establish complete separation or live resource isolation.
+
 ## Install and run
 
 Install only this component and its declared package dependencies:

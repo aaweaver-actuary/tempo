@@ -134,7 +134,7 @@ def test_input_immutable_and_partial_rejection(state):
 def test_native_workbench_producer_contract(state):
     owner=setup(state)
     report=owner.report('run')
-    from tempo_intelligence_database.adapters.store import public
+    from tempo_intelligence.serialization import public
     app=create_app(state[1],store=state[0])
     with TestClient(app) as client:
         client.headers.update({'Authorization':'Bearer '+state[1].caller_token,'X-Tempo-Workspace':'fixture'})

@@ -10,24 +10,18 @@ from psycopg_pool import ConnectionPool
 from tempo_analysis_jobs_contracts.v1 import MaiaJob, MaiaResult, JobStatus, serialize_contract
 
 from tempo_intelligence.errors import DomainError
-from tempo_intelligence.identity import canonical_json, digest, source_descriptor
+from tempo_intelligence.identity import canonical_json, digest
 from tempo_intelligence.maia import build_maia_job, validate_maia_result
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
+from tempo_intelligence.serialization import public
+from tempo_intelligence.source_requests import cache_identity, request_descriptors, retry_eligible
 
 
 def utcnow():
     return datetime.now(timezone.utc)
 
 
-def public(value):
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {key: public(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [public(item) for item in value]
-    return value
 
 
 class Store:
@@ -150,15 +144,11 @@ class Store:
                 existing_snapshot=database.execute("SELECT payload FROM snapshots WHERE identity=%s",(snapshot_identity,)).fetchone()
                 if existing_snapshot["payload"] != immutable_snapshot:
                     raise DomainError("snapshot_replay_conflict")
-                descriptors=[source_descriptor(request.snapshot,source) for source in request.sources]
-                for descriptor in descriptors:
-                    if descriptor["kind"] != "maia":
-                        descriptor["provider_origin"]=self.configuration.provider_base_url
+                descriptors=request_descriptors(request,self.configuration)
                 bindings=[]
-                descriptors.sort(key=lambda descriptor:digest({"workspace":self.workspace_id,"descriptor":{key:value for key,value in descriptor.items() if key != "legal_universe_digest"}}))
+                descriptors.sort(key=lambda descriptor:cache_identity(self.workspace_id,descriptor))
                 for descriptor in descriptors:
-                    semantic={key:value for key,value in descriptor.items() if key != "legal_universe_digest"}
-                    cache_id=digest({"workspace":self.workspace_id,"descriptor":semantic})
+                    cache_id=cache_identity(self.workspace_id,descriptor)
                     terminal=descriptor["terminal_reason"] is not None
                     if descriptor["kind"] == "maia" and not terminal:
                         self._profile(database,descriptor)
@@ -222,9 +212,7 @@ class Store:
             return public({"schema_version":1,"workspace_id":self.workspace_id,**row})
 
     def _retry_eligible(self,cache,now):
-        return bool(cache["retryable"] and cache["state"] in ("failed","waiting_credentials","retry_wait")
-            and (cache["next_attempt_at"] is None or cache["next_attempt_at"]<=now)
-            and (cache["kind"] == "maia" or cache["descriptor"]["provider_origin"] == self.configuration.provider_base_url))
+        return retry_eligible(cache,now,self.configuration)
 
     def _command(self,request_id,command_id,expected_revision,retry):
         with self.transaction() as database:

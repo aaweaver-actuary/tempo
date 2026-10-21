@@ -20,7 +20,13 @@ these two older adapters. Remaining mixed methods include `Store.submit`,
 `inspect`, `_command`, credential/provider state transitions and Maia admission;
 `AnalysisStore` still mixes manifest/page/finalize/run admission, status and command
 responses, report publication/pagination/dismissal/export, and engine execution
-state transitions with their queries. `Store.public` serialization and
-`_retry_eligible` are also database-free helpers still in that adapter. The Games
-read projection is already limited to queries and row extraction. DDL discovery
-and migration execution remain database operations in `../ddl/`.
+state transitions with their queries. Response serialization and retry policy
+now live in the component's
+[`serialization.py`](../../../services/intelligence/src/tempo_intelligence/serialization.py)
+and [`source_requests.py`](../../../services/intelligence/src/tempo_intelligence/source_requests.py).
+The private `_retry_eligible` entry point delegates to the latter, which also
+owns descriptor preparation and cache-identity policy; the Store
+keeps the existing binding/sort/lock order and every transaction/query call point.
+See the [request/cache boundary](../../../services/intelligence/README.md#request-and-cache-policy-boundary).
+The Games read projection is already limited to queries and row extraction. DDL
+discovery and migration execution remain database operations in `../ddl/`.

@@ -168,6 +168,18 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 </details>
 
+## Additional storage candidates found after the baseline
+
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Two additional real Redis mixed files were found while reviewing control storage; they do not alter the baseline arithmetic above and must also be extracted:
+
+| Pending source | Database operations | Application responsibility to retain outside database |
+| --- | --- | --- |
+| [background_wakes.py](../backend/app/services/background_wakes.py) | Cached Redis factory and four ownership/reserve/publish/consume/abort Lua execution sites. | Existing wake lifecycle, identity, callback and queue orchestration. |
+| [background_runtime.py](../backend/app/services/background_runtime.py) | Short-timeout Redis factory, worker-slot SET with 15-second TTL, bounded MGET of sixteen slots. | Runtime snapshot/lease timing and presentation; its ContextVar `.set` calls are not Redis. |
+
+The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis operations/key/value layout must move along with SQL while preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
+
+
 The scan excludes the centralized tree and tests. Historical evidence/qualification receipts retain their recorded source paths; current active references were relocated. Redis orchestration and host resource coordination remain in their existing infrastructure owners.
 
 ## Handoff for the separately coordinated domain move
@@ -222,3 +234,6 @@ Game Evidence’s import-status response tail and comparison report dictionary h
 
 
 Learning’s durable tasks, essential maintenance and producer receiver persistence now join the earlier six application/storage splits. Fifteen Learning baseline candidates remain, including admission, gateways, publication/review/queue composition and their current helpers; no full-runtime isolation claim is implied.
+
+
+Intelligence serialization and source request descriptor/cache/retry decisions now live in application modules. Their existing composition call points retain request/binding/query order and lazy provider configuration access; further request/model/credential/inspection/Maia and Analysis workflow policy remains unfinished inside the root adapters.

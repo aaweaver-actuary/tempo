@@ -7,7 +7,7 @@ import uuid
 from psycopg.types.json import Jsonb
 from tempo_intelligence.errors import DomainError
 from tempo_intelligence.identity import digest, canonical_json
-from tempo_intelligence_database.adapters.store import public
+from tempo_intelligence.serialization import public
 from tempo_intelligence.analysis.models import Manifest, Page, RunRequest, payload_digest
 from tempo_intelligence.analysis.classify import ordered_positions, source_findings
 from tempo_intelligence.analysis.engine import validate_result, comparison, compatible_worker, validate_pair_jobs
