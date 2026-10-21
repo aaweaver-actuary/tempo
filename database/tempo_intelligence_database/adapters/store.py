@@ -15,7 +15,8 @@ from tempo_intelligence.maia import build_maia_job, validate_maia_result
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
 from tempo_intelligence.serialization import public
-from tempo_intelligence.source_requests import cache_identity, request_descriptors, retry_eligible
+from tempo_intelligence.source_requests import (admit_request, cache_identity, failure_transition,
+    request_descriptors, request_snapshot, retry_eligible, source_inspection, validate_request_revision)
 
 
 def utcnow():
@@ -123,9 +124,7 @@ class Store:
             raise DomainError("unsupported_model_context",422)
 
     def submit(self,request):
-        if request.snapshot.workspace_id != self.workspace_id:
-            raise DomainError("workspace_mismatch",403)
-        payload=request.model_dump(mode="json")
+        payload=admit_request(request,self.workspace_id)
         with self.transaction() as database:
             database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("request:"+request.request_id,))
             old=database.execute("SELECT payload FROM requests WHERE request_id=%s AND revision=%s",(request.request_id,request.request_revision)).fetchone()
@@ -134,12 +133,8 @@ class Store:
                     raise DomainError("request_replay_conflict")
             else:
                 head=database.execute("SELECT revision FROM request_heads WHERE request_id=%s",(request.request_id,)).fetchone()
-                expected=request.expected_revision
-                if (head and (head["revision"] != expected or request.request_revision <= head["revision"])) or (not head and expected not in (None,0)):
-                    raise DomainError("request_revision_conflict")
-                snapshot=request.snapshot.model_dump(mode="json")
-                immutable_snapshot={key:value for key,value in snapshot.items() if key != "policy_context"}
-                snapshot_identity=digest({key:snapshot[key] for key in ("source_id","source_revision","snapshot_id","publication_id","publication_generation")})
+                validate_request_revision(request,head)
+                snapshot,immutable_snapshot,snapshot_identity=request_snapshot(request)
                 database.execute("INSERT INTO snapshots VALUES(%s,%s) ON CONFLICT DO NOTHING",(snapshot_identity,Jsonb(immutable_snapshot)))
                 existing_snapshot=database.execute("SELECT payload FROM snapshots WHERE identity=%s",(snapshot_identity,)).fetchone()
                 if existing_snapshot["payload"] != immutable_snapshot:
@@ -187,8 +182,7 @@ class Store:
             for binding in request["bindings"]:
                 cache=database.execute("SELECT * FROM caches WHERE cache_id=%s",(binding["cache_id"],)).fetchone()
                 evidence=database.execute("SELECT accepted_at FROM evidence WHERE evidence_id=%s",(cache["accepted_id"],)).fetchone() if cache["accepted_id"] else None
-                freshness="absent" if not evidence else "current" if evidence["accepted_at"]+timedelta(seconds=request["payload"]["max_age_seconds"])>utcnow() else "stale"
-                source={"kind":cache["kind"],"cache_id":cache["cache_id"],"work_generation":cache["generation"],"execution_generation":cache["execution_generation"],"state":cache["state"],"freshness":freshness,"evidence_id":cache["accepted_id"],"error_code":cache["error_code"],"attempts":cache["attempts"],"retryable":cache["retryable"],"retry_at":cache["next_attempt_at"],"retry_eligible":self._retry_eligible(cache,utcnow())}
+                source=source_inspection(cache,evidence,request,self._retry_eligible,utcnow)
                 if cache["kind"] != "maia":
                     source["credential"]=self._credential_status(database)
                     source["provider_origin"]=cache["descriptor"]["provider_origin"]
@@ -354,11 +348,7 @@ class Store:
             if auth_failed:
                 credential=claim["credential"]
                 database.execute("UPDATE credential_registrations r SET status='rejected' FROM credential_head h WHERE h.id=1 AND h.registration_id=r.registration_id AND h.generation=r.generation AND r.registration_id=%s AND r.generation=%s AND r.status IN ('registered','accepted')",(credential["registration_id"],credential["generation"]))
-            waiting=code.startswith("credential_") or code.startswith("session_") or auth_failed
-            attempts=cache["attempts"]+(0 if retry_at or waiting or cancelled else 1)
-            state="queued" if cancelled else "waiting_credentials" if waiting else "retry_wait" if retry_at or (retryable and attempts<3) else "failed"
-            deadline=retry_at or (utcnow()+timedelta(seconds=60 if waiting else (5 if attempts<2 else 30)) if state in ("retry_wait","waiting_credentials") else None)
-            can_retry=bool(retryable or waiting or retry_at or cancelled)
+            attempts,state,deadline,can_retry=failure_transition(cache,code,retryable,retry_at,auth_failed,cancelled,utcnow)
             database.execute("UPDATE caches SET state=%s,attempts=%s,retryable=%s,error_code=%s,next_attempt_at=%s,lease_token=NULL,leased_until=NULL,updated_at=now() WHERE cache_id=%s",(state,attempts,can_retry,code,deadline,cache["cache_id"]))
             self._release_provider(database,claim,retry_at)
             return True

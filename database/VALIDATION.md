@@ -307,3 +307,8 @@ PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backe
 ```
 
 Evidence: `/tmp/tempo-db-redis-{existing-tests,boundary-tests,baseline-test,source-proof}.log`. Six Python sources, owner Mermaid/links and whitespace pass. No actual Redis, Lua server, PostgreSQL, sockets or live data ran. Native/outage timing/resource/full-system behavior remains unverified; the two additional wake/runtime Redis sources remain pending. No schema, key/format/TTL, security, lifecycle or CI behavior changed.
+
+
+## Intelligence request admission, inspection and failure decisions
+
+Five existing blocks moved to application `source_requests.py`: workspace/payload admission, revision validation, snapshot preparation, freshness/source response and failure-state/retry decisions. Inlining them restores the complete original Store class AST, including clocks/retry short circuits, binding/query order and unchanged SQL/transactions/locks. Thirty-seven distinct focused pure/fake cases pass (nineteen new). Sdist→wheel artifacts include current helpers/adapters/tests with matching source bytes. Owner Mermaid/links, syntax and whitespace pass; exact commands and hashes are in `services/intelligence/VALIDATION.md` and `/tmp/tempo-intelligence-admission-inspection-evidence.json`. Remaining replay/cache/Maia/provider/command and Analysis workflow blocks stay explicitly inventoried. No installed-consumer runtime/native/live/full-system or deployment qualification is claimed; no credential values/security behavior, schema/contract or CI operation changed.

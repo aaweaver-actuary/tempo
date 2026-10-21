@@ -16,16 +16,20 @@ and then merges the captured facts in that order. SQL and transaction ownership
 remain here.
 
 This is a bounded extraction, not a complete removal of application policy from
-these two older adapters. Remaining mixed methods include `Store.submit`,
-`inspect`, `_command`, credential/provider state transitions and Maia admission;
+these two older adapters. Remaining `Store.submit` policy includes request and
+snapshot replay validation, expired-cache refresh and Maia profile/job decisions.
+`inspect` still assembles provider availability/credential fields and the final
+request envelope. `_command` still orchestrates retry/refresh, and credential/
+provider workflows and Maia generation/admission still mix decisions with SQL;
 `AnalysisStore` still mixes manifest/page/finalize/run admission, status and command
 responses, report publication/pagination/dismissal/export, and engine execution
 state transitions with their queries. Response serialization and retry policy
 now live in the component's
 [`serialization.py`](../../../services/intelligence/src/tempo_intelligence/serialization.py)
 and [`source_requests.py`](../../../services/intelligence/src/tempo_intelligence/source_requests.py).
-The private `_retry_eligible` entry point delegates to the latter, which also
-owns descriptor preparation and cache-identity policy; the Store
+The private `_retry_eligible` entry point delegates to the latter, which also owns
+request/revision admission, snapshot preparation, descriptor/cache identity,
+captured-source inspection and failure transitions. The Store
 keeps the existing binding/sort/lock order and every transaction/query call point.
 See the [request/cache boundary](../../../services/intelligence/README.md#request-and-cache-policy-boundary).
 The Games read projection is already limited to queries and row extraction. DDL

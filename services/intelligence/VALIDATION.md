@@ -347,3 +347,41 @@ assembly, credential/provider transitions, Maia generation/admission, and Analys
 workflow/report/execution policy. No complete-separation claim, installed-consumer
 runtime qualification, native fixture execution, live operation, security change,
 full-system suite, CI change, deployment or merge is established by this slice.
+
+## Source admission, inspection and failure blocks — October 21, 2026
+
+This subsequent slice moves five existing blocks from Store into the existing
+`source_requests.py`: workspace/payload admission, expected-head revision
+validation, full/immutable snapshot preparation and identity, base captured-source
+inspection, and failure attempt/state/deadline/retry decisions. The existing
+clock and retry callbacks preserve conditional clock invocation and freshness /
+retry evaluation order. No new repository, dispatch layer, query port, public
+contract or schema is introduced.
+
+All **37 selected source-root cases passed**, including 19 new admission,
+snapshot, freshness and failure-decision cases, the previous 17 policy/serializer
+cases and one existing fake-store HTTP refresh/retry case. The upstream
+Starlette/AnyIO deprecation remains unsuppressed. The complete Store class AST is
+restored by inlining these five moved blocks; their bodies match the original
+statements except explicit workspace/retry/clock parameters. All earlier policy
+helpers and every SQL statement literal remain unchanged. This verifies query,
+transaction, lock, callback and binding order without running a database.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_requests.py services/intelligence/tests/test_api.py::test_caller_reads_and_bounded_refresh_retry_have_explicit_revision_commands -q --rootdir=. -o pythonpath= --import-mode=importlib
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-admission-inspection-build
+```
+
+The source distribution rebuilt its wheel, with current helper/adapter bytes and
+the updated regular tests included. The owner Mermaid block parses with the
+existing jsdom/Mermaid setup, and owner file links resolve. Test output is retained
+at `/tmp/tempo-intelligence-admission-inspection-tests.log`; original Store and
+policy snapshots are `/tmp/tempo-intelligence-admission-inspection-before.py` and
+`/tmp/tempo-intelligence-admission-policy-before.py`. Artifacts remain in the build
+directory for integration; the shared review environment remains read only.
+
+Request/snapshot replay checks, expired-cache refresh, Maia profile/job decisions,
+provider-specific inspection/final request envelopes, command orchestration and
+the documented Analysis workflows still require responsibility extraction. They
+remain explicit unfinished work. This focused evidence is not installed-consumer,
+native, live, security, full-system, CI, deployment or merge qualification.

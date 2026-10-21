@@ -1,5 +1,17 @@
 # Intelligence regression ownership
 
+## Source admission, inspection and failure decisions
+
+The regular `tests/test_source_requests.py` suite also owns workspace rejection
+before serialization, initial/replacement revision fences, retained snapshot
+payload/identity, absent/current/stale freshness including its exact boundary,
+freshness-before-retry clock order, retry attempt budgets/backoff, unchanged
+provider deadlines, waiting/auth-rejection inputs and cancellation decisions.
+These blocks now live in the existing application policy module; their callers
+remain at the same points between Store queries, locks and credential effects.
+The native request/replay/cache/transaction proofs retain their ownership and
+were not executed for this extraction.
+
 ## Database-free source requests and serialization
 
 `tests/test_source_requests.py` owns non-mutating nested datetime serialization,
