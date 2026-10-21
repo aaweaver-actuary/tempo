@@ -5,46 +5,14 @@ import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { learningDayKey as localDayKey } from "./study-connection";
-import { offlineTrainingDatabase as database } from "../../database/browser/offline-training-storage";
+import { readPreparedTraining, updatePreparedTraining } from "../../database/browser/prepared-training-storage";
+import type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
+export { readPreparedTraining } from "../../database/browser/prepared-training-storage";
+export type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
-
-export type OfflineAttempt = {
-  localEntryId: number;
-  parentLocalEntryId?: number;
-  cardId: string;
-  outcome: "again" | "correct";
-  guided: boolean;
-  completedAt: string;
-  expectedReviewId: number;
-  expectedRevision: number;
-  queueCycle?: number;
-  serverEntryId?: number;
-  serverReviewId?: number;
-  serverRepeatEntryId?: number | null;
-  conflict?: string;
-  syncWarning?: string;
-  serverAcknowledged?: boolean;
-  studyId?: string;
-  exerciseId?: string;
-  attemptId?: string;
-  openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
-  openingEvidenceRejected?: string;
-  openingEvidenceFallbackReason?: "local_storage_quota";
-  answer?: StudyAnswer;
-  assessment?: StudyAssessment;
-  selfRating?: "correct" | "again";
-};
-
-export type PreparedTraining = {
-  localDate: string;
-  preparedAt: string;
-  cards: BackendQueueCard[];
-  attempts: OfflineAttempt[];
-  nextTemporaryId: number;
-};
 
 export class OfflineReplayError extends Error {
   constructor(message: string, readonly endpoint: string, options?: ErrorOptions) {
@@ -67,22 +35,10 @@ export function describeOfflineQueue(prepared: PreparedTraining): string {
     ". The live count may differ until you reconnect.";
 }
 
-const RECORD_KEY = "prepared-daily-queue";
-
 export function requiresConnectedGrading(card: Pick<BackendQueueCard, "content_type">): boolean {
   if (card.content_type === "defense") return true;
   if (card.content_type !== "study_exercise") return false;
   return !studySnapshotSchema.safeParse((card as BackendQueueCard).study_snapshot).success;
-}
-
-export async function readPreparedTraining(): Promise<PreparedTraining | null> {
-  if (typeof indexedDB === "undefined") return null;
-  const opened = await database();
-  return new Promise((resolve, reject) => {
-    const request = opened.transaction("training").objectStore("training").get(RECORD_KEY);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-  });
 }
 
 export async function discardOfflineConflict(localEntryId: number): Promise<PreparedTraining> {
@@ -90,30 +46,6 @@ export async function discardOfflineConflict(localEntryId: number): Promise<Prep
     if (!current?.attempts.some((attempt) => attempt.localEntryId === localEntryId && attempt.conflict))
       throw new Error("This saved conflict is no longer available. Reopen Review conflicts to refresh the list.");
     return { ...current, attempts: current.attempts.filter((attempt) => attempt.localEntryId !== localEntryId) };
-  });
-}
-
-async function updatePreparedTraining(
-  update: (current: PreparedTraining | null) => PreparedTraining,
-): Promise<PreparedTraining> {
-  const opened = await database();
-  return new Promise((resolve, reject) => {
-    const transaction = opened.transaction("training", "readwrite");
-    const store = transaction.objectStore("training");
-    let updated: PreparedTraining;
-    const request = store.get(RECORD_KEY);
-    request.onsuccess = () => {
-      try {
-        updated = update(request.result ?? null);
-        store.put(updated, RECORD_KEY);
-      } catch (error) {
-        transaction.abort();
-        reject(error);
-      }
-    };
-    transaction.oncomplete = () => resolve(updated);
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
   });
 }
 
