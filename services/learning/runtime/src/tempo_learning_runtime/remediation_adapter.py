@@ -3,7 +3,8 @@
 from datetime import datetime, timezone
 import json
 
-from psycopg.rows import tuple_row
+from tempo_learning_database.adapters import remediation_adapter as storage
+from tempo_learning_database.adapters.remediation_adapter import BorrowedConnection
 from tempo_chess_core import canonical_fen_key
 from tempo_learning_remediation import (
     AcceptedDecision,
@@ -22,19 +23,6 @@ from tempo_learning_database.connections import current_database
 from .durable_tasks import enqueue_task_in_transaction
 
 
-class BorrowedConnection:
-    """Per-cursor tuple rows without changing the runtime's shared row factory."""
-
-    def __init__(self, database):
-        self.database = database
-        self.info = database.raw.info
-
-    def execute(self, statement, parameters=()):
-        return self.database.raw.cursor(row_factory=tuple_row).execute(
-            statement, parameters
-        )
-
-
 def workspace_id():
     return current_database.get().configuration.workspace_id
 
@@ -50,10 +38,7 @@ class AcceptedDefinitions:
         self.database = database
 
     def for_card(self, card_id):
-        row = self.database.execute(
-            "SELECT publication_id,publication_generation FROM cards WHERE id=?",
-            (card_id,),
-        ).fetchone()
+        row = storage.card_publication_identity(self.database, card_id)
         if not row or row[0] is None:
             return None
         return self.decision(card_id, None, row[0], row[1])
@@ -62,20 +47,10 @@ class AcceptedDefinitions:
         from .publication_bridge import physical_id
         authored_id = card_id
         card_id = physical_id(self.database, card_id)
-        alias = self.database.execute("SELECT content_card_id FROM content_card_aliases WHERE learning_card_id=? AND publication_id=?", (card_id,publication_id)).fetchone()
+        alias = storage.content_alias(self.database, card_id, publication_id)
         if alias:
             authored_id = alias[0]
-        row = self.database.execute(
-            """SELECT publication.payload_json,card.revision,card.serving_active,card.archived,
-                      card.superseded_by FROM cards card
-               JOIN accepted_publications publication ON publication.publication_id=card.publication_id
-                 AND publication.generation=card.publication_generation
-               JOIN serving_publications serving ON serving.publication_id=publication.publication_id
-                 AND serving.generation=publication.generation
-               WHERE card.id=? AND card.publication_id=? AND card.publication_generation=?
-                 AND publication.state='active'""",
-            (card_id, publication_id, publication_generation),
-        ).fetchone()
+        row = storage.accepted_publication_facts(self.database, card_id, publication_id, publication_generation)
         if row is None:
             return None
         document=json.loads(row[0])
@@ -140,10 +115,7 @@ def clear_priority(database, card_id):
     from .real_game_feedback import MISS_REASON, has_outstanding_real_game_miss
 
     if not has_outstanding_real_game_miss(database, card_id):
-        database.execute(
-            "UPDATE daily_queue SET gameplay_priority_reason=NULL WHERE card_id=? AND gameplay_priority_reason=?",
-            (card_id, MISS_REASON),
-        )
+        storage.clear_priority(database, card_id, MISS_REASON)
 
 
 def receive(database, delivery, *, background=False, historical_evidence_revision=None):
@@ -153,18 +125,12 @@ def receive(database, delivery, *, background=False, historical_evidence_revisio
     from .publication_bridge import physical_id
     affected = {physical_id(database,obligation.card_id) for obligation in delivery.obligations}
     for withdrawal in getattr(delivery, "withdrawals", ()):
-        row = database.execute_native(
-            "SELECT card_id FROM remediation_obligation_heads WHERE workspace_id=%s AND obligation_id=%s",
-            (workspace_id(), withdrawal.obligation_id),
-        ).fetchone()
+        row = storage.withdrawal_card(database, workspace_id(), withdrawal.obligation_id)
         if row:
             affected.add(row[0])
     for card_id in sorted(affected):
         lock_card(database, card_id)
-    before = database.execute_native(
-        "SELECT revision FROM remediation_workspaces WHERE workspace_id=%s",
-        (workspace_id(),),
-    ).fetchone()
+    before = storage.workspace_revision(database, workspace_id())
     context = ReceiveContext(
         workspace_id(),
         delivery.game_id,
@@ -194,10 +160,7 @@ def bind_issued_attempt(database, queue_entry_id, card_id, revision):
         return
     owned = repository(database)
     identity = attempt_identity(queue_entry_id, revision)
-    existing = database.execute_native(
-        "SELECT issued_at FROM remediation_attempts WHERE workspace_id=%s AND attempt_id=%s",
-        (workspace_id(), identity),
-    ).fetchone()
+    existing = storage.attempt_issued_at(database, workspace_id(), identity)
     issued_at = existing[0] if existing else datetime.now(timezone.utc)
     owned.bind_attempt(
         AttemptAuthority(
@@ -220,11 +183,7 @@ def settle_review(database, card_id, review_id, *, queue_entry_id=None, revision
     current = AcceptedDefinitions(database).for_card(card_id)
     if current is None or not current.active:
         return
-    bound = database.execute_native(
-        """SELECT attempt_id,card_id,card_revision,publication_id,publication_generation,issued_at
-           FROM remediation_attempts WHERE workspace_id=%s AND attempt_id=%s""",
-        (workspace_id(), attempt_identity(queue_entry_id, revision)),
-    ).fetchone()
+    bound = storage.bound_attempt(database, workspace_id(), attempt_identity(queue_entry_id, revision))
     if not bound or tuple(bound)[1:5] != (
         current.card_id,
         current.card_revision,
@@ -232,14 +191,8 @@ def settle_review(database, card_id, review_id, *, queue_entry_id=None, revision
         current.publication_generation,
     ):
         return
-    review = database.execute(
-        "SELECT rating,guided,reviewed_at,source_kind,invalidated_at FROM reviews WHERE id=? AND card_id=?",
-        (review_id, card_id),
-    ).fetchone()
-    origin = database.execute(
-        "SELECT attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=? AND revision=? AND issued_as_head=1",
-        (queue_entry_id, card_id, revision),
-    ).fetchone()
+    review = storage.settlement_review(database, review_id, card_id)
+    origin = storage.issued_origin(database, queue_entry_id, card_id, revision)
     if not review or origin is None:
         return
     owned = repository(database)
@@ -265,35 +218,19 @@ def settle_review(database, card_id, review_id, *, queue_entry_id=None, revision
 
 def candidate(database, card_id, queue_day):
     current = AcceptedDefinitions(database).for_card(card_id)
-    row = database.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
+    row = storage.card(database, card_id)
     if row is None or current is None:
         return None
     route = (
-        database.execute(
-            """SELECT step.repertoire_id FROM opening_graph_steps step
-           JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id
-             AND publication.generation=step.generation
-           JOIN repertoires repertoire ON repertoire.id=step.repertoire_id
-           JOIN repertoire_lines line ON line.id=step.line_id
-           WHERE step.card_id=? AND step.generation=? AND publication.state='ready'
-             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                 WHERE block.card_id=step.card_id AND block.repertoire_id=step.repertoire_id)
-           ORDER BY repertoire.created_at,repertoire.id,line.created_at,line.id,step.decision_index LIMIT 1""",
-            (card_id, current.publication_generation),
-        ).fetchone()
+        storage.opening_route(database, card_id, current.publication_generation)
         if row["content_type"] == "opening"
         else None
     )
     from .admission import protected_queue_ids
 
     protected = protected_queue_ids(database, queue_day)
-    entries = database.execute(
-        "SELECT id,status FROM daily_queue WHERE card_id=? AND queue_date=?",
-        (card_id, queue_day),
-    ).fetchall()
-    deleted = database.execute(
-        "SELECT 1 FROM deleted_cards WHERE card_id=?", (card_id,)
-    ).fetchone()
+    entries = storage.queue_entries(database, card_id, queue_day)
+    deleted = storage.deleted_card(database, card_id)
     return Candidate(
         card_id,
         row["revision"],
@@ -354,10 +291,7 @@ def maintain_one(database, payload):
                     applied = admit_prelocked(
                         database, proposal.card_id, day, MISS_REASON, proposal=proposal
                     )
-                    entry = database.execute(
-                        "SELECT id FROM daily_queue WHERE card_id=? AND queue_date=? AND status='queued' ORDER BY position,id LIMIT 1",
-                        (proposal.card_id, day),
-                    ).fetchone()
+                    entry = storage.admitted_entry(database, proposal.card_id, day)
                     return AdmissionResult(
                         "applied" if applied else "rejected",
                         None if applied else "admission_recheck_rejected",

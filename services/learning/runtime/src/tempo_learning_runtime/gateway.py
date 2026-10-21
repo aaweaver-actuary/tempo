@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 import hashlib, json, uuid
-import psycopg
+from tempo_learning_database.adapters import gateway as storage
+from tempo_learning_database.adapters.gateway import psycopg
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from tempo_learning_database.connections import connection, current_database
@@ -33,14 +34,8 @@ def record_intent(operation_id, name, payload):
         raise HTTPException(422, "Idempotency-Key must contain 1 to 128 characters")
     digest = request_digest(name, payload)
     with connection() as database:
-        database.execute_native(
-            "INSERT INTO operation_receipts(operation_id,command_name,request_hash,payload_json) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-            (operation_id, name, digest, json.dumps(payload)),
-        )
-        row = database.execute_native(
-            "SELECT command_name,request_hash FROM operation_receipts WHERE operation_id=%s",
-            (operation_id,),
-        ).fetchone()
+        storage.insert_operation_intent(database, operation_id, name, digest, json.dumps(payload))
+        row = storage.intent_identity(database, operation_id)
         if tuple(row) != (name, digest):
             raise ReviewConflict(
                 "command_identity_reused",
@@ -50,13 +45,8 @@ def record_intent(operation_id, name, payload):
 
 def execute(operation_id, *, background=False, publication=None):
     with connection(background=background) as database:
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (operation_id,)
-        )
-        row = database.execute_native(
-            "SELECT * FROM operation_receipts WHERE operation_id=%s FOR UPDATE",
-            (operation_id,),
-        ).fetchone()
+        storage.lock_operation(database, operation_id)
+        row = storage.operation_for_update(database, operation_id)
         if row is None:
             raise HTTPException(404, "Unknown operation")
         if publication is not None and row['command_name'].startswith('publication.') != publication:
@@ -64,7 +54,7 @@ def execute(operation_id, *, background=False, publication=None):
         if row["state"] in ("complete", "failed"):
             return
         payload = json.loads(row["payload_json"])
-        database.execute_native("SAVEPOINT command_handler")
+        storage.begin_command_handler(database)
         try:
             if row["command_name"] in (
                 "tactics.attempt.submit",
@@ -73,14 +63,8 @@ def execute(operation_id, *, background=False, publication=None):
             ):
                 attempt_id = payload["request"]["attempt_id"]
                 digest = request_digest(row["command_name"], payload)
-                database.execute_native(
-                    "INSERT INTO logical_request_bindings VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
-                    (row["command_name"], attempt_id, digest),
-                )
-                logical = database.execute_native(
-                    "SELECT request_hash FROM logical_request_bindings WHERE family=%s AND attempt_id=%s FOR UPDATE",
-                    (row["command_name"], attempt_id),
-                ).fetchone()
+                storage.bind_logical_request(database, row["command_name"], attempt_id, digest)
+                logical = storage.logical_request_identity(database, row["command_name"], attempt_id)
                 if logical[0] != digest:
                     raise ReviewConflict(
                         "review_attempt_reused",
@@ -97,7 +81,7 @@ def execute(operation_id, *, background=False, publication=None):
         ):
             raise
         except (HTTPException, ValueError, KeyError) as error:
-            database.execute_native("ROLLBACK TO SAVEPOINT command_handler")
+            storage.rollback_command_handler(database)
             error_payload = {
                 "status_code": error.status_code
                 if isinstance(error, HTTPException)
@@ -109,16 +93,10 @@ def execute(operation_id, *, background=False, publication=None):
             }
             if isinstance(error, ReviewConflict):
                 error_payload.update(code=error.code, retryable=error.retryable)
-            database.execute_native(
-                "UPDATE operation_receipts SET state='failed',error_json=%s,updated_at=NOW() WHERE operation_id=%s",
-                (json.dumps(error_payload), operation_id),
-            )
+            storage.fail_operation(database, json.dumps(error_payload), operation_id)
         else:
-            database.execute_native("RELEASE SAVEPOINT command_handler")
-            database.execute_native(
-                "UPDATE operation_receipts SET state='complete',response_json=%s,updated_at=NOW() WHERE operation_id=%s",
-                (json.dumps(result), operation_id),
-            )
+            storage.release_command_handler(database)
+            storage.complete_operation(database, json.dumps(result), operation_id)
 
 
 def fence_publication(operation_id, name, payload):
@@ -133,25 +111,21 @@ def fence_publication(operation_id, name, payload):
         raise HTTPException(422, 'Unsupported publication fence family')
     fingerprint = request_digest(name, payload)
     with connection() as database:
-        database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (operation_id,))
-        database.execute_native(
-            'INSERT INTO operation_receipts(operation_id,command_name,request_hash,payload_json) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING',
-            (operation_id, name, fingerprint, json.dumps(payload)))
-        row = database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
+        storage.lock_operation(database, operation_id)
+        storage.insert_operation_intent(database, operation_id, name, fingerprint, json.dumps(payload))
+        row = storage.operation_for_update(database, operation_id)
         if (row['command_name'], row['request_hash']) != (name, fingerprint):
             raise ReviewConflict('command_identity_reused', 'Operation ID was already used for another request')
         if row['state'] not in ('complete', 'failed'):
             error = {'status_code': 409, 'code': 'publication_abandoned_before_execution',
                      'detail': 'Publication operation was durably abandoned before execution', 'retryable': False}
-            database.execute_native("UPDATE operation_receipts SET state='failed',error_json=%s,updated_at=NOW() WHERE operation_id=%s", (json.dumps(error), operation_id))
+            storage.fail_operation(database, json.dumps(error), operation_id)
     return read_operation(operation_id, publication=True)
 
 
 def read_operation(operation_id, *, publication=None):
     with connection(read_only=True) as database:
-        row = database.execute_native(
-            "SELECT * FROM operation_receipts WHERE operation_id=%s", (operation_id,)
-        ).fetchone()
+        row = storage.read_operation(database, operation_id)
     if row is None:
         return {"operation_id": operation_id, "state": "unknown"}
     if publication is not None and row['command_name'].startswith('publication.') != publication:

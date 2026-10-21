@@ -22,6 +22,8 @@
 | [review_reconciliation.py](review_reconciliation.py) | Existing review schedule/history/snapshot/receipt/card operations; chronological/fallback decisions and clocks stay outside database. |
 | [admission.py](admission.py) | Existing complete admission facts, card/queue locks, quotas/routes and writes; [authority decisions/composition](admission-review/README.md). |
 | [review_adapter.py](review_adapter.py) | Existing review facts, dialect lock operations and completion/receipt/evidence writes; contract/authority/deferred decisions stay in runtime. |
+| [gateway.py](gateway.py) | Existing operation receipt/logical identity queries and savepoint statements; [application lifecycle/composition](gateway-remediation/README.md). |
+| [remediation_adapter.py](remediation_adapter.py) | Existing integration facts, priority write and intact borrowed tuple-row driver facade; accepted/settlement/admission decisions stay in runtime. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
 | [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |
