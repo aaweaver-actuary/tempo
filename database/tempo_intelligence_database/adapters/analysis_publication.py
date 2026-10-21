@@ -51,4 +51,3 @@ class AnalysisPublicationOperations:
 
     def next_run(self):
         return self._database.execute("SELECT r.run_id FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) WHERE r.state<>'staging' AND (r.payload->>'derivation_version'='2' OR r.published_generation IS NOT NULL) AND r.requested_generation IS DISTINCT FROM r.published_generation ORDER BY r.created_at,r.run_id LIMIT 1").fetchone()
-

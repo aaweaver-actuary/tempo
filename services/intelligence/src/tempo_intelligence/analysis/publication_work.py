@@ -74,5 +74,3 @@ def derive_next_report(derive,transaction):
     with transaction() as operations:
         row=operations.next_run()
     return derive()(row["run_id"]) if row else False
-
-
