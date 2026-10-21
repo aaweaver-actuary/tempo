@@ -67,7 +67,7 @@ def test_queue_application_import_does_not_load_http_or_worker_root():
         pending.extend(application_imports(module_name, include_deferred=module_name in owned_modules) - visited)
     import_probe = "from app.services import queue_application, queue_ordering, postgres_queue_refresh; import sys; assert not (set(sys.modules) & " + repr(FORBIDDEN) + ')'
     subprocess.run([sys.executable, '-c', import_probe], check=True,
-                   env={**os.environ, 'PYTHONPATH': str(APP_ROOT.parent)})
+                   env={**os.environ, 'PYTHONPATH': os.pathsep.join((str(APP_ROOT.parent), str(APP_ROOT.parent.parent / 'database')))})
 
 
 @pytest.mark.parametrize('fixture', json.loads((FIXTURES / 'queue-extraction-220.json').read_text())['ordering'])
@@ -160,7 +160,7 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
         assert 'SELECT EXISTS' in sql
         opening_page_reads.append(sql)
         return [(False,)]  # Exhausted allowance: the bounded page resumes admit_study.
-    monkeypatch.setattr(postgres_queue_refresh, '_bounded_read', bounded_opening_read)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, '_bounded_read', bounded_opening_read)
     monkeypatch.setattr(postgres_queue_refresh.postgres_store, 'configured', lambda: True)
     @contextmanager
     def owned_connection(**kwargs):
@@ -244,3 +244,4 @@ def no_frozen_publication_in_legacy_extraction_fixtures(monkeypatch, request):
         def frozen_metadata_reader():
             yield object()
         monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', frozen_metadata_reader)
+        monkeypatch.setattr(postgres_queue_refresh.read_storage, 'background_read_connection', frozen_metadata_reader)

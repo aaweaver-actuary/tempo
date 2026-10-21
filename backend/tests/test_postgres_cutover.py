@@ -2785,6 +2785,7 @@ def test_postgres_study_admission_slices_respect_quota_burial_and_replay(monkeyp
             yield NativeSqlite(database)
 
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", read_section)
     admitted = []
     while (card_id := postgres_queue_refresh._prepare_study_admission("2026-09-27")) is not None:
         with sqlite3.connect(database_path) as database:
@@ -2947,6 +2948,7 @@ def test_postgres_queue_randomization_replans_changed_membership_and_rejects_sta
                         wait_for_foreground)
     monkeypatch.setattr(postgres_queue_refresh, "connection", section)
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", lambda: section(background=True))
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", lambda: section(background=True))
     monkeypatch.setattr(postgres_queue_refresh.frozen_opening_order, "activation", lambda *args, **kwargs: (None,0))
     from app.services import study_mode
     monkeypatch.setattr(study_mode, 'study_only_enabled', lambda: False)
@@ -3051,8 +3053,9 @@ def test_postgres_queue_randomization_splits_review_lookup_into_bounded_reads(mo
             return [(identifier,) for identifier in parameters[1:]]
         raise AssertionError(statement)
 
-    monkeypatch.setattr(postgres_queue_refresh, "_bounded_read", bounded_read)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "_bounded_read", bounded_read)
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", reader)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", reader)
     monkeypatch.setattr(postgres_queue_refresh.frozen_opening_order, "activation", lambda *args: (None,0))
     plan = postgres_queue_refresh._prepare_queue_randomization("2026-09-27")
     assert plan is not None
@@ -3109,6 +3112,7 @@ def test_postgres_opening_quarantine_validates_outside_database_and_replays_once
             yield NativeSqlite(database)
 
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", read_section)
     first = postgres_queue_refresh._prepare_opening_quarantine("2026-09-27", 0)
     assert first["after_entry_id"] == 2
     assert first["has_more"]
@@ -5123,6 +5127,7 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
             yield NativeSqlite(database)
 
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", read_section)
     processed_ids: list[int] = []
     introduced_counts: dict[str, int] = {}
     while True:
@@ -5251,6 +5256,7 @@ def test_postgres_due_queue_slices_admit_only_eligible_cards_in_order(monkeypatc
             yield NativeSqlite(database)
 
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", read_section)
     admitted_ids = []
     while True:
         card_id = postgres_queue_refresh._prepare_due_card("2026-09-27")
@@ -5320,6 +5326,7 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
         return [{"PuzzleId": "puzzle-a", "FEN": "source-fen"}]
 
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", read_section)
     monkeypatch.setattr(postgres_queue_refresh, "pack_records", records)
     monkeypatch.setattr(postgres_queue_refresh, "validate_puzzle_record",
                         lambda record: ("training-fen", ["e2e4"]))

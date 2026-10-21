@@ -1,4 +1,7 @@
 """Existing queue presentation, quarantine and projection operations."""
+from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.http_composition.availability import available_attempt_sql
 
 
 _QUARANTINE_OPENING_ELIGIBILITY = """q.queue_date=%s AND q.status='queued'
@@ -127,3 +130,56 @@ def clear_diagnostics(database, queue_date):
                     "DELETE FROM queue_projection_diagnostics WHERE queue_date=%s",
                     (queue_date,),
                 )
+
+
+_QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,q.position,c.content_type,
+                  CASE WHEN q.admission_kind='explicit' THEN 'explicit'
+                       WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
+                       ELSE 'new' END admission_kind,
+                  q.gameplay_priority_reason
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=? AND q.status='queued'
+           ORDER BY q.id"""
+
+
+def is_postgres_connection(database) -> bool:
+    return isinstance(database, PostgresConnection)
+
+
+def presentation_facts(database, day, miss_reason: str, *, read=None, after_entry_id=None, limit=None):
+    """Capture eligibility and attempt protection without changing membership."""
+    if read is None:
+        read = lambda statement, parameters: database.execute(statement, parameters).fetchall()
+    # Shadow evidence is PostgreSQL-only; SQLite remains the recovery adapter.
+    presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
+                 if postgres_store.configured() else "0")
+    statement = """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,
+                  q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
+                  (q.review_result_json IS NOT NULL) review_completed,c.revision,
+                  EXISTS(SELECT 1 FROM queue_attempt_origins origin
+                    WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
+                      AND origin.revision=c.revision AND origin.issued_as_head=1) issued,
+                  """ + presented + """ presented,
+                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=? AND q.status='queued'"""
+    parameters = [day]
+    if after_entry_id is not None:
+        statement += " AND q.id>?"
+        parameters.append(after_entry_id)
+    statement += " ORDER BY q.id"
+    if limit is not None:
+        statement += " LIMIT ?"
+        parameters.append(limit)
+    rows = [dict(row) for row in read(statement, tuple(parameters))]
+    if not rows:
+        return rows, set(), set()
+    placeholders = ','.join('?' for _ in rows)
+    reviewed = {row[0] for row in read(
+        "SELECT DISTINCT card_id FROM reviews WHERE invalidated_at IS NULL AND card_id IN (" + placeholders + ")",
+        tuple(row['card_id'] for row in rows),
+    )}
+    eligible = {row[0] for row in read(available_attempt_sql(miss_reason) + " AND q.id IN (" + placeholders + ")",
+                                     (day, *(row['id'] for row in rows)))}
+
+    return rows, reviewed, eligible

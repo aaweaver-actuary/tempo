@@ -445,7 +445,7 @@ def test_capacity_worker_preparation_preserves_normal_plan_and_returns_parent_de
             ).fetchall()
         return connection.execute(statement.replace("%s", "?"), parameters).fetchall()
 
-    monkeypatch.setattr(worker, "_bounded_read", read)
+    monkeypatch.setattr(worker.read_storage, "_bounded_read", read)
     planned = worker._prepare_prioritized_openings(day)
     assert len(planned) == 10
     assert all("capacity_route" not in item for item in planned[:2])
@@ -648,7 +648,7 @@ def test_capacity_worker_full_allowance_avoids_frontier_queries(
             return []
         return connection.execute(statement.replace("%s", "?"), parameters).fetchall()
 
-    monkeypatch.setattr(worker, "_bounded_read", read)
+    monkeypatch.setattr(worker.read_storage, "_bounded_read", read)
     assert worker._prepare_prioritized_openings(day) == []
 
 
@@ -680,3 +680,4 @@ def legacy_capacity_checkpoint_has_no_frozen_order(monkeypatch, request):
     def metadata_reader():
         yield object()
     monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', metadata_reader)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, 'background_read_connection', metadata_reader)
