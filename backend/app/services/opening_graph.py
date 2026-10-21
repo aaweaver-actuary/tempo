@@ -13,6 +13,7 @@ import chess
 from fsrs import Card, State
 
 from .cards import card_id
+from tempo_legacy_database.adapters.opening_graph import compatibility as storage
 
 
 @dataclass(frozen=True)
@@ -296,30 +297,12 @@ def load_graph_input(repertoire_id: str) -> GraphInput:
     with read_connection() as database:
         lines = tuple(
             dict(row)
-            for row in database.execute(
-                """SELECT line.*,depth.learner_decision_count
-                   FROM repertoire_lines line
-                   LEFT JOIN repertoire_line_training_depths depth ON depth.line_id=line.id
-                   WHERE line.repertoire_id=? ORDER BY line.id""",
-                (repertoire_id,),
-            )
+            for row in storage.source_line_rows(database, (repertoire_id,))
         )
-        settings = database.execute(
-            "SELECT initial_depth FROM settings WHERE id=1"
-        ).fetchone()
+        settings = storage.initial_depth_row(database)
         prefix_overrides = tuple(
             dict(row)
-            for row in database.execute(
-                """SELECT split.source_card_id,split.shortened_card_id,
-                          shortened.start_fen shortened_start_fen,
-                          shortened.moves_json shortened_moves_json,
-                          split.continuation_card_id,
-                          continuation.start_fen continuation_start_fen,
-                          continuation.moves_json continuation_moves_json
-                   FROM prefix_splits split
-                   JOIN cards shortened ON shortened.id=split.shortened_card_id
-                   JOIN cards continuation ON continuation.id=split.continuation_card_id"""
-            )
+            for row in storage.prefix_override_rows(database)
         )
     return GraphInput(
         repertoire_id,
@@ -335,31 +318,14 @@ def _load_legacy_snapshot(repertoire_id: str) -> tuple[tuple[dict, ...], dict[st
     with read_connection() as database:
         cards = tuple(
             dict(row)
-            for row in database.execute(
-                """SELECT DISTINCT card.*,
-                          COALESCE(seed.baseline_successful_days,0) seed_successful_days,
-                          COALESCE(seed.baseline_recent_clean,0) seed_recent_clean
-                   FROM cards card
-                   JOIN repertoire_cards link ON link.card_id=card.id
-                   LEFT JOIN opening_card_schedule_seeds seed ON seed.card_id=card.id
-                   WHERE link.repertoire_id=? AND card.content_type='opening'
-                     AND card.archived=0""",
-                (repertoire_id,),
-            )
+            for row in storage.legacy_card_rows(database, (repertoire_id,))
         )
         reviews: dict[str, list[dict]] = {}
-        for row in database.execute(
-            """SELECT review.* FROM reviews review
-               JOIN repertoire_cards link ON link.card_id=review.card_id
-               WHERE link.repertoire_id=? ORDER BY review.reviewed_at DESC,review.id DESC""",
-            (repertoire_id,),
-        ):
+        for row in storage.legacy_review_rows(database, (repertoire_id,)):
             reviews.setdefault(row["card_id"], []).append(dict(row))
         existing_card_ids = {
             row[0]
-            for row in database.execute(
-                "SELECT id FROM cards"
-            )
+            for row in storage.existing_card_rows(database)
         }
     return cards, reviews, existing_card_ids
 
@@ -531,7 +497,7 @@ def prepare_opening_graph_rebuild(task: dict) -> GraphRebuildInput:
     legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
     from tempo_legacy_database.connections import background_read_connection
     with background_read_connection() as database:
-        deleted_ids = frozenset(row[0] for row in database.execute("SELECT card_id FROM deleted_cards"))
+        deleted_ids = frozenset(row[0] for row in storage.deleted_card_rows(database))
     return GraphRebuildInput(
         graph_input=graph_input,
         legacy_cards=legacy_cards,
@@ -579,15 +545,12 @@ def publish_opening_graph_rebuild(
     schedule_seeds = artifacts.schedule_seeds
 
     def current_task(database):
-        return database.execute("SELECT 1 FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'", (task["id"], generation, task["lease_token"])).fetchone() is not None
+        return storage.leased_task(database, (task["id"], generation, task["lease_token"])) is not None
 
     def clear_staging(database: sqlite3.Connection) -> None:
         if not current_task(database):
             return
-        database.execute(
-            "DELETE FROM opening_graph_steps WHERE repertoire_id=? AND generation=?",
-            (repertoire_id, generation),
-        )
+        storage.clear_staging(database, (repertoire_id, generation))
 
     submit_background_write(
         clear_staging,
@@ -601,17 +564,10 @@ def publish_opening_graph_rebuild(
             if not current_task(database):
                 return
             from ..card_deletion import omit_deleted_graph_steps
-            deleted_ids = {row[0] for row in database.execute("SELECT card_id FROM deleted_cards")}
+            deleted_ids = {row[0] for row in storage.deleted_card_rows(database)}
             retained_steps = {(step.line_id, step.decision_index): step for step in omit_deleted_graph_steps(graph_steps, deleted_ids)}
             values = tuple(retained_steps[(step.line_id, step.decision_index)] for step in values if (step.line_id, step.decision_index) in retained_steps)
-            database.executemany(
-                """INSERT INTO opening_graph_steps(
-                       repertoire_id,generation,line_id,decision_index,
-                       segment_kind,first_decision_index,last_decision_index,
-                       decision_fen_keys_json,card_id,parent_card_id,
-                       decision_fen_key,starting_fen,moves_json,trained_color
-                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                [
+            storage.insert_steps(database, [
                     (
                         step.repertoire_id,
                         generation,
@@ -629,14 +585,8 @@ def publish_opening_graph_rebuild(
                         step.trained_color,
                     )
                     for step in values
-                ],
-            )
-            database.executemany(
-                """INSERT OR IGNORE INTO cards(
-                       id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-                       content_type,trained_color,pending_validation,canonical_route_source
-                   ) VALUES(?,?,?,?,?,?,?,'opening',?,0,0)""",
-                [
+                ])
+            storage.insert_cards(database, [
                     (
                         step.card_id,
                         repertoire_id,
@@ -648,8 +598,7 @@ def publish_opening_graph_rebuild(
                         step.trained_color,
                     )
                     for step in values
-                ],
-            )
+                ])
 
         submit_background_write(
             stage,
@@ -662,16 +611,11 @@ def publish_opening_graph_rebuild(
         def stage_mappings(database: sqlite3.Connection, values=mapping_chunk) -> None:
             if not current_task(database):
                 return
-            values = tuple((source, target) for source, target in values if database.execute("SELECT 1 FROM cards WHERE id=?", (source,)).fetchone() and database.execute("SELECT 1 FROM cards WHERE id=?", (target,)).fetchone())
-            database.executemany(
-                """INSERT OR IGNORE INTO opening_graph_legacy_mappings(
-                       repertoire_id,generation,legacy_card_id,decision_card_id
-                   ) VALUES(?,?,?,?)""",
-                [
+            values = tuple((source, target) for source, target in values if storage.card_present(database, (source,)) and storage.card_present(database, (target,)))
+            storage.insert_legacy_mappings(database, [
                     (repertoire_id, generation, legacy_card_id, decision_card_id)
                     for legacy_card_id, decision_card_id in values
-                ],
-            )
+                ])
 
         submit_background_write(
             stage_mappings,
@@ -687,33 +631,19 @@ def publish_opening_graph_rebuild(
                 return
             now = datetime.now(timezone.utc).isoformat()
             for decision_card_id, seed in values:
-                if not database.execute("SELECT 1 FROM cards WHERE id=?", (decision_card_id,)).fetchone():
+                if not storage.card_present(database, (decision_card_id,)):
                     continue
-                database.execute(
-                    """UPDATE cards SET state=?,due_date=?,interval_days=?,stability=?,
-                           fsrs_card_json=?,first_correct_at=?,reinforcement_pending=0,
-                           introduced_at=?
-                       WHERE id=? AND NOT EXISTS(
-                           SELECT 1 FROM reviews WHERE card_id=cards.id
-                       )""",
-                    (
+                storage.apply_seed(database, (
                         seed["state"], seed["due_date"], seed["interval_days"],
                         seed["stability"], seed["fsrs_card_json"],
                         seed["first_correct_at"], seed["introduced_at"],
                         decision_card_id,
-                    ),
-                )
-                database.execute(
-                    """INSERT OR IGNORE INTO opening_card_schedule_seeds(
-                           card_id,source_card_id,baseline_successful_days,
-                           baseline_recent_clean,verification_due,created_at
-                       ) VALUES(?,?,?,?,?,?)""",
-                    (
+                    ))
+                storage.insert_seed(database, (
                         decision_card_id, seed["source_card_id"],
                         seed["baseline_successful_days"], seed["baseline_recent_clean"],
                         seed["verification_due"], now,
-                    ),
-                )
+                    ))
 
         submit_background_write(
             apply_seeds,
@@ -721,170 +651,27 @@ def publish_opening_graph_rebuild(
         )
 
     def publish(database: sqlite3.Connection) -> bool:
-        current = database.execute(
-            "SELECT generation FROM background_tasks WHERE id=? AND lease_token=?",
-            (task["id"], task["lease_token"]),
-        ).fetchone()
+        current = storage.task_generation(database, (task["id"], task["lease_token"]))
         if not current or int(current["generation"]) != generation:
             return False
         now = datetime.now(timezone.utc).isoformat()
-        database.execute(
-            """INSERT INTO opening_graph_publications(
-                   repertoire_id,generation,state,last_error,published_at
-               ) VALUES(?,?,'ready',NULL,?)
-               ON CONFLICT(repertoire_id) DO UPDATE SET
-                   generation=excluded.generation,state='ready',last_error=NULL,
-                   published_at=excluded.published_at""",
-            (repertoire_id, generation, now),
-        )
-        database.execute(
-            """INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id,canonical_route_source)
-               SELECT repertoire_id,card_id,0 FROM opening_graph_steps
-               WHERE repertoire_id=? AND generation=?""",
-            (repertoire_id, generation),
-        )
-        database.execute(
-            """UPDATE cards SET archived=0,
-                   kind=CASE WHEN EXISTS(
-                       SELECT 1 FROM opening_graph_steps prefix_step
-                       JOIN opening_graph_publications prefix_publication
-                         ON prefix_publication.repertoire_id=prefix_step.repertoire_id
-                        AND prefix_publication.generation=prefix_step.generation
-                       WHERE prefix_step.card_id=cards.id
-                         AND prefix_step.segment_kind='prefix'
-                   ) THEN 'prefix' ELSE 'response' END
-               WHERE canonical_route_source=0 AND id IN (
-                   SELECT card_id FROM opening_graph_steps
-                   WHERE repertoire_id=? AND generation=?
-               )""",
-            (repertoire_id, generation),
-        )
-        database.execute(
-            """UPDATE cards SET state='locked'
-               WHERE content_type='opening' AND state='new'
-                 AND introduced_at IS NULL
-                 AND NOT EXISTS(SELECT 1 FROM reviews WHERE card_id=cards.id)
-                 AND EXISTS(
-                     SELECT 1 FROM opening_graph_steps descendant_step
-                     JOIN opening_graph_publications descendant_publication
-                       ON descendant_publication.repertoire_id=descendant_step.repertoire_id
-                      AND descendant_publication.generation=descendant_step.generation
-                     WHERE descendant_step.card_id=cards.id
-                       AND descendant_step.parent_card_id IS NOT NULL
-                 )
-                 AND NOT EXISTS(
-                     SELECT 1 FROM opening_graph_steps root_step
-                     JOIN opening_graph_publications root_publication
-                       ON root_publication.repertoire_id=root_step.repertoire_id
-                      AND root_publication.generation=root_step.generation
-                     WHERE root_step.card_id=cards.id
-                       AND root_step.parent_card_id IS NULL
-                 )"""
-        )
-        database.execute(
-            """UPDATE cards SET state='new',due_date=?
-               WHERE content_type='opening' AND state='locked'
-                 AND introduced_at IS NULL
-                 AND NOT EXISTS(SELECT 1 FROM reviews WHERE card_id=cards.id)
-                 AND EXISTS(
-                     SELECT 1 FROM opening_graph_steps root_step
-                     JOIN opening_graph_publications root_publication
-                       ON root_publication.repertoire_id=root_step.repertoire_id
-                      AND root_publication.generation=root_step.generation
-                     WHERE root_step.card_id=cards.id
-                       AND root_step.parent_card_id IS NULL
-                 )""",
-            (local_day,),
-        )
-        database.execute(
-            """UPDATE daily_queue SET status='superseded'
-               WHERE status='queued' AND card_id IN (
-                   SELECT link.card_id FROM repertoire_cards link
-                   JOIN cards legacy ON legacy.id=link.card_id
-                   WHERE link.repertoire_id=? AND legacy.content_type='opening' AND link.canonical_route_source=0 AND (legacy.canonical_route_source=0 OR legacy.repertoire_id=link.repertoire_id)
-                     AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained WHERE retained.card_id=legacy.id AND retained.repertoire_id<>link.repertoire_id)
-                     AND NOT EXISTS(
-                         SELECT 1 FROM opening_graph_steps step
-                         WHERE step.repertoire_id=? AND step.generation=?
-                           AND step.card_id=legacy.id
-                     )
-               )""",
-            (repertoire_id, repertoire_id, generation),
-        )
+        storage.publish_generation(database, (repertoire_id, generation, now))
+        storage.insert_links(database, (repertoire_id, generation))
+        storage.classify_generated_cards(database, (repertoire_id, generation))
+        storage.lock_unintroduced_descendants(database)
+        storage.unlock_unintroduced_roots(database, (local_day,))
+        storage.retire_obsolete_queue(database, (repertoire_id, repertoire_id, generation))
         # Retire an orphaned generated owner association before deleting its
         # link, retaining history without reactivating owner fallback.
-        database.execute(
-            """UPDATE cards SET archived=1 WHERE repertoire_id=? AND content_type='opening'
-                 AND EXISTS(SELECT 1 FROM repertoire_cards former
-                     WHERE former.card_id=cards.id AND former.repertoire_id=? AND former.canonical_route_source=0)
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained
-                     WHERE retained.card_id=cards.id AND retained.repertoire_id<>?)
-                 AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step
-                     WHERE step.repertoire_id=? AND step.generation=? AND step.card_id=cards.id)""",
-            (repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation),
-        )
+        storage.archive_generated_owner(database, (repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation))
         # Reassign retained owners before deleting generated memberships, so
         # cleanup cannot reactivate a stale owner fallback.
-        database.execute(
-            """UPDATE cards SET repertoire_id=(
-                   SELECT MIN(retained.repertoire_id) FROM repertoire_cards retained
-                   WHERE retained.card_id=cards.id AND retained.repertoire_id<>?
-               ) WHERE repertoire_id=? AND content_type='opening'
-                 AND EXISTS(SELECT 1 FROM repertoire_cards former
-                     WHERE former.card_id=cards.id AND former.repertoire_id=? AND former.canonical_route_source=0)
-                 AND EXISTS(SELECT 1 FROM repertoire_cards retained
-                     WHERE retained.card_id=cards.id AND retained.repertoire_id<>?)
-                 AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step
-                     WHERE step.repertoire_id=? AND step.generation=? AND step.card_id=cards.id)""",
-            (repertoire_id, repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation),
-        )
-        database.execute(
-            """DELETE FROM repertoire_cards
-               WHERE repertoire_id=? AND canonical_route_source=0 AND card_id IN (
-                   SELECT card.id FROM cards card WHERE card.content_type='opening'
-                     AND NOT EXISTS(
-                         SELECT 1 FROM opening_graph_steps step
-                         WHERE step.repertoire_id=? AND step.generation=?
-                           AND step.card_id=card.id
-                     )
-               )""",
-            (repertoire_id, repertoire_id, generation),
-        )
-        database.execute(
-            """UPDATE cards SET archived=1
-               WHERE content_type='opening' AND archived=0 AND canonical_route_source=0
-                 AND NOT EXISTS(
-                     SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id
-                 )"""
-        )
-        database.execute(
-            "DELETE FROM repertoire_integrity_card_blocks WHERE repertoire_id=?",
-            (repertoire_id,),
-        )
-        database.execute(
-            """INSERT OR IGNORE INTO repertoire_integrity_card_blocks(
-                   repertoire_id,card_id,issue_id,scan_generation,published_at
-               )
-               SELECT ?,step.card_id,issue.id,?,?
-               FROM opening_graph_steps step
-               JOIN json_each(step.decision_fen_keys_json) decision_position
-               JOIN repertoire_integrity_issues issue
-                 ON issue.repertoire_id=step.repertoire_id
-                AND issue.fen_key=decision_position.value
-               WHERE step.repertoire_id=? AND step.generation=?""",
-            (repertoire_id, f"graph:{generation}", now, repertoire_id, generation),
-        )
-        database.execute(
-            """UPDATE cards SET pending_validation=CASE WHEN EXISTS(
-                   SELECT 1 FROM repertoire_integrity_card_blocks block
-                   WHERE block.card_id=cards.id
-               ) THEN 1 ELSE 0 END
-               WHERE id IN (
-                   SELECT card_id FROM opening_graph_steps
-                   WHERE repertoire_id=? AND generation=?
-               )""",
-            (repertoire_id, generation),
-        )
+        storage.reassign_retained_owner(database, (repertoire_id, repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation))
+        storage.delete_generated_links(database, (repertoire_id, repertoire_id, generation))
+        storage.archive_unlinked_generated_cards(database)
+        storage.delete_blocks(database, (repertoire_id,))
+        storage.insert_blocks(database, (repertoire_id, f"graph:{generation}", now, repertoire_id, generation))
+        storage.refresh_validation(database, (repertoire_id, generation))
         return True
 
     published = submit_background_write(
