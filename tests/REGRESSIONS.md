@@ -5149,3 +5149,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## PGN import and discard persistence
 
 `backend/tests/test_pgn_import_storage_boundary.py` owns eight fake-only cases for empty/multi-result batches, identity/clock/certification/callback order, discard receipts and validation before reads. Exact source proof also covers unchanged models, decorators and registrations; the fake inner function does not qualify outer refresh wiring/native import behavior.
+
+
+## Authored card edit and archive persistence
+
+`backend/tests/test_card_edits_storage_boundary.py` owns eight fake boundaries for expected revision, legal move/scope checks, sorted locks, replacement/history/review/queue transitions, archive and callback order. Models/decorators/registrations preserve exact source AST; outer Games refresh wiring and native execution remain unverified.

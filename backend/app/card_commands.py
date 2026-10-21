@@ -11,9 +11,10 @@ from fastapi import HTTPException
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
-from tempo_legacy_database.connections import card_columns
+from tempo_legacy_database.adapters.authored_repertoires.card_edits import storage
+from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import card_columns
 from .models import CardRevisionRequest
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_integrity import (
     invalidate_integrity_in_transaction, request_integrity_scan_in_transaction,
@@ -50,22 +51,13 @@ def _request_current_integrity_scan(
     """Rescan the edited card when a current graph exists; a queued graph rescans itself."""
 
     invalidate_integrity_in_transaction(database, repertoire_id)
-    current = database.execute_native(
-        "SELECT publication.generation,task.state FROM opening_graph_publications publication "
-        "JOIN background_tasks task ON task.kind='opening_graph_rebuild' "
-        "AND task.deduplication_key=publication.repertoire_id "
-        "AND task.generation=publication.generation "
-        "WHERE publication.repertoire_id=%s", (repertoire_id,),
-    ).fetchone()
+    current = storage.current_publication(database, repertoire_id)
     if current is not None and current[1] == "complete":
         request_integrity_scan_in_transaction(
             database, repertoire_id, int(current[0]), local_day,
         )
     else:
-        graph_task = database.execute_native(
-            "SELECT state FROM background_tasks WHERE kind='opening_graph_rebuild' "
-            "AND deduplication_key=%s", (repertoire_id,),
-        ).fetchone()
+        graph_task = storage.graph_task(database, repertoire_id)
         if graph_task is None or graph_task[0] in {"complete", "failed", "superseded"}:
             request_graph_rebuild_in_transaction(database, repertoire_id, local_day)
 
@@ -78,57 +70,34 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
         raise HTTPException(422, "expected_revision is required for card edits")
     moves = _validated_moves(request.starting_fen, request.moves)
     from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
-    repertoire_ids = [row[0] for row in database.execute(
-        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id", (identifier, identifier))]
+    repertoire_ids = [row[0] for row in storage.card_scope(database, identifier)]
     validated_routes = {repertoire_id: ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in repertoire_ids}
     replacement_id = card_id(request.starting_fen, moves)
-    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
+    storage.lock_prefix_transition(database)
     for locked_id in sorted({identifier, replacement_id}):
-        database.execute_native(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-            (f"tempo:card-edit:{locked_id}",),
-        )
+        storage.lock_card_edit(database, locked_id)
     from .card_deletion import require_card_not_deleted
     require_card_not_deleted(database, identifier)
     require_card_not_deleted(database, replacement_id)
-    old = database.execute_native(
-        "SELECT * FROM cards WHERE id=%s FOR UPDATE", (identifier,),
-    ).fetchone()
+    old = storage.locked_card(database, identifier)
     if old is None:
         raise HTTPException(404, "Card not found")
     if int(old["revision"] or 1) != request.expected_revision:
         raise HTTPException(409, "The card changed; refresh it and try again")
     if old["archived"] or old["superseded_by"] is not None:
         raise HTTPException(409, "The card was replaced; refresh it and try again")
-    existing = database.execute_native(
-        "SELECT id,revision FROM cards WHERE id=%s FOR UPDATE", (replacement_id,),
-    ).fetchone()
+    existing = storage.locked_replacement(database, replacement_id)
     revision = request.expected_revision + 1
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "INSERT INTO card_revisions(card_id,revision,start_fen,moves_json,history_mode,created_at) "
-        "VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(card_id,revision) DO NOTHING",
-        (identifier, revision, old["start_fen"], old["moves_json"], request.history_mode, now),
-    )
+    storage.record_revision(database, identifier, revision, old["start_fen"], old["moves_json"], request.history_mode, now)
     if replacement_id == identifier:
-        database.execute_native(
-            "UPDATE cards SET start_fen=%s,moves_json=%s,source_fen=%s,revision=%s,canonical_route_source=1 WHERE id=%s",
-            (request.starting_fen, json.dumps(moves), request.source_fen, revision, identifier),
-        )
+        storage.replace_content(database, request.starting_fen, moves, request.source_fen, revision, identifier)
     elif existing is not None:
-        database.execute_native("UPDATE cards SET canonical_route_source=1 WHERE id=%s", (replacement_id,))
+        storage.mark_canonical(database, replacement_id)
         if request.history_mode == "preserve":
-            database.execute_native(
-                "UPDATE reviews SET card_id=%s WHERE card_id=%s", (replacement_id, identifier),
-            )
-        database.execute_native(
-            "UPDATE daily_queue SET status='complete' WHERE card_id=%s AND status='queued'",
-            (identifier,),
-        )
-        database.execute_native(
-            "UPDATE cards SET archived=1,superseded_by=%s WHERE id=%s",
-            (replacement_id, identifier),
-        )
+            storage.transfer_reviews(database, replacement_id, identifier)
+        storage.complete_queued(database, identifier)
+        storage.supersede(database, replacement_id, identifier)
     else:
         copied_fields = dict(old)
         copied_fields.update({
@@ -146,44 +115,21 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
                 "recent_attempts_json": "[]",
             })
         columns = card_columns(database)
-        database.execute_native(
-            f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('%s' for _ in columns)})",
-            tuple(copied_fields.get(column) for column in columns),
-        )
+        storage.insert_replacement(database, columns, copied_fields)
         if request.history_mode == "preserve":
-            database.execute_native(
-                "UPDATE reviews SET card_id=%s WHERE card_id=%s", (replacement_id, identifier),
-            )
-        database.execute_native(
-            "UPDATE daily_queue SET card_id=%s WHERE card_id=%s AND status='queued'",
-            (replacement_id, identifier),
-        )
-        database.execute_native(
-            "UPDATE cards SET archived=1,superseded_by=%s WHERE id=%s",
-            (replacement_id, identifier),
-        )
+            storage.transfer_reviews(database, replacement_id, identifier)
+        storage.rebind_queued(database, replacement_id, identifier)
+        storage.supersede(database, replacement_id, identifier)
     if replacement_id != identifier:
-        database.execute_native(
-            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) "
-            "SELECT repertoire_id,%s,1 FROM repertoire_cards WHERE card_id=%s "
-            "ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1",
-            (replacement_id, identifier),
-        )
-        database.execute_native(
-            "DELETE FROM repertoire_cards WHERE card_id=%s", (identifier,),
-        )
+        storage.copy_membership(database, replacement_id, identifier)
+        storage.remove_membership(database, identifier)
     for repertoire_id, validated_route in validated_routes.items():
-        database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, replacement_id))
+        storage.admit_membership(database, repertoire_id, replacement_id)
     for repertoire_id, validated_route in validated_routes.items():
         certify_admitted_route(database, repertoire_id, validated_route)
-    repertoire_ids = [str(row[0]) for row in database.execute_native(
-        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id",
-        (replacement_id,),
-    )]
+    repertoire_ids = [str(row[0]) for row in storage.card_repertoires(database, replacement_id)]
     if repertoire_ids:
-        database.execute_native(
-            "UPDATE cards SET pending_validation=1 WHERE id=%s", (replacement_id,),
-        )
+        storage.mark_pending(database, replacement_id)
         for repertoire_id in repertoire_ids:
             _request_current_integrity_scan(database, repertoire_id, date.today().isoformat())
     return {
@@ -197,27 +143,14 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
 @refresh_game_publications_after_mutation
 def archive_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     identifier = str(payload["card_id"])
-    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
-    database.execute_native(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-        (f"tempo:card-edit:{identifier}",),
-    )
-    card = database.execute_native(
-        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (identifier,),
-    ).fetchone()
+    storage.lock_prefix_transition(database)
+    storage.lock_card_edit(database, identifier)
+    card = storage.locked_archive_identity(database, identifier)
     if card is None:
         raise HTTPException(404, "Card not found")
-    repertoire_ids = [str(row[0]) for row in database.execute_native(
-        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id",
-        (identifier,),
-    )]
-    database.execute_native(
-        "UPDATE cards SET archived=1 WHERE id=%s", (identifier,),
-    )
-    database.execute_native(
-        "UPDATE daily_queue SET status='complete' WHERE card_id=%s AND status='queued'",
-        (identifier,),
-    )
+    repertoire_ids = [str(row[0]) for row in storage.card_repertoires(database, identifier)]
+    storage.archive(database, identifier)
+    storage.complete_queued(database, identifier)
     for repertoire_id in repertoire_ids:
         _request_current_integrity_scan(database, repertoire_id, date.today().isoformat())
     integrity = {
