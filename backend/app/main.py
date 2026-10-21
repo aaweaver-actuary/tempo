@@ -23,7 +23,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, 
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from tempo_legacy_database.connections import background_read_connection, card_columns, connection, initialize, query_only_request, read_connection
+from tempo_legacy_database.connections import background_read_connection, connection, initialize, query_only_request, read_connection
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.http_composition import (
     system as system_storage,
@@ -41,6 +41,9 @@ from tempo_legacy_database.adapters.http_composition import (
     game_analysis_control as game_analysis_control_storage,
     analysis_publication as analysis_publication_storage,
     defense_controls as defense_controls_storage,
+    game_findings as game_findings_storage,
+    game_reads as game_reads_storage,
+    statistics as http_statistics_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
@@ -4110,29 +4113,10 @@ def list_game_findings(
     page_limit = limit if limit is not None else (500 if game_id else 100)
     if offset < 0 or not 1 <= page_limit <= 1000:
         raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 1000")
-    clauses = []
-    parameters: list[object] = []
-    if status:
-        if status not in {"pending", "accepted", "ignored", "excluded"}:
-            raise HTTPException(422, "Unknown finding status")
-        clauses.append("f.status=?")
-        parameters.append(status)
-    if game_id:
-        clauses.append("f.game_id=?")
-        parameters.append(game_id)
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    if status and status not in {"pending", "accepted", "ignored", "excluded"}:
+        raise HTTPException(422, "Unknown finding status")
     with connection() as db:
-        total = db.execute(
-            f"SELECT COUNT(*) FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
-            parameters,
-        ).fetchone()[0]
-        rows = db.execute(
-            f"""SELECT f.*,g.played_at,g.provider,g.opening_name,g.adaptive_excluded
-                 FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id
-                 {where} ORDER BY g.played_at DESC,f.ply,f.kind,f.id
-                 LIMIT ? OFFSET ?""",
-            [*parameters, page_limit, offset],
-        ).fetchall()
+        total, rows = game_findings_storage.findings_page(db, status, game_id, page_limit, offset)
     return {
         "findings": [
             {**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows
@@ -4144,34 +4128,9 @@ def list_game_findings(
 
 @app.get("/api/game-findings/tactical-queue")
 def next_tactical_finding(motif: str | None = None):
-    clauses = [
-        "f.kind='tactical miss'", "f.status='pending'", "g.adaptive_excluded=0",
-        "o.active=1", "o.analysis_version=g.analysis_version",
-        "(f.review_after IS NULL OR f.review_after<=?)",
-    ]
-    parameters: list[str] = [datetime.now(timezone.utc).isoformat()]
-    if motif:
-        clauses.append("o.motif=?")
-        parameters.append(motif)
+    now = datetime.now(timezone.utc).isoformat()
     with connection() as db:
-        remaining = db.execute(
-            f"""SELECT COUNT(*) FROM current_game_findings f
-                JOIN imported_games g ON g.id=f.game_id
-                JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
-                WHERE {' AND '.join(clauses)}""", parameters,
-        ).fetchone()[0]
-        row = db.execute(
-            f"""SELECT f.*,g.played_at,g.provider,g.speed,g.color,g.opening_name,
-                       o.outcome,o.opportunity_value_cp,o.evaluation_loss_cp,o.accepted_moves_json,
-                       o.evidence_json AS opportunity_evidence
-                FROM current_game_findings f
-                JOIN imported_games g ON g.id=f.game_id
-                JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
-                WHERE {' AND '.join(clauses)}
-                ORDER BY CASE WHEN instr(o.evidence_json,'"type": "mate"') > 0 THEN 0 ELSE 1 END,
-                         o.confidence DESC,o.evaluation_loss_cp DESC,g.played_at DESC,f.id
-                LIMIT 1""", parameters,
-        ).fetchone()
+        remaining, row = game_findings_storage.tactical_queue(db, now, motif)
     if not row:
         return {"item": None, "remaining": 0, "next_item_id": None}
     item = dict(row)
@@ -4193,19 +4152,16 @@ def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest
         )
     now = datetime.now(timezone.utc)
     with connection() as db:
-        finding = db.execute(
-            "SELECT f.*,g.adaptive_excluded FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id WHERE f.id=?",
-            (finding_id,),
-        ).fetchone()
+        finding = game_findings_storage.curation_finding(db, finding_id)
         if not finding or finding["kind"] != "tactical miss":
             raise HTTPException(404, "Pending tactical miss not found")
         if finding["adaptive_excluded"]:
             raise HTTPException(409, "This game is excluded from adaptation")
         if request.action == "skip":
             review_after = (now + timedelta(days=1)).isoformat()
-            db.execute("UPDATE game_findings SET review_after=?,updated_at=? WHERE id=?", (review_after, now.isoformat(), finding_id))
+            game_findings_storage.defer_finding(db, finding_id, review_after, now.isoformat())
             return {"id": finding_id, "status": "pending", "review_after": review_after}
-        db.execute("UPDATE game_findings SET status='ignored',review_after=NULL,updated_at=? WHERE id=?", (now.isoformat(), finding_id))
+        game_findings_storage.ignore_finding(db, finding_id, now.isoformat())
     return {"id": finding_id, "status": "ignored"}
 
 
@@ -4241,11 +4197,7 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
             idempotency_key=idempotency_key,
         )
     with connection() as db:
-        finding = db.execute(
-            """SELECT f.*,g.adaptive_excluded FROM current_game_findings f
-               JOIN imported_games g ON g.id=f.game_id WHERE f.id=?""",
-            (finding_id,),
-        ).fetchone()
+        finding = game_findings_storage.decision_finding(db, finding_id)
         if not finding:
             raise HTTPException(404, "Gameplay finding not found")
         if request.decision == "accepted" and finding["adaptive_excluded"]:
@@ -4256,18 +4208,11 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
                 raise HTTPException(
                     422, "This repertoire lapse is not linked to a study card"
                 )
-            linked_event = db.execute(
-                """SELECT id FROM current_repertoire_decision_events repertoire_decision_events
-                   WHERE game_id=? AND repertoire_id=? AND ply=? AND card_id=? AND outcome='miss'""",
-                (finding["game_id"], finding["repertoire_id"], finding["ply"], finding["card_id"]),
-            ).fetchone()
+            linked_event = game_findings_storage.linked_miss_event(db, finding["game_id"], finding["repertoire_id"], finding["ply"], finding["card_id"])
             if not linked_event:
                 raise HTTPException(409, "Canonical game decision is unavailable. Reanalyze this game and try again.")
             queued = prioritize_real_game_miss(db, linked_event["id"])
-        db.execute(
-            "UPDATE game_findings SET status=?,updated_at=? WHERE id=?",
-            (request.decision, datetime.now(timezone.utc).isoformat(), finding_id),
-        )
+        game_findings_storage.set_finding_decision(db, finding_id, request.decision, datetime.now(timezone.utc).isoformat())
     return {
         "id": finding_id,
         "status": request.decision,
@@ -4315,29 +4260,16 @@ def exclude_game_from_adaptation(
             idempotency_key=idempotency_key,
         )
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM imported_games WHERE id=?", (game_id,)
-        ).fetchone():
+        if not game_findings_storage.game_presence(db, game_id):
             raise HTTPException(404, "Game not found")
-        db.execute(
-            "UPDATE imported_games SET adaptive_excluded=? WHERE id=?",
-            (int(request.excluded), game_id),
-        )
+        game_findings_storage.set_adaptive_exclusion(db, game_id, request.excluded)
         if request.excluded:
-            db.execute(
-                "UPDATE game_findings SET status='excluded',updated_at=? WHERE game_id=? AND status='pending'",
-                (datetime.now(timezone.utc).isoformat(), game_id),
-            )
+            game_findings_storage.exclude_pending_findings(db, game_id, datetime.now(timezone.utc).isoformat())
         else:
-            db.execute(
-                "UPDATE game_findings SET status='pending',updated_at=? WHERE game_id=? AND status='excluded'",
-                (datetime.now(timezone.utc).isoformat(), game_id),
-            )
+            game_findings_storage.restore_excluded_findings(db, game_id, datetime.now(timezone.utc).isoformat())
     enqueue_game_derivation(game_id)
     with read_connection() as database:
-        affected_repertoires = [row[0] for row in database.execute(
-            "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?", (game_id,),
-        )]
+        affected_repertoires = game_findings_storage.affected_repertoire_ids(database, game_id)
     for repertoire_id in affected_repertoires:
         enqueue_opportunity_refresh(repertoire_id, background=True)
     coordinator.wake()
@@ -4386,23 +4318,6 @@ def public_game_record(row: sqlite3.Row) -> GamePublicRecord:
     )
 
 
-GAME_PUBLIC_SELECT = """g.id,g.provider,g.username,g.played_at,g.speed,g.rated,
-    g.color,g.result,g.start_fen,g.moves_json,g.game_url,g.opening_name,
-    g.analysis_state,g.analysis_version,g.major_mistake_ply,g.missed_punishment_ply,
-    m.repertoire_id,m.classification,
-    m.first_player_deviation_ply AS divergence_ply,
-    m.first_player_deviation_fen AS divergence_fen,
-    m.first_player_deviation_expected_json AS expected_json,
-    m.first_player_deviation_actual_uci AS actual_uci,
-    m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
-    m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json"""
-
-GAME_SUMMARY_SELECT = """g.id,g.provider,g.played_at,g.speed,g.color,g.result,
-    g.opening_name,g.analysis_state,g.major_mistake_ply,g.missed_punishment_ply,
-    m.repertoire_id,m.classification,m.first_player_deviation_ply AS divergence_ply,
-    m.matched_player_decisions,m.repertoire_opportunities"""
-
-
 @app.get("/api/games/summary", response_model=GamesSummaryResponse)
 def summary(
     fen: str | None = None,
@@ -4427,67 +4342,15 @@ def summary(
             )
         except (ValueError, TypeError, json.JSONDecodeError):
             raise HTTPException(422, "Invalid games cursor")
-    clauses: list[str] = []
-    parameters: list[object] = []
-    if position_key is not None:
-        clauses.append(
-            "EXISTS(SELECT 1 FROM game_position_occurrences p "
-            "WHERE p.game_id=g.id AND p.fen_key=?)"
-        )
-        parameters.append(position_key)
-    if repertoire_id:
-        clauses.append("m.repertoire_id=?")
-        parameters.append(repertoire_id)
-    filters = {
-        "g.provider": provider, "m.classification": status, "g.color": color,
-        "g.speed": speed,
-    }
-    for column, value in filters.items():
-        if value:
-            clauses.append(f"{column}=?")
-            parameters.append(value)
-    if outcome:
-        if outcome == "draw":
-            clauses.append("g.result='1/2-1/2'")
-        elif outcome == "won":
-            clauses.append("((g.color='white' AND g.result='1-0') OR (g.color='black' AND g.result='0-1'))")
-        elif outcome == "lost":
-            clauses.append("((g.color='white' AND g.result='0-1') OR (g.color='black' AND g.result='1-0'))")
-        else:
-            raise HTTPException(422, "Unknown game outcome filter")
-    if played_from:
-        clauses.append("g.played_at>=?")
-        parameters.append(played_from)
-    if cursor_played_at and cursor_id:
-        clauses.append("(g.played_at<? OR (g.played_at=? AND g.id<?))")
-        parameters.extend([cursor_played_at, cursor_played_at, cursor_id])
-    where = " AND ".join(clauses) if clauses else "1=1"
+    if outcome and outcome not in {"draw", "won", "lost"}:
+        raise HTTPException(422, "Unknown game outcome filter")
     with connection() as db:
-        rows = db.execute(
-            f"""SELECT {GAME_SUMMARY_SELECT}
-               FROM imported_games g
-               LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
-               WHERE {where}
-               ORDER BY g.played_at DESC,g.id DESC LIMIT ?""",
-            (*parameters, limit + 1),
-        ).fetchall()
-        count_clauses = clauses[:-1] if cursor_played_at and cursor_id else clauses
-        count_parameters = parameters[:-3] if cursor_played_at and cursor_id else parameters
-        total = db.execute(
-            f"""SELECT COUNT(*) FROM imported_games g
-                 LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
-                 WHERE {' AND '.join(count_clauses) if count_clauses else '1=1'}""",
-            count_parameters,
-        ).fetchone()[0]
+        rows, total = game_reads_storage.summary_page(
+            db, position_key, repertoire_id, provider, status, color, speed, outcome,
+            played_from, cursor_played_at, cursor_id, limit,
+        )
         position_plies = {
-            row["id"]: db.execute(
-                """SELECT COALESCE(
-                     (SELECT MIN(event.ply) FROM current_repertoire_decision_events event
-                      WHERE event.game_id=? AND event.repertoire_id=? AND event.fen_key=?),
-                     (SELECT MIN(occurrence.ply) FROM game_position_occurrences occurrence
-                      WHERE occurrence.game_id=? AND occurrence.fen_key=?))""",
-                (row["id"], repertoire_id, position_key, row["id"], position_key),
-            ).fetchone()[0]
+            row["id"]: game_reads_storage.matched_position_ply(db, row["id"], repertoire_id, position_key)[0]
             for row in rows[:limit]
         } if position_key else {}
     page_rows = rows[:limit]
@@ -4522,25 +4385,9 @@ def summary(
 @app.get("/api/games/position-summary")
 def game_position_summary(fen: str, repertoire_id: str | None = None):
     position_key = fen_key(fen)
-    postgres_mode = postgres_store.configured()
+    postgres_mode = game_reads_storage.position_query_mode()
     with connection() as db:
-        repertoire_filter = (
-            "(%s::text IS NULL OR match.repertoire_id=%s)" if postgres_mode
-            else "(? IS NULL OR match.repertoire_id=?)"
-        )
-        execute = db.execute_native if postgres_mode else db.execute
-        occurrences = execute(
-            f"""SELECT p.game_id,p.ply,p.move_uci,g.result,g.color,
-                      a.loss_cp,a.label
-               FROM game_position_occurrences p
-               JOIN imported_games g ON g.id=p.game_id
-               LEFT JOIN current_game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
-               LEFT JOIN game_move_analysis a ON a.game_id=p.game_id AND a.ply=p.ply
-               WHERE p.fen_key={'%s' if postgres_mode else '?'}
-                 AND {repertoire_filter}
-               ORDER BY g.played_at DESC""",
-            (position_key, repertoire_id, repertoire_id),
-        ).fetchall()
+        occurrences = game_reads_storage.position_occurrences(db, position_key, repertoire_id, postgres_mode)
     by_move: dict[str, dict] = {}
     for row in occurrences:
         if not row["move_uci"]:
@@ -4601,12 +4448,7 @@ def game_position_summary(fen: str, repertoire_id: str | None = None):
 @app.get("/api/games/{game_id:path}", response_model=GamePublicRecord)
 def game_detail(game_id: str):
     with connection() as db:
-        row = db.execute(
-            f"""SELECT {GAME_PUBLIC_SELECT}
-               FROM imported_games g LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
-               WHERE g.id=?""",
-            (game_id,),
-        ).fetchone()
+        row = game_reads_storage.public_game_row(db, game_id)
     if not row:
         raise HTTPException(404, "Game not found")
     return public_game_record(row)
@@ -4655,10 +4497,7 @@ def chess_statistics_insights(status: str = "pending"):
     if status not in {"pending", "accepted", "ignored"}:
         raise HTTPException(422, "Unknown insight status")
     with connection() as database:
-        rows = database.execute(
-            "SELECT * FROM daily_chess_insights WHERE status=? ORDER BY local_day DESC,kind",
-            (status,),
-        ).fetchall()
+        rows = http_statistics_storage.daily_insights(database, status)
     return {"insights": [{**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows]}
 
 
