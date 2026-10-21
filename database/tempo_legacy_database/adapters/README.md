@@ -60,3 +60,6 @@
 
 
 [Introduction-priority storage](introduction_priorities/README.md) holds complete coverage/personal-evidence/card/settings projections, priority job claims and generation publication operations. Scoring, bounded read/page/chunk loops, clocks, foreground yielding, stale-generation decisions and callbacks remain in the existing application owner.
+
+
+[HTTP composition storage](http_composition/README.md) holds complete system/settings and queue-maintenance queries separated from the existing HTTP composition root. Application settings/HTTP/admission/refresh/lifecycle decisions remain there; `main.py` is still pending until its remaining database operations are extracted.
