@@ -257,3 +257,93 @@ limits remain unchanged: trusted operator credential identity, configured Maia
 artifact binding without independent result attestation, one rating/no speed pair,
 and no repetition history from one FEN. No live-provider check, full-product gate,
 live migration, independent production provisioning, deployment or merge occurred.
+
+## Database-free findings extraction — October 21, 2026
+
+This receipt covers the uncommitted extraction in the isolated database worktree,
+not a rerun of the historical qualification above. The existing 49-line finding
+merge/ranking tail of `AnalysisStore._derive_evidence` moved to
+`src/tempo_intelligence/analysis/findings.py`. Its statements are AST-identical
+except that `self.workspace` is the explicit `workspace` argument. Every other
+`AnalysisStore` method and every adapter SQL statement literal is unchanged.
+Source classification still precedes the existing background evidence read,
+which precedes merging. No transaction, lock, publication order, schema or public
+wire contract changed. [Ownership and composition](src/tempo_intelligence/analysis/README.md#finding-assembly)
+and the [remaining mixed adapter inventory](../../database/tempo_intelligence_database/adapters/README.md)
+are explicit; this is not a claim of complete separation.
+
+The selected source-root pure/fake tests passed **62 cases**. After tightening one
+new evidence-identity assertion, all **four new cases** passed again. These cover
+source advice merge/deduplication, draft proposal enrichment/ranking, unknown
+repertoire association, incompatible engine profile and the unchanged composition
+order; the existing classification/ranking/engine tests retain their assertions.
+The existing Starlette/AnyIO deprecation warning remains unsuppressed.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_findings.py services/intelligence/tests/test_analysis.py services/intelligence/tests/test_repairs.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_findings.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-findings-build
+```
+
+The shared review environment was read only; explicit source roots supply only
+the declared local dependencies. The source distribution rebuilt its wheel, and
+both include the new helper and centralized adapter. Their wheel bytes match
+current source and contain no bytecode/cache files. Artifact SHA-256 values:
+
+- Wheel: `298068de27ac326047678023bc158004ded7729fe0757968dc096272bbb2f76d`.
+- Source distribution: `a5e15ddad8025c9c97b3e18b9fa6c2f583e8fb0e7e4237fa9330a8077bbe4960`.
+
+Artifacts remain under `/tmp/tempo-intelligence-findings-build` for integration;
+the pre-extraction adapter snapshot remains at
+`/tmp/tempo-intelligence-findings-before.py` for the statement comparison. These
+artifacts predate this receipt-only edit. Owner documentation links resolve.
+Mermaid rendering was not checked because this checkout lacks the parser package;
+no new documentation toolchain was installed. No installed-consumer runtime,
+native PostgreSQL, server, worker, provider, live data, full-system suite,
+deployment, security operation or CI change ran for this extraction.
+
+## Source-request policy and serialization extraction — October 21, 2026
+
+This separate bounded slice moves `public` value conversion to
+`src/tempo_intelligence/serialization.py` and descriptor preparation, cache
+identity and retry eligibility to `src/tempo_intelligence/source_requests.py`.
+Analysis responses and the retained native fixture import the application
+serializer directly. The Store retains all SQL, transaction/lock ownership,
+clock call points and its private retry entry point as a delegation.
+
+Source comparison verifies the serializer, descriptor loop, cache identity and
+retry predicate against their original AST. Inlining the new calls reproduces
+the complete original `submit` statement order, including descriptor preparation,
+binding initialization, sorting, cache processing and binding append. Every other
+Store method and every SQL statement literal is unchanged. Provider-origin reads
+remain inside the same loop and short-circuit conditions. The original adapter
+snapshot is `/tmp/tempo-intelligence-source-requests-before.py`.
+
+**23 distinct selected source-root cases passed**: 17 new pure policy/serializer
+cases, five existing request/identity cases and the existing fake-store bounded
+HTTP refresh/retry case. The first command passed 22 cases; the separately added
+lazy-provider-lookup case then passed on its own. Those counts are distinct, not
+repeated runs. The existing Starlette/AnyIO deprecation remains unsuppressed.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_requests.py services/intelligence/tests/test_models.py::test_source_cache_inputs_ignore_policy_and_repertoire_identity services/intelligence/tests/test_models.py::test_cohort_sets_have_one_canonical_parameter_order services/intelligence/tests/test_models.py::test_distinct_provider_inputs_do_not_share_evidence_identity services/intelligence/tests/test_models.py::test_one_request_has_at_most_one_configuration_per_source_family services/intelligence/tests/test_models.py::test_request_rejects_unknown_fields_and_duplicate_sources services/intelligence/tests/test_api.py::test_caller_reads_and_bounded_refresh_retry_have_explicit_revision_commands -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_requests.py::test_maia_and_ineligible_cache_paths_do_not_read_provider_configuration -q --rootdir=. -o pythonpath= --import-mode=importlib
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-source-requests-build
+```
+
+The first command predates the additional short-circuit case; rerunning it now
+selects all 23 cases. Logs are `/tmp/tempo-intelligence-source-requests-tests.log`
+and `/tmp/tempo-intelligence-source-requests-lazy-provider.log`. The shared review
+environment remains read only. The source distribution rebuilt its wheel; both
+include the new helpers and updated owner adapters, with source-matching wheel
+bytes and no cache files. Artifacts remain in the build directory above for
+integration. The new owner diagram parses using the existing
+`/tmp/tempo-db-extraction-diagrams/node_modules` jsdom/Mermaid setup; local owner
+links resolve. This is syntax/source evidence, not a browser-rendering claim.
+
+The [remaining mixed-method inventory](../../database/tempo_intelligence_database/adapters/README.md)
+still includes request/revision/snapshot admission, source freshness/response
+assembly, credential/provider transitions, Maia generation/admission, and Analysis
+workflow/report/execution policy. No complete-separation claim, installed-consumer
+runtime qualification, native fixture execution, live operation, security change,
+full-system suite, CI change, deployment or merge is established by this slice.

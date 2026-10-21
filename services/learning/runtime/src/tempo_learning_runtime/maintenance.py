@@ -2,9 +2,9 @@
 
 from datetime import datetime, timezone
 import json, logging
-import psycopg
+from tempo_learning_database.adapters import maintenance as storage
+from tempo_learning_database.adapters.maintenance import psycopg, PoolTimeout
 from tempo_learning_remediation import RemediationError
-from psycopg_pool import PoolTimeout
 from tempo_learning_database.connections import connection
 from .durable_tasks import claim
 from .admission import admit, next_candidates
@@ -21,12 +21,7 @@ def finish_slice(database, task, payload, more):
     if task["kind"] == "remediation":
         # Lock late: claims have committed and card/queue/module operations have
         # finished. Read the marker here, never from the claim-time snapshot.
-        current = database.execute_native(
-            """SELECT payload_json FROM background_tasks
-               WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'
-                 AND lease_expires_at>clock_timestamp() FOR UPDATE""",
-            (task["id"], task["generation"], task["lease_token"]),
-        ).fetchone()
+        current = storage.leased_task_payload_for_update(database, task)
         if current is None:
             raise SupersededWork()
         merged = json.loads(current[0])
@@ -36,21 +31,9 @@ def finish_slice(database, task, payload, more):
             merged.update(after_card="", rescan_requested=False)
             more = True
         payload = merged
-    changed = database.execute_native(
-        """UPDATE background_tasks SET payload_json=%s,state=%s,phase=%s,
-               lease_token=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=NOW()
-           WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'
-             AND lease_expires_at>clock_timestamp()
-           RETURNING id""",
-        (
-            json.dumps(payload),
-            "queued" if more else "complete",
-            "queued" if more else "published",
-            task["id"],
-            task["generation"],
-            task["lease_token"],
-        ),
-    ).fetchone()
+    changed = storage.finish_task_slice(
+        database, task, payload, "queued" if more else "complete", "queued" if more else "published",
+    )
     if not changed:
         raise SupersededWork()
 
@@ -59,9 +42,7 @@ def run_once():
     from .gateway import execute
 
     with connection(read_only=True, background=True) as database:
-        operation = database.execute_native(
-            "SELECT operation_id FROM operation_receipts WHERE state='queued' AND command_name!='publication.activate.v2' AND (next_retry_at IS NULL OR next_retry_at<=NOW()) ORDER BY created_at,operation_id LIMIT 1"
-        ).fetchone()
+        operation = storage.next_queued_operation(database)
     if operation:
         try:
             execute(operation[0], background=True)
@@ -69,10 +50,7 @@ def run_once():
             # A retained intent must not starve queue maintenance while a card is busy.
             logger.exception("Essential command yielded; original identity retained")
             with connection(background=True) as database:
-                database.execute_native(
-                    "UPDATE operation_receipts SET next_retry_at=NOW()+INTERVAL '1 second' WHERE operation_id=%s AND state='queued'",
-                    (operation[0],),
-                )
+                storage.defer_queued_operation(database, operation[0])
         return True
     with connection(background=True) as database:
         task = claim(database)
@@ -85,12 +63,7 @@ def run_once():
         # after the application transaction rolls back; preserve new generations.
         try:
             with connection(background=True) as database:
-                database.execute_native(
-                    """UPDATE background_tasks SET state='queued',lease_token=NULL,
-                    lease_expires_at=NULL,last_error='Learning slice yielded',updated_at=NOW()
-                    WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'""",
-                    (task["id"], task["generation"], task["lease_token"]),
-                )
+                storage.release_yielded_task(database, task)
         except (psycopg.Error, PoolTimeout):
             logger.info("Claim release yielded; lease expiry retains recovery")
         raise
@@ -123,7 +96,7 @@ def apply_task(task):
             lock_queue_date_for_position(database, day)
             rows = queue_application.presentation_rows(database, day)
             membership_hash = frozen_opening_order.queue_hash(queue_ordering._queue_membership_hash(rows), token)
-            saved = database.execute("SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)).fetchone()
+            saved = storage.queue_day_order(database, day)
             if not saved or saved["membership_hash"] != membership_hash:
                 annotated = frozen_opening_order.annotate(database, rows) if token[0] is not None else rows
                 seed, _, ordered = queue_ordering._plan_daily_queue_order(
@@ -132,20 +105,12 @@ def apply_task(task):
                 )
                 for slot, row in zip(sorted(rows, key=lambda row: (row['position'], row['id'])), ordered):
                     if slot['position'] != row['position']:
-                        database.execute("UPDATE daily_queue SET position=? WHERE id=?", (slot['position'], row['id']))
-                database.execute(
-                    """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
-                       VALUES(?,?,?,?) ON CONFLICT(queue_date) DO UPDATE SET
-                       membership_hash=excluded.membership_hash,generated_at=excluded.generated_at""",
-                    (day, seed, membership_hash, datetime.now(timezone.utc).isoformat()),
-                )
+                        storage.set_queue_position(database, slot['position'], row['id'])
+                storage.save_queue_day_order(database, day, seed, membership_hash, datetime.now(timezone.utc).isoformat())
             # Match foreground task-before-projection order after card/queue
             # locks, preventing ensure_current's projection lock from inverting it.
             finish_slice(database, task, payload, False)
-            database.execute_native(
-                "INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,updated_at) VALUES(%s,'ready',1,0,%s) ON CONFLICT(queue_date) DO UPDATE SET state='ready',generation=queue_projections.generation+1,refresh_pending=0,last_error=NULL,updated_at=excluded.updated_at",
-                (day, datetime.now(timezone.utc).isoformat()),
-            )
+            storage.mark_queue_projection_ready(database, day, datetime.now(timezone.utc).isoformat())
     return True
 
 

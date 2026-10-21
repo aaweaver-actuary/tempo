@@ -361,3 +361,25 @@ def validated_snapshot_cache(previous, digest, document):
     if previous is None or previous[0] != key:
         return (key, parse_snapshot(document))
     return previous
+
+
+def prepare_snapshot(snapshot):
+    snapshot = parse_snapshot(snapshot)
+    document = snapshot.model_dump(mode="json")
+    digest = identity(document)
+    workspace = snapshot.publication.workspace_id
+    return snapshot, document, digest, workspace
+
+
+def snapshot_changed_positions(snapshot, previous, current):
+    if previous and snapshot.schema_version == 2:
+        old = parse_snapshot(previous['document'])
+        if old.snapshot_id == snapshot.snapshot_id and old.revision >= snapshot.revision:
+            raise ValueError('stale_snapshot_revision')
+        if old.publication.publication_id == snapshot.publication.publication_id and old.publication.publication_generation > snapshot.publication.publication_generation:
+            raise ValueError('stale_snapshot_generation')
+    affected = set(current["changed_positions"])
+    for item in [snapshot, parse_snapshot(previous["document"]) if previous else None]:
+        if item:
+            affected.update(key for _, keys, _ in item.compiled_routes() for key in keys)
+    return affected

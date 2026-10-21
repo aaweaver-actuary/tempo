@@ -29,3 +29,12 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 
 
 [Derivation storage](derivation/README.md) owns the existing position/event stages, job projections, feature publication and miss/priority queries. Application workers keep chess/phase/task decisions and the same borrowed transactions.
+
+
+[Provider synchronization](sync/README.md) and [repertoire staging](repertoire/README.md) contain complete original sync/claim/window/comparison queries. Worker normalization, fetch, phase, task/lease and publication decisions remain outside database with their existing transaction authority.
+
+
+[Legacy provider import storage](imports/README.md) and [event/finding storage](evidence/README.md) hold the existing imported-game/state, gameplay-event and staged finding/publication operations. Provider/chess/classification, task/retry and publication decisions remain at the original application seams.
+
+
+[Coordinator storage](coordinator/README.md) contains the original recovery/claim/status/settlement queries; the coordinator retains process/async/provider/task lifecycle. Shared claim SQL builders remain available through their old composition names.

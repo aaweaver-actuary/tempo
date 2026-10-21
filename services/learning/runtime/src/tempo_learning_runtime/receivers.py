@@ -1,5 +1,6 @@
 """Versioned intake and required settlement under the sole Learning transaction."""
 
+from tempo_learning_database.adapters import evidence_receipts as storage
 from typing import Annotated
 import hashlib, json
 from fastapi import HTTPException
@@ -47,10 +48,7 @@ def receive(database, delivery, workspace_id, *, background=False):
         return _receiver(database, delivery, admit).model_dump(mode="json")
     # Legacy receipts are immutable read-only compatibility evidence. They never
     # execute the retired obligation writer or fabricate missing provenance.
-    historical = database.execute(
-        "SELECT digest,result_json FROM evidence_deliveries WHERE delivery_id=?",
-        (delivery.delivery_id,),
-    ).fetchone()
+    historical = storage.historical_delivery_receipt(database, delivery.delivery_id)
     if historical:
         if (
             historical[0]
@@ -58,10 +56,7 @@ def receive(database, delivery, workspace_id, *, background=False):
         ):
             raise HTTPException(409, "Evidence delivery identity reused")
         return json.loads(historical[1])
-    frontier = database.execute(
-        "SELECT evidence_revision FROM accepted_evidence_revisions WHERE workspace_id=? AND evidence_id=?",
-        (workspace_id, delivery.evidence_id),
-    ).fetchone()
+    frontier = storage.accepted_revision_frontier(database, workspace_id, delivery.evidence_id)
     from .remediation_adapter import receive as receive_remediation
 
     acknowledgement = receive_remediation(database, delivery, background=background,

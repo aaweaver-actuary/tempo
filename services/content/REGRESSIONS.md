@@ -160,3 +160,11 @@ both actual packed persistence and exact public export/replay after the repair.
 ## Source application helper separation
 
 `tests/test_source_policy.py` covers source/workspace admission, exercise turn checks, binding responses, publication status/error selection and coverage labels over supplied facts. Its import guard keeps storage, network and sibling implementations out of the pure policy module. SQL, locks, fencing and hook timing remain in the existing root database store; these synthetic cases do not replace native contracts.
+
+## Reconciliation orchestration separation
+
+`tests/test_worker_application.py` owns the moved `work_once` orchestration's ordered claim/idle-collection/manifest/phase operations, unchanged manifest exception scope, domain and generic validation errors, unknown phase, stale authority, and propagation of unexpected failures. Synthetic storage-boundary cases require the original single transaction and fence before failure-write/error-text evaluation; the public `ContentService.work_once` composition is exercised without opening a database. Existing native worker, lease, lock-order, collector, rollback and failed-generation contracts remain with `integration/test_postgres.py`; synthetic cases do not establish actual PostgreSQL locking or resource isolation.
+
+## Route and publication preparation separation
+
+`tests/test_content_preparation.py` owns the moved 16-ply/terminal route-window decision, completed-cache reuse, exact publication/provenance fields, exercise-count rejection before construction, retained serialization/decode pass, inventory retirement/status/stale projection, and route/publication computation at the original read/hook/transaction points. Existing selected `tests/test_domain.py` checkpoint, illegal-route, publication identity/round-trip/permutation and retirement cases retain the underlying algorithm/contract invariants. Native epoch/fence/cache races and publication authority/rollback/replay contracts remain in `integration/test_postgres.py`; they were not replaced by synthetic timing tests.

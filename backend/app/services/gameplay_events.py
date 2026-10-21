@@ -9,6 +9,7 @@ import json
 import chess
 
 from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.games.evidence import gameplay as storage
 from .activity_gate import activity_gate
 from .motif_detectors import classify_candidate_lines, select_primary_motif
 
@@ -36,24 +37,12 @@ def refresh_gameplay_events(
     """Compute outside a transaction and replace only this version in one short write."""
     read_section = background_read_connection if prepare_only else lambda: connection(background=background)
     with read_section() as database:
-        game = database.execute(
-            """SELECT id,color,start_fen,moves_json,analysis_version,analysis_evidence_version
-                  FROM imported_games WHERE id=?""",
-            (game_id,),
-        ).fetchone()
+        game = storage.source_game(database, game_id)
         if not game:
             return [] if prepare_only else None
-        analysis_rows = database.execute(
-            "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply",
-            (game_id,),
-        ).fetchall()
-        candidate_rows = database.execute(
-            "SELECT * FROM game_move_analysis_candidates WHERE game_id=? ORDER BY ply,rank",
-            (game_id,),
-        ).fetchall()
-        settings = database.execute(
-            "SELECT major_mistake_cp,engine_line_window_cp FROM settings WHERE id=1"
-        ).fetchone()
+        analysis_rows = storage.source_analysis(database, game_id)
+        candidate_rows = storage.source_candidates(database, game_id)
+        settings = storage.event_threshold_settings(database)
     moves = json.loads(game["moves_json"])
     analysis_version = max(1, int(game["analysis_version"]))
     missed_opportunity_threshold_cp = int(settings["major_mistake_cp"])
@@ -251,16 +240,5 @@ def refresh_gameplay_events(
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
-        database.execute(
-            "DELETE FROM gameplay_events WHERE game_id=? AND classifier_version=?",
-            (game_id, CLASSIFIER_VERSION),
-        )
-        database.executemany(
-            """INSERT INTO gameplay_events(
-                   id,game_id,analysis_version,classifier_version,ply,kind,motif,
-                   beneficiary_color,created_by_color,outcome,confidence,loss_cp,
-                   best_move_uci,actual_move_uci,principal_variation_json,evidence_json,
-                   created_at,updated_at
-               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            computed_events,
-        )
+        storage.delete_classifier_events(database, game_id, CLASSIFIER_VERSION)
+        storage.insert_event_values(database, computed_events)

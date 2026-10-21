@@ -14,6 +14,7 @@ import httpx
 
 from ..models import GameSyncRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
+from tempo_legacy_database.adapters.games.sync import windows as storage
 from .chesscom_client import fetch_chesscom_archive_month, fetch_chesscom_archive_urls
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
@@ -42,13 +43,8 @@ def _enqueue_window(database: PostgresConnection, *, job_id: str, provider: str,
                     source_url: str | None = None) -> str:
     identifier = _window_id(job_id, provider, kind, start_ms, end_ms)
     now = datetime.now(timezone.utc).isoformat()
-    database.execute(
-        """INSERT INTO game_sync_windows(
-               id,job_id,provider,window_kind,window_start_ms,window_end_ms,
-               source_url,created_at,updated_at
-           ) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING""",
-        (identifier, job_id, provider, kind, start_ms, end_ms,
-         source_url, now, now),
+    storage.insert_window(
+        database, identifier, job_id, provider, kind, start_ms, end_ms, source_url, now,
     )
     enqueue_task_in_transaction(
         database, "game_sync_window", f"{job_id}:{identifier}",
@@ -87,16 +83,10 @@ async def _fetch_window(window: dict[str, Any], request: GameSyncRequest) -> tup
 def _load_window_and_request(claimed_task: dict[str, Any]) -> tuple[dict, GameSyncRequest] | None:
     with background_lease():
         with connection(read_only=True, background=True) as database:
-            window_row = database.execute(
-                "SELECT * FROM game_sync_windows WHERE id=?",
-                (claimed_task["payload"]["window_id"],),
-            ).fetchone()
+            window_row = storage.load_window(database, claimed_task["payload"]["window_id"])
             if window_row is None:
                 return None
-            job_row = database.execute(
-                "SELECT request_json,status FROM game_sync_jobs WHERE id=?",
-                (window_row["job_id"],),
-            ).fetchone()
+            job_row = storage.load_window_request(database, window_row["job_id"])
     if job_row is None or job_row["status"] not in {"queued", "running"}:
         return None
     return dict(window_row), GameSyncRequest.model_validate_json(job_row["request_json"])
@@ -106,10 +96,7 @@ def _stage_window(database: PostgresConnection, claimed_task: dict[str, Any],
                   window: dict, records: list[dict], counts: dict) -> bool:
     if not lock_current_slice(database, claimed_task):
         return False
-    current = database.execute(
-        "SELECT status FROM game_sync_windows WHERE id=? FOR UPDATE",
-        (window["id"],),
-    ).fetchone()
+    current = storage.lock_window_status(database, window["id"])
     if current is None or current["status"] != "planned":
         return False
     provider_page_full = (
@@ -132,24 +119,16 @@ def _stage_window(database: PostgresConnection, claimed_task: dict[str, Any],
                 kind="games", start_ms=start_ms, end_ms=end_ms,
                 source_url=window.get("source_url"),
             )
-        database.execute(
-            "UPDATE game_sync_windows SET status='split',updated_at=? WHERE id=?",
-            (datetime.now(timezone.utc).isoformat(), window["id"]),
-        )
+        storage.mark_window_split(database, window["id"], datetime.now(timezone.utc).isoformat())
         return complete_task_slice_in_transaction(database, claimed_task)
     serialized = json.dumps(records, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(serialized.encode()).hexdigest()
-    database.execute(
-        """UPDATE game_sync_windows SET status='staged',records_json=?,source_digest=?,
-           total_records=?,fetched_count=?,filtered_count=?,rejected_count=?,updated_at=?
-           WHERE id=?""",
-        (serialized, digest, len(records), counts["fetched"], counts["filtered"],
-         counts["rejected"], datetime.now(timezone.utc).isoformat(), window["id"]),
+    storage.stage_window_records(
+        database, window["id"], serialized, digest, len(records), counts["fetched"],
+        counts["filtered"], counts["rejected"], datetime.now(timezone.utc).isoformat(),
     )
     if not records:
-        database.execute(
-            "UPDATE game_sync_windows SET status='complete' WHERE id=?", (window["id"],),
-        )
+        storage.mark_window_complete(database, window["id"])
         completed = complete_task_slice_in_transaction(database, claimed_task)
         if completed:
             finish_game_sync_if_complete(database, window["job_id"])
@@ -162,10 +141,7 @@ def _stage_window(database: PostgresConnection, claimed_task: dict[str, Any],
 def _dispatch_one(database: PostgresConnection, claimed_task: dict[str, Any]) -> bool:
     if not lock_current_slice(database, claimed_task):
         return False
-    window = database.execute(
-        "SELECT * FROM game_sync_windows WHERE id=? FOR UPDATE",
-        (claimed_task["payload"]["window_id"],),
-    ).fetchone()
+    window = storage.lock_window(database, claimed_task["payload"]["window_id"])
     if window is None or window["status"] != "staged":
         return False
     records = json.loads(window["records_json"])
@@ -194,14 +170,9 @@ def _dispatch_one(database: PostgresConnection, claimed_task: dict[str, Any]) ->
             priority=80,
         )
     next_index = record_index + 1
-    database.execute(
-        "UPDATE game_sync_windows SET next_record_index=?,updated_at=? WHERE id=?",
-        (next_index, datetime.now(timezone.utc).isoformat(), window["id"]),
-    )
+    storage.advance_record_cursor(database, window["id"], next_index, datetime.now(timezone.utc).isoformat())
     if next_index == len(records):
-        database.execute(
-            "UPDATE game_sync_windows SET status='complete' WHERE id=?", (window["id"],),
-        )
+        storage.mark_window_complete(database, window["id"])
         completed = complete_task_slice_in_transaction(database, claimed_task)
         if completed:
             finish_game_sync_if_complete(database, window["job_id"])

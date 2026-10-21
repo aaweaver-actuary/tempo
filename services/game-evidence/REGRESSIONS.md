@@ -20,6 +20,29 @@ pending fallback and source-revision-before-snapshot readiness precedence.
 retains the prior per-worker tuple, while digest/document changes still invalidate
 it. These are application/installed-wiring checks, not native transaction proof.
 
+`tests/test_reporting.py` owns comparison construction and import-status response
+shaping: unchanged source/authority readiness precedence and fact identities,
+timestamp/missing-result handling after closing the read, and report construction
+only after the callback, locked reads and current-input fences when no comparison
+already exists. It retains the original publication order with synthetic facts;
+the native suite still owns actual locks, rollback and publication races.
+
+`tests/test_snapshot_preparation.py` owns the snapshot preparation split: invalid
+input precedes connection acquisition; exact replay and immutable identity conflict
+retain their early returns/errors; staleness rejection precedes position access
+and route compilation; affected positions retain prior parse counts/route order,
+with no source-list mutation. Synthetic installed-store traces retain the locked
+read and write call points, including rejection without writes. Native snapshot
+installation/generation, concurrency and rollback proof remains with the existing
+PostgreSQL regressions.
+
+`tests/test_worker.py` owns the moved worker control flow: no-work and existing
+job-kind/fallback paths, exact job/callback forwarding, work exception identity,
+fenced failure-write timing, claim-error/cancellation exclusion and unmasked
+failure-write exceptions. It uses installed store/application wiring and synthetic
+capabilities; actual leases, contention, persistence and restart remain native
+suite responsibilities.
+
 `tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
 legacy observation: exact original physical card/interior offset, played/expected
 move, deterministic immutable identity, unknown/no-miss without an envelope,

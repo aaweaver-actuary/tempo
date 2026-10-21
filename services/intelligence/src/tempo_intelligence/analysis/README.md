@@ -16,3 +16,29 @@ The [centralized projection](../../../../../database/tempo_intelligence_database
 This split adds no public wire operation or new runtime framework. Existing HTTP composition and the installed service continue to supply the owning Store. It does not create a Study dependency, start a worker/provider/engine, change grants or establish live resource isolation. [Schema relationships and fields](../../../../../database/tempo_intelligence_database/schema/README.md) remain source-only PostgreSQL documentation; no DDL or migrations changed.
 
 Focused proofs: `services/intelligence/tests/test_game_browser.py` preserves cursor fences and limits and verifies bounded query parameters in one owner read transaction; `test_games_readonly.py` retains fake-store server denial and lifecycle tests. Existing native proof `services/intelligence/integration/test_games_readonly_postgres.py` remains the real PostgreSQL/grant boundary and was not run for this extraction.
+
+## Finding assembly
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`findings.py`](findings.py) owns the existing source-advice merge, engine evidence
+enrichment, draft response-proposal assembly, uncertain engine-profile handling
+and final ranking. It receives already captured facts and mutates the same finding
+lists as before; it has no connection, query, transaction or worker capability.
+
+```mermaid
+flowchart LR
+  store[Intelligence AnalysisStore composition] -->|classify accepted input first| classify[Source classification helpers]
+  store -->|existing background read next| capture[Intelligence evidence rows]
+  store -->|captured facts then merge| merge[Finding assembly and ranking]
+  merge --> classify
+  merge --> comparison[Pure engine comparison]
+```
+
+The centralized `AnalysisStore._derive_evidence` remains the composition owner:
+source classification precedes its existing background evidence read, which
+precedes this database-free merge. No query, lock, transaction boundary, report
+publication order, public wire contract or cross-owner dependency changes.
+`tests/test_findings.py` uses synthetic accepted facts to check advice identity,
+proposal enrichment, ranking, unknown repertoire association and incompatible
+engine identity, plus fake composition to preserve that operation order.
+Existing native Analysis report and publication proofs remain unexecuted here.

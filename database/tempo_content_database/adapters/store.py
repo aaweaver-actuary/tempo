@@ -12,8 +12,10 @@ from psycopg_pool import ConnectionPool
 from tempo_content_publication_contracts.v1 import Publication, serialize_contract
 
 from tempo_content.models import SourceSnapshot, SourceExercise
-from tempo_content.policy import prepare_source, exercise_continuation, binding_responses, publication_report, coverage_reply
-from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position, inventory_segment, build_publication
+from tempo_content.policy import prepare_source, exercise_continuation, binding_responses, publication_report, coverage_reply, inventory_report
+from tempo_content.worker import reconcile_once, route_segment
+from tempo_content.publication import prepare_publication, publication_authority
+from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
 
 INVENTORY_VERSION = 'content-legal-v1/chess-1.11.2'
@@ -271,8 +273,7 @@ class ContentService:
                 count = database.execute('SELECT count(*) AS count FROM content.'+table+' WHERE source_id=%s AND generation=%s',(source['id'],task['generation'])).fetchone()['count']
                 if count!=manifest['counts'][kind]:
                     raise ContentError('inventory_incomplete','Complete generation has missing '+kind)
-        state = 'retirement_required' if task['state']=='complete' and manifest['counts']['exercises']==0 else task['state']
-        return {**source,**task,'state':state,'status':state,'stale':source['last_complete_revision']!=source['requested_revision']}
+        return inventory_report(source,task,manifest['counts']['exercises'])
 
     def _claim(self,source_key,hook):
         query = 'SELECT t.*,s.source_key FROM content.tasks t JOIN content.sources s ON s.id=t.source_id AND s.requested_revision=t.revision WHERE t.state IN (\'pending\',\'working\') AND (t.lease_until IS NULL OR t.lease_until<=clock_timestamp())'
@@ -304,29 +305,19 @@ class ContentService:
         database.execute('UPDATE content.tasks SET phase=%s,cursor=%s,exercise_state=%s,state=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s',(phase or task['phase'],task['cursor'] if cursor is None else cursor,Jsonb(exercise_state),state,task['source_id'],task['generation']))
 
     def work_once(self,source_key=None,hook=None):
-        task = self._claim(source_key,hook)
-        if not task:
-            return self.collect_once(hook=hook)
-        manifest = self._manifest(task['source_id'],task['revision'])
-        try:
-            if task['phase']=='routes':
-                return self._route_slice(task,manifest,hook)
-            if task['phase']=='exercises':
-                return self._exercise_slice(task,manifest,hook)
-            if task['phase']=='bindings':
-                return self._binding_slice(task,manifest,hook)
-            raise ContentError('unknown_task_phase',task['phase'])
-        except ValueError as error:
-            code = error.code if isinstance(error,ContentError) else 'invalid_content'
-            if code=='stale_generation':
-                return {'worked':False,'status':'stale_generation','phase':task['phase']}
-            with self._transaction() as database:
-                try:
-                    self._fence(database,task)
-                except ContentError:
-                    return {'worked':False,'status':'stale_generation','phase':task['phase']}
-                database.execute("UPDATE content.tasks SET state='failed',error=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s",(Jsonb({'code':code,'message':str(error)}),task['source_id'],task['generation']))
-            return {'worked':True,'status':'failed','phase':task['phase'],'error':{'code':code,'message':str(error)}}
+        return reconcile_once(source_key,hook,claim_task=self._claim,collect=self.collect_once,
+                              read_manifest=self._manifest,route_slice=self._route_slice,
+                              exercise_slice=self._exercise_slice,binding_slice=self._binding_slice,
+                              fail_task=self._fail_task)
+
+    def _fail_task(self,task,code,error):
+        with self._transaction() as database:
+            try:
+                self._fence(database,task)
+            except ContentError:
+                return False
+            database.execute("UPDATE content.tasks SET state='failed',error=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s",(Jsonb({'code':code,'message':str(error)}),task['source_id'],task['generation']))
+        return True
 
     def _transition(self,task,phase,state='pending',hook=None):
         _hook(hook,'after_read',task=task)
@@ -359,10 +350,7 @@ class ContentService:
                 self._advance(database,task)
                 _hook(hook,'after_writes',task=task)
             return {'worked':True,'status':'pending','phase':'routes','registered':artifact_id,'plies':0}
-        first = artifact['cursor']
-        moves = route['moves'][first:first+16]
-        terminal = first+len(moves)==len(route['moves'])
-        occurrences,end_fen = ([],artifact['next_fen']) if artifact['complete'] else inventory_segment(artifact['next_fen'],moves,color,first,terminal=terminal)
+        first, moves, terminal, occurrences, end_fen = route_segment(route,artifact,color)
         _hook(hook,'before_commit',task=task,artifact=artifact)
         with self._transaction() as database:
             self._fence(database,task,hook)
@@ -513,13 +501,8 @@ class ContentService:
             database.execute('UPDATE content.tasks SET built_at=%s WHERE source_id=%s AND generation=%s',(built_at,source['id'],task['generation']))
         snapshot = self._snapshot(manifest)
         revisions = self._exercise_revisions(source['id'],task['generation'])
-        if len(revisions)!=len(snapshot.exercises):
-            raise ContentError('incomplete_exercises','Missing validated exercise revisions')
-        publication = build_publication(snapshot,task['revision'],task['generation'],built_at,revisions)
-        payload = serialize_contract(publication)
-        if not isinstance(payload,str):
-            payload = payload.decode()
-        provenance = {'source_id':source['id'],'source_key':source_key,'source_digest':manifest['digest'],'source_revision':task['revision'],'inventory_version':INVENTORY_VERSION,'snapshot':snapshot.model_dump(mode='json')}
+        publication, provenance = prepare_publication(snapshot,task['revision'],task['generation'],built_at,revisions,
+            source_id=source['id'],source_key=source_key,source_digest=manifest['digest'],inventory_version=INVENTORY_VERSION)
         _hook(hook,'before_commit',publication=publication)
         self.store_publication(publication,source['id'],provenance,hook)
         return publication
@@ -540,8 +523,8 @@ class ContentService:
             manifest = self._manifest(source_id,publication.source_revision)
             revisions = self._exercise_revisions(source_id,publication.publication_generation)
             expected_snapshot = self._snapshot(manifest)
-            expected_payload = serialize_contract(build_publication(expected_snapshot,publication.source_revision,publication.publication_generation,publication.built_at,revisions))
-            expected_provenance = {'source_id':source_id,'source_key':expected_snapshot.source_key,'source_digest':manifest['digest'],'source_revision':publication.source_revision,'inventory_version':INVENTORY_VERSION,'snapshot':expected_snapshot.model_dump(mode='json')}
+            expected_payload, expected_provenance = publication_authority(expected_snapshot,publication,revisions,
+                source_id=source_id,source_digest=manifest['digest'],inventory_version=INVENTORY_VERSION)
         with self._transaction() as database:
             source = self._lock_source(database,source_id,hook)
             existing = database.execute('SELECT payload,digest,source_id,provenance FROM content.publications WHERE publication_id=%s AND generation=%s',(publication.publication_id,publication.publication_generation)).fetchone()

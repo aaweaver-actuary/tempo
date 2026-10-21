@@ -7,13 +7,14 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from tempo_game_evidence.comparison import compare_game
-from tempo_game_evidence.snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage, validated_snapshot_cache
+from tempo_game_evidence.snapshot import ComparisonSnapshot, prepare_snapshot, snapshot_changed_positions, snapshot_storage, validated_snapshot_cache
 from tempo_game_evidence.source import INDEX_VERSION, identity, prepare_import_identity, prepare_import_document, replay_positions, utc_now
-from tempo_game_evidence.reporting import comparison_report_response
+from tempo_game_evidence.reporting import build_comparison_report, comparison_report_response, import_status_response
 
 
 from tempo_game_evidence.payloads import make_delivery
-from tempo_game_evidence.reconciliation import finalize, request_reconciliation, resume_reconciliation
+from tempo_game_evidence.reconciliation import finalize, request_reconciliation
+from tempo_game_evidence.worker import process_comparison_job
 
 
 class EvidenceStore:
@@ -90,10 +91,7 @@ class EvidenceStore:
             ("compare:"+game_id, workspace, game_id))
 
     def load_snapshot(self, snapshot):
-        snapshot = parse_snapshot(snapshot)
-        document = snapshot.model_dump(mode="json")
-        digest = identity(document)
-        workspace = snapshot.publication.workspace_id
+        snapshot, document, digest, workspace = prepare_snapshot(snapshot)
         with self.connect() as database:
             database.execute("INSERT INTO workspace_inputs(workspace_id) VALUES(%s) ON CONFLICT DO NOTHING", (workspace,))
             current = database.execute("SELECT * FROM workspace_inputs WHERE workspace_id=%s FOR UPDATE", (workspace,)).fetchone()
@@ -104,16 +102,7 @@ class EvidenceStore:
             if existing and existing["digest"] != digest:
                 raise ValueError("immutable_snapshot_revision_conflict")
             previous = database.execute("SELECT document FROM snapshots WHERE digest=%s", (current["snapshot_digest"],)).fetchone()
-            if previous and snapshot.schema_version == 2:
-                old = parse_snapshot(previous['document'])
-                if old.snapshot_id == snapshot.snapshot_id and old.revision >= snapshot.revision:
-                    raise ValueError('stale_snapshot_revision')
-                if old.publication.publication_id == snapshot.publication.publication_id and old.publication.publication_generation > snapshot.publication.publication_generation:
-                    raise ValueError('stale_snapshot_generation')
-            affected = set(current["changed_positions"])
-            for item in [snapshot, parse_snapshot(previous["document"]) if previous else None]:
-                if item:
-                    affected.update(key for _, keys, _ in item.compiled_routes() for key in keys)
+            affected = snapshot_changed_positions(snapshot, previous, current)
             database.execute("INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                              (digest,workspace,snapshot.snapshot_id,snapshot.revision,Jsonb(snapshot_storage(document))))
             database.execute("UPDATE workspace_inputs SET epoch=epoch+1,snapshot_digest=%s,changed_positions=%s WHERE workspace_id=%s",
@@ -142,23 +131,13 @@ class EvidenceStore:
             return job
 
     def process_one(self, *, before_publish=None):
-        job = self.claim_job()
-        if not job:
-            return False
-        try:
-            if job["kind"] == "rescope":
-                self._rescope(job)
-            elif job["kind"] == "reconcile":
-                resume_reconciliation(self, job)
-            else:
-                self._compare(job, before_publish)
-        except Exception:
-            with self.connect() as database:
-                database.execute("""UPDATE jobs SET lease_token=NULL,leased_until=NULL,attempts=attempts+1,
+        return process_comparison_job(self, before_publish=before_publish)
+
+    def record_job_failure(self, job):
+        with self.connect() as database:
+            database.execute("""UPDATE jobs SET lease_token=NULL,leased_until=NULL,attempts=attempts+1,
                   error='comparison_failed',next_attempt_at=now()+interval '5 seconds'
                   WHERE job_key=%s AND lease_token=%s""", (job["job_key"],job["lease_token"]))
-            raise
-        return True
 
     def _rescope(self, job):
         with self.connect() as database:
@@ -215,14 +194,7 @@ class EvidenceStore:
             existing = database.execute("SELECT 1 FROM comparisons WHERE game_id=%s AND input_token=%s", (job["game_id"],token)).fetchone()
             if not existing:
                 revision = current_game["report_revision"] + 1
-                report = {"schema_version": 1, "game": game, "comparison_revision": revision,
-                          "readiness": "unknown" if not snapshot or not snapshot.serving_current() or "source_error" in game else "ready",
-                          "reason": game.get("source_error") or ("snapshot_missing" if not snapshot else None),
-                          "snapshot": {"digest": inputs["snapshot_digest"], "snapshot_id": snapshot.snapshot_id,
-                              "revision": snapshot.revision, "publication_id": snapshot.publication.publication_id,
-                              "publication_generation": snapshot.publication.publication_generation,
-                              "source_revision": snapshot.publication.source_revision} if snapshot else None,
-                          "findings": findings}
+                report = build_comparison_report(game, revision, snapshot, inputs["snapshot_digest"], findings)
                 database.execute("INSERT INTO comparisons VALUES(%s,%s,%s,%s)", (game["game_id"],revision,token,Jsonb(report)))
                 database.execute("UPDATE games SET report_revision=%s,positions=%s,index_receipt=%s WHERE game_id=%s",
                                  (revision,Jsonb(positions),Jsonb({"input_digest": row["input_digest"], "version": INDEX_VERSION,
@@ -254,7 +226,4 @@ class EvidenceStore:
         with self.connect() as database:
             result=database.execute("SELECT import_id,status,reason,cursor,next_attempt_at,attempts FROM import_cursors WHERE workspace_id=%s AND import_id=%s",
                                     (workspace,import_id)).fetchone()
-        if not result:
-            raise KeyError(import_id)
-        result["next_attempt_at"]=result["next_attempt_at"].isoformat()
-        return result
+        return import_status_response(result, import_id)

@@ -8,6 +8,8 @@ import json
 from typing import Any
 
 from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.games.derivation.jobs import lock_job as lock_derivation_job
+from tempo_legacy_database.adapters.games.repertoire import comparison as storage
 from .canonical_scope_freshness import game_scope_generation
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
@@ -20,10 +22,7 @@ from .repertoire_comparison import (
 
 def _prepared_comparison(game_id: str) -> tuple[dict | None, str, list[dict]]:
     with background_read_connection() as database:
-        row = database.execute(
-            "SELECT id,color,start_fen,moves_json,played_at FROM imported_games WHERE id=?",
-            (game_id,),
-        ).fetchone()
+        row = storage.imported_game(database, game_id)
     if row is None:
         return None, "", []
     game = {**dict(row), "moves": json.loads(row["moves_json"])}
@@ -37,29 +36,8 @@ def _prepared_comparison(game_id: str) -> tuple[dict | None, str, list[dict]]:
 
 def _stage_match(database, game_id: str, version: int, index: int, match: dict) -> None:
     deviation = match["deviation"]
-    database.execute(
-        """INSERT INTO game_repertoire_matches_staged(
-             game_id,derivation_version,repertoire_id,is_primary,classification,
-             matched_player_decisions,repertoire_opportunities,deepest_covered_ply,
-             first_player_deviation_ply,first_player_deviation_fen,
-             first_player_deviation_expected_json,first_player_deviation_actual_uci,
-             deviation_card_id,first_opponent_gap_ply,out_of_book_ply,
-             timeline_json,updated_at,canonical_prefix_revision)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(game_id,derivation_version,repertoire_id) DO UPDATE SET
-             is_primary=excluded.is_primary,classification=excluded.classification,
-             matched_player_decisions=excluded.matched_player_decisions,
-             repertoire_opportunities=excluded.repertoire_opportunities,
-             deepest_covered_ply=excluded.deepest_covered_ply,
-             first_player_deviation_ply=excluded.first_player_deviation_ply,
-             first_player_deviation_fen=excluded.first_player_deviation_fen,
-             first_player_deviation_expected_json=excluded.first_player_deviation_expected_json,
-             first_player_deviation_actual_uci=excluded.first_player_deviation_actual_uci,
-             deviation_card_id=excluded.deviation_card_id,
-             first_opponent_gap_ply=excluded.first_opponent_gap_ply,
-             out_of_book_ply=excluded.out_of_book_ply,
-             timeline_json=excluded.timeline_json,updated_at=excluded.updated_at,
-             canonical_prefix_revision=excluded.canonical_prefix_revision""",
+    storage.stage_match_values(
+        database,
         (game_id, version, match["repertoire_id"], int(index == 0),
          match["classification"], match["matched"], match["opportunities"],
          match["deepest"], deviation["ply"] if deviation else None,
@@ -76,15 +54,8 @@ def _stage_primary_event(database, game: dict, version: int, primary: dict,
     event_id = hashlib.sha256(
         f"{game['id']}\0{primary['repertoire_id']}\0{event['ply']}".encode()
     ).hexdigest()
-    database.execute(
-        """INSERT INTO repertoire_decision_events_staged(
-             id,game_id,derivation_version,repertoire_id,card_id,ply,fen_key,
-             expected_uci,actual_uci,outcome,played_at,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(game_id,derivation_version,id) DO UPDATE SET
-             card_id=excluded.card_id,expected_uci=excluded.expected_uci,
-             actual_uci=excluded.actual_uci,outcome=excluded.outcome,
-             updated_at=excluded.updated_at""",
+    storage.stage_decision_event_values(
+        database,
         (event_id, game["id"], version, primary["repertoire_id"],
          event["card_id"], event["ply"], event["fen_key"],
          event["expected_uci"], event["actual_uci"], event["outcome"],
@@ -95,33 +66,17 @@ def _stage_primary_event(database, game: dict, version: int, primary: dict,
 def _publish_comparison(database, task: dict, game: dict, version: int,
                         matches: list[dict]) -> bool:
     game_id = game["id"]
-    database.execute("UPDATE imported_games SET repertoire_scope_generation=? WHERE id=?", (game_scope_generation(database), game_id))
+    storage.record_repertoire_scope(database, game_id, game_scope_generation(database))
     primary = matches[0] if matches else None
     evidence_owner = game.get("decision_evidence_owner", primary)
     expected_events = len(evidence_owner["decision_events"]) if evidence_owner else 0
-    saved_matches = database.execute(
-        "SELECT COUNT(*) FROM game_repertoire_matches_staged "
-        "WHERE game_id=? AND derivation_version=?", (game_id, version),
-    ).fetchone()[0]
-    saved_events = database.execute(
-        "SELECT COUNT(*) FROM repertoire_decision_events_staged "
-        "WHERE game_id=? AND derivation_version=?", (game_id, version),
-    ).fetchone()[0]
+    saved_matches = storage.staged_match_count(database, game_id, version)
+    saved_events = storage.staged_decision_event_count(database, game_id, version)
     if saved_matches != len(matches) or saved_events != expected_events:
         raise RuntimeError("Game repertoire comparison is incomplete; publication was withheld")
     deviation = primary["deviation"] if primary else None
-    database.execute(
-        """INSERT INTO repertoire_comparisons_staged(
-             game_id,derivation_version,repertoire_id,classification,
-             divergence_ply,divergence_fen,expected_json,actual_uci,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(game_id,derivation_version) DO UPDATE SET
-             repertoire_id=excluded.repertoire_id,
-             classification=excluded.classification,
-             divergence_ply=excluded.divergence_ply,
-             divergence_fen=excluded.divergence_fen,
-             expected_json=excluded.expected_json,
-             actual_uci=excluded.actual_uci,updated_at=excluded.updated_at""",
+    storage.stage_comparison_values(
+        database,
         (game_id, version, primary["repertoire_id"] if primary else None,
          primary["classification"] if primary else "no applicable repertoire",
          deviation["ply"] if deviation else None,
@@ -130,12 +85,7 @@ def _publish_comparison(database, task: dict, game: dict, version: int,
          deviation["actual"] if deviation else None,
          datetime.now(timezone.utc).isoformat()),
     )
-    database.execute(
-        "UPDATE game_derivation_jobs SET completed_phases=2,"
-        "phase='refreshing_findings',published_repertoire_version=? "
-        "WHERE game_id=? AND derivation_version=?",
-        (version, game_id, version),
-    )
+    storage.publish_repertoire_generation(database, game_id, version)
     enqueue_compact_postgres_task_in_transaction(
         database, "game_derivation_findings", game_id,
         {"game_id": game_id, "derivation_version": version,
@@ -159,10 +109,7 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
         current_scope_generation = game_scope_generation(database, lock=True)
         if not lock_current_slice(database, task):
             return False
-        job = database.execute(
-            "SELECT derivation_version,completed_phases,status FROM game_derivation_jobs "
-            "WHERE game_id=? FOR UPDATE", (game_id,),
-        ).fetchone()
+        job = lock_derivation_job(database, game_id)
         if (game is None or job is None or int(job["derivation_version"]) != version
                 or int(job["completed_phases"]) != 1
                 or job["status"] not in {"queued", "running"}):
@@ -172,11 +119,7 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
                 or payload.get("game_scope_generation", scope_generation) != scope_generation
                 or (expected_signature is not None and expected_signature != signature)):
             new_version = version + 1
-            database.execute(
-                "UPDATE game_derivation_jobs SET derivation_version=?,"
-                "phase='comparing_repertoire' WHERE game_id=? AND derivation_version=?",
-                (new_version, game_id, version),
-            )
+            storage.restart_changed_source(database, game_id, version, new_version)
             enqueue_compact_postgres_task_in_transaction(
                 database, "game_derivation_compare", game_id,
                 {"game_id": game_id, "derivation_version": new_version,
