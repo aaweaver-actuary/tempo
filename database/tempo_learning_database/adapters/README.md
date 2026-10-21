@@ -26,6 +26,8 @@
 | [remediation_adapter.py](remediation_adapter.py) | Existing integration facts, priority write and intact borrowed tuple-row driver facade; accepted/settlement/admission decisions stay in runtime. |
 | [publications.py](publications.py) | Existing accepted/serving/receipt, v1 execution/graph/frozen and retirement operations; [publication decisions/composition](publication-execution/README.md). |
 | [publication_bridge.py](publication_bridge.py) | Existing v2 projections, set-based locks and JSONB writes; alias/revision/document and preparation decisions remain in runtime. |
+| [api.py](api.py) | Existing complete HTTP read projections, saved-attempt/savepoint statements and driver identities; [API/defense composition](api-defense/README.md). |
+| [defense.py](defense.py) | Existing accepted-defense/queue/recognition facts, dialect predicate and persistence; rubric/grading/replay/scheduling decisions remain in runtime. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
 | [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |
