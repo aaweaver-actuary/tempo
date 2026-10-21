@@ -1,7 +1,8 @@
 """Production Study + installed Learning + owned PostgreSQL acceptance."""
 from pathlib import Path
 import hashlib, json, os, subprocess, sys, tempfile, shutil
-from run_postgres import ROOT, main
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "database"))
+from tempo_learning_database.tooling.run_postgres import ROOT, main
 
 
 def run():
@@ -33,7 +34,9 @@ def run():
              {"TEMPO_LEARNING_STUDY_ASSETS": str(build)},
              [ROOT / "app", ROOT / "static", ROOT / "vite.static.config.ts",
               ROOT / "package.json", ROOT / "package-lock.json", ROOT / "module-resolution.ts",
-              ROOT / "scripts/prove-study-learning.mjs", ROOT / "scripts/offline-shell-assets.ts", ROOT / "public"],
+              ROOT / "scripts/prove-study-learning.mjs", ROOT / "scripts/offline-shell-assets.ts",
+              ROOT / "scripts/maia-cache-asset.ts", ROOT / "database/browser",
+              ROOT / "database/browser-intents", ROOT / "database/tests/browser", ROOT / "public"],
              evidence_directory=evidence)
     finally:
         shutil.rmtree(build)
