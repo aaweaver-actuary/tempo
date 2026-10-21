@@ -26,6 +26,8 @@ from .services.study_grading import GRADER_VERSION, evaluate_answer, validate_ex
 from .services.study_pgn import preview_pgn
 from .services.study_portable import export_bundle, import_bundle, validate_bundle
 
+from tempo_legacy_database.adapters.commands.studies import routes as route_storage
+
 
 router = APIRouter(prefix="/api/studies", tags=["studies"])
 specification_adapter = TypeAdapter(ExerciseSpecification)
@@ -44,19 +46,14 @@ def _digest(value: Any) -> str:
 
 
 def _require(database, table: str, identifier: str):
-    if table not in {"studies", "study_chapters", "study_positions", "study_exercises"}:
-        raise AssertionError("Unknown study table")
-    row = database.execute(f"SELECT * FROM {table} WHERE id=?", (identifier,)).fetchone()
+    row = route_storage.record(database, table, identifier)
     if row is None:
         raise HTTPException(404, f"{table.replace('_', ' ').title()} not found")
     return row
 
 
 def _revision(database, exercise):
-    row = database.execute(
-        "SELECT * FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
-        (exercise["id"], exercise["current_revision"]),
-    ).fetchone()
+    row = route_storage.revision_record(database, exercise["id"], exercise["current_revision"])
     if row is None:
         raise HTTPException(409, "Exercise revision is unavailable")
     return row
@@ -66,10 +63,7 @@ def _exercise_payload(database, exercise_id: str, *, learner: bool = False) -> d
     exercise = _require(database, "study_exercises", exercise_id)
     revision = _revision(database, exercise)
     specification = json.loads(revision["specification_json"])
-    card = database.execute(
-        "SELECT id,state,due_date FROM cards WHERE study_exercise_id=? AND archived=0",
-        (exercise_id,),
-    ).fetchone()
+    card = route_storage.exercise_card_status(database, exercise_id)
     if learner:
         safe_interaction = {key: specification[key] for key in (
             "mode", "grading_policy", "criterion", "candidate_region", "start_square",
@@ -79,8 +73,7 @@ def _exercise_payload(database, exercise_id: str, *, learner: bool = False) -> d
                 "type": specification["type"], "prompt": specification["prompt"],
                 "hint": specification.get("hint", ""),
                 **safe_interaction,
-                "fen": database.execute("SELECT fen FROM study_positions WHERE id=?",
-                                        (exercise["position_id"],)).fetchone()[0]}
+                "fen": route_storage.position_fen(database, exercise["position_id"])}
     return {**dict(exercise), "specification": specification,
             "card": dict(card) if card else None}
 
@@ -93,14 +86,12 @@ def _queue_refresh() -> None:
 @router.get("")
 def list_studies():
     with read_connection() as database:
-        return {"studies": [dict(row) for row in database.execute(
-            "SELECT * FROM studies ORDER BY archived,title,id"
-        )]}
+        return {"studies": [dict(row) for row in route_storage.study_rows(database)]}
 
 
 @router.post("")
 def create_study(request: StudyCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command(
             "studies.create", request.model_dump(mode="json"),
             idempotency_key=idempotency_key,
@@ -108,9 +99,13 @@ def create_study(request: StudyCreate, idempotency_key: str | None = Header(defa
     identifier = str(uuid.uuid4())
     now = _now()
     with connection() as database:
-        database.execute(
-            "INSERT INTO studies(id,title,description,source_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-            (identifier, request.title, request.description, _json(request.source), now, now),
+        route_storage.insert_study(
+            database,
+            identifier,
+            request.title,
+            request.description,
+            _json(request.source),
+            now,
         )
     return {"id": identifier}
 
@@ -119,36 +114,40 @@ def create_study(request: StudyCreate, idempotency_key: str | None = Header(defa
 def get_study(study_id: str):
     with read_connection() as database:
         study = _require(database, "studies", study_id)
-        chapters = [dict(row) for row in database.execute(
-            "SELECT * FROM study_chapters WHERE study_id=? ORDER BY position,id", (study_id,)
-        )]
+        chapters = [dict(row) for row in route_storage.chapter_rows(database, study_id)]
         return {"study": dict(study), "chapters": chapters}
 
 
 @router.patch("/{study_id}")
 def update_study(study_id: str, request: StudyCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command(
             "studies.update", {"study_id": study_id, "study": request.model_dump(mode="json")},
             idempotency_key=idempotency_key,
         )
     with connection() as database:
         _require(database, "studies", study_id)
-        database.execute("UPDATE studies SET title=?,description=?,source_json=?,updated_at=? WHERE id=?",
-                         (request.title, request.description, _json(request.source), _now(), study_id))
+        route_storage.update_study(
+            database,
+            request.title,
+            request.description,
+            _json(request.source),
+            _now(),
+            study_id,
+        )
     return {"id": study_id}
 
 
 @router.post("/{study_id}/archive")
 def archive_study(study_id: str,
                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.archive", {"study_id": study_id},
                                 idempotency_key=idempotency_key)
     with connection() as database:
         _require(database, "studies", study_id)
-        database.execute("UPDATE studies SET archived=1,updated_at=? WHERE id=?", (_now(), study_id))
-        database.execute("UPDATE cards SET archived=1 WHERE study_exercise_id IN (SELECT id FROM study_exercises WHERE study_id=?)", (study_id,))
+        route_storage.archive_study(database, _now(), study_id)
+        route_storage.archive_study_cards(database, study_id)
     _queue_refresh()
     return {"id": study_id, "archived": True}
 
@@ -156,19 +155,19 @@ def archive_study(study_id: str,
 @router.post("/{study_id}/unarchive")
 def unarchive_study(study_id: str,
                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.unarchive", {"study_id": study_id},
                                 idempotency_key=idempotency_key)
     with connection() as database:
         _require(database, "studies", study_id)
-        database.execute("UPDATE studies SET archived=0,updated_at=? WHERE id=?", (_now(), study_id))
+        route_storage.unarchive_study(database, _now(), study_id)
     return {"id": study_id, "archived": False}
 
 
 @router.post("/{study_id}/chapters")
 def create_chapter(study_id: str, request: ChapterCreate,
                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.chapters.create",
                                 {"study_id": study_id, "chapter": request.model_dump(mode="json")},
                                 idempotency_key=idempotency_key)
@@ -177,27 +176,33 @@ def create_chapter(study_id: str, request: ChapterCreate,
         study = _require(database, "studies", study_id)
         if study["archived"]:
             raise HTTPException(409, "Archived studies cannot receive chapters")
-        position = database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM study_chapters WHERE study_id=?", (study_id,)).fetchone()[0]
-        database.execute("INSERT INTO study_chapters(id,study_id,title,description,position) VALUES(?,?,?,?,?)",
-                         (identifier, study_id, request.title, request.description, position))
+        position = route_storage.next_chapter_position(database, study_id)
+        route_storage.insert_chapter(
+            database,
+            identifier,
+            study_id,
+            request.title,
+            request.description,
+            position,
+        )
     return {"id": identifier, "position": position}
 
 
 @router.put("/{study_id}/chapters/order")
 def reorder_chapters(study_id: str, chapter_ids: list[str],
                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.chapters.reorder",
                                 {"study_id": study_id, "chapter_ids": chapter_ids},
                                 idempotency_key=idempotency_key)
     with connection() as database:
-        current = [row[0] for row in database.execute("SELECT id FROM study_chapters WHERE study_id=?", (study_id,))]
+        current = route_storage.chapter_identifiers(database, study_id)
         if set(current) != set(chapter_ids) or len(current) != len(chapter_ids):
             raise HTTPException(422, "Chapter order must include each chapter exactly once")
         for index, chapter_id in enumerate(chapter_ids):
-            database.execute("UPDATE study_chapters SET position=? WHERE id=?", (-index - 1, chapter_id))
+            route_storage.set_chapter_position(database, -index - 1, chapter_id)
         for index, chapter_id in enumerate(chapter_ids):
-            database.execute("UPDATE study_chapters SET position=? WHERE id=?", (index, chapter_id))
+            route_storage.set_chapter_position(database, index, chapter_id)
     return {"chapter_ids": chapter_ids}
 
 
@@ -207,19 +212,13 @@ def get_chapter(study_id: str, chapter_id: str):
         chapter = _require(database, "study_chapters", chapter_id)
         if chapter["study_id"] != study_id:
             raise HTTPException(404, "Chapter not in this study")
-        sources = [dict(row) for row in database.execute(
-            "SELECT id,source_group_id,version,filename,record_index,headers_json,diagnostics_json,valid,created_at FROM study_sources WHERE chapter_id=? ORDER BY created_at,record_index",
-            (chapter_id,),
+        sources = [dict(row) for row in route_storage.source_rows(database, chapter_id)]
+        positions = [dict(row) for row in route_storage.position_rows(database, chapter_id)]
+        exercises = [_exercise_payload(database, row[0]) for row in route_storage.chapter_exercise_rows(
+            database,
+            chapter_id,
         )]
-        positions = [dict(row) for row in database.execute(
-            "SELECT * FROM study_positions WHERE source_id IN (SELECT id FROM study_sources WHERE chapter_id=?) ORDER BY source_id,node_path",
-            (chapter_id,),
-        )]
-        exercises = [_exercise_payload(database, row[0]) for row in database.execute(
-            "SELECT id FROM study_exercises WHERE position_id IN (SELECT id FROM study_positions WHERE source_id IN (SELECT id FROM study_sources WHERE chapter_id=?)) ORDER BY created_at,id",
-            (chapter_id,),
-        )]
-        links = [dict(row) for row in database.execute("SELECT * FROM study_links WHERE study_id=?", (study_id,))]
+        links = [dict(row) for row in route_storage.link_rows(database, study_id)]
         return {"chapter": dict(chapter), "sources": sources, "positions": positions,
                 "exercises": exercises, "links": links}
 
@@ -227,7 +226,7 @@ def get_chapter(study_id: str, chapter_id: str):
 @router.patch("/{study_id}/chapters/{chapter_id}")
 def rename_chapter(study_id: str, chapter_id: str, request: ChapterCreate,
                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.chapters.rename",
                                 {"study_id": study_id, "chapter_id": chapter_id,
                                  "chapter": request.model_dump(mode="json")},
@@ -236,15 +235,14 @@ def rename_chapter(study_id: str, chapter_id: str, request: ChapterCreate,
         chapter = _require(database, "study_chapters", chapter_id)
         if chapter["study_id"] != study_id:
             raise HTTPException(404, "Chapter not in this study")
-        database.execute("UPDATE study_chapters SET title=?,description=? WHERE id=?",
-                         (request.title, request.description, chapter_id))
+        route_storage.rename_chapter(database, request.title, request.description, chapter_id)
     return {"id": chapter_id}
 
 
 @router.post("/{study_id}/links")
 def create_link(study_id: str, request: StudyLinkCreate,
                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.links.create",
                                 {"study_id": study_id, "link": request.model_dump(mode="json")},
                                 idempotency_key=idempotency_key)
@@ -254,20 +252,26 @@ def create_link(study_id: str, request: StudyLinkCreate,
     with connection() as database:
         _require(database, "studies", study_id)
         source = _require(database, "study_positions", request.source_position_id)
-        chapter_id = database.execute("SELECT chapter_id FROM study_sources WHERE id=?", (source["source_id"],)).fetchone()[0]
+        chapter_id = route_storage.source_chapter_identity(database, source["source_id"])
         if _require(database, "study_chapters", chapter_id)["study_id"] != study_id:
             raise HTTPException(422, "Source position is outside the study")
         if request.target_position_id:
             target = _require(database, "study_positions", request.target_position_id)
-            target_chapter_id = database.execute("SELECT chapter_id FROM study_sources WHERE id=?", (target["source_id"],)).fetchone()[0]
+            target_chapter_id = route_storage.source_chapter_identity(database, target["source_id"])
             if _require(database, "study_chapters", target_chapter_id)["study_id"] != study_id:
                 raise HTTPException(422, "Target position is outside the study")
         else:
             if _require(database, "study_exercises", request.target_exercise_id)["study_id"] != study_id:
                 raise HTTPException(422, "Target exercise is outside the study")
-        database.execute("INSERT INTO study_links VALUES(?,?,?,?,?,?)",
-                         (identifier, study_id, request.source_position_id, request.target_position_id,
-                          request.target_exercise_id, request.relation))
+        route_storage.insert_link(
+            database,
+            identifier,
+            study_id,
+            request.source_position_id,
+            request.target_position_id,
+            request.target_exercise_id,
+            request.relation,
+        )
     return {"id": identifier}
 
 
@@ -277,9 +281,10 @@ def preview_study_import(study_id: str, request: StudyImportPreviewRequest):
         chapter = _require(database, "study_chapters", request.chapter_id)
         if chapter["study_id"] != study_id:
             raise HTTPException(404, "Chapter not in this study")
-        existing = [dict(row) for row in database.execute(
-            "SELECT source_group_id,version,sha256 FROM study_sources WHERE chapter_id=? AND source_group_id=? ORDER BY version DESC",
-            (request.chapter_id, request.source_group_id),
+        existing = [dict(row) for row in route_storage.source_version_rows(
+            database,
+            request.chapter_id,
+            request.source_group_id,
         )] if request.source_group_id else []
     try:
         preview = preview_pgn(request.raw_pgn)
@@ -302,7 +307,7 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest,
         raise HTTPException(422, "Selected PGN records are invalid")
     if not selected:
         raise HTTPException(422, "Select at least one source record")
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command(
             "studies.import.commit",
             {"study_id": study_id, "request": request.model_dump(mode="json"),
@@ -314,12 +319,12 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest,
         chapter = _require(database, "study_chapters", request.chapter_id)
         if chapter["study_id"] != study_id:
             raise HTTPException(404, "Chapter not in this study")
-        exact_rows = database.execute(
-            """SELECT source_group_id,version,record_index FROM study_sources
-               WHERE chapter_id=? AND sha256=? AND (? IS NULL OR source_group_id=?)
-               ORDER BY version DESC""",
-            (request.chapter_id, preview["digest"], request.source_group_id, request.source_group_id),
-        ).fetchall()
+        exact_rows = route_storage.matching_source_versions(
+            database,
+            request.chapter_id,
+            preview["digest"],
+            request.source_group_id,
+        )
         exact = exact_rows[0] if exact_rows and request.mode != "copy" else None
         existing_records = {row["record_index"] for row in exact_rows
                             if exact and row["source_group_id"] == exact["source_group_id"]
@@ -332,10 +337,11 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest,
         elif request.mode == "update":
             if not request.source_group_id:
                 raise HTTPException(422, "Updating a source requires its source group ID")
-            latest = database.execute(
-                "SELECT MAX(version) FROM study_sources WHERE chapter_id=? AND source_group_id=?",
-                (request.chapter_id, request.source_group_id),
-            ).fetchone()[0]
+            latest = route_storage.latest_source_version(
+                database,
+                request.chapter_id,
+                request.source_group_id,
+            )
             if latest is None:
                 raise HTTPException(404, "Source group not found")
             source_group_id = request.source_group_id
@@ -349,26 +355,41 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest,
                 continue
             record = preview["records"][index]
             source_id = str(uuid.uuid4())
-            database.execute(
-                """INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,
-                   filename,record_index,headers_json,diagnostics_json,valid,created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (source_id, request.chapter_id, source_group_id, version,
-                 record["raw_pgn"], preview["digest"], request.filename, index,
-                 _json(record["headers"]), _json(record["diagnostics"]), int(record["valid"]), now),
+            route_storage.insert_source(
+                database,
+                source_id,
+                request.chapter_id,
+                source_group_id,
+                version,
+                record["raw_pgn"],
+                preview["digest"],
+                request.filename,
+                index,
+                _json(record["headers"]),
+                _json(record["diagnostics"]),
+                int(record["valid"]),
+                now,
             )
             path_ids = {}
             for node in record["nodes"]:
                 position_id = str(uuid.uuid4())
                 path_ids[node["path"]] = position_id
-                database.execute(
-                    """INSERT INTO study_positions(id,source_id,parent_id,child_index,move_uci,fen,
-                       history_json,comment,starting_comment,nags_json,arrows_json,squares_json,node_path,valid)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (position_id, source_id, path_ids.get(node["parent_path"]), node["child_index"],
-                     node["move_uci"], node["fen"], _json(node["history"]), node["comment"],
-                     node["starting_comment"], _json(node["nags"]), _json(node["arrows"]),
-                     _json(node["squares"]), node["path"], int(record["valid"])),
+                route_storage.insert_position(
+                    database,
+                    position_id,
+                    source_id,
+                    path_ids.get(node["parent_path"]),
+                    node["child_index"],
+                    node["move_uci"],
+                    node["fen"],
+                    _json(node["history"]),
+                    node["comment"],
+                    node["starting_comment"],
+                    _json(node["nags"]),
+                    _json(node["arrows"]),
+                    _json(node["squares"]),
+                    node["path"],
+                    int(record["valid"]),
                 )
             created.append(source_id)
     return {"source_group_id": source_group_id, "created_source_ids": created,
@@ -378,7 +399,7 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest,
 @router.post("/{study_id}/exercises")
 def create_exercise(study_id: str, request: ExerciseCreate,
                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.create",
                                 {"study_id": study_id, "exercise": request.model_dump(mode="json")},
                                 idempotency_key=idempotency_key)
@@ -387,7 +408,7 @@ def create_exercise(study_id: str, request: ExerciseCreate,
     with connection() as database:
         study = _require(database, "studies", study_id)
         position = _require(database, "study_positions", request.position_id)
-        source = database.execute("SELECT chapter_id,valid FROM study_sources WHERE id=?", (position["source_id"],)).fetchone()
+        source = route_storage.source_validity(database, position["source_id"])
         chapter = _require(database, "study_chapters", source["chapter_id"])
         if study["archived"] or chapter["study_id"] != study_id:
             raise HTTPException(409, "Position is not in an active study")
@@ -399,15 +420,23 @@ def create_exercise(study_id: str, request: ExerciseCreate,
             raise HTTPException(422, str(error)) from error
         now = _now()
         specification_data = specification.model_dump(mode="json")
-        database.execute(
-            """INSERT INTO study_exercises(id,study_id,position_id,sibling_group,source_json,point_value,created_at,updated_at)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            (identifier, study_id, request.position_id, request.sibling_group,
-             _json(request.source), request.point_value, now, now),
+        route_storage.insert_exercise(
+            database,
+            identifier,
+            study_id,
+            request.position_id,
+            request.sibling_group,
+            _json(request.source),
+            request.point_value,
+            now,
         )
-        database.execute(
-            "INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?)",
-            (identifier, 1, _json(specification_data), _digest(specification_data), now),
+        route_storage.insert_revision(
+            database,
+            identifier,
+            1,
+            _json(specification_data),
+            _digest(specification_data),
+            now,
         )
     return {"id": identifier, "revision": 1, "status": "draft"}
 
@@ -433,7 +462,7 @@ def present_exercise(study_id: str, exercise_id: str):
 @router.put("/{study_id}/exercises/{exercise_id}")
 def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRequest,
                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.revise",
                                 {"study_id": study_id, "exercise_id": exercise_id,
                                  "revision": request.model_dump(mode="json", exclude_unset=True)},
@@ -453,35 +482,40 @@ def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRe
             key: value for key, value in previous.items() if key not in {"explanation", "further_analysis"}}
         next_revision = exercise["current_revision"] + 1
         now = _now()
-        database.execute("INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?)",
-                         (exercise_id, next_revision, _json(revised), _digest(revised), now))
-        database.execute("UPDATE study_exercises SET current_revision=?,updated_at=? WHERE id=?",
-                         (next_revision, now, exercise_id))
+        route_storage.insert_revision(
+            database,
+            exercise_id,
+            next_revision,
+            _json(revised),
+            _digest(revised),
+            now,
+        )
+        route_storage.publish_revision(database, next_revision, now, exercise_id)
         if "source" in request.model_fields_set:
-            database.execute("UPDATE study_exercises SET source_json=? WHERE id=?",
-                             (_json(request.source or {}), exercise_id))
+            route_storage.update_exercise_source(database, _json(request.source or {}), exercise_id)
         if "sibling_group" in request.model_fields_set:
-            database.execute("UPDATE study_exercises SET sibling_group=? WHERE id=?",
-                             (request.sibling_group, exercise_id))
+            route_storage.update_sibling_group(database, request.sibling_group, exercise_id)
         if "point_value" in request.model_fields_set:
-            database.execute("UPDATE study_exercises SET point_value=? WHERE id=?",
-                             (request.point_value, exercise_id))
+            route_storage.update_point_value(database, request.point_value, exercise_id)
         if material and request.schedule_decision == "reset":
-            old_card = database.execute("SELECT * FROM cards WHERE study_exercise_id=? AND archived=0", (exercise_id,)).fetchone()
+            old_card = route_storage.active_card(database, exercise_id)
             if old_card:
-                database.execute("UPDATE cards SET archived=1 WHERE id=?", (old_card["id"],))
-                database.execute("UPDATE daily_queue SET status='blocked' WHERE card_id=? AND status='queued'", (old_card["id"],))
+                route_storage.archive_card(database, old_card["id"])
+                route_storage.block_card_queue(database, old_card["id"])
                 new_card_id = str(uuid.uuid4())
-                database.execute(
-                    """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-                       content_type,study_exercise_id,revision) VALUES(?,NULL,'exercise',?,'[]','new',?,'study_exercise',?,?)""",
-                    (new_card_id, position["fen"], date.today().isoformat(), exercise_id, next_revision),
+                route_storage.insert_reset_card(
+                    database,
+                    new_card_id,
+                    position["fen"],
+                    date.today().isoformat(),
+                    exercise_id,
+                    next_revision,
                 )
         elif material:
-            database.execute("UPDATE cards SET revision=? WHERE study_exercise_id=? AND archived=0", (next_revision, exercise_id))
-            database.execute("UPDATE daily_queue SET status='blocked' WHERE card_id IN (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'", (exercise_id,))
+            route_storage.update_card_revision(database, next_revision, exercise_id)
+            route_storage.block_exercise_queue(database, exercise_id)
         else:
-            database.execute("UPDATE cards SET revision=? WHERE study_exercise_id=? AND archived=0", (next_revision, exercise_id))
+            route_storage.update_card_revision(database, next_revision, exercise_id)
     if material:
         _queue_refresh()
     return {"id": exercise_id, "revision": next_revision, "material": material,
@@ -491,7 +525,7 @@ def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRe
 @router.post("/{study_id}/exercises/{exercise_id}/enroll")
 def enroll_exercise(study_id: str, exercise_id: str,
                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.enroll",
                                 {"study_id": study_id, "exercise_id": exercise_id},
                                 idempotency_key=idempotency_key)
@@ -508,16 +542,18 @@ def enroll_exercise(study_id: str, exercise_id: str,
             validate_exercise(specification, position["fen"])
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
-        existing = database.execute("SELECT id FROM cards WHERE study_exercise_id=? AND archived=0", (exercise_id,)).fetchone()
+        existing = route_storage.active_card_identity(database, exercise_id)
         if existing:
             return {"card_id": existing[0], "idempotent": True}
         card_id = str(uuid.uuid4())
-        database.execute(
-            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-               content_type,study_exercise_id) VALUES(?,NULL,'exercise',?,'[]','new',?,'study_exercise',?)""",
-            (card_id, position["fen"], date.today().isoformat(), exercise_id),
+        route_storage.insert_enrolled_card(
+            database,
+            card_id,
+            position["fen"],
+            date.today().isoformat(),
+            exercise_id,
         )
-        database.execute("UPDATE study_exercises SET status='published' WHERE id=?", (exercise_id,))
+        route_storage.publish_exercise(database, exercise_id)
     _queue_refresh()
     return {"card_id": card_id, "idempotent": False}
 
@@ -525,7 +561,7 @@ def enroll_exercise(study_id: str, exercise_id: str,
 @router.post("/{study_id}/exercises/{exercise_id}/suspend")
 def suspend_exercise(study_id: str, exercise_id: str,
                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.suspend",
                                 {"study_id": study_id, "exercise_id": exercise_id},
                                 idempotency_key=idempotency_key)
@@ -533,8 +569,8 @@ def suspend_exercise(study_id: str, exercise_id: str,
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id:
             raise HTTPException(404, "Exercise not in this study")
-        database.execute("UPDATE cards SET pending_validation=1 WHERE study_exercise_id=? AND archived=0", (exercise_id,))
-        database.execute("UPDATE daily_queue SET status='blocked' WHERE card_id IN (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'", (exercise_id,))
+        route_storage.suspend_exercise_cards(database, exercise_id)
+        route_storage.block_exercise_queue(database, exercise_id)
     _queue_refresh()
     return {"suspended": True}
 
@@ -542,7 +578,7 @@ def suspend_exercise(study_id: str, exercise_id: str,
 @router.post("/{study_id}/exercises/{exercise_id}/train-now")
 def train_exercise_now(study_id: str, exercise_id: str,
                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.train_now",
                                 {"study_id": study_id, "exercise_id": exercise_id},
                                 idempotency_key=idempotency_key)
@@ -550,19 +586,15 @@ def train_exercise_now(study_id: str, exercise_id: str,
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         study = _require(database, "studies", study_id)
-        card = database.execute("SELECT * FROM cards WHERE study_exercise_id=? AND archived=0", (exercise_id,)).fetchone()
+        card = route_storage.active_card(database, exercise_id)
         if exercise["study_id"] != study_id or study["archived"] or exercise["status"] != "published" or not card or card["pending_validation"]:
             raise HTTPException(409, "Enroll and resume this exercise before training it")
-        existing = database.execute("SELECT id FROM daily_queue WHERE card_id=? AND queue_date=? AND status='queued' ORDER BY cycle DESC LIMIT 1",
-                                    (card["id"], today)).fetchone()
+        existing = route_storage.queued_exercise_entry(database, card["id"], today)
         if existing:
             return {"queue_entry_id": existing[0], "idempotent": True}
-        cycle = database.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE card_id=? AND queue_date=?",
-                                 (card["id"], today)).fetchone()[0]
-        position = database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (today,)).fetchone()[0]
-        entry_id = database.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,card_bucket)
-                            VALUES(?,?,?,?,'explicit','study_exercise') RETURNING id""",
-                         (today, card["id"], cycle, position)).fetchone()[0]
+        cycle = route_storage.next_exercise_cycle(database, card["id"], today)
+        position = route_storage.next_queue_position(database, today)
+        entry_id = route_storage.append_explicit_entry(database, today, card["id"], cycle, position)
     _queue_refresh()
     return {"queue_entry_id": entry_id, "idempotent": False}
 
@@ -570,7 +602,7 @@ def train_exercise_now(study_id: str, exercise_id: str,
 @router.post("/{study_id}/exercises/{exercise_id}/resume")
 def resume_exercise(study_id: str, exercise_id: str,
                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.resume",
                                 {"study_id": study_id, "exercise_id": exercise_id},
                                 idempotency_key=idempotency_key)
@@ -578,7 +610,7 @@ def resume_exercise(study_id: str, exercise_id: str,
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id or exercise["status"] == "archived":
             raise HTTPException(409, "Exercise unavailable")
-        database.execute("UPDATE cards SET pending_validation=0 WHERE study_exercise_id=? AND archived=0", (exercise_id,))
+        route_storage.resume_exercise_cards(database, exercise_id)
     _queue_refresh()
     return {"suspended": False}
 
@@ -586,7 +618,7 @@ def resume_exercise(study_id: str, exercise_id: str,
 @router.post("/{study_id}/exercises/{exercise_id}/archive")
 def archive_exercise(study_id: str, exercise_id: str,
                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.exercises.archive",
                                 {"study_id": study_id, "exercise_id": exercise_id},
                                 idempotency_key=idempotency_key)
@@ -594,9 +626,9 @@ def archive_exercise(study_id: str, exercise_id: str,
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id:
             raise HTTPException(404, "Exercise not in this study")
-        database.execute("UPDATE study_exercises SET status='archived' WHERE id=?", (exercise_id,))
-        database.execute("UPDATE cards SET archived=1 WHERE study_exercise_id=?", (exercise_id,))
-        database.execute("UPDATE daily_queue SET status='blocked' WHERE card_id IN (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'", (exercise_id,))
+        route_storage.archive_exercise(database, exercise_id)
+        route_storage.archive_exercise_cards(database, exercise_id)
+        route_storage.block_exercise_queue(database, exercise_id)
     _queue_refresh()
     return {"archived": True}
 
@@ -606,7 +638,7 @@ def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest
                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if len(request.attempt_id) > 100:
         raise HTTPException(422, "Attempt ID is too long")
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.attempts.submit",
                                 {"study_id": study_id, "exercise_id": exercise_id,
                                  "attempt": request.model_dump(mode="json")},
@@ -614,7 +646,7 @@ def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest
     answer_data = request.answer.model_dump(mode="json")
     answer_hash = _digest({"request": request.model_dump(mode="json")})
     with connection() as database:
-        existing = database.execute("SELECT * FROM study_attempts WHERE id=?", (request.attempt_id,)).fetchone()
+        existing = route_storage.attempt(database, request.attempt_id)
         if existing:
             if existing["answer_hash"] != answer_hash:
                 raise HTTPException(409, "Attempt ID was already used with another response")
@@ -629,34 +661,45 @@ def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest
         if assessment["outcome"] == "invalid_submission":
             raise HTTPException(422, assessment["feedback"])
         if request.context == "review":
-            card = database.execute("SELECT * FROM cards WHERE id=? AND study_exercise_id=? AND archived=0 AND pending_validation=0",
-                                    (request.card_id, exercise_id)).fetchone()
-            queue = database.execute("SELECT * FROM daily_queue WHERE id=? AND card_id=? AND cycle=? AND status='queued'",
-                                     (request.queue_entry_id, request.card_id, request.queue_cycle)).fetchone()
+            card = route_storage.active_review_card(database, request.card_id, exercise_id)
+            queue = route_storage.queued_review_entry(
+                database,
+                request.queue_entry_id,
+                request.card_id,
+                request.queue_cycle,
+            )
             if not card or not queue or card["revision"] != request.revision:
                 raise HTTPException(409, "The selected exercise is no longer queued")
             if request.expected_review_id is not None:
-                latest = database.execute("SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=?", (card["id"],)).fetchone()[0]
+                latest = route_storage.latest_effective_review_id(database, card["id"])
                 if latest != request.expected_review_id:
                     raise HTTPException(409, "Another device already reviewed this card")
         elif any(value is not None for value in (request.card_id, request.queue_entry_id, request.queue_cycle)):
             raise HTTPException(422, "Practice attempts cannot name a queue entry")
         now = _now()
-        database.execute(
-            """INSERT INTO study_attempts(id,exercise_id,revision,card_id,queue_entry_id,cycle,context,
-               answer_json,answer_hash,assessment_json,assessment_method,grader_version,hint_seen,
-               solution_seen_before_answer,started_at,committed_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (request.attempt_id, exercise_id, request.revision, request.card_id, request.queue_entry_id,
-             request.queue_cycle, request.context, _json(answer_data), answer_hash, _json(assessment),
-             "self_assessed" if assessment["outcome"] in {"unrecognized", "needs_self_assessment"} else "automatic",
-             GRADER_VERSION, int(request.hint_seen), int(request.solution_seen_before_answer),
-             request.started_at or now, now),
+        route_storage.insert_attempt(
+            database,
+            request.attempt_id,
+            exercise_id,
+            request.revision,
+            request.card_id,
+            request.queue_entry_id,
+            request.queue_cycle,
+            request.context,
+            _json(answer_data),
+            answer_hash,
+            _json(assessment),
+            "self_assessed" if assessment["outcome"] in {"unrecognized", "needs_self_assessment"} else "automatic",
+            GRADER_VERSION,
+            int(request.hint_seen),
+            int(request.solution_seen_before_answer),
+            request.started_at or now,
+            now,
         )
         if assessment["outcome"] in {"unrecognized", "needs_self_assessment"}:
             return {"attempt_id": request.attempt_id, "assessment": assessment,
                     "pending_self_assessment": True}
-        result = _finish_attempt(database, database.execute("SELECT * FROM study_attempts WHERE id=?", (request.attempt_id,)).fetchone(),
+        result = _finish_attempt(database, route_storage.attempt(database, request.attempt_id),
                                  "correct" if assessment["outcome"] == "correct" else "again")
     _queue_refresh()
     return result
@@ -666,7 +709,7 @@ def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest
 def self_assess(study_id: str, exercise_id: str, attempt_id: str,
                 request: StudySelfAssessmentRequest,
                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         return dispatch_command("studies.attempts.self_assess",
                                 {"study_id": study_id, "exercise_id": exercise_id,
                                  "attempt_id": attempt_id,
@@ -674,7 +717,7 @@ def self_assess(study_id: str, exercise_id: str, attempt_id: str,
                                 idempotency_key=idempotency_key or f"{attempt_id}:self-assess")
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
-        attempt = database.execute("SELECT * FROM study_attempts WHERE id=? AND exercise_id=?", (attempt_id, exercise_id)).fetchone()
+        attempt = route_storage.exercise_attempt(database, attempt_id, exercise_id)
         if exercise["study_id"] != study_id or not attempt:
             raise HTTPException(404, "Attempt not found")
         if attempt["result_json"]:
@@ -696,11 +739,10 @@ def self_assess(study_id: str, exercise_id: str, attempt_id: str,
 def attempt_feedback(study_id: str, exercise_id: str, attempt_id: str):
     with read_connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
-        attempt = database.execute("SELECT revision FROM study_attempts WHERE id=? AND exercise_id=?", (attempt_id, exercise_id)).fetchone()
+        attempt = route_storage.attempt_revision(database, attempt_id, exercise_id)
         if exercise["study_id"] != study_id or not attempt:
             raise HTTPException(404, "Committed attempt not found")
-        revision = database.execute("SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
-                                    (exercise_id, attempt["revision"])).fetchone()
+        revision = route_storage.exercise_revision(database, exercise_id, attempt["revision"])
         return {"specification": json.loads(revision[0])}
 
 
@@ -708,17 +750,9 @@ def attempt_feedback(study_id: str, exercise_id: str, attempt_id: str):
 def study_summary(study_id: str):
     with read_connection() as database:
         _require(database, "studies", study_id)
-        return {"chapters": [dict(row) for row in database.execute(
-            """SELECT chapter.id,chapter.title,COUNT(DISTINCT exercise.id) exercise_count,
-                      COUNT(DISTINCT attempt.id) attempts,
-                      SUM(CASE WHEN attempt.id IS NOT NULL AND attempt.id=(SELECT first.id FROM study_attempts first WHERE first.exercise_id=exercise.id ORDER BY committed_at,id LIMIT 1) AND json_extract(attempt.result_json,'$.rating')='correct' THEN exercise.point_value ELSE NULL END) first_attempt_points
-               FROM study_chapters chapter
-               LEFT JOIN study_sources source ON source.chapter_id=chapter.id
-               LEFT JOIN study_positions position ON position.source_id=source.id
-               LEFT JOIN study_exercises exercise ON exercise.position_id=position.id
-               LEFT JOIN study_attempts attempt ON attempt.exercise_id=exercise.id
-               WHERE chapter.study_id=? GROUP BY chapter.id ORDER BY chapter.position""",
-            (study_id,),
+        return {"chapters": [dict(row) for row in route_storage.chapter_summary_rows(
+            database,
+            study_id,
         )]}
 
 
@@ -735,15 +769,7 @@ def export_study_content(study_id: str):
 def export_study_pgn(study_id: str):
     with read_connection() as database:
         _require(database, "studies", study_id)
-        records = [row[0] for row in database.execute(
-            """SELECT source.raw_pgn FROM study_sources source
-               JOIN study_chapters chapter ON chapter.id=source.chapter_id
-               WHERE chapter.study_id=? AND source.version=(
-                 SELECT MAX(latest.version) FROM study_sources latest
-                 WHERE latest.chapter_id=source.chapter_id AND latest.source_group_id=source.source_group_id)
-               ORDER BY chapter.position,source.created_at,source.record_index""",
-            (study_id,),
-        )]
+        records = route_storage.current_source_pgn(database, study_id)
     return {"pgn": "\n".join(records),
             "warning": "PGN omits Tempo exercise rubrics, stable IDs, teaching links, and scheduling state. Use the Tempo study bundle for content transfer."}
 
@@ -751,7 +777,7 @@ def export_study_pgn(study_id: str):
 @router.post("/import-bundle")
 def import_study_content(request: StudyBundleImportRequest,
                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
+    if route_storage.native_commands_enabled():
         try:
             validate_bundle(request.bundle)
         except ValueError as error:

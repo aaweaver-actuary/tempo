@@ -101,3 +101,78 @@ Proposal only: later boundary work can replace legacy authored-to-practice
 composition with the receiving owner's public command capabilities. The parallel
 revision-block SQL variants may be simplified after separate behavioral review;
 this move implements neither change.
+
+## Study HTTP reads and SQLite fallback
+
+[routes.py](routes.py) owns the 69 existing database sites from
+[study_routes.py](../../../../../backend/app/study_routes.py). It adds 27 fixed
+operations and reuses 34 exact existing operations from this directory and the
+existing [Study-attempt storage](../../study_attempts/storage.py). Reuse requires
+the same SQL bytes, parameters and result projection; differing lock, whitespace
+and SQLite/native variants remain distinct. No receiving-owner permission or
+new queue/attempt writer was added.
+
+The HTTP composition retains its connection/read-context lifetime and native
+command dispatch, including idempotency keys. It still owns request/model and
+same-study validation, grading, response dictionaries, learner-field filtering,
+copy/update/version/replay decisions, revision/reset policy, UUID/time/hash/JSON
+creation, SQLite error-to-HTTP translation and queue-refresh callbacks. Only the
+configured-driver predicate moved here; the existing facade module alias remains
+available and references the same configuration object.
+
+Eight row queries still execute eagerly and iterate lazily. A simple identity
+row iterator keeps each cursor in storage while application payload callbacks
+interleave with rows in the original order and caller context. A later cursor
+failure still occurs after earlier application callbacks; the extraction does
+not materialize those queries with `fetchall`. Pure chapter-ID and PGN-text
+projections retain their original eager query/list behavior. Summary aggregation
+and latest-version PGN selection keep their original SQL; response assembly and
+PGN joining remain in application code.
+
+```mermaid
+erDiagram
+  study_exercises {
+    text id PK
+  }
+  cards {
+    text id PK
+  }
+  daily_queue {
+    bigint id PK
+  }
+  study_attempts {
+    text id PK
+    text exercise_id FK
+    text card_id FK
+    bigint queue_entry_id FK
+    bigint revision
+  }
+  study_exercises ||..o{ study_attempts : exercise_id
+  cards o|..o{ study_attempts : card_id
+  daily_queue o|..o| study_attempts : queue_entry_id
+```
+
+This is the existing enforced source-FK view. Attempt card/queue references are
+nullable; `queue_entry_id` is unique. Revision, cycle and request/hash equality
+are application identity checks, not inferred FKs.
+
+| Additional stored data | Existing fields and relationships |
+| --- | --- |
+| Attempt identity and evidence | `study_attempts.id text PK`, non-null `exercise_id text FK`; nullable `card_id text FK` and `queue_entry_id bigint FK/unique`. `revision`, grader version and hint/solution flags are `bigint`; nullable cycle is `bigint`. Context, answer JSON/hash, assessment JSON/method and start/commit times are `text`; final time/result JSON and retired-operation ID are nullable `text` (the latter an enforced receipt FK). [Every field/type/key and exact cardinality](../../../schema/study-queue-review-2/README.md#publicstudy_attempts). |
+| Review freshness and selected queue | The same card/exercise/revision/active-validation facts, queued entry date/card/cycle/status and latest stored review ID are read. No query filter or scheduling semantics changed. [Card/queue fields](../../../schema/study-queue-review-1/README.md), [review fields](../../../schema/study-queue-review-2/README.md#publicreviews). |
+| Summary and feedback | Existing exercise point value, committed attempt/result JSON and the revisioned specification supply summary/feedback projections. They retain the schema links above; no new stored score or model was added. |
+
+Attempt finalization still invokes the existing `_finish_attempt` capability at
+its original point in the borrowed transaction. The legacy `_queue_refresh`
+callback still reaches the existing main composition after the same commits;
+this backward coupling is disclosed, not repaired or presented as a clean domain
+boundary. Ordinary Study acquires no new Games dependency from this move.
+
+Focused route proof adds 17 existing task-owned SQLite/API and fake native-dispatch
+cases plus three cursor/context/driver-boundary cases. All pass. The one-time
+source comparison restores every route, decorator and module statement, all 69
+SQL/method/parameter/result expressions, native fallback decisions and original
+facade bindings. Native PostgreSQL execution and live deployment remain unverified.
+Proposal only: the parallel command/fallback variants and the late main callback
+can be simplified in separately coordinated boundary work; no consolidation,
+feature change or new framework was implemented here.
