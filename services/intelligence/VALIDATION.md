@@ -828,3 +828,80 @@ artifacts remain unchanged. Task-owned artifacts are retained for integration;
 the shared toolchain is unchanged. No git/global-doc, native/live, actual engine/
 provider/private credential, config/security/grant, full-system, CI, deployment,
 issue or merge action was performed.
+
+## Analysis run/command/receipt/dismissal move — October 21, 2026
+
+Five complete existing application blocks now compose `analysis/run_work.py`:
+`submit`, `_receipt`, `_save_receipt`, `command` and `dismiss`. Fixed
+`AnalysisRunOperations` keeps full bound queries, immutable/stale/cancellation/
+receipt/dismissal guards and canonical receipt writes on unchanged owner contexts.
+Application code owns generation/budget/action choices, position/hash preparation,
+receipt response/digest mutation and dismissal responses. Narrow existing-value
+callbacks retain original hash/state evaluation at query-parameter points; no
+generic dispatcher, SQL port, new model or schema/transaction authority is added.
+
+**26 selected current-source cases passed**: 13 new synthetic fixed-operation/
+composition cases, 11 existing input-composition cases, the existing position-order
+case and public-schema case. The same 13 new cases passed against the saved
+original AnalysisStore (comparison evidence, not 39 distinct current cases).
+An initial argument-name collision in the new test receipt factory stopped four
+new command cases before production execution; the factory parameter was renamed
+and the complete selected set passed. No production repair was required.
+
+The cases preserve generation/hash timing, 64-position stage boundaries, final
+head supersession, four command action effect orders, receipt replay before stale
+revision, receipt conflict and first/second dismissal replay. Dismissal keeps its
+finding read between writes and user-state lock before guarded effects. Result
+digest mutation still precedes the canonical writer's binding, and the same
+response object returns. Private status/head and receipt/writer lookup order is
+retained before argument/model evaluation; existing input finalization exercises
+these same moved receipt helpers on its borrowed connection.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_analysis_runs.py services/intelligence/tests/test_analysis_inputs.py services/intelligence/tests/test_analysis.py::test_C_partial_scan_truth services/intelligence/tests/test_analysis.py::test_packaged_analysis_v1_schemas_match_public_models -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest /tmp/tempo_intelligence_analysis_run_original_test.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+python3 /tmp/tempo-intelligence-analysis-run-source-proof.py
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-analysis-run-build
+python3 /tmp/tempo-intelligence-analysis-run-artifact-proof.py
+python3 /tmp/tempo-intelligence-analysis-run-audit.py
+```
+
+Fixed-operation expansion matches all five complete original method sequences,
+26 query call points/24 distinct strings, public signatures, guard/hash/staging/
+action/dismissal and return order. Other 30 AnalysisStore methods, including the
+optional-lock head query/guard, remain AST-identical. Bound-property source proof
+retains receipt/writer and status/head binding order. Atomic guards and the sole
+canonical receipt writer stay root; response/digest assembly is no longer an
+unaccounted mixed helper.
+
+The two new module paths justify fresh source-distribution → wheel discovery.
+Five current implementation/doc files match wheel bytes and eight current
+implementation/test/doc files match source-distribution bytes, with no Python
+caches. Isolated imports load three moved/wired modules from the wheel with
+declared pure source dependencies and initialize no owner/pool/connection or
+worker. Five Analysis owner Mermaid blocks parse; scoped syntax, whitespace/
+conflicts and local Markdown links pass. GitHub rendering, real atomicity,
+concurrency, native execution and installed-consumer runtime remain unverified.
+
+The [complete 36-method audit](../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+now identifies seven mixed methods: `capture`, `derive`, `derive_next`, `claim`,
+`accept`, `failure` and `mark_engine_unavailable`. Remaining batches are report
+capture/derivation/publication (60–90 minutes) and engine workflow (75–105 minutes),
+roughly 2–3.5 hours total. Whole-owner separation is still unfinished.
+
+Proposal-only simplification observations, with concrete source locations,
+benefits and uncertainty, are retained separately in
+`/tmp/tempo-intelligence-analysis-run-simplification-proposals.json` for the
+integration owner's single simplification document. They concern three identical
+nonlocking cache queries and repeated pure cursor byte codecs. No consolidation
+or extra repository document was implemented.
+
+Original sources remain under `/tmp/tempo-intelligence-analysis-run-before/`;
+logs/proof scripts/distributions remain in matching
+`/tmp/tempo-intelligence-analysis-run-*` paths. Current full method status is in
+`/tmp/tempo-intelligence-analysis-run-audit.json`; final file/artifact/proposal
+hashes are in `/tmp/tempo-intelligence-analysis-run-evidence.json`. Earlier audit
+artifacts remain unchanged. Task-owned resources are retained for integration;
+the shared toolchain is unchanged. No git/global-doc, native/live, actual engine/
+provider/private credential, config/security/grant, full-system, CI, deployment,
+issue or merge action was performed.
