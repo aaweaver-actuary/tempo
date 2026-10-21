@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from tempo_legacy_database.adapters.foreground_controls import settings as storage
 from .models import Settings
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
@@ -27,9 +28,7 @@ def update_settings(database: PostgresConnection, payload: dict[str, Any]) -> di
     unknown_fields = supplied_fields - set(_SETTINGS_COLUMNS)
     if unknown_fields:
         raise HTTPException(422, "Unknown settings field")
-    existing = database.execute(
-        "SELECT * FROM settings WHERE id=1 FOR UPDATE"
-    ).fetchone()
+    existing = storage.locked_settings(database)
     if existing is None:
         raise HTTPException(503, "Settings are unavailable; retry after the database is restored")
     if any(existing[column_name] != getattr(settings, column_name)
@@ -44,23 +43,15 @@ def update_settings(database: PostgresConnection, payload: dict[str, Any]) -> di
         "defensive_analysis_enabled": int(values["defensive_analysis_enabled"]),
         "study_only_mode": int(values["study_only_mode"]),
     }
-    database.execute(
-        "UPDATE settings SET " + ",".join(f"{column_name}=?" for column_name in _SETTINGS_COLUMNS)
-        + " WHERE id=1",
-        tuple(stored_values[column_name] for column_name in _SETTINGS_COLUMNS),
-    )
+    storage.store_settings(database, stored_values, _SETTINGS_COLUMNS)
     for provider, username in (
         ("lichess", settings.lichess_username.strip()),
         ("chess.com", settings.chesscom_username.strip()),
     ):
         if username:
-            database.execute(
-                "INSERT INTO game_accounts(provider,username) VALUES(?,?) "
-                "ON CONFLICT(provider) DO UPDATE SET username=excluded.username",
-                (provider, username),
-            )
+            storage.store_provider_account(database, provider, username)
         else:
-            database.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
+            storage.remove_provider_account(database, provider)
     from .services.postgres_next_opponent import request_profile_refresh
     if not values['study_only_mode']:
         request_profile_refresh(database)

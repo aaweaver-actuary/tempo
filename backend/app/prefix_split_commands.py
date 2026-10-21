@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from tempo_legacy_database.adapters.foreground_controls import prefix_splits as storage
 from .models import PrefixSplitRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
@@ -17,22 +18,12 @@ from .services.prefix_split import apply_prefix_split, preview_prefix_split
 
 
 def _lock_prefix_card(database: PostgresConnection, card_id: str) -> None:
-    if database.execute_native(
-        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,),
-    ).fetchone() is None:
+    if storage.locked_prefix_card(database, card_id) is None:
         raise HTTPException(404, "Card not found")
 
 
 def _shared_usage(database: PostgresConnection, card_id: str) -> dict[str, int]:
-    usage = database.execute(
-        "SELECT COUNT(DISTINCT step.line_id) line_count,"
-        "COUNT(DISTINCT step.repertoire_id) repertoire_count "
-        "FROM opening_graph_steps step "
-        "JOIN opening_graph_publications publication "
-        "ON publication.repertoire_id=step.repertoire_id "
-        "AND publication.generation=step.generation "
-        "WHERE step.card_id=?", (card_id,),
-    ).fetchone()
+    usage = storage.published_usage(database, card_id)
     return {
         "shared_line_count": max(1, int(usage["line_count"])),
         "shared_repertoire_count": max(1, int(usage["repertoire_count"])),
@@ -54,14 +45,12 @@ def accept_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -
         raise HTTPException(409, str(error)) from error
     if not result["idempotent"]:
         linked_repertoire_ids = {
-            str(row[0]) for row in database.execute(
-                "SELECT repertoire_id FROM repertoire_cards WHERE card_id IN (?,?)",
-                (result["parent"]["card_id"], result["continuation"]["card_id"]),
+            str(row[0]) for row in storage.linked_repertoire_rows(
+                database, result["parent"]["card_id"], result["continuation"]["card_id"],
             )
         }
-        database.execute(
-            "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
-            (result["parent"]["card_id"], result["continuation"]["card_id"]),
+        storage.mark_split_pending_validation(
+            database, result["parent"]["card_id"], result["continuation"]["card_id"],
         )
         for repertoire_id in sorted(linked_repertoire_ids):
             invalidate_integrity_in_transaction(database, repertoire_id)
@@ -83,15 +72,8 @@ def reject_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -
         raise HTTPException(422, str(error)) from error
     if preview["source_revision"] != request.expected_revision:
         raise HTTPException(409, "The card changed; refresh it and try again")
-    latest_failed_review_id = database.execute(
-        "SELECT COALESCE(MAX(id),0) FROM reviews "
-        "WHERE card_id=? AND rating='again' AND source_kind='study' "
-        "AND invalidated_at IS NULL", (card_id,),
-    ).fetchone()[0]
-    database.execute(
-        "UPDATE cards SET prefix_split_rejected_after_review_id=? WHERE id=?",
-        (latest_failed_review_id, card_id),
-    )
+    latest_failed_review_id = storage.latest_failed_study_review_id(database, card_id)
+    storage.store_split_rejection(database, latest_failed_review_id, card_id)
     return {"rejected_after_review_id": int(latest_failed_review_id)}
 
 
