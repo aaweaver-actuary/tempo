@@ -11,6 +11,8 @@ import time
 import httpx
 
 from tempo_legacy_database.connections import connection
+from tempo_legacy_database.adapters.games.imports import legacy as storage
+from tempo_legacy_database.adapters.games.sync import records as sync_storage
 from ..models import GameSyncRequest
 from .chesscom_client import fetch_chesscom_games
 from .game_record import GameRecord
@@ -67,15 +69,11 @@ def _persist_game(record: GameRecord) -> tuple[str, str]:
 
 def _persist_game_once(record: GameRecord) -> tuple[str, str]:
     with connection(background=True) as database:
-        existing = database.execute(
-            "SELECT * FROM imported_games WHERE provider=? AND provider_game_id=?",
-            (record.provider, record.provider_game_id),
-        ).fetchone()
+        existing = storage.imported_provider_game(database, record.provider, record.provider_game_id)
         if not existing:
-            existing = database.execute(
-                "SELECT * FROM imported_games WHERE provider=? AND lower(username)=lower(?) AND content_hash=? AND provider_game_id IS NULL",
-                (record.provider, record.username, record.content_hash),
-            ).fetchone()
+            existing = storage.imported_legacy_game(
+                database, record.provider, record.username, record.content_hash,
+            )
         values = (
             record.provider_game_id,
             record.content_hash,
@@ -107,49 +105,21 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
                 )
             )
             if changed:
-                database.execute(
-                    """UPDATE imported_games SET provider_game_id=?,content_hash=?,username=?,played_at=?,speed=?,rated=?,color=?,result=?,start_fen=?,moves_json=?,game_url=?,opening_name=?,player_rating=?,opponent_rating=?,rating_change=?,time_control=? WHERE id=?""",
-                    (*values, existing["id"]),
-                )
-                database.execute(
-                    "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
-                    (existing["id"], datetime.now(timezone.utc).isoformat()),
-                )
-                database.execute(
-                    "DELETE FROM daily_chess_snapshots WHERE local_day=?",
-                    (record.played_at[:10],),
-                )
-                database.execute(
-                    "DELETE FROM daily_chess_insights WHERE local_day=?",
-                    (record.played_at[:10],),
-                )
+                storage.update_imported_game(database, existing["id"], values)
+                storage.ensure_analysis_job(database, existing["id"], datetime.now(timezone.utc).isoformat())
+                sync_storage.invalidate_day_snapshot(database, record.played_at[:10])
+                sync_storage.invalidate_day_insights(database, record.played_at[:10])
                 return "updated", existing["id"]
-            database.execute(
-                "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
-                (existing["id"], datetime.now(timezone.utc).isoformat()),
-            )
+            storage.ensure_analysis_job(database, existing["id"], datetime.now(timezone.utc).isoformat())
             return "duplicate", existing["id"]
-        database.execute(
-            """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name,player_rating,opponent_rating,rating_change,time_control)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                f"{record.provider}:{record.provider_game_id}",
-                record.provider,
-                *values,
-            ),
+        storage.insert_imported_game(
+            database, f"{record.provider}:{record.provider_game_id}", record.provider, values,
         )
-        database.execute(
-            "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
-            (f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat()),
+        storage.insert_analysis_job(
+            database, f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat(),
         )
-        database.execute(
-            "DELETE FROM daily_chess_snapshots WHERE local_day=?",
-            (record.played_at[:10],),
-        )
-        database.execute(
-            "DELETE FROM daily_chess_insights WHERE local_day=?",
-            (record.played_at[:10],),
-        )
+        sync_storage.invalidate_day_snapshot(database, record.played_at[:10])
+        sync_storage.invalidate_day_insights(database, record.played_at[:10])
         return "inserted", f"{record.provider}:{record.provider_game_id}"
 
 
@@ -158,10 +128,7 @@ def _starting_point(provider: str, username: str, request: GameSyncRequest, *, b
     if request.repair:
         return requested_cutoff
     with connection(background=background) as database:
-        newest = database.execute(
-            "SELECT MAX(played_at) FROM imported_games WHERE provider=? AND lower(username)=lower(?)",
-            (provider, username),
-        ).fetchone()[0]
+        newest = storage.newest_provider_game_time(database, provider, username)
     if not newest:
         return requested_cutoff
     return max(requested_cutoff, datetime.fromisoformat(newest) - OVERLAP)
@@ -177,9 +144,7 @@ async def _sync_provider(
     started_at = datetime.now(timezone.utc)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        previous = database.execute(
-            "SELECT username,retry_after FROM game_sync_state WHERE provider=?", (provider,)
-        ).fetchone()
+        previous = storage.provider_retry_state(database, provider)
         if (
             previous
             and previous["username"].casefold() == username.casefold()
@@ -192,16 +157,8 @@ async def _sync_provider(
             result["error"] = f"{provider} sync is waiting for its rate limit to reset"
             return result
         if previous and previous["username"].casefold() != username.casefold():
-            database.execute(
-                "UPDATE game_sync_state SET cursor=NULL,last_success_at=NULL,retry_after=NULL WHERE provider=?",
-                (provider,),
-            )
-        database.execute(
-            """INSERT INTO game_sync_state(provider,username,status,last_started_at,last_error)
-               VALUES(?,?,'syncing',?,NULL)
-               ON CONFLICT(provider) DO UPDATE SET username=excluded.username,status='syncing',last_started_at=excluded.last_started_at,last_error=NULL""",
-            (provider, username, started_at.isoformat()),
-        )
+            storage.reset_provider_cursor(database, provider)
+        storage.mark_provider_syncing(database, provider, username, started_at.isoformat())
     since = _starting_point(provider, username, request, background=True)
     try:
         if provider == "lichess":
@@ -224,9 +181,9 @@ async def _sync_provider(
         completed_at = datetime.now(timezone.utc)
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
-            database.execute(
-                """UPDATE game_sync_state SET status='idle',cursor=?,last_success_at=?,last_error=NULL,retry_after=NULL,last_result_json=? WHERE provider=?""",
-                (since.isoformat(), completed_at.isoformat(), json.dumps({key: value for key, value in result.items() if not key.startswith("_")}), provider),
+            storage.save_provider_success(
+                database, provider, since.isoformat(), completed_at.isoformat(),
+                json.dumps({key: value for key, value in result.items() if not key.startswith("_")}),
             )
     except (ProviderRequestError, httpx.HTTPError) as error:
         result["status"] = "error"
@@ -235,9 +192,9 @@ async def _sync_provider(
         result["retry_after"] = _retry_at(error.retry_after) if isinstance(error, ProviderRequestError) else None
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
-            database.execute(
-                "UPDATE game_sync_state SET status='error',last_error=?,retry_after=?,last_result_json=? WHERE provider=?",
-                (result["error"], result["retry_after"], json.dumps({key: value for key, value in result.items() if not key.startswith("_")}), provider),
+            storage.save_provider_failure(
+                database, provider, result["error"], result["retry_after"],
+                json.dumps({key: value for key, value in result.items() if not key.startswith("_")}),
             )
     return result
 

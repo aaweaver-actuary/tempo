@@ -8,6 +8,8 @@ import json
 from typing import Any
 
 from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.adapters.games.derivation.jobs import lock_job as lock_derivation_job
+from tempo_legacy_database.adapters.games.evidence import findings as storage
 from .canonical_scope_freshness import game_scope_generation
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
@@ -61,68 +63,16 @@ def _prepared_items(game_id: str) -> tuple[str, list[tuple[str, str, dict]]]:
 
 def _publish_items(database, task: dict, game_id: str, version: int,
                    expected_count: int) -> bool:
-    saved_count = database.execute(
-        "SELECT COUNT(*) FROM game_finding_publication_items "
-        "WHERE game_id=? AND derivation_version=?", (game_id, version),
-    ).fetchone()[0]
+    saved_count = storage.staged_item_count(database, game_id, version)
     if saved_count != expected_count:
         raise RuntimeError("Game findings stage is incomplete; publication was withheld")
     parameters = (game_id, version)
-    database.execute_native(
-        "INSERT INTO game_findings "
-        "SELECT (jsonb_populate_record(NULL::game_findings, "
-        "staged.payload_json::jsonb || jsonb_build_object('game_scope_generation',(SELECT generation FROM repertoire_game_scope WHERE id=1)))).* "
-        "FROM game_finding_publication_items staged "
-        "WHERE staged.game_id=%s AND staged.derivation_version=%s "
-        "AND staged.item_kind='finding' "
-        "ON CONFLICT(id) DO UPDATE SET "
-        "confidence=excluded.confidence,evidence_json=excluded.evidence_json,"
-        "repertoire_id=excluded.repertoire_id,game_scope_generation=excluded.game_scope_generation,"
-        "card_id=CASE WHEN excluded.kind='repertoire lapse' THEN excluded.card_id "
-        "ELSE COALESCE(excluded.card_id,game_findings.card_id) END,"
-        "motif=excluded.motif,source_opportunity_id=excluded.source_opportunity_id,"
-        "updated_at=excluded.updated_at", parameters,
-    )
+    storage.publish_finding_items(database, parameters)
     publication_time = datetime.now(timezone.utc).isoformat()
-    database.execute(
-        "UPDATE tactical_opportunities SET active=0,superseded_at=?,updated_at=? "
-        "WHERE game_id=? AND active=1 AND analysis_version!=("
-        "SELECT analysis_version FROM imported_games WHERE id=?)",
-        (publication_time, publication_time, game_id, game_id),
-    )
-    database.execute_native(
-        "INSERT INTO tactical_opportunities "
-        "SELECT (jsonb_populate_record(NULL::tactical_opportunities, "
-        "staged.payload_json::jsonb)).* "
-        "FROM game_finding_publication_items staged "
-        "WHERE staged.game_id=%s AND staged.derivation_version=%s "
-        "AND staged.item_kind='opportunity' "
-        "ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,"
-        "confidence=excluded.confidence,opportunity_value_cp=excluded.opportunity_value_cp,"
-        "evaluation_loss_cp=excluded.evaluation_loss_cp,"
-        "played_move_uci=excluded.played_move_uci,"
-        "accepted_moves_json=excluded.accepted_moves_json,"
-        "evidence_json=excluded.evidence_json,engine_version=excluded.engine_version,"
-        "network_version=excluded.network_version,active=1,superseded_at=NULL,"
-        "updated_at=excluded.updated_at", parameters,
-    )
-    database.execute_native(
-        "INSERT INTO gameplay_card_priorities "
-        "SELECT (jsonb_populate_record(NULL::gameplay_card_priorities, "
-        "staged.payload_json::jsonb)).* "
-        "FROM game_finding_publication_items staged "
-        "WHERE staged.game_id=%s AND staged.derivation_version=%s "
-        "AND staged.item_kind='priority' "
-        "ON CONFLICT(card_id) DO UPDATE SET "
-        "source_game_id=excluded.source_game_id,finding_id=excluded.finding_id,"
-        "priority_date=LEAST(gameplay_card_priorities.priority_date,excluded.priority_date),"
-        "reason=excluded.reason", parameters,
-    )
-    database.execute(
-        "UPDATE game_derivation_jobs SET completed_phases=3,"
-        "phase='applying_real_game_misses' "
-        "WHERE game_id=? AND derivation_version=?", parameters,
-    )
+    storage.supersede_old_opportunities(database, game_id, publication_time)
+    storage.publish_opportunity_items(database, parameters)
+    storage.publish_priority_items(database, parameters)
+    storage.advance_findings_phase(database, parameters)
     enqueue_compact_postgres_task_in_transaction(
         database, "game_derivation_misses", game_id,
         {"game_id": game_id, "derivation_version": version,
@@ -138,13 +88,8 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
     cursor = int(payload.get("cursor", 0))
     with background_read_connection() as database:
         scope_generation = game_scope_generation(database)
-        comparison_generation = database.execute("SELECT repertoire_scope_generation FROM imported_games WHERE id=?", (game_id,)).fetchone()
-        preparation = database.execute_native(
-            "SELECT source_signature,item_count,items_json -> %s AS item "
-            "FROM game_finding_preparations "
-            "WHERE game_id=%s AND derivation_version=%s",
-            (cursor, game_id, version),
-        ).fetchone()
+        comparison_generation = storage.comparison_generation(database, game_id)
+        preparation = storage.prepared_item(database, game_id, version, cursor)
     if preparation is None or cursor >= int(preparation["item_count"]):
         signature, items = _prepared_items(game_id)
     else:
@@ -153,10 +98,7 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
         current_scope_generation = game_scope_generation(database, lock=True)
         if not lock_current_slice(database, task):
             return False
-        job = database.execute(
-            "SELECT derivation_version,completed_phases,status FROM game_derivation_jobs "
-            "WHERE game_id=? FOR UPDATE", (game_id,),
-        ).fetchone()
+        job = lock_derivation_job(database, game_id)
         if (job is None or int(job["derivation_version"]) != version
                 or int(job["completed_phases"]) != 2
                 or job["status"] not in {"queued", "running"}):
@@ -167,23 +109,14 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
             return complete_task_slice_in_transaction(database, task)
         if preparation is None:
             assert items is not None
-            database.execute_native(
-                "INSERT INTO game_finding_preparations("
-                "game_id,derivation_version,source_signature,item_count,items_json) "
-                "VALUES(%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
-                (game_id, version, signature, len(items), json.dumps(items)),
-            )
+            storage.store_preparation(database, game_id, version, signature, len(items), json.dumps(items))
             return advance_task_slice_in_transaction(
                 database, task, next_phase="stage",
                 next_payload={**payload, "phase": "stage", "cursor": 0, "game_scope_generation": scope_generation},
             )
         if cursor >= int(preparation["item_count"]) and signature != preparation["source_signature"]:
             next_version = version + 1
-            database.execute(
-                "UPDATE game_derivation_jobs SET derivation_version=? "
-                "WHERE game_id=? AND derivation_version=?",
-                (next_version, game_id, version),
-            )
+            storage.restart_findings_generation(database, game_id, version, next_version)
             enqueue_compact_postgres_task_in_transaction(
                 database, "game_derivation_findings", game_id,
                 {"game_id": game_id, "derivation_version": next_version,
@@ -192,14 +125,7 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
             return True
         if cursor < int(preparation["item_count"]):
             kind, item_key, item_payload = preparation["item"]
-            database.execute(
-                """INSERT INTO game_finding_publication_items(
-                     game_id,derivation_version,item_kind,item_key,payload_json)
-                   VALUES(?,?,?,?,?)
-                   ON CONFLICT(game_id,derivation_version,item_kind,item_key)
-                   DO UPDATE SET payload_json=excluded.payload_json""",
-                (game_id, version, kind, item_key, json.dumps(item_payload)),
-            )
+            storage.stage_item(database, game_id, version, kind, item_key, json.dumps(item_payload))
             return advance_task_slice_in_transaction(
                 database, task, next_phase="stage",
                 next_payload={**payload, "phase": "stage", "cursor": cursor + 1},

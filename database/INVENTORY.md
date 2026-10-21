@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **59 files**; one candidate is confirmed non-database application code, and **96 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **62 files**; one candidate is confirmed non-database application code, and **93 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -58,9 +58,9 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed SQL/DDL split: [backend/app/services/frozen_opening_order.py](../backend/app/services/frozen_opening_order.py) now only binds [Study policy](../backend/app/study/frozen_order/README.md) and [database storage](tempo_legacy_database/adapters/frozen_order.py). Legacy caller composition migration remains.
 - [backend/app/services/game_analysis_worker.py](../backend/app/services/game_analysis_worker.py)
 - [backend/app/services/game_findings.py](../backend/app/services/game_findings.py)
-- [backend/app/services/game_sync.py](../backend/app/services/game_sync.py)
+- Completed legacy Games imports storage split: [backend/app/services/game_sync.py](tempo_legacy_database/adapters/games/imports/README.md).
 - [backend/app/services/game_sync_coordinator.py](../backend/app/services/game_sync_coordinator.py)
-- [backend/app/services/gameplay_events.py](../backend/app/services/gameplay_events.py)
+- Completed legacy Games evidence storage split: [backend/app/services/gameplay_events.py](tempo_legacy_database/adapters/games/evidence/README.md).
 - [backend/app/services/guided_review.py](../backend/app/services/guided_review.py)
 - [backend/app/services/introduction_priorities.py](../backend/app/services/introduction_priorities.py)
 - [backend/app/services/learning_review_adapter.py](../backend/app/services/learning_review_adapter.py)
@@ -79,7 +79,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed Games derivation storage split: [backend/app/services/postgres_game_derivation.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_events.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_features.py](tempo_legacy_database/adapters/games/derivation/README.md).
-- [backend/app/services/postgres_game_findings.py](../backend/app/services/postgres_game_findings.py)
+- Completed legacy Games evidence storage split: [backend/app/services/postgres_game_findings.py](tempo_legacy_database/adapters/games/evidence/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_misses.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_priorities.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed legacy Games repertoire storage split: [backend/app/services/postgres_game_repertoire.py](tempo_legacy_database/adapters/games/repertoire/README.md).
