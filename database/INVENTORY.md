@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **138 files**; one candidate is confirmed non-database application code, and **17 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **139 files**; one candidate is confirmed non-database application code, and **16 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -65,7 +65,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy introduction-priority storage split: [backend/app/services/introduction_priorities.py](tempo_legacy_database/adapters/introduction_priorities/README.md).
 - Completed legacy Learning review storage split: [backend/app/services/learning_review_adapter.py](tempo_legacy_database/adapters/learning_bridge/README.md).
 - Completed legacy authority/evidence storage split: [backend/app/services/legacy_game_authority.py](tempo_legacy_database/adapters/games/authority/README.md).
-- [backend/app/services/legacy_study_remediation.py](../backend/app/services/legacy_study_remediation.py)
+- Completed legacy Study remediation storage split: [backend/app/services/legacy_study_remediation.py](tempo_legacy_database/adapters/learning_bridge/README.md).
 - Completed queue/capacity fixed storage split: [backend/app/services/opening_capacity_admission.py](tempo_legacy_database/adapters/queue_refresh/README.md).
 - Completed existing compatibility graph storage split: [backend/app/services/opening_graph.py](tempo_legacy_database/adapters/opening_graph/README.md).
 - Completed existing legacy opening graph recovery storage split: [backend/app/services/opening_graph_recovery.py](tempo_legacy_database/adapters/opening_graph/README.md).
@@ -219,13 +219,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 103 | 0 | 17 |
+| Legacy backend | 104 | 0 | 16 |
 | Learning runtime | 26 | 0 | 0 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **138** | **1** | **17** |
+| **Total baseline** | **139** | **1** | **16** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 

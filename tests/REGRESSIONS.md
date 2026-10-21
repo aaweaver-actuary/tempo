@@ -5129,3 +5129,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Authored Studies portable persistence
 
 `backend/tests/test_study_portable_storage_boundary.py` owns six fake boundaries for lazy export/column shape/UUID-reference remapping/replay/conflict/nonmutation behavior. Two existing contract/corpus checks remain selected; the seven authored-content tables are exercised by the existing bundle format, without personal practice history or unused-table claims.
+
+
+## Legacy Study remediation persistence
+
+`backend/tests/test_legacy_remediation_storage_separation.py` owns sixteen semantic source/snapshot boundaries for accepted contributions, availability heads, settlement/queue-priority decisions and borrowed reader/writer order. Nine existing synthetic Study/scripted PostgreSQL cases retain assertions. No native race/resource/deployment behavior follows from the isolated source-snapshot proof.

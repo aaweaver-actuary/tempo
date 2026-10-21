@@ -14,117 +14,37 @@ from tempo_learning_remediation import (AdmissionResult, AttemptAuthority, Candi
     apply_admission)
 
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.learning_bridge import remediation as storage
+from tempo_legacy_database.adapters.learning_bridge.remediation import CURRENT_FACT_SQL, SOURCE_FENCE_SQL
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID, BRIDGE_MISS_REASON
 
 
 def repository(database):
     from ..game_evidence_commands import BorrowedTupleConnection
-    if database.read_only:
-        from psycopg.rows import tuple_row
-        class ReadProjection:
-            info = database.raw.info
-            def execute(self, statement, parameters=()):
-                if not statement.lstrip().upper().startswith("SELECT "):
-                    raise RuntimeError("Legacy status is a read-only projection")
-                return database.raw.cursor(row_factory=tuple_row).execute(statement, parameters)
-        return PostgresRepository(ReadProjection(), LEGACY_WORKSPACE_ID)
+    if storage.is_read_only(database):
+        return PostgresRepository(storage.read_projection(database), LEGACY_WORKSPACE_ID)
     return PostgresRepository(BorrowedTupleConnection(database), LEGACY_WORKSPACE_ID)
 
 
-# Only owner-controlled SQL, never a producer-supplied predicate. The retained
-# proof is not a claim that legacy cards have Content publication columns.
-CURRENT_FACT_SQL = """SELECT DISTINCT ON (contribution.publication_id,contribution.publication_generation)
-    contribution.payload_json,card.introduced_at
- FROM remediation_obligation_heads head
- JOIN remediation_contributions contribution USING(workspace_id,obligation_id,obligation_revision)
- JOIN cards card ON card.id=contribution.card_id AND card.revision=contribution.card_revision
- JOIN repertoires repertoire ON repertoire.id=contribution.payload_json::jsonb->'authority'->>'repertoire_id'
- JOIN repertoire_game_scope scope ON scope.id=1
- JOIN legacy_learning_identity identity ON identity.id=1
- JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
- JOIN imported_games game ON game.id=contribution.game_id
- WHERE head.workspace_id=%s AND head.card_id=%s AND head.active
- AND contribution.publication_id LIKE 'legacy-graph:%%'
- AND contribution.payload_json::jsonb->'authority'->>'kind'='legacy_graph'
- AND contribution.payload_json::jsonb->'authority'->>'workspace_id'=identity.workspace_id
- AND contribution.payload_json::jsonb->'authority'->>'target_id'=identity.target_id
- AND repertoire.scope_source_revision=(contribution.payload_json::jsonb->'authority'->>'scope_source_revision')::bigint
- AND repertoire.canonical_prefix_revision=(contribution.payload_json::jsonb->'authority'->>'canonical_prefix_revision')::bigint
- AND repertoire.canonical_prefix_moves_json::jsonb='[]'::jsonb
- AND scope.generation=(contribution.payload_json::jsonb->'authority'->>'catalogue_generation')::bigint
- AND publication.generation=contribution.publication_generation AND publication.state='ready'
- AND game.adaptive_excluded=0
- AND game.provider=contribution.payload_json::jsonb->'game_source'->>'provider'
- AND game.provider_game_id=contribution.payload_json::jsonb->'game_source'->>'provider_game_id'
- AND game.content_hash=contribution.payload_json::jsonb->'game_source'->>'content_hash'
- AND card.content_type='opening' AND card.revision=1 AND card.introduced_at IS NOT NULL
- AND card.state IN ('learning','mature')
- AND card.archived=0 AND card.pending_validation=0 AND card.superseded_by IS NULL
- AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id)
- AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block WHERE block.card_id=card.id)
- AND NOT EXISTS(SELECT 1 FROM repertoire_cards other WHERE other.card_id=card.id AND other.repertoire_id<>repertoire.id)
- AND (card.repertoire_id IS NULL OR card.repertoire_id=repertoire.id)
- AND (card.repertoire_id=repertoire.id OR EXISTS(SELECT 1 FROM repertoire_cards link
-     WHERE link.card_id=card.id AND link.repertoire_id=repertoire.id))
- AND EXISTS(SELECT 1 FROM opening_graph_steps step WHERE step.repertoire_id=repertoire.id
-     AND step.generation=publication.generation AND step.card_id=card.id
-     AND step.line_id=contribution.payload_json::jsonb->'comparison'->>'route_id'
-     AND step.starting_fen=card.start_fen AND step.moves_json::jsonb=card.moves_json::jsonb
-     AND step.trained_color=card.trained_color)
- ORDER BY contribution.publication_id,contribution.publication_generation,contribution.obligation_revision DESC
- LIMIT 2"""
-
-# Current imported-game authority is supplied by its owner. If any active source
-# for this card is corrected/excluded/missing, defer the whole card until the
-# producer replaces or withdraws it. Do not let another game's valid projection
-# launder that stale incident through a card-level shared predicate.
-SOURCE_FENCE_SQL = """SELECT DISTINCT contribution.game_id,
-    COALESCE(game.provider=contribution.payload_json::jsonb->'game_source'->>'provider'
-      AND game.provider_game_id=contribution.payload_json::jsonb->'game_source'->>'provider_game_id'
-      AND game.content_hash=contribution.payload_json::jsonb->'game_source'->>'content_hash'
-      AND game.color=contribution.payload_json::jsonb->'decision_scope_proof'->'scope'->>'learner_color'
-      AND game.result IN ('win','loss','draw','1-0','0-1','1/2-1/2')
-      AND game.adaptive_excluded=0,false) source_current
- FROM remediation_obligation_heads head
- JOIN remediation_contributions contribution USING(workspace_id,obligation_id,obligation_revision)
- JOIN remediation_game_heads accepted_game ON accepted_game.workspace_id=head.workspace_id
-    AND accepted_game.game_id=contribution.game_id AND accepted_game.game_revision=contribution.game_revision
- LEFT JOIN imported_games game ON game.id=contribution.game_id
- WHERE head.workspace_id=%s AND head.card_id=%s AND head.active
- ORDER BY contribution.game_id LIMIT 4"""
-
-
 def current_fact(database, card_id, *, lock=False):
-    rows = database.execute_native(CURRENT_FACT_SQL, (LEGACY_WORKSPACE_ID, card_id)).fetchall()
+    rows = storage.current_facts(database, LEGACY_WORKSPACE_ID, card_id)
     if len(rows) != 1: return None
     payload = json.loads(rows[0]["payload_json"])
     # Early unscoped prototypes remain retained evidence, never a new grant.
     if "decision_scope_proof" not in payload: return None
     authority = LegacyAuthorityToken.model_validate(payload["authority"])
-    sources = database.execute_native(SOURCE_FENCE_SQL, (LEGACY_WORKSPACE_ID, card_id)).fetchall()
+    sources = storage.source_fences(database, LEGACY_WORKSPACE_ID, card_id)
     if not 1 <= len(sources) <= 3 or any(not row["source_current"] for row in sources): return None
     if lock:
         # A normal review must not wait on optional bridge authority after its
         # card/day locks. Busy or changing source simply cannot grant a binding
         # or settlement. Held share locks fence the subsequent exact re-read.
-        admitted = database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
-            ("tempo:opening-graph:" + authority.repertoire_id,)).fetchone()
+        admitted = storage.try_lock_graph(database, authority.repertoire_id)
         if not admitted or not admitted[0]: return None
-        held = database.execute_native("""SELECT 1 FROM repertoires repertoire
-            CROSS JOIN repertoire_game_scope scope CROSS JOIN legacy_learning_identity identity
-            JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
-            JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=repertoire.id
-            JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=repertoire.id
-            JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=repertoire.id
-            JOIN imported_games game ON game.id=%s
-            WHERE repertoire.id=%s AND scope.id=1 AND identity.id=1
-            FOR SHARE OF repertoire,scope,identity,publication,integrity,graph,scan,game SKIP LOCKED""",
-            (payload["game_id"], authority.repertoire_id)).fetchone()
+        held = storage.try_hold_authority(database, payload["game_id"], authority.repertoire_id)
         if not held: return None
-        games = database.execute_native("SELECT id FROM imported_games WHERE id IN (" +
-            ",".join("%s" for _ in sources) + ") ORDER BY id FOR SHARE SKIP LOCKED",
-            tuple(row["game_id"] for row in sources)).fetchall()
+        games = storage.try_hold_source_games(database, sources)
         if len(games) != len(sources): return None
         return current_fact(database, card_id)
     proof = LegacyScopedCatalogueProof.model_validate(payload["decision_scope_proof"])
@@ -150,9 +70,8 @@ def attempt_identity(entry_id, revision):
 
 def bind_first_issuance(database, entry_id, card_id, revision):
     """Called only by validated actual-head issuance, before its origin stamp."""
-    if not isinstance(database, PostgresConnection): return
-    origin = database.execute("SELECT issued_as_head FROM queue_attempt_origins "
-        "WHERE queue_entry_id=? AND card_id=? AND revision=?", (entry_id, card_id, revision)).fetchone()
+    if not storage.is_postgres(database): return
+    origin = storage.issued_origin(database, entry_id, card_id, revision)
     if origin is None or origin[0]: return  # Never retrofit a pre-bridge/offline origin.
     current = current_fact(database, card_id, lock=True)
     if current is None or current.card_revision != revision: return
@@ -162,18 +81,14 @@ def bind_first_issuance(database, entry_id, card_id, revision):
 
 def settle_review(database, card_id, review_id, *, queue_entry_id, revision, source_attempt_id):
     """Completion/reconciliation can consume an issuance; they never create one."""
-    if (not isinstance(database, PostgresConnection) or queue_entry_id is None
+    if (not storage.is_postgres(database) or queue_entry_id is None
             or revision is None or not source_attempt_id): return False
-    bound = database.execute_native("""SELECT attempt_id,card_id,card_revision,publication_id,publication_generation,issued_at
-        FROM remediation_attempts WHERE workspace_id=%s AND attempt_id=%s""",
-        (LEGACY_WORKSPACE_ID, attempt_identity(queue_entry_id, revision))).fetchone()
+    bound = storage.bound_attempt(database, LEGACY_WORKSPACE_ID, attempt_identity(queue_entry_id, revision))
     if bound is None: return False
     current = current_fact(database, card_id, lock=True)
     if current is None or tuple(bound)[1:5] != (card_id, revision, *accepted_storage_identity(current)): return False
-    review = database.execute("SELECT rating,guided,reviewed_at,source_kind,invalidated_at,source_ref FROM reviews "
-        "WHERE id=? AND card_id=?", (review_id, card_id)).fetchone()
-    origin = database.execute("SELECT attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? "
-        "AND card_id=? AND revision=? AND issued_as_head=1", (queue_entry_id, card_id, revision)).fetchone()
+    review = storage.settlement_review(database, review_id, card_id)
+    origin = storage.settlement_origin(database, queue_entry_id, card_id, revision)
     if review is None or origin is None or review["source_ref"] != "attempt:" + source_attempt_id: return False
     outcome = ReviewOutcome(str(review_id), AttemptAuthority(*tuple(bound)),
         datetime.fromisoformat(review["reviewed_at"]), "correct" if review["rating"] == "correct" else "again",
@@ -186,8 +101,7 @@ def settle_review(database, card_id, review_id, *, queue_entry_id, revision, sou
 
 def invalidate_review(database, card_id, review_id, reason):
     """Borrow the invalidation writer's card/day locks and transaction."""
-    retained = database.execute("SELECT invalidated_at FROM reviews WHERE id=? AND card_id=?",
-                                (review_id, card_id)).fetchone()
+    retained = storage.invalidated_review(database, review_id, card_id)
     if not retained or retained[0] is None:
         raise ValueError("The review owner must invalidate the actual review in this transaction")
     repository(database).invalidate_settlement(str(review_id), reason)
@@ -206,15 +120,13 @@ def has_current_miss(database, card_id):
 
 def clear_priority(database, card_id):
     if not has_current_miss(database, card_id):
-        database.execute("UPDATE daily_queue SET gameplay_priority_reason=NULL WHERE card_id=? "
-                         "AND gameplay_priority_reason=?", (card_id, BRIDGE_MISS_REASON))
+        storage.clear_priority(database, card_id, BRIDGE_MISS_REASON)
 
 
 def admit_card(database, payload):
     """One bounded command; existing backend writer is a prelocked capability."""
     card_id, day = payload["card_id"], date.today().isoformat()
-    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:card-edit:" + card_id,))
-    database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (card_id,))
+    storage.lock_card(database, card_id)
     lock_queue_date_for_position(database, day)
     return admit_prelocked(database, card_id, day)
 
@@ -241,8 +153,7 @@ def admit_prelocked(database, card_id, day):
         target = [row for row in rows if row["card_id"] == card_id]
         from .queue_ordering import _protected_queue_ids
         protected = _protected_queue_ids(rows)
-        buried = database.execute("SELECT 1 FROM daily_queue WHERE card_id=? AND queue_date=? AND status='buried' LIMIT 1",
-                                  (card_id, day)).fetchone() is not None
+        buried = storage.buried_entry(database, card_id, day) is not None
         class PrelockedWriter:
             def apply(self, proposal):
                 from .review_service import ensure_card_queued_after
@@ -250,8 +161,7 @@ def admit_prelocked(database, card_id, day):
                     return AdmissionResult("deferred", "frozen_order_changed")
                 ensure_card_queued_after(database, card_id, 0, priority_reason=BRIDGE_MISS_REASON,
                     queue_date=day, protect_presented=True, preserve_order=False)
-                entry = database.execute("SELECT id FROM daily_queue WHERE card_id=? AND queue_date=? "
-                    "AND status='queued' ORDER BY position,id LIMIT 1", (card_id, day)).fetchone()
+                entry = storage.queued_entry(database, card_id, day)
                 return AdmissionResult("applied", queue_entry_id=entry[0])
         result = apply_admission(owned, candidate(current, buried=buried,
             protected=any(row["id"] in protected for row in target)), PrelockedWriter())
@@ -260,34 +170,27 @@ def admit_prelocked(database, card_id, day):
 
 def card_status(database, card_id):
     """Read-only target inspection; never admit, issue, stamp or review."""
-    target = database.execute_native("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1").fetchone()
-    work = database.execute_native("SELECT sequence,work_state,reason,queue_entry_id FROM remediation_cards "
-        "WHERE workspace_id=%s AND card_id=%s", (LEGACY_WORKSPACE_ID, card_id)).fetchone()
+    target = storage.target_identity(database)
+    work = storage.card_work(database, LEGACY_WORKSPACE_ID, card_id)
     result = dict(target_id=target[0] if target else None, workspace_id=LEGACY_WORKSPACE_ID,
                   card_id=card_id, accepted=work is not None, current=False, admission=None, settlement=None)
-    actual = database.execute("SELECT revision FROM cards WHERE id=?", (card_id,)).fetchone()
+    actual = storage.current_revision(database, card_id)
     result["actual_card_revision"] = actual[0] if actual else None
     if work is None: return result
     current = current_fact(database, card_id)
-    active = database.execute_native("SELECT COUNT(*) FROM remediation_obligation_heads WHERE workspace_id=%s "
-        "AND card_id=%s AND active", (LEGACY_WORKSPACE_ID, card_id)).fetchone()[0]
+    active = storage.active_obligations(database, LEGACY_WORKSPACE_ID, card_id)
     outstanding = repository(database).has_outstanding(card_id)
-    retained = database.execute_native("SELECT payload_json FROM remediation_contributions WHERE workspace_id=%s "
-        "AND card_id=%s ORDER BY obligation_revision DESC,obligation_id LIMIT 1",
-        (LEGACY_WORKSPACE_ID, card_id)).fetchone()
+    retained = storage.latest_contribution(database, LEGACY_WORKSPACE_ID, card_id)
     payload = json.loads(retained[0])
     day = date.today().isoformat()
-    queue = database.execute("SELECT id FROM daily_queue WHERE card_id=? AND queue_date=? AND status='queued' "
-        "ORDER BY position,id LIMIT 1", (card_id, day)).fetchone()
-    from .queue_application import available_attempt_sql
-    head = database.execute(available_attempt_sql() + " ORDER BY q.position,q.id LIMIT 1", (day,)).fetchone()
+    queue = storage.queued_entry(database, card_id, day)
+    from .queue_application import MISS_REASON
+    head = storage.available_head(database, day, MISS_REASON)
     from .queue_ordering import _protected_queue_ids
     from .queue_application import presentation_rows
     protected = _protected_queue_ids(presentation_rows(database, day))
-    origin = database.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=? "
-        "AND card_id=? AND revision=?", (queue[0], card_id, payload["comparison"]["card_revision"])).fetchone() if queue else None
-    bound = database.execute_native("SELECT 1 FROM remediation_attempts WHERE workspace_id=%s AND attempt_id=%s",
-        (LEGACY_WORKSPACE_ID, attempt_identity(queue[0], payload["comparison"]["card_revision"]))).fetchone() if queue else None
+    origin = storage.issued_origin(database, queue[0], card_id, payload["comparison"]["card_revision"]) if queue else None
+    bound = storage.attempt_binding_exists(database, LEGACY_WORKSPACE_ID, attempt_identity(queue[0], payload["comparison"]["card_revision"])) if queue else None
     result.update(current=current is not None, repertoire_id=payload["authority"]["repertoire_id"],
         card_revision=payload["comparison"]["card_revision"], played_move=payload["encounter"]["observed_move"],
         expected_moves=payload["comparison"]["expected_moves"],
