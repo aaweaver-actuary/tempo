@@ -444,3 +444,17 @@ The final combined selection passes eleven cases (five existing statistics plus 
 The complete exercise phase moves into application `worker/exercises.py`; the root adapter retains its original single fenced identity/predecessor/revision/write section and reports a completion fact. Model hydration, three item reads, execution policy, hooks and exact continuation/validated responses retain their order. Full phase/atomic-section reconstruction passes; forty-seven other methods/root helpers and all ninety-two SQL literals remain unchanged. Seven source cases and ten installed cases pass (four missing boundary cases, three reused cases).
 
 Fresh sdist→wheel/runtime bytes, three owner Mermaid blocks/links, source proof and whitespace pass. Exact commands/hashes and full forty-nine-method/four-helper classification are `/tmp/tempo-content-exercise-evidence/manifest.json` and its audit receipt. Only source load/staging and publication build/admission remain mixed workflows within this audited store. Native/live/full-system/deployment checks remain unverified; denied loopback cases were unchanged and not retried. No schema/query, credential/security, lifecycle or CI behavior changed.
+
+
+## Legacy authored exercise attempts and finalization
+
+Thirty original queries move from the attempt commands and finalizer into twenty-seven fixed root operations, sharing three identical reads. Original locked/unlocked and MAX/COALESCE distinctions remain. All statement bytes and bound expressions match; specific expansion restores every non-import application AST, including grading/replay/guided/sibling/HTTP decisions, clocks, callbacks and registrations. A root-owned iterator preserves eager sibling-query execution and lazy row consumption between existing writes without exposing a cursor or generic query port. Four Python sources compile.
+
+Six existing selected cases pass: two practice/replay/queue-answer fake-native cases and four task-SQLite automatic/guided/revision/sibling cases. Only the pre-existing Starlette alias deprecation warning appears. Exact selections:
+
+```sh
+TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backend/tests/test_postgres_cutover.py::test_postgres_study_practice_attempt_replays_and_self_assesses_once backend/tests/test_postgres_cutover.py::test_postgres_study_review_attempt_rejects_second_answer_for_one_queue_entry -q --rootdir=.
+TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backend/tests/test_studies.py::test_study_square_exercise_from_fen_only_position_reviews_once backend/tests/test_studies.py::test_study_correct_answer_after_hint_is_saved_as_guided_again backend/tests/test_studies.py::test_study_attempt_rejects_card_revision_mismatch_without_scheduling backend/tests/test_studies.py::test_study_answer_revealing_sibling_is_buried_until_explicit_practice -q --rootdir=.
+```
+
+Proof/baselines: `/tmp/tempo-db-study-attempts-{proof.py,before/}`. Native PostgreSQL/advisory locks, installed-wheel execution, deployed isolation and full-system remain unverified. No schema/migration/JSON/security/credential, grading/scheduling policy, lifecycle or CI behavior changes; existing Studies→practice/queue composition is retained and disclosed, with no Games dependency added.
