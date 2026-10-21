@@ -2,12 +2,13 @@
 
 **Current source; live schema and deployment unverified.** These named operations are mechanically separated from [the existing HTTP composition root](../../../../backend/app/main.py). They borrow its connection/transaction, preserve the existing complete SQL and parameter order, and return fetched facts or lazily yielded rows. They never open/commit/rollback a transaction, construct HTTP responses, choose scheduling/settings policy or import an application implementation.
 
-This directory currently covers 30 direct database call sites in `main.py`: system status, global settings, queue maintenance, queue read projections and head/entry operations. **The remaining inline database operations in that file are unfinished extraction work.** It is not yet a completed centralization claim.
+This directory currently covers 52 direct database call sites in `main.py`: system status, global settings, queue maintenance, queue read projections, head/entry operations, repertoire browsing/metadata and portable snapshot/export reads. **The remaining inline database operations in that file are unfinished extraction work.** It is not yet a completed centralization claim.
 
 | Module | Persistence responsibility | Decisions retained in `main.py` |
 | --- | --- | --- |
 | [system.py](system.py) | Frozen target/active-run identity; SQLite settings-read probe; recent queue projections; analysis threshold fact. | Health/HTTP availability, target key/presentation, task counts and writer status. |
 | [settings.py](settings.py) | Public/previous settings facts, fixed settings update and clean eligible repertoire rows. | Omitted-flag preservation, model values, account normalization, coverage/discovery change detection and refresh callbacks. Identical account writes reuse [the existing account operations](../commands/accounts.py). |
+| [repertoires.py](repertoires.py), [snapshots.py](snapshots.py) | Repertoire/line/comparison/integrity facts; annotation and teaching rows/writes; main selection; fixed portable table reads and PGN export source rows. Exact presence, rename, quota and annotation-delete statements reuse existing root operations. | Priority/prefix projections, request/FEN/JSON/clock/HTTP handling, shared scope/refresh callbacks, snapshot enrichment exclusions/checksum and PGN chess/annotation rendering. |
 | [queue_projection.py](queue_projection.py), [availability.py](availability.py) | Queue/card projection SQL, availability and count/head queries, encounter batch reads, exercise revision, issued-head/entry facts, existing begin/failure/bury statements. One fixed availability SQL implementation is also used by the existing `queue_application` compatibility helper. | Clock and badge choices, payload/prepared snapshot shaping, HTTP/conflict decisions, writer/worker routing, canonical head issuance/attempt validation and queue-order callbacks. |
 | [queue_maintenance.py](queue_maintenance.py) | Queue projection status/failure/refresh writes; existing defense task and eligible candidate facts; pending discovery intent. | Dates, error sanitization/rethrow, admission checks, enqueue conditions, priorities, foreground/background submission and coordinator wake. Startup and maintenance reuse the same projection-state read. |
 
@@ -18,6 +19,7 @@ flowchart LR
   store --> settings[Settings and provider accounts]
   store --> queue[Queue projections, attempts and durable task facts]
   store --> source[Repertoire integrity, discovery and defense facts]
+  store --> authoring[Existing annotations, teaching state and portable source tables]
   jobs --> lifecycle[Existing coordinator and shared legacy lifecycle]
 ```
 
@@ -31,6 +33,12 @@ Head issuance still reads the immutable identity first, returns on an already is
 
 The narrow `queue_application._AVAILABLE_ATTEMPT_SQL` initialization and `available_attempt_sql()` public helper now delegate to the root fixed SQL implementation. The base SQL is purely reconstructed on calls using the existing semantic miss reason; no cache, runtime holder or raw-SQL port was added. The existing SQL bytes, configured-mode evaluation, query parameters, clocks and effect/callback order are preserved.
 
+## Repertoire metadata and portable exports
+
+The repertoire list still makes its two current-day reads after fixed SQL and parameter serialization, using an application-owned date capability. It retains the existing shared connection for introduction-priority and prefix projections. Annotation FEN canonicalization, comment trimming/JSON, teaching timestamps and idempotent response shape remain application decisions. The SQLite teaching statement retains its original `INSERT OR IGNORE` behavior; it is not replaced with the PostgreSQL command's distinct saved-timestamp replay contract. Main selection still runs inside the existing connection and scope-refresh context; no additional locking or writer is introduced.
+
+Portable snapshot source is one fixed, ordered 51-table iterable in `snapshots.py`. It accepts only the existing connection, never caller-supplied table names or query text. One table's fetched rows are yielded at each original query point. The application still removes automatic coverage enrichment, constructs counts/canonical JSON/checksum and chooses export time/source. That existing cross-feature portable read is retained as legacy composition, not new cross-owner read authority. PGN source queries retain optional repertoire scope; legal chess traversal, comments/arrows/squares and response headers remain outside the database tree.
+
 ## Storage map
 
 The linked schema README views remain canonical for actual stored fields/types, primary/composite keys, enforced foreign keys and explicitly logical relationships. No constraints or ownership are inferred from this call graph.
@@ -39,6 +47,9 @@ The linked schema README views remain canonical for actual stored fields/types, 
 | --- | --- | --- |
 | `settings` | Singleton `id=1`; daily quotas, study/defense flags, depth/timezone, provider usernames, engine/light/draw policy and coverage settings. | [Runtime metadata dictionary](../../schema/runtime-metadata/README.md#publicsettings) |
 | `game_accounts` | `provider` identity and normalized `username`. | [Game projections](../../schema/game-projections-1/README.md#publicgame_accounts) |
+| `repertoires`, `repertoire_lines`, `repertoire_cards`, opening graph and integrity metadata | Existing repertoire names/source/order/limits/prefix, route FEN/moves/color, memberships, graph generation/readiness and integrity counts/signatures. | [Authored source dictionaries](../../schema/README.md) |
+| `position_annotations`, `teaching_states` | Existing repertoire/FEN note key, comment/arrows/squares/time; card/revision/ply taught timestamp. | [Annotations](../../schema/authored-content-1/README.md#publicposition_annotations) and [teaching states](../../schema/study-queue-review-3/README.md#publicteaching_states) |
+| Fixed portable 51-table set | Existing portable settings/authored content/cards/queue/review, tactics/endgames, Games/analysis/defense/statistics/coverage/sync source rows, in the original table order. | [Full schema index](../../schema/README.md); the exact export set is visible in [snapshots.py](snapshots.py). |
 | `cards`, `daily_queue`, `reviews`, `queue_attempt_origins`, deletion and integrity blocks | Existing executable card/revision/content, status/position/cycle/guided attempt fields, historical review facts, exact issued identity and eligibility exclusions. No state/queue ownership changes. | [Study/queue/review dictionary](../../schema/study-queue-review-1/README.md) and [attempt/projection dictionary](../../schema/study-queue-review-2/README.md) |
 | `study_exercises`, `study_exercise_revisions`, `studies`, sibling burials | Existing published exercise/current revision/specification, archive and same-day sibling eligibility facts. | [Authored content and Study schema index](../../schema/README.md) |
 | `game_position_occurrences`, `imported_games` | Existing FEN/game encounter counts and last-seen date, excluding adaptively excluded games. | [Game projection dictionaries](../../schema/README.md) |
@@ -51,4 +62,4 @@ The linked schema README views remain canonical for actual stored fields/types, 
 
 The legacy composition root still wires Study, Games and other optional-feature helpers and their shared lifecycle; this move preserves that pre-existing coupling and table access. It does not establish optional-feature/Study failure isolation or grant cross-owner table permission. The existing [Study loaded-graph guard](../../../../scripts/study-composition.ts) is unchanged.
 
-Focused existing status tests and one-time old/new fake traces check the moved read/iterator/settings/maintenance paths, including omitted flags, callbacks, errors and server-style identity facts. No lifespan/bootstrap, real PostgreSQL, live data/schema, provider, deployment or full-system validation is claimed.
+Focused existing status tests and one-time old/new fake traces check the moved read/iterator/settings/maintenance paths, including omitted flags, callbacks, errors, repertoire/annotation/teaching/export/snapshot behavior and server-style identity facts. No lifespan/bootstrap, real PostgreSQL, live data/schema, provider, deployment or full-system validation is claimed.

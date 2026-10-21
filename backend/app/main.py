@@ -30,8 +30,13 @@ from tempo_legacy_database.adapters.http_composition import (
     settings as settings_storage,
     queue_maintenance as queue_maintenance_storage,
     queue_projection as queue_projection_storage,
+    repertoires as repertoire_http_storage,
+    snapshots as snapshot_http_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
+from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
+from tempo_legacy_database.adapters.foreground_controls import repertoires as repertoire_control_storage
+from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
@@ -1634,95 +1639,8 @@ async def import_pgn(
 @app.get("/api/repertoires")
 def list_repertoires():
     from .repertoire_settings import SYSTEM_REPERTOIRES
-    system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
     with read_connection() as db:
-        rows = db.execute(
-            f"""
-            WITH line_counts AS (
-                SELECT repertoire_id,COUNT(*) AS line_count
-                FROM repertoire_lines
-                GROUP BY repertoire_id
-            ), card_counts AS (
-                SELECT repertoire_id,COUNT(*) AS card_count
-                FROM repertoire_cards
-                GROUP BY repertoire_id
-            ), active_prefix_counts AS (
-                SELECT step.repertoire_id,COUNT(DISTINCT card.id) AS active_prefix_count
-                FROM opening_graph_steps step
-                JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
-                JOIN cards card ON card.id=step.card_id
-                JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
-                WHERE card.kind='prefix' AND card.content_type='opening' AND card.archived=0
-                  AND card.state!='locked' AND card.pending_validation=0
-                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                 WHERE block.repertoire_id=step.repertoire_id AND block.card_id=card.id)
-                GROUP BY step.repertoire_id
-            ), due_counts AS (
-                SELECT rc.repertoire_id,COUNT(DISTINCT q.card_id) AS due_count
-                FROM daily_queue q
-                JOIN repertoire_cards rc ON rc.card_id=q.card_id
-                WHERE q.queue_date=? AND q.status='queued' AND NOT EXISTS(
-                    SELECT 1 FROM repertoire_integrity_card_blocks block
-                    WHERE block.repertoire_id=rc.repertoire_id AND block.card_id=q.card_id
-                )
-                GROUP BY rc.repertoire_id
-            ), blocked_counts AS (
-                SELECT block.repertoire_id,
-                       COUNT(DISTINCT block.card_id) AS blocked_card_count,
-                       COUNT(DISTINCT CASE WHEN card.due_date<=? AND card.state IN ('learning','mature')
-                                          THEN block.card_id END) AS blocked_due_count
-                FROM repertoire_integrity_card_blocks block
-                JOIN cards card ON card.id=block.card_id AND card.archived=0
-                GROUP BY block.repertoire_id
-            ), issue_counts AS (
-                SELECT repertoire_id,COUNT(*) AS issue_count,
-                       SUM(CASE WHEN kind IN ('missing_response','multiple_responses','invalid_source')
-                           THEN 1 ELSE 0 END) AS conflict_count
-                FROM repertoire_integrity_issues
-                GROUP BY repertoire_id
-            )
-            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,r.new_cards_per_day,
-                   r.canonical_prefix_moves_json,r.canonical_prefix_revision,
-                   COALESCE(r.new_cards_per_day,(SELECT new_cards_per_day FROM settings WHERE id=1)) effective_new_cards_per_day,
-                   COALESCE(rs.status,'unchecked') integrity_status,
-                   COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
-                   (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
-                   COALESCE(lc.line_count,0) AS line_count,
-                   COALESCE(cc.card_count,0) AS card_count,
-                   COALESCE(apc.active_prefix_count,0) AS active_prefix_count,
-                   (SELECT l2.trained_color FROM repertoire_lines l2 WHERE l2.repertoire_id=r.id ORDER BY l2.created_at LIMIT 1) AS trained_color,
-                   COALESCE(dc.due_count,0) AS due_count,
-                   COALESCE(bc.blocked_due_count,0) AS blocked_due_count,
-                   COALESCE(bc.blocked_card_count,0) AS blocked_card_count,
-                   COALESCE(ic.issue_count,0) AS integrity_issue_count,
-                   COALESCE(ic.conflict_count,0) AS conflict_count,
-                   COALESCE(graph.generation,0) AS graph_generation,
-                   graph.published_at AS graph_updated_at,
-                   CASE
-                     WHEN graph_task.state IN ('queued','leased','retrying') THEN 'refreshing'
-                     WHEN graph_task.state='failed' THEN 'failed'
-                     WHEN graph.generation IS NOT NULL THEN 'ready'
-                     ELSE 'refreshing'
-                   END AS graph_state,
-                   graph_task.last_error AS graph_error
-            FROM repertoires r
-            LEFT JOIN repertoire_integrity_state rs ON rs.repertoire_id=r.id
-            LEFT JOIN line_counts lc ON lc.repertoire_id=r.id
-            LEFT JOIN card_counts cc ON cc.repertoire_id=r.id
-            LEFT JOIN active_prefix_counts apc ON apc.repertoire_id=r.id
-            LEFT JOIN due_counts dc ON dc.repertoire_id=r.id
-            LEFT JOIN blocked_counts bc ON bc.repertoire_id=r.id
-            LEFT JOIN issue_counts ic ON ic.repertoire_id=r.id
-            LEFT JOIN opening_graph_publications graph ON graph.repertoire_id=r.id
-            LEFT JOIN background_tasks graph_task
-              ON graph_task.kind='opening_graph_rebuild'
-             AND graph_task.deduplication_key=r.id
-            WHERE r.id NOT IN ({system_placeholders}) OR (r.id='__retained_cards__' AND EXISTS(
-                SELECT 1 FROM cards retained WHERE retained.repertoire_id=r.id))
-            ORDER BY r.created_at DESC
-        """,
-            (date.today().isoformat(), date.today().isoformat(), *SYSTEM_REPERTOIRES),
-        ).fetchall()
+        rows = repertoire_http_storage.repertoire_rows(db, SYSTEM_REPERTOIRES, lambda: date.today().isoformat())
         repertoire_items = [
             {
                 **{key: value for key, value in dict(row).items() if key not in {"canonical_prefix_moves_json", "canonical_prefix_revision"}},
@@ -1749,10 +1667,7 @@ def repertoire_move_membership(identifier: str, fen: str = Query(max_length=128)
 @app.get("/api/repertoire/lines")
 def repertoire_lines():
     with read_connection() as db:
-        rows = db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
-                                  r.name repertoire_name,r.is_main
-                           FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
-                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY r.created_at,l.created_at""").fetchall()
+        rows = repertoire_http_storage.line_rows(db)
     return {
         "lines": [{**dict(row), "moves": json.loads(row["moves_json"])} for row in rows]
     }
@@ -1762,14 +1677,7 @@ def repertoire_lines():
 def comparison_cards():
     """Return saved opening routes; chess replay belongs outside the database read."""
     with read_connection() as db:
-        rows = db.execute("""SELECT c.id,c.start_fen,c.moves_json,c.state,c.kind,
-                                  c.trained_color,r.id repertoire_id,r.name repertoire_name
-                           FROM cards c
-                           JOIN repertoire_cards rc ON rc.card_id=c.id
-                           JOIN repertoires r ON r.id=rc.repertoire_id
-                           WHERE c.content_type='opening' AND c.archived=0 AND r.id<>'__retained_cards__'
-                             AND c.pending_validation=0
-                           ORDER BY c.id,r.id""").fetchall()
+        rows = repertoire_http_storage.comparison_card_rows(db)
         records = [dict(row) for row in rows]
     cards = []
     for record in records:
@@ -1826,10 +1734,7 @@ def resolve_repertoire_integrity(
             "integrity.issue.resolve", prepared, idempotency_key=idempotency_key,
         )
     with read_connection() as database:
-        issue = database.execute(
-            "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
-            (issue_id, identifier),
-        ).fetchone()
+        issue = repertoire_http_storage.integrity_issue_signature(database, issue_id, identifier)
     if not issue:
         raise HTTPException(404, "Integrity issue not found")
     if issue["signature"] != request.signature:
@@ -1868,20 +1773,12 @@ def fen_key(fen: str) -> str:
 @app.get("/api/repertoires/{identifier}/annotations")
 def list_annotations(identifier: str, fen: str | None = None):
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, identifier):
             raise HTTPException(404, "Repertoire not found")
         if fen:
-            rows = db.execute(
-                "SELECT * FROM position_annotations WHERE repertoire_id=? AND fen_key=?",
-                (identifier, fen_key(fen)),
-            ).fetchall()
+            rows = repertoire_http_storage.position_annotation_rows(db, identifier, fen_key(fen))
         else:
-            rows = db.execute(
-                "SELECT * FROM position_annotations WHERE repertoire_id=? ORDER BY updated_at",
-                (identifier,),
-            ).fetchall()
+            rows = repertoire_http_storage.annotation_rows(db, identifier)
     return {
         "annotations": [
             {
@@ -1912,29 +1809,12 @@ def save_annotation(identifier: str, request: PositionAnnotationRequest,
     arrows = [item.model_dump(by_alias=True) for item in request.arrows]
     squares = [item.model_dump() for item in request.squares]
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
-        ).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(db, identifier):
             raise HTTPException(404, "Repertoire not found")
         if not request.comment.strip() and not arrows and not squares:
-            db.execute(
-                "DELETE FROM position_annotations WHERE repertoire_id=? AND fen_key=?",
-                (identifier, key),
-            )
+            annotation_command_storage.delete_position_annotation(db, identifier, key)
         else:
-            db.execute(
-                """INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at)
-                          VALUES(?,?,?,?,?,?) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET
-                          comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
-                (
-                    identifier,
-                    key,
-                    request.comment.strip(),
-                    json.dumps(arrows),
-                    json.dumps(squares),
-                    now,
-                ),
-            )
+            repertoire_http_storage.save_annotation(db, identifier, key, request.comment.strip(), json.dumps(arrows), json.dumps(squares), now)
     return {
         "repertoireId": identifier,
         "fenKey": key,
@@ -1948,10 +1828,7 @@ def save_annotation(identifier: str, request: PositionAnnotationRequest,
 @app.get("/api/cards/{identifier}/teaching")
 def list_teaching_states(identifier: str):
     with connection() as db:
-        rows = db.execute(
-            "SELECT card_id,revision,ply,taught_at FROM teaching_states WHERE card_id=? ORDER BY revision,ply",
-            (identifier,),
-        ).fetchall()
+        rows = repertoire_http_storage.teaching_rows(db, identifier)
     return {
         "states": [
             {
@@ -1977,14 +1854,9 @@ def mark_teaching_state(identifier: str, request: TeachingStateRequest,
         )
     taught_at = datetime.now(timezone.utc).isoformat()
     with connection() as db:
-        if not db.execute(
-            "SELECT 1 FROM cards WHERE id=? AND archived=0", (identifier,)
-        ).fetchone():
+        if not repertoire_http_storage.active_card_presence(db, identifier):
             raise HTTPException(404, "Card not found")
-        db.execute(
-            "INSERT OR IGNORE INTO teaching_states(card_id,revision,ply,taught_at) VALUES(?,?,?,?)",
-            (identifier, request.revision, request.ply, taught_at),
-        )
+        repertoire_http_storage.record_teaching_state(db, identifier, request.revision, request.ply, taught_at)
     return {
         "cardId": identifier,
         "revision": request.revision,
@@ -1995,79 +1867,22 @@ def mark_teaching_state(identifier: str, request: TeachingStateRequest,
 
 @app.get("/api/migration/snapshot")
 def migration_snapshot():
-    table_names = [
-        "settings",
-        "repertoires",
-        "canonical_prefix_previews",
-        "canonical_prefix_results",
-        "canonical_prefix_positions",
-        "repertoire_lines",
-        "repertoire_cards",
-        "cards",
-        "reviews",
-        "daily_queue",
-        "queue_attempt_origins",
-        "review_attempt_receipts",
-        "review_schedule_snapshots",
-        "daily_queue_days",
-        "position_annotations",
-        "teaching_states",
-        "card_revisions",
-        "prefix_splits",
-        "tactic_progress",
-        "tactic_captures",
-        "endgame_templates",
-        "endgame_attempts",
-        "game_accounts",
-        "imported_games",
-        "game_move_analysis",
-        "game_move_analysis_candidates",
-        "game_analysis_jobs",
-        "game_sync_jobs",
-        "game_derivation_jobs",
-        "repertoire_game_scope",
-        "game_position_occurrences",
-        "gameplay_card_priorities",
-        "repertoire_comparisons",
-        "game_repertoire_matches",
-        "repertoire_decision_events",
-        "game_findings",
-        "threat_training_candidates",
-        "threat_analysis_requests",
-        "threat_candidate_requests",
-        "defense_attempts",
-        "guided_review_sessions",
-        "guided_review_attempts",
-        "gameplay_events",
-        "game_feature_rows",
-        "daily_chess_snapshots",
-        "daily_chess_insights",
-        "game_insight_recommendations",
-        "repertoire_coverage_runs",
-        "repertoire_coverage_nodes",
-        "repertoire_coverage_candidates",
-        "game_sync_state",
-    ]
     with read_connection() as db:
         # Automatic coverage and Explorer cache rows are rebuildable enrichment.
         # Keeping them out of a portable study snapshot preserves its checksum
         # across a restart while background work continues independently.
         automatic_coverage_run_ids = {
             row["id"]
-            for row in db.execute(
-                """SELECT id FROM repertoire_coverage_runs
-                   WHERE settings_json LIKE ?""",
-                ('%"automatic_priority": true%',),
-            )
+            for row in snapshot_http_storage.automatic_coverage_runs(db)
         }
         automatic_coverage_node_ids = {
             row["id"]
-            for row in db.execute("SELECT id,run_id FROM repertoire_coverage_nodes").fetchall()
+            for row in snapshot_http_storage.coverage_nodes(db)
             if row["run_id"] in automatic_coverage_run_ids
         }
         tables = {}
-        for name in table_names:
-            rows = [dict(row) for row in db.execute(f"SELECT * FROM {name}").fetchall()]
+        for name, source_rows in snapshot_http_storage.portable_table_rows(db):
+            rows = [dict(row) for row in source_rows]
             if name == "repertoire_coverage_runs":
                 rows = [row for row in rows if row["id"] not in automatic_coverage_run_ids]
             elif name == "repertoire_coverage_nodes":
@@ -2102,15 +1917,9 @@ def make_main_repertoire(identifier: str,
             idempotency_key=idempotency_key,
         )
     with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
-            (identifier,),
-        ).fetchone():
+        if not repertoire_http_storage.selectable_repertoire(db, identifier):
             raise HTTPException(404, "Repertoire not found")
-        db.execute(
-            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
-            (identifier,),
-        )
+        repertoire_http_storage.select_main_repertoire(db, identifier)
     return {"id": identifier, "is_main": True}
 
 
@@ -2881,8 +2690,7 @@ def update_repertoire_settings(identifier: str, request: RepertoireSettingsReque
     from .repertoire_settings import repertoire_settings_response
     with connection() as db:
         repertoire_settings_response(db, identifier)
-        db.execute("UPDATE repertoires SET new_cards_per_day=? WHERE id=?",
-                   (request.new_cards_per_day, identifier))
+        repertoire_control_storage.store_daily_limit(db, request.new_cards_per_day, identifier)
         result = repertoire_settings_response(db, identifier)
     enqueue_daily_queue_refresh(foreground=True)
     return result
@@ -2898,28 +2706,15 @@ def rename_repertoire(identifier: str, request: RepertoireRenameRequest,
             idempotency_key=idempotency_key,
         )
     with connection() as db:
-        if not db.execute(
-            "UPDATE repertoires SET name=? WHERE id=?",
-            (request.name.strip(), identifier),
-        ).rowcount:
+        if not repertoire_control_storage.rename_repertoire(db, request.name.strip(), identifier):
             raise HTTPException(404, "Repertoire not found")
     return {"id": identifier, "name": request.name.strip()}
 
 
 def export_repertoires(repertoire_id: str | None = None):
     with connection() as db:
-        query = "SELECT l.*,r.name repertoire_name FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id"
-        rows = db.execute(
-            query
-            + (" WHERE l.repertoire_id=?" if repertoire_id else "")
-            + (" ORDER BY l.created_at"),
-            ((repertoire_id,) if repertoire_id else ()),
-        ).fetchall()
-        annotation_rows = db.execute(
-            "SELECT * FROM position_annotations"
-            + (" WHERE repertoire_id=?" if repertoire_id else ""),
-            ((repertoire_id,) if repertoire_id else ()),
-        ).fetchall()
+        rows = repertoire_http_storage.export_line_rows(db, repertoire_id)
+        annotation_rows = repertoire_http_storage.export_annotation_rows(db, repertoire_id)
     annotations = {
         (row["repertoire_id"], row["fen_key"]): row for row in annotation_rows
     }
