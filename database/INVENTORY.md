@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **151 files**; one candidate is confirmed non-database application code, and **4 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **152 files**; one candidate is confirmed non-database application code, and **3 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -44,7 +44,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed controls SQL split: [backend/app/repertoire_settings.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed controls SQL split: [backend/app/review_commands.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed pasted-analysis storage split: [backend/app/services/analysis_paste.py](tempo_legacy_database/adapters/authored_repertoires/README.md).
-- [backend/app/services/background_activity.py](../backend/app/services/background_activity.py)
+- Completed background activity control storage split: [backend/app/services/background_activity.py](tempo_legacy_database/adapters/controls/activity/README.md).
 - Completed background diagnostic query/scope split: [backend/app/services/background_diagnostics.py](tempo_legacy_database/adapters/background_diagnostics/README.md).
 - Completed queue/lifecycle storage split: [backend/app/services/background_metrics.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - Completed existing canonical-prefix implementation storage split: [backend/app/services/canonical_prefix.py](tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/README.md).
@@ -219,13 +219,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 116 | 0 | 4 |
+| Legacy backend | 117 | 0 | 3 |
 | Learning runtime | 26 | 0 | 0 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **151** | **1** | **4** |
+| **Total baseline** | **152** | **1** | **3** |
 
 Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 

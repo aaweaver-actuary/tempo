@@ -55,3 +55,7 @@ Add concise evidence as more modules are reviewed. Do not implement these propos
 
 - **Observed related code:** ordinary task upsert/event sequencing and the compact native CTE share enqueue/reset fields but differ in event/metric/returned-identity and bounded-round-trip contracts. A future owner-level specification could reduce drift; consolidation would require preserving those transaction/budget differences. These are related variants,not proven interchangeable duplicates.
 - **Compatibility question:** native/compatibility phase suffixes and parameter arities express different observable checkpoint semantics. A later retirement could reduce variants only with actual consumer/deployment evidence. Names do not prove any path/table unused; no retirement is implemented here.
+
+### Activity source metadata maintenance (proposal only)
+
+`controls/activity/storage.py` retains the existing finite SOURCES table/key mapping,generation columns and state-column selection. Review whether a single explicit declaration could reduce separated edits when adding a source. External consumers require the current tuple shape; three sources intentionally omit generation queries,and state/status/lease rules differ. Similar metadata is not proof of interchangeable behavior. No registry,framework or metadata consolidation was implemented.

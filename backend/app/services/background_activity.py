@@ -9,22 +9,12 @@ from fastapi import HTTPException
 
 from tempo_legacy_database.connections import connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.controls.activity import storage
+from tempo_legacy_database.adapters.controls.activity.storage import SOURCES
 from tempo_legacy_database.adapters.controls.claim_sql import claimable, control_order
 
 
-from .defensive_analysis import analysis_enabled, recommendation_sql, search_admission_sql, task_admission_sql
-
-SOURCES = {
-    "durable": ("background_tasks", "id"),
-    "sync": ("game_sync_jobs", "id"),
-    "derivation": ("game_derivation_jobs", "game_id"),
-    "integrity": ("repertoire_integrity_jobs", "repertoire_id"),
-    "coverage": ("repertoire_coverage_runs", "id"),
-    "statistics": ("daily_statistics_jobs", "local_day"),
-    "priority": ("repertoire_priority_jobs", "repertoire_id"),
-    "game_analysis": ("game_analysis_jobs", "game_id"),
-    "threat_analysis": ("threat_analysis_requests", "id"),
-}
+from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, recommendation_sql, search_admission_sql, task_admission_sql
 
 
 def _now() -> str:
@@ -41,18 +31,9 @@ def report_progress(
     if completed_units is not None and (completed_units < 0 or total_units is None or total_units < completed_units):
         raise ValueError("Invalid progress")
     with connection(background=background) as database:
-        generation_columns = {
-            "durable": ("generation",), "derivation": ("derivation_version",),
-            "integrity": ("run_id",), "coverage": ("id",),
-            "priority": ("generation",), "game_analysis": ("analysis_version", "analysis_evidence_version"),
-        }
-        table, id_column = SOURCES[source]
-        columns = generation_columns.get(source)
+        columns, read_current = storage.prepare_progress_read(source)
         if columns:
-            current = database.execute(
-                f"SELECT {','.join(columns)}{',status,lease_id' if source == 'game_analysis' else ''} FROM {table} WHERE {id_column}=?",
-                (work_id,),
-            ).fetchone()
+            current = read_current(database, work_id)
             if not current:
                 return False
             current_generation = ":".join(str(current[column]) for column in columns)
@@ -60,15 +41,7 @@ def report_progress(
                 return False
             if source == "game_analysis" and (current["status"] != "leased" or current["lease_id"] != lease_id):
                 return False
-        database.execute(
-            """INSERT INTO background_activity(source,work_id,generation_key,phase,
-                   completed_units,total_units,updated_at) VALUES(?,?,?,?,?,?,?)
-               ON CONFLICT(source,work_id) DO UPDATE SET
-                   generation_key=excluded.generation_key,phase=excluded.phase,
-                   completed_units=excluded.completed_units,total_units=excluded.total_units,
-                   updated_at=excluded.updated_at""",
-            (source, work_id, generation_key, phase, completed_units, total_units, _now()),
-        )
+        storage.upsert_progress(database, (source, work_id, generation_key, phase, completed_units, total_units, _now()))
     return True
 
 
@@ -99,63 +72,28 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str,
     """Apply a validated activity control in the caller's short write transaction."""
     if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
         return False
-    table, id_column = SOURCES[source]
-    state_column = "state" if source in {"durable", "threat_analysis"} else "status"
-    row_lock = " FOR UPDATE" if postgres_store.configured() else ""
-    settings_admission = (task_admission_sql('kind') if source == 'durable' else
-                          search_admission_sql('threat_analysis_requests.id') if source == 'threat_analysis' else '1=1')
-    work_row = database.execute(
-        f"SELECT {state_column},({settings_admission}) AS settings_admitted "
-        f"FROM {table} WHERE {id_column}=?{row_lock}", (work_id,)
-    ).fetchone()
+    read_work = storage.prepare_control_read(source, DEFENSIVE_TASK_KINDS)
+    work_row = read_work(database, work_id)
     if not work_row or work_row[0] in {"failed", "superseded"}:
         return False
     if work_row[0] == "complete":
-        if source != "coverage" or not database.execute(
-            """SELECT 1 FROM repertoire_coverage_nodes WHERE run_id=?
-               AND (explorer_status!='complete' OR maia_status!='complete') LIMIT 1""",
-            (work_id,),
-        ).fetchone():
+        if source != "coverage" or not storage.unfinished_coverage(database, (work_id,)):
             return False
     if action == 'resume' and not allow_settings_blocked_resume and not work_row[1]:
         raise HTTPException(409, 'Defensive analysis is disabled in Settings. '
                             'Enable Defensive analysis in Settings before resuming this work.')
     now = _now()
-    database.execute(
-        """INSERT INTO background_activity(source,work_id,updated_at)
-           VALUES(?,?,?) ON CONFLICT(source,work_id) DO NOTHING""",
-        (source, work_id, now),
-    )
-    column = "paused" if action in {"pause", "resume"} else "promoted"
+    storage.ensure_control(database, (source, work_id, now))
+    write_control = storage.prepare_control_update(action)
     value = int(action in {"pause", "prioritize"})
-    database.execute(
-        f"UPDATE background_activity SET {column}=?,updated_at=? WHERE source=? AND work_id=?",
-        (value, now, source, work_id),
-    )
+    write_control(database, (value, now, source, work_id))
     if source == "game_analysis" and action == "pause":
-        database.execute(
-            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
-               lease_expires_at=NULL,updated_at=? WHERE game_id=? AND status='leased'""",
-            (now, work_id),
-        )
-        database.execute(
-            "UPDATE imported_games SET analysis_state='pending' WHERE id=?",
-            (work_id,),
-        )
+        storage.release_analysis_lease(database, (now, work_id))
+        storage.mark_analysis_pending(database, (work_id,))
     if source == "coverage" and action == "pause":
-        database.execute(
-            """UPDATE repertoire_coverage_nodes SET maia_status='queued',
-               lease_id=NULL,lease_expires_at=NULL,updated_at=?
-               WHERE run_id=? AND maia_status='leased'""",
-            (now, work_id),
-        )
+        storage.release_maia_lease(database, (now, work_id))
     if source == "threat_analysis" and action == "pause":
-        database.execute(
-            """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
-                 lease_expires_at=NULL,updated_at=?
-               WHERE id=? AND state='leased'""",
-            (now, work_id),
-        )
+        storage.release_threat_lease(database, (now, work_id))
     return True
 
 
@@ -178,20 +116,11 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     items: list[dict] = []
     with read_connection() as database:
         analysis_enabled(database)
-        for row in database.execute(
-            f"SELECT *,NOT {task_admission_sql('kind')} AS paused_by_settings "
-            "FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,),
-        ):
+        for row in storage.durable_activity(database, (cutoff,), DEFENSIVE_TASK_KINDS):
             items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
             items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
             items[-1]['paused'] = items[-1]['paused_by_settings']
-        for row in database.execute(
-            f"""SELECT request.id,state,attempts,last_error,updated_at,
-                      {recommendation_sql('request.id')} AS is_recommendation,
-                      NOT {search_admission_sql('request.id')} AS paused_by_settings
-                FROM threat_analysis_requests request
-                WHERE state!='complete' OR updated_at>=?""", (cutoff,),
-        ):
+        for row in storage.threat_activity(database, (cutoff,)):
             state = ("running" if row["state"] == "leased" else
                      "retrying" if row["state"] == "queued" and row["attempts"] else row["state"])
             title = "Repertoire recommendation search" if row['is_recommendation'] else "Defensive engine search"
@@ -200,26 +129,15 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                                     error=row["last_error"]))
             items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
             items[-1]['paused'] = items[-1]['paused_by_settings']
-        for row in database.execute("SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
+        for row in storage.sync_activity(database, (cutoff,)):
             items.append(_base_item("sync", row["id"], "Game sync", row["status"], row["updated_at"], row["id"], error=row["error"]))
-        for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j
-                                      JOIN imported_games g ON g.id=j.game_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+        for row in storage.derivation_activity(database, (cutoff,)):
             title = f"{row['provider'].title()} game {row['played_at'][:10]} · {row['game_id'][-8:]} findings"
             items.append(_base_item("derivation", row["game_id"], title, row["status"], row["updated_at"], str(row["derivation_version"]), row["phase"], error=row["last_error"]))
-        for row in database.execute("""SELECT j.*,r.name AS repertoire_name FROM repertoire_integrity_jobs j
-                                      JOIN repertoires r ON r.id=j.repertoire_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+        for row in storage.integrity_activity(database, (cutoff,)):
             items.append(_base_item("integrity", row["repertoire_id"], f"{row['repertoire_name']} integrity", row["status"], row["updated_at"], row["run_id"], row["status"], row["source_offset"], row["total_sources"], row["last_error"]))
-        coverage_counts = {row["run_id"]: row for row in database.execute(
-                """SELECT run_id,COUNT(*) AS total,
-                   SUM(CASE WHEN explorer_status='complete' THEN 1 ELSE 0 END) AS explorer_done,
-                   SUM(CASE WHEN maia_status='complete' THEN 1 ELSE 0 END) AS maia_done,
-                   SUM(CASE WHEN explorer_status='running' OR maia_status='leased' THEN 1 ELSE 0 END) AS active
-                   FROM repertoire_coverage_nodes GROUP BY run_id"""
-            )}
-        for row in database.execute("""SELECT runs.*,r.name AS repertoire_name FROM repertoire_coverage_runs runs
-                                      JOIN repertoires r ON r.id=runs.repertoire_id"""):
+        coverage_counts = {row["run_id"]: row for row in storage.coverage_counts(database)}
+        for row in storage.coverage_activity(database):
             counts = coverage_counts.get(row["id"])
             total_nodes = counts["total"] if counts else 0
             completed_nodes = ((counts["explorer_done"] or 0) + (counts["maia_done"] or 0)) if counts else 0
@@ -231,25 +149,13 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
             if state == "complete" and row["updated_at"] < cutoff:
                 continue
             items.append(_base_item("coverage", row["id"], f"{row['repertoire_name']} coverage", state, row["updated_at"], row["id"], "Checking positions", completed_nodes, total_nodes * 2, row["last_error"]))
-        for row in database.execute("SELECT * FROM daily_statistics_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
+        for row in storage.statistics_activity(database, (cutoff,)):
             items.append(_base_item("statistics", row["local_day"], f"Daily insights {row['local_day']}", row["status"], row["updated_at"], row["local_day"], error=row["last_error"]))
-        for row in database.execute("""SELECT j.*,r.name AS repertoire_name FROM repertoire_priority_jobs j
-                                      JOIN repertoires r ON r.id=j.repertoire_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+        for row in storage.priority_activity(database, (cutoff,)):
             items.append(_base_item("priority", row["repertoire_id"], f"{row['repertoire_name']} priorities", row["status"], row["updated_at"], str(row["generation"]), error=row["last_error"]))
         game_position_counts = {(item["game_id"], item["analysis_version"]): item
-                                for item in database.execute(
-            """SELECT game_id,analysis_version,
-                      SUM(CASE WHEN state='complete' THEN 1 ELSE 0 END) AS completed,
-                      COUNT(*) AS started,
-                      MAX(CASE WHEN scan_pass='confirmed' THEN 1 ELSE 0 END) AS confirming
-               FROM game_analysis_position_reports GROUP BY game_id,analysis_version"""
-        )}
-        for row in database.execute("""SELECT j.*,g.provider,g.played_at,
-                                             json_array_length(g.moves_json)+1 AS position_total
-                                      FROM game_analysis_jobs j
-                                      JOIN imported_games g ON g.id=j.game_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+                                for item in storage.analysis_position_counts(database)}
+        for row in storage.analysis_activity(database, (cutoff,)):
             title = f"{row['provider'].title()} game {row['played_at'][:10]} · {row['game_id'][-8:]} analysis"
             progress = game_position_counts.get((row["game_id"], row["analysis_version"]))
             state = "running" if row["status"] == "leased" else (
@@ -261,7 +167,7 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                                     (row["position_total"] * (2 if progress and progress["confirming"] else 1))
                                     if row["position_total"] else None,
                                     row["last_error"]))
-        controls = {(row["source"], row["work_id"]): row for row in database.execute("SELECT * FROM background_activity")}
+        controls = {(row["source"], row["work_id"]): row for row in storage.activity_controls(database)}
     for item in items:
         control = controls.get((item["source"], item["id"]))
         if control:
