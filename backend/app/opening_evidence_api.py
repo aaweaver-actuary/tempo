@@ -1,6 +1,7 @@
 """Background checkpoint delivery and internal reads for optional shadow facts."""
 from fastapi import APIRouter, Header, HTTPException, Query
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.controls import opening_evidence as storage
 from .command_gateway import register_command
 from tempo_legacy_database.connections import background_read_connection
 from .opening_evidence_contracts import OpeningEvidenceCheckpoint
@@ -42,9 +43,9 @@ def opening_attempt_evidence(attempt_id: str):
     read_section = (background_read_connection(authoritative=True) if activity_gate.in_background
                     else postgres_store.connection(read_only=True))
     with read_section as database:
-        attempt = database.execute_native('SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s', (attempt_id,)).fetchone()
+        attempt = storage.opening_attempt_row(database, attempt_id)
         if not attempt:
             raise HTTPException(404, 'Opening attempt evidence not found')
         attempt = dict(attempt)
-        events = [row[0] for row in database.execute_native('SELECT event_json FROM opening_evidence_events WHERE attempt_id=%s ORDER BY sequence LIMIT 256', (attempt_id,)).fetchall()]
+        events = storage.opening_event_payloads(database, attempt_id)
     return {**attempt, 'events': [json.loads(event) for event in events]}

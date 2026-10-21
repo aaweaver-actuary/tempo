@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from tempo_legacy_database.adapters.commands import statistics as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 
@@ -21,12 +22,7 @@ def request_daily_statistics_refresh(
     except ValueError as error:
         raise HTTPException(422, "Invalid local day") from error
     now = datetime.now(timezone.utc).isoformat()
-    database.execute(
-        """INSERT INTO daily_statistics_jobs(local_day,status,last_error,updated_at)
-           VALUES(?,'queued',NULL,?) ON CONFLICT(local_day) DO UPDATE SET
-           status='queued',last_error=NULL,updated_at=excluded.updated_at""",
-        (local_day, now),
-    )
+    storage.queue_daily_statistics(database, local_day, now)
     enqueue_compact_postgres_task_in_transaction(
         database, "daily_statistics", local_day, {"local_day": local_day}, priority=120,
     )

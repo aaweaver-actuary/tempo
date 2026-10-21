@@ -20,3 +20,5 @@
 
 - [queue_position_lock.py](queue_position_lock.py): existing queue-position advisory lock boundary.
 - [postgres_readiness.py](postgres_readiness.py): existing PostgreSQL/worker readiness adapter.
+
+[Command persistence](commands/README.md) groups the existing account/activity/annotation/statistics/endgame/teaching operations. [Control/read projections](controls/README.md) groups settings, review reconciliation, opening evidence and coverage operations. Their application call-site composition and transaction authority stay outside these helpers.

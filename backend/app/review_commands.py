@@ -2,6 +2,7 @@
 from tempo_learning_review import register_review_commands
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.controls import review_reconciliation as storage
 from .services.learning_review_adapter import submit_legacy_review
 from typing import Any
 
@@ -16,13 +17,13 @@ def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> d
     # A handled conflict becomes a successful transport receipt, so the gateway
     # cannot roll back its handler savepoint for us. Fence the entire ordinary
     # review path, including evidence writes, before converting that exception.
-    database.raw.execute("SAVEPOINT reconcile_review")
+    storage.begin_reconciliation(database)
     try:
         result = submit_review(database, payload)
     except ReviewConflict as error:
-        database.raw.execute("ROLLBACK TO SAVEPOINT reconcile_review")
+        storage.rollback_reconciliation(database)
         result = {"persisted": False, "conflict": error.information()}
-    database.raw.execute("RELEASE SAVEPOINT reconcile_review")
+    storage.release_reconciliation(database)
     return result
 
 

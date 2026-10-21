@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL modules**. The frozen-order split, four SQL-only helper moves and browser connection-storage split close ten source files including command-reader/repertoire/defensive and Intelligence-reader batches; one candidate is confirmed non-database application code, and **145 remain for review/extraction**. Complete centralization is unfinished while their database operations live outside the root `database/` tree. This is a starting checklist, not an accepted permanent exception. Extract application/domain logic into logically named folders outside `database/`, keep each database operation inside it, and connect the single implementations through explicit interfaces and outer composition. Application-facing tests and public wire JSON schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **22 files**; one candidate is confirmed non-database application code, and **133 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -10,16 +10,16 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 <summary>Paths for follow-up extraction review</summary>
 
 - Completed browser storage split: [app/lib/study-connection.ts](../app/lib/study-connection.ts) retains application connection/authority/transport decisions; [database/browser/study-connection-storage.ts](browser/study-connection-storage.ts) owns the existing IndexedDB inspection and Web Storage operations.
-- [backend/app/account_commands.py](../backend/app/account_commands.py)
-- [backend/app/activity_commands.py](../backend/app/activity_commands.py)
-- [backend/app/annotation_commands.py](../backend/app/annotation_commands.py)
+- Completed commands SQL split: [backend/app/account_commands.py](tempo_legacy_database/adapters/commands/README.md).
+- Completed commands SQL split: [backend/app/activity_commands.py](tempo_legacy_database/adapters/commands/README.md).
+- Completed commands SQL split: [backend/app/annotation_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - [backend/app/branch_commands.py](../backend/app/branch_commands.py)
 - [backend/app/canonical_prefix_api.py](../backend/app/canonical_prefix_api.py)
 - [backend/app/card_commands.py](../backend/app/card_commands.py)
 - [backend/app/card_deletion.py](../backend/app/card_deletion.py)
 - [backend/app/command_gateway.py](../backend/app/command_gateway.py)
 - [backend/app/coverage_maia_commands.py](../backend/app/coverage_maia_commands.py)
-- [backend/app/endgame_commands.py](../backend/app/endgame_commands.py)
+- Completed commands SQL split: [backend/app/endgame_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - [backend/app/finding_card_commands.py](../backend/app/finding_card_commands.py)
 - [backend/app/finding_commands.py](../backend/app/finding_commands.py)
 - [backend/app/game_analysis_commands.py](../backend/app/game_analysis_commands.py)
@@ -30,7 +30,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/guided_review_commands.py](../backend/app/guided_review_commands.py)
 - [backend/app/integrity_repair_commands.py](../backend/app/integrity_repair_commands.py)
 - [backend/app/main.py](../backend/app/main.py)
-- [backend/app/opening_evidence_api.py](../backend/app/opening_evidence_api.py)
+- Completed controls SQL split: [backend/app/opening_evidence_api.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/opening_segmentation_api.py](../backend/app/opening_segmentation_api.py)
 - [backend/app/opportunity_commands.py](../backend/app/opportunity_commands.py)
 - [backend/app/pgn_import_commands.py](../backend/app/pgn_import_commands.py)
@@ -41,8 +41,8 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/queue_attempt_origins.py](../backend/app/queue_attempt_origins.py)
 - [backend/app/queue_commands.py](../backend/app/queue_commands.py)
 - [backend/app/repertoire_commands.py](../backend/app/repertoire_commands.py)
-- [backend/app/repertoire_settings.py](../backend/app/repertoire_settings.py)
-- [backend/app/review_commands.py](../backend/app/review_commands.py)
+- Completed controls SQL split: [backend/app/repertoire_settings.py](tempo_legacy_database/adapters/controls/README.md).
+- Completed controls SQL split: [backend/app/review_commands.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/analysis_paste.py](../backend/app/services/analysis_paste.py)
 - [backend/app/services/background_activity.py](../backend/app/services/background_activity.py)
 - [backend/app/services/background_diagnostics.py](../backend/app/services/background_diagnostics.py)
@@ -71,9 +71,9 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/opening_graph_recovery.py](../backend/app/services/opening_graph_recovery.py)
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/opening_progression.py](tempo_legacy_database/adapters/opening_progression.py).
 - [backend/app/services/opening_ranking_snapshot.py](../backend/app/services/opening_ranking_snapshot.py)
-- [backend/app/services/postgres_coverage_candidates.py](../backend/app/services/postgres_coverage_candidates.py)
+- Completed controls SQL split: [backend/app/services/postgres_coverage_candidates.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/postgres_coverage_explorer.py](../backend/app/services/postgres_coverage_explorer.py)
-- [backend/app/services/postgres_coverage_recovery.py](../backend/app/services/postgres_coverage_recovery.py)
+- Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/postgres_coverage_seed.py](../backend/app/services/postgres_coverage_seed.py)
 - [backend/app/services/postgres_daily_statistics.py](../backend/app/services/postgres_daily_statistics.py)
 - [backend/app/services/postgres_game_derivation.py](../backend/app/services/postgres_game_derivation.py)
@@ -111,7 +111,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/review_service.py](../backend/app/services/review_service.py)
 - [backend/app/services/statistics.py](../backend/app/services/statistics.py)
 - [backend/app/services/study_attempts.py](../backend/app/services/study_attempts.py)
-- [backend/app/services/study_mode.py](../backend/app/services/study_mode.py)
+- Completed controls SQL split: [backend/app/services/study_mode.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/study_portable.py](../backend/app/services/study_portable.py)
 - [backend/app/services/study_priority.py](../backend/app/services/study_priority.py)
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/tactic_admission.py](tempo_legacy_database/adapters/tactic_admission.py).
@@ -122,13 +122,13 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/threat_training.py](../backend/app/services/threat_training.py)
 - [backend/app/settings_commands.py](../backend/app/settings_commands.py)
 - Completed intact database snapshot/evidence reader move: [backend/app/snapshot_reads.py](tempo_legacy_database/adapters/snapshot_reads.py).
-- [backend/app/statistics_commands.py](../backend/app/statistics_commands.py)
+- Completed commands SQL split: [backend/app/statistics_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - [backend/app/study_attempt_commands.py](../backend/app/study_attempt_commands.py)
 - [backend/app/study_commands.py](../backend/app/study_commands.py)
 - [backend/app/study_routes.py](../backend/app/study_routes.py)
 - [backend/app/tactic_commands.py](../backend/app/tactic_commands.py)
 - [backend/app/tasks.py](../backend/app/tasks.py)
-- [backend/app/teaching_commands.py](../backend/app/teaching_commands.py)
+- Completed commands SQL split: [backend/app/teaching_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - [backend/app/threat_analysis_commands.py](../backend/app/threat_analysis_commands.py)
 - [services/content/src/tempo_content/bridge.py](../services/content/src/tempo_content/bridge.py)
 - [services/content/src/tempo_content/cli.py](../services/content/src/tempo_content/cli.py)
@@ -201,6 +201,6 @@ PR334 retains the physical moves, schema documentation and direct-run discovery 
 
 Completed first slice: `backend/app/services/frozen_opening_order.py` now contains legacy call-site composition only. Its six-entry SQLite `SCHEMA` list (five tables plus activation seed), 17 guarded table names and 51 generated trigger definitions moved unchanged to [database-owned DDL](tempo_legacy_database/ddl/frozen-opening/README.md). Both original initialization call sites import that DDL directly. All query/write operations moved to [the borrowed-transaction adapter](tempo_legacy_database/adapters/frozen_order.py); preference/eligibility/slot-order decisions moved to [the Study logical folder](../backend/app/study/frozen_order/README.md). Existing function signatures remain at the composition seam. There are no duplicated implementations or generic SQL execution ports.
 
-This removes 29 database-call sites from one 315-line application module. All SQL literals and the three DDL/guard assignment ASTs match the baseline exactly. PostgreSQL migration files, transaction authority, lock order and reader/fingerprint formats are unchanged. Existing legacy callers still import the composition seam: that dependency remains a next-phase domain move, not a claim of complete strict isolation. Two more baseline paths, `opening_progression.py` and `tactic_admission.py`, contain only persistence queries/locks. They moved intact into this owner’s `adapters/` directory; imports, native proof references and existing runner source maps follow their new paths. Their source bytes are unchanged and they add no application policy or shared runtime. The independent Learning runtime versions of those two SQL-only helpers also moved intact to its own `database/tempo_learning_database/adapters/` package, without sharing a runtime implementation with the backend. Its sdist-to-wheel build, installed deferred-import/authentication guard and artifact path/byte checks pass. Browser connection inspection and session/authority storage operations now live in `database/browser/study-connection-storage.ts`; its application wrapper supplies registered database names at the original point in inspection. Intelligence’s analysis worker was a confirmed engine-client `execute` false positive and needs no database move. The subsequent command-reader/repertoire/defensive batch moves the SQL-only snapshot reader intact, separates authored Studies conflict algorithms from their line query, and moves defensive setting/predicate SQL while leaving task policy and HTTP errors outside database. Intelligence’s Games reader also delegates its four complete parameter-bound queries to its own database projection, retaining its original single owning read transaction and cursor decisions. Ten baseline files are extracted/relocated and one is cleared as non-database; the 145 remaining baseline paths are still pending; false positives require inspection rather than blind movement.
+This removes 29 database-call sites from one 315-line application module. All SQL literals and the three DDL/guard assignment ASTs match the baseline exactly. PostgreSQL migration files, transaction authority, lock order and reader/fingerprint formats are unchanged. Existing legacy callers still import the composition seam: that dependency remains a next-phase domain move, not a claim of complete strict isolation. Two more baseline paths, `opening_progression.py` and `tactic_admission.py`, contain only persistence queries/locks. They moved intact into this owner’s `adapters/` directory; imports, native proof references and existing runner source maps follow their new paths. Their source bytes are unchanged and they add no application policy or shared runtime. The independent Learning runtime versions of those two SQL-only helpers also moved intact to its own `database/tempo_learning_database/adapters/` package, without sharing a runtime implementation with the backend. Its sdist-to-wheel build, installed deferred-import/authentication guard and artifact path/byte checks pass. Browser connection inspection and session/authority storage operations now live in `database/browser/study-connection-storage.ts`; its application wrapper supplies registered database names at the original point in inspection. Intelligence’s analysis worker was a confirmed engine-client `execute` false positive and needs no database move. The subsequent command-reader/repertoire/defensive batch moves the SQL-only snapshot reader intact, separates authored Studies conflict algorithms from their line query, and moves defensive setting/predicate SQL while leaving task policy and HTTP errors outside database. Intelligence’s Games reader also delegates its four complete parameter-bound queries to its own database projection, retaining its original single owning read transaction and cursor decisions. Two six-file legacy commands/controls batches move complete queries, locks and savepoint operations to their owner adapter subdirectories, while application guards, clocks, callback order, JSON decode timing and math stay outside database. Twenty-two baseline files are extracted/relocated and one is cleared as non-database; the 133 remaining baseline paths are still pending; false positives require inspection rather than blind movement.
 
 Other checklist families include legacy queue/review/attempt commands, Games/analysis projections, authored Studies/PGN operations, Content bridge orchestration and Learning runtime application paths. Close and verify a bounded owning slice at a time. Inline SQL/DDL is not accepted as a permanent exception, and moving a whole mixed module into `database/` will not by itself separate application policy.

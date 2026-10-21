@@ -1,6 +1,7 @@
 """Durable installation-wide admission policy for emergency study isolation."""
 
 from tempo_legacy_database.connections import read_connection, background_read_connection
+from tempo_legacy_database.adapters.controls import settings as storage
 from .activity_gate import activity_gate
 from contextlib import nullcontext
 from fastapi import HTTPException
@@ -34,7 +35,7 @@ def study_only_enabled(database=None) -> bool:
         reader = background_read_connection if activity_gate.in_background else read_connection
         with (activity_gate.background_control() if activity_gate.in_background else nullcontext()), reader() as settings_database:
             return study_only_enabled(settings_database)
-    setting = database.execute('SELECT study_only_mode FROM settings WHERE id=1').fetchone()
+    setting = storage.study_mode_setting(database)
     if setting is None:
         raise HTTPException(503, 'Study mode settings are unavailable; restore the database and retry')
     return bool(setting[0])

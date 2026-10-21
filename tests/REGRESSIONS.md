@@ -5023,3 +5023,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 
 - `backend/tests/test_repertoire_conflicts.py::test_authored_studies_conflict_policy_imports_without_database_or_sibling_domains` imports the extracted policy in an isolated interpreter that rejects infrastructure/sibling modules. Existing `test_conflict_fast_position_key_preserves_en_passant_distinction` retains algorithm proof. Other legacy API/cache/repair cases remain unchanged and separately owned.
 - Existing `backend/tests/test_prefix_transition_api.py` snapshot, digest/native-value, collation, bounded-batch and response-fence assertions follow the intact relocated snapshot reader. Existing `backend/tests/test_postgres_threat_analysis_commands.py` fake borrowed-transaction checks cover defensive setting/predicate composition after its SQL moves; no native PostgreSQL is implied.
+
+
+## Legacy command/control database extraction
+
+`backend/tests/test_legacy_command_database_split.py` and `backend/tests/test_legacy_control_database_split.py` own the moved command/control boundaries: no SQL/cursor calls in the selected application modules; caller rollback and teaching replay; original retry event/wakeup ordering; savepoint containment, post-close JSON decoding, coverage math and Redis settings behavior. Existing corresponding command cases retain their assertions. These focused fakes/in-memory SQLite checks do not establish native PostgreSQL execution or whole-backend domain isolation.
