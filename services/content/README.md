@@ -69,7 +69,7 @@ sequenceDiagram
   end
 ```
 
-Source anchors: Content [`bridge`](src/tempo_content/bridge.py)
+Source anchors: Content [`bridge composition/application`](src/tempo_content/bridge/README.md)
 and [`CLI`](src/tempo_content/cli.py), external
 [`Operator` receipt/retry workflow and `execution_bundle`](../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py),
 Learning [publication routes](../learning/runtime/src/tempo_learning_runtime/api.py),

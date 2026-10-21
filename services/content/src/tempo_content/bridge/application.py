@@ -14,10 +14,9 @@ from typing import Literal
 import chess
 import chess.pgn
 from pydantic import Field, model_validator
-from psycopg.types.json import Jsonb
 
-from .domain import ContentError, canonical_source, canonical_position, stable_id, decision_identity, project_move_line
-from .models import SourceModel, SourceSnapshot, SourceRepertoire, SourcePolicy
+from ..domain import ContentError, canonical_source, canonical_position, stable_id, decision_identity, project_move_line
+from ..models import SourceModel, SourceSnapshot, SourceRepertoire, SourcePolicy
 
 
 def canonical(value):
@@ -181,13 +180,6 @@ def map_import(raw, manifest):
     return source, manifest
 
 
-def lock_scope(database, source_id, operation_id=None):
-    database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("content:scope:" + source_id,))
-    reservation = database.execute("SELECT id FROM content.bridge_operations WHERE source_id=%s AND state IN ('approved','applying')", (source_id,)).fetchone()
-    if reservation and reservation["id"] != operation_id:
-        raise ContentError("source_reserved", "An approved operation owns this source; inspect/reconcile it first")
-
-
 def validate_bridge_execution_scope(source, manifest):
     """Cheap A-only compatibility checks; general Content v1 remains unchanged.
 
@@ -262,9 +254,10 @@ def projected_definition(definition,binding):
     return {**definition,'starting_fen':fen,'specification':specification,'decision_id':binding['decision_id']}
 
 
-class Bridge:
-    def __init__(self, service):
+class BridgeApplication:
+    def __init__(self, service, storage):
         self.service = service
+        self.storage = storage
 
     def draft(self, source, manifest, expected_revision, proposal=None):
         source = SourceSnapshot.model_validate(source)
@@ -286,17 +279,15 @@ class Bridge:
         identifier = stable_id(source.workspace_id, source.source_key, "draft", digest(semantic))
         source_id = stable_id(source.workspace_id, source.source_key, "source", source.source_key)
         with self.service._transaction() as database:
-            database.execute("INSERT INTO content.bridge_drafts VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                (identifier, source_id, source.source_key, expected_revision, fingerprint, Jsonb(document)))
+            self.storage.insert_draft(database, identifier, source_id, source.source_key, expected_revision, fingerprint, document)
         # A conflict may be the primary key or the logical proposal identity.
         # Read after the INSERT transaction: a concurrent winner is now durable.
         if proposal is not None:
-            previous = self.service._one("SELECT * FROM content.bridge_drafts WHERE document->'proposal'->>'proposal_id'=%s AND document->'proposal'->>'workspace_id'=%s AND source_key=%s",
-                (proposal["proposal_id"], proposal["workspace_id"], source.source_key))
+            previous = self.storage.draft_for_proposal(proposal["proposal_id"], proposal["workspace_id"], source.source_key)
             if previous is not None and previous["document"]["proposal"] != proposal:
                 raise ContentError("proposal_identity_conflict", "Proposal idempotency identity was reused with different contents")
         else:
-            previous = self.service._one("SELECT * FROM content.bridge_drafts WHERE id=%s", (identifier,))
+            previous = self.storage.draft(identifier)
         if previous is None:
             raise ContentError("draft_not_found", "Draft is unavailable")
         if previous["digest"] != fingerprint or digest(previous["document"]) != fingerprint:
@@ -304,7 +295,7 @@ class Bridge:
         return {**previous, "status": "draft"}
 
     def draft_show(self, identifier):
-        row = self.service._one("SELECT * FROM content.bridge_drafts WHERE id=%s", (identifier,))
+        row = self.storage.draft(identifier)
         if not row:
             raise ContentError("draft_not_found", "Draft is unavailable")
         return {**row, "status": "draft"}
@@ -318,19 +309,18 @@ class Bridge:
         operation_id = stable_id(self.service.workspace_id, draft["source_key"], "operation", identifier)
         with self.service._transaction() as database:
             # Consistent scope-before-operation/source ordering, including initial source creation.
-            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("content:scope:" + draft["source_id"],))
-            previous = database.execute("SELECT id FROM content.bridge_operations WHERE draft_id=%s", (identifier,)).fetchone()
+            self.storage.source_scope_lock(database, draft["source_id"])
+            previous = self.storage.operation_for_draft(database, identifier)
             if not previous:
-                lock_scope(database, draft["source_id"])
-                current = database.execute("SELECT requested_revision FROM content.sources WHERE id=%s", (draft["source_id"],)).fetchone()
+                self.storage.lock_scope(database, draft["source_id"])
+                current = self.storage.source_revision(database, draft["source_id"])
                 if (current["requested_revision"] if current else 0) != draft["expected_revision"]:
                     raise ContentError("stale_source_revision", "Draft was based on an obsolete source revision")
-                database.execute("INSERT INTO content.bridge_operations(id,draft_id,source_id,state) VALUES(%s,%s,%s,'approved')",
-                    (operation_id, identifier, draft["source_id"]))
+                self.storage.insert_operation(database, operation_id, identifier, draft["source_id"])
         return self.operation(operation_id)
 
     def operation(self, identifier):
-        row = self.service._one("SELECT o.*,d.digest,d.source_key,d.expected_revision,d.document AS draft FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.id=%s", (identifier,))
+        row = self.storage.operation(identifier)
         if not row:
             raise ContentError("operation_not_found", "No durable approved operation exists")
         document=dict(row['document'])
@@ -344,14 +334,14 @@ class Bridge:
     def _fail_before_delivery(self, identifier, failure, *, approved=False):
         operation = self.operation(identifier)
         with self.service._transaction() as database:
-            database.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('content:scope:' + operation['source_id'],))
-            row = database.execute('SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE', (identifier,)).fetchone()
+            self.storage.source_scope_lock(database, operation['source_id'])
+            row = self.storage.operation_document_for_update(database, identifier)
             if row['state'] == 'failed':
                 if row['document'].get('failure') != failure:
                     raise ContentError('terminal_failure_conflict', 'Terminal failure is immutable')
             elif row['state'] in (('approved', 'applying') if approved else ('applying',)) and 'delivery' not in row['document'] and 'receipt' not in row['document']:
-                lock_scope(database, operation['source_id'], identifier)
-                database.execute("UPDATE content.bridge_operations SET state='failed',document=document || %s,updated_at=now() WHERE id=%s", (Jsonb({'failure': failure}), identifier))
+                self.storage.lock_scope(database, operation['source_id'], identifier)
+                self.storage.mark_failed(database, identifier, failure)
             else:
                 raise ContentError('pre_delivery_failure_not_authorized', 'Only a proven undelivered application can fail locally; reconcile checkpointed Learning authority')
         return self.operation(identifier)
@@ -363,10 +353,10 @@ class Bridge:
     def cancel(self, identifier):
         operation = self.operation(identifier)
         with self.service._transaction() as database:
-            lock_scope(database, operation["source_id"], identifier)
-            row = database.execute("SELECT state FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
+            self.storage.lock_scope(database, operation["source_id"], identifier)
+            row = self.storage.operation_state_for_update(database, identifier)
             if row["state"] == "approved":
-                database.execute("UPDATE content.bridge_operations SET state='cancelled',updated_at=now() WHERE id=%s", (identifier,))
+                self.storage.mark_cancelled(database, identifier)
             elif row["state"] != "cancelled":
                 return {"operation_id": identifier, "cancelled": False, "reason": "application_started"}
         return {"operation_id": identifier, "cancelled": True}
@@ -378,10 +368,10 @@ class Bridge:
             if error.code in ('inventory_failed','bridge_inventory_limit','bridge_export_limit','bridge_document_limit'):
                 operation=self.operation(identifier)
                 with self.service._transaction() as database:
-                    lock_scope(database,operation['source_id'],identifier)
-                    row=database.execute('SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE',(identifier,)).fetchone()
+                    self.storage.lock_scope(database,operation['source_id'],identifier)
+                    row=self.storage.operation_document_for_update(database, identifier)
                     if row['state']=='applying' and not row['document'].get('delivery') and not row['document'].get('export') and not row['document'].get('export_packed'):
-                        database.execute("UPDATE content.bridge_operations SET state='failed',document=document || %s,updated_at=now() WHERE id=%s",(Jsonb({'failure':{'code':error.code,'message':error.message}}),identifier))
+                        self.storage.mark_failed(database, identifier, {'code':error.code,'message':error.message})
             raise
 
     def _prepare(self, identifier, max_slices):
@@ -393,15 +383,15 @@ class Bridge:
                 self._fail_before_delivery(identifier, {'code': error.code, 'message': error.message}, approved=True)
                 raise
         with self.service._transaction() as database:
-            lock_scope(database, operation["source_id"], identifier)
-            row = database.execute("SELECT state FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
+            self.storage.lock_scope(database, operation["source_id"], identifier)
+            row = self.storage.operation_state_for_update(database, identifier)
             if row["state"] == "cancelled":
                 raise ContentError("operation_cancelled", "Cancelled intent cannot authorize application")
             if row['state']=='failed':
                 raise ContentError('operation_failed','Failed pre-delivery intent cannot authorize application; inspect its failure and create a corrected draft')
             if row["state"] == "completed":
                 return self.operation(identifier)
-            database.execute("UPDATE content.bridge_operations SET state='applying',updated_at=now() WHERE id=%s", (identifier,))
+            self.storage.mark_applying(database, identifier)
         draft = operation["draft"]
         loaded = self.service.load_source(draft["source"], draft["expected_revision"], operation_id=identifier)
         for _ in range(max_slices):
@@ -422,7 +412,7 @@ class Bridge:
         else:
             prepared = {"pending": True, **loaded}
         with self.service._transaction() as database:
-            database.execute("UPDATE content.bridge_operations SET document=document || %s,updated_at=now() WHERE id=%s AND state='applying'", (Jsonb(prepared), identifier))
+            self.storage.merge_prepared_document(database, identifier, prepared)
         return self.operation(identifier)
 
     def record(self, identifier, receipt):
@@ -444,13 +434,13 @@ class Bridge:
         if receipt.get("transport") != "authenticated_learning_http" or not receipt.get("endpoint"):
             raise ContentError("receipt_transport_missing", "Operator transport provenance is required")
         with self.service._transaction() as database:
-            lock_scope(database, operation["source_id"], identifier)
-            row = database.execute("SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
+            self.storage.lock_scope(database, operation["source_id"], identifier)
+            row = self.storage.operation_document_for_update(database, identifier)
             if row["state"] not in ("applying", "completed"):
                 raise ContentError("application_not_authorized", "Receipt cannot replace durable application authorization")
             if row["state"] == "completed" and row["document"].get("receipt") != receipt:
                 raise ContentError("receipt_conflict", "Completed receipt is immutable")
-            database.execute("UPDATE content.bridge_operations SET state='completed',document=document || %s,updated_at=now() WHERE id=%s", (Jsonb({"receipt": receipt}), identifier))
+            self.storage.mark_completed(database, identifier, receipt)
         return self.operation(identifier)
 
     def record_terminal_failure(self, identifier, failure):
@@ -473,16 +463,16 @@ class Bridge:
             raise ContentError("failure_receipt_mismatch", "Failure does not bind this authorized delivery")
         with self.service._transaction() as database:
             # Terminal replay must also work after a successor reserves the source.
-            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("content:scope:" + operation["source_id"],))
-            row = database.execute("SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
+            self.storage.source_scope_lock(database, operation["source_id"])
+            row = self.storage.operation_document_for_update(database, identifier)
             if row["state"] == "failed":
                 if row["document"].get("failure") != failure:
                     raise ContentError("terminal_failure_conflict", "Terminal failure is immutable")
             elif row["state"] == "applying" and row["document"].get("delivery") == failure["delivery"]:
-                lock_scope(database, operation["source_id"], identifier)
+                self.storage.lock_scope(database, operation["source_id"], identifier)
                 if row["document"].get("receipt") is not None:
                     raise ContentError("terminal_failure_conflict", "A completion receipt cannot become failure")
-                database.execute("UPDATE content.bridge_operations SET state='failed',document=document || %s,updated_at=now() WHERE id=%s", (Jsonb({"failure": failure}), identifier))
+                self.storage.mark_failed(database, identifier, failure)
             else:
                 raise ContentError("application_not_authorized", "Terminal failure cannot replace another operation outcome")
         return self.operation(identifier)
@@ -495,8 +485,8 @@ class Bridge:
         legacy_hashes={key:digest(value) for key,value in operation['document'].get('snapshots',{}).items()}
         values=dict(values)
         with self.service._transaction() as database:
-            lock_scope(database, operation["source_id"], identifier)
-            row = database.execute("SELECT state,document FROM content.bridge_operations WHERE id=%s FOR UPDATE", (identifier,)).fetchone()
+            self.storage.lock_scope(database, operation["source_id"], identifier)
+            row = self.storage.operation_document_for_update(database, identifier)
             if row["state"] not in ("applying", "completed"):
                 raise ContentError("application_not_authorized", "Checkpoint requires durable application authorization")
             document = row["document"]
@@ -511,18 +501,18 @@ class Bridge:
             for key,value in values.items():
                 if key != 'snapshots_packed' and key in document and document[key] != value:
                     raise ContentError("checkpoint_conflict", "Delivery identity is immutable")
-            database.execute("UPDATE content.bridge_operations SET document=document || %s,updated_at=now() WHERE id=%s", (Jsonb(values),identifier))
+            self.storage.merge_checkpoint(database, identifier, values)
         return self.operation(identifier)
 
     def export(self, publication_id, generation, manifest=None):
         if manifest is None:
-            prepared = self.service._one("SELECT document->'export' AS export FROM content.bridge_operations WHERE document->'export'->'publication'->>'publication_id'=%s AND document->'export'->'publication'->>'publication_generation'=%s", (publication_id,str(generation)))
+            prepared = self.storage.legacy_export(publication_id, generation)
             if prepared and prepared.get('export'):
                 return prepared['export']
-            packed=self.service._one("SELECT document->'export_packed' AS packed FROM content.bridge_operations WHERE document->'export_identity'->>'publication_id'=%s AND document->'export_identity'->>'publication_generation'=%s",(publication_id,str(generation)))
+            packed=self.storage.packed_export(publication_id, generation)
             if packed and packed.get('packed'):
                 return unpack_bridge_document(packed['packed'])
-        row = self.service._one("SELECT * FROM content.publications WHERE publication_id=%s AND generation=%s", (publication_id, generation))
+        row = self.storage.publication(publication_id, generation)
         if not row:
             raise ContentError("publication_not_found", "Immutable publication is unavailable")
         source = SourceSnapshot.model_validate(row["provenance"]["snapshot"])
@@ -624,7 +614,7 @@ class Bridge:
 
     def proposal_draft(self, proposal):
         proposal = ResponseProposal.model_validate(proposal)
-        previous_draft = self.service._one("SELECT id,document FROM content.bridge_drafts WHERE document->'proposal'->>'proposal_id'=%s AND document->'proposal'->>'workspace_id'=%s AND source_key=%s", (proposal.proposal_id,proposal.workspace_id,proposal.source_key))
+        previous_draft = self.storage.proposal_draft_identity(proposal.proposal_id, proposal.workspace_id, proposal.source_key)
         if previous_draft:
             if previous_draft['document']['proposal']!=proposal.model_dump(mode='json'):
                 raise ContentError('proposal_identity_conflict','Proposal idempotency identity was reused with different contents')
@@ -664,7 +654,7 @@ class Bridge:
                 if item["route_key"] == route.key and item["policy_key"] == proposal.policy_key and item["ply"] < proposal.anchor_ply)
             document["bindings"].append({"route_key": route_key, "policy_key": proposal.policy_key, "ply": proposal.anchor_ply + 1, "exercise_key": key})
         # Retain original provenance/alias/re-entry instead of relabeling imported scope.
-        previous = self.service._one("SELECT d.document FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.source_id=%s AND o.state='completed' ORDER BY o.updated_at DESC LIMIT 1", (current["id"],))
+        previous = self.storage.latest_completed_provenance(current["id"])
         if previous is None:
             raise ContentError("proposal_provenance_unavailable", "Proposal application needs the original complete import manifest")
         return self.draft(document, previous["document"]["manifest"], proposal.expected_source_revision, proposal.model_dump(mode="json"))

@@ -1,0 +1,21 @@
+# Content bridge application and composition
+
+**Current source in this unmerged extraction; live deployment unverified.** The supported `tempo_content.bridge.Bridge(service)` entry point remains unchanged. This package separates the existing application decisions from database operations; it introduces no new schema, delivery authority or cross-owner connection.
+
+```mermaid
+flowchart LR
+  composition[Public Bridge composition] --> application[Content bridge application]
+  composition --> storage[Content BridgeStore adapter]
+  application -->|semantic facts and commands; original transaction| storage
+  storage --> content[Content-owned PostgreSQL tables]
+```
+
+[application.py](application.py) owns import/proposal validation, immutable draft identities, approval/state decisions, export construction and receipt/checkpoint rules. The [composition entry point](__init__.py) supplies the [database adapter](../../../../../database/tempo_content_database/adapters/bridge.py), which owns the existing complete SQL statements, JSON driver encoding, scope locks and row projections. No generic SQL execution capability is passed to the application.
+
+Application orchestration retains the existing `ContentService._transaction()` section boundaries and order. Adapter mutations borrow that transaction and never open or commit another one; adapter read projections use the same existing `ContentService._one()` owner reads. The source-scope lock still precedes the operation/source checks. `ContentService` now imports the shared scope-lock implementation directly from its database owner, rather than reaching back into this application package.
+
+The CLI's explicit readiness connection lives in [the database readiness owner](../../../../../database/tempo_content_database/ddl/migrate.py); its connection context and readiness checks are unchanged. Its exported database-error alias is the original driver exception class, preserving CLI error classification and diagnostic redaction.
+
+Stored data and enforced relationships remain documented in the [Content database chart/dictionary](../../../../../database/tempo_content_database/schema/README.md). `bridge_drafts` still stores immutable source/manifest/proposal documents; `bridge_operations` still stores durable approval/application state, delivery/checkpoint observations and receipts. No table, field, foreign key, migration or checksum changed. Public package initialization still exports the existing concrete `ContentService`; this split does not claim that importing the entire Content package is driver-free.
+
+Focused proofs: the existing bridge, execution projection and inventory-cursor cases, plus `tests/test_bridge_storage_boundary.py` for semantic approval/lock ordering and CLI readiness composition. Installed package/import/help/migration-resource checks run without services. Native PostgreSQL and external delivery remain separately owned and were not run for this relocation.

@@ -258,7 +258,7 @@ def test_C3_expanded_export_budget_rejects_before_retaining_oversized_scope():
 
 
 def test_C3_export_computes_each_definition_identity_at_most_once(monkeypatch):
-    from tempo_content import bridge as module
+    from tempo_content.bridge import application as module
     from tempo_content.domain import build_publication
     from types import SimpleNamespace
     import chess
@@ -272,13 +272,13 @@ def test_C3_export_computes_each_definition_identity_at_most_once(monkeypatch):
         if kind=='card':calls.append(key)
         return original(workspace,source_key,kind,key)
     monkeypatch.setattr(module,'stable_id',counted)
-    exported=module.Bridge(SimpleNamespace(_one=lambda *args:row)).export(publication.publication_id,1,description)
+    exported=Bridge(SimpleNamespace(_one=lambda *args:row)).export(publication.publication_id,1,description)
     assert len(exported['publication']['definitions'])==len(source.exercises)
     assert len(calls)<=len(source.exercises)
 
 
 def test_C3_packed_bridge_document_retains_exact_types_and_rejects_corruption(monkeypatch):
-    from tempo_content import bridge as module
+    from tempo_content.bridge import application as module
     original={'schema_version':1,'flag':True,'source':['a'*10000], 'revision':2}
     packed=module.pack_bridge_document(original)
     assert len(packed['data']) < len(json.dumps(original))

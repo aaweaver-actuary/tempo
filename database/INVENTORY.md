@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **34 files**; one candidate is confirmed non-database application code, and **121 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **36 files**; one candidate is confirmed non-database application code, and **119 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -130,8 +130,8 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/tasks.py](../backend/app/tasks.py)
 - Completed commands SQL split: [backend/app/teaching_commands.py](tempo_legacy_database/adapters/commands/README.md).
 - [backend/app/threat_analysis_commands.py](../backend/app/threat_analysis_commands.py)
-- [services/content/src/tempo_content/bridge.py](../services/content/src/tempo_content/bridge.py)
-- [services/content/src/tempo_content/cli.py](../services/content/src/tempo_content/cli.py)
+- Completed Content bridge split: [application/public composition](../services/content/src/tempo_content/bridge/README.md) and [database operations](tempo_content_database/adapters/bridge.py).
+- Completed Content CLI readiness split: [cli.py](../services/content/src/tempo_content/cli.py) retains parsing/commands; [readiness connection](tempo_content_database/ddl/migrate.py) stays with DDL.
 - [services/game-evidence/src/tempo_game_evidence/analysis_export.py](../services/game-evidence/src/tempo_game_evidence/analysis_export.py)
 - [services/game-evidence/src/tempo_game_evidence/api.py](../services/game-evidence/src/tempo_game_evidence/api.py)
 - [services/game-evidence/src/tempo_game_evidence/delivery.py](../services/game-evidence/src/tempo_game_evidence/delivery.py)
@@ -207,3 +207,6 @@ Other checklist families include legacy queue/review/attempt commands, Games/ana
 
 
 Learning’s six-file deletion/miss/frozen-order and recovery/bootstrap/teaching batches preserve their original caller-owned transactions. Frozen preference computation lives in the Learning application `study/frozen_order/` directory; the other existing application modules remain composition seams. Eighteen Learning candidates and further legacy/domain coupling remain unfinished.
+
+
+Content’s additional five existing source/exercise/binding/publication/coverage decisions now live in its application `policy/` folder. Worker dispatch, route traversal and publication orchestration still inside the database store are further extraction work beyond the original mixed-file checklist, not permanent exceptions.

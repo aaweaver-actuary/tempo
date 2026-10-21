@@ -5,11 +5,10 @@ import os
 import sys
 from pathlib import Path
 
-import psycopg
 from tempo_content_publication_contracts.v1 import serialize_contract
 
 from .domain import ContentError
-from tempo_content_database.ddl.migrate import migrate, readiness
+from tempo_content_database.ddl.migrate import DatabaseError, migrate, readiness_from_url
 from tempo_content_database.adapters.store import ContentService
 
 
@@ -101,8 +100,7 @@ def main(argv=None):
             migrate(os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL'],workspace,arguments.runtime_role)
             result = {'status':'migrated','workspace_id':workspace}
         elif arguments.command=='readiness':
-            with psycopg.connect(os.environ['TEMPO_CONTENT_DATABASE_URL']) as database:
-                result = readiness(database,workspace)
+            result = readiness_from_url(os.environ['TEMPO_CONTENT_DATABASE_URL'],workspace)
         else:
             with ContentService(os.environ['TEMPO_CONTENT_DATABASE_URL'],workspace) as service:
                 operation = arguments.operation
@@ -173,10 +171,10 @@ def main(argv=None):
         else:
             print(json.dumps(result,sort_keys=True,default=str))
         return 0
-    except (ContentError,ValueError,KeyError,OSError,psycopg.Error) as error:
+    except (ContentError,ValueError,KeyError,OSError,DatabaseError) as error:
         # Do not print credentials or driver connection strings in diagnostics.
-        code = error.code if isinstance(error,ContentError) else 'configuration_missing' if isinstance(error,KeyError) else 'database_unavailable' if isinstance(error,psycopg.Error) else 'invalid_input'
-        message = str(error) if isinstance(error,(ContentError,ValueError)) and not isinstance(error,psycopg.Error) else 'Required configuration, input, or database operation is unavailable'
+        code = error.code if isinstance(error,ContentError) else 'configuration_missing' if isinstance(error,KeyError) else 'database_unavailable' if isinstance(error,DatabaseError) else 'invalid_input'
+        message = str(error) if isinstance(error,(ContentError,ValueError)) and not isinstance(error,DatabaseError) else 'Required configuration, input, or database operation is unavailable'
         print(json.dumps({'status':'error','code':code,'message':message}),file=sys.stderr)
         return 2
 

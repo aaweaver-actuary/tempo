@@ -151,3 +151,12 @@ historical mapping; these definitions cannot establish existing-card misses.
 `test_C3_preparation_persists_packed_export_and_public_operation_rehydrates` is the
 native storage regression: it failed on the original inline checkpoint and proves
 both actual packed persistence and exact public export/replay after the repair.
+
+## Root database bridge extraction
+
+`tests/test_bridge_storage_boundary.py` owns semantic approval facts and source-scope-before-row-check ordering on the same opaque borrowed transaction, plus unchanged CLI/readiness configuration and connection-context composition. The existing bridge/export, execution projection and cursor assertions remain. Bridge public composition now lives in `src/tempo_content/bridge/__init__.py`, application logic in `bridge/application.py`, and concrete SQL in `database/tempo_content_database/adapters/bridge.py` at repository root. The installed migration-resource regression follows that root database package's `ddl/migrations`, preserving all manifest/checksum assertions.
+
+
+## Source application helper separation
+
+`tests/test_source_policy.py` covers source/workspace admission, exercise turn checks, binding responses, publication status/error selection and coverage labels over supplied facts. Its import guard keeps storage, network and sibling implementations out of the pure policy module. SQL, locks, fencing and hook timing remain in the existing root database store; these synthetic cases do not replace native contracts.
