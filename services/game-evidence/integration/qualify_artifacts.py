@@ -31,7 +31,7 @@ def main():
     try:
         report["revision"]=run(["git","rev-parse","HEAD"],ROOT,"revision").strip()
         report["dirty"]=run(["git","status","--short"],ROOT,"source-status").strip()
-        for relative in ["services/game-evidence","packages/chess-core","contracts/content-publication","contracts/game-evidence"]:
+        for relative in ["services/game-evidence","database/tempo_game_evidence_database","packages/chess-core","contracts/content-publication","contracts/game-evidence"]:
             for path in (ROOT/relative).rglob("*"):
                 if path.is_file() and not any(part in {".venv","__pycache__","test-results","dist",".pytest_cache"} for part in path.parts):
                     report["source_inputs"][str(path.relative_to(ROOT))]=hashlib.sha256(path.read_bytes()).hexdigest()

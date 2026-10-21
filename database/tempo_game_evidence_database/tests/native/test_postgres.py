@@ -24,7 +24,7 @@ from tempo_game_evidence.providers import AccountImport, enqueue_import, import_
 from tempo_game_evidence_contracts.v2 import EvidenceDelivery
 
 # This fixture corpus is deliberately local to the owning service.
-FIXTURES=Path(__file__).resolve().parents[1]/"fixtures"
+FIXTURES=Path(__file__).resolve().parents[4]/"services/game-evidence/fixtures"
 
 
 def deliver_one(*arguments, **keywords):

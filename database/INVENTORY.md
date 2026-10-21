@@ -189,7 +189,7 @@ These concrete source-placement/discovery items remain even though the original1
 
 | Owner / current pending scope | Required placement or reference work | Current validation limit |
 | --- | --- | --- |
-| Game Evidence | Two native test/runner files and one database source-fingerprint test scope; qualifier must fingerprint the root owner. | Native files move whole; runtime wheel must exclude tests/tooling and source fingerprint pure discovery remains explicit. |
+| Completed Game Evidence | [Native suite and source metadata tests](tempo_game_evidence_database/tests/README.md),[runner](tempo_game_evidence_database/tooling/README.md) and qualifier root-owner fingerprints are centralized. | Three installed focused checks and sdist→wheel/resource checks pass; all native functions/SQL/guards unchanged. Native tooling remains source-checkout-only and unexecuted. |
 | Intelligence | Ten native integration runner/test/fixture/support files,including actual-A/Analysis qualification; owner artifact/discovery references. | Whole database-specific native harness,not a new installed native product; no actual engine/provider run. |
 | Learning / remediation / legacy review | Seven native/restore files plus a mixed remediation guard scope; mixed qualification-policy cases stay outside. | Preserve resource/target/cleanup guards and pure/native discovery; native/restore tooling is sdist-only. |
 | Legacy backend | Native bridge,discovery-acceptance and queue-admission fixtures/tests; associated database-native qualification tooling under inspection. | One stale acceptance-class import is being repaired; import/plan checks only,not actual native proof. |

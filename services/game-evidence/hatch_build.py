@@ -10,5 +10,9 @@ class CustomBuildHook(BuildHookInterface):
         source = local if local.is_dir() else repository
         if not source.is_dir():
             raise FileNotFoundError("Missing tempo_game_evidence_database build input")
-        destination = "tempo_game_evidence_database" if self.target_name == "wheel" else "database/tempo_game_evidence_database"
-        build_data["force_include"][str(source)] = destination
+        if self.target_name == "wheel":
+            for entry in sorted(source.iterdir()):
+                if entry.name not in {"tests", "tooling"}:
+                    build_data["force_include"][str(entry)] = "tempo_game_evidence_database/" + entry.name
+        else:
+            build_data["force_include"][str(source)] = "database/tempo_game_evidence_database"

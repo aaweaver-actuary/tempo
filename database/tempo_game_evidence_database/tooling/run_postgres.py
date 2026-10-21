@@ -17,8 +17,9 @@ from psycopg.conninfo import make_conninfo
 from psycopg import sql
 
 HERE = Path(__file__).resolve().parent
-SERVICE = HERE.parent
-ROOT = SERVICE.parents[1]
+ROOT = HERE.parents[2]
+SERVICE = ROOT / "services/game-evidence"
+TESTS = HERE.parent / "tests"
 
 
 def docker(*arguments, check=True):
@@ -132,7 +133,7 @@ def main():
                            TEMPO_GAME_EVIDENCE_TEST_UPGRADE_URL=make_conninfo(migration_url,dbname="evidence_upgrade"),
                            PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
         junit=directory/"native.xml"
-        command=[sys.executable,"-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(HERE/"test_postgres.py"),
+        command=[sys.executable,"-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(TESTS/"native/test_postgres.py"),str(TESTS/"test_source_fingerprints.py"),
                  "-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
         if len(sys.argv)>2:
             command.extend(["-k",sys.argv[2]])
