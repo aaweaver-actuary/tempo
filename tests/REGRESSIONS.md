@@ -5107,3 +5107,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Queue refresh bounded reads and capacity storage
 
 `backend/tests/test_queue_refresh_read_database_split.py` owns complete fixed read/timeout/capacity/presentation delegation and retained application kernels. Six existing suites retarget reader/factory monkeypatches to their moved defining modules; import subprocess includes the root database path, with assertions unchanged. The79-site source proof and focused selection retain three original fixture limitations recorded in database/BASELINE-CHECK-LIMITATIONS.md; native/full-system behavior is not qualified.
+
+
+## Borrowed Study review storage
+
+`backend/tests/test_review_service_storage_boundary.py` owns six fake borrowed-transaction boundaries for schedule replay, clock/receipt/provenance/seed and lazy requeue/position/classification ordering. The existing feedback canonical-writer consumer guard remains selected; no native/SQLite integration or Study independence claim follows from these checks.
