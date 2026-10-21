@@ -1314,7 +1314,7 @@ def initialize() -> None:
         database.execute("PRAGMA journal_mode = WAL")
         database.execute("PRAGMA synchronous = NORMAL")
         database.execute("BEGIN IMMEDIATE")
-        from app.services.frozen_opening_order import SCHEMA as frozen_order_schema
+        from tempo_legacy_database.ddl.frozen_opening_schema import SCHEMA as frozen_order_schema
         statements.extend(frozen_order_schema)
         for statement in statements:
             database.execute(statement)
@@ -1757,7 +1757,7 @@ def initialize() -> None:
             BEGIN SELECT RAISE(ABORT,'This card was permanently deleted and cannot be recreated'); END""")
 
 
-    from app.services.frozen_opening_order import SQLITE_GUARDS
+    from tempo_legacy_database.ddl.frozen_opening_schema import SQLITE_GUARDS
     with connection() as frozen_schema_database:
         frozen_existing_tables = {row[0] for row in frozen_schema_database.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         for frozen_guard_statement in SQLITE_GUARDS:

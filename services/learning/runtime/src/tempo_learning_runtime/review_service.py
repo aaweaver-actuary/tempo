@@ -4,7 +4,7 @@ from .clock import date
 import hashlib, json
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .scheduler import schedule_review, unlock_ready
-from .opening_progression import unlock_legacy_children_after_review
+from tempo_learning_database.adapters.opening_progression import unlock_legacy_children_after_review
 
 
 def rebuild_defense_schedule(

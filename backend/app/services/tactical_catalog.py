@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .cards import card_id
 from .puzzles import validate_puzzle_record
-from .tactic_admission import count_daily_tactic_introductions, lock_daily_tactic_admission
+from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions, lock_daily_tactic_admission
 
 DATA_ROOT = Path(os.getenv('TEMPO_CATALOG_ROOT', str(Path(__file__).resolve().parents[3] / 'public')))
 

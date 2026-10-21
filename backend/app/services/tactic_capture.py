@@ -11,7 +11,7 @@ from ..models import TacticCaptureRequest
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .cards import card_id
 from .review_service import ensure_card_queued_after
-from .tactic_admission import lock_daily_tactic_admission
+from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission
 
 
 def game_capture_id(finding_id: str) -> uuid.UUID:

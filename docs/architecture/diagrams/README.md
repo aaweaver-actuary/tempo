@@ -8,7 +8,7 @@ sequence to inspect the transaction or failure boundary in question. The
 the target/migration authorities. Source wins if a drawing disagrees; correct the
 drawing and disclose the discrepancy.
 
-Database table/key/field views live in the [database directory index](../../../database/README.md); physical colocation preserves the component owners shown here.
+Database table/key/field views live in the [database directory index](../../../database/README.md); physical colocation preserves the component owners shown here. The [unmerged frozen-order extraction](../../../backend/app/study/frozen_order/README.md) documents its bounded policy/storage wiring and remaining legacy caller coupling.
 
 ## Source and status
 

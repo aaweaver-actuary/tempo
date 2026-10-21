@@ -18,7 +18,7 @@ from .services.cards import card_id
 from .services.review_service import ensure_card_queued_after
 from .services.tactical_catalog import activate
 from .services.tactic_capture import capture_tactic
-from .services.tactic_admission import lock_daily_tactic_admission
+from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission
 
 
 def create_tactic_capture(database: PostgresConnection, payload: dict[str, Any]) -> dict:

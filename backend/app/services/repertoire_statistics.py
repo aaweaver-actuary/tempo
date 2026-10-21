@@ -8,7 +8,7 @@ import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from tempo_legacy_database.connections import read_connection
-from .opening_progression import PRACTICED_OPENING_PARENT_SQL
+from tempo_legacy_database.adapters.opening_progression import PRACTICED_OPENING_PARENT_SQL
 
 
 WINDOWS = {"30d": 30, "90d": 90, "all": None}

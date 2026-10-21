@@ -2,9 +2,9 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The following **156 mixed application/SQL modules remain to be separated**. Complete centralization is unfinished while their database operations live outside the root `database/` tree. This is a starting checklist, not an accepted permanent exception. Extract application/domain logic into logically named folders outside `database/`, keep each database operation inside it, and connect the single implementations through explicit interfaces and outer composition. Application-facing tests and public wire JSON schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL modules**. The frozen-order split and four SQL-only helper moves close five source files; **151 remain to be separated**. Complete centralization is unfinished while their database operations live outside the root `database/` tree. This is a starting checklist, not an accepted permanent exception. Extract application/domain logic into logically named folders outside `database/`, keep each database operation inside it, and connect the single implementations through explicit interfaces and outer composition. Application-facing tests and public wire JSON schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
-Mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
+Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
 <details>
 <summary>Paths for follow-up extraction review</summary>
@@ -55,7 +55,7 @@ Mixed source files found by a conservative database-call/IndexedDB text scan: **
 - [backend/app/services/durable_scheduling.py](../backend/app/services/durable_scheduling.py)
 - [backend/app/services/durable_tasks.py](../backend/app/services/durable_tasks.py)
 - [backend/app/services/engine_scheduling.py](../backend/app/services/engine_scheduling.py)
-- [backend/app/services/frozen_opening_order.py](../backend/app/services/frozen_opening_order.py)
+- Completed SQL/DDL split: [backend/app/services/frozen_opening_order.py](../backend/app/services/frozen_opening_order.py) now only binds [Study policy](../backend/app/study/frozen_order/README.md) and [database storage](tempo_legacy_database/adapters/frozen_order.py). Legacy caller composition migration remains.
 - [backend/app/services/game_analysis_worker.py](../backend/app/services/game_analysis_worker.py)
 - [backend/app/services/game_findings.py](../backend/app/services/game_findings.py)
 - [backend/app/services/game_sync.py](../backend/app/services/game_sync.py)
@@ -69,7 +69,7 @@ Mixed source files found by a conservative database-call/IndexedDB text scan: **
 - [backend/app/services/opening_capacity_admission.py](../backend/app/services/opening_capacity_admission.py)
 - [backend/app/services/opening_graph.py](../backend/app/services/opening_graph.py)
 - [backend/app/services/opening_graph_recovery.py](../backend/app/services/opening_graph_recovery.py)
-- [backend/app/services/opening_progression.py](../backend/app/services/opening_progression.py)
+- Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/opening_progression.py](tempo_legacy_database/adapters/opening_progression.py).
 - [backend/app/services/opening_ranking_snapshot.py](../backend/app/services/opening_ranking_snapshot.py)
 - [backend/app/services/postgres_coverage_candidates.py](../backend/app/services/postgres_coverage_candidates.py)
 - [backend/app/services/postgres_coverage_explorer.py](../backend/app/services/postgres_coverage_explorer.py)
@@ -114,7 +114,7 @@ Mixed source files found by a conservative database-call/IndexedDB text scan: **
 - [backend/app/services/study_mode.py](../backend/app/services/study_mode.py)
 - [backend/app/services/study_portable.py](../backend/app/services/study_portable.py)
 - [backend/app/services/study_priority.py](../backend/app/services/study_priority.py)
-- [backend/app/services/tactic_admission.py](../backend/app/services/tactic_admission.py)
+- Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/tactic_admission.py](tempo_legacy_database/adapters/tactic_admission.py).
 - [backend/app/services/tactic_capture.py](../backend/app/services/tactic_capture.py)
 - [backend/app/services/tactical_catalog.py](../backend/app/services/tactical_catalog.py)
 - [backend/app/services/tactical_opportunities.py](../backend/app/services/tactical_opportunities.py)
@@ -147,7 +147,7 @@ Mixed source files found by a conservative database-call/IndexedDB text scan: **
 - [services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py](../services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py)
 - [services/learning/runtime/src/tempo_learning_runtime/gateway.py](../services/learning/runtime/src/tempo_learning_runtime/gateway.py)
 - [services/learning/runtime/src/tempo_learning_runtime/maintenance.py](../services/learning/runtime/src/tempo_learning_runtime/maintenance.py)
-- [services/learning/runtime/src/tempo_learning_runtime/opening_progression.py](../services/learning/runtime/src/tempo_learning_runtime/opening_progression.py)
+- Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/opening_progression.py](tempo_learning_database/adapters/opening_progression.py).
 - [services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py](../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py)
 - [services/learning/runtime/src/tempo_learning_runtime/publications.py](../services/learning/runtime/src/tempo_learning_runtime/publications.py)
 - [services/learning/runtime/src/tempo_learning_runtime/queue_application.py](../services/learning/runtime/src/tempo_learning_runtime/queue_application.py)
@@ -162,7 +162,7 @@ Mixed source files found by a conservative database-call/IndexedDB text scan: **
 - [services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py](../services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py)
 - [services/learning/runtime/src/tempo_learning_runtime/study_attempts.py](../services/learning/runtime/src/tempo_learning_runtime/study_attempts.py)
 - [services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py](../services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py)
-- [services/learning/runtime/src/tempo_learning_runtime/tactic_admission.py](../services/learning/runtime/src/tempo_learning_runtime/tactic_admission.py)
+- Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/tactic_admission.py](tempo_learning_database/adapters/tactic_admission.py).
 - [services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py](../services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py)
 - [services/learning/runtime/src/tempo_learning_runtime/teaching_commands.py](../services/learning/runtime/src/tempo_learning_runtime/teaching_commands.py)
 
@@ -199,8 +199,8 @@ Preserve `scripts/study-composition.ts`'s loaded-graph guard (including changed 
 
 PR334 retains the physical moves, schema documentation and direct-run discovery repairs. A dependent follow-up separates the mixed implementations so this large file-map diff remains reviewable. The checklist contains 155 Python files (46,247 lines), 2,574 database calls across 828 functions, plus one browser file. These are static workload counts, not proof that every function is database-only or that its transaction can be split safely.
 
-The first small extraction is `backend/app/services/frozen_opening_order.py`: move its six-entry SQLite `SCHEMA` list (five CREATE TABLE statements plus the activation seed) into `database/tempo_legacy_database/ddl/frozen_opening_schema.py`; point the existing SQLite initializer and test fixture directly at that owner. Preserve every statement and order. This removes the reverse dependency where `database/tempo_legacy_database/connections.py` imports DDL from application code. It changes no schema, initialization timing or transaction authority.
+Completed first slice: `backend/app/services/frozen_opening_order.py` now contains legacy call-site composition only. Its six-entry SQLite `SCHEMA` list (five tables plus activation seed), 17 guarded table names and 51 generated trigger definitions moved unchanged to [database-owned DDL](tempo_legacy_database/ddl/frozen-opening/README.md). Both original initialization call sites import that DDL directly. All query/write operations moved to [the borrowed-transaction adapter](tempo_legacy_database/adapters/frozen_order.py); preference/eligibility/slot-order decisions moved to [the Study logical folder](../backend/app/study/frozen_order/README.md). Existing function signatures remain at the composition seam. There are no duplicated implementations or generic SQL execution ports.
 
-Then separate frozen-order persistence/read projections from preference/eligibility decisions. Reuse the existing borrowed transaction and public fact/command interfaces; keep ordering/fingerprint decisions outside `database/` in the Study logical folder and supply storage capabilities through outer composition. Do not introduce a generic `execute(sql)` port, duplicate old/new implementations or present a compatibility facade as a finished strict domain boundary. Queue presentation/issuance and rollback operations need their original atomicity and lock order retained. Update the SQLite source-schema README separately from the PostgreSQL charts; the two dialects are not assumed identical.
+This removes 29 database-call sites from one 315-line application module. All SQL literals and the three DDL/guard assignment ASTs match the baseline exactly. PostgreSQL migration files, transaction authority, lock order and reader/fingerprint formats are unchanged. Existing legacy callers still import the composition seam: that dependency remains a next-phase domain move, not a claim of complete strict isolation. Two more baseline paths, `opening_progression.py` and `tactic_admission.py`, contain only persistence queries/locks. They moved intact into this owner’s `adapters/` directory; imports, native proof references and existing runner source maps follow their new paths. Their source bytes are unchanged and they add no application policy or shared runtime. The independent Learning runtime versions of those two SQL-only helpers also moved intact to its own `database/tempo_learning_database/adapters/` package, without sharing a runtime implementation with the backend. Its sdist-to-wheel build, installed deferred-import/authentication guard and artifact path/byte checks pass. The 151 remaining baseline paths are still pending; false positives require inspection rather than blind movement.
 
 Other checklist families include legacy queue/review/attempt commands, Games/analysis projections, authored Studies/PGN operations, Content bridge orchestration and Learning runtime application paths. Close and verify a bounded owning slice at a time. Inline SQL/DDL is not accepted as a permanent exception, and moving a whole mixed module into `database/` will not by itself separate application policy.

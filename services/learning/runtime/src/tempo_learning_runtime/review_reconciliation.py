@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from .clock import date
 import json
 
-from .opening_progression import unlock_legacy_children_after_review
+from tempo_learning_database.adapters.opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
 
 

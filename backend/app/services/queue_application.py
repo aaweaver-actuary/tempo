@@ -13,7 +13,7 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from . import frozen_opening_order
-from .opening_progression import PRACTICED_OPENING_PARENT_SQL
+from tempo_legacy_database.adapters.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .pgn import ends_on_trained_move
 from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
 from .real_game_feedback import MISS_REASON

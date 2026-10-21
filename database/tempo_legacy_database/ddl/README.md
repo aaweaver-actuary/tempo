@@ -6,6 +6,7 @@
 | --- | --- |
 | [background_metrics_schema.py](background_metrics_schema.py) | SQLite compatibility schema for bounded background diagnostics. |
 | [canonical_scope_schema.py](canonical_scope_schema.py) | SQLite compatibility migrations for the canonical publication version model. |
+| [frozen_opening_schema.py](frozen_opening_schema.py) | Existing SQLite frozen-order schema and invalidation triggers; [relationships and fields](frozen-opening/README.md). |
 | [schema_version.py](schema_version.py) | Authoritative PostgreSQL schema readiness version. |
 | [study_migration.py](study_migration.py) | Add study-owned cards without changing existing scheduling identities. |
 | [tactic_capture_migration.py](tactic_capture_migration.py) | Narrow compatibility repair, also available after verified legacy import. |

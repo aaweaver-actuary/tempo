@@ -7,7 +7,7 @@ from .models import TacticAttemptRequest
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .review_service import ensure_card_queued_after
-from .tactic_admission import lock_daily_tactic_admission
+from tempo_learning_database.adapters.tactic_admission import lock_daily_tactic_admission
 from tempo_chess_core import card_id
 
 

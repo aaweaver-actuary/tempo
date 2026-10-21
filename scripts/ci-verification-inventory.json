@@ -118,7 +118,7 @@
       "backend/app/services/study_grading.py",
       "backend/app/services/study_pgn.py",
       "backend/app/services/study_portable.py",
-      "backend/app/services/tactic_admission.py",
+      "database/tempo_legacy_database/adapters/tactic_admission.py",
       "backend/app/services/tactic_capture.py",
       "backend/app/services/tactical_catalog.py",
       "backend/app/services/tactical_opportunities.py",

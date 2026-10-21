@@ -72,6 +72,23 @@ The focused tactic suite exposed two fixture imports still searching `scripts/` 
 
 Focused checks: 71 cases passed across CLI bootstrap (8), tactic capture (24), graph rehearsal admission (4), canonical rehearsal admission (7), Study priority maintenance (4), SQLite snapshot (3), admission proof ownership (14), native control-error helper (6), and the one affected canonical-retention fixture. The first combined pass had 60 passes and four old parameterized paths failing; the four were then repaired and passed separately. Existing assertions, fake controls and task-owned temporary/in-memory SQLite were retained. No native PostgreSQL fixture or live service ran. Full commands/logs are retained in the task evidence; these results supplement, not replace, the earlier 24-case/9-subtest CLI/staging repair evidence.
 
+## Dependent mixed-file extraction: frozen-order slice
+
+- 77 focused cases passed: 29 in `test_frozen_opening_order.py`, `test_frozen_opening_schema.py` and `test_frozen_order_policy.py`; 41 in `test_frozen_maia_plan.py`; 7 in `test_queue_admission_adapter.py`. Command prefix: `PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest`, with the named `backend/tests/` files, `-q --rootdir=.`. Only in-memory or task-owned temporary SQLite was used. One existing Starlette/AnyIO deprecation warning occurred.
+- One-time AST/source comparison against `cd4ffbdb58a7634cbe9b1db0a31a6e86580fa42e` found every SQL string literal unchanged across the moved implementations, and identical assignment ASTs for `SCHEMA`, `GUARDED_TABLES` and `SQLITE_GUARDS`. No PostgreSQL migration changed. This comparison is relocation evidence, not a new permanent SQL-literal test or framework.
+- Pure-import guards reject database drivers, sibling implementation and application imports at the new boundaries. Existing exposure, legacy protection, rollback and stale-plan tests retain their assertions. Existing native PostgreSQL tests were not executed: no live or disposable service, worker, credentials or data was touched. Native execution and full-backend domain isolation remain unverified; this draft is not declared merge-qualified from SQLite evidence.
+
+
+### SQL-only Study helper moves
+
+The legacy `opening_progression.py` and `tactic_admission.py` files moved intact to `tempo_legacy_database/adapters/`; both are byte-identical to the previous source. Their consumers, native proof imports and existing local runner source maps use the new paths. The focused `test_opening_progression.py`, `test_daily_queue_sparse_unlock.py` and `test_tactic_capture.py` suites passed all 40 cases after the PR334 fixture-discovery repairs. Only in-memory/task-temporary SQLite and fake controls ran; native PostgreSQL remains unexecuted. These helpers create no connection/commit authority or new cross-owner import.
+
+Both new frozen-order README Mermaid blocks parsed with Mermaid 11.12.0. Changed README/source links resolved, and conflict/whitespace checks passed. Disposable parser dependencies are outside the repository.
+
+
+### Independently packaged Learning helper moves
+
+Learning runtime's own SQL-only `opening_progression.py` and `tactic_admission.py` also moved intact into its database adapter package; byte equality was checked. Existing internal imports now use that owner-specific package. `python -m build --no-isolation --outdir /tmp/tempo-db-review-wheels services/learning/runtime` built the sdist and rebuilt its wheel from the sdist. Wheel inspection confirms both helpers exist only at their database-owned paths with the original bytes. The freshly reinstalled wheel passed `test_installation.py -k import_all_deferred`: all deferred runtime modules import while optional services, application imports, SQLite and socket connects are rejected, and denied authentication opens no infrastructure. This selected pass does not cover the pre-existing contract-version assertion in the first installation test or native PostgreSQL. No schema/resource/transaction behavior changed.
 ## PR334 reference audit repair
 
 Review at `8159afda` found ten legacy test files still resolving migrations under the removed `backend/migrations/` location, one bare tooling import, and a remediation staging fixture using its former package-local SQL path. These references now resolve the centralized owner files. The staging fixture includes the three database packages already required by the artifact copier and retains both byte equality and staged-source tamper rejection. Current guide commands point to the moved tools/proofs; dated historical receipts are unchanged. Content's migration-manifest test uses the packaged database resource, matching the independently prepared owner fix exactly.
