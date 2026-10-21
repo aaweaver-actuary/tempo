@@ -44,7 +44,45 @@ cursor advancement remain in the original adapter sections.
 `tests/test_content_preparation.py` checks full-versus-sliced route inventory,
 completed-cache reuse and the computation/hook/transaction order. Pure
 [publication preparation](../publication/README.md) is also outside the adapter.
-Route/exercise/binding phase and I/O sequencing, source staging and publication
+Route/exercise phase and I/O sequencing, source staging and publication
 read/reservation/write coordination remain mixed extraction work. These bounded
 moves do not claim those methods are application-free or make them a permanent
 exception.
+
+## Binding phase
+
+[`reconcile_binding`](bindings.py) owns the complete existing binding phase:
+finish an exhausted phase, read the binding/target/exercise in their original
+order, invoke the existing `binding_responses` policy between the original
+hooks, request the atomic write and return its existing processing result.
+
+```mermaid
+flowchart LR
+  delivery[Existing work_once phase delivery] --> composition[ContentService._binding_slice composition]
+  composition --> application[reconcile_binding application]
+  application -->|immutable binding and exercise| items[Existing _item reads]
+  application -->|route and occurrence facts| target[Content _binding_target]
+  application -->|validated accepted moves| commit[Content _commit_binding]
+  items --> database[Content-owned PostgreSQL]
+  target --> database
+  commit -->|one fenced transaction| database
+```
+
+The [root adapter](../../../../../database/tempo_content_database/adapters/store.py)
+composes its existing `_transition`, `_item` and `_hook` with two concrete
+storage operations. `_binding_target` owns the original complete route/artifact
+and occurrence queries, their parameters and the missing-route short circuit;
+each retains the original `_one` connection boundary. `_commit_binding` owns
+the original transaction, fence, response insert, task advance and
+`after_writes` hook. SQL and driver JSON encoding stay there.
+
+An absent/incomplete target still permits the original exercise read and
+`after_read` hook before policy rejection. A missing exercise fails before that
+hook. A stale fence or exception from `after_writes` aborts the same write
+section. Exhaustion uses the original transition without reading another
+binding. `tests/test_binding_application.py` checks these boundaries with
+synthetic owner operations; existing policy tests retain response rules.
+Installed package checks retain the component's independent artifact closure.
+Native PostgreSQL locking, leases and rollback remain unverified for this move;
+the native contracts are retained and the previously denied loopback cases were
+not retried.
