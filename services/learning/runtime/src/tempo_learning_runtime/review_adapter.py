@@ -22,6 +22,7 @@ from .review_reconciliation import (
     reconcile_completed_review,
 )
 from .background_runtime import training_timing_stage
+from tempo_learning_database.adapters import review_adapter as storage
 
 
 def _lock_review_cards(database, card_id, candidate):
@@ -31,33 +32,10 @@ def _lock_review_cards(database, card_id, candidate):
         {card_id, *([candidate.card_id] if candidate else [])}
     ):
         if locked_card_id == card_id:
-            if hasattr(database, "execute_native"):
-                database.execute_native(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                    (f"tempo:card-edit:{locked_card_id}",),
-                )
-            database.execute(
-                "SELECT id FROM cards WHERE id=? FOR UPDATE", (locked_card_id,)
-            )
+            storage.lock_current_review_card(database, locked_card_id)
         else:
-            if isinstance(database, PostgresConnection):
-                admitted = database.execute_native(
-                    "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
-                    (f"tempo:card-edit:{locked_card_id}",),
-                ).fetchone()[0]
-                if not admitted:
-                    continuation_locked = False
-                    continue
-            row = database.execute(
-                "SELECT id FROM cards WHERE id=?"
-                + (
-                    " FOR UPDATE SKIP LOCKED"
-                    if isinstance(database, PostgresConnection)
-                    else ""
-                ),
-                (locked_card_id,),
-            ).fetchone()
-            continuation_locked = continuation_locked and row is not None
+            locked = storage.try_lock_continuation_card(database, locked_card_id)
+            continuation_locked = continuation_locked and locked
     return continuation_locked
 
 
@@ -134,9 +112,7 @@ class LearningReviewAdapter:
             return learning.ReviewPolicy(
                 settings.timezone, settings.light_first_interval_days
             )
-        row = self.database.execute(
-            "SELECT timezone,light_first_interval_days FROM settings WHERE id=1"
-        ).fetchone()
+        row = storage.review_policy(self.database)
         return learning.ReviewPolicy(row["timezone"], row["light_first_interval_days"])
 
     def is_deleted(self, card_id):
@@ -145,11 +121,7 @@ class LearningReviewAdapter:
         return is_card_deleted(self.database, card_id)
 
     def receipt(self, attempt_id):
-        row = self.database.execute(
-            "SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json,request_json "
-            "FROM review_attempt_receipts WHERE attempt_id=?",
-            (attempt_id,),
-        ).fetchone()
+        row = storage.attempt_receipt(self.database, attempt_id)
         return (
             learning.AttemptReceipt(
                 row["card_id"],
@@ -165,37 +137,15 @@ class LearningReviewAdapter:
         )
 
     def card(self, card_id):
-        row = self.database.execute(
-            "SELECT content_type,archived,superseded_by,revision,state FROM cards WHERE id=?",
-            (card_id,),
-        ).fetchone()
+        row = storage.card(self.database, card_id)
         if row is None:
             return None
-        owners = tuple(
-            item[0]
-            for item in self.database.execute(
-                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? UNION SELECT repertoire_id FROM cards WHERE id=?",
-                (card_id, card_id),
-            ).fetchall()
-        )
-        integrity = self.database.execute(
-            """SELECT 1 FROM cards c
-               LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
-               LEFT JOIN repertoires r ON r.id=rc.repertoire_id OR r.id=c.repertoire_id
-               WHERE c.id=? AND c.archived=0
-                 AND COALESCE(c.pending_validation,0)=0
-                 AND (c.content_type!='opening' OR NOT EXISTS(
-                     SELECT 1 FROM repertoire_integrity_card_blocks block
-                     WHERE block.repertoire_id=r.id AND block.card_id=c.id
-                 )) LIMIT 1""",
-            (card_id,),
-        ).fetchone()
+        owners = storage.card_owners(self.database, card_id)
+        integrity = storage.card_integrity(self.database, card_id)
         return learning.CardFacts(
             row["content_type"],
             bool(row["archived"])
-            or not self.database.execute(
-                "SELECT serving_active FROM cards WHERE id=?", (card_id,)
-            ).fetchone()[0],
+            or not storage.serving_active(self.database, card_id),
             row["superseded_by"],
             row["revision"],
             row["state"],
@@ -221,18 +171,10 @@ class LearningReviewAdapter:
         )
 
     def find_attempt(self, command, context):
-        lock = " FOR UPDATE"
         if command.queue_entry_id:
-            row = self.database.execute(
-                "SELECT * FROM daily_queue WHERE id=? AND card_id=?" + lock,
-                (command.queue_entry_id, command.card_id),
-            ).fetchone()
+            row = storage.attempt_by_id(self.database, command.queue_entry_id, command.card_id)
         else:
-            row = self.database.execute(
-                "SELECT * FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1"
-                + lock,
-                (context.local_day.isoformat(), command.card_id),
-            ).fetchone()
+            row = storage.first_queued_attempt(self.database, context.local_day.isoformat(), command.card_id)
         return self._attempt(row)
 
     def recover_attempt(self, command):
@@ -243,34 +185,18 @@ class LearningReviewAdapter:
         )
 
     def current_revision(self, card_id):
-        row = self.database.execute(
-            "SELECT revision FROM cards WHERE id=?", (card_id,)
-        ).fetchone()
+        row = storage.current_revision(self.database, card_id)
         return row["revision"] if row else None
 
     def latest_review_id(self, card_id, *, valid_only):
-        return self.database.execute(
-            (
-                "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=?"
-                if valid_only
-                else "SELECT MAX(id) FROM reviews WHERE card_id=?"
-            )
-            + (" AND invalidated_at IS NULL" if valid_only else ""),
-            (card_id,),
-        ).fetchone()[0]
+        return storage.latest_review_id(self.database, card_id, valid_only)
 
     def retain_introduction(self, card_id, queue_day):
-        self.database.execute(
-            "UPDATE cards SET introduced_at=COALESCE(introduced_at,?) WHERE id=?",
-            (queue_day, card_id),
-        )
+        storage.retain_introduction(self.database, queue_day, card_id)
 
     def has_later_review(self, card_id, context):
         return (
-            self.database.execute(
-                "SELECT id FROM reviews WHERE card_id=? AND invalidated_at IS NULL AND reviewed_at>? LIMIT 1",
-                (card_id, context.reviewed_at.isoformat()),
-            ).fetchone()
+            storage.later_review(self.database, card_id, context.reviewed_at.isoformat())
             is not None
         )
 
@@ -298,14 +224,8 @@ class LearningReviewAdapter:
 
     def bind_receipt(self, command, request_json, *, restore_original=False):
         if restore_original:
-            self.database.execute(
-                "UPDATE review_attempt_receipts SET outcome=?,guided=? WHERE attempt_id=?",
-                (command.outcome, int(command.guided), command.attempt_id),
-            )
-        self.database.execute(
-            "UPDATE review_attempt_receipts SET request_json=? WHERE attempt_id=?",
-            (request_json, command.attempt_id),
-        )
+            storage.restore_receipt_outcome(self.database, command.outcome, int(command.guided), command.attempt_id)
+        storage.bind_receipt_request(self.database, request_json, command.attempt_id)
 
     def schedule_snapshot(self, card_id):
         return card_schedule_state(self.database, card_id)
@@ -330,30 +250,17 @@ class LearningReviewAdapter:
             )
 
     def complete_attempt(self, command, context, *, guided):
-        queue_day = self.database.execute("SELECT queue_date FROM daily_queue WHERE id=?", (command.queue_entry_id,)).fetchone()
+        queue_day = storage.queue_date(self.database, command.queue_entry_id)
         day = queue_day[0] if queue_day else context.local_day.isoformat()
         previous_order = capture_daily_queue_order(self.database, day)
         if command.queue_entry_id:
-            self.database.execute(
-                "UPDATE daily_queue SET status='complete',attempt_state=? WHERE id=? AND card_id=?",
-                (
-                    "guided" if guided else "clean",
-                    command.queue_entry_id,
-                    command.card_id,
-                ),
-            )
+            storage.complete_identified_attempt(self.database, "guided" if guided else "clean", command.queue_entry_id, command.card_id)
         else:
-            self.database.execute(
-                "UPDATE daily_queue SET status='complete' WHERE id=(SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position LIMIT 1)",
-                (context.local_day.isoformat(), command.card_id),
-            )
+            storage.complete_first_queued_attempt(self.database, context.local_day.isoformat(), command.card_id)
         preserve_daily_queue_order(self.database, day, previous=previous_order)
 
     def mark_clean_tactic(self, card_id, context):
-        self.database.execute(
-            "UPDATE tactic_progress SET clean_pass_at=COALESCE(clean_pass_at,?) WHERE card_id=?",
-            (context.reviewed_at.isoformat(), card_id),
-        )
+        storage.mark_clean_tactic(self.database, context.reviewed_at.isoformat(), card_id)
 
     def requeue(self, attempt, card_id, after, state):
         return queue_application.requeue(
@@ -364,28 +271,16 @@ class LearningReviewAdapter:
         save_schedule_snapshot(self.database, review_id, snapshot)
 
     def save_receipt(self, command, context, result):
-        self.database.execute(
-            "INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (
-                command.attempt_id,
-                command.card_id,
-                result["queue_entry_id"],
-                command.outcome,
-                int(command.guided),
-                context.reviewed_at.isoformat() if command.recorded_at else None,
-                result["review_id"],
-                "canonical",
-                None,
-                json.dumps(result),
-            ),
+        storage.save_receipt(
+            self.database, attempt_id=command.attempt_id, card_id=command.card_id,
+            queue_entry_id=result["queue_entry_id"], outcome=command.outcome,
+            guided=int(command.guided), completed_at=context.reviewed_at.isoformat() if command.recorded_at else None,
+            review_id=result["review_id"], scheduling_status="canonical", warning=None, result_json=json.dumps(result),
         )
 
     def retain_completion(self, command, attempt, result_json, *, origin_only=False):
         if not origin_only:
-            self.database.execute(
-                "UPDATE daily_queue SET review_result_json=? WHERE id=? AND card_id=?",
-                (result_json, attempt.id, command.card_id),
-            )
+            storage.retain_daily_completion(self.database, result_json, attempt.id, command.card_id)
         if attempt.recovered:
             from .queue_attempt_origins import retain_recovered_completion
 
@@ -402,17 +297,12 @@ class LearningReviewAdapter:
     def refresh_progression(self, context, card, result):
         if card.content_type == "opening" and result.get("review_id") is not None:
             day = context.local_day.isoformat()
-            preserved = self.database.execute(
-                "SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=?", (day,)
-            ).fetchone()[0]
+            preserved = storage.maximum_queue_id(self.database, day)
             self.queue_refreshes[day] = {"preserve_through_entry_id": preserved}
             self.remediation_days.add(day)
 
     def refresh_priority(self, repertoire_id, *, transactional_only=False):
-        self.database.execute(
-            "INSERT INTO advisory_notifications(kind,subject) VALUES('priority_refresh',?) ON CONFLICT(kind,subject) DO UPDATE SET generation=advisory_notifications.generation+1",
-            (repertoire_id,),
-        )
+        storage.record_priority_refresh(self.database, repertoire_id)
 
     def refresh_maturity(self, context):
         day = context.local_day.isoformat()
@@ -440,20 +330,11 @@ class LearningReviewAdapter:
         lock_queue_date_for_position(self.database, date.today().isoformat())
 
     def completed_evidence_exists(self, attempt_id):
-        row = self.database.execute_native(
-            "SELECT state FROM opening_evidence_attempts WHERE attempt_id=%s",
-            (attempt_id,),
-        ).fetchone()
+        row = storage.completed_evidence_state(self.database, attempt_id)
         return bool(row and row[0] == "complete")
 
     def evidence_revision_allowed(self, command):
-        revision = self.database.execute(
-            "SELECT revision FROM cards WHERE id=?", (command.card_id,)
-        ).fetchone()
-        entry = self.database.execute(
-            "SELECT status FROM daily_queue WHERE id=? AND card_id=?",
-            (command.queue_entry_id, command.card_id),
-        ).fetchone()
+        revision, entry = storage.evidence_revision_facts(self.database, command.card_id, command.queue_entry_id)
         expected = command.completion.card_revision
         return bool(
             revision
@@ -489,21 +370,11 @@ class LearningReviewAdapter:
 
     def inherit_evidence_scope(self, command, result):
         completion = self.request.opening_evidence_completion
-        self.database.execute_native(
-            "INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color) VALUES(%s,%s,%s,%s) ON CONFLICT(queue_entry_id,presentation_snapshot_id,repertoire_id) DO UPDATE SET effective_trained_color=EXCLUDED.effective_trained_color",
-            (
-                result["requeue_entry_id"],
-                completion.manifest.presentation_snapshot_id,
-                completion.manifest.repertoire_id,
-                completion.manifest.trained_color,
-            ),
-        )
+        storage.inherit_evidence_scope(self.database, result["requeue_entry_id"], completion.manifest.presentation_snapshot_id,
+            completion.manifest.repertoire_id, completion.manifest.trained_color)
 
     def continuation_facts(self, candidate):
-        row = self.database.execute(
-            "SELECT q.cycle,q.attempt_failed,c.revision,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=? AND q.card_id=? AND q.status='queued'",
-            (candidate.queue_entry_id, candidate.card_id),
-        ).fetchone()
+        row = storage.continuation_facts(self.database, candidate.queue_entry_id, candidate.card_id)
         return (
             learning.ContinuationFacts(
                 row["cycle"],
@@ -530,10 +401,7 @@ class LearningReviewAdapter:
             )["issued"]
 
     def save_continuation(self, attempt_id, result):
-        self.database.execute(
-            "UPDATE review_attempt_receipts SET result_json=? WHERE attempt_id=?",
-            (json.dumps(result), attempt_id),
-        )
+        storage.save_continuation(self.database, json.dumps(result), attempt_id)
 
 
 def apply_legacy_review(
