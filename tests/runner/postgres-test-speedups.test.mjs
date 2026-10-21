@@ -13,7 +13,7 @@ import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
-import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redis-readiness.mjs";
+import { stopApplicationsAndVerifyWorkerSignals } from "../../database/tests/redis/check-redis-readiness.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);

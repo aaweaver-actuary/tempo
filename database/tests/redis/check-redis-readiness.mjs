@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicJson } from "./tempo-deployment.mjs";
-import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { atomicJson } from "../../../scripts/tempo-deployment.mjs";
+import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "../../../scripts/tempo-runtime.mjs";
 
 // Observe the existing lifecycle stop boundary; do not add a restart or alter its deadline.
 export async function stopApplicationsAndVerifyWorkerSignals({ runtime, compose, docker }) {

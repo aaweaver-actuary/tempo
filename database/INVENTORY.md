@@ -218,6 +218,14 @@ A separate browser API scan at PR350 found 58 runtime files / 357 bound WebStora
 
 The generic `validated-data` helper remains unchanged; this task does not introduce callback-expanded validation wrappers. Mixed UI files are classified by exact key/responsibility, not moved wholesale. Actual DB/Redis diagnostic/backup tooling and source-level native fixture candidates are tracked separately from ordinary browser state and from the closed original 156-row checklist. No live browser data, sessions, credentials or services are inspected.
 
+### Supplemental DB/Redis tooling and test-owner classification
+
+Three dedicated Redis proof files now live entirely in [database/tests/redis](tests/redis/README.md), with old script paths deleted and no compatibility shims. Four mixed CLI/runtime/browser-qualifier callers retain lifecycle/scenario policy while their fixed operations live in [CLI probes/backup](tooling/cli/README.md), [CLI fixtures](tests/cli/README.md) and [browser fixtures](tests/browser/README.md). Stored query/command arguments, guards, credentials, deadlines and cleanup authority are unchanged. Source/fake evidence does not qualify actual native infrastructure.
+
+A separate finite source classification identifies 46 application-facing test files with 142 direct task-SQLite or disposable PostgreSQL fixture factory expressions. Those are test-owner organization candidates, not 46 new runtime implementation misses or permission for a broad native campaign. Existing application/contract assertions retain their regular suites; reorganize only a concrete affected fixture/helper with its owning boundary. This does not turn ordinary test fakes, browser preferences or asset caches into a universal storage-refactor requirement.
+
+The subsequent backend phase has a finite source inventory of **202 original backend/app modules**; all 202 received responsibility/boundary reviews, with no overlap or missing original paths. That is review coverage, not 202 completed moves or domain-isolation acceptance. Remaining technical connection/admission/timing and explicit contract seams are included in that phase; no new runtime framework or consolidation is authorized.
+
 ## Handoff for the separately coordinated domain move
 
 | Proposed owner | Current source to sort (examples, not a move in this PR) | Boundary to preserve |

@@ -12,8 +12,8 @@ from unittest.mock import patch
 import redis
 from celery.exceptions import Retry
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'database'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'backend'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'database'))
 from app import tasks
 from app.celery_app import celery_app
 from app.services import background_wakes

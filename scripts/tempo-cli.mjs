@@ -7,6 +7,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnch
 import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
   redact, schemaVersionFromSource, selectCandidate, sourceFingerprint, sourceMatchesFingerprint, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { assessMigrationRecovery, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { probeDiagnosticRedis, readMigrationLedger } from "../database/tooling/cli/probes.mjs";
 
 const help = `Tempo — manage the existing Docker/PostgreSQL installation
 
@@ -135,10 +136,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   detail(`Receipt consistency: ${identity.receipt}`);
   let pending = [], ledgerProblem;
   if (running.includes("postgres")) {
-    const result = await runtime.compose(["exec", "-T", "-e",
-      "PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=1000 -c lock_timeout=100", "postgres", "psql", "-X", "-tA", "-v", "ON_ERROR_STOP=1", "-U",
-      runtime.configuration.services.postgres.environment.POSTGRES_USER ?? "postgres", "-d", runtime.configuration.services.postgres.environment.POSTGRES_DB,
-      "-c", "SELECT version FROM tempo_schema_migrations ORDER BY version"], { allowFailure: true, timeout: 5000 });
+    const result = await readMigrationLedger(runtime);
     const applied = result.stdout.trim() ? result.stdout.trim().split(/\s+/).map(Number) : [];
     if (result.code === 0 && applied.every(version => Number.isInteger(version) && version > 0)) {
       const newest = Math.max(0, ...applied);
@@ -214,7 +212,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
     } catch { detail("API health: unavailable."); }
     if (running.includes("redis")) {
       try {
-        const result = await runtime.compose(["exec", "-T", "redis", "redis-cli", "-e", "--raw", "ping"], { allowFailure: true, timeout: 5000 });
+        const result = await probeDiagnosticRedis(runtime);
         const reply = classifyRedisReply(result);
         redisReady = reply.status === "ready";
         if (reply.status === "terminal") assessment = recoveryAssessment({ sourceProblem, migrationRecovery, verification, ledgerProblem,

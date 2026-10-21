@@ -2131,6 +2131,7 @@
         "static",
         "public",
         "scripts/prove-study-learning.mjs",
+        "database/tests/browser",
         "scripts/offline-shell-assets.ts",
         "scripts/maia-cache-asset.ts",
         "database/browser",

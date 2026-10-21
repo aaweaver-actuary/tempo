@@ -8,6 +8,8 @@ import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, 
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
 
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
+import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
+import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
 
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -379,7 +381,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       poll();
       let interrupted = false;
       try {
-        const response = await compose(["exec", "-T", "redis", "redis-cli", "-e", "--raw", "ping"],
+        const response = await probeLifecycleRedis(compose,
           { allowFailure: true, timeout: Math.min(5000, Math.max(1, Math.ceil(deadline - now()))) });
         if (response.code === 0 && response.stdout.trim() === "PONG" && now() <= deadline) return;
         reason = redact(response.stdout.trim() || response.stderr.trim() || "Redis readiness probe was interrupted or timed out", secretValues).slice(-4000);
@@ -446,9 +448,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     await compose(["stop", "--timeout", "60", ...services], { echo: true });
   }
 
-  const backupCommand = (args, options = {}) => compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T",
-    "--entrypoint", "sh", "postgres-backup", "-ec", ...args], options);
-
   async function backup() {
     stage("verifying_backup");
     const stamp = `${new Date().toISOString().replaceAll(/[-:.]/g, "")}-${operation.id}`;
@@ -458,18 +457,14 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const database = configuration.services.postgres.environment.POSTGRES_DB;
     backupRecord = { filename: name, restore_database: restoreDatabase, created_at: new Date().toISOString(), verified: false };
     operation.backup = backupRecord; atomicJson(journalPath, operation);
-    await backupCommand([
-      'test ! -e "/backups/$1"; pg_dump -h postgres -U "$2" -d "$3" -Fc -f "/backups/$1.partial"; pg_restore -l "/backups/$1.partial" >/dev/null; mv "/backups/$1.partial" "/backups/$1"; cd /backups; sha256sum "$1" > "$1.sha256"; sha256sum -c "$1.sha256"',
-      "sh", name, user, database,
-    ], { echo: true });
-    await backupCommand(['createdb -h postgres -U "$1" "$2"', "sh", user, restoreDatabase]);
+    await createPostgresBackup(compose, name, user, database);
+    await createBackupRestoreDatabase(compose, user, restoreDatabase);
     backupRecord.restore_created = true; atomicJson(journalPath, operation);
-    await backupCommand(['pg_restore -h postgres -U "$1" -d "$2" --no-owner --no-privileges --single-transaction "/backups/$3"',
-      "sh", user, restoreDatabase, name]);
+    await restorePostgresBackup(compose, user, restoreDatabase, name);
     await maintenance("database/tooling/verify_postgres_backup.py", [`postgresql://${user}@postgres:5432/${database}`,
       `postgresql://${user}@postgres:5432/${restoreDatabase}`], { echo: true });
     backupRecord.verified = true; atomicJson(journalPath, operation);
-    await backupCommand(['dropdb -h postgres -U "$1" "$2"', "sh", user, restoreDatabase]);
+    await removeBackupRestoreDatabase(compose, user, restoreDatabase);
     backupRecord.restore_removed = true; atomicJson(journalPath, operation);
     log(`Verified backup: ${name}`);
     return backupRecord;
