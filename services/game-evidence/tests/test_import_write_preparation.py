@@ -73,6 +73,8 @@ def test_provider_unavailable_retry_keeps_sixty_second_server_interval_and_relea
         def execute(self, _query, parameters):
             events.append(('write', self.index))
             calls.append((self.index, parameters))
+            if self.index == 3:
+                assert "next_attempt_at=now()+interval '60 seconds'" in _query
 
     connections = iter(Connection(index) for index in range(1, 5))
     store = SimpleNamespace(connect=lambda: next(connections))
@@ -90,7 +92,7 @@ def test_provider_unavailable_retry_keeps_sixty_second_server_interval_and_relea
     assert events == [('enter', 1), ('attempt', 1), ('exit', 1), ('enter', 2), ('unavailable', 2),
                       ('exit', 2), ('enter', 3), ('write', 3), ('exit', 3),
                       ('enter', 4), ('write', 4), ('write', 4), ('exit', 4)]
-    assert calls == [(3, (timedelta(seconds=60), 'import', 'token')),
+    assert calls == [(3, ('import', 'token')),
                      (4, ('import', 'token')), (4, ('lichess', 'token'))]
 
 

@@ -131,11 +131,11 @@ class EvidenceStore:
     def process_one(self, *, before_publish=None):
         return process_comparison_job(self, before_publish=before_publish)
 
-    def record_job_failure(self, job, retry_after):
+    def record_job_failure(self, job):
         with self.connect() as database:
             database.execute("""UPDATE jobs SET lease_token=NULL,leased_until=NULL,attempts=attempts+1,
-                  error='comparison_failed',next_attempt_at=now()+%s
-                  WHERE job_key=%s AND lease_token=%s""", (retry_after,job["job_key"],job["lease_token"]))
+                  error='comparison_failed',next_attempt_at=now()+interval '5 seconds'
+                  WHERE job_key=%s AND lease_token=%s""", (job["job_key"],job["lease_token"]))
 
     def _rescope(self, job):
         with self.connect() as database:
