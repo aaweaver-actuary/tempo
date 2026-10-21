@@ -11,6 +11,7 @@
 | [maia_operations.py](maia_operations.py) | Fixed profile/job/evidence reads and writes, job/cache locks and atomic replay/stale/transition guards on the owner's existing transaction. |
 | [request_admission.py](request_admission.py) | Fixed request/snapshot/cache admission operations and request/snapshot replay guards on the caller's write transaction. |
 | [provider_operations.py](provider_operations.py) | Fixed source selection, lease/fence, evidence publication and registration-result writes on the owner's background transaction. |
+| [credential_operations.py](credential_operations.py) | Fixed credential row/head/registration operations and atomic generation/retirement guards on the owner's read/write contexts. |
 | [store.py](store.py) | Intelligence owns every transaction here; no provider executes inside this boundary. |
 
 The existing finding merge/ranking block now lives in the component's
@@ -30,7 +31,8 @@ workflow with fixed guarded writes. Maia profile/job/result/status application
 workflows now live in [`maia_work.py`](../../../services/intelligence/src/tempo_intelligence/maia_work.py),
 and the evidence response lives in `source_requests.read_evidence`. Source claim and
 publication workflows now live in [`provider_work.py`](../../../services/intelligence/src/tempo_intelligence/provider_work.py);
-credential workflows still mix decisions with SQL;
+credential status/registration workflows now live in
+[`credential_work.py`](../../../services/intelligence/src/tempo_intelligence/credential_work.py);
 `AnalysisStore` still mixes manifest/page/finalize/run admission, status and command
 responses, report publication/pagination/dismissal/export, and engine execution
 state transitions with their queries. Response serialization and retry policy
@@ -54,13 +56,12 @@ its connection to this projection. The application builds the envelope before
 that context closes and invokes the existing final credential status capability
 afterward. It has no generic query/execute port or cross-owner table access.
 
-Remaining Store mixed application blocks are specifically `_credential_status`,
-`credential_status`, `credential_reload` and `credential_revoke`. Request admission,
-inspection, refresh/retry, Maia work, evidence response and source claim/publication
-orchestration are no longer mixed blocks. Database startup validation,
-workspace binding checks, transaction settings, lease/replay atomic guards and
-fixed writers remain database responsibilities; this inventory does not propose
-relocating those guards or changing their authority.
+The four previously inventoried mixed Store credential workflows now delegate
+the existing status/expiry/configuration and registration orchestration outside
+this tree. Store retains transaction composition, startup/workspace validation,
+fixed guards/writers and the existing ordered failure effects. This is not
+completion of all Intelligence separation: AnalysisStore remains substantially
+mixed, as the full method audit below shows.
 
 `RequestCommands` retains six fixed SQL operations and the existing receipt and
 request-revision guards. It delegates request-head lookup, generation changes and
@@ -106,19 +107,83 @@ and clock metadata, appends before registration acceptance and releases last.
 No network, private credential file or new lease/transaction authority is added.
 See the [provider-source boundary](../../../services/intelligence/README.md#provider-source-claim-and-publication-boundary).
 
+`CredentialOperations` owns the fixed row read, locked generation check,
+registration lookup/replay retirement guard, registration/head/resume writes and
+conditional revoke write. It delegates the existing status projection on the
+same connection; it never opens or commits a transaction or loads private files.
+Application `project_status` preserves the original expiry short circuit and
+public value conversion. `credential_status` keeps the private-loader import and
+configured lookup inside the original active-status branch, after the initial
+read closes. Registration replay returns status under the original lock without
+consulting incoming expiry; new registration/revocation returns after the same
+ordered writes. Store supplies unchanged read/write contexts and late clock/
+configuration lookup. No configuration, credentials/security behavior or actual
+private material was changed or accessed. See the
+[credential workflow boundary](../../../services/intelligence/README.md#credential-workflow-boundary).
+
 ## Complete Store responsibility inventory
 
-This source audit accounts for all 36 current Store methods (the original 32 plus
-four transaction composition contexts). Mixed rows remain unfinished extraction
-work, not permanent exceptions or a completed-split claim.
+This source audit accounts for all 38 current Store methods (the original 32 plus
+six transaction composition contexts). The seven previously inventoried mixed
+workflows have been separated. Retained fixed-effect and validation code is
+listed explicitly; this does not establish complete owner separation or live
+resource isolation.
 
 | Classification | Methods / remaining responsibility |
 | --- | --- |
 | Database authority and fixed operations (11) | `__init__`, `read_only`, `transaction`, `validate_startup`, `close`, `health`, `_head`, `_new_generation`, `_fenced`, `_release_provider`, `_append`: connection settings, schema/grant/workspace checks, guarded reads and atomic writes. |
-| Composition / fixed effects (21) | `inspection_transaction`, `inspect`, `_retry_eligible`, `command_transaction`, `_command`, `refresh`, `retry`, `fail`, `_profile`, `_maia_job`, `maia_read_transaction`, `maia_write_transaction`, `evidence`, `maia_jobs`, `accept_maia`, `maia_status`, `admission_transaction`, `submit`, `provider_transaction`, `claim`, `publish`: wire existing application decisions/workflows to owning transactions and fixed effects. `fail` retains its existing fenced, ordered effect application around the extracted failure decision. |
-| Mixed credential workflows (4) | `_credential_status`, `credential_status`, `credential_reload`, `credential_revoke`: expiry/status projection, configured material/status handling and registration/revocation orchestration. |
+| Composition / fixed effects (27) | `inspection_transaction`, `inspect`, `_retry_eligible`, `command_transaction`, `_command`, `refresh`, `retry`, `fail`, `_profile`, `_maia_job`, `maia_read_transaction`, `maia_write_transaction`, `evidence`, `maia_jobs`, `accept_maia`, `maia_status`, `admission_transaction`, `submit`, `provider_transaction`, `claim`, `publish`, `_credential_status`, `credential_read_transaction`, `credential_write_transaction`, `credential_status`, `credential_reload`, `credential_revoke`: wire existing application decisions/workflows to owning transactions and fixed effects. `fail` retains its existing fenced, ordered effect application around the extracted failure decision. |
 
-The separate `AnalysisStore` inventory above is still outstanding. No security,
-credential material, grant, lease/replay guard or transaction-authority behavior
-change is proposed by this classification; this batch changes only request
-admission and provider-source claim/publication code location and wiring.
+## Complete AnalysisStore source audit
+
+All 33 methods in `analysis_store.py` were source-read; this batch makes no edits
+to that file. Three fixed owner/read guards and three existing composition
+wrappers are distinguished from two pure application methods and 25 mixed
+workflow/response candidates below. This conservative inventory includes receipt
+response/digest assembly, not just large domain algorithms. Atomic guards,
+canonical receipt writing, locks, bounded query/read projections and publication
+transactions retain their root owner. `_input` and `capture` fact grouping must
+be reviewed as fixed projection versus application assembly; the inventory is
+not permission to force a new abstraction when a concrete read projection is
+sufficient. These are unfinished review/extraction work, not permanent exceptions.
+
+| Method / source lines | Classification | Remaining application or retained responsibility |
+| --- | --- | --- |
+| [`__init__`](analysis_store.py#L17) (17–19) | fixed | Owner/workspace binding only; retain adapter binding. |
+| [`_workspace`](analysis_store.py#L21) (21–23) | application | Request workspace admission before manifest/run work. |
+| [`manifest`](analysis_store.py#L25) (25–34) | mixed | Workspace admission, model serialization/digest and response envelope; retain immutable input insert/read guard root. |
+| [`page`](analysis_store.py#L36) (36–50) | mixed | Page serialization/reference/game-count admission and response; retain locked input lookup and immutable page insert/read guard root. |
+| [`inputs`](analysis_store.py#L52) (52–55) | mixed | Public list envelope after the bounded input read. |
+| [`_input`](analysis_store.py#L57) (57–63) | mixed | Page payload flattening after input/page read; review as fixed read projection versus application assembly without forcing a port. |
+| [`finalize`](analysis_store.py#L65) (65–85) | mixed | Action/completeness/game scope decisions, command/result flow; retain page-admission lock, receipt and writes root. |
+| [`_head`](analysis_store.py#L87) (87–91) | fixed | Fixed optional-lock run/head lookup and not-found guard. |
+| [`submit`](analysis_store.py#L93) (93–133) | mixed | Input/evidence/ranking admission, positions/cap, generation/budget work and three-phase staging flow; retain guards and 64-position write boundaries root. |
+| [`_status`](analysis_store.py#L135) (135–137) | mixed | Status/progress/scope/legacy-recovery public projection over fixed state counts. |
+| [`status`](analysis_store.py#L139) (139–141) | composition | Existing read-only head/status composition; wire relocated projection at the same point. |
+| [`runs`](analysis_store.py#L143) (143–146) | mixed | Public list and per-run status projection inside read context. |
+| [`games`](analysis_store.py#L148) (148–150) | composition | Already delegates existing GamesReader; late import and owner stay fixed. |
+| [`_receipt`](analysis_store.py#L152) (152–157) | mixed | Replay response/digest projection around command advisory lock, digest binding and guarded receipt read; retain atomic guard root. |
+| [`_save_receipt`](analysis_store.py#L159) (159–161) | mixed | Response request_digest mutation at writer call point plus canonical receipt write; retain one root writer. |
+| [`receipt`](analysis_store.py#L163) (163–168) | mixed | Public receipt/digest projection with fixed not-found read guard. |
+| [`command`](analysis_store.py#L170) (170–203) | mixed | Continue/retry/resume/cancel dispatch, legacy/cancellation decisions and response/receipt; preserve each root atomic guard and ordered write. |
+| [`capture`](analysis_store.py#L205) (205–213) | mixed | Captured result/dismissal fact assembly plus subsequent input snapshot composition; review fixed read-projection pieces rather than inventing abstractions. |
+| [`_derive_evidence`](analysis_store.py#L215) (215–219) | composition | Existing classify -> late findings import -> accepted evidence read -> merge wiring; pure merge already moved. |
+| [`derive`](analysis_store.py#L221) (221–287) | mixed | Legacy/current finding assembly, dismissal/reopen policy, validation, metadata/completeness/state, 64-item staging and before_publish callback; retain publication/revision/dismissal guards root. |
+| [`report`](analysis_store.py#L289) (289–324) | mixed | Filter/generation/history selection, cursor scope/validation, pending/current/stale and ReportPage projection; retain bounded queries root. |
+| [`finding`](analysis_store.py#L326) (326–336) | mixed | Visible generation selection and response envelope; retain accepted-generation/item guarded reads root. |
+| [`dismiss`](analysis_store.py#L338) (338–358) | mixed | Two-phase receipt/finding/locked command workflow, dismissal choice and response; retain shared-user-state lock and revision/publication guards root. |
+| [`export`](analysis_store.py#L360) (360–369) | application | Existing proposal/context/legacy decision and pure response; consumes finding/report capabilities without SQL. |
+| [`claim`](analysis_store.py#L371) (371–412) | mixed | Cancellation/recovery/legacy decisions, depth/worker compatibility, pure job callback and wire/input validation, lease response; retain global capacity lock and lease writes root. |
+| [`accept`](analysis_store.py#L414) (414–442) | mixed | Result validation/digest, root-versus-played stage decisions/pair comparison and response; retain replay/lease/execution guards and ordered result/position/run writes root. |
+| [`failure`](analysis_store.py#L444) (444–469) | mixed | Failure-code/status event projection, attempts/cancel/retry/backoff decisions; retain fencing/event insertion/position/run writes root. |
+| [`remaining`](analysis_store.py#L471) (471–487) | mixed | Limit/cursor scope/validation and response; retain bounded ordinal read root. |
+| [`derive_next`](analysis_store.py#L489) (489–492) | mixed | Fixed eligible-run read plus conditional application derivation dispatch. |
+| [`mark_engine_unavailable`](analysis_store.py#L494) (494–501) | mixed | Legacy admission and conditional requested-generation effect; retain fixed writes root. |
+| [`engine_result`](analysis_store.py#L503) (503–508) | mixed | Public result/job envelope after fixed not-found guarded read. |
+| [`evidence_records`](analysis_store.py#L510) (510–516) | fixed | Empty-input short circuit, complete ordered owner evidence read and identity-set completeness guard; retain as fixed owner projection. |
+| [`input_status`](analysis_store.py#L518) (518–523) | mixed | Public manifest/state/page-status envelope over fixed guarded reads. |
+
+Suggested mechanical batches are read/status/cursor/export responses; input/page
+admission/finalization; run admission/commands/dismissal and receipt response
+assembly; capture/report derivation/publication; engine work claim/result/failure.
+No batch authorizes actual engine/provider work, live state or a schema redesign.

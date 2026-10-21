@@ -517,3 +517,18 @@ last. These cases use no real credential material or provider/network access.
 Existing synthetic worker slice cases retain off-thread storage and event-loop
 HTTP ownership; native lease/concurrency proofs remain separate and unexecuted
 by this move.
+
+## Credential workflow source-only composition
+
+`tests/test_credential_work.py` owns the relocated row projection, conditional
+configured-status flow and registration/revocation composition with fake rows,
+synthetic material and a substituted loader. Missing registration skips expiry;
+expiry clock evaluation retains its order before terminal-status filtering.
+The status read closes before the active-only late import/configuration/load
+branch. Generation conflict stops before registration lookup; replay returns
+under the same lock without incoming expiry. New registration keeps registration,
+head, waiting-cache resume and status order; revocation keeps the optional write
+and status inside its one context. No real loader, private file or provider is
+used. Existing complete inspection and source-claim fake cases continue to own
+the callbacks consuming this status. Native/private-file/security proofs remain
+unchanged and were not run for this source move.

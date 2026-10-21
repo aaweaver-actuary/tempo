@@ -617,3 +617,78 @@ around the already extracted failure decision. The separate AnalysisStore audit
 remains outstanding. No native/live database, actual engine/provider, private
 credential, security/grant, full-system, CI, deployment or merge action was
 performed or qualified here.
+
+## Credential workflow source move and full Analysis audit — October 21, 2026
+
+The four existing credential workflows now live in `credential_work.py` with fixed
+`CredentialOperations` and Store-owned read/write contexts. The root retains
+complete SQL, generation/retired-registration guards and canonical writes.
+Configuration, grants, secrets, private loader/provider behavior and public
+method/error identity are unchanged. This was a source-only relocation; all
+executed inputs were fake rows and synthetic metadata/material. The real private
+loader was substituted on every selected loader path and never executed.
+
+**18 selected current-source cases passed**: 11 new credential composition cases,
+two existing complete-inspection cases and five existing provider-claim fake
+cases. The same 11 new cases passed against the saved original Store as comparison
+evidence, not 29 distinct current-source cases. Missing registration skips expiry;
+clock evaluation still precedes terminal-status filtering. The status read closes
+before the active-only late import/configuration/substituted-load branch.
+Generation conflict stops before registration lookup; replay skips incoming
+expiry and returns under the same lock. New registration retains registration →
+head → waiting-cache resume → status order, and revoke retains head → optional
+write → status inside one transaction. No selected case failed.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_credential_work.py services/intelligence/tests/test_source_requests.py::test_complete_inspection_keeps_one_snapshot_clock_order_and_post_read_credential_refresh services/intelligence/tests/test_source_admission.py::test_provider_claim_retains_control_clock_cache_credential_and_lease_order -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest /tmp/tempo_intelligence_credential_original_test.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+python3 /tmp/tempo-intelligence-credential-source-proof.py
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-credential-build
+python3 /tmp/tempo-intelligence-credential-artifact-proof.py
+python3 /tmp/tempo-intelligence-analysis-source-audit.py
+```
+
+Fixed-operation expansion matches all four complete original method sequences,
+eight query call points/seven distinct strings, guards, late import, returns and
+lookup/clock order. The other 32 Store methods remain AST-identical. The shared
+fixed head lookup serves both original reload/revoke call points without changing
+either context. No generic query port or new transaction/registration authority
+was introduced.
+
+The two new module paths justify fresh source-distribution → wheel discovery.
+Four current implementation/doc files match wheel bytes and seven current
+implementation/test/doc files match source-distribution bytes; no cache files
+ship. An isolated smoke imports all three moved/wired modules from that wheel
+with declared pure source dependencies, confirms the late private-loader module
+is not imported and initializes no pool/connection. Four owner Mermaid blocks
+parse; scoped Python syntax, whitespace/conflict and local Markdown links pass.
+GitHub rendering was not inspected. Actual private-file/security and native
+concurrency/durability proofs remain unchanged and were not run.
+
+The [complete source responsibility audit](../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+now accounts for every one of the 33 AnalysisStore methods, with 96 direct query
+call points. That file was source-read only and remains unchanged. The conservative
+inventory identifies three fixed owner/read operations, three existing composition
+wrappers, two pure application methods and 25 mixed workflow/response candidates.
+Receipt response/digest assembly is included explicitly; its atomic guards/writer
+stay root. `_input` and `capture` fact assembly must be reviewed as fixed projection
+versus application flow, without forcing a new port. Suggested remaining batches:
+read/status/cursor/export response, input/page admission/finalization, run commands/
+receipts/dismissal, derivation/publication, and engine claim/result/failure. Initial
+estimate is about five coherent batches / 5–7 hours, with the first read group
+about 60–90 minutes; this is not authorization for redesign or a native campaign.
+
+The Store's previously inventoried seven mixed workflows are now delegated; its
+38-method inventory still explicitly retains startup/workspace validation,
+transaction settings, guards, canonical writers and ordered failure effects.
+Completion of these Store moves does not complete Intelligence separation.
+
+Original files are retained under `/tmp/tempo-intelligence-credential-before/`;
+logs, proof scripts and distributions remain in the corresponding
+`/tmp/tempo-intelligence-credential-*` paths. The full read-only Analysis audit is
+`/tmp/tempo-intelligence-analysis-source-audit.json`. Exact final file/artifact and
+unchanged Analysis source hashes are in
+`/tmp/tempo-intelligence-credential-evidence.json`. These task-owned artifacts are
+retained for integration; the shared review environment is unchanged. No git,
+global-doc, native/live, actual private credential/provider, config/security/grant,
+full-system, CI, deployment, issue or merge action was performed.

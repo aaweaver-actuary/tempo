@@ -126,7 +126,8 @@ or model execution. `tests/test_maia_work.py` exercises these moved boundaries
 with the actual composition/fixed operations and fake rows; existing contract
 validation and native durability/concurrency proofs retain their separate owners.
 The [full Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
-still identifies four mixed credential methods and the separate unfinished Analysis audit.
+accounts for the retained Store authority/composition and all 33 AnalysisStore
+methods; the latter still contains substantial application work.
 
 ## Provider-source claim and publication boundary
 
@@ -143,7 +144,7 @@ flowchart LR
   claim -->|control / cache / status / leases| fixed[Fixed provider operations]
   publish -->|control lock / fence / append / accept / release| fixed
   fixed --> tables[(Intelligence provider / cache / evidence / registration tables)]
-  fixed --> facts[Existing credential-status capability]
+  fixed --> facts[Existing credential-status projection]
 ```
 
 The [fixed adapter](../../database/tempo_intelligence_database/adapters/provider_operations.py)
@@ -157,6 +158,39 @@ load private material. Publication retains control-lock → fence → writer loo
 port, independent commit, provider call, private credential access or lease redesign is
 introduced. `tests/test_source_admission.py` owns the moved request/provider
 boundaries with actual fixed operations, fake rows and synthetic metadata.
+
+## Credential workflow boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`credential_work.py`](src/tempo_intelligence/credential_work.py) owns the existing
+row status/expiry projection, configured status flow and registration/revocation
+orchestration. [`CredentialOperations`](../../database/tempo_intelligence_database/adapters/credential_operations.py)
+retains complete bound queries, head-generation and retired-registration guards
+and fixed writes. Store supplies the existing owner read/write contexts.
+
+```mermaid
+flowchart LR
+  store[Store transaction composition] --> app[Credential status and registration application]
+  app -->|existing read or write owner context| fixed[Fixed credential operations and atomic guards]
+  fixed --> tables[(Intelligence credential head / registration / waiting-cache rows)]
+  app -->|active status only; after initial read closes| loader[Existing private material loader]
+  app --> projection[Existing status and expiry projection]
+  projection -->|borrowed caller connection| fixed
+```
+
+The private-loader import/configured lookup remains in its original conditional
+branch after the initial status read closes. Projection expiry retains its clock
+short circuit; registration replay skips incoming expiry and returns under the
+original locked context. New registration still writes registration → head →
+waiting-cache resume → status; revocation keeps head guard → optional revoke →
+status order. The move changes no configuration, grants, secrets, private loader
+or provider behavior. `tests/test_credential_work.py` proves the moved boundaries
+with fake rows, synthetic material and a substituted loader; the real loader and
+private files are never used by this extraction's checks. Native durability and
+actual private-file/security checks remain separate and unexecuted.
+The [complete source audit](../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+accounts for every AnalysisStore method; completing the Store workflows does not
+complete separation of the whole Intelligence owner.
 
 ## Install and run
 

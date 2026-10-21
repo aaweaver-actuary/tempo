@@ -14,15 +14,16 @@ from tempo_intelligence.identity import canonical_json, digest
 from tempo_intelligence.maia_work import accept_maia, create_maia_job, maia_jobs, maia_status, require_profile
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
-from tempo_intelligence.serialization import public
 from tempo_intelligence.source_requests import (command_request, failure_transition, inspect_request,
     read_evidence, retry_eligible, submit_request)
 from tempo_intelligence.provider_work import claim_source, publish_source
+from tempo_intelligence.credential_work import credential_status, project_status, reload_credential, revoke_credential
 from tempo_intelligence_database.adapters.request_inspection import RequestInspection
 from tempo_intelligence_database.adapters.request_commands import RequestCommands
 from tempo_intelligence_database.adapters.maia_operations import MaiaOperations
 from tempo_intelligence_database.adapters.request_admission import RequestAdmission
 from tempo_intelligence_database.adapters.provider_operations import ProviderOperations
+from tempo_intelligence_database.adapters.credential_operations import CredentialOperations
 
 
 def utcnow():
@@ -182,54 +183,26 @@ class Store:
         return self._command(request_id,command_id,expected_revision,True)
 
     def _credential_status(self,database):
-        row=database.execute("SELECT h.generation,h.registration_id,r.status,r.expires_at FROM credential_head h LEFT JOIN credential_registrations r USING(registration_id) WHERE h.id=1").fetchone()
-        if not row["registration_id"]:
-            return {"generation":row["generation"],"registration_id":None,"status":"credential_missing"}
-        if row["expires_at"] and row["expires_at"]<=utcnow() and row["status"] not in ("rejected","revoked"):
-            row["status"]="expired"
-        return public(row)
+        return project_status(CredentialOperations(self,database),lambda:utcnow())
+
+    @contextmanager
+    def credential_read_transaction(self):
+        with self.transaction(read_only=True) as database:
+            yield CredentialOperations(self,database)
+
+    @contextmanager
+    def credential_write_transaction(self):
+        with self.transaction() as database:
+            yield CredentialOperations(self,database)
 
     def credential_status(self):
-        with self.transaction(read_only=True) as database:
-            status=self._credential_status(database)
-        if status["status"] in ("registered","accepted"):
-            from tempo_intelligence.credentials import CredentialError, PrivateCredentials
-            try:
-                material=PrivateCredentials(self.configuration.credential_file).load()
-                if material.registration_id != status["registration_id"]:
-                    status["status"]="credential_registration_mismatch"
-                elif material.expires_at and material.expires_at<=utcnow():
-                    status["status"]="expired"
-            except CredentialError:
-                status["status"]="credential_storage_unavailable"
-        return status
+        return credential_status(self.credential_read_transaction,lambda:self.configuration,lambda:utcnow())
 
     def credential_reload(self,material,expected_generation):
-        with self.transaction() as database:
-            head=database.execute("SELECT * FROM credential_head WHERE id=1 FOR UPDATE").fetchone()
-            if head["generation"] != expected_generation:
-                raise DomainError("credential_generation_conflict")
-            old=database.execute("SELECT * FROM credential_registrations WHERE registration_id=%s",(material.registration_id,)).fetchone()
-            if old:
-                if head["registration_id"] == material.registration_id and old["status"] in ("registered","accepted"):
-                    return self._credential_status(database)
-                raise DomainError("registration_id_retired")
-            if material.expires_at and material.expires_at<=utcnow():
-                raise DomainError("credential_expired",422)
-            generation=head["generation"]+1
-            database.execute("INSERT INTO credential_registrations(registration_id,generation,status,expires_at) VALUES(%s,%s,'registered',%s)",(material.registration_id,generation,material.expires_at))
-            database.execute("UPDATE credential_head SET generation=%s,registration_id=%s WHERE id=1",(generation,material.registration_id))
-            database.execute("UPDATE caches SET state='queued',error_code=NULL,next_attempt_at=NULL WHERE state='waiting_credentials'")
-            return self._credential_status(database)
+        return reload_credential(material,expected_generation,self.credential_write_transaction,lambda:utcnow())
 
     def credential_revoke(self,expected_generation):
-        with self.transaction() as database:
-            head=database.execute("SELECT * FROM credential_head WHERE id=1 FOR UPDATE").fetchone()
-            if head["generation"] != expected_generation:
-                raise DomainError("credential_generation_conflict")
-            if head["registration_id"]:
-                database.execute("UPDATE credential_registrations SET status='revoked' WHERE registration_id=%s",(head["registration_id"],))
-            return self._credential_status(database)
+        return revoke_credential(expected_generation,self.credential_write_transaction)
 
     @contextmanager
     def provider_transaction(self):
