@@ -579,3 +579,7 @@ Learning `gateway.py` and `remediation_adapter.py` delegate their33 original DB/
 ## Committed prefix/service-policy continuation consistency — 2026-10-21
 
 At c3f78fe0, original inventory arithmetic is113completed+1false positive+42pending=156; owner totals and root overview agree. The81 committed changed paths relative to82d0d26c resolve568 relative Markdown links; all19 changed Mermaid blocks parse with the existing Mermaid11.12/jsdom toolchain. No SQL migration file changed. Committed whitespace and tracked conflict scans pass. Partial main.py work is explicitly not counted complete, and source-only checks do not establish native execution/live schema or whole-system isolation.
+
+## PR343 defensive-query compatibility import repair — 2026-10-21
+
+The later source audit found `background_diagnostics` still imports `_ELIGIBLE_THREAT_REQUEST` from the legacy command module. Restore that compatibility export as an alias of the single root scheduling constant; no query or behavior changes. A fresh process confirms command/diagnostics aliases are the identical root constant object. In a clean isolated PR343 checkout with empty DB/Redis URLs and explicit task SQLite fixtures, the six existing defensive command tests and the two diagnostic queue-classification/JIT-budget cases pass **eight cases**. No test/assertion/fixture changed, no lifespan/native/live service ran, and the explicit task pytest scratch is removed after evidence preservation. This repair remains on PR343; ongoing extraction work stays on its dependent branch.
