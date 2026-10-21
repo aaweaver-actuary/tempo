@@ -872,7 +872,7 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 @app.get("/api/health")
 def health():
     if postgres_store.configured():
-        from tempo_legacy_database.adapters.postgres_readiness import postgres_health
+        from .operations.postgres_readiness import postgres_health
         response = postgres_health()
         from .services.frozen_maia_math import READER_VERSION
         response["frozen_opening_reader_version"] = READER_VERSION

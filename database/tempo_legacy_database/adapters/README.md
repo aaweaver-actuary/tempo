@@ -19,7 +19,7 @@
 | [snapshot_reads.py](snapshot_reads.py) | Existing SQL snapshot/evidence capture helper, relocated intact with native values, C collation, batch and digest behavior preserved. |
 
 - [queue_position_lock.py](queue_position_lock.py): existing queue-position advisory lock boundary.
-- [postgres_readiness.py](postgres_readiness.py): existing PostgreSQL/worker readiness adapter.
+- [postgres_readiness.py](postgres_readiness.py): four existing PostgreSQL readiness fact queries on the same reader scope. [Operational health decisions](../../../backend/app/operations/README.md) retain HTTP/Celery/status evaluation outside database.
 
 [Command persistence](commands/README.md) groups the existing account/activity/annotation/statistics/endgame/teaching operations. [Control/read projections](controls/README.md) groups settings, review reconciliation, opening evidence and coverage operations. Their application call-site composition and transaction authority stay outside these helpers.
 
@@ -78,3 +78,5 @@
 [Existing coverage explorer and seeding persistence](coverage/README.md) owns complete node/candidate/run/route/scope queries. Traversal, chess, probability/cohort, fingerprint, lease/current-scope decisions and provider/cache/task callbacks stay in the existing applications, with unchanged transaction composition.
 
 [Background diagnostic reads](background_diagnostics/README.md) hold complete bounded aggregates and existing PostgreSQL/SQLite timeout/progress/read scopes. Application clocks, remaining-budget/progress callbacks, error classification, formatting and runtime merge remain outside; lazy engine iteration retains original query interleaving.
+
+Readiness facts use [runtime metadata](../schema/runtime-metadata/README.md) and [queue projection fields](../schema/study-queue-review-2/README.md): maximum migration version, required settings identity, queue state/refresh_pending/last_error and task state/payload. These are source-schema read projections; no table/field/key/FK/ownership changes, and no live schema verification. Application JSON/date/readiness decisions remain outside this tree.
