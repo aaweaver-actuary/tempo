@@ -13,7 +13,7 @@ from app.services import opening_segmentation
 def test_segmentation_migration_has_unique_number_and_matches_schema_readiness():
     from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
-    migration_directory = Path(__file__).resolve().parents[1] / 'migrations'
+    migration_directory = Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations'
     migration_paths = sorted(migration_directory.glob('[0-9][0-9][0-9]_*.sql'))
     migration_numbers = [int(path.name[:3]) for path in migration_paths]
     assert len(migration_numbers) == len(set(migration_numbers))
