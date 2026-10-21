@@ -283,7 +283,7 @@ The Game Evidence worker targets `/internal/evidence` with `TEMPO_GAME_EVIDENCE_
 uv run --project services/learning/runtime --locked --no-editable python \
   services/learning/runtime/qualify.py /absolute/evidence/installed
 services/learning/runtime/.venv/bin/python \
-  services/learning/runtime/integration/run_postgres.py /absolute/evidence/native
+  database/tempo_learning_database/tooling/run_postgres.py /absolute/evidence/native
 # Existing component runner also selects the declared producer suites:
 TEMPO_COMPONENT_PYTHON="$PWD/services/learning/runtime/.venv/bin/python" \
   node tools/component-build/test-lane.mjs --component learning

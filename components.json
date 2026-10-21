@@ -181,7 +181,7 @@
         "src",
         "fixtures",
         "tests",
-        "integration",
+        "../../../database/tempo_learning_database/tooling",
         "browser",
         "qualify.py",
         "Dockerfile",
@@ -202,7 +202,7 @@
           "owner": "learning",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/learning/runtime/integration/run_postgres.py",
+          "command": "python database/tempo_learning_database/tooling/run_postgres.py",
           "inputs": [
             "services/learning/runtime",
             "services/learning/application/qualification.py",
@@ -212,7 +212,8 @@
             "services/learning/remediation",
             "services/game-evidence",
             "services/content",
-            "tools/analysis-restoration/a_bridge"
+            "tools/analysis-restoration/a_bridge",
+            "database/tempo_learning_database"
           ]
         }
       ],
@@ -2060,7 +2061,7 @@
       "owner": "learning",
       "kind": "postgres",
       "cwd": ".",
-      "command": "python services/learning/runtime/integration/run_postgres.py",
+      "command": "python database/tempo_learning_database/tooling/run_postgres.py",
       "inputs": [
         "services/learning/runtime",
         "services/learning/application/qualification.py",

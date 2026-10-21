@@ -3,7 +3,7 @@
 from pathlib import Path
 import json, os, secrets, subprocess, sys, time, shutil, hashlib, socket
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 APPLICATION = ROOT / "services/learning/application"
 sys.path.insert(0, str(APPLICATION))
 from qualification import (
@@ -58,7 +58,8 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
     ).strip()
     report["source_inputs"] = {
         str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted((ROOT / "services/learning/runtime").rglob("*"))
+        for path in sorted([*(ROOT / "services/learning/runtime").rglob("*"),
+                            *(ROOT / "database/tempo_learning_database").rglob("*")])
         if path.is_file()
         and not any(
             part in {".venv", "__pycache__", "dist", ".pytest_cache", "node_modules"}
