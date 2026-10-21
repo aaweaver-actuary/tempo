@@ -592,16 +592,16 @@ def test_provider_origin_mismatch_is_ineligible_without_blocking_maia_retry(stat
 
 
 def test_legacy_maia_retry_preserves_persisted_constraints_and_refresh_uses_current_budget(state,monkeypatch):
-    from tempo_intelligence_database.adapters import store as store_module
+    from tempo_intelligence import maia_work
     store,_,_=state
-    current_builder=store_module.build_maia_job
+    current_builder=maia_work.build_maia_job
     def legacy_builder(*arguments):
         built=current_builder(*arguments)
         job=built.model_dump(mode="json")
         job["constraints"]["max_memory_mb"]=512
         return type(built).model_validate(job)
     with monkeypatch.context() as historical:
-        historical.setattr(store_module,"build_maia_job",legacy_builder)
+        historical.setattr(maia_work,"build_maia_job",legacy_builder)
         submit(store,request_value(sources=[maia_source()]))
     original_job=store.maia_jobs("request")["jobs"][0]
     assert original_job["constraints"]=={"max_wall_time_ms":5000,"max_memory_mb":512}

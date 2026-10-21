@@ -10,11 +10,12 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from tempo_legacy_database.adapters.commands import coverage_maia as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
 from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .services.canonical_prefix import read_prefix
-from .services.canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, latest_coverage_attempt_predicate
+from .services.canonical_scope_freshness import coverage_run_is_current
 from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
 
@@ -27,14 +28,10 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
     lease_id = str(payload.get("lease_id", ""))
     if not node_id or not lease_id:
         raise HTTPException(422, "Invalid coverage lease")
-    owner = database.execute_native("SELECT repertoire_id FROM repertoire_coverage_nodes WHERE id=%s", (node_id,)).fetchone()
+    owner = storage.node_owner(database, node_id)
     if owner:
         read_prefix(database, owner[0], lock=True)
-    row = database.execute_native(
-        "SELECT n.*,r.settings_json,r.status AS run_status FROM repertoire_coverage_nodes n "
-        "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-        f"WHERE n.id=%s AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (node_id,),
-    ).fetchone()
+    row = storage.locked_lease(database, node_id)
     if row is None or row["maia_status"] != "leased" or row["lease_id"] != lease_id:
         raise HTTPException(409, "Coverage lease is no longer active")
     if (row["run_status"] == "building" or not coverage_run_is_current(database, row, row["repertoire_id"])):
@@ -44,31 +41,15 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
 
 def claim_maia_node(database: PostgresConnection, _payload: dict[str, Any]) -> dict[str, Any]:
     now = _now()
-    row = database.execute_native(
-        "SELECT n.id,n.run_id,n.repertoire_id,n.fen,r.settings_json FROM repertoire_coverage_nodes n "
-        "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-        "LEFT JOIN background_activity control ON control.source='coverage' "
-        "AND control.work_id=n.run_id "
-        "WHERE r.status IN ('queued','running','complete','failed') "
-        "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
-        "AND COALESCE(control.paused,0)=0 "
-        f"AND {coverage_scope_predicate(database, native=True)} "
-        f"AND {latest_coverage_attempt_predicate(database, native=True)} "
-        "ORDER BY COALESCE(control.promoted,0) DESC,r.created_at,n.ply,n.id "
-        "LIMIT 1", (now,),
-    ).fetchone()
+    row = storage.claim_candidate(database, now)
     if row is None:
         return {"job": None}
     read_prefix(database, row["repertoire_id"], lock=True)
-    current = database.execute_native("SELECT maia_status,lease_expires_at FROM repertoire_coverage_nodes WHERE id=%s FOR UPDATE SKIP LOCKED", (row["id"],)).fetchone()
+    current = storage.locked_candidate(database, row["id"])
     if current is None or (current["maia_status"] != "queued" and not (current["maia_status"] == "leased" and current["lease_expires_at"] < now)) or not coverage_run_is_current(database, row, row["repertoire_id"]):
         return {"job": None}
     lease_id = str(uuid.uuid4())
-    database.execute_native(
-        "UPDATE repertoire_coverage_nodes SET maia_status='leased',lease_id=%s,"
-        "lease_expires_at=%s,updated_at=%s WHERE id=%s",
-        (lease_id, (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(), now, row["id"]),
-    )
+    storage.mark_leased(database, lease_id, (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(), now, row["id"])
     return {"job": {"node_id": row["id"], "run_id": row["run_id"],
                     "lease_id": lease_id, "fen": row["fen"],
                     "elo": json.loads(row["settings_json"])["maia_elo"]}}
@@ -76,10 +57,7 @@ def claim_maia_node(database: PostgresConnection, _payload: dict[str, Any]) -> d
 
 def heartbeat_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
     row = _lease(database, payload)
-    database.execute_native(
-        "UPDATE repertoire_coverage_nodes SET lease_expires_at=%s,updated_at=%s WHERE id=%s",
-        ((datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(), _now(), row["id"]),
-    )
+    storage.heartbeat(database, (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(), _now(), row["id"])
     return {"status": "leased"}
 
 
@@ -88,12 +66,7 @@ def release_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> 
     lease_id = str(payload.get("lease_id", ""))
     if not node_id or not lease_id:
         raise HTTPException(422, "Invalid coverage lease")
-    changed = database.execute_native(
-        "UPDATE repertoire_coverage_nodes SET maia_status='queued',lease_id=NULL,"
-        "lease_expires_at=NULL,updated_at=%s "
-        "WHERE id=%s AND maia_status='leased' AND lease_id=%s RETURNING id",
-        (_now(), node_id, lease_id),
-    ).fetchone()
+    changed = storage.release(database, _now(), node_id, lease_id)
     return {"status": "queued" if changed else "stale"}
 
 
@@ -104,15 +77,8 @@ def fail_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> dic
         raise HTTPException(422, "Invalid coverage failure report")
     message = f"Maia coverage failed: {error[:900]}"
     now = _now()
-    database.execute_native(
-        "UPDATE repertoire_coverage_nodes SET maia_status='failed',lease_id=NULL,"
-        "lease_expires_at=NULL,last_error=%s,updated_at=%s WHERE id=%s",
-        (message, now, row["id"]),
-    )
-    database.execute_native(
-        "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s "
-        "WHERE id=%s", (message, now, row["run_id"]),
-    )
+    storage.fail_node(database, message, now, row["id"])
+    storage.fail_run(database, message, now, row["run_id"])
     enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
     return {"status": "failed"}
 
@@ -126,36 +92,11 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
     moves = list({move["move_uci"]: move for move in moves}.values())
     covered_replies = list(json.loads(row["covered_replies_json"]))
     if moves:
-        database.execute_native(
-            "INSERT INTO repertoire_coverage_candidates("
-            "node_id,move_uci,maia_probability,covered,source_state) "
-            "SELECT %s,move_uci,probability,"
-            "CASE WHEN move_uci=ANY(%s::text[]) THEN 1 ELSE 0 END,'maia-only' "
-            "FROM jsonb_to_recordset(%s::jsonb) "
-            "AS move(move_uci text,probability double precision) "
-            "ON CONFLICT(node_id,move_uci) DO UPDATE SET "
-            "maia_probability=excluded.maia_probability,covered=excluded.covered",
-            (row["id"], covered_replies, json.dumps(moves)),
-        )
+        storage.upsert_candidates(database, row["id"], covered_replies, json.dumps(moves))
     settings = json.loads(row["settings_json"])
     recalculate_coverage_node(database, row["id"], settings, int(row["explorer_games"]))
-    database.execute_native(
-        "UPDATE repertoire_coverage_nodes SET maia_status='complete',lease_id=NULL,"
-        "lease_expires_at=NULL,updated_at=%s WHERE id=%s", (_now(), row["id"]),
-    )
-    database.execute_native(
-        "INSERT INTO background_activity(source,work_id,generation_key,phase,"
-        "completed_units,total_units,updated_at) "
-        "SELECT 'coverage',%s,%s,'Checking positions',"
-        "COUNT(*) FILTER (WHERE explorer_status='complete') + "
-        "COUNT(*) FILTER (WHERE maia_status='complete'),COUNT(*)*2,%s "
-        "FROM repertoire_coverage_nodes WHERE run_id=%s "
-        "ON CONFLICT(source,work_id) DO UPDATE SET "
-        "generation_key=excluded.generation_key,phase=excluded.phase,"
-        "completed_units=excluded.completed_units,total_units=excluded.total_units,"
-        "updated_at=excluded.updated_at",
-        (row["run_id"], row["run_id"], _now(), row["run_id"]),
-    )
+    storage.mark_complete(database, _now(), row["id"])
+    storage.record_progress(database, row["run_id"], row["run_id"], _now(), row["run_id"])
     enqueue_priority_refresh_in_transaction(database, row["repertoire_id"])
     enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
     return {"status": "complete"}

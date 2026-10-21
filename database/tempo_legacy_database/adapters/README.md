@@ -57,3 +57,12 @@
 
 
 [Bounded prefix reads](prefix_reads/README.md) contains existing diagnostic graph/evidence projections and the complete native-typed transition state capture, preserving one read-only MVCC scope, query/size/payload order and resource/stale-link guards. Algorithms, typed responses and existing planning authority remain unchanged outside database.
+
+
+[Introduction-priority storage](introduction_priorities/README.md) holds complete coverage/personal-evidence/card/settings projections, priority job claims and generation publication operations. Scoring, bounded read/page/chunk loops, clocks, foreground yielding, stale-generation decisions and callbacks remain in the existing application owner.
+
+
+[HTTP composition storage](http_composition/README.md) holds complete system/settings and queue-maintenance queries separated from the existing HTTP composition root. Application settings/HTTP/admission/refresh/lifecycle decisions remain there; `main.py` is still pending until its remaining database operations are extracted.
+
+
+[Priority preparation and retention](priority_lifecycle/README.md) contains existing source-epoch locks, preparation/staging/publication queries and native/SQLite retention statements. Application generation/lease/freshness checks, row budgets, clocks, slice progression and durable callbacks remain outside; complete operations reuse exact introduction-priority queries.

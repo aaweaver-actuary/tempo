@@ -5077,3 +5077,13 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Legacy statistics persistence
 
 `backend/tests/test_legacy_statistics_database_split.py` guards direct operations and preserves dimension rejection, one-time projection capture before clock/connection, current-comparison filtering and daily job claims. Existing statistics cases retain metric/date/math assertions. These selected fakes/task-SQLite checks do not establish native PostgreSQL or deployed isolation.
+
+
+## Introduction-priority database extraction
+
+`backend/tests/test_introduction_priority_database_split.py` owns four focused boundaries: direct-operation delegation, legacy delete→clock→insert evaluation order, actual task-SQLite personal-evidence scope/color/speed/exclusion/keyset behavior, and pause/promotion/Study-only conditional claim authority. Existing scoring/parity/coalescing/replay/stale-generation/paging/publication tests retain their assertions. Native PostgreSQL locking and deployed optional-feature isolation remain unverified.
+
+
+## Legacy priority preparation and retention extraction
+
+`backend/tests/test_priority_lifecycle_database_split.py` owns focused direct-driver/dialect delegation, lease→source→job→task lock sequencing, absent-source fencing and task-SQLite epoch identity. Existing preparation fixtures and two SQLite retention cases retain generation, row-budget/publication and task assertions. Native PostgreSQL locking/translation and deployed isolation remain unverified.

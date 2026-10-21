@@ -25,6 +25,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from tempo_legacy_database.connections import background_read_connection, card_columns, connection, initialize, query_only_request, read_connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.http_composition import (
+    system as system_storage,
+    settings as settings_storage,
+    queue_maintenance as queue_maintenance_storage,
+)
+from tempo_legacy_database.adapters.commands import accounts as account_storage
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
@@ -215,10 +221,7 @@ async def lifespan(_: FastAPI):
     database_writer.start()
     if os.getenv("TEMPO_COORDINATOR_MODE", "embedded") == "external":
         with read_connection() as database:
-            current_projection = database.execute(
-                "SELECT state FROM queue_projections WHERE queue_date=?",
-                (date.today().isoformat(),),
-            ).fetchone()
+            current_projection = queue_maintenance_storage.queue_projection_state(database, date.today().isoformat())
         if current_projection is None:
             enqueue_daily_queue_refresh()
     else:
@@ -417,7 +420,7 @@ def _validated_analysis_evaluations(
 
 def _game_analysis_threshold() -> int:
     with background_read_connection() as database:
-        row = database.execute("SELECT major_mistake_cp FROM settings WHERE id=1").fetchone()
+        row = system_storage.analysis_threshold(database)
     if row is None:
         raise HTTPException(503, "Analysis settings are unavailable")
     return int(row[0])
@@ -859,13 +862,13 @@ def health():
         response["frozen_opening_reader_version"] = READER_VERSION
         from .services.opening_segmentation import stable_key
         with read_connection() as frozen_database:
-            identity = frozen_database.execute_native("SELECT (SELECT system_identifier::text FROM pg_control_system()),(SELECT oid::text FROM pg_database WHERE datname=current_database()),current_database(),current_schema(),(SELECT run_id FROM frozen_opening_activation WHERE id=1)").fetchone()
+            identity = system_storage.frozen_opening_identity(frozen_database)
         response["frozen_opening_target_id"] = stable_key(*tuple(identity)[:4])
         response["frozen_opening_active_run"] = identity[4]
         response["test_instance"] = os.getenv("TEMPO_TEST_INSTANCE") == "disposable"
         return response
     with read_connection() as db:
-        db.execute("SELECT id FROM settings LIMIT 1").fetchone()
+        system_storage.check_settings_read(db)
     if not database_writer.healthy:
         raise HTTPException(503, "Database writer is unavailable")
     return {
@@ -902,9 +905,7 @@ def system_tasks():
     with read_connection() as database:
         projections = [
             dict(row)
-            for row in database.execute(
-                "SELECT * FROM queue_projections ORDER BY queue_date DESC LIMIT 7"
-            )
+            for row in system_storage.recent_queue_projections(database)
         ]
     status = {
         "tasks": tasks,
@@ -1020,9 +1021,7 @@ def capabilities():
 @app.get("/api/settings", response_model=Settings)
 def get_settings():
     with read_connection() as db:
-        row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
-        ).fetchone()
+        row = settings_storage.public_settings(db)
     return Settings(**dict(row))
 
 
@@ -1044,58 +1043,46 @@ def put_settings(s: Settings,
         "coverage_maia_elo",
     )
     def persist_settings(db):
-        previous_settings = db.execute(
-            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
-        ).fetchone()
-        db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,study_only_mode=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
-            (
-                s.tactics_new_per_day,
-                s.defense_new_cards_per_day,
-                int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
-                int(s.defensive_analysis_enabled) if "defensive_analysis_enabled" in s.model_fields_set else previous_settings["defensive_analysis_enabled"],
-                int(s.study_only_mode) if "study_only_mode" in s.model_fields_set else previous_settings["study_only_mode"],
-                s.discovery_window_days,
-                s.initial_depth,
-                s.timezone,
-                s.new_cards_per_day,
-                s.study_new_per_day,
-                s.lichess_username,
-                s.chesscom_username,
-                s.auto_sync_minutes,
-                s.engine_line_window_cp,
-                s.major_mistake_cp,
-                s.light_first_interval_days,
-                s.draw_hold_user_moves,
-                s.coverage_reply_denominator,
-                s.coverage_cumulative_target,
-                s.coverage_horizon_fullmoves,
-                s.coverage_path_floor,
-                s.coverage_maia_elo,
-            ),
+        previous_settings = settings_storage.previous_settings(db)
+        settings_storage.save_settings(
+            db,
+            s.tactics_new_per_day,
+            s.defense_new_cards_per_day,
+            int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
+            int(s.defensive_analysis_enabled) if "defensive_analysis_enabled" in s.model_fields_set else previous_settings["defensive_analysis_enabled"],
+            int(s.study_only_mode) if "study_only_mode" in s.model_fields_set else previous_settings["study_only_mode"],
+            s.discovery_window_days,
+            s.initial_depth,
+            s.timezone,
+            s.new_cards_per_day,
+            s.study_new_per_day,
+            s.lichess_username,
+            s.chesscom_username,
+            s.auto_sync_minutes,
+            s.engine_line_window_cp,
+            s.major_mistake_cp,
+            s.light_first_interval_days,
+            s.draw_hold_user_moves,
+            s.coverage_reply_denominator,
+            s.coverage_cumulative_target,
+            s.coverage_horizon_fullmoves,
+            s.coverage_path_floor,
+            s.coverage_maia_elo,
         )
         for provider, username in (
             ("lichess", s.lichess_username.strip()),
             ("chess.com", s.chesscom_username.strip()),
         ):
             if username:
-                db.execute(
-                    "INSERT INTO game_accounts(provider,username) VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET username=excluded.username",
-                    (provider, username),
-                )
+                account_storage.save_game_account(db, provider, username)
             else:
-                db.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
+                account_storage.delete_game_account(db, provider)
         coverage_changed = previous_settings is None or any(
             previous_settings[field] != getattr(s, field) for field in coverage_fields
         )
         eligible_repertoires = [
             row["id"]
-            for row in db.execute(
-                """SELECT r.id FROM repertoires r
-                   JOIN repertoire_integrity_state state ON state.repertoire_id=r.id
-                   WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
-                     AND state.status='clean'"""
-            )
+            for row in settings_storage.clean_repertoires(db)
         ] if coverage_changed or previous_settings["discovery_window_days"] != s.discovery_window_days else []
         return eligible_repertoires if coverage_changed else [], (
             eligible_repertoires if previous_settings["discovery_window_days"] != s.discovery_window_days else []
@@ -1228,14 +1215,7 @@ def _execute_daily_queue_task(task: dict) -> None:
     except Exception as error:
         sanitized_error = str(error)[:500]
         submit_background_write(
-            lambda database: database.execute(
-                """INSERT INTO queue_projections(
-                       queue_date,state,generation,refresh_pending,last_error
-                   ) VALUES(?,'failed',0,0,?)
-                   ON CONFLICT(queue_date) DO UPDATE SET state='failed',
-                       refresh_pending=0,last_error=excluded.last_error""",
-                (queue_date, sanitized_error),
-            ),
+            lambda database: queue_maintenance_storage.mark_queue_projection_failed(database, queue_date, sanitized_error),
             label=f"daily-queue-failed:{queue_date}",
         )
         raise
@@ -1266,9 +1246,7 @@ register_durable_task_handler("discovery_recommendation", execute_recommendation
 def _ensure_current_daily_queue() -> None:
     queue_date = date.today().isoformat()
     with read_connection() as database:
-        projection = database.execute(
-            "SELECT state FROM queue_projections WHERE queue_date=?", (queue_date,)
-        ).fetchone()
+        projection = queue_maintenance_storage.queue_projection_state(database, queue_date)
     if projection is None:
         enqueue_daily_queue_refresh(foreground=False)
 
@@ -1283,17 +1261,8 @@ def _ensure_daily_defense_admission() -> None:
             return
     today = date.today().isoformat()
     with read_connection() as database:
-        existing = database.execute(
-            """SELECT 1 FROM background_tasks WHERE kind='defensive_admission'
-               AND deduplication_key=? LIMIT 1""", (today,),
-        ).fetchone()
-        eligible = database.execute(
-            """SELECT 1 FROM threat_training_candidates
-               WHERE validation_state IN ('engine_supported','validated_control')
-               AND approved_at IS NULL AND dismissed_at IS NULL AND paused_at IS NULL
-               AND superseded_at IS NULL
-               LIMIT 1"""
-        ).fetchone()
+        existing = queue_maintenance_storage.existing_defense_admission(database, today)
+        eligible = queue_maintenance_storage.eligible_defense_admission(database)
     if not existing and eligible:
         enqueue_defense_admission(background=True)
 
@@ -1303,13 +1272,7 @@ register_maintenance_handler(_ensure_daily_defense_admission)
 
 def _ensure_discovery_admissions() -> None:
     with read_connection() as database:
-        intent = database.execute(
-            """SELECT admission.id FROM discovery_admission_intents admission
-               WHERE admission.state!='queued'
-                 AND NOT EXISTS(SELECT 1 FROM background_tasks task
-                     WHERE task.kind='discovery_admission' AND task.deduplication_key=admission.id)
-               ORDER BY admission.created_at,admission.id LIMIT 1"""
-        ).fetchone()
+        intent = queue_maintenance_storage.pending_discovery_admission(database)
     if intent:
         enqueue_admission_intent(intent["id"])
 
@@ -1328,13 +1291,7 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     )
     submit = submit_foreground_write if foreground else submit_background_write
     submit(
-        lambda database: database.execute(
-            """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-               VALUES(?,'refreshing',0,1)
-               ON CONFLICT(queue_date) DO UPDATE SET state='refreshing',
-                   refresh_pending=1,last_error=NULL""",
-            (queue_date,),
-        ),
+        lambda database: queue_maintenance_storage.mark_queue_projection_refreshing(database, queue_date),
         label=f"daily-queue-refreshing:{queue_date}",
     )
     coordinator.wake()

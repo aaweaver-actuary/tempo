@@ -488,3 +488,132 @@ unfinished extraction work, as explicitly inventoried. Fixed database/atomic
 guards retain their existing authority. Native durability/concurrency, installed
 consumer runtime, live data, credentials/security, full-system behavior, CI,
 deployment and merge were not exercised or qualified by this slice.
+
+## Maia/profile/evidence workflows — October 21, 2026
+
+Six complete existing Store application blocks moved: `_profile`, `_maia_job`,
+`evidence`, `maia_jobs`, `accept_maia` and `maia_status`. `maia_work.py` owns profile
+configuration, immutable work creation, job-list/result/status workflow and
+semantic validation; `source_requests.read_evidence` owns the evidence envelope.
+The root `MaiaOperations` retains complete bound queries, profile binding and
+unknown/stale/replay/transition guards and the same caller-owned connection.
+Store supplies its unchanged read/write transaction contexts. There is no new
+query port, execution/provider dependency or transaction authority.
+
+**35 selected current-source cases passed**: 11 new actual-composition/fixed-row
+boundary cases, 23 existing Maia contract/semantic cases and the existing HTTP
+worker-payload case. The same 11 boundary cases also passed against the saved
+pre-move Store; this is comparison evidence, not 46 distinct current-source
+cases. An initial bookkeeping assertion in the new test's event filtering was
+corrected before the final pass; no production behavior correction was needed.
+The existing upstream Starlette/AnyIO deprecation remains unsuppressed.
+
+The new boundary cases preserve configured-profile evaluation before the fixed
+read, immutable previous-job retry without current workspace/default lookup,
+binding iteration order and evidence serialization inside the read snapshot.
+Result wire serialization precedes transaction entry; status serialization
+follows the job lock. Writer lookup precedes application payload construction;
+evidence appends before job completion. Result/status replay skips cache writes,
+and failed status updates the cache after the job. The retained native historical
+budget test changes only its moved builder import/patch location and was not run.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_maia_work.py services/intelligence/tests/test_maia_validation.py services/intelligence/tests/test_api.py::test_valid_versioned_requests_and_worker_payloads_reach_their_own_ports -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest /tmp/tempo_intelligence_maia_original_boundary_test.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+python3 /tmp/tempo-intelligence-maia-source-proof.py
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-maia-build
+python3 /tmp/tempo-intelligence-maia-artifact-proof.py
+```
+
+The one-time source proof expands fixed operations at each original call point:
+all six complete application sequences, guards and parameter order match; all
+26 other existing Store methods and 10 earlier source-request helpers remain
+AST-identical. All 13 original query call points (11 distinct SQL strings) remain
+in the same sequence, including the shared fixed job lookup used separately by
+result and status. The transaction options and lazy configuration/workspace
+lookups match. The bound append capability resolves the original writer before
+payload construction, also checked by the original/current event proof.
+
+The fresh source distribution rebuilt its wheel. Five current implementation/doc
+files match wheel bytes; nine current implementation/test/doc files match source
+distribution bytes. Neither archive includes Python caches. An isolated import
+smoke loads all four moved/wired modules from that wheel, using source paths only
+for the declared pure contract/chess dependencies; it opens no pool/connection.
+Two owner Mermaid blocks parse using existing jsdom/Mermaid, and scoped source
+syntax, whitespace/conflict and local Markdown links pass. GitHub rendering was
+not inspected. This is artifact discovery/import evidence, not installed-consumer
+or native runtime qualification.
+
+Original scoped files remain under `/tmp/tempo-intelligence-maia-before/`.
+Source proof, artifact proof, original/current case logs and build logs are in
+`/tmp/tempo-intelligence-maia-*`; the exact final source/artifact hashes are in
+`/tmp/tempo-intelligence-maia-evidence.json`. Distributions remain under the build
+directory for integration. The shared review toolchain was not modified.
+
+The [full 34-method Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
+now identifies seven remaining mixed methods: `submit`, `_credential_status`,
+`credential_status`, `credential_reload`, `credential_revoke`, `claim` and
+`publish`. The separate AnalysisStore source audit remains outstanding. These are
+unfinished extraction work. No native/live database, actual engine/provider,
+private credential, security/grant, full-system, CI, deployment or merge action
+was exercised or qualified by this slice.
+
+## Complete request admission and provider-source workflows — October 21, 2026
+
+`Store.submit`, `claim` and `publish` now compose complete existing application
+workflows in `source_requests.submit_request` and `provider_work.py`. Fixed
+`RequestAdmission` and `ProviderOperations` retain parameter-bound SQL,
+request/snapshot replay guards, leases/fences and ordered writes on the same
+caller-owned connections. Store lends the unchanged write and `background=True`
+contexts. This introduces three module paths; fresh package discovery is checked
+for those paths, without installing or changing the shared review environment.
+
+**52 current-source cases passed**: 11 new actual-composition/fixed-row cases,
+38 existing source-policy cases, one existing HTTP worker-payload case and two
+bounded synthetic worker cases. The same 11 new boundary cases also passed
+against the saved original Store (comparison evidence, not 63 distinct current
+cases). No selected case failed. The upstream Starlette/AnyIO deprecation remains
+unsuppressed. All provider/credential-status facts and UUIDs used here are
+synthetic; no private file, actual provider/network or native database is accessed.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_admission.py services/intelligence/tests/test_source_requests.py services/intelligence/tests/test_api.py::test_valid_versioned_requests_and_worker_payloads_reach_their_own_ports services/intelligence/tests/test_worker.py::test_worker_without_claim_performs_no_provider_or_failure_operation services/intelligence/tests/test_worker.py::test_successful_slice_offloads_database_calls_and_keeps_http_on_event_loop -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest /tmp/tempo_intelligence_admission_provider_original_test.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+python3 /tmp/tempo-intelligence-admission-provider-source-proof.py
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-admission-provider-build
+python3 /tmp/tempo-intelligence-admission-provider-artifact-proof.py
+```
+
+One-time fixed-operation expansion matches all three complete original method
+sequences, including all 18 moved query strings/call points, guards and parameter
+order. The other 31 Store methods and all 11 prior source-request helpers remain
+AST-identical. The original transaction options and lazy workspace/configuration/
+inspection/clock/UUID expressions match. Original/current event proofs retain
+sorted cache locks and post-commit inspection; provider lock → clock → cache →
+status → lease order and early exits; and publication fence → writer lookup →
+UUID → clock → append → registration-result update → release order.
+
+The fresh source distribution rebuilds its wheel. Six current implementation/doc
+files match wheel bytes and nine current implementation/test/doc files match
+source-distribution bytes; neither archive includes Python caches. An isolated
+import smoke loads all five moved/wired modules from the fresh wheel, using source
+paths only for declared pure contract/chess dependencies, with no initialization
+or connection. Three owner Mermaid blocks parse with the existing tooling;
+scoped Python syntax, whitespace/conflict and local Markdown links pass. GitHub
+rendering was not inspected; installed-consumer and native runtime qualification
+are not established by these checks.
+
+Original files remain under `/tmp/tempo-intelligence-admission-provider-before/`;
+logs, one-time proof scripts and distributions remain in the matching
+`/tmp/tempo-intelligence-admission-provider-*` paths. Exact final file/artifact
+hashes and the 36-method classification are in
+`/tmp/tempo-intelligence-admission-provider-evidence.json`. These task-owned
+artifacts are retained for integration; the shared toolchain remains unchanged.
+
+The remaining mixed Store methods are `_credential_status`, `credential_status`,
+`credential_reload` and `credential_revoke`; their source-only separation is a
+later batch. `fail` retains its existing fenced, ordered fixed-effect application
+around the already extracted failure decision. The separate AnalysisStore audit
+remains outstanding. No native/live database, actual engine/provider, private
+credential, security/grant, full-system, CI, deployment or merge action was
+performed or qualified here.

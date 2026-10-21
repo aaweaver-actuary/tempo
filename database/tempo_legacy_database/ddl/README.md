@@ -13,3 +13,6 @@
 | [tactic_capture_migration.py](tactic_capture_migration.py) | Narrow compatibility repair, also available after verified legacy import. |
 
 [Ordered SQL migrations](migrations/README.md). Moving these files does not apply them. Migration bytes/checksums and order are preserved; the legacy wrapper’s installed-resource path changes only.
+
+
+[canonical_prefix_preview_schema.py](canonical_prefix_preview_schema.py) contains the existing three SQLite compatibility preview/result/position definitions and conditional initializer. Its canonical full field/key/relationship source references are in the [prefix storage README](../adapters/authored_repertoires/canonical_prefix/README.md). PostgreSQL migrations remain unchanged; no initializer or live schema was run by this move.

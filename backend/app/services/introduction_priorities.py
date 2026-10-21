@@ -17,10 +17,12 @@ import time
 
 import chess
 
+from tempo_legacy_database.adapters.introduction_priorities import inputs, jobs, publications
+
 from .repertoire_comparison import canonical_fen
 from .repertoire_coverage import blend_probabilities
 from .activity_gate import activity_gate
-from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity, game_scope_generation
+from .canonical_scope_freshness import coverage_run_is_current, scope_identity, game_scope_generation
 from .canonical_prefix import scope_lines, read_prefix
 
 
@@ -214,24 +216,13 @@ def _repertoire_reply_moves(lines: list[IntendedLine]) -> dict[str, set[str]]:
 def _coverage_evidence(
     database: sqlite3.Connection, repertoire_id: str
 ) -> dict[str, dict]:
-    run = database.execute(
-        """SELECT id,settings_json FROM repertoire_coverage_runs WHERE repertoire_id=?
-           ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
-                    created_at DESC LIMIT 1""",
-        (repertoire_id,),
-    ).fetchone()
+    run = inputs.coverage_run(database, repertoire_id)
     if not coverage_run_is_current(database, run, repertoire_id):
         return {}
-    nodes = database.execute(
-        """SELECT * FROM repertoire_coverage_nodes WHERE run_id=?""", (run["id"],)
-    ).fetchall()
+    nodes = inputs.coverage_nodes(database, run["id"])
     evidence: dict[str, dict] = {}
     for node in nodes:
-        candidates = database.execute(
-            """SELECT move_uci,explorer_probability,maia_probability
-               FROM repertoire_coverage_candidates WHERE node_id=?""",
-            (node["id"],),
-        ).fetchall()
+        candidates = inputs.coverage_candidates(database, node["id"])
         evidence[node["fen_key"]] = {
             "explorer_status": node["explorer_status"],
             "explorer_games": int(node["explorer_games"] or 0),
@@ -246,15 +237,7 @@ def _personal_evidence(
 ) -> dict[str, dict[str, float]]:
     if not fen_keys:
         return {}
-    placeholders = ",".join("?" for _ in fen_keys)
-    rows = database.execute(
-        f"""SELECT p.fen_key,p.move_uci,g.played_at
-            FROM game_position_occurrences p JOIN imported_games g ON g.id=p.game_id
-            WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
-              AND g.color=? AND g.adaptive_excluded=0
-              AND g.speed IN ({",".join("?" for _ in SUPPORTED_PERSONAL_SPEEDS)})""",
-        (*sorted(fen_keys), trained_color, *SUPPORTED_PERSONAL_SPEEDS),
-    ).fetchall()
+    rows = inputs.personal_evidence_rows(database, fen_keys, trained_color, SUPPORTED_PERSONAL_SPEEDS)
     return _personal_evidence_from_rows([dict(row) for row in rows])
 
 
@@ -574,27 +557,17 @@ def _load_priority_calculation_input(
     with read_section() as database:
         line_rows = [
             dict(row)
-            for row in database.execute(
-                "SELECT * FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
-                (repertoire_id,),
-            )
+            for row in inputs.repertoire_lines(database, repertoire_id)
         ]
         line_rows = scope_lines(database, repertoire_id, line_rows)
         has_prefix = bool(read_prefix(database, repertoire_id)["moves"])
         canonical_scope = {**scope_identity(database, repertoire_id), "game_scope_generation": game_scope_generation(database)}
         cards = tuple(
             dict(row)
-            for row in database.execute(
-                """SELECT DISTINCT c.* FROM cards c
-                   JOIN repertoire_cards rc ON rc.card_id=c.id
-                   WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.archived=0""",
-                (repertoire_id,),
-            )
+            for row in inputs.active_opening_cards(database, repertoire_id)
         )
         settings = dict(
-            database.execute(
-                "SELECT coverage_horizon_fullmoves,coverage_path_floor FROM settings WHERE id=1"
-            ).fetchone()
+            inputs.priority_settings(database)
         )
         coverage_evidence = _coverage_evidence(database, repertoire_id)
         real_game_misses = _real_game_miss_evidence(database, repertoire_id)
@@ -623,24 +596,13 @@ def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_colo
     rows: list[dict] = []
     for start in range(0, len(fen_keys), PERSONAL_EVIDENCE_KEYS_PER_READ):
         selected_keys = fen_keys[start:start + PERSONAL_EVIDENCE_KEYS_PER_READ]
-        placeholders = ",".join("?" for _ in selected_keys)
         last_position: tuple[str, str, int] | None = None
         while True:
-            cursor_clause = " AND (p.fen_key,p.game_id,p.ply)>(?,?,?)" if last_position else ""
-            scope_clause = " AND EXISTS(SELECT 1 FROM current_game_repertoire_matches match WHERE match.game_id=p.game_id AND match.repertoire_id=?)" if repertoire_id else ""
             with read_section() as database:
-                page = [dict(row) for row in database.execute(
-                    f"""SELECT p.fen_key,p.game_id,p.ply,p.move_uci,g.played_at
-                    FROM game_position_occurrences p
-                    JOIN imported_games g ON g.id=p.game_id
-                    WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
-                      AND g.color=? AND g.adaptive_excluded=0
-                      AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})
-                      {scope_clause} {cursor_clause}
-                    ORDER BY p.fen_key,p.game_id,p.ply LIMIT ?""",
-                    (*selected_keys, trained_color, *SUPPORTED_PERSONAL_SPEEDS,
-                     *([repertoire_id] if repertoire_id else []), *(last_position or ()), PERSONAL_EVIDENCE_ROWS_PER_READ),
-                ).fetchall()]
+                page = [dict(row) for row in inputs.personal_evidence_page(
+                    database, selected_keys, trained_color, SUPPORTED_PERSONAL_SPEEDS,
+                    repertoire_id, last_position, PERSONAL_EVIDENCE_ROWS_PER_READ,
+                )]
             rows.extend(page)
             if len(page) < PERSONAL_EVIDENCE_ROWS_PER_READ:
                 break
@@ -654,18 +616,9 @@ def _replace_priority_records(
     repertoire_id: str,
     records: list[PriorityRecord],
 ) -> None:
-    database.execute(
-        "DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?",
-        (repertoire_id,),
-    )
+    publications.delete_legacy_rows(database, repertoire_id)
     updated_at = _now()
-    database.executemany(
-        """INSERT INTO repertoire_card_introduction_priorities(
-               repertoire_id,card_id,scoring_version,completed_line_ids_json,
-               completion_mass,frontier_decisions_json,frontier_reach,
-               priority_score,evidence_json,updated_at
-           ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-        [
+    publications.insert_legacy_rows(database, [
             (
                 record.repertoire_id,
                 record.card_id,
@@ -679,8 +632,7 @@ def _replace_priority_records(
                 updated_at,
             )
             for record in records
-        ],
-    )
+        ])
 
 
 def rebuild_introduction_priorities(
@@ -690,23 +642,14 @@ def rebuild_introduction_priorities(
 
     line_rows = [
         dict(row)
-        for row in database.execute(
-            "SELECT * FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
-            (repertoire_id,),
-        )
+        for row in inputs.repertoire_lines(database, repertoire_id)
     ]
     lines = tuple(_maximal_intended_lines(scope_lines(database, repertoire_id, line_rows)))
     cards = tuple(
         dict(row)
-        for row in database.execute(
-            """SELECT DISTINCT c.* FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id
-               WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.archived=0""",
-            (repertoire_id,),
-        )
+        for row in inputs.compatibility_opening_cards(database, repertoire_id)
     )
-    settings = database.execute(
-        "SELECT coverage_horizon_fullmoves,coverage_path_floor FROM settings WHERE id=1"
-    ).fetchone()
+    settings = inputs.priority_settings(database)
     reply_moves = _repertoire_reply_moves(list(lines))
     calculation_input = PriorityCalculationInput(
         repertoire_id,
@@ -752,28 +695,12 @@ def enqueue_priority_refresh_in_transaction(
     scheduled_delay = request_refresh(database, 'repertoire_priority', repertoire_id,
                                       quiet_seconds=quiet_seconds)
     if scheduled_delay is None:
-        current_generation = database.execute(
-            'SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=? '
-            'UNION ALL SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=? LIMIT 1',
-            (repertoire_id, repertoire_id),
-        ).fetchone()
+        current_generation = jobs.known_generation(database, repertoire_id)
         return int(current_generation[0])
     now = refresh_clock()
     next_attempt_at = (now + timedelta(seconds=scheduled_delay)).isoformat()
-    database.execute(
-        """INSERT INTO repertoire_priority_jobs(
-               repertoire_id,generation,status,attempts,next_attempt_at,last_error,updated_at
-           ) VALUES(?,1,'queued',0,?,NULL,?)
-           ON CONFLICT(repertoire_id) DO UPDATE SET
-               generation=repertoire_priority_jobs.generation+1,
-               status='queued',attempts=0,next_attempt_at=excluded.next_attempt_at,
-               last_error=NULL,updated_at=excluded.updated_at""",
-        (repertoire_id, next_attempt_at, now.isoformat()),
-    )
-    generation = int(database.execute(
-        "SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=?",
-        (repertoire_id,),
-    ).fetchone()[0])
+    jobs.enqueue_generation(database, repertoire_id, next_attempt_at, now.isoformat())
+    generation = int(jobs.generation(database, repertoire_id))
     if postgres_store.configured():
         from .durable_tasks import enqueue_compact_postgres_task_in_transaction
 
@@ -795,17 +722,12 @@ def enqueue_priority_refreshes_for_game(
     from tempo_legacy_database.connections import connection
 
     with connection(background=background) as database:
-        game = database.execute(
-            "SELECT color FROM imported_games WHERE id=?", (game_id,)
-        ).fetchone()
+        game = inputs.game_color(database, game_id)
         if not game:
             return
         repertoire_ids = [
             row[0]
-            for row in database.execute(
-                "SELECT DISTINCT repertoire_id FROM repertoire_lines WHERE trained_color=?",
-                (game["color"],),
-            )
+            for row in inputs.repertoire_ids_for_color(database, game["color"])
         ]
     for repertoire_id in repertoire_ids:
         enqueue_priority_refresh(repertoire_id, background=background)
@@ -813,30 +735,17 @@ def enqueue_priority_refreshes_for_game(
 
 def claim_priority_refresh() -> dict | None:
     from tempo_legacy_database.connections import connection
-    from .background_activity import claimable, control_order
 
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        database.execute("BEGIN IMMEDIATE")
-        job = database.execute(
-            f"""SELECT * FROM repertoire_priority_jobs
-               WHERE status='queued' AND next_attempt_at<=?
-               AND {claimable('priority', 'repertoire_priority_jobs.repertoire_id')}
-               ORDER BY {control_order('priority', 'repertoire_priority_jobs.repertoire_id')}next_attempt_at,updated_at LIMIT 1""",
-            (_now(),),
-        ).fetchone()
+        jobs.begin_claim(database)
+        job = jobs.claim_candidate(database, _now())
         if not job:
             return None
-        changed = database.execute(
-            """UPDATE repertoire_priority_jobs
-               SET status='running',attempts=attempts+1,updated_at=?
-               WHERE repertoire_id=? AND generation=? AND status='queued'""",
-            (_now(), job["repertoire_id"], job["generation"]),
-        ).rowcount
+        changed = jobs.mark_running(database, _now(), job["repertoire_id"], job["generation"])
         claimed_job = dict(job) if changed else None
         if changed:
-            database.execute("UPDATE analysis_refresh_requests SET pending_since=NULL "
-                             "WHERE kind='repertoire_priority' AND repertoire_id=?", (job['repertoire_id'],))
+            jobs.clear_pending_request(database, job['repertoire_id'])
     if claimed_job:
         logging.getLogger("tempo.background").info(
             "priority refresh claimed repertoire_id=%s generation=%s attempts=%s",
@@ -877,11 +786,8 @@ def execute_priority_refresh(job: dict) -> None:
             activity_gate.wait_for_foreground()
             commit_started = time.perf_counter()
             with connection(background=True) as database:
-                database.execute("BEGIN IMMEDIATE")
-                current = database.execute(
-                    "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
-                    (repertoire_id,),
-                ).fetchone()
+                jobs.begin_claim(database)
+                current = jobs.current_job(database, repertoire_id)
                 if (
                     not current
                     or int(current["generation"]) != generation
@@ -895,18 +801,8 @@ def execute_priority_refresh(job: dict) -> None:
                     )
                     return
                 _replace_priority_records(database, repertoire_id, records)
-                database.execute(
-                    """UPDATE repertoire_priority_jobs
-                       SET status='complete',last_error=NULL,updated_at=?
-                       WHERE repertoire_id=? AND generation=?""",
-                    (_now(), repertoire_id, generation),
-                )
-                database.execute(
-                    'INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) '
-                    'VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET '
-                    'generation=excluded.generation,updated_at=excluded.updated_at',
-                    (repertoire_id, generation, _now()),
-                )
+                jobs.complete_legacy_job(database, _now(), repertoire_id, generation)
+                publications.publish_legacy_generation(database, repertoire_id, generation, _now())
                 from .refresh_requests import record_publication
                 record_publication(database, 'repertoire_priority', repertoire_id)
                 from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
@@ -927,26 +823,11 @@ def execute_priority_refresh(job: dict) -> None:
         except Exception as error:
             retry_delay = min(60, 2 ** min(5, int(job.get("attempts", 0)) + 1))
             with connection(background=True) as database:
-                current = database.execute(
-                    "SELECT generation,attempts FROM repertoire_priority_jobs WHERE repertoire_id=?",
-                    (repertoire_id,),
-                ).fetchone()
+                current = jobs.attempt_state(database, repertoire_id)
                 if not current or int(current["generation"]) != generation:
                     return
                 failed = int(current["attempts"]) >= 5
-                database.execute(
-                    """UPDATE repertoire_priority_jobs
-                       SET status=?,next_attempt_at=?,last_error=?,updated_at=?
-                       WHERE repertoire_id=? AND generation=?""",
-                    (
-                        "failed" if failed else "queued",
-                        (datetime.now(timezone.utc) + timedelta(seconds=retry_delay)).isoformat(),
-                        str(error),
-                        _now(),
-                        repertoire_id,
-                        generation,
-                    ),
-                )
+                jobs.retry_or_fail(database, "failed" if failed else "queued", (datetime.now(timezone.utc) + timedelta(seconds=retry_delay)).isoformat(), str(error), _now(), repertoire_id, generation)
                 logging.getLogger("tempo.background").exception(
                 "priority refresh failed repertoire_id=%s generation=%d retry_delay=%ds failed=%s",
                 repertoire_id,
@@ -972,21 +853,12 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
     generation = int(job["generation"])
     updated_at = _now()
     with connection(background=True) as database:
-        database.execute(
-            "DELETE FROM repertoire_card_priority_generations WHERE repertoire_id=? AND generation=?",
-            (repertoire_id, generation),
-        )
+        publications.delete_staged_generation(database, repertoire_id, generation)
     for chunk_start in range(0, len(records), 100):
         chunk = records[chunk_start : chunk_start + 100]
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
-            database.executemany(
-                """INSERT INTO repertoire_card_priority_generations(
-                       repertoire_id,generation,card_id,scoring_version,
-                       completed_line_ids_json,completion_mass,frontier_decisions_json,
-                       frontier_reach,priority_score,evidence_json,updated_at
-                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                [
+            publications.insert_generation_rows(database, [
                     (
                         record.repertoire_id,
                         generation,
@@ -1001,31 +873,18 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
                         updated_at,
                     )
                     for record in chunk
-                ],
-            )
+                ])
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        current = database.execute(
-            "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
-            (repertoire_id,),
-        ).fetchone()
+        current = jobs.current_job(database, repertoire_id)
         if (
             not current
             or int(current["generation"]) != generation
             or current["status"] != "running"
         ):
             return False
-        database.execute(
-            """INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at)
-               VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET
-               generation=excluded.generation,updated_at=excluded.updated_at""",
-            (repertoire_id, generation, updated_at),
-        )
-        database.execute(
-            """UPDATE repertoire_priority_jobs SET status='complete',last_error=NULL,updated_at=?
-               WHERE repertoire_id=? AND generation=?""",
-            (_now(), repertoire_id, generation),
-        )
+        publications.publish_generation(database, repertoire_id, generation, updated_at)
+        jobs.complete_generation_job(database, _now(), repertoire_id, generation)
         enqueue_task_in_transaction(
             database,
             "priority_retention",
@@ -1041,19 +900,9 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
 
 
 def priority_status(database: sqlite3.Connection, repertoire_id: str) -> dict:
-    row = database.execute(
-        """SELECT evidence_json,updated_at FROM current_repertoire_card_priority_generations generated
-           WHERE generated.repertoire_id=? AND generated.generation=(
-               SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?
-           ) ORDER BY updated_at DESC LIMIT 1""",
-        (repertoire_id, repertoire_id),
-    ).fetchone()
+    row = publications.published_evidence(database, repertoire_id)
     if not row:
-        row = database.execute(
-            """SELECT evidence_json,updated_at FROM current_repertoire_card_introduction_priorities
-               WHERE repertoire_id=? ORDER BY updated_at DESC LIMIT 1""",
-            (repertoire_id,),
-        ).fetchone()
+        row = publications.legacy_evidence(database, repertoire_id)
     if not row:
         return {
             "state": "fallback",
@@ -1073,12 +922,7 @@ def priority_status(database: sqlite3.Connection, repertoire_id: str) -> dict:
         if explorer == "ready" or maia == "ready" or evidence.get("personal_games", 0)
         else "fallback"
     )
-    coverage_error = database.execute(
-        f"""SELECT last_error FROM repertoire_coverage_runs r WHERE r.repertoire_id=?
-           AND {coverage_scope_predicate(database, repertoire_id='r.repertoire_id')}
-           ORDER BY created_at DESC LIMIT 1""",
-        (repertoire_id,),
-    ).fetchone()
+    coverage_error = inputs.coverage_error(database, repertoire_id)
     return {
         "state": state,
         "personal_games": round(float(evidence.get("personal_games", 0)), 2),

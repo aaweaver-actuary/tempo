@@ -7,6 +7,7 @@ import re
 import sqlite3
 
 import chess
+from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import scope as storage
 
 
 def position_key(fen: str) -> str:
@@ -50,12 +51,7 @@ def prefix_projection(moves: list[str], revision: int = 0) -> dict:
 
 
 def read_prefix(database, repertoire_id: str, *, lock: bool = False) -> dict:
-    suffix = " FOR UPDATE" if lock and hasattr(database, "execute_native") else ""
-    row = database.execute(
-        "SELECT canonical_prefix_moves_json,canonical_prefix_revision,"
-        "canonical_prefix_preview_id,scope_source_revision FROM repertoires WHERE id=?" + suffix,
-        (repertoire_id,),
-    ).fetchone()
+    row = storage.prefix_row(database, repertoire_id, lock=lock)
     if row is None:
         return {"moves": [], "revision": 0, "preview_id": None, "source_revision": 0}
     return {"moves": json.loads(row["canonical_prefix_moves_json"]),
@@ -128,15 +124,7 @@ def line_origin(database, preview_id: str | None, starting_fen: str) -> list[str
         return []
     if not preview_id:
         return None
-    anchor = database.execute(
-        "SELECT position.route_json FROM canonical_prefix_positions position "
-        "JOIN canonical_prefix_previews preview ON preview.id=position.preview_id "
-        "JOIN repertoires repertoire ON repertoire.id=preview.repertoire_id "
-        "WHERE position.preview_id=? AND position.fen_key=? "
-        "AND position.source_revision=repertoire.scope_source_revision "
-        "ORDER BY position.in_scope DESC,position.ply,position.route_json LIMIT 1",
-        (preview_id, position_key(starting_fen)),
-    ).fetchone()
+    anchor = storage.line_anchor(database, preview_id, position_key(starting_fen))
     return json.loads(anchor["route_json"]) if anchor else None
 
 
@@ -173,8 +161,7 @@ def position_rank(position: dict) -> tuple[int, int, str]:
 
 def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[str]]]) -> list[dict]:
     """Resolve selected routes together without persisting validation certificates."""
-    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
-        database.execute("BEGIN IMMEDIATE")
+    storage.begin_batch_scope(database)
     prefixes = {repertoire_id: read_prefix(database, repertoire_id, lock=True)
                 for repertoire_id in sorted({candidate[0] for candidate in candidates})}
     local_positions: dict[str, dict[str, dict]] = {repertoire_id: {} for repertoire_id in prefixes}
@@ -259,7 +246,7 @@ def store_positions(database, preview_id: str, positions: list[dict], *, source_
     if not positions:
         return
     if source_revision is None:
-        source_revision = database.execute("SELECT source_revision FROM canonical_prefix_previews WHERE id=?", (preview_id,)).fetchone()[0]
+        source_revision = storage.preview_source_revision(database, preview_id)
     best_positions: dict[tuple[str, int], dict] = {}
     for position in positions:
         key = (position["fen_key"], position["in_scope"])
@@ -269,24 +256,4 @@ def store_positions(database, preview_id: str, positions: list[dict], *, source_
     positions = [best_positions[key] for key in sorted(best_positions)]
     # Rank only within one verified source epoch. Old short routes must not
     # prevent recertification, and delayed old writes cannot renew stale proof.
-    replacement_guard = (
-        " WHERE excluded.source_revision>canonical_prefix_positions.source_revision OR "
-        "(excluded.source_revision=canonical_prefix_positions.source_revision AND "
-        "(excluded.ply,excluded.route_json)<(canonical_prefix_positions.ply,canonical_prefix_positions.route_json))"
-    )
-    if hasattr(database, "execute_native"):
-        database.execute_native(
-            "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply,source_revision) "
-            "SELECT %s,fen_key,in_scope,fen,route_json,ply,%s FROM jsonb_to_recordset(%s::jsonb) "
-            "AS position(fen_key text,in_scope bigint,fen text,route_json text,ply bigint) "
-            "ON CONFLICT(preview_id,fen_key,in_scope) DO UPDATE SET fen=excluded.fen,route_json=excluded.route_json,"
-            "ply=excluded.ply,source_revision=excluded.source_revision" + replacement_guard,
-            (preview_id, source_revision, json.dumps(positions)),
-        )
-    else:
-        database.executemany(
-            "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply,source_revision) VALUES(?,?,?,?,?,?,?) "
-            "ON CONFLICT(preview_id,fen_key,in_scope) DO UPDATE SET fen=excluded.fen,route_json=excluded.route_json,"
-            "ply=excluded.ply,source_revision=excluded.source_revision" + replacement_guard,
-            [(preview_id, item["fen_key"], item["in_scope"], item["fen"], item["route_json"], item["ply"], source_revision) for item in positions],
-        )
+    storage.write_positions(database, preview_id, positions, source_revision)
