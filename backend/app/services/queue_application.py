@@ -542,9 +542,7 @@ def requeue(db, day, cid, after, attempt):
     return inserted_entry_id
 
 
-_QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-           VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
-           state='refreshing',refresh_pending=1,last_error=NULL"""
+from tempo_legacy_database.adapters.queue_refresh.foreground import _QUEUE_REFRESH_PROJECTION_SQL, mark_queue_refreshing
 
 
 from tempo_legacy_database.adapters.http_composition import availability as queue_availability_storage
@@ -566,9 +564,6 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     task = enqueue_task_in_transaction(
         database, "daily_queue", "current", payload, priority=10,
     )
-    database.execute(
-        _QUEUE_REFRESH_PROJECTION_SQL,
-        (queue_date,),
-    )
+    mark_queue_refreshing(database, queue_date)
     return task
 
