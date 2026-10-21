@@ -5174,3 +5174,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Authored Studies command storage
 
 `backend/tests/test_study_command_database_split.py` owns four focused SQLite/boundary cases for chapter order,exercise links,finite record allowlist and complete operation delegation. Existing content command and practice assertions remain unchanged. No Study/Studies independence or native transaction qualification follows from this mechanical move.
+
+
+## Threat pipeline storage
+
+`backend/tests/test_threat_pipeline_storage_separation.py` owns thirteen semantic source/snapshot boundaries for candidate facts,ranking/upsert decisions,claim fairness,lease/fingerprint guards,clock/resource/callback sequencing and borrowed writes. Existing validation/backfill cases retain assertions; no native engine or PostgreSQL qualification is claimed.
