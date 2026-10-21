@@ -1,5 +1,6 @@
 """Study-owned reads and settings commands; never a mixed-domain settings facade."""
 
+from tempo_learning_database.adapters import study_bootstrap as storage
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from .clock import date
 from .durable_tasks import enqueue_task_in_transaction
@@ -30,7 +31,7 @@ BOOLEAN_FIELDS = {"study_only_mode", "include_defensive_cards_in_daily_stack"}
 
 
 def read_settings(database):
-    row = database.execute("SELECT * FROM settings WHERE id=1").fetchone()
+    row = storage.settings_row(database)
     return {name: bool(row[column]) if name in BOOLEAN_FIELDS else row[column]
             for name, column in FIELDS.items()}
 
@@ -40,10 +41,10 @@ def update_settings(database, payload):
     values = request.model_dump(exclude_unset=True)
     if not values or any(value is None for value in values.values()):
         raise ValueError("Supply at least one non-null Study setting")
-    database.execute("SELECT id FROM settings WHERE id=1 FOR UPDATE").fetchone()
-    for name, value in values.items():
-        database.execute(f"UPDATE settings SET {FIELDS[name]}=? WHERE id=1",
-                         (int(value) if name in BOOLEAN_FIELDS else value,))
+    storage.write_settings_columns(database, (
+        (FIELDS[name], int(value) if name in BOOLEAN_FIELDS else value)
+        for name, value in values.items()
+    ))
     day = date.today().isoformat()
     # Mode only pauses optional work. Essential maintenance stays registered.
     if set(values) != {"study_only_mode"}:
@@ -53,12 +54,7 @@ def update_settings(database, payload):
 
 def tactic_progress(database):
     result = {}
-    for row in database.execute(
-        "SELECT p.deck_id,p.puzzle_id,p.clean_pass_at FROM tactic_progress p "
-        "WHERE p.clean_pass_at IS NOT NULL OR EXISTS "
-        "(SELECT 1 FROM tactic_discovery_attempts a WHERE a.puzzle_id=p.puzzle_id) "
-        "ORDER BY p.deck_id,p.puzzle_id"
-    ).fetchall():
+    for row in storage.tactic_progress_rows(database):
         progress = result.setdefault(row["deck_id"],
             {"index": 0, "clean": 0, "cleanIds": [], "discoveredIds": []})
         identity = "lichess-" + row["puzzle_id"]
@@ -72,7 +68,7 @@ def tactic_progress(database):
 
 def move_membership(database, card_id, revision, fen, move_uci):
     """Check alternatives only against currently accepted executable routes."""
-    card = database.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
+    card = storage.membership_card(database, card_id)
     if not card or not card["serving_active"] or card["archived"] or card["superseded_by"] or card["revision"] != revision:
         raise HTTPException(409, "Accepted opening revision is unavailable")
     require_card_not_deleted(database, card_id)
@@ -84,17 +80,7 @@ def move_membership(database, card_id, revision, fen, move_uci):
     if not position.is_valid() or move not in position.legal_moves:
         raise HTTPException(422, "Invalid submitted position or move")
     position_key = " ".join(position.fen().split()[:4])
-    rows = database.execute(
-        "SELECT c.id,c.revision,c.trained_color,p.payload_json,COALESCE(alias.content_card_id,c.id) AS authored_id FROM cards c "
-        "JOIN accepted_publications p ON p.publication_id=c.publication_id AND p.generation=c.publication_generation "
-        "JOIN serving_publications serving ON serving.publication_id=p.publication_id AND serving.generation=p.generation "
-        "LEFT JOIN content_card_aliases alias ON alias.learning_card_id=c.id AND alias.publication_id=p.publication_id "
-        "WHERE p.state='active' AND c.serving_active=1 "
-        "AND c.archived=0 AND c.superseded_by IS NULL AND c.content_type='opening' "
-        "AND NOT EXISTS (SELECT 1 FROM deleted_cards d WHERE d.card_id=c.id) "
-        "AND EXISTS (SELECT 1 FROM repertoire_cards member JOIN repertoire_cards current "
-        "ON current.repertoire_id=member.repertoire_id WHERE member.card_id=c.id AND current.card_id=?)",
-        (card_id,)).fetchall()
+    rows = storage.membership_candidates(database, card_id)
     verified = False
     publications = {}
     for row in rows:

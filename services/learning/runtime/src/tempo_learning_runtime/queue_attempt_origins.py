@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tempo_learning_database.adapters import queue_attempt_origins as storage
 
 
 def recover_queue_entry(database, card_id: str, request) -> dict:
@@ -9,10 +10,7 @@ def recover_queue_entry(database, card_id: str, request) -> dict:
             "queue_attempt_unprovable",
             "The original queue attempt cannot be verified. The completed result needs review.",
         )
-    contexts = database.execute(
-        "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?",
-        (request.queue_entry_id, card_id),
-    ).fetchall()
+    contexts = storage.recovery_origins(database, request.queue_entry_id, card_id)
     if request.expected_revision is not None:
         contexts = [
             context
@@ -25,10 +23,7 @@ def recover_queue_entry(database, card_id: str, request) -> dict:
             "The original queue attempt cannot be verified. The completed result needs review.",
         )
     origin = dict(contexts[0])
-    current = database.execute(
-        "SELECT revision,start_fen,moves_json,trained_color,content_type FROM cards WHERE id=?",
-        (card_id,),
-    ).fetchone()
+    current = storage.current_card_definition(database, card_id)
     if (
         not current
         or any(
@@ -67,13 +62,7 @@ def recover_queue_entry(database, card_id: str, request) -> dict:
     }
 
 
-def retain_recovered_completion(database, entry: dict, result_json: str) -> None:
-    """A removed projection still needs its canonical competing-review context."""
-    database.execute(
-        "UPDATE queue_attempt_origins SET last_status='complete',review_result_json=? "
-        "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-        (result_json, entry["id"], entry["card_id"], entry["revision"]),
-    )
+retain_recovered_completion = storage.retain_recovered_completion
 
 
 def validate_failure_marker(
@@ -82,14 +71,7 @@ def validate_failure_marker(
     """A queue-only legacy marker cannot choose between replacement contexts."""
     from .review_conflicts import ReviewConflict
 
-    contexts = database.execute(
-        "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (entry_id,)
-    ).fetchall()
-    current = database.execute(
-        """SELECT c.id,c.revision,c.start_fen,c.moves_json,c.trained_color,c.content_type
-        FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=?""",
-        (entry_id,),
-    ).fetchone()
+    contexts, current = storage.failure_marker_facts(database, entry_id)
     if card_id is not None:
         contexts = [
             origin

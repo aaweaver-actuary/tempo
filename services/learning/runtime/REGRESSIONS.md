@@ -290,3 +290,13 @@ removed, not skipped. The historical integration receipt remains dated evidence
 for the earlier worker architecture. Browser contracts now use deterministic
 saved-line/material-only scenarios rather than searching generated positions;
 no browser/server build or run is claimed for this change.
+
+
+## Database file separation: frozen Study facts and guards
+
+`test_frozen_order_policy.py` owns the extracted policy's source import boundary, inactive/publication annotation, changed-definition/legacy/route distinctions, stale-token and mandatory-miss capabilities, protected relative slots, generator input, and borrowed-transaction deletion/definition visibility and rollback. Tests use supplied facts or in-memory SQLite only; they do not qualify native PostgreSQL. Existing queue-ordering and installed deferred-import/authentication checks remain the owners of presentation and independently installed closure. The SQL literals across the three original/moved implementations were compared once for relocation evidence, not permanently pinned by policy tests.
+
+
+## Database file separation: Study recovery, bootstrap and teaching
+
+`test_study_command_storage_separation.py` owns missing/ambiguous recovery identity rejection, retained-completion transaction rollback, exact failure-marker definition fencing, settings alias/boolean encoding and essential-enqueue order, supplied accepted-route chess verification, and learner-turn teaching rejection before a write. These ten cases use semantic fake operations or in-memory SQLite; existing native `test_study_bootstrap_teaching.py` and `test_transactions.py` retain PostgreSQL ownership and were not run for this mechanical split. SQL literals were checked once for relocation evidence, not frozen as policy-test expectations.

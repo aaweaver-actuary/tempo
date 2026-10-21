@@ -4,6 +4,12 @@
 
 | File | Role |
 | --- | --- |
+| [card_deletion.py](card_deletion.py) | Existing deleted-card fact on the caller’s transaction; application conflict translation stays in Learning composition. |
+| [frozen_order.py](frozen_order.py) | Bounded frozen-order reads, activation/exposure facts and SQL predicates; [policy/composition](../../../services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/README.md). |
+| [real_game_miss_projection.py](real_game_miss_projection.py) | Existing Learning-owned miss query, using remediation’s public predicate without a new connection or writer. |
+| [queue_attempt_origins.py](queue_attempt_origins.py) | Retained queue-origin/current-definition reads and recovered completion write; caller transaction preserved. |
+| [study_bootstrap.py](study_bootstrap.py) | Existing Study settings/progress/accepted-route reads and settings writes; [application decisions/composition](../../../services/learning/runtime/src/tempo_learning_runtime/study/README.md). |
+| [teaching_states.py](teaching_states.py) | Existing card lock order and idempotent teaching-state writes/reads; validation stays outside database. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
 | [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |
