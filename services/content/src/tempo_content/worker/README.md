@@ -47,8 +47,8 @@ cursor advancement remain in the original adapter sections.
 `tests/test_content_preparation.py` checks full-versus-sliced route inventory,
 completed-cache reuse and the computation/hook/transaction order. Pure
 [publication preparation](../publication/README.md) is also outside the adapter.
-Source staging and publication
-read/reservation/write coordination remain mixed extraction work. These bounded
+Source staging/admission remains mixed extraction work. Publication build/admission
+now lives in its [application module](../publication/README.md). These bounded
 moves do not claim those methods are application-free or make them a permanent
 exception.
 

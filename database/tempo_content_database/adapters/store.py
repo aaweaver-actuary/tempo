@@ -9,12 +9,12 @@ import uuid
 from psycopg.rows import dict_row, tuple_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
-from tempo_content_publication_contracts.v1 import Publication, serialize_contract
+from tempo_content_publication_contracts.v1 import Publication
 
 from tempo_content.models import SourceSnapshot
 from tempo_content.policy import prepare_source, publication_report, coverage_reply, inventory_report
 from tempo_content.worker import reconcile_once, reconcile_binding, reconcile_exercise, reconcile_route
-from tempo_content.publication import prepare_publication, publication_authority
+from tempo_content.publication import build_source_publication, admit_publication
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
 
@@ -473,16 +473,18 @@ class ContentService:
             return {'worked':False,'status':'pending' if remains else 'idle','phase':'collect'}
 
     def publication_build(self,source_key,hook=None):
-        source = self._source(source_key)
-        task = self._one('SELECT * FROM content.tasks WHERE source_id=%s AND revision=%s ORDER BY generation DESC LIMIT 1',(source['id'],source['requested_revision']))
-        existing = self._one('SELECT payload FROM content.publications WHERE publication_id=%s AND generation=%s',(source['publication_id'],task['generation']))
-        if existing:
-            return Publication.model_validate_json(existing['payload'])
-        if task['state']!='complete':
-            raise ContentError('inventory_incomplete','Current inventory is not complete')
-        manifest = self._manifest(source['id'],task['revision'])
-        if manifest['counts']['exercises']==0:
-            raise ContentError('retirement_required','Empty desired source requires Learning retirement through #193')
+        return build_source_publication(source_key,hook,inventory_version=INVENTORY_VERSION,
+            read_source=self._source,read_task=self._publication_task,read_payload=self._publication_payload,
+            read_manifest=self._manifest,reserve_build=self._reserve_publication_build,read_snapshot=self._snapshot,
+            read_revisions=self._exercise_revisions,persist=self.store_publication,notify=_hook)
+
+    def _publication_task(self,source_id,revision):
+        return self._one('SELECT * FROM content.tasks WHERE source_id=%s AND revision=%s ORDER BY generation DESC LIMIT 1',(source_id,revision))
+
+    def _publication_payload(self,publication_id,generation):
+        return self._one('SELECT payload FROM content.publications WHERE publication_id=%s AND generation=%s',(publication_id,generation))
+
+    def _reserve_publication_build(self,source,task):
         with self._transaction() as database:
             current = self._lock_source(database,source['id'])
             if current['requested_revision']!=task['revision']:
@@ -490,32 +492,15 @@ class ContentService:
             locked = database.execute('SELECT * FROM content.tasks WHERE source_id=%s AND generation=%s FOR UPDATE',(source['id'],task['generation'])).fetchone()
             built_at = locked['built_at'] or datetime.now(timezone.utc).isoformat()
             database.execute('UPDATE content.tasks SET built_at=%s WHERE source_id=%s AND generation=%s',(built_at,source['id'],task['generation']))
-        snapshot = self._snapshot(manifest)
-        revisions = self._exercise_revisions(source['id'],task['generation'])
-        publication, provenance = prepare_publication(snapshot,task['revision'],task['generation'],built_at,revisions,
-            source_id=source['id'],source_key=source_key,source_digest=manifest['digest'],inventory_version=INVENTORY_VERSION)
-        _hook(hook,'before_commit',publication=publication)
-        self.store_publication(publication,source['id'],provenance,hook)
-        return publication
+        return built_at
 
     def store_publication(self,publication,source_id,provenance,hook=None):
+        return admit_publication(publication,source_id,provenance,hook,inventory_version=INVENTORY_VERSION,
+            digest_text=_digest,read_payload=self._publication_payload,read_manifest=self._manifest,
+            read_revisions=self._exercise_revisions,read_snapshot=self._snapshot,commit_publication=self._commit_publication)
+
+    def _commit_publication(self,publication,source_id,provenance,payload,digest,expected_payload,expected_provenance,hook):
         """Immutable insert boundary; complete source authority remains mandatory."""
-        publication = Publication.model_validate(publication)
-        payload = serialize_contract(publication)
-        if isinstance(payload,bytes):
-            payload = payload.decode()
-        digest = _digest(payload)
-        # Reconstruct the exact authoritative definitions before the write
-        # section; a contract-valid envelope alone is not build authority.
-        replay = self._one('SELECT payload FROM content.publications WHERE publication_id=%s AND generation=%s',(publication.publication_id,publication.publication_generation))
-        expected_payload = None
-        expected_provenance = None
-        if not replay:
-            manifest = self._manifest(source_id,publication.source_revision)
-            revisions = self._exercise_revisions(source_id,publication.publication_generation)
-            expected_snapshot = self._snapshot(manifest)
-            expected_payload, expected_provenance = publication_authority(expected_snapshot,publication,revisions,
-                source_id=source_id,source_digest=manifest['digest'],inventory_version=INVENTORY_VERSION)
         with self._transaction() as database:
             source = self._lock_source(database,source_id,hook)
             existing = database.execute('SELECT payload,digest,source_id,provenance FROM content.publications WHERE publication_id=%s AND generation=%s',(publication.publication_id,publication.publication_generation)).fetchone()

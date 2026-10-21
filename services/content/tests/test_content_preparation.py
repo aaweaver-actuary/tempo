@@ -13,6 +13,7 @@ from tempo_content.models import SourceSnapshot
 from tempo_content.policy import inventory_report
 from tempo_content.publication import prepare_publication, publication_authority
 from tempo_content.publication import preparation
+from tempo_content.publication import application as publication_application
 from tempo_content.worker import route_segment
 from tempo_content.worker import routes
 from tempo_content_database.adapters import store
@@ -201,7 +202,7 @@ def test_publication_preparation_stays_after_build_reservation_and_before_commit
     service._snapshot = lambda supplied: events.append('snapshot') or snapshot
     service._exercise_revisions = lambda *arguments: events.append('revisions') or revisions
     service.store_publication = save
-    monkeypatch.setattr(store, 'prepare_publication', compute)
+    monkeypatch.setattr(publication_application, 'prepare_publication', compute)
     assert service.publication_build('source-key', lambda event, context: events.append(event)) is publication
     assert events == ['begin', 'database operation', 'database operation', 'commit',
                       'snapshot', 'revisions', 'compute', 'before_commit', 'store publication']
@@ -234,7 +235,7 @@ def test_publication_authority_reconstruction_stays_before_original_write_transa
     service._exercise_revisions = lambda *arguments: events.append('revisions') or revisions
     service._snapshot = lambda *arguments: events.append('snapshot') or snapshot
     service._transaction = section
-    monkeypatch.setattr(store, 'publication_authority', reconstruct)
+    monkeypatch.setattr(publication_application, 'publication_authority', reconstruct)
     with pytest.raises(ReachedWriteSection):
         service.store_publication(publication, 'source-id', provenance)
     assert events == ['replay', 'manifest', 'revisions', 'snapshot', 'authority', 'begin']
