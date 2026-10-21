@@ -38,3 +38,6 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 
 
 [Coordinator storage](coordinator/README.md) contains the original recovery/claim/status/settlement queries; the coordinator retains process/async/provider/task lifecycle. Shared claim SQL builders remain available through their old composition names.
+
+
+[Authority, finite capture and acceptance storage](authority/README.md) owns the existing reader/tuple writer, column metadata, bounded stream SQL and receipt/acceptance operations. Application scope/budget/digest/chess/lineage and command outcome decisions remain outside database.

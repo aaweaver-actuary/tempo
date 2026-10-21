@@ -15,6 +15,9 @@ from tempo_game_evidence_contracts.legacy import (authority_source_projection,
 from tempo_game_evidence_contracts.legacy_scope import (LegacyDecisionScope,
     LegacyRowDigest, LegacyScopedCatalogueProof, LegacyStreamManifest)
 from tempo_learning_remediation import RemediationError
+from tempo_legacy_database.adapters.games.authority import capture as storage
+from tempo_legacy_database.adapters.games.authority import headers
+from tempo_legacy_database.adapters.games.authority.capture import Stream
 
 PAGE_SIZE = 64
 
@@ -44,18 +47,6 @@ class CaptureRequest:
     decision_plies: tuple[int, ...]
 
 
-@dataclass(frozen=True)
-class Stream:
-    name: str
-    columns: str
-    source: str
-    keys: tuple[str, ...]
-    parameters: tuple = ()
-
-    def key(self, row):
-        return tuple(row[key.rsplit(".", 1)[-1]] for key in self.keys)
-
-
 class Traversal:
     def __init__(self, reader, streams, budget, clock=time.monotonic):
         self.reader, self.budget, self.clock = reader, budget, clock
@@ -67,11 +58,8 @@ class Traversal:
             raise ValueError("finite positive capture budget required")
         for stream in streams:
             self.check_time()
-            count = reader(f"/*legacy-stream:{stream.name}:count*/ SELECT COUNT(*) row_count FROM " +
-                stream.source, stream.parameters)[0]["row_count"]
-            last = reader(f"/*legacy-stream:{stream.name}:highwater*/ SELECT " + ",".join(stream.keys) +
-                " FROM " + stream.source + " ORDER BY " + ",".join(key + " DESC" for key in stream.keys) +
-                " LIMIT 1", stream.parameters)
+            count = storage.stream_count(reader, stream)
+            last = storage.stream_highwater(reader, stream)
             if type(count) is not int or count < 0 or bool(count) != bool(last):
                 self.fail("legacy_capture_preflight_changed")
             self.preflight[stream.name] = (count, stream.key(last[0]) if last else ())
@@ -96,13 +84,7 @@ class Traversal:
             self.check_time()
             if self.pages >= self.budget.max_pages:
                 self.fail("legacy_capture_page_budget")
-            keys = "ROW(" + ",".join(stream.keys) + ")"
-            marks = "ROW(" + ",".join("%s" for _ in stream.keys) + ")"
-            # PostgreSQL compares seek/highwater keys in its own collation.
-            statement = (f"/*legacy-stream:{stream.name}:page*/ SELECT " + stream.columns +
-                f",{keys}>{marks} AS _seek_advanced FROM " + stream.source +
-                f" AND {keys}>{marks} AND {keys}<={marks} ORDER BY " + ",".join(stream.keys) + " LIMIT 64")
-            page = self.reader(statement, (*cursor, *stream.parameters, *cursor, *highwater))
+            page = storage.stream_page(self.reader, stream, cursor, highwater)
             self.pages += 1
             if len(page) > PAGE_SIZE:
                 self.fail("legacy_capture_page_invalid")
@@ -166,8 +148,8 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
     before = metadata(repertoire_id)
     if before["graph_state"] != "ready" or not before.get("integrity_current"):
         Traversal.fail("legacy_completed_current_integrity_required")
-    identities = reader("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1")
-    games = reader("SELECT " + _GAME_COLUMNS + " FROM imported_games WHERE id=%s", (request.game_id,))
+    identities = headers.backend_identity(reader)
+    games = headers.imported_game(reader, request.game_id)
     if len(identities) != 1 or identities[0]["workspace_id"] != LEGACY_WORKSPACE_ID or len(games) != 1:
         Traversal.fail("legacy_capture_header_missing")
     game = games[0]
@@ -180,25 +162,7 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
     scope = LegacyDecisionScope(game_id=request.game_id, content_hash=game["content_hash"], occurred_at=occurred_at.isoformat(),
         learner_color=game["color"], starting_position_key=root, moves=moves,
         decision_plies=list(request.decision_plies))
-    streams = [
-        Stream("repertoires", _REPERTOIRE_COLUMNS, "repertoires WHERE left(id,2)<>'__'", ("id",)),
-        Stream("repertoire_lines", "id,repertoire_id,trained_color,start_fen,moves_json",
-            "repertoire_lines WHERE left(repertoire_id,2)<>'__'", ("id",)),
-        Stream("graphs", "*", "opening_graph_steps WHERE repertoire_id=%s AND generation=%s",
-            ("line_id", "decision_index"), (repertoire_id, before["graph_generation"])),
-        Stream("cards", ",".join("card." + key for key in _CARD_COLUMNS.split(",")) +
-            ",EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block WHERE block.card_id=card.id) integrity_blocked,"
-            "EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=card.id) deleted",
-            "cards card WHERE (EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id AND link.repertoire_id=%s) "
-            "OR EXISTS(SELECT 1 FROM opening_graph_steps graph WHERE graph.card_id=card.id AND graph.repertoire_id=%s "
-            "AND graph.generation=%s)) AND card.content_type='opening'",
-            ("card.id",), (repertoire_id, repertoire_id, before["graph_generation"])),
-        Stream("repertoire_cards", "link.repertoire_id,link.card_id,link.canonical_route_source",
-            "repertoire_cards link WHERE (EXISTS(SELECT 1 FROM repertoire_cards selected "
-            "WHERE selected.card_id=link.card_id AND selected.repertoire_id=%s) OR EXISTS(SELECT 1 FROM opening_graph_steps graph "
-            "WHERE graph.card_id=link.card_id AND graph.repertoire_id=%s AND graph.generation=%s))",
-            ("link.repertoire_id", "link.card_id"), (repertoire_id, repertoire_id, before["graph_generation"])),
-    ]
+    streams = storage.source_streams(repertoire_id, before["graph_generation"])
     traversal = Traversal(reader, streams, budget, clock)
     tables = {name: [] for name in ("repertoires", "repertoire_lines", "cards", "repertoire_cards")}
     graphs, manifests = [], []

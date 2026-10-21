@@ -16,13 +16,13 @@ from tempo_learning_remediation import LegacyAcceptedDecision, RemediationError
 from tempo_game_evidence_contracts.legacy_scope import LegacyScopedCatalogueProof
 
 from tempo_legacy_database.connections import background_read_connection
+from tempo_legacy_database.adapters.games.authority import headers as storage
+from tempo_legacy_database.adapters.games.authority.headers import (
+    _CARD_COLUMNS, _GAME_COLUMNS, _GAME_HEADER_COLUMNS, _REPERTOIRE_COLUMNS, read_rows,
+)
 from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
 
 MAX_DECISION_ROUTES = 64
-_REPERTOIRE_COLUMNS = "id,name,is_main,scope_source_revision,canonical_prefix_revision,canonical_prefix_moves_json,canonical_prefix_preview_id"
-_CARD_COLUMNS = "id,revision,start_fen,moves_json,trained_color,content_type,archived,pending_validation,superseded_by,repertoire_id,canonical_route_source,introduced_at"
-_GAME_COLUMNS = "id,provider,provider_game_id,content_hash,played_at,color,result,start_fen,moves_json,adaptive_excluded"
-_GAME_HEADER_COLUMNS = "id,provider,provider_game_id,content_hash"
 
 
 @dataclass(frozen=True)
@@ -44,11 +44,11 @@ class WithdrawalCapture:
 
 def capture_withdrawal_header(delivery):
     """No graph/card authority is needed to retract an exact retained incident."""
-    identity = read_rows("SELECT target_id,workspace_id FROM legacy_learning_identity WHERE id=1")
+    identity = storage.backend_identity(read_rows)
     if (len(identity) != 1 or identity[0]["workspace_id"] != LEGACY_WORKSPACE_ID
             or identity[0]["target_id"] != delivery.authority.target_id):
         raise RemediationError("terminal_failure", "legacy_withdrawal_target_mismatch")
-    games = read_rows("SELECT " + _GAME_HEADER_COLUMNS + " FROM imported_games WHERE id=%s", (delivery.game_id,))
+    games = storage.imported_game_header(read_rows, delivery.game_id)
     game = {key: games[0][key] for key in _GAME_HEADER_COLUMNS.split(",")} if games else None
     if game is not None and (game["provider"], game["provider_game_id"]) != (
             delivery.game_source.provider, delivery.game_source.provider_game_id):
@@ -85,19 +85,8 @@ def validate_withdrawal_lineage(delivery, withdrawal, retained):
         raise RemediationError("terminal_failure", "legacy_withdrawal_lineage_invalid") from error
 
 
-def read_rows(statement, parameters=()):
-    with background_read_connection() as database:
-        return [dict(row) for row in database.execute_native(statement, parameters).fetchall()]
-
-
 def metadata(repertoire_id):
-    rows = read_rows("""SELECT repertoire.scope_source_revision,repertoire.canonical_prefix_revision,
-        scope.generation catalogue_generation,graph.generation graph_generation,graph.state graph_state,
-        integrity.status integrity_status,integrity.scan_status,integrity.scan_generation
-        FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
-        LEFT JOIN opening_graph_publications graph ON graph.repertoire_id=repertoire.id
-        LEFT JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=repertoire.id
-        WHERE repertoire.id=%s AND scope.id=1""", (repertoire_id,))
+    rows = storage.repertoire_metadata(read_rows, repertoire_id)
     if len(rows) != 1:
         raise RemediationError("stale_revision", "legacy_repertoire_authority_missing")
     from .postgres_integrity import current_integrity_certificate

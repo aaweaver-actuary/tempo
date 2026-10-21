@@ -10,6 +10,7 @@ from pathlib import Path
 
 import chess
 from tempo_game_evidence_contracts.legacy import fingerprint
+from tempo_legacy_database.adapters.games.authority import headers as storage
 
 from .services import legacy_game_authority as owner
 from .services.legacy_game_capture import CaptureRequest, capture_source_scope
@@ -21,10 +22,9 @@ def capture_game(repertoire_id, game_id, decision_plies=None, *, reader=None, me
     # This first-slice operator deliberately does not invent correction lineage.
     # Response-loss recovery uses the retained original preview, never recapture.
     def prior():
-        return reader("SELECT game_revision FROM remediation_game_heads WHERE workspace_id=%s AND game_id=%s",
-                      (LEGACY_WORKSPACE_ID, game_id))
+        return storage.accepted_game_head(reader, LEGACY_WORKSPACE_ID, game_id)
     if prior(): raise ValueError("legacy_game_already_accepted_use_retained_preview")
-    rows = reader("SELECT " + owner._GAME_COLUMNS + " FROM imported_games WHERE id=%s", (game_id,))
+    rows = storage.imported_game(reader, game_id)
     if len(rows) != 1: raise ValueError("one_explicit_existing_game_required")
     game = rows[0]
     owner.completed_game_time(game)
