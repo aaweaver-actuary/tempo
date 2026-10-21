@@ -56,7 +56,7 @@ application, three-domain role denial, and complete authored-source capacity.
 These tests are discovered by the regular native runner; its dependency closure
 now records Content and the database-free operator tool as test inputs only.
 
-The complete native inventory is discovered by `integration/run_postgres.py` from `tests/`; collection, every setup/call/teardown phase and JUnit must agree. No selection flags or skips are accepted. `components.json` registers the owning native suite and its real client/runner inputs. Installation checks also run in source-removed Python consumers through `qualify.py`.
+The complete native inventory is discovered by `../../../database/tempo_learning_database/tooling/run_postgres.py` from `tests/`; collection, every setup/call/teardown phase and JUnit must agree. No selection flags or skips are accepted. `components.json` registers the owning native suite and its real client/runner inputs. Installation checks also run in source-removed Python consumers through `qualify.py`.
 
 | Regular file | Proof |
 | --- | --- |

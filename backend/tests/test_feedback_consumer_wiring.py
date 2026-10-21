@@ -30,7 +30,7 @@ def test_native_recovery_consumer_binds_database_operations_to_feedback_adapter(
 
 
 def test_native_review_consumer_uses_canonical_writer_and_feedback_composition():
-    bound = imports('services/learning/application/integration/test_postgres.py')
+    bound = imports('database/tempo_legacy_database/tests/learning_review/test_postgres.py')
     assert bound['ensure_card_queued_after'] == ('app.services.review_service', 'ensure_card_queued_after')
     assert bound['prioritize_queued_misses'] == ('app.services.real_game_feedback_adapter', 'prioritize_queued_misses')
     assert bound['MISS_REASON'] == ('app.services.real_game_feedback', 'MISS_REASON')
@@ -143,7 +143,7 @@ def test_consumer_guard_resolves_backend_relative_imports_without_conflating_run
 def test_repository_connection_consumers_do_not_import_semantic_policy_operations():
     # Includes scripts/integration packages and resolves backend-relative imports;
     # the independent runtime's same-named module remains a separate owner.
-    for directory in ('backend', 'scripts', 'services', 'tools', 'packages', 'contracts'):
+    for directory in ('backend', 'database', 'scripts', 'services', 'tools', 'packages', 'contracts'):
         for folder, children, filenames in os.walk(ROOT / directory):
             children[:] = [name for name in children if not name.startswith('.')
                            and name not in {'node_modules', '__pycache__', 'build', 'dist'}]

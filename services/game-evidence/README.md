@@ -303,7 +303,7 @@ suite verifies source/report digests and recomputes findings from the actual PGN
 
 ```sh
 services/game-evidence/.venv/bin/python -m pytest services/game-evidence/tests -q
-services/game-evidence/.venv/bin/python services/game-evidence/integration/run_postgres.py
+services/game-evidence/.venv/bin/python database/tempo_game_evidence_database/tooling/run_postgres.py
 services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py
 node tools/component-build/check-components.mjs --component game-evidence
 ```
@@ -315,6 +315,8 @@ The runner accepts no caller database URL and never restarts Docker or prunes.
 Artifact checks install wheel/sdist in clean Python 3.12/3.14 consumers. Evidence
 records commands, source/artifact hashes, case counts and cleanup outcomes.
 These focused checks do not establish whole-product or hosted qualification.
+
+Native database tooling and contracts now live in the [single root database owner](../../database/tempo_game_evidence_database/tooling/README.md), with [pure source-fingerprint checks](../../database/tempo_game_evidence_database/tests/README.md). Their SQL and native test bodies are unchanged; fixtures stay with this service. The full owner is included in sdists, while database `tooling/` and `tests/` are excluded from runtime wheels. The artifact qualifier remains service build orchestration and fingerprints the root owner that it copies. The installed-import guard stays in the service suite; the former source-inspection regression runs from the root database test category. Relocation source/build checks do not imply native execution.
 
 ## Authentication recovery
 

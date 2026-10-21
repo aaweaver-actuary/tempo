@@ -7,7 +7,7 @@
 | [adapters](adapters/README.md) | Concrete persistence implementations and read projections. |
 | [ddl](ddl/README.md) | Schema metadata, ordered migrations and explicit owner migration entry points. |
 | [schema](schema/README.md) | Rendered Mermaid relationships and complete field/type dictionaries. |
-| [tests](tests/README.md) | Content-owned native persistence contracts, included in the sdist only. |
+| [tests](tests/README.md) | Content-owned native persistence contracts and separately discovered storage-only pure unit tests, included in the sdist only. |
 | [tooling](tooling/README.md) | Existing disposable PostgreSQL runner and representative benchmark, included in the sdist only. |
 
 ## Logical relationships (not SQL foreign keys)

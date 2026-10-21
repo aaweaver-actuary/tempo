@@ -181,7 +181,7 @@
         "src",
         "fixtures",
         "tests",
-        "integration",
+        "../../../database/tempo_learning_database/tooling",
         "browser",
         "qualify.py",
         "Dockerfile",
@@ -202,7 +202,7 @@
           "owner": "learning",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/learning/runtime/integration/run_postgres.py",
+          "command": "python database/tempo_learning_database/tooling/run_postgres.py",
           "inputs": [
             "services/learning/runtime",
             "services/learning/application/qualification.py",
@@ -212,7 +212,8 @@
             "services/learning/remediation",
             "services/game-evidence",
             "services/content",
-            "tools/analysis-restoration/a_bridge"
+            "tools/analysis-restoration/a_bridge",
+            "database/tempo_learning_database"
           ]
         }
       ],
@@ -257,7 +258,7 @@
           "kind": "python",
           "cwd": "services/content",
           "command": "python run_suite.py pure",
-          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock"]
+          "inputs": ["tests", "fixtures", "src", "run_suite.py", "pyproject.toml", "uv.lock", "../../database/tempo_content_database/tests/unit"]
         },
         {
           "owner": "content",
@@ -340,10 +341,11 @@
           "owner": "game-evidence",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/game-evidence/integration/run_postgres.py",
+          "command": "python database/tempo_game_evidence_database/tooling/run_postgres.py",
           "inputs": [
-            "services/game-evidence/integration/run_postgres.py",
-            "services/game-evidence/integration/test_postgres.py",
+            "database/tempo_game_evidence_database/tooling/run_postgres.py",
+            "database/tempo_game_evidence_database/tests/native/test_postgres.py",
+            "database/tempo_game_evidence_database/tests/test_source_fingerprints.py",
             "services/game-evidence/src",
             "services/game-evidence/fixtures",
             "services/game-evidence/pyproject.toml",
@@ -438,13 +440,14 @@
           "owner": "intelligence",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/intelligence/integration/run_postgres.py",
+          "command": "python database/tempo_intelligence_database/tooling/run_postgres.py",
           "inputs": [
             "services/intelligence/integration",
             "services/intelligence/src",
             "services/intelligence/fixtures",
             "services/intelligence/pyproject.toml",
-            "services/intelligence/uv.lock"
+            "services/intelligence/uv.lock",
+            "database/tempo_intelligence_database"
           ]
         }
       ],
@@ -1486,7 +1489,11 @@
         "tests",
         "qualification.py",
         "qualify.py",
-        "run_suite.py"
+        "run_suite.py",
+        "hatch_build.py",
+        "integration",
+        "../../../database/tempo_legacy_database/tooling/learning_review",
+        "../../../database/tempo_legacy_database/tests/learning_review"
       ],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {
@@ -1516,21 +1523,25 @@
             "services/learning/application/qualification.py",
             "services/learning/application/qualify.py",
             "services/learning/application/integration/test_qualification_runners.py",
-            "services/learning/application/integration/run_postgres.py",
+            "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
             "backend/tests/test_learning_package_installation.py",
             "backend/pyproject.toml",
             "backend/requirements-test.txt",
             "backend/Dockerfile",
-            "services/learning/application/run_suite.py"
+            "services/learning/application/run_suite.py",
+            "database/tempo_legacy_database/tests/learning_review/test_native_runner.py",
+            "services/learning/application/hatch_build.py"
           ]
         },
         {
           "owner": "learning-review-application",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/learning/application/integration/run_postgres.py",
+          "command": "python database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
           "inputs": [
-            "services/learning/application/integration",
+            "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
+            "database/tempo_legacy_database/tests/learning_review/test_postgres.py",
+            "database/tempo_legacy_database",
             "backend/app",
             "database/tempo_legacy_database/ddl/migrations",
             "backend/requirements.txt",
@@ -1600,7 +1611,7 @@
         "pyproject.toml",
         "uv.lock",
         "src",
-        "migrations",
+        "../../../database/tempo_remediation_database/ddl/migrations",
         "tests",
         "integration",
         "run_suite.py",
@@ -1647,16 +1658,19 @@
             "database/tempo_remediation_database/ddl/migrations",
             "contracts/game-evidence/src",
             "contracts/game-evidence/pyproject.toml",
-            "services/learning/remediation/tests"
+            "services/learning/remediation/tests",
+            "database/tempo_remediation_database/tooling/run_postgres.py",
+            "database/tempo_remediation_database/tests/native/test_runner.py"
           ]
         },
         {
           "owner": "learning-remediation",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/learning/remediation/integration/run_postgres.py",
+          "command": "python database/tempo_remediation_database/tooling/run_postgres.py",
           "inputs": [
-            "services/learning/remediation/integration",
+            "database/tempo_remediation_database/tooling/run_postgres.py",
+            "database/tempo_remediation_database/tests/native/test_postgres.py",
             "database/tempo_remediation_database/ddl/migrations",
             "services/learning/remediation/tests/support.py",
             "services/learning/application/qualification.py",
@@ -2056,7 +2070,7 @@
       "owner": "learning",
       "kind": "postgres",
       "cwd": ".",
-      "command": "python services/learning/runtime/integration/run_postgres.py",
+      "command": "python database/tempo_learning_database/tooling/run_postgres.py",
       "inputs": [
         "services/learning/runtime",
         "services/learning/application/qualification.py",

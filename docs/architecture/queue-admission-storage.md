@@ -82,7 +82,7 @@ page boundaries, rejected-page cursors, shared-card historical charging after
 integrity changes, duplicate cycles, exact stale capacity witnesses, miss/quota
 exceptions and an observed failure after a real queue insert before caller rollback.
 
-`backend/integration/queue_admission/test_postgres.py` prepares four native cases:
+`database/tempo_legacy_database/tests/queue_admission/test_postgres.py` prepares four native cases:
 
 1. Failure after queue/card/trigger-created unissued-origin effects rolls all back.
 2. Two writers serialize under existing card/day locks and preserve the issued head.
@@ -99,7 +99,7 @@ compares shared-card admission outcomes with the legacy complete query on the
 actual engine. SQLite's opposed-insertion cross-page outcome is separately named
 in the adapter suite. Since the old query has no explicit order, any PostgreSQL
 ownership difference blocks parity and requires an explicit parent policy decision.
-See [the native command, target receipt, resource and cleanup plan](../../backend/integration/queue_admission/README.md).
+See [the native command, target receipt, resource and cleanup plan](../../database/tempo_legacy_database/tests/queue_admission/README.md).
 The explicitly approved native window at source `269ce9e1` ran four cases:
 three passed, including the legacy-versus-paged PostgreSQL shared-membership
 comparison. The requeue case reached its cycle assertions, then failed because

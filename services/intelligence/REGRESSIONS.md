@@ -71,7 +71,7 @@ including encounter, learner comparison, gap and deterministic proposal anchor.
 
 ## PR295 R6/R7 corrective regressions
 
-`integration/test_analysis_postgres.py` owns the native cases:
+`database/tempo_intelligence_database/tests/integration/test_analysis_postgres.py` owns the native cases:
 
 - `test_R6_engine_opportunity_has_no_invented_encounter_frequency`
 - `test_R6_equal_support_cross_category_ranking` (also generation-bound pagination)
@@ -91,7 +91,7 @@ revision come from preserved JUnit/runner reports, not from this inventory. Unit
 and mock assertions do not establish PostgreSQL persistence or role isolation.
 
 Run `tests/` through the installed distribution. Run the native files through
-`integration/run_postgres.py`, which provisions only invocation-owned disposable
+`database/tempo_intelligence_database/tooling/run_postgres.py`, which provisions only invocation-owned disposable
 resources and rejects arbitrary database URLs. The native fixture disables external
 network access and uses local fake providers; no live credential is required.
 
@@ -233,7 +233,7 @@ Installed local command behavior, explicit bounded work, owner-only migration en
 - `test_input_size_bound_fails_before_json_parsing`
 - `test_work_requires_explicit_once`
 
-## `integration/test_postgres.py`
+## `database/tempo_intelligence_database/tests/integration/test_postgres.py`
 
 Real PostgreSQL ownership, immutable persistence, revision/cache/lease races, recovery, Maia replay and installed API/CLI operation.
 
@@ -259,7 +259,7 @@ Real PostgreSQL ownership, immutable persistence, revision/cache/lease races, re
 - `test_changed_provider_origin_has_distinct_cache_and_cannot_claim_old_origin_work`
 - `test_board_terminal_positions_with_legal_moves_do_not_queue_source_distributions`
 
-## `integration/test_provider_postgres.py`
+## `database/tempo_intelligence_database/tests/integration/test_provider_postgres.py`
 
 Real local HTTP against task-owned PostgreSQL: provider/session failures, rate limits, concurrency, cancellation and foreground-read independence.
 
@@ -278,7 +278,7 @@ Real local HTTP against task-owned PostgreSQL: provider/session failures, rate l
 - `test_postgres_expired_registration_waits_without_http_or_failure_attempts`
 - `test_postgres_provider_outage_stops_after_three_failures_and_explicit_retry_recovers`
 
-## `integration/test_server_postgres.py`
+## `database/tempo_intelligence_database/tests/integration/test_server_postgres.py`
 
 Actual installed HTTP server process, private registration, persisted counts and restart recovery against invocation-owned PostgreSQL.
 
@@ -311,7 +311,7 @@ New Maia supported-envelope budget contract.
 
 - `test_generated_maia_job_budget_matches_supported_one_gib_worker_envelope`
 
-## Repair qualification: `integration/test_postgres.py`
+## Repair qualification: `database/tempo_intelligence_database/tests/integration/test_postgres.py`
 
 Native selective retry, command replay/conflict, retained evidence, historical constraints, and exact externally-produced Maia result acceptance.
 
@@ -324,7 +324,7 @@ Native selective retry, command replay/conflict, retained evidence, historical c
 - `test_legacy_maia_retry_preserves_persisted_constraints_and_refresh_uses_current_budget`
 - `test_real_supported_maia_envelope_result_is_accepted_against_exact_persisted_job`
 
-## Repair qualification: `integration/test_provider_postgres.py`
+## Repair qualification: `database/tempo_intelligence_database/tests/integration/test_provider_postgres.py`
 
 Native cancellation cleanup failure/deadline, lease expiration and fencing, real SQL isolation, and client deadline pool recovery.
 
@@ -332,7 +332,7 @@ Native cancellation cleanup failure/deadline, lease expiration and fencing, real
 - `test_postgres_advisory_locked_background_claim_keeps_actual_asgi_health_responsive`
 - `test_postgres_background_client_deadline_discards_connection_resets_context_and_allows_pool_replacement`
 
-## Repair qualification: `integration/test_server_postgres.py`
+## Repair qualification: `database/tempo_intelligence_database/tests/integration/test_server_postgres.py`
 
 Installed server-process lifecycle failure injection, foreground health during background SQL, and shutdown.
 
@@ -374,7 +374,7 @@ Owned by `tests/test_worker.py`; these cover executor join and cancellation of a
 - `test_worker_acknowledged_cancellation_is_not_a_failed_search`
 - `test_packaged_analysis_v1_schemas_match_public_models`
 
-### `integration/test_analysis_postgres.py`
+### `database/tempo_intelligence_database/tests/integration/test_analysis_postgres.py`
 
 - `test_C_duplicate_result`
 - `test_C_worker_restart`
@@ -400,8 +400,8 @@ Owned by `tests/test_worker.py`; these cover executor join and cancellation of a
 
 `C_native_workbench` belongs to the independent Workbench suite. `C_optional_off_study` and `C_actual_AB_consumers` belong to the explicit external pilot integration lane, with actual artifacts required; fixture-only suites do not claim those milestones.
 
-Explicit actual lanes: `integration/test_actual_analysis.py` owns fresh installed B
-same-root depth/mate acceptance. `integration/test_actual_a.py` owns actual A export
+Explicit actual lanes: `database/tempo_intelligence_database/tests/integration/test_actual_analysis.py` owns fresh installed B
+same-root depth/mate acceptance. `database/tempo_intelligence_database/tests/integration/test_actual_a.py` owns actual A export
 acceptance into a separate restricted C workspace and bounded B dispatch. They are
 selected only with explicit artifact/profile paths; missing selected inputs fail.
 The external pilot owns the exact named `test_C_actual_AB_consumers` and
@@ -416,7 +416,7 @@ R2 exact association (none/one/ambiguous/deduplicated/earlier/diverged/re-entry)
 nullable-lineage invariants; R5 version/runtime/implementation compatibility,
 completed depth, typed mate, original root/history/restriction checks.
 
-`integration/test_analysis_postgres.py` owns:
+`database/tempo_intelligence_database/tests/integration/test_analysis_postgres.py` owns:
 - `test_R1_global_cross_category_priority_and_pagination`
 - `test_R2_same_color_without_exact_context_has_no_lineage`
 - `test_R2_finding_and_dismissal_identity_ignore_selection_order`
@@ -460,7 +460,7 @@ retain the same contract after complete SQL queries move to
 `tempo_intelligence_database.adapters.games_read_projection`: scope/input/page
 parameters remain bound, the one-row lookahead remains bounded, and the caller
 owns one read-only transaction. These use fake rows, not a live database.
-`integration/test_analysis_postgres.py::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free`
+`database/tempo_intelligence_database/tests/integration/test_analysis_postgres.py::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free`
 compares responses with actual accepted input, checks authentication/workspace
 rejection and proves unchanged run/job progress across reads. The native
 Workbench producer exports this real read response for its constructed fixture.
@@ -469,7 +469,7 @@ Workbench producer exports this real read response for its constructed fixture.
 
 `tests/test_games_readonly.py` owns configuration/worker exclusion, authenticated
 mutation rejection before storage, workspace isolation and capability discovery.
-`integration/test_games_readonly_postgres.py` owns actual read-only enforcement
+`database/tempo_intelligence_database/tests/integration/test_games_readonly_postgres.py` owns actual read-only enforcement
 through both pools even when an internal caller omits the read flag, accepted-game
 paging through the real API, bounded DB settings and unchanged source/run/job/
 command/profile state. The native `games-readonly` selection also retains the
@@ -495,7 +495,7 @@ serialization follows the job lock, replay skips cache/writes and failed status
 updates the cache only after the job update. Existing `test_maia_validation.py`
 continues to own wire/model/input/legal-universe validation without execution.
 
-The existing native `integration/test_postgres.py` proofs retain atomic replay,
+The existing native `database/tempo_intelligence_database/tests/integration/test_postgres.py` proofs retain atomic replay,
 stale/transition rejection, historical retry constraints and current-budget
 refresh; the historical fixture now patches the builder at its moved application
 lookup. Those native proofs were preserved in source and were not executed by
@@ -614,3 +614,16 @@ connection initializer/finalizer or protocol runs. The sixth case proves driver,
 Store and runner share one deadline context and the runner resets it after the
 operation. Existing fake runner cancellation/close/executor-join cases remain
 selected; native blocked-I/O timing and database tests are retained and unrun.
+
+## Native harness source placement
+
+The ten existing native/tooling files moved whole into the single root database
+owner tree. Assertions, parametrization, fixture authority, SQL/role/resource/
+cleanup policy and optional qualification selection are unchanged. Task-local
+exact source/path proof covers all existing function/class bodies and SQL/driver
+calls. Guarded collection finds the same 141 default test identities before and
+after; collection executes no native test body and forbids connection/pool/socket/
+process creation. Archive/runtime-module discovery and cold-wheel origins are the
+proportional packaging proof. Pure/fake component tests remain here; no new native
+qualification pass or framework is claimed. Historical validation receipts retain
+their dated command/source paths; current commands use the owner tooling README.

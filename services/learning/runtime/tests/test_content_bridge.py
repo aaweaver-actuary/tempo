@@ -295,7 +295,7 @@ def test_C3_complete_historical_alias_activation_fits_documented_lock_capacity(c
 @pytest.mark.parametrize('sequence_already_ahead',[False,True])
 def test_C3_copied_review_identity_advances_without_reusing_or_reordering_history(case,sequence_already_ahead):
     import importlib.util
-    helper_path=Path(__file__).parents[1]/'integration/restore_rehearsal.py'
+    helper_path=Path(__file__).resolve().parents[4]/'database/tempo_learning_database/tooling/restore_rehearsal.py'
     specification=importlib.util.spec_from_file_location('learning_owned_rehearsal_restore',helper_path)
     helper=importlib.util.module_from_spec(specification);specification.loader.exec_module(helper)
     activate(case)

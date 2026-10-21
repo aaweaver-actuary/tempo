@@ -1177,3 +1177,100 @@ Native blocked-I/O timing, PostgreSQL locking/concurrency and deployment/resourc
 isolation remain unverified. Task-owned source snapshots, selected logs, source/
 artifact proofs, audit and exact manifest remain under
 `/tmp/tempo-intelligence-runtime-driver-*` for integration review.
+
+## Native database harness whole-file relocation — October 21, 2026
+
+The nine files identified by the closure scan, plus the additional direct-SQL
+`test_actual_analysis.py`, moved whole into the single root database owner tree.
+The runner is now `database/tempo_intelligence_database/tooling/run_postgres.py`;
+nine test/fixture/support files are in that owner's `tests/integration/` package.
+The two actual A/B files combine cross-component durable acceptance with SQL state
+assertions. They remain intact optional native qualification, not pure application
+tests or a permanent scattered-database exception. Application pure/fake/contract
+tests and `integration/qualify_artifacts.py` remain application-owned.
+
+Only service/fixture/test discovery, build/source-input metadata and current
+references changed. The hook ships native tests/tooling in the sdist and excludes
+them from runtime wheels. Artifact qualification copies those source-only trees
+into the existing clean consumer and invokes the new runner path. The embedded
+installed-package guard's pre-existing undefined `pathlib.Path` references remain
+unchanged: only `Path` is imported in that child script, so full artifact
+qualification may hit `NameError` before native lanes. This unrelated limitation
+was not repaired or executed in the relocation scope. No qualification policy was
+changed. Dated historical validation receipts retain their original command/source
+paths.
+
+Exact task-local source proof passes:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-native-harness-source-proof.py
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-native-harness-selection-proof.py
+```
+
+All original function/class bodies, decorators/signatures and remaining module
+constants/imports/embedded child code match after explicit fixture/test-path
+substitution. Four moved modules are byte-identical. All 89 SQL/driver/connect
+call points are unchanged. Native resource bounds, origin/role/grant safeguards,
+cleanup checks, deadlines, assertions and optional test lanes are unchanged.
+Extracted command construction for default, Analysis, Games-reader, actual B and
+actual A/B modes yields identical arguments/environment after path normalization;
+every selected native path exists. The runner now fingerprints all ten moved
+inputs and actual build metadata. This is source/selection evaluation only: no
+runner main, native test, provider, engine, database or private input was invoked.
+
+**Collection only**, with connection, pool, socket and subprocess construction
+rejected before importing pytest, found the same **141 default test identities**
+in three layouts: saved original harness, relocated repository source and staged
+source-harness consumer using the fresh wheel. No test body or fixture ran;
+141 collected is not 141 passed. The optional actual A/B tests were source-checked
+but not selected for collection or execution. Logs and inventories are in
+`/tmp/tempo-intelligence-native-harness-{original,source,consumer}-collection.*`.
+No full suite or native qualification was run. Application tests were not repeated
+because their source and all 55 runtime Python module bytes are unchanged.
+
+Fresh packaging/discovery checks:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation \
+  --outdir /tmp/tempo-intelligence-native-harness-build
+PYTHONDONTWRITEBYTECODE=1 \
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src \
+  /tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-native-harness-artifact-proof.py
+/tmp/tempo-db-review-venv/bin/python -I /tmp/tempo-intelligence-native-harness-wheel-smoke.py
+```
+
+The sdist matches 19 current source/document/harness files, with no old native
+paths, bytecode or cache files. The wheel contains no native tests/tooling; all
+55 runtime Python files exactly match the prior runtime-driver artifact. Cold
+wheel imports resolve the service, database package and Store from that wheel;
+runtime DDL remains present and no Store/pool/connection/worker is created.
+Repository, extracted-sdist and staged-consumer service/fixture paths resolve
+correctly. Initial task-local check helpers needed canonical `/tmp` path handling
+and nested command-block/path normalization; the final helpers/checks pass and
+no production/native behavior was changed in response. Scoped syntax,
+whitespace/EOF/conflict/link checks and the one new canonical tooling Mermaid
+view pass; hosted GitHub rendering was not inspected.
+
+- Wheel SHA-256: `007d66d0484f25e3c569a959cfe4041ba278731991ad205b6058354addf30bc1`.
+- Source distribution SHA-256: `6216d2273150a85b7550f05f280d728680adcb001467fc2372c4bc32fda0a98e`.
+
+The current external component-registry command at
+`components.json .components[6].tests[1].command` was reported to the integration
+owner for its separate global metadata update, from the old service runner path
+to `python database/tempo_intelligence_database/tooling/run_postgres.py`. No old
+native path was found in current testing/architecture guides, scripts or workflow
+source; dated analysis-restoration receipts remain historical. This agent made
+no global registry/document, git, issue or CI change.
+
+This closes the recorded Intelligence native source-placement remainder, not a
+whole-repository centralization or domain-independence audit. Source/integration
+code has no remaining concrete database driver/cursor operation outside the root;
+the Analysis worker's `client.execute` is its unchanged engine-client call.
+Application fake/guard tests intentionally retain their owning component home.
+No native PostgreSQL, role/security/grant, credential, provider/engine, service,
+live state or full-system action ran. Real locking/resource/timeout/concurrency,
+optional actual A/B and deployment acceptance remain unverified. The pre-existing
+embedded qualifier `pathlib.Path`/`NameError` limitation is also unverified at
+runtime and remains unchanged; no issue or extra qualification campaign was run.
+Whole-file snapshots, move map, audits, source/selection/collection/artifact logs
+and exact manifest are retained under `/tmp/tempo-intelligence-native-harness-*`.

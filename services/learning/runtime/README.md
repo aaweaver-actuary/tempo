@@ -83,7 +83,7 @@ sequenceDiagram
     B-->>S: pending intent committed<br/>locally
     S->>A: POST card review with same<br/>Idempotency-Key
     Note over A: Authenticate workspace/origin before<br/>DB access
-    Note over A: MAIN host accounting: bounded-memory<br/>request accounting; daemon owns file I/O
+    Note over A: MAIN host accounting: bounded-memory<br/>request accounting,<br/>daemon owns file I/O
     A->>D: record_intent in its own<br/>transaction
     D-->>A: queued intent committed (or<br/>matching identity found)
     Note over A,D: Execution transaction, operation<br/>advisory lock and receipt row lock
@@ -283,7 +283,7 @@ The Game Evidence worker targets `/internal/evidence` with `TEMPO_GAME_EVIDENCE_
 uv run --project services/learning/runtime --locked --no-editable python \
   services/learning/runtime/qualify.py /absolute/evidence/installed
 services/learning/runtime/.venv/bin/python \
-  services/learning/runtime/integration/run_postgres.py /absolute/evidence/native
+  database/tempo_learning_database/tooling/run_postgres.py /absolute/evidence/native
 # Existing component runner also selects the declared producer suites:
 TEMPO_COMPONENT_PYTHON="$PWD/services/learning/runtime/.venv/bin/python" \
   node tools/component-build/test-lane.mjs --component learning

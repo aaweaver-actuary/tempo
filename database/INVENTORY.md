@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **155 files**; one candidate is confirmed non-database application code, and **zero original entries remain for review/extraction**. The original checklist is closed; complete centralization remains unfinished while the additional native harness/test placement and technical composition work below is unresolved. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **155 files**; one candidate is confirmed non-database application code, and **zero original entries remain for review/extraction**. The original checklist is closed, and the separately identified native harness/test/benchmark placement groups below are complete. Technical composition boundaries and any further source-audit findings remain unfinished work, not permanent exceptions or a claim of complete centralization. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -170,7 +170,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 ## Additional storage candidates found after the baseline
 
-The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. The first nine additional storage/tooling sources were resolved by checking Redis operations, SQL constants and Content native harnesses outside the original call scan. Further closure scans found the separately pending native/test groups below. None alter baseline arithmetic.
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. The first nine additional storage/tooling sources were resolved by checking Redis operations, SQL constants and Content native harnesses outside the original call scan. Further closure scans found the separately tracked native/test groups below, now relocated. None alter baseline arithmetic.
 
 | Additional source / status | Database operations | Application responsibility to retain outside database |
 | --- | --- | --- |
@@ -179,26 +179,32 @@ The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive pr
 | Extracted [legacy_game_observation.py](../backend/app/legacy_game_observation.py) | Accepted-head and imported-game SELECTs now live in the same [authority storage](tempo_legacy_database/adapters/games/authority/README.md), retaining the existing reader. | One-game capture scope, legal decision plies and export authority/format. |
 | Extracted [legacy_game_capture.py](../backend/app/services/legacy_game_capture.py) | Existing metadata and finite stream/count/high-water/page operations now live in [authority storage](tempo_legacy_database/adapters/games/authority/README.md). | Capture budget/digest/selection and finite traversal; extract with its authority/observation callers. |
 | Relocated [writer_latency.py](tests/benchmarks/writer_latency.py) | Disposable SQLite connection/schema/inserts and writer contention tooling. | Existing benchmark reporting; whole dedicated benchmark may relocate intact. |
-| Extracted [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) fixture operations | Five existing native setup statements now live in [ownership fixture.py](ownership/fixture.py), including the two unchanged test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
+| Extracted [qualify_legacy_bridge.py](../database/tempo_legacy_database/tooling/legacy_bridge/qualify_legacy_bridge.py) fixture operations | Five existing native setup statements now live in [ownership fixture.py](ownership/fixture.py), including the two unchanged test-table DDL definitions. | Existing allocation/orchestration now lives together in the root legacy native tooling category; five fixed fixture statements retain their separate ownership helper. No native execution. |
 
 Three Content native-only files discovered after the runtime audit are also relocated intact: [the PostgreSQL suite](tempo_content_database/tests/test_postgres.py), [its runner](tempo_content_database/tooling/run_postgres.py) and [benchmark](tempo_content_database/tooling/benchmark.py). Native assertions and benchmark are byte-identical; only runner/build/discovery/source-hash paths change. Application-facing synthetic tests and source-free consumer tooling retain Content ownership. These three additional relocations do not alter the original156-row arithmetic.
 
-### Further native harness and storage-test placement — pending
+### Further native harness and storage-test placement — current status
 
-These concrete source-placement/discovery items remain even though the original156-row checklist is closed. All work is mechanical; no native suite,restore,provisioning or live service is run. Application policy/contract tests remain outside database where they do not implement database-specific fixtures. Historical qualification receipts retain original paths.
+These separately discovered source-placement/discovery groups are now complete; they are not part of the original 156-row arithmetic. All changes are mechanical. No native suite, restore, provisioning or live service was run. Application policy/contract tests remain outside database where they do not implement database-specific fixtures. Historical qualification receipts retain original paths. Native qualification and strict domain/composition boundaries remain unverified or unfinished as specified below.
 
-| Owner / current pending scope | Required placement or reference work | Current validation limit |
+| Owner / placement status | Completed placement or reference work | Current validation limit |
 | --- | --- | --- |
-| Game Evidence | Two native test/runner files and one database source-fingerprint test scope; qualifier must fingerprint the root owner. | Native files move whole; runtime wheel must exclude tests/tooling and source fingerprint pure discovery remains explicit. |
-| Intelligence | Ten native integration runner/test/fixture/support files,including actual-A/Analysis qualification; owner artifact/discovery references. | Whole database-specific native harness,not a new installed native product; no actual engine/provider run. |
-| Learning / remediation / legacy review | Seven native/restore files plus a mixed remediation guard scope; mixed qualification-policy cases stay outside. | Preserve resource/target/cleanup guards and pure/native discovery; native/restore tooling is sdist-only. |
-| Legacy backend | Native bridge,discovery-acceptance and queue-admission fixtures/tests; associated database-native qualification tooling under inspection. | One stale acceptance-class import is being repaired; import/plan checks only,not actual native proof. |
-| Content | Whole cursor unit suite and four direct storage-only test functions; pure runner/artifact inputs updated explicitly. | Native tests stay excluded from pure discovery; source-free application checks retain component ownership. |
+| Completed Game Evidence | [Native suite and source metadata tests](tempo_game_evidence_database/tests/README.md),[runner](tempo_game_evidence_database/tooling/README.md) and qualifier root-owner fingerprints are centralized. | Three installed focused checks and sdist→wheel/resource checks pass; all native functions/SQL/guards unchanged. Native tooling remains source-checkout-only and unexecuted. |
+| Completed Intelligence | Ten native runner/test/fixture/support files,including actual-A/Analysis qualification,now live in [owner tests](tempo_intelligence_database/tests/README.md) and [tooling](tempo_intelligence_database/tooling/README.md); artifact/registry inputs follow them. | Guarded collection preserves141 default identities in original/source/wheel-consumer layouts,with no native fixture/body execution. Runtime Python bytes unchanged; full qualifier has a documented pre-existing guard-name limitation. |
+| Completed Learning/remediation/review placement | Remediation [tests](tempo_remediation_database/tests/native/README.md)/[runner](tempo_remediation_database/tooling/README.md),runtime [native/restore tooling](tempo_learning_database/tooling/README.md),legacy-review [tests/guards](tempo_legacy_database/tests/learning_review/README.md)/[runner](tempo_legacy_database/tooling/learning_review/README.md) are centralized. Pure qualification-policy tests remain outside. | Source/discovery/archive checks pass; runtime wheel contents unchanged. Application tooling selection is93pass/seven failures reproduced original; native tooling is sdist-only and unexecuted. |
+| Completed legacy native placement | [Bridge proofs](tempo_legacy_database/tests/legacy_bridge/README.md),[acceptance](tempo_legacy_database/tests/discovery_acceptance/README.md),[queue admission](tempo_legacy_database/tests/queue_admission/README.md) and [qualification/resource tooling](tempo_legacy_database/tooling/legacy_bridge/README.md) are centralized. | Stale acceptance import repaired;131 pure cases and25 guarded collection nodes pass. Exact existing controlled read-only source mount is allowed; all other owner/target/cleanup predicates unchanged. No native proof claimed. |
+| Completed Content | [Cursor suite and four storage-only functions](tempo_content_database/tests/unit/README.md) now reside root; pure runner/artifact/registry inputs explicitly include only unit tests. | Seventy focused cases and source/discovery/archive checks pass; native parent stays excluded. Runtime wheel resources are unchanged; source-free full qualifier and five denied loopback cases remain unverified. |
+
+Two dedicated benchmark entry points are also centralized: [storage read rehearsal](tempo_legacy_database/tooling/benchmark_storage_reads.py) and [writer launcher](tests/benchmarks/benchmark-writer.mjs). Their existing bodies are unchanged except physical root/resolver references; npm and finite direct-CLI discovery follow them. Other benchmark scripts exercise application algorithms and retain their logical owners. No benchmark ran.
 
 The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis factories/Lua/pipeline/operations and Study-settings query now live under [redis_control](tempo_legacy_database/adapters/redis_control/README.md), preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 
 
 The scan excludes the centralized tree and tests. Historical evidence/qualification receipts retain their recorded source paths; current active references were relocated. Redis orchestration and host resource coordination remain in their existing infrastructure owners.
+
+### Newly confirmed browser remainder — source review pending extraction
+
+The final outside-tree source scan found actual IndexedDB transaction/read/write operations in `app/lib/offline-training.ts`, `app/lib/opening-evidence-journal.ts` and `public/maia-worker.js`, despite their existing root connection adapters. These are additional mixed-file splits, not completed original entries or permanent exceptions. Keep application replay/evidence/model policy outside and move complete existing storage operations into the root browser category, preserving transaction callbacks and worker delivery/build paths. LocalStorage and tooling matches are still being classified; names/text matches alone are not declared storage operations or unused code. Native placement completion above therefore does not establish complete database centralization.
 
 ## Handoff for the separately coordinated domain move
 
@@ -239,7 +245,7 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 | Browser connection | 1 | 0 | 0 |
 | **Total baseline** | **155** | **1** | **0** |
 
-Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
+Additional sources above show their separate placement status. The initially relocated adapters also received the bounded application-responsibility audits below; remaining technical composition and backend boundary work stays explicit. Zero pending baseline rows alone does not establish that an adapter is application-free or a domain is independent.
 
 ### Application blocks removed from originally moved adapters
 

@@ -233,7 +233,10 @@ and [test suite](../../database/tempo_content_database/tests/README.md) live und
 the single root database owner and retain Content's logical test ownership.
 They are included in the sdist, excluded from the production wheel. The
 application-facing pure suite, consumer probes, artifact qualifier and
-`run_suite.py` remain here. Historical commands in validation receipts retain
+`run_suite.py` remain here. [Storage-only pure unit tests](../../database/tempo_content_database/tests/unit/README.md)
+now live under the same root owner. The pure runner and source-free artifact
+consumers explicitly select that `tests/unit` subtree alongside application tests;
+they never discover the native parent directory. Historical commands in validation receipts retain
 their original paths; use the current native command above for discovery.
 
 Actual tested revisions, counts, timings, cleanup, and limitations belong in

@@ -8,9 +8,9 @@ failure, recovered chronology, explicit registration, evidence and continuation.
 `qualify.py` runs the same suite in source-free Python 3.12/3.14 consumers with
 service guards. A failed, skipped, deselected, incomplete or zero-selected suite is not qualification.
 
-The separate owning native command is `python integration/run_postgres.py DIR` in
+The separate owning native command is `python database/tempo_legacy_database/tooling/learning_review/run_postgres.py DIR` from the checkout root in
 a legacy test environment containing installed tempo-learning-review and
- tempo-scheduling. It discovers `integration/test_postgres.py` in its own fresh
+ tempo-scheduling. It discovers `database/tempo_legacy_database/tests/learning_review/test_postgres.py` in its own fresh
 PostgreSQL cluster and exports every executed pytest identity to JUnit. It covers
 ordinary evidence/history/schedule/receipt/queue effects, response loss and logical
 retry, native competing connections, stage failures, handled savepoint conflict,
@@ -29,7 +29,8 @@ tests remain with C and are not edited here.
 
 ## Integration and qualification regressions (PR #278)
 
-`integration/test_qualification_runners.py` is a separate regular owning tooling
+`integration/test_qualification_runners.py` and
+`database/tempo_legacy_database/tests/learning_review/test_native_runner.py` form the separate regular owning tooling
 suite, registered alongside the package and native suites in `components.json`.
 It requires no PostgreSQL cluster and stays outside the guarded application tests.
 

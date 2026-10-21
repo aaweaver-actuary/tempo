@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 from tempo_content.bridge.application import BridgeApplication
 from tempo_content import cli
-from tempo_content_database.ddl import migrate as migration
 
 
 def test_bridge_approval_keeps_scope_before_row_locks_on_one_borrowed_transaction():
@@ -60,21 +59,3 @@ def test_cli_readiness_calls_database_owner_with_unchanged_configuration(monkeyp
     assert cli.main(['readiness']) == 0
     assert calls == [('postgresql://unused/synthetic', 'synthetic-workspace')]
     assert '"status": "ready"' in capsys.readouterr().out
-
-
-def test_readiness_owner_borrows_the_original_connection_context(monkeypatch):
-    transaction = object()
-    events = []
-
-    @contextmanager
-    def connect(url):
-        assert url == 'postgresql://unused/synthetic'
-        events.append('connect')
-        yield transaction
-        events.append('close')
-
-    monkeypatch.setattr(migration.psycopg, 'connect', connect)
-    monkeypatch.setattr(migration, 'readiness', lambda database, workspace: (
-        events.append((database is transaction, workspace)) or {'status': 'ready'}))
-    assert migration.readiness_from_url('postgresql://unused/synthetic', 'workspace') == {'status': 'ready'}
-    assert events == ['connect', (True, 'workspace'), 'close']

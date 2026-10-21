@@ -7,7 +7,7 @@ translation, without opening a connection in HTTP composition. Existing
 `test_analysis_schema.py`, `test_providers.py`, `test_credentials.py` and
 `test_boundary.py` retain their policy, input, authentication and installed-import
 assertions after SQL extraction into the root database owner tree. Native storage
-proofs remain in `integration/test_postgres.py`; no native proof is implied by
+proofs remain in `../../database/tempo_game_evidence_database/tests/native/test_postgres.py`; no native proof is implied by
 these unit cases.
 
 `tests/test_application_preparation.py` owns import preparation and read-response
@@ -85,7 +85,7 @@ owns producer-created snapshot v2 and analysis fixtures from genuine activation,
 covered/opponent-deviation denominator contexts and proposal consumption.
 `tests/test_bridge_snapshot.py` owns accepted v2 source/route/policy generation
 and reconstructed response-scope rejection using a genuine installed synthetic
-fixture. `integration/test_postgres.py` additionally owns interrupted frozen-export
+fixture. `../../database/tempo_game_evidence_database/tests/native/test_postgres.py` additionally owns interrupted frozen-export
 resumption after a game revision changes, exact cursor scope and immutable-table
 runtime update denial. The installed proof exports the existing outbox inspection
 and genuine acknowledgements, without introducing another remediation producer.
@@ -104,7 +104,7 @@ shared membership, explicit transposition re-entry, repeated occurrences, custom
 FEN, castling, en-passant, promotions, unknown acceptance, invalid provenance,
 source bounds and provider cursor/rate-limit behavior.
 
-`integration/test_postgres.py`, executed by `integration/run_postgres.py`, owns
+`../../database/tempo_game_evidence_database/tests/native/test_postgres.py`, executed by `../../database/tempo_game_evidence_database/tooling/run_postgres.py`, owns
 atomic comparison/outbox publication, rollback, duplicate sources, verified-index
 reuse, stale source/snapshot fencing, pending/completed/rejected/stale delivery,
 lost acknowledgement with fresh-process replay, durable blocked corrections,
@@ -176,7 +176,7 @@ installed CLI -> authenticated Learning HTTP -> independent databases.
 
 ## PR #294 snapshot repair
 
-`integration/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.
+`../../database/tempo_game_evidence_database/tests/native/test_postgres.py::test_A_snapshot_installation_orders_preserve_current_generation` runs both historical-first and current-first loading against real PostgreSQL, using actual installed producer fixtures. It verifies immutable replay, current pointer, stale rejection and comparison progress on generation 2. Existing mixed-generation/response-scope and evidence-withdrawal regressions remain unchanged.
 
 `test_A_post_retirement_snapshot_cannot_claim_current_serving` installs a genuine retired observation, recomputes comparison readiness and preserves the original snapshot and delivery records.
 

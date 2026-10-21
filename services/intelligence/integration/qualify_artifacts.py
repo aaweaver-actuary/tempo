@@ -62,6 +62,9 @@ def main(arguments=None):
             for path in sorted(source.rglob("*")):
                 if path.is_file() and not set(path.parts) & IGNORED:
                     report["source_inputs"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((ROOT / "database/tempo_intelligence_database").rglob("*")):
+            if path.is_file() and not set(path.parts) & IGNORED:
+                report["source_inputs"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
         with tempfile.TemporaryDirectory(prefix="tempo-intelligence-artifacts-") as temporary:
             workspace = Path(temporary).resolve()
             distributions = destination / "distributions"
@@ -98,6 +101,10 @@ def main(arguments=None):
                     run(["uv", "pip", "install", "--python", python, "--no-build-isolation", artifact], consumer, label + "-install")
                     for directory in ("tests", "fixtures", "integration"):
                         shutil.copytree(SERVICE / directory, consumer / directory, ignore=shutil.ignore_patterns("__pycache__", "qualify_artifacts.py"))
+                    for directory in ("tests", "tooling"):
+                        shutil.copytree(ROOT / "database/tempo_intelligence_database" / directory,
+                            consumer / "database/tempo_intelligence_database" / directory,
+                            ignore=shutil.ignore_patterns("__pycache__"))
                     shutil.copy2(SERVICE / "pyproject.toml", consumer / "pyproject.toml")
                     guard = r'''
 from importlib import metadata
@@ -123,7 +130,7 @@ for name in ('tempo-learning-runtime','tempo-game-evidence','tempo-content','tem
                     run([consumer / ".venv/bin/tempo-intelligence", "--help"], consumer, label + "-cli")
                     if not package_only and (version, kind) in {("3.12", "wheel"), ("3.14", "sdist")}:
                         native_destination = destination / (label + "-native")
-                        run([python, "integration/run_postgres.py", native_destination], consumer, label + "-native", extra_environment={"TEMPO_INTELLIGENCE_TEST_REVISION": report["revision"]})
+                        run([python, "database/tempo_intelligence_database/tooling/run_postgres.py", native_destination], consumer, label + "-native", extra_environment={"TEMPO_INTELLIGENCE_TEST_REVISION": report["revision"]})
                         native_report = json.loads((native_destination / "native-resource.json").read_text())
                         if not native_report.get("complete"):
                             raise RuntimeError("installed_native_proof_incomplete")

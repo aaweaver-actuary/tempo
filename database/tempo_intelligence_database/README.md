@@ -7,6 +7,8 @@
 | [adapters](adapters/README.md) | Concrete persistence implementations and read projections. |
 | [ddl](ddl/README.md) | Schema metadata, ordered migrations and explicit owner migration entry points. |
 | [schema](schema/README.md) | Rendered Mermaid relationships and complete field/type dictionaries. |
+| [tests](tests/README.md) | Native PostgreSQL fixture and durable/component qualification; source-distribution only. |
+| [tooling](tooling/README.md) | Invocation-owned native runner and relocated test discovery; source-distribution only. |
 
 ## Logical relationships (not SQL foreign keys)
 

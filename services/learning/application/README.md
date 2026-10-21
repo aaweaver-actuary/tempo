@@ -55,7 +55,7 @@ image; no Node dependencies or model assets. From the checkout root:
 ```sh
 uv venv --python 3.14 .venv
 uv pip install --python .venv/bin/python -r backend/requirements.txt -r backend/requirements-test.txt pytest==9.1.1
-.venv/bin/python services/learning/application/integration/run_postgres.py /absolute/evidence/directory
+.venv/bin/python database/tempo_legacy_database/tooling/learning_review/run_postgres.py /absolute/evidence/directory
 ```
 
 The native runner accepts only an evidence directory, creates a uniquely labelled
@@ -82,7 +82,7 @@ containing spaces. The external result file and native evidence copy are retaine
 Runner regressions run without PostgreSQL:
 
 ```sh
-backend/.venv/bin/python -m pytest services/learning/application/integration/test_qualification_runners.py backend/tests/test_learning_package_installation.py -q
+backend/.venv/bin/python -m pytest services/learning/application/integration/test_qualification_runners.py database/tempo_legacy_database/tests/learning_review/test_native_runner.py backend/tests/test_learning_package_installation.py -q
 TEMPO_COMPONENT_PYTHON="$PWD/backend/.venv/bin/python" node tools/component-build/test-lane.mjs --component learning-review-application
 ```
 

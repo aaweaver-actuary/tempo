@@ -27,7 +27,10 @@ def main(arguments=None):
             raise ValueError("expected one nonempty JUnit destination")
     except ValueError as error:
         parser.error(str(error))
-    path = HERE / ("tests" if options.suite == "pure" else "integration/test_runner.py")
+    paths = [HERE / "tests"] if options.suite == "pure" else [
+        HERE / "integration/test_runner.py",
+        ROOT / "database/tempo_remediation_database/tests/native/test_runner.py",
+    ]
     with tempfile.TemporaryDirectory(prefix="tempo-remediation-suite-") as directory:
         directory = Path(directory)
         junit = Path(options.junitxml[0]).resolve() if options.junitxml else directory / "cases.xml"
@@ -36,7 +39,7 @@ def main(arguments=None):
         for stage, extra in (("collection", ["--collect-only", "-q"]), ("execution", ["-q", "--junitxml=" + str(junit)])):
             receipt = directory / (stage + ".json")
             result = subprocess.run([sys.executable, str(CHECKER), str(receipt), "-c", str(HERE / "pyproject.toml"),
-                "-o", "addopts=", "-p", "no:cacheprovider", str(path), *extra],
+                "-o", "addopts=", "-p", "no:cacheprovider", *[str(path) for path in paths], *extra],
                 cwd=HERE, env=checker.controlled_environment(), text=True, capture_output=True)
             print(result.stdout, end=""); print(result.stderr, end="", file=sys.stderr)
             if result.returncode: return result.returncode

@@ -17,7 +17,7 @@ plus explicit no-SQL/driver/concrete-adapter guards for the extracted modules.
 queries, microsecond/timezone boundaries, unsafe/excluded facts, 128-row typed
 batches and caller rollback. Existing native command/Study/replay proofs remain
 required; source-only checks do not certify native PostgreSQL integration.
-Prepared owning PostgreSQL contracts in `backend/integration/legacy_bridge/test_native.py`
+Prepared owning PostgreSQL contracts in `database/tempo_legacy_database/tests/legacy_bridge/test_native.py`
 cover borrowed rollback/typed projections, actual card/day lock lifetime and
 accepted-scope exclusion with a different-repertoire control. They join the three
 existing command/Study cases under the unchanged capped native runner; adding or
@@ -4569,8 +4569,8 @@ Audit CI readiness evidence (existing named browser cases):
 ### Issue #220 — essential queue application ownership
 
 - `test_queue_application_import_does_not_load_http_or_worker_root` parses direct/deferred/dynamic imports of queue owners, their eager dependency closure, and imports in a fresh interpreter. The sole broker-publication adapter exception retains post-commit wakes.
-- `test_queue_presentation_matches_versioned_fixtures` retains the admitted inputs from main `3f7332399796366eb32f9fcb5e1b5c678a5b1562` and asserts the deliberately adopted policy-v3 presentation outputs. Pure Learning proportions and owning native queue publication replace the former v2 round-robin and fixed-other-slot presentation promises. The permanent all-SQL-text pin is retired: `test_queue_admission_application_has_no_sql_or_driver_dependencies`, `backend/tests/test_queue_admission.py` and `backend/tests/test_queue_admission_adapter.py` own application isolation, semantic decisions, bounded adapter pages, historical shared-card charging, exact capacity witnesses and caller rollback. Existing protected-head, provenance, cycle and ordering tests remain. Four prepared PostgreSQL cases in `backend/integration/queue_admission/test_postgres.py` require the parent-owned serialized native window; collection is not native qualification. See `docs/architecture/queue-admission-storage.md`.
-- `backend/tests/test_queue_native_fixture_guard.py` rejects stale/live/indirect DSNs before connection, verifies the read-only database/cluster/OID probe, and rejects target changes before fixture writes. The parent-issued target receipt and exact native/resource/cleanup contract are in `backend/integration/queue_admission/README.md`. `test_cross_page_shared_card_preserves_legacy_admitting_membership_with_opposed_insertion` asserts actual SQLite membership/allowance consumption across pages; PostgreSQL parity remains an explicit prepared comparison, without inventing a deterministic ownership rule. The architecture document maps the retired fixture's unchanged unlock/restoration/quarantine/refresh/requeue areas to their retained behavioral owners.
+- `test_queue_presentation_matches_versioned_fixtures` retains the admitted inputs from main `3f7332399796366eb32f9fcb5e1b5c678a5b1562` and asserts the deliberately adopted policy-v3 presentation outputs. Pure Learning proportions and owning native queue publication replace the former v2 round-robin and fixed-other-slot presentation promises. The permanent all-SQL-text pin is retired: `test_queue_admission_application_has_no_sql_or_driver_dependencies`, `backend/tests/test_queue_admission.py` and `backend/tests/test_queue_admission_adapter.py` own application isolation, semantic decisions, bounded adapter pages, historical shared-card charging, exact capacity witnesses and caller rollback. Existing protected-head, provenance, cycle and ordering tests remain. Four prepared PostgreSQL cases in `database/tempo_legacy_database/tests/queue_admission/test_postgres.py` require the parent-owned serialized native window; collection is not native qualification. See `docs/architecture/queue-admission-storage.md`.
+- `backend/tests/test_queue_native_fixture_guard.py` rejects stale/live/indirect DSNs before connection, verifies the read-only database/cluster/OID probe, and rejects target changes before fixture writes. The parent-issued target receipt and exact native/resource/cleanup contract are in `database/tempo_legacy_database/tests/queue_admission/README.md`. `test_cross_page_shared_card_preserves_legacy_admitting_membership_with_opposed_insertion` asserts actual SQLite membership/allowance consumption across pages; PostgreSQL parity remains an explicit prepared comparison, without inventing a deterministic ownership rule. The architecture document maps the retired fixture's unchanged unlock/restoration/quarantine/refresh/requeue areas to their retained behavioral owners.
 - `test_queue_application_requeue_preserves_origin_cycle_and_issuance` covers retained origins, insert position, caller rollback and unissued repeat identity.
 - `test_essential_queue_study_only_resumes_every_legacy_phase` and `test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint` preserve historical optional-phase skips and capacity checkpoint payloads.
 - `test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay` in the regular native queue-attempt proof exercises real foreground contention, interruption rollback, pool restart/persisted checkpoint reload, replay and generation/lease fencing. Existing native issuance/receipt and prepared-transition proofs remain required.
@@ -4976,7 +4976,7 @@ review/replay/invalidation, with a paired prior-issued attempt fence. PostgreSQL
 rows and HTTP/Celery/operation transport are scripted; actual backend native
 durability and locking remain a separate, unexecuted qualification gate.
 
-`backend/integration/legacy_bridge/test_native.py` prepares the actual installed
+`database/tempo_legacy_database/tests/legacy_bridge/test_native.py` prepares the actual installed
 producer/capture → HTTP/Celery/Redis → backend migration50/module PostgreSQL →
 normal Study boundary in three explicit cases: fresh/replayed/restarted normal
 Study, prior-issued attempt fencing, and module/completed-operation rollback.
@@ -5194,3 +5194,13 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Threat training storage
 
 `backend/tests/test_threat_training_storage_separation.py` owns fourteen semantic source/snapshot boundaries for rubric repair/admission,approval,exercise/report facts,recognition/attempt replay,card/day/receipt locking,grading and queue/scheduling/clock/resource order. The existing admission case remains unchanged. Native races,actual engine and optional-feature independence remain unverified.
+
+
+## Content storage-owned pure unit placement
+
+The root `database/tempo_content_database/tests/unit` suite owns cursor-token integrity and the four fixed target/commit/failure/readiness-context storage cases. Component policy and semantic boundary tests retain Content ownership. Pure discovery explicitly excludes native parent tests; assertion-preserving source/archive checks do not qualify the full artifact or denied loopback paths.
+
+
+## Relocated legacy native proof discovery and controlled import paths
+
+`backend/tests/test_legacy_backend_native_plan.py::test_native_fixture_accepts_exact_controlled_database_import_path_and_rejects_outside_paths` owns five pure allow/reject cases for the existing read-only `/source/database` fixture mount. Arbitrary roots,private descendants and neighboring prefixes remain rejected. Guarded source collection covers all25 relocated bridge/Discovery/queue nodes,including the acceptance application's moved-class import; collection opens no native connection or process.
