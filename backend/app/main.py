@@ -29,6 +29,7 @@ from tempo_legacy_database.adapters.http_composition import (
     system as system_storage,
     settings as settings_storage,
     queue_maintenance as queue_maintenance_storage,
+    queue_projection as queue_projection_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
@@ -1303,11 +1304,7 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
     payload = {"queue_date": queue_date, "entry_id": card["queue_entry_id"],
                "card_id": card["id"], "expected_revision": card["revision"]}
     with read_connection() as database:
-        issued = database.execute(
-            "SELECT issued_as_head FROM queue_attempt_origins "
-            "WHERE queue_entry_id=? AND card_id=? AND revision=?",
-            (payload["entry_id"], payload["card_id"], payload["expected_revision"]),
-        ).fetchone()
+        issued = queue_projection_storage.issued_head(database, payload["entry_id"], payload["card_id"], payload["expected_revision"])
     if issued and issued["issued_as_head"]:
         return
     if postgres_store.configured():
@@ -1316,7 +1313,7 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
     else:
         from .queue_commands import issue_queue_head
         with connection() as database:
-            database.execute("BEGIN IMMEDIATE")
+            queue_projection_storage.begin_head_issuance(database)
             result = issue_queue_head(database, payload)
     if isinstance(result, JSONResponse) or not result.get("issued"):
         raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
@@ -1325,120 +1322,10 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
 def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
     day = date.today().isoformat()
     with read_connection() as db:
-        evidence_timezone = db.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0] if include_opening_evidence and postgres_store.configured() else None
-        projection_row = db.execute(
-            "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
-        ).fetchone()
-        diagnostic_rows = db.execute(
-            "SELECT card_id,message FROM queue_projection_diagnostics WHERE queue_date=? ORDER BY card_id",
-            (day,),
-        ).fetchall()
-        queue_sql = """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
-                                  (SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=c.id AND invalidated_at IS NULL) latest_review_id,
-                                  q.gameplay_priority_reason,q.admission_kind,
-                                  CASE WHEN c.kind='prefix'
-                                              AND instr(c.recent_attempts_json,'"again"')>0
-                                    THEN COALESCE((SELECT MAX(failed_review.id) FROM reviews failed_review
-                                      WHERE failed_review.card_id=c.id AND failed_review.rating='again'
-                                        AND failed_review.source_kind='study'
-                                        AND failed_review.invalidated_at IS NULL),0)
-                                    ELSE 0 END latest_failed_review_id,
-                                  EXISTS(SELECT 1 FROM reviews study_review
-                                         WHERE study_review.card_id=c.id AND study_review.source_kind='study'
-                                           AND study_review.invalidated_at IS NULL) has_study_review,
-                                  (SELECT COUNT(*) FROM reviews study_review_count
-                                   WHERE study_review_count.card_id=c.id
-                                     AND study_review_count.source_kind='study'
-                                     AND study_review_count.invalidated_at IS NULL) study_review_count,
-                                  COALESCE(q.admission_source,
-                                    (SELECT 'defense:' || candidate.id
-                                     FROM threat_training_candidates candidate
-                                     WHERE candidate.card_id=c.id LIMIT 1)) admission_source,c.*,
-                                  COALESCE(r.name,study.title,'Study') repertoire_name,
-                                  COALESCE(r.source_name,'Study') repertoire_source,
-                                  COALESCE(r.is_main,0) is_main,study.id study_id,
-                                  COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
-                           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                           LEFT JOIN repertoires r ON r.id=COALESCE(
-                               (SELECT linked.id FROM repertoires linked
-                                WHERE ((linked.id=c.repertoire_id AND EXISTS(
-                                    SELECT 1 FROM repertoire_cards primary_link
-                                    WHERE primary_link.repertoire_id=linked.id)) OR EXISTS(
-                                    SELECT 1 FROM repertoire_cards rc
-                                    WHERE rc.card_id=c.id AND rc.repertoire_id=linked.id))
-                                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                                 WHERE block.repertoire_id=linked.id AND block.card_id=c.id)
-                                ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
-                               c.repertoire_id)
-                           LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
-                           LEFT JOIN studies study ON study.id=exercise.study_id
-                           WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
-                             AND c.superseded_by IS NULL
-                             AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
-                             AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-                             AND COALESCE(c.pending_validation,0)=0
-                             AND (c.content_type!='study_exercise' OR
-                                  (exercise.status='published' AND study.archived=0
-                                   AND (q.admission_kind='explicit' OR NOT EXISTS(
-                                     SELECT 1 FROM study_sibling_burials burial
-                                     WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
-                             AND (c.content_type!='opening' OR EXISTS(
-                                 SELECT 1 FROM repertoires repertoire
-                                 WHERE (repertoire.id=c.repertoire_id OR EXISTS(
-                                     SELECT 1 FROM repertoire_cards link
-                                     WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
-                                   AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                       WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
-                           ORDER BY q.position,q.id"""
-        from .services.frozen_opening_order import stale_queue_predicate, legacy_queue_predicate
-        queue_sql = queue_sql.replace(
-            "ORDER BY q.position,q.id",
-            stale_queue_predicate() + (legacy_queue_predicate() if postgres_store.configured() else "") + " ORDER BY q.position,q.id",
-        )
-        if postgres_store.configured():
-            # Resolve linked repertoires once as a set. The correlated SQLite
-            # lookup makes PostgreSQL scan repertoire_cards thousands of times
-            # before it joins today's queue.
-            original_lookup = queue_sql[
-                queue_sql.index("LEFT JOIN repertoires r ON"):
-                queue_sql.index("LEFT JOIN study_exercises exercise")
-            ]
-            repertoire_lookup = (
-                "LEFT JOIN ranked_repertoires choice "
-                "ON choice.card_id=c.id AND choice.rank=1 "
-                "LEFT JOIN repertoires r ON r.id=COALESCE(choice.repertoire_id,c.repertoire_id) "
-            )
-            from .queue_commands import available_attempt_sql
-            candidate_window = available_attempt_sql().replace("SELECT q.id FROM", "SELECT q.* FROM", 1)
-            candidate_window += " ORDER BY q.position,q.id" + (" LIMIT ?" if limit is not None else "")
-            queue_sql = (
-                "WITH active_queue AS MATERIALIZED "
-                "(" + candidate_window + "), "
-                "candidate_repertoires AS MATERIALIZED ("
-                "SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
-                "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
-                "JOIN repertoire_cards rc ON rc.card_id=c.id "
-                "JOIN repertoires linked ON linked.id=rc.repertoire_id "
-                "WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
-                "WHERE block.repertoire_id=linked.id AND block.card_id=c.id) "
-                "UNION SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
-                "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
-                "JOIN repertoires linked ON linked.id=c.repertoire_id "
-                "WHERE EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.repertoire_id=linked.id) "
-                "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
-                "WHERE block.repertoire_id=linked.id AND block.card_id=c.id)), "
-                "ranked_repertoires AS MATERIALIZED (SELECT card_id,repertoire_id,"
-                "ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY is_main DESC,created_at DESC) rank "
-                "FROM candidate_repertoires) "
-                + queue_sql.replace(original_lookup, repertoire_lookup)
-                .replace("FROM daily_queue q JOIN cards c", "FROM active_queue q JOIN cards c")
-                .replace("WHERE q.queue_date=? AND q.status='queued' AND c.archived=0", "WHERE c.archived=0")
-            )
-        rows = db.execute(
-            queue_sql + (" LIMIT ?" if limit is not None else ""),
-            (day, limit, limit) if limit is not None and postgres_store.configured() else
-            (day, limit) if limit is not None else (day,),
-        ).fetchall()
+        evidence_timezone = queue_projection_storage.evidence_timezone(db)[0] if include_opening_evidence and postgres_store.configured() else None
+        projection_row = queue_projection_storage.queue_projection(db, day)
+        diagnostic_rows = queue_projection_storage.queue_diagnostics(db, day)
+        rows = queue_projection_storage.queue_rows(db, day, limit, miss_reason=MISS_REASON)
         cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
         badge_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         fen_keys = {" ".join(card["start_fen"].split()[:4]) for card in cards}
@@ -1446,18 +1333,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         unique_fen_keys = list(fen_keys)
         for offset in range(0, len(unique_fen_keys), 400):
             fen_key_batch = unique_fen_keys[offset:offset + 400]
-            placeholders = ",".join("?" for _ in fen_key_batch)
-            encounter_rows = db.execute(
-                f"""SELECT occurrence.fen_key,
-                           COUNT(DISTINCT occurrence.game_id) encounter_count,
-                           MAX(game.played_at) last_seen_at
-                    FROM game_position_occurrences occurrence
-                    JOIN imported_games game ON game.id=occurrence.game_id
-                    WHERE occurrence.fen_key IN ({placeholders})
-                      AND game.played_at>=? AND game.adaptive_excluded=0
-                    GROUP BY occurrence.fen_key""",
-                (*fen_key_batch, badge_cutoff),
-            ).fetchall()
+            encounter_rows = queue_projection_storage.encounter_rows(db, fen_key_batch, badge_cutoff)
             encounter_by_fen.update({row["fen_key"]: row for row in encounter_rows})
         for card in cards:
             card["prefix_split_offer_available"] = (
@@ -1475,11 +1351,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
             if encounter_count >= 3:
                 badges.append("Frequent")
             card["encounter_badges"] = badges
-        from .queue_commands import available_attempt_sql
-        total_count = len(cards) if limit is None else db.execute(
-            "SELECT COUNT(*) FROM (" + available_attempt_sql() + ") eligible_queue",
-            (day,),
-        ).fetchone()[0]
+        total_count = len(cards) if limit is None else queue_projection_storage.available_count(db, day, miss_reason=MISS_REASON)
     if cards:
         _issue_returned_queue_head(day, cards[0])
     for card in cards:
@@ -1523,12 +1395,7 @@ def prepared_queue(include_opening_evidence: bool = False):
     if study_cards:
         with read_connection() as database:
             for card in study_cards:
-                row = database.execute(
-                    """SELECT exercise.current_revision,revision.specification_json
-                       FROM study_exercises exercise JOIN study_exercise_revisions revision
-                         ON revision.exercise_id=exercise.id AND revision.revision=exercise.current_revision
-                       WHERE exercise.id=?""", (card["study_exercise_id"],),
-                ).fetchone()
+                row = queue_projection_storage.exercise_revision(database, card["study_exercise_id"])
                 if not row:
                     raise HTTPException(409, f"Study exercise {card['study_exercise_id']} has no current revision")
                 card["study_snapshot"] = {
@@ -2266,20 +2133,13 @@ def requeue(db, day, cid, after, attempt):
 def queue_entry_state(entry_id: int):
     """Read one queue attempt without changing its position or review state."""
     with read_connection() as database:
-        entry = database.execute(
-            "SELECT queue_date,status,attempt_failed FROM daily_queue WHERE id=?",
-            (entry_id,),
-        ).fetchone()
+        entry = queue_projection_storage.entry_state(database, entry_id)
         if not entry or str(entry["queue_date"]) != date.today().isoformat():
             return {"state": "unavailable", "attempt_failed": False}
         if entry["status"] != "queued":
             return {"state": "completed" if entry["status"] == "complete" else "unavailable",
                     "attempt_failed": bool(entry["attempt_failed"])}
-        from .queue_commands import available_attempt_sql
-        active_entry = database.execute(
-            available_attempt_sql() + " ORDER BY q.position,q.id LIMIT 1",
-            (date.today().isoformat(),),
-        ).fetchone()
+        active_entry = queue_projection_storage.available_head(database, lambda: date.today().isoformat(), miss_reason=MISS_REASON)
     return {"state": "head" if active_entry and active_entry["id"] == entry_id else "queued",
             "attempt_failed": bool(entry["attempt_failed"])}
 
@@ -2296,12 +2156,7 @@ def mark_attempt_failed(entry_id: int,
         from .queue_commands import validate_available_attempt
         validate_available_attempt(db, entry_id, request.card_id if request else None,
                                    request.expected_revision if request else None)
-        if not db.execute(
-            """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
-               AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
-                    OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)""",
-            (entry_id,),
-        ).rowcount:
+        if not queue_projection_storage.mark_entry_failed(db, entry_id):
             raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     return {"attempt_failed": True}
 
@@ -2321,12 +2176,7 @@ def bury_queue_entry(entry_id: int,
                                    request.expected_revision if request else None)
         previous_order = capture_daily_queue_order(db, day)
         # Retained rows prevent same-day refreshes from readmitting the card.
-        db.execute(
-            """UPDATE daily_queue SET status='buried'
-               WHERE queue_date=? AND status!='complete'
-                 AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
-            (day, entry_id),
-        )
+        queue_projection_storage.bury_entry(db, day, entry_id)
         preserve_daily_queue_order(db, day, previous=previous_order)
     return {"buried": True, "queue_entry_id": entry_id}
 

@@ -2,12 +2,13 @@
 
 **Current source; live schema and deployment unverified.** These named operations are mechanically separated from [the existing HTTP composition root](../../../../backend/app/main.py). They borrow its connection/transaction, preserve the existing complete SQL and parameter order, and return fetched facts or lazily yielded rows. They never open/commit/rollback a transaction, construct HTTP responses, choose scheduling/settings policy or import an application implementation.
 
-This directory currently covers the first 17 direct database call sites in `main.py`: system status, global settings and queue maintenance. **The remaining inline database operations in that file are unfinished extraction work.** It is not yet a completed centralization claim.
+This directory currently covers 30 direct database call sites in `main.py`: system status, global settings, queue maintenance, queue read projections and head/entry operations. **The remaining inline database operations in that file are unfinished extraction work.** It is not yet a completed centralization claim.
 
 | Module | Persistence responsibility | Decisions retained in `main.py` |
 | --- | --- | --- |
 | [system.py](system.py) | Frozen target/active-run identity; SQLite settings-read probe; recent queue projections; analysis threshold fact. | Health/HTTP availability, target key/presentation, task counts and writer status. |
 | [settings.py](settings.py) | Public/previous settings facts, fixed settings update and clean eligible repertoire rows. | Omitted-flag preservation, model values, account normalization, coverage/discovery change detection and refresh callbacks. Identical account writes reuse [the existing account operations](../commands/accounts.py). |
+| [queue_projection.py](queue_projection.py), [availability.py](availability.py) | Queue/card projection SQL, availability and count/head queries, encounter batch reads, exercise revision, issued-head/entry facts, existing begin/failure/bury statements. One fixed availability SQL implementation is also used by the existing `queue_application` compatibility helper. | Clock and badge choices, payload/prepared snapshot shaping, HTTP/conflict decisions, writer/worker routing, canonical head issuance/attempt validation and queue-order callbacks. |
 | [queue_maintenance.py](queue_maintenance.py) | Queue projection status/failure/refresh writes; existing defense task and eligible candidate facts; pending discovery intent. | Dates, error sanitization/rethrow, admission checks, enqueue conditions, priorities, foreground/background submission and coordinator wake. Startup and maintenance reuse the same projection-state read. |
 
 ```mermaid
@@ -15,12 +16,20 @@ flowchart LR
   http[Legacy HTTP and maintenance composition] -->|existing borrowed connection or writer callback| store[Named system, settings and maintenance operations]
   http -->|existing scheduling and refresh decisions| jobs[Queue, coverage, discovery and defense helpers]
   store --> settings[Settings and provider accounts]
-  store --> queue[Queue projections and durable task facts]
+  store --> queue[Queue projections, attempts and durable task facts]
   store --> source[Repertoire integrity, discovery and defense facts]
   jobs --> lifecycle[Existing coordinator and shared legacy lifecycle]
 ```
 
 Queries that were consumed by cursor iteration still yield one row at a time at the original comprehension points. Fixed settings arguments are evaluated in the application in their original order. Queue projection writes discard their otherwise unused internal driver cursor; existing callers discard the submitted callback result. No new connection, transaction, queue writer, schema/migration or generic SQL interface is introduced.
+
+## Queue projection and head issuance
+
+`queue_rows` retains both original query shapes, conditional availability fragments, repeated configured-mode checks, limits and parameter order. The application still performs the existing 400-key encounter batches, cutoff/badge clocks and response assembly; the adapter owns each complete parameter-bound batch read. `available_head` accepts only the application-owned current-day capability so its original clock read stays after availability SQL construction. It does not accept a SQL string or query callback.
+
+Head issuance still reads the immutable identity first, returns on an already issued head, and uses the existing PostgreSQL worker command or SQLite caller-owned transaction. The named `begin_head_issuance` operation executes the original `BEGIN IMMEDIATE` at the same point; it does not open/commit/rollback a connection or become another issuance authority. Existing `queue_commands.issue_queue_head`, validation, first-issuance binding, failure conflict checks and capture/preserve queue-order callbacks are unchanged. Prepared Study exercise snapshots and optional opening evidence remain application composition.
+
+The narrow `queue_application._AVAILABLE_ATTEMPT_SQL` initialization and `available_attempt_sql()` public helper now delegate to the root fixed SQL implementation. The base SQL is purely reconstructed on calls using the existing semantic miss reason; no cache, runtime holder or raw-SQL port was added. The existing SQL bytes, configured-mode evaluation, query parameters, clocks and effect/callback order are preserved.
 
 ## Storage map
 
@@ -30,6 +39,9 @@ The linked schema README views remain canonical for actual stored fields/types, 
 | --- | --- | --- |
 | `settings` | Singleton `id=1`; daily quotas, study/defense flags, depth/timezone, provider usernames, engine/light/draw policy and coverage settings. | [Runtime metadata dictionary](../../schema/runtime-metadata/README.md#publicsettings) |
 | `game_accounts` | `provider` identity and normalized `username`. | [Game projections](../../schema/game-projections-1/README.md#publicgame_accounts) |
+| `cards`, `daily_queue`, `reviews`, `queue_attempt_origins`, deletion and integrity blocks | Existing executable card/revision/content, status/position/cycle/guided attempt fields, historical review facts, exact issued identity and eligibility exclusions. No state/queue ownership changes. | [Study/queue/review dictionary](../../schema/study-queue-review-1/README.md) and [attempt/projection dictionary](../../schema/study-queue-review-2/README.md) |
+| `study_exercises`, `study_exercise_revisions`, `studies`, sibling burials | Existing published exercise/current revision/specification, archive and same-day sibling eligibility facts. | [Authored content and Study schema index](../../schema/README.md) |
+| `game_position_occurrences`, `imported_games` | Existing FEN/game encounter counts and last-seen date, excluding adaptively excluded games. | [Game projection dictionaries](../../schema/README.md) |
 | `queue_projections` | `queue_date`, state, generation, refresh pending, error and existing status fields. | [Queue projection dictionary](../../schema/study-queue-review-2/README.md#publicqueue_projections) |
 | `background_tasks` | Existing defense task kind/deduplication identity. | [Runtime metadata](../../schema/runtime-metadata/README.md#publicbackground_tasks) |
 | `threat_training_candidates` | Validation/approval/dismissal/pause/supersession eligibility facts. | [Defense candidates](../../schema/practice-families-2/README.md#publicthreat_training_candidates) |

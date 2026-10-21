@@ -579,32 +579,13 @@ _QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,stat
            state='refreshing',refresh_pending=1,last_error=NULL"""
 
 
-_AVAILABLE_ATTEMPT_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
-            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
-              AND c.pending_validation=0 AND c.superseded_by IS NULL
-              AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
-              AND (c.content_type!='opening' OR EXISTS(
-                  SELECT 1 FROM repertoires repertoire
-                  WHERE (repertoire.id=c.repertoire_id OR EXISTS(
-                      SELECT 1 FROM repertoire_cards link
-                      WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
-                    AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks blocked
-                        WHERE blocked.card_id=c.id AND blocked.repertoire_id=repertoire.id)))
-              AND (c.content_type!='defense' OR
-                   (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-              AND (c.content_type!='study_exercise' OR EXISTS(
-                  SELECT 1 FROM study_exercises exercise JOIN studies study ON study.id=exercise.study_id
-                  WHERE exercise.id=c.study_exercise_id AND exercise.status='published' AND study.archived=0
-                    AND (q.admission_kind='explicit' OR NOT EXISTS(
-                        SELECT 1 FROM study_sibling_burials burial
-                        WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))"""
-_AVAILABLE_ATTEMPT_SQL += frozen_opening_order.stale_queue_predicate()
+from tempo_legacy_database.adapters.http_composition import availability as queue_availability_storage
+
+_AVAILABLE_ATTEMPT_SQL = queue_availability_storage.base_available_attempt_sql(MISS_REASON)
+
 
 def available_attempt_sql() -> str:
-    # Frozen publications are PostgreSQL-authoritative. The optional legacy
-    # exposure sources do not exist in SQLite's recovery compatibility schema.
-    return (_AVAILABLE_ATTEMPT_SQL + frozen_opening_order.legacy_queue_predicate()
-            if postgres_store.configured() else _AVAILABLE_ATTEMPT_SQL)
+    return queue_availability_storage.available_attempt_sql(MISS_REASON)
 
 
 def request_queue_refresh_in_transaction(database: PostgresConnection,
