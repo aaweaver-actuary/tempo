@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINTS = (
-    "scripts/benchmark_storage_reads.py",
+    "database/tempo_legacy_database/tooling/benchmark_storage_reads.py",
     "scripts/recover-opening-publication.py",
     "scripts/evaluate_opening_rankings.py",
     "scripts/show_opening_frontier.py",

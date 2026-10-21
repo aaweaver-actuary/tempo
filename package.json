@@ -34,7 +34,7 @@
     "bench:pgn": "node scripts/benchmark-pgn.mjs",
     "bench:graph": "node scripts/benchmark-graph.mjs",
     "bench:motifs": "node scripts/benchmark-motifs.mjs",
-    "bench:writer": "node scripts/benchmark-writer.mjs",
+    "bench:writer": "node database/tests/benchmarks/benchmark-writer.mjs",
     "build:packages": "npm run build --workspace @tempo/chess-line && npm run build --workspace @tempo/browser-intents && npm run build --workspace @tempo/study-session",
     "pretest:unit": "npm run build:packages",
     "pretypecheck": "npm run build:packages",

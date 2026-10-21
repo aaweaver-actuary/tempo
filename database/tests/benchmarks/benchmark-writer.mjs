@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { resolvePython } from "./resolve-python.mjs";
+import { resolvePython } from "../../../scripts/resolve-python.mjs";
 
 const result = spawnSync(resolvePython(), ["database/tests/benchmarks/writer_latency.py"], {
   stdio: "inherit",
