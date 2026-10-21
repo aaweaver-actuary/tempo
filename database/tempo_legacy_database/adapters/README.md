@@ -76,3 +76,5 @@
 [Existing legacy opening-evidence storage](opening_evidence/README.md) holds manifest/checkpoint/observation/review/exposure queries and bounded read scopes. Existing evidence computation and reconciliation choices remain outside; Learning evidence has its separate owner. This is existing shadow-evidence storage, not the proposed canonical model.
 
 [Existing coverage explorer and seeding persistence](coverage/README.md) owns complete node/candidate/run/route/scope queries. Traversal, chess, probability/cohort, fingerprint, lease/current-scope decisions and provider/cache/task callbacks stay in the existing applications, with unchanged transaction composition.
+
+[Background diagnostic reads](background_diagnostics/README.md) hold complete bounded aggregates and existing PostgreSQL/SQLite timeout/progress/read scopes. Application clocks, remaining-budget/progress callbacks, error classification, formatting and runtime merge remain outside; lazy engine iteration retains original query interleaving.

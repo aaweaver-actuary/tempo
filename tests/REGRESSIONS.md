@@ -5097,3 +5097,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Queue refresh opening/projection storage slice
 
 `backend/tests/test_queue_refresh_publication_database_split.py` owns the remaining direct-operation boundary and task-SQLite projection rollback/receipt/callback commit checks. Existing failed baseline fixture paths remain recorded without weakened assertions. Bounded readers/SQL builders and existing compatibility bridges are still pending; this guard does not imply whole-file/native acceptance.
+
+
+## Background diagnostic storage separation
+
+`backend/tests/test_background_diagnostics_storage_boundary.py` owns eight fake-only boundaries for deadline/progress/JIT/read scope, lazy engine formatting/query order, error classification, runtime merge and compatibility identities. It opens no native/SQLite integration connection; existing owning integration cases remain unselected and unchanged.
