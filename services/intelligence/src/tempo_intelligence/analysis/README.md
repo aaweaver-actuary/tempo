@@ -81,5 +81,44 @@ lookup order. Existing packaged schemas and legacy report contracts remain
 selected owning checks. No DDL, foreign key, write workflow, deadline, provider,
 engine, private credential or live resource behavior is changed or exercised.
 The [complete method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-continues to identify 15 mixed Analysis methods; this is a bounded read slice,
+continues to identify 12 mixed Analysis methods; this is a bounded read slice,
 not completion of the whole owner.
+
+## Input admission and finalization boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`input_work.py`](input_work.py) owns the existing manifest/page/finalize application
+workflows. Workspace admission, model JSON/hash preparation, page-reference and
+game-count choices, final game-scope checks and public responses are unchanged.
+The existing public models and `payload_digest` helper are reused.
+
+```mermaid
+flowchart LR
+  store[AnalysisStore transaction composition] --> app[Input admission and finalization application]
+  app -->|unchanged owner write context| fixed[Fixed Analysis input operations and storage guards]
+  fixed --> tables[(Intelligence input and page tables)]
+  app -->|finalize prior read closes before write| snapshot[Existing input snapshot capability]
+  fixed -->|same connection and original call points| receipts[Existing command receipt guard and canonical writer]
+  app --> wire[Existing models and payload digest]
+```
+
+The [fixed operations](../../../../../database/tempo_intelligence_database/adapters/analysis_inputs.py)
+retain full bound queries, immutable input/page replay guards and locked page-set
+completeness. `AnalysisStore.input_transaction` lends the existing owner write
+context. Finalize retains its prior separate input read and early completeness
+check, then receipt replay before the input/page locks, final game-scope decision,
+accepted-state write and final receipt. Its bound receipt/writer properties
+resolve the existing private methods before command JSON construction. Manifest
+and page keep both original model serializations/hash preparation before the
+write and response workspace lookup after commit. Finalize keeps response/hash
+mutation and return points, including receipt replay inside its write context.
+
+`tests/test_analysis_inputs.py` exercises actual fixed operations with synthetic
+models/fake rows: immutable input/page conflicts, page-reference rejection,
+finalization replay/page-set/game-scope guards, early admission failures and
+receipt/serialization order. Existing schema and historical optional-metadata
+page-digest cases remain unchanged. Real locking, rollback durability and native
+concurrency are separate proofs and were not run. This adds no new schema,
+model, generic query API, transaction/receipt writer or engine/provider dependency.
+The [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+retains twelve mixed methods; completion of input admission is a bounded slice.

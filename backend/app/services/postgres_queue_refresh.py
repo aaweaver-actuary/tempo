@@ -8,10 +8,11 @@ import json
 import logging
 from typing import Any
 
-from psycopg.errors import TransactionTimeout
+from tempo_legacy_database.adapters.queue_refresh.reads import TransactionTimeout, _bounded_read
 
 from tempo_legacy_database.connections import background_read_connection, connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.queue_refresh import reads as read_storage
 from tempo_legacy_database.adapters.queue_refresh import admissions, openings as openings_storage, presentation as presentation_storage
 from tempo_legacy_database.adapters.queue_refresh.openings import _STUDY_OPENING_ORDER, _STUDY_OPENING_ROUTES, _PRIORITY_OPENING_PAGE_SQL
 from tempo_legacy_database.adapters.queue_refresh.presentation import _QUARANTINE_OPENING_ELIGIBILITY, _PROJECTION_BLOCKED_COUNT_SQL
@@ -98,52 +99,25 @@ def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
     with background_read_connection() as frozen_database:
         frozen_token = frozen_opening_order.activation(frozen_database)
     frozen_active = frozen_token[0] is not None
-    route_sql = _STUDY_OPENING_ROUTES
-    occurrence_order = _STUDY_OPENING_ORDER
-    order_columns = ''
-    if frozen_active:
-        route_sql = route_sql.replace("WHERE publication.state", "LEFT JOIN frozen_opening_activation foa ON foa.id=1 LEFT JOIN frozen_opening_ranks forank ON forank.run_id=foa.run_id AND forank.card_id=c.id WHERE publication.state")
-        miss_key = "CASE WHEN c.id IN (" + outstanding_miss_sql(postgres=True, columns='event.card_id') + ") THEN 0 ELSE 1 END"
-        rank_key = "COALESCE(forank.ordinal,9223372036854775807)"
-        order_columns = ',' + miss_key + ',' + rank_key
-        occurrence_order = '(' + miss_key + ',' + rank_key + ',' + _STUDY_OPENING_ORDER[1:]
-    has_opening_allowance = _bounded_read(
-        """SELECT EXISTS(SELECT 1 FROM repertoires r CROSS JOIN settings s
-           WHERE s.id=1 AND EXISTS(SELECT 1 FROM opening_graph_publications publication
-                                  WHERE publication.repertoire_id=r.id AND publication.state='ready')
-             AND COALESCE(r.new_cards_per_day,s.new_cards_per_day) > (
-             SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id
-             WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening'
-               AND c.introduced_at=%s AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=r.id
-           )) OR EXISTS(""" + outstanding_miss_sql(postgres=True, columns='1') + ' LIMIT 1)',
-        (queue_date, queue_date), native=True,
-    )[0][0]
+    read_last_occurrences, read_occurrence_page = read_storage.study_opening_queries(frozen_active)
+    has_opening_allowance = read_storage.has_opening_allowance(queue_date)[0][0]
     upper_occurrence_cursor = payload.get('study_opening_upper')
     if not has_opening_allowance:
         return {'items': [], 'cursor': payload.get('study_opening_cursor', []),
                 'upper': upper_occurrence_cursor or [], 'has_more': False, 'examined': 0,
                 'stop_reason': 'daily_allowances_exhausted'}
     if upper_occurrence_cursor is None:
-        last_occurrences = _bounded_read("SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,"
-                             "step.decision_index,c.id" + order_columns + " " + route_sql +
-                             " ORDER BY " + occurrence_order + " DESC LIMIT 1", native=True)
+        last_occurrences = read_last_occurrences()
         upper_occurrence_cursor = (list((*tuple(last_occurrences[0])[6:], *tuple(last_occurrences[0])[:6])) if frozen_active else list(last_occurrences[0])) if last_occurrences else []
     if not upper_occurrence_cursor:
         return {'items': [], 'cursor': [], 'upper': [], 'has_more': False, 'examined': 0,
                 'stop_reason': 'no_unintroduced_graph_candidates'}
     after_occurrence_cursor = payload.get('study_opening_cursor')
-    cursor_placeholders = '(' + ','.join(['%s'] * (8 if frozen_active else 6)) + ')'
-    cursor_filter = (" AND " + occurrence_order + ">" + cursor_placeholders if after_occurrence_cursor else "")
+
+
     # Each read and result is bounded. No priority publications, probabilities,
     # engine/network calls or repertoire-wide Python accumulation are involved.
-    opening_occurrences = _bounded_read(
-        "SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,step.decision_index,c.id,"
-        "step.generation,c.start_fen,c.moves_json,COALESCE(c.trained_color,step.trained_color),step.starting_fen,step.moves_json" + order_columns + " "
-        + route_sql + cursor_filter + " AND " + occurrence_order + "<=" + cursor_placeholders +
-        " ORDER BY " + occurrence_order + " LIMIT %s",
-        (*(tuple(after_occurrence_cursor) if after_occurrence_cursor else ()), *upper_occurrence_cursor,
-         _OPENING_CANDIDATE_READ_BATCH_SIZE), native=True,
-    )
+    opening_occurrences = read_occurrence_page(after_occurrence_cursor, upper_occurrence_cursor, _OPENING_CANDIDATE_READ_BATCH_SIZE)
     opening_occurrences.sort(key=_study_opening_cursor)
     prepared_openings = []
     selected_card_ids = set()
@@ -187,40 +161,21 @@ def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
 
 
 
-def _bounded_read(statement: str, parameters: tuple = (), *, native: bool = False) -> list:
-    """Retry a read-only section if PostgreSQL closes its 50 ms transaction."""
 
-    for attempt in range(3):
-        try:
-            with background_read_connection() as database:
-                execute = database.execute_native if native else database.execute
-                return execute(statement, parameters).fetchall()
-        except TransactionTimeout:
-            if attempt == 2:
-                raise
-    raise AssertionError("Unreachable background read retry state")
 
 
 def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
     """Choose one puzzle after closing the bounded PostgreSQL read section."""
 
-    limit = _bounded_read("SELECT tactics_new_per_day FROM settings WHERE id=1")[0][0]
-    reserved = _bounded_read(
-        DAILY_TACTIC_COUNT_SQL, (queue_date,),
-    )[0][0]
+    limit = read_storage.tactical_allowance()[0][0]
+    reserved = read_storage.tactical_reserved(queue_date)[0][0]
     if reserved >= limit:
         return None
-    active_packs = sorted(row[0] for row in _bounded_read(
-        "SELECT pack_id FROM tactic_pack_activation WHERE active=1",
-    ))
+    active_packs = sorted(row[0] for row in read_storage.active_tactical_packs())
     if not active_packs:
         return None
-    rotation_cursor = _bounded_read(
-        "SELECT last_pack_id FROM tactic_rotation WHERE id=1",
-    )[0][0]
-    seen_puzzles = {row[0] for row in _bounded_read(
-        "SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL",
-    )}
+    rotation_cursor = read_storage.tactical_rotation()[0][0]
+    seen_puzzles = {row[0] for row in read_storage.admitted_tactical_puzzles()}
     ordered_packs = ([pack for pack in active_packs if pack > rotation_cursor]
                      + [pack for pack in active_packs if pack <= rotation_cursor])
     for pack_id in ordered_packs:
@@ -240,10 +195,7 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
                     "rotation_cursor": rotation_cursor,
                 })
             candidate_ids = [candidate["card_id"] for candidate in prepared_candidates]
-            deleted_ids = {row[0] for row in _bounded_read(
-                "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])",
-                (candidate_ids,), native=True,
-            )}
+            deleted_ids = {row[0] for row in read_storage.deleted_candidates(candidate_ids)}
             for candidate in prepared_candidates:
                 if candidate["card_id"] not in deleted_ids:
                     return candidate
@@ -295,18 +247,7 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
     with background_read_connection() as frozen_database:
         if frozen_opening_order.activation(frozen_database)[0] is not None:
             return None, 0
-    rows = _bounded_read(
-        """SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id
-           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.queue_date=%s AND q.status='queued' AND c.content_type='opening'
-             AND c.repertoire_id<>'__retained_cards__'
-             AND COALESCE(q.admission_kind,'')!='explicit'
-             AND (c.introduced_at IS NULL OR c.introduced_at=%s)
-             AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-             AND q.id <> ALL(%s::bigint[])
-           ORDER BY q.position,q.id LIMIT 1""",
-        (queue_date, queue_date, processed_ids), native=True,
-    )
+    rows = read_storage.unseen_candidate(queue_date, processed_ids)
     if not rows:
         return None, 0
     candidate = dict(rows[0])
@@ -314,13 +255,7 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
     if repertoire_id in introduced_counts:
         return candidate, introduced_counts[repertoire_id]
     # Eligibility changes must not refund a reviewed historical introduction.
-    reviewed_count = _bounded_read(
-        """SELECT COUNT(DISTINCT c.id) FROM cards c
-           LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
-           WHERE COALESCE(q.admission_repertoire_id,c.repertoire_id)=%s AND c.content_type='opening' AND c.introduced_at=%s
-             AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)""",
-        (repertoire_id, queue_date), native=True,
-    )[0][0]
+    reviewed_count = read_storage.reviewed_introductions(repertoire_id, queue_date)[0][0]
     return candidate, int(reviewed_count)
 
 
@@ -346,11 +281,7 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
 
 
 def _prepare_due_card(queue_date: str) -> str | None:
-    rows = _bounded_read(
-        "SELECT c.id FROM cards c WHERE " + _DUE_CARD_ELIGIBILITY +
-        " ORDER BY c.due_date,c.id LIMIT 1",
-        (queue_date, queue_date, queue_date), native=True,
-    )
+    rows = read_storage.due_candidate(queue_date)
     return str(rows[0][0]) if rows else None
 
 
@@ -378,37 +309,18 @@ def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningPropos
     """Plan openings using separate bounded reads and no open write transaction."""
 
 
-    active_misses = [row[0] for row in _bounded_read(queue_application._ACTIVE_OPENING_MISS_SQL)]
+    active_misses = [row[0] for row in read_storage.active_opening_misses()]
     candidates = []
     after_card_id = ""
     while True:
-        card_ids = [row[0] for row in _bounded_read(
-            "SELECT id FROM cards WHERE content_type='opening' "
-            "AND state IN ('new','locked') AND introduced_at IS NULL "
-            "AND archived=0 AND COALESCE(pending_validation,0)=0 "
-            "AND id>%s ORDER BY id LIMIT %s",
-            (after_card_id, _OPENING_CANDIDATE_READ_BATCH_SIZE), native=True,
-        )]
+        card_ids = [row[0] for row in read_storage.opening_candidate_ids(after_card_id, _OPENING_CANDIDATE_READ_BATCH_SIZE)]
         if not card_ids:
             break
-        candidates.extend(_bounded_read(
-            _PRIORITY_OPENING_PAGE_SQL,
-            (active_misses, card_ids, MISS_REASON, queue_date,
-             queue_date, queue_date, queue_date), native=True,
-        ))
+        candidates.extend(read_storage.priority_opening_rows(active_misses, card_ids, MISS_REASON, queue_date))
         after_card_id = card_ids[-1]
     # Count consumption independently from current candidate eligibility.
-    counts = _bounded_read(
-        """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
-           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=%s
-           GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
-        (queue_date, queue_date), native=True,
-    )
-    daily_limit = dict(_bounded_read(
-        "SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) "
-        "FROM repertoires r CROSS JOIN settings s WHERE s.id=1",
-    ))
+    counts = read_storage.introduced_opening_counts(queue_date)
+    daily_limit = dict(read_storage.opening_daily_limits())
     candidates = _annotate_frozen_pages(candidates)
     plan = plan_prioritized_opening_admissions(
         candidates, dict(counts), queue_date, daily_limit, miss_reason=MISS_REASON,
@@ -418,7 +330,7 @@ def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningPropos
                      for repertoire_id, candidate in plan]
     from .opening_capacity_admission import (
         capacity_expansion_enabled, remaining_opening_allowances, read_capacity_routes,
-        capacity_priority_statement, propose_capacity_expansion_from_priority_rows, capacity_proposal_payload, CAPACITY_READ_BATCH_SIZE,
+        propose_capacity_expansion_from_priority_rows, capacity_proposal_payload, CAPACITY_READ_BATCH_SIZE,
     )
     if not capacity_expansion_enabled():
         return planned_items
@@ -431,15 +343,11 @@ def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningPropos
         return planned_items
     normal_parent_ids = tuple(row['id'] for row in candidates) if frozen_active else tuple(candidate['id'] for _, candidate in plan)
     routes = tuple(route for repertoire_id in sorted(remaining) if remaining[repertoire_id] > 0
-                   for route in read_capacity_routes(_bounded_read, repertoire_id, normal_parent_ids))
+                   for route in read_capacity_routes(read_storage._bounded_read, repertoire_id, normal_parent_ids))
     capacity_rows = []
     card_ids = sorted({card_id for card_id, _ in routes})
     for offset in range(0, len(card_ids), CAPACITY_READ_BATCH_SIZE):
-        capacity_rows.extend(_bounded_read(
-            capacity_priority_statement(_PRIORITY_OPENING_PAGE_SQL),
-            (active_misses, card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE], MISS_REASON,
-             queue_date, queue_date, queue_date, queue_date), native=True,
-        ))
+        capacity_rows.extend(read_storage.capacity_priority_rows(active_misses, card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE], MISS_REASON, queue_date))
     capacity_rows = _annotate_frozen_pages(capacity_rows)
     if frozen_active:
         from .opening_capacity_admission import plan_frozen_with_capacity
@@ -514,21 +422,11 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
 def _prepare_study_admission(queue_date: str) -> str | None:
     """Read the allowance and oldest eligible exercise in bounded sections."""
 
-    allowance = int(_bounded_read("SELECT study_new_per_day FROM settings WHERE id=1")[0][0])
-    admitted = int(_bounded_read(
-        """SELECT COUNT(*) FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
-           WHERE queue.queue_date=%s AND card.content_type='study_exercise'
-             AND card.state='new' AND queue.status IN ('queued','complete','buried')""",
-        (queue_date,), native=True,
-    )[0][0])
+    allowance = int(read_storage.study_allowance()[0][0])
+    admitted = int(read_storage.study_admitted(queue_date)[0][0])
     if admitted >= allowance:
         return None
-    rows = _bounded_read(
-        "SELECT c.id FROM cards c JOIN study_exercises exercise ON exercise.id=c.study_exercise_id "
-        "JOIN studies study ON study.id=exercise.study_id WHERE " + _STUDY_NEW_ELIGIBILITY +
-        " ORDER BY exercise.created_at,exercise.id LIMIT 1",
-        (queue_date, queue_date, queue_date), native=True,
-    )
+    rows = read_storage.study_candidate(queue_date)
     return str(rows[0][0]) if rows else None
 
 
@@ -551,15 +449,8 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
 
 
 def _prepare_real_game_obligation(queue_date: str, after_card_id: str) -> str | None:
-    obligation = outstanding_miss_sql(postgres=True,
-        additional_where="AND card.state IN ('learning','mature')")
-    candidates = _bounded_read(
-        f"WITH obligations AS ({obligation}) SELECT card_id FROM ("
-        "SELECT card_id FROM obligations UNION SELECT card_id FROM daily_queue "
-        "WHERE queue_date=%s AND status='queued' AND gameplay_priority_reason=%s) candidate "
-        "WHERE card_id>%s ORDER BY card_id LIMIT 1",
-        (queue_date, MISS_REASON, after_card_id), native=True,
-    )
+
+    candidates = read_storage.real_game_obligation(queue_date, MISS_REASON, after_card_id)
     return str(candidates[0][0]) if candidates else None
 
 
@@ -571,7 +462,7 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
     rows = []
     after_entry_id = 0
     while True:
-        page = queue_application.presentation_rows(None, queue_date, read=_bounded_read,
+        page = queue_application.presentation_rows(None, queue_date, read=read_storage._bounded_read,
                                                  after_entry_id=after_entry_id, limit=16)
         rows.extend(page)
         if len(page)<16:
@@ -642,16 +533,7 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
 def _prepare_opening_quarantine(queue_date: str, after_entry_id: int) -> dict[str, Any]:
     """Validate a bounded set of opening cards with no database connection open."""
 
-    rows = _bounded_read(
-        """SELECT q.id queue_entry_id,c.id card_id,c.start_fen,c.moves_json,
-                  COALESCE(c.trained_color,(SELECT line.trained_color FROM repertoire_lines line
-                           WHERE line.repertoire_id=c.repertoire_id
-                           ORDER BY line.created_at LIMIT 1)) trained_color
-           FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE """
-        + _QUARANTINE_OPENING_ELIGIBILITY +
-        " AND q.id>%s ORDER BY q.id LIMIT %s",
-        (queue_date, after_entry_id, _QUARANTINE_READ_BATCH_SIZE + 1), native=True,
-    )
+    rows = read_storage.quarantine_page(queue_date, after_entry_id, _QUARANTINE_READ_BATCH_SIZE + 1)
     inspected = rows[:_QUARANTINE_READ_BATCH_SIZE]
     for candidate_index, candidate in enumerate(inspected):
         if candidate["trained_color"] not in {"white", "black"}:
@@ -693,15 +575,13 @@ def _quarantine_one_opening(database, queue_date: str, candidate: dict) -> bool:
 
 
 def _prepare_projection_blocked_count(queue_date: str) -> int:
-    return int(_bounded_read(
-        _PROJECTION_BLOCKED_COUNT_SQL, (queue_date, queue_date), native=True,
-    )[0][0])
+    return int(read_storage.projection_blocked_count(queue_date)[0][0])
 
 
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
-    if not postgres_store.configured():
+    if not read_storage.native_configured():
         raise RuntimeError("PostgreSQL queue refresh requires the PostgreSQL store")
 
     payload = task["payload"]

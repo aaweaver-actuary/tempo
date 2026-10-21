@@ -42,7 +42,7 @@ def test_tactical_deleted_candidate_batches_preserve_rotated_order(monkeypatch, 
             return [("a-1",)]
         raise AssertionError(statement)
 
-    monkeypatch.setattr(postgres_queue_refresh, "_bounded_read", read)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "_bounded_read", read)
     monkeypatch.setattr(postgres_queue_refresh, "pack_records", records_by_pack.__getitem__)
     monkeypatch.setattr(postgres_queue_refresh, "validate_puzzle_record", lambda record: (record["PuzzleId"], ["e2e4"]))
     monkeypatch.setattr(postgres_queue_refresh, "card_id", lambda fen, solution: fen)

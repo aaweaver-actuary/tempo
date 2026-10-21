@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 import chess
 import chess.pgn
 
+from tempo_legacy_database.adapters.authored_repertoires import analysis_paste as storage
+
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from .cards import card_id
 from .pgn import ends_on_trained_move
@@ -129,13 +131,8 @@ def _position_moves(line: PastedLine) -> list[tuple[str, str]]:
 
 
 def _snapshot(database: sqlite3.Connection) -> tuple[list[dict], list[dict], str]:
-    repertoires = [dict(row) for row in database.execute(
-        """SELECT id,name FROM repertoires
-           WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"""
-    )]
-    lines = [dict(row) for row in database.execute(
-        "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"
-    )]
+    repertoires = storage.repertoires(database)
+    lines = storage.lines(database)
     signature = hashlib.sha256(json.dumps([repertoires, lines], sort_keys=True).encode()).hexdigest()
     return repertoires, lines, signature
 
@@ -245,11 +242,7 @@ def _resolves_gap(database: sqlite3.Connection, source_gap_id: str, repertoire_i
         node_id, opponent_move = source_gap_id.split(":", 1)
     except ValueError as error:
         raise PasteInputError("Invalid coverage gap") from error
-    gap = database.execute(
-        """SELECT n.fen,n.repertoire_id FROM repertoire_coverage_candidates c
-           JOIN repertoire_coverage_nodes n ON n.id=c.node_id
-           WHERE c.node_id=? AND c.move_uci=?""", (node_id, opponent_move)
-    ).fetchone()
+    gap = storage.coverage_gap(database, node_id, opponent_move)
     if not gap or gap["repertoire_id"] != repertoire_id:
         return False
     gap_fen_key = canonical_fen(gap["fen"])
@@ -265,8 +258,7 @@ def commit_pasted_lines(
     source_gap_id: str | None, preview_token: str, selections: list[dict],
     prepared_preview: dict, parsed: list[PastedLine],
 ) -> dict:
-    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
-        database.execute("BEGIN IMMEDIATE")
+    storage.begin_write_if_needed(database)
     if prepared_preview["preview_token"] != preview_token:
         raise StalePastePreview("Repertoires changed since the preview. Preview again before saving")
     _, _, current_signature = _snapshot(database)
@@ -328,26 +320,18 @@ def commit_pasted_lines(
         duplicate = option["duplicate"] or insert_key in inserted_keys
         inserted_keys.add(insert_key)
         if not duplicate:
-            inserted = database.execute(
-                """INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-                   VALUES(?,?,?,?,?,?,?)""",
-                (line_id, selected["repertoire_id"], pasted.san,
-                 option["trained_color"], pasted.starting_fen, json.dumps(list(pasted.moves)), now),
+            inserted_rows = storage.insert_line(
+                database, line_id, selected["repertoire_id"], pasted.san,
+                option["trained_color"], pasted.starting_fen, json.dumps(list(pasted.moves)), now,
             )
-            if inserted.rowcount:
+            if inserted_rows:
                 admitted_routes.append((selected["repertoire_id"], validated_routes[index]))
-            depth = database.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
-            database.execute(
-                "INSERT OR IGNORE INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(?,?)",
-                (line_id, depth),
-            )
+            depth = storage.initial_depth(database)
+            storage.set_line_depth(database, line_id, depth)
             affected.add(selected["repertoire_id"])
         if source_gap_id and _resolves_gap(database, source_gap_id, selected["repertoire_id"], pasted):
             node_id, opponent_move = source_gap_id.split(":", 1)
-            database.execute(
-                "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
-                (node_id, opponent_move),
-            )
+            storage.cover_gap(database, node_id, opponent_move)
             resolved_gap = True
             affected.add(selected["repertoire_id"])
         saved.append({"index": index, "repertoire_id": selected["repertoire_id"],

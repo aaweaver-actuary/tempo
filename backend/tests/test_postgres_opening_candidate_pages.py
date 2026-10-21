@@ -26,7 +26,7 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
             return [("rep", 2)]
         raise AssertionError(statement[:100])
 
-    monkeypatch.setattr(postgres_queue_refresh, "_bounded_read", read_page)
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, "_bounded_read", read_page)
     monkeypatch.setattr(
         postgres_queue_refresh, "plan_prioritized_opening_admissions",
         lambda candidates, _counts, _day, _limit, *, miss_reason: [

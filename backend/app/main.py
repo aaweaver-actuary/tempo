@@ -34,8 +34,12 @@ from tempo_legacy_database.adapters.http_composition import (
     snapshots as snapshot_http_storage,
     line_authoring as line_authoring_storage,
     card_authoring as card_authoring_storage,
+    practice as practice_storage,
+    discovery as http_discovery_storage,
+    coverage as http_coverage_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
+from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
 from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
 from tempo_legacy_database.adapters.foreground_controls import repertoires as repertoire_control_storage
 from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
@@ -2214,17 +2218,12 @@ def progress_summary():
     with read_connection() as db:
         states = {
             row["state"]: row["n"]
-            for row in db.execute(
-                "SELECT state,COUNT(*) n FROM cards WHERE archived=0 GROUP BY state"
-            )
+            for row in practice_storage.card_state_rows(db)
         }
         activity = [
             {
                 "date": (day - timedelta(days=offset)).isoformat(),
-                "count": db.execute(
-                    "SELECT COUNT(*) FROM reviews WHERE date(reviewed_at)=? AND invalidated_at IS NULL",
-                    ((day - timedelta(days=offset)).isoformat(),),
-                ).fetchone()[0],
+                "count": practice_storage.review_count(db, (day - timedelta(days=offset)).isoformat()),
             }
             for offset in range(6, -1, -1)
         ]
@@ -2232,19 +2231,9 @@ def progress_summary():
             "states": states,
             "activity": activity,
             "reviewedToday": activity[-1]["count"],
-            "cleanCards": db.execute(
-                "SELECT COUNT(DISTINCT card_id) FROM reviews WHERE rating='correct' AND guided=0 AND invalidated_at IS NULL"
-            ).fetchone()[0],
-            "dueToday": db.execute(
-                """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                   WHERE q.queue_date=? AND q.status='queued'
-                     AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)""",
-                (day.isoformat(),),
-            ).fetchone()[0],
-            "blockedDue": db.execute(
-                "SELECT COALESCE((SELECT blocked_count FROM queue_projections WHERE queue_date=?),0)",
-                (day.isoformat(),),
-            ).fetchone()[0],
+            "cleanCards": practice_storage.clean_card_count(db),
+            "dueToday": practice_storage.queued_card_count(db, day.isoformat()),
+            "blockedDue": practice_storage.blocked_count(db, day.isoformat()),
             "totalCards": sum(states.values()),
         }
 
@@ -2660,7 +2649,7 @@ def repertoire_coverage_gaps(identifier: str):
 @app.get("/api/repertoires/{identifier}/opportunities")
 def repertoire_opportunities(identifier: str):
     with connection() as database:
-        if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(database, identifier):
             raise HTTPException(404, "Repertoire not found")
         return {"opportunities": list_opportunities(database, identifier)}
 
@@ -2670,27 +2659,8 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
     if offset < 0 or not 1 <= limit <= 100:
         raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 100")
     with read_connection() as database:
-        total, unread_count = database.execute(
-            """SELECT COUNT(*), SUM(CASE WHEN opportunity.seen_at IS NULL
-                       AND opportunity.snoozed_until IS NULL
-                       OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
-               FROM current_repertoire_opportunities opportunity
-               WHERE opportunity.status='active'
-                 AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
-                 AND opportunity.handled_evidence_json IS NULL
-                 AND opportunity.repertoire_id NOT IN
-                     ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')""",
-            (datetime.now(timezone.utc).isoformat(),),
-        ).fetchone()
-        identifiers = [dict(row) for row in database.execute(
-            """SELECT id,repertoire_id FROM current_repertoire_opportunities
-               WHERE status='active'
-                 AND handled_evidence_json IS NULL
-                 AND repertoire_id NOT IN
-                   ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
-               ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
-            (limit, offset),
-        )]
+        total, unread_count = http_discovery_storage.discovery_counts(database, datetime.now(timezone.utc).isoformat())
+        identifiers = [dict(row) for row in http_discovery_storage.discovery_identifiers(database, limit, offset)]
         by_repertoire: dict[str, list[str]] = {}
         for item in identifiers:
             by_repertoire.setdefault(item["repertoire_id"], []).append(item["id"])
@@ -2745,16 +2715,10 @@ def accept_discovery_continuation(
 @app.get("/api/discovery-admissions/{intent_id}")
 def discovery_admission_status(intent_id: str):
     with read_connection() as database:
-        intent = database.execute(
-            "SELECT state,last_error FROM discovery_admission_intents WHERE id=?", (intent_id,),
-        ).fetchone()
+        intent = http_discovery_storage.admission_intent(database, intent_id)
         if not intent:
             raise HTTPException(404, "Discovery admission was not found")
-        task = database.execute(
-            """SELECT state,last_error FROM background_tasks
-               WHERE kind='discovery_admission' AND deduplication_key=?""",
-            (intent_id,),
-        ).fetchone()
+        task = http_discovery_storage.admission_task(database, intent_id)
     failed = bool(task and task["state"] == "failed")
     return {"state": "queued" if intent["state"] == "queued" else
             "failed" if failed else "preparing",
@@ -2772,7 +2736,7 @@ def refresh_repertoire_opportunities(identifier: str,
             idempotency_key=idempotency_key,
         )
     with read_connection() as database:
-        if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+        if not repertoire_projection_storage.repertoire_presence(database, identifier):
             raise HTTPException(404, "Repertoire not found")
     enqueue_opportunity_refresh(identifier)
     coordinator.wake()
@@ -2868,23 +2832,11 @@ def coverage_maia_available():
     from .services.study_mode import study_only_enabled
     if study_only_enabled():
         return {"available": False, "paused_reason": "study_only_mode"}
-    from .services.canonical_scope_freshness import coverage_scope_predicate, latest_coverage_attempt_predicate
     if not postgres_store.configured():
         return {"available": True}
     read_section = background_read_connection if activity_gate.in_background else read_connection
     with read_section() as database:
-        row = database.execute_native(
-            "SELECT EXISTS(SELECT 1 FROM repertoire_coverage_nodes n "
-            "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-            "LEFT JOIN background_activity control ON control.source='coverage' "
-            "AND control.work_id=n.run_id "
-            "WHERE r.status IN ('queued','running','complete','failed') "
-            "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
-            "AND COALESCE(control.paused,0)=0 "
-            f"AND {coverage_scope_predicate(database, native=True)} "
-            f"AND {latest_coverage_attempt_predicate(database, native=True)})",
-            (datetime.now(timezone.utc).isoformat(),),
-        ).fetchone()
+        row = http_coverage_storage.maia_availability(database, lambda: datetime.now(timezone.utc).isoformat())
     return {"available": bool(row[0])}
 
 
@@ -2939,12 +2891,7 @@ def coverage_maia_heartbeat(request: dict,
     if not isinstance(node_id, str) or not isinstance(lease_id, str):
         raise HTTPException(422, "Invalid coverage lease")
     with connection(background=activity_gate.in_background) as database:
-        changed = database.execute(
-            """UPDATE repertoire_coverage_nodes SET lease_expires_at=?,updated_at=?
-               WHERE id=? AND maia_status='leased' AND lease_id=?""",
-            ((datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
-             datetime.now(timezone.utc).isoformat(), node_id, lease_id),
-        ).rowcount
+        changed = http_coverage_storage.heartbeat(database, (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(), datetime.now(timezone.utc).isoformat(), node_id, lease_id)
     if not changed:
         raise HTTPException(409, "Coverage lease is no longer active")
     return {"status": "leased"}
@@ -2962,12 +2909,7 @@ def coverage_maia_release(request: dict,
     if not isinstance(node_id, str) or not isinstance(lease_id, str):
         raise HTTPException(422, "Invalid coverage lease")
     with connection(background=activity_gate.in_background) as database:
-        changed = database.execute(
-            """UPDATE repertoire_coverage_nodes SET maia_status='queued',lease_id=NULL,
-               lease_expires_at=NULL,updated_at=?
-               WHERE id=? AND maia_status='leased' AND lease_id=?""",
-            (datetime.now(timezone.utc).isoformat(), node_id, lease_id),
-        ).rowcount
+        changed = http_coverage_storage.release(database, datetime.now(timezone.utc).isoformat(), node_id, lease_id)
     return {"status": "queued" if changed else "stale"}
 
 
@@ -2984,23 +2926,13 @@ def coverage_maia_failure(request: dict,
     if not all(isinstance(value, str) and value for value in (node_id, lease_id, error)):
         raise HTTPException(422, "Invalid coverage failure report")
     with connection(background=activity_gate.in_background) as database:
-        node = database.execute(
-            "SELECT run_id,repertoire_id FROM repertoire_coverage_nodes WHERE id=? AND maia_status='leased' AND lease_id=?",
-            (node_id, lease_id),
-        ).fetchone()
+        node = http_coverage_storage.failed_lease(database, node_id, lease_id)
         if not node:
             raise HTTPException(409, "Coverage lease is no longer active")
         now = datetime.now(timezone.utc).isoformat()
         message = f"Maia coverage failed: {error[:900]}"
-        database.execute(
-            """UPDATE repertoire_coverage_nodes SET maia_status='failed',lease_id=NULL,
-               lease_expires_at=NULL,last_error=?,updated_at=? WHERE id=?""",
-            (message, now, node_id),
-        )
-        database.execute(
-            "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
-            (message, now, node["run_id"]),
-        )
+        http_coverage_storage.fail_node(database, message, now, node_id)
+        http_coverage_storage.fail_run(database, message, now, node["run_id"])
         from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
         enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     return {"status": "failed"}
@@ -3144,86 +3076,31 @@ def tactic_attempt(request: TacticAttemptRequest,
         from .card_deletion import require_card_not_deleted
         require_card_not_deleted(db, cid)
         if request.attempt_id:
-            previous = db.execute(
-                "SELECT result_json FROM tactic_discovery_attempts WHERE id=?",
-                (request.attempt_id,),
-            ).fetchone()
+            previous = tactic_attempt_storage.attempt_receipt(db, request.attempt_id)
             if previous:
                 return json.loads(previous[0])
-        db.execute(
-            "INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__tactics__','Tactics','Lichess puzzle database',?)",
-            (now.isoformat(),),
-        )
+        tactic_attempt_storage.ensure_tactic_repertoire(db, now.isoformat())
         clean_at = now.isoformat() if request.correct and request.clean else None
-        db.execute(
-            "INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES(?,?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET clean_pass_at=COALESCE(tactic_progress.clean_pass_at,excluded.clean_pass_at),card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at),admission_mode=excluded.admission_mode",
-            (
-                request.puzzle_id,
-                pack_id,
-                cid,
-                clean_at,
-                now.isoformat(),
-                "light" if request.correct and request.clean else "normal",
-            ),
-        )
-        db.execute(
-            "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state,introduced_at) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning',?)",
-            (
-                cid,
-                training_fen,
-                json.dumps(solution),
-                (
-                    calendar_day + timedelta(days=light_days)
-                    if request.correct and request.clean
-                    else calendar_day
-                ).isoformat(),
-                "tactic",
-                "light" if request.correct and request.clean else "normal",
-                request.puzzle_id,
-                request.source_fen,
-                calendar_day.isoformat(),
-            ),
-        )
+        tactic_attempt_storage.save_progress(db, request.puzzle_id, pack_id, cid, clean_at, now.isoformat(), "light" if request.correct and request.clean else "normal")
+        tactic_attempt_storage.create_attempt_card(db, cid, training_fen, json.dumps(solution), (calendar_day + timedelta(days=light_days) if request.correct and request.clean else calendar_day).isoformat(), "tactic", "light" if request.correct and request.clean else "normal", request.puzzle_id, request.source_fen, calendar_day.isoformat())
         if not request.correct or not request.clean:
-            db.execute(
-                "UPDATE cards SET state='learning',scheduling_mode=CASE WHEN scheduling_mode='light' THEN 'normal' ELSE scheduling_mode END,due_date=? WHERE id=?",
-                (calendar_day.isoformat(), cid),
-            )
+            tactic_attempt_storage.reopen_attempt_card(db, calendar_day.isoformat(), cid)
         if (
             not request.correct
-            and not db.execute(
-                "SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'",
-                (calendar_day.isoformat(), cid),
-            ).fetchone()
+            and not tactic_attempt_storage.queued_attempt_card(db, calendar_day.isoformat(), cid)
         ):
             requeue(db, calendar_day.isoformat(), cid, 4, "guided")
-        stored = db.execute(
-            "SELECT scheduling_mode,due_date FROM cards WHERE id=?", (cid,)
-        ).fetchone()
-        db.execute(
-            "UPDATE tactic_progress SET admission_mode=? WHERE puzzle_id=?",
-            (stored[0], request.puzzle_id),
-        )
+        stored = tactic_attempt_storage.attempt_card_schedule(db, cid)
+        tactic_attempt_storage.save_admission_mode(db, stored[0], request.puzzle_id)
         result = {"card_id": cid, "mode": stored[0], "next_due": stored[1]}
-        db.execute(
-            "INSERT INTO tactic_discovery_attempts VALUES(?,?,?,?,?)",
-            (
-                request.attempt_id or str(uuid.uuid4()),
-                request.deck_id,
-                request.puzzle_id,
-                int(request.correct and request.clean),
-                json.dumps(result),
-            ),
-        )
+        tactic_attempt_storage.save_attempt_receipt(db, request.attempt_id or str(uuid.uuid4()), request.deck_id, request.puzzle_id, int(request.correct and request.clean), json.dumps(result))
     return result
 
 
 @app.get("/api/tactics/progress")
 def tactic_progress():
     with connection() as db:
-        discovered = db.execute(
-            "SELECT deck_id,puzzle_id,clean_pass_at FROM tactic_progress WHERE clean_pass_at IS NOT NULL OR puzzle_id NOT IN(SELECT puzzle_id FROM tactic_introductions) OR puzzle_id IN(SELECT puzzle_id FROM tactic_discovery_attempts) ORDER BY deck_id,puzzle_id"
-        ).fetchall()
+        discovered = practice_storage.tactic_progress_rows(db)
     data = {}
     for row in discovered:
         value = data.setdefault(
@@ -3264,9 +3141,7 @@ async def probe_endgame(request: EndgameProbeRequest):
 @app.get("/api/endgames/templates")
 def list_endgames():
     with connection() as db:
-        rows = db.execute(
-            "SELECT * FROM endgame_templates WHERE enabled=1 ORDER BY created_at"
-        ).fetchall()
+        rows = practice_storage.endgame_templates(db)
     return {"templates": [dict(row) for row in rows]}
 
 
@@ -3289,8 +3164,7 @@ async def create_endgame_attempt(
             raise HTTPException(409, str(error)) from error
         if receipt["state"] != "unknown":
             with read_connection() as db:
-                saved = db.execute("SELECT payload_json FROM operation_receipts WHERE operation_id=?",
-                                   (idempotency_key,)).fetchone()
+                saved = practice_storage.saved_endgame_payload(db, idempotency_key)
             if not saved or json.loads(saved["payload_json"]).get("template_id") != identifier:
                 raise HTTPException(409, "Operation ID was already used for another template")
         if receipt["state"] == "complete":

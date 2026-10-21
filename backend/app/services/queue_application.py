@@ -34,7 +34,7 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     return queue_admission.reconcile_unseen_queue(QueueAdmissionAdapter(db), day, limit, repertoire_limits)
 
 
-_ACTIVE_OPENING_MISS_SQL = outstanding_miss_sql(postgres=True)
+from tempo_legacy_database.adapters.queue_refresh.reads import _ACTIVE_OPENING_MISS_SQL
 
 
 def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], maximum: int) -> int:
@@ -336,54 +336,22 @@ def seed_queue(db, day):
                        (day, study_row["id"], next_position + offset))
 
 
-_QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,q.position,c.content_type,
-                  CASE WHEN q.admission_kind='explicit' THEN 'explicit'
-                       WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
-                       ELSE 'new' END admission_kind,
-                  q.gameplay_priority_reason
-           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.queue_date=? AND q.status='queued'
-           ORDER BY q.id"""
 
+
+
+from tempo_legacy_database.adapters.queue_refresh import presentation as presentation_storage
+from tempo_legacy_database.adapters.queue_refresh.presentation import _QUEUE_RANDOMIZATION_ROWS_SQL
 
 def presentation_rows(database, day, *, read=None, after_entry_id=None, limit=None):
     """Capture eligibility and attempt protection without changing membership."""
-    if read is None:
-        read = lambda statement, parameters: database.execute(statement, parameters).fetchall()
-    # Shadow evidence is PostgreSQL-only; SQLite remains the recovery adapter.
-    presented = ("EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.queue_entry_id=q.id)"
-                 if postgres_store.configured() else "0")
-    statement = """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,
-                  q.gameplay_priority_reason,q.cycle,q.attempt_state,q.attempt_failed,
-                  (q.review_result_json IS NOT NULL) review_completed,c.revision,
-                  EXISTS(SELECT 1 FROM queue_attempt_origins origin
-                    WHERE origin.queue_entry_id=q.id AND origin.card_id=c.id
-                      AND origin.revision=c.revision AND origin.issued_as_head=1) issued,
-                  """ + presented + """ presented,
-                  EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id) taught
-           FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.queue_date=? AND q.status='queued'"""
-    parameters = [day]
-    if after_entry_id is not None:
-        statement += " AND q.id>?"
-        parameters.append(after_entry_id)
-    statement += " ORDER BY q.id"
-    if limit is not None:
-        statement += " LIMIT ?"
-        parameters.append(limit)
-    rows = [dict(row) for row in read(statement, tuple(parameters))]
+    rows, reviewed, eligible = presentation_storage.presentation_facts(
+        database, day, MISS_REASON, read=read, after_entry_id=after_entry_id, limit=limit,
+    )
     if not rows:
         return rows
-    placeholders = ','.join('?' for _ in rows)
-    reviewed = {row[0] for row in read(
-        "SELECT DISTINCT card_id FROM reviews WHERE invalidated_at IS NULL AND card_id IN (" + placeholders + ")",
-        tuple(row['card_id'] for row in rows),
-    )}
-    eligible = {row[0] for row in read(available_attempt_sql() + " AND q.id IN (" + placeholders + ")",
-                                     (day, *(row['id'] for row in rows)))}
     for row in rows:
         from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
-        if isinstance(database, PostgresConnection) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
+        if presentation_storage.is_postgres_connection(database) and row['gameplay_priority_reason'] == BRIDGE_MISS_REASON:
             from .legacy_study_remediation import has_current_miss
             if not has_current_miss(database, row['card_id']): row['gameplay_priority_reason'] = None
         row['admission_kind'] = ('explicit' if row['admission_kind']=='explicit'
@@ -574,9 +542,7 @@ def requeue(db, day, cid, after, attempt):
     return inserted_entry_id
 
 
-_QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-           VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
-           state='refreshing',refresh_pending=1,last_error=NULL"""
+from tempo_legacy_database.adapters.queue_refresh.foreground import _QUEUE_REFRESH_PROJECTION_SQL, mark_queue_refreshing
 
 
 from tempo_legacy_database.adapters.http_composition import availability as queue_availability_storage
@@ -598,9 +564,6 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     task = enqueue_task_in_transaction(
         database, "daily_queue", "current", payload, priority=10,
     )
-    database.execute(
-        _QUEUE_REFRESH_PROJECTION_SQL,
-        (queue_date,),
-    )
+    mark_queue_refreshing(database, queue_date)
     return task
 

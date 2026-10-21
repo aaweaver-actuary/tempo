@@ -71,7 +71,7 @@ def translate_failure(error):
     if isinstance(error, learning.ReviewConflict):
         return ReviewConflict(error.code, error.message, retryable=error.retryable)
     if error.code == "opening_evidence_conflict":
-        from tempo_learning_database.adapters.postgres_opening_evidence import evidence_error
+        from .opening_evidence import evidence_error
 
         return evidence_error(error.message, error.code)
     return HTTPException(error.status_code, error.message)
@@ -349,7 +349,7 @@ class LearningReviewAdapter:
         )
 
     def persist_evidence(self, command):
-        from tempo_learning_database.adapters.postgres_opening_evidence import persist_checkpoint
+        from .opening_evidence import persist_checkpoint
 
         with training_timing_stage("completion_evidence"):
             persist_checkpoint(
@@ -362,7 +362,7 @@ class LearningReviewAdapter:
             )
 
     def complete_evidence(self, command, result):
-        from tempo_learning_database.adapters.postgres_opening_evidence import complete_review_evidence
+        from .opening_evidence import complete_review_evidence
 
         complete_review_evidence(
             self.database, self.request.opening_evidence_completion, result

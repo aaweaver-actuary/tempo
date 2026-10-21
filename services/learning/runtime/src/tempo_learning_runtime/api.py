@@ -26,7 +26,7 @@ from .models import (
 from .study_contracts import StudyAttemptRequest, StudySelfAssessmentRequest
 from .review_adapter import submit_legacy_review
 from .review_conflicts import ReviewConflict
-from tempo_learning_database.adapters import postgres_opening_evidence as evidence
+from . import opening_evidence as evidence
 from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 from .maintenance import safe_run_once
 from .publications import PublicationBundle, stage, activate, retire

@@ -59,8 +59,9 @@ def test_study_opening_selector_reads_only_one_page_per_slice(monkeypatch):
     @contextmanager
     def reader():
         yield Reader()
-    monkeypatch.setattr(worker, '_bounded_read', bounded_read)
+    monkeypatch.setattr(worker.read_storage, '_bounded_read', bounded_read)
     monkeypatch.setattr(worker, 'background_read_connection', reader)
+    monkeypatch.setattr(worker.read_storage, 'background_read_connection', reader)
     monkeypatch.setattr(worker, '_study_opening_route_still_valid', lambda *_: True)
     monkeypatch.setattr(worker, 'has_outstanding_real_game_miss', lambda *_: False)
     page = worker._prepare_study_opening_page('2026-10-13', {})
@@ -165,3 +166,4 @@ def legacy_study_order_has_no_accepted_snapshot(monkeypatch):
             with original_reader() as database:
                 yield database
     monkeypatch.setattr(worker, 'background_read_connection', metadata_compatible_reader)
+    monkeypatch.setattr(worker.read_storage, 'background_read_connection', metadata_compatible_reader)
