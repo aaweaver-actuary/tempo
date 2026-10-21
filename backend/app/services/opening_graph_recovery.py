@@ -13,6 +13,8 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.opening_graph import recovery as storage
+from tempo_legacy_database.adapters.opening_graph.recovery import read_rows
 from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import defer_task_for_contention, fail_task, warm_completion_sql
 from .opening_segmentation import stable_key
@@ -42,9 +44,7 @@ def _selected_scope_key(prepared):
 
 def _validate_followup(database, prepared, kind, *, prior, lock):
     pin = prepared['tasks'][kind]
-    row = database.execute_native(
-        'SELECT * FROM background_tasks WHERE kind=%s AND deduplication_key=%s' + (' FOR UPDATE' if lock else ''),
-        (kind, prepared['repertoire_id'])).fetchone()
+    row = storage.followup_task(database, kind, prepared['repertoire_id'], lock=lock)
     if prior:
         if pin['prior'] and (pin['prior']['state'] == 'leased' or pin['prior']['lease_token'] is not None or pin['prior']['lease_expires_at'] is not None):
             raise ValueError('Pinned downstream predecessor must not carry a lease')
@@ -64,36 +64,21 @@ def validate_selected_scope(database, prepared, *, lock=True):
         raise ValueError('Maintenance plan requires pinned downstream predecessors; use fresh preflight before any claims')
     if prepared.get('mode') != QUEUED_REBUILD_MODE or local_study_day() != prepared['day']:
         raise ValueError('Maintenance mode or local study day changed')
-    identity = dict(database.execute_native(
-        "SELECT (SELECT system_identifier::text FROM pg_control_system()) cluster_id,"
-        "(SELECT oid::text FROM pg_database WHERE datname=current_database()) database_oid,"
-        "current_database() database,current_schema() schema").fetchone())
+    identity = dict(storage.database_identity(database))
     if stable_key(*(identity[field] for field in ('cluster_id', 'database_oid', 'database', 'schema'))) != prepared['target']:
         raise ValueError('Database target identity mismatch')
-    token = database.execute_native(
-        "SELECT r.scope_source_revision,r.canonical_prefix_revision,"
-        "s.initial_depth,s.study_only_mode,a.run_id,a.epoch "
-        "FROM repertoires r CROSS JOIN settings s CROSS JOIN frozen_opening_activation a "
-        "WHERE r.id=%s AND s.id=1 AND a.id=1" + (' FOR SHARE OF r,s,a' if lock else ''),
-        (prepared['repertoire_id'],)).fetchone()
+    token = storage.scope_row(database, prepared['repertoire_id'], lock=lock)
     if token is None or not token['study_only_mode'] or dict(token) != prepared['scope_token']:
         raise ValueError('Source, study mode, depth, or frozen activation changed')
-    graph = database.execute_native(
-        "SELECT id,generation,state,phase FROM background_tasks WHERE kind='opening_graph_rebuild' "
-        "AND deduplication_key=%s" + (' FOR SHARE' if lock else ''), (prepared['repertoire_id'],)).fetchone()
+    graph = storage.graph_scope_task(database, prepared['repertoire_id'], lock=lock)
     if graph is None or (graph['id'], graph['generation']) != (prepared['task_id'], prepared['generation']):
         raise ValueError('Selected graph identity or generation changed')
-    publication = database.execute_native(
-        'SELECT generation,state FROM opening_graph_publications WHERE repertoire_id=%s',
-        (prepared['repertoire_id'],)).fetchone()
+    publication = storage.publication(database, prepared['repertoire_id'])
     published = graph['phase'] in {'classify', 'integrity', 'cleanup', 'finalize', 'published'}
     expected_publication = prepared['generation'] if published else prepared['previous_graph_generation']
     if publication is None or publication['state'] != 'ready' or publication['generation'] != expected_publication:
         raise ValueError('Selected graph publication changed or is not ready')
-    if database.execute_native(
-        "SELECT 1 FROM prefix_transition_applications WHERE repertoire_id=%s "
-        "AND state IN ('publishing','recovery_required') LIMIT 1",
-        (prepared['repertoire_id'],)).fetchone():
+    if storage.active_transition(database, prepared['repertoire_id']):
         raise ValueError('An active prefix transition requires its own recovery owner')
     scan = _validate_followup(database, prepared, 'integrity_scan', prior=graph['state'] != 'complete', lock=lock)
     _validate_followup(database, prepared, 'opening_segmentation',
@@ -107,20 +92,20 @@ def preflight_queued_rebuild(task_id, repertoire_id, generation, expected_target
     token = scope_token(repertoire_id)
     if (token['scope_source_revision'], token['canonical_prefix_revision']) != (source_revision, prefix_revision):
         raise ValueError('Pinned source or canonical prefix revision mismatch')
-    task = read_rows('SELECT * FROM background_tasks WHERE id=%s', (task_id,))
+    task = storage.task_rows(task_id)
     if (len(task) != 1 or (task[0]['kind'], task[0]['deduplication_key'], task[0]['generation'],
                          task[0]['state'], task[0]['phase'], task[0]['attempt_count']) !=
             ('opening_graph_rebuild', repertoire_id, generation, 'queued', 'queued', 0)
             or json.loads(task[0]['payload_json']).get('repertoire_id') != repertoire_id):
         raise ValueError('Expected the exact untouched queued graph rebuild')
-    publication = read_rows('SELECT generation,state FROM opening_graph_publications WHERE repertoire_id=%s', (repertoire_id,))
+    publication = storage.publication_rows(repertoire_id)
     if len(publication) != 1 or publication[0]['state'] != 'ready' or publication[0]['generation'] >= generation:
         raise ValueError('Expected an older retained ready graph publication')
-    if read_rows('SELECT 1 FROM opening_graph_steps WHERE repertoire_id=%s AND generation>=%s LIMIT 1', (repertoire_id, generation)):
+    if storage.newer_staging(repertoire_id, generation):
         raise ValueError('Untouched queued task already has target or newer staging')
     tasks = {'opening_graph_rebuild': {'id': task_id, 'generation': generation}}
     for kind in ('integrity_scan', 'opening_segmentation'):
-        rows = read_rows('SELECT id,generation,state,phase,lease_token,lease_expires_at FROM background_tasks WHERE kind=%s AND deduplication_key=%s', (kind, repertoire_id))
+        rows = storage.followup_predecessor(kind, repertoire_id)
         if rows and (rows[0]['state'] == 'leased' or rows[0]['lease_token'] is not None or rows[0]['lease_expires_at'] is not None):
             raise ValueError('A follow-up task already has a lease')
         tasks[kind] = {'id': rows[0]['id'] if rows else None,
@@ -130,7 +115,7 @@ def preflight_queued_rebuild(task_id, repertoire_id, generation, expected_target
     prepared = {'mode': QUEUED_REBUILD_MODE, 'plan_version': 2, 'target': expected_target, 'task_id': task_id,
                 'repertoire_id': repertoire_id, 'generation': generation, 'scope_token': token,
                 'day': day, 'previous_graph_generation': publication[0]['generation'], 'tasks': tasks}
-    with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
+    with background_lease(), storage.authoritative_connection() as database:
         validate_selected_scope(database, prepared, lock=False)
     return prepared
 
@@ -151,9 +136,9 @@ def validate_selected_delivery(database, task, *, after_checkpoint=False):
     if next_kind and not after_checkpoint:
         # Transaction-local handoff authority. Existing row locks above protect
         # predecessors; the guarded upsert also fences the absent-row race.
-        database._selected_rebuild_handoff = {'kind': next_kind, 'repertoire_id': prepared['repertoire_id'],
+        storage.set_selected_handoff(database, {'kind': next_kind, 'repertoire_id': prepared['repertoire_id'],
                                              'pin': prepared['tasks'][next_kind], 'graph_generation': prepared['generation'],
-                                             'day': prepared['day']}
+                                             'day': prepared['day']})
 
 
 def validate_selected_enqueue(handoff, kind, repertoire_id, row, payload, *, after=False):
@@ -175,12 +160,10 @@ def validate_selected_enqueue(handoff, kind, repertoire_id, row, payload, *, aft
 
 def assert_selected_execution_not_started(prepared):
     """Never create a fresh preservation baseline after a claim/partial write."""
-    with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
+    with background_lease(), storage.authoritative_connection() as database:
         validate_selected_scope(database, prepared, lock=False)
-        row = database.execute_native('SELECT state,phase,attempt_count,payload_json FROM background_tasks WHERE id=%s AND generation=%s',
-                                      (prepared['task_id'], prepared['generation'])).fetchone()
-        claimed = database.execute_native("SELECT 1 FROM background_task_events WHERE task_id=%s AND generation=%s AND event='maintenance_recovery_claim' LIMIT 1",
-                                         (prepared['task_id'], prepared['generation'])).fetchone()
+        row = storage.unstarted_task(database, prepared['task_id'], prepared['generation'])
+        claimed = storage.prior_claim(database, prepared['task_id'], prepared['generation'])
         if (row is None or (row['state'], row['phase'], row['attempt_count']) != ('queued', 'queued', 0)
                 or json.loads(row['payload_json']).get('maintenance_recovery_scope') is not None or claimed):
             raise ValueError('Execution baseline is missing after maintenance started; preserve checkpoints and diagnose')
@@ -198,15 +181,8 @@ def wait_for_admission(operation):
             time.sleep(.25)
 
 
-def read_rows(statement, parameters=()):
-    with postgres_store.connection(read_only=True) as database:
-        return [dict(row) for row in database.execute_native(statement, parameters).fetchall()]
-
-
 def target_identity():
-    return read_rows("SELECT (SELECT system_identifier::text FROM pg_control_system()) cluster_id,"
-                     "(SELECT oid::text FROM pg_database WHERE datname=current_database()) database_oid,"
-                     "current_database() database,current_schema() schema")[0]
+    return storage.target_identity_rows()[0]
 
 
 def target_id():
@@ -215,10 +191,7 @@ def target_id():
 
 
 def scope_token(repertoire_id):
-    rows = read_rows("SELECT r.scope_source_revision,r.canonical_prefix_revision,"
-                     "s.initial_depth,s.study_only_mode,a.run_id,a.epoch "
-                     "FROM repertoires r CROSS JOIN settings s CROSS JOIN frozen_opening_activation a "
-                     "WHERE r.id=%s AND s.id=1 AND a.id=1", (repertoire_id,))
+    rows = storage.scope_rows(repertoire_id)
     if len(rows) != 1 or not rows[0]['study_only_mode']:
         raise ValueError('Recovery requires an existing repertoire in study-only mode')
     return rows[0]
@@ -233,10 +206,9 @@ def validate_staged_graph(repertoire_id, generation):
         expected.extend(prepared.steps)
         after_line_id = prepared.line_id
         line_count += 1
-    deleted = {row['card_id'] for row in read_rows('SELECT card_id FROM deleted_cards')}
+    deleted = {row['card_id'] for row in storage.deleted_cards()}
     expected = omit_deleted_graph_steps(tuple(expected), deleted)
-    staged = read_rows('SELECT * FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s '
-                       'ORDER BY line_id,decision_index', (repertoire_id, generation))
+    staged = storage.staged_rows(repertoire_id, generation)
     def expected_row(step):
         result = asdict(step)
         result['moves'] = list(result['moves'])
@@ -257,12 +229,12 @@ def validate_staged_graph(repertoire_id, generation):
         if step.card_id in definitions and definitions[step.card_id] != definition:
             raise ValueError('Conflicting staged card definitions')
         definitions[step.card_id] = definition
-    memberships = {row['card_id'] for row in read_rows('SELECT card_id FROM repertoire_cards WHERE repertoire_id=%s', (repertoire_id,))}
+    memberships = {row['card_id'] for row in storage.membership_card_ids(repertoire_id)}
     if memberships != set(definitions):
         raise ValueError('Recovery would change repertoire memberships; refusing publication')
     for offset in range(0, len(definitions), 16):
         identifiers = sorted(definitions)[offset:offset + 16]
-        cards = read_rows('SELECT * FROM cards WHERE id=ANY(%s)', (identifiers,))
+        cards = storage.physical_cards(identifiers)
         if len(cards) != len(identifiers):
             raise ValueError('Staged graph has missing cards')
         for card in cards:
@@ -279,7 +251,7 @@ def preflight(task_id, repertoire_id, generation, expected_target):
     if target_id() != expected_target:
         raise ValueError('Database target identity mismatch')
     token = scope_token(repertoire_id)
-    task = read_rows('SELECT * FROM background_tasks WHERE id=%s', (task_id,))
+    task = storage.task_rows(task_id)
     if not task or task[0]['kind'] != 'opening_graph_rebuild' or task[0]['deduplication_key'] != repertoire_id:
         raise ValueError('Wrong recovery task or repertoire')
     task = task[0]
@@ -287,7 +259,7 @@ def preflight(task_id, repertoire_id, generation, expected_target):
         raise ValueError('Expected a failed graph task at its publish checkpoint')
     if json.loads(task['payload_json']).get('repertoire_id') != repertoire_id:
         raise ValueError('Task payload scope mismatch')
-    if read_rows('SELECT 1 FROM opening_graph_publications WHERE repertoire_id=%s', (repertoire_id,)):
+    if storage.publication_exists(repertoire_id):
         raise ValueError('Recovery is restricted to a first publication')
     validation = validate_staged_graph(repertoire_id, generation)
     if scope_token(repertoire_id) != token:
@@ -299,7 +271,7 @@ def preflight(task_id, repertoire_id, generation, expected_target):
 def claim_exact_task(database, task_id, kind, repertoire_id, generation, *, resume_failed=False, day, graph_generation=None,
                      selected_rebuild=None):
     """Explicit maintenance authority applies only to this exact row, not a kind."""
-    task = database.execute_native('SELECT * FROM background_tasks WHERE id=%s FOR UPDATE', (task_id,)).fetchone()
+    task = storage.locked_task(database, task_id)
     if (task is None or task['kind'] != kind or task['deduplication_key'] != repertoire_id
             or task['generation'] != generation):
         raise ValueError('Recovery task identity or generation changed')
@@ -341,15 +313,8 @@ def claim_exact_task(database, task_id, kind, repertoire_id, generation, *, resu
         raise ValueError('Recovery cannot restart graph staging')
     payload['local_day'] = day
     lease = str(uuid.uuid4())
-    updated = database.execute_native(
-        "UPDATE background_tasks SET state='leased',lease_token=%s,lease_expires_at=%s,"
-        "payload_json=%s,attempt_count=attempt_count+1,completed_at=NULL,updated_at=%s "
-        "WHERE id=%s AND generation=%s RETURNING *",
-        (lease, (now + timedelta(seconds=60)).isoformat(), json.dumps(payload), now.isoformat(), task_id, generation),
-    ).fetchone()
-    database.execute_native('INSERT INTO background_task_events(task_id,generation,event,phase,detail,created_at) '
-                            'VALUES(%s,%s,%s,%s,%s,%s)',
-                            (task_id, generation, 'maintenance_recovery_claim', task['phase'], 'Explicit single-repertoire recovery', now.isoformat()))
+    updated = storage.claim_task(database, (lease, (now + timedelta(seconds=60)).isoformat(), json.dumps(payload), now.isoformat(), task_id, generation))
+    storage.record_claim(database, (task_id, generation, 'maintenance_recovery_claim', task['phase'], 'Explicit single-repertoire recovery', now.isoformat()))
     result = dict(updated)
     result['payload'] = payload
     result.pop('payload_json')
@@ -379,8 +344,7 @@ def finish_queued_rebuild(prepared, *, progress=lambda value: None, save_plan=la
     ):
         pin = prepared['tasks'][kind]
         if kind != 'opening_graph_rebuild':
-            followup = read_rows('SELECT id,generation,payload_json FROM background_tasks WHERE kind=%s AND deduplication_key=%s',
-                                 (kind, prepared['repertoire_id']))
+            followup = storage.followup_rows(kind, prepared['repertoire_id'])
             if (len(followup) != 1 or followup[0]['generation'] != pin['generation']
                     or pin['id'] not in {None, followup[0]['id']}
                     or json.loads(followup[0]['payload_json']).get('graph_generation') != prepared['generation']):
@@ -391,7 +355,7 @@ def finish_queued_rebuild(prepared, *, progress=lambda value: None, save_plan=la
             if stop_requested() or time.monotonic() >= deadline or slices >= max_slices:
                 raise RuntimeError('Maintenance stopped at its budget; saved checkpoints are retained')
             try:
-                with background_lease(), postgres_store.connection(background=True) as database:
+                with background_lease(), storage.maintenance_connection() as database:
                     task = claim_exact_task(database, pin['id'], kind, prepared['repertoire_id'], pin['generation'],
                                             day=prepared['day'], graph_generation=prepared['generation'], selected_rebuild=prepared)
             except BackgroundAdmissionDeferred:
@@ -410,14 +374,10 @@ def finish_queued_rebuild(prepared, *, progress=lambda value: None, save_plan=la
                 fail_task(task['id'], task['generation'], task['lease_token'], error)
                 raise
             slices += 1
-    with background_lease(), postgres_store.connection(read_only=True, authoritative=True, background=True) as database:
+    with background_lease(), storage.authoritative_connection() as database:
         validate_selected_scope(database, prepared, lock=False)
-        scan = database.execute_native(
-            'SELECT status,scan_status,scan_generation,checked_at FROM repertoire_integrity_state WHERE repertoire_id=%s',
-            (prepared['repertoire_id'],)).fetchone()
-        segments = database.execute_native(
-            'SELECT state,graph_generation,run_id FROM opening_segmentation_state WHERE repertoire_id=%s',
-            (prepared['repertoire_id'],)).fetchone()
+        scan = storage.integrity_publication(database, prepared['repertoire_id'])
+        segments = storage.segmentation_publication(database, prepared['repertoire_id'])
         scan_pin, segment_pin = prepared['tasks']['integrity_scan'], prepared['tasks']['opening_segmentation']
         if (scan is None or scan['status'] not in {'clean', 'needs_repair'} or scan['scan_status'] != 'idle'
                 or scan['checked_at'] is None or scan['scan_generation'] != f"{scan_pin['id']}:{scan_pin['generation']}"
@@ -439,7 +399,7 @@ def recover(prepared, *, day, progress=lambda value: None, max_slices=20000):
         if scope_token(repertoire_id) != prepared['scope_token']:
             raise ValueError('Source, study mode, or Maia activation changed; stop recovery')
         try:
-            with background_lease(), postgres_store.connection(background=True) as database:
+            with background_lease(), storage.maintenance_connection() as database:
                 task = claim_exact_task(database, task_id, kind, repertoire_id, generation,
                                         resume_failed=allow_failed, day=day, graph_generation=prepared['generation'])
         except BackgroundAdmissionDeferred:
@@ -448,7 +408,7 @@ def recover(prepared, *, day, progress=lambda value: None, max_slices=20000):
         if task is None:
             if kind == 'integrity_scan':
                 return {'state': 'complete', 'slices': slice_number, 'graph_task_id': prepared['task_id'], 'integrity_task_id': task_id}
-            integrity = read_rows("SELECT id,generation,payload_json FROM background_tasks WHERE kind='integrity_scan' AND deduplication_key=%s", (repertoire_id,))
+            integrity = storage.integrity_task_rows(repertoire_id)
             if len(integrity) != 1 or json.loads(integrity[0]['payload_json']).get('graph_generation') != prepared['generation']:
                 raise ValueError('Graph did not request the expected integrity task')
             kind, task_id, generation = 'integrity_scan', integrity[0]['id'], integrity[0]['generation']
@@ -471,39 +431,25 @@ def recover(prepared, *, day, progress=lambda value: None, max_slices=20000):
 
 def capture_evidence(repertoire_id, day, *, selected_rebuild=False):
     """Private maintenance evidence, paged without a long snapshot transaction."""
-    def paged(table, key, predicate='TRUE', parameters=()):
-        keys = key if isinstance(key, tuple) else (key,)
-        columns = tuple('id' if field == 'id_numeric' else field for field in keys)
-        cursor = tuple(0 if field in {'id_numeric', 'queue_entry_id', 'revision'} else '' for field in keys)
-        order = ','.join(columns)
-        placeholders = ','.join('%s' for _ in columns)
-        rows = []
-        while True:
-            page = read_rows(f'SELECT * FROM {table} WHERE ({predicate}) AND ({order})>({placeholders}) ORDER BY {order} LIMIT 128',
-                             (*parameters, *cursor))
-            rows.extend(page)
-            if len(page) < 128:
-                return rows
-            cursor = tuple(page[-1][column] for column in columns)
-    activation = read_rows('SELECT * FROM frozen_opening_activation WHERE id=1')[0]
+    activation = storage.frozen_activation()[0]
     evidence = {
         'recorded_at': datetime.now(timezone.utc).isoformat(), 'target': target_identity(),
-        'settings': read_rows('SELECT * FROM settings'),
-        'tasks': read_rows('SELECT * FROM background_tasks WHERE deduplication_key=%s ORDER BY id', (repertoire_id,)),
-        'sources': read_rows('SELECT * FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id', (repertoire_id,)),
-        'graph': read_rows('SELECT * FROM opening_graph_steps WHERE repertoire_id=%s ORDER BY generation,line_id,decision_index', (repertoire_id,)),
-        'memberships': read_rows('SELECT * FROM repertoire_cards WHERE repertoire_id=%s ORDER BY card_id', (repertoire_id,)),
-        'cards': paged('cards', 'id', 'repertoire_id=%s', (repertoire_id,)),
-        'reviews': paged('reviews', 'id_numeric'),
-        'issued_origins': paged('queue_attempt_origins', ('queue_entry_id', 'card_id', 'revision'), 'issued_as_head=1'),
+        'settings': storage.settings_evidence(),
+        'tasks': storage.task_evidence(repertoire_id),
+        'sources': storage.source_evidence(repertoire_id),
+        'graph': storage.graph_evidence(repertoire_id),
+        'memberships': storage.membership_evidence(repertoire_id),
+        'cards': storage.repertoire_card_evidence(repertoire_id),
+        'reviews': storage.review_evidence(),
+        'issued_origins': storage.issued_origin_evidence(),
         'activation': activation,
-        'frozen_ranks': paged('frozen_opening_ranks', 'card_id', 'run_id=%s', (activation['run_id'],)),
-        'queue': read_rows('SELECT q.*,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=%s ORDER BY q.position,q.id', (day,)),
+        'frozen_ranks': storage.frozen_rank_evidence(activation['run_id']),
+        'queue': storage.queue_evidence(day),
     }
     if selected_rebuild:
         evidence['mode'] = QUEUED_REBUILD_MODE
         # A generated physical card may be shared with another repertoire.
-        evidence['cards'] = paged('cards', 'id')
+        evidence['cards'] = storage.all_card_evidence()
         reviewed = {row['card_id'] for row in evidence['reviews']}
         schedule_fields = ('id', 'state', 'introduced_at', 'due_date', 'interval_days', 'ease', 'repetitions',
                            'lapses', 'fsrs_card_json', 'first_correct_at', 'stability', 'scheduling_mode',
