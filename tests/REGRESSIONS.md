@@ -5107,3 +5107,25 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Queue refresh bounded reads and capacity storage
 
 `backend/tests/test_queue_refresh_read_database_split.py` owns complete fixed read/timeout/capacity/presentation delegation and retained application kernels. Six existing suites retarget reader/factory monkeypatches to their moved defining modules; import subprocess includes the root database path, with assertions unchanged. The79-site source proof and focused selection retain three original fixture limitations recorded in database/BASELINE-CHECK-LIMITATIONS.md; native/full-system behavior is not qualified.
+
+
+## Borrowed Study review storage
+
+`backend/tests/test_review_service_storage_boundary.py` owns six fake borrowed-transaction boundaries for schedule replay, clock/receipt/provenance/seed and lazy requeue/position/classification ordering. The existing feedback canonical-writer consumer guard remains selected; no native/SQLite integration or Study independence claim follows from these checks.
+
+
+## Queue application eligibility and seeding storage
+
+`backend/tests/test_queue_application_database_split.py` owns complete-query capture/selection and boundary delegation for the first application slice. Existing adapter/unlock/reset/Study allowance/reconciliation/seeding checks retain assertions. That first-slice snapshot did not close the file. The subsequent publication/requeue selection covers its final18 sites; native behavior/full-system acceptance remain unverified.
+
+
+## Legacy Learning review persistence
+
+`backend/tests/test_legacy_review_storage_separation.py` owns eighteen semantic boundaries for review facts, original card locks/scope/deferred effects and shared queue-projection wiring. Source-snapshot import checks deny sockets/SQLite infrastructure and verify module origins; no backend wheel or native behavior is claimed.
+
+The final `test_queue_application_database_split.py` selection also covers complete captured projection writes, requeue and clock/JSON/order sequencing. All39 direct sites plus sparse selector are now root-owned; existing queue-extraction/randomization/quarantine assertions remain intact.
+
+
+## Authored Studies portable persistence
+
+`backend/tests/test_study_portable_storage_boundary.py` owns six fake boundaries for lazy export/column shape/UUID-reference remapping/replay/conflict/nonmutation behavior. Two existing contract/corpus checks remain selected; the seven authored-content tables are exercised by the existing bundle format, without personal practice history or unused-table claims.

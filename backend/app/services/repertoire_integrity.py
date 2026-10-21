@@ -13,6 +13,7 @@ import uuid
 import chess
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
+from tempo_legacy_database.adapters.authored_repertoires.integrity import storage
 from tempo_legacy_database.connections import card_columns, read_connection
 from tempo_legacy_database.adapters.database_executor import submit_background_write
 
@@ -57,24 +58,11 @@ def _signature(issue: dict) -> str:
 def _source_rows(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
     lines = [
         {**dict(row), "source_type": "line", "source_id": row["id"]}
-        for row in database.execute(
-            "SELECT id,repertoire_id,name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
-            (repertoire_id,),
-        ).fetchall()
+        for row in storage.source_lines(database, (repertoire_id,))
     ]
     cards = [
         {**dict(row), "source_type": "card", "source_id": row["id"]}
-        for row in database.execute(
-        """SELECT DISTINCT c.id,c.repertoire_id,c.kind,c.start_fen,c.moves_json,
-                              COALESCE(c.trained_color,(
-                                  SELECT l.trained_color FROM repertoire_lines l
-                                  WHERE l.repertoire_id=? ORDER BY l.created_at,l.id LIMIT 1
-                              )) trained_color
-               FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
-               WHERE (rc.repertoire_id=? OR c.repertoire_id=?) AND c.archived=0 AND c.content_type='opening'
-               ORDER BY c.id""",
-            (repertoire_id, repertoire_id, repertoire_id),
-        ).fetchall()
+        for row in storage.source_cards(database, (repertoire_id, repertoire_id, repertoire_id))
     ]
     return lines + cards
 
@@ -203,53 +191,25 @@ def _publish_card_blocks(
 ) -> None:
     """Atomically replace the card-level projection for one completed scan."""
 
-    database.execute(
-        "DELETE FROM repertoire_integrity_card_blocks WHERE repertoire_id=?",
-        (repertoire_id,),
-    )
+    storage.clear_card_blocks(database, (repertoire_id,))
     rows = {
         (repertoire_id, source["id"], issue["id"], scan_generation, published_at)
         for issue in issues
         for source in issue.get("sources", [])
         if source.get("type") == "card"
-        and database.execute(
-            "SELECT 1 FROM cards WHERE id=?", (source.get("id"),)
-        ).fetchone()
+        and storage.card_exists(database, (source.get("id"),))
     }
-    database.executemany(
-        """INSERT INTO repertoire_integrity_card_blocks(
-               repertoire_id,card_id,issue_id,scan_generation,published_at
-           ) VALUES(?,?,?,?,?)""",
-        sorted(rows),
-    )
-    database.execute(
-        """UPDATE cards SET pending_validation=CASE WHEN EXISTS(
-               SELECT 1 FROM repertoire_integrity_card_blocks published_block
-               WHERE published_block.card_id=cards.id
-           ) THEN 1 ELSE 0 END
-           WHERE archived=0 AND content_type='opening' AND
-             (repertoire_id=? OR id IN (
-                 SELECT card_id FROM repertoire_cards WHERE repertoire_id=?
-             ))""",
-        (repertoire_id, repertoire_id),
-    )
+    storage.insert_card_blocks(database, sorted(rows))
+    storage.update_card_validation(database, (repertoire_id, repertoire_id))
 def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
-    if not database.execute(
-        "SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)
-    ).fetchone():
+    if not storage.repertoire_exists(database, (repertoire_id,)):
         raise KeyError("Repertoire not found")
     issues = _scan_sources(database, repertoire_id)
     now = _now()
-    database.execute(
-        "DELETE FROM repertoire_integrity_issues WHERE repertoire_id=?",
-        (repertoire_id,),
-    )
+    storage.clear_issues(database, (repertoire_id,))
     for issue in issues:
-        database.execute(
-            """INSERT INTO repertoire_integrity_issues(
-                       id,repertoire_id,kind,fen_key,fen,trained_color,signature,
-                       moves_json,sources_json,created_at,updated_at
-                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        storage.insert_sweep_issue(
+            database,
             (
                 issue["id"],
                 repertoire_id,
@@ -265,11 +225,7 @@ def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
             ),
         )
     status = "needs_repair" if issues else "clean"
-    database.execute(
-        """INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at)
-           VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at""",
-        (repertoire_id, status, now),
-    )
+    storage.publish_sweep_state(database, (repertoire_id, status, now))
     _publish_card_blocks(database, repertoire_id, issues, f"sweep:{now}", now)
     return integrity_summary(database, repertoire_id)
 
@@ -277,7 +233,7 @@ def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
 def sweep_all(database: sqlite3.Connection) -> None:
     ids = [
         row[0]
-        for row in database.execute("SELECT id FROM repertoires").fetchall()
+        for row in storage.all_repertoire_ids(database)
         if row[0] not in SYSTEM_REPERTOIRES
     ]
     for repertoire_id in ids:
@@ -294,7 +250,7 @@ def enqueue_integrity_scans(
     """Queue integrity work without changing the last published result."""
 
     queued: list[str] = []
-    system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
+    stale_repertoire_targets, all_repertoire_targets = storage.repertoire_scan_targets(SYSTEM_REPERTOIRES)
     from tempo_legacy_database.connections import connection
 
     with connection(background=background) as database:
@@ -303,49 +259,25 @@ def enqueue_integrity_scans(
         elif stale_only:
             ids = [
                 row[0]
-                for row in database.execute(
-                    f"""SELECT r.id FROM repertoires r
-                       LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
-                       WHERE r.id NOT IN ({system_placeholders})
-                         AND (s.repertoire_id IS NULL OR s.status='unchecked' OR s.scan_status='failed')
-                       ORDER BY r.id""",
-                    tuple(SYSTEM_REPERTOIRES),
-                )
+                for row in stale_repertoire_targets(database, tuple(SYSTEM_REPERTOIRES))
             ]
         else:
             ids = [
                 row[0]
-                for row in database.execute(
-                    f"SELECT id FROM repertoires WHERE id NOT IN ({system_placeholders}) ORDER BY id",
-                    tuple(SYSTEM_REPERTOIRES),
-                )
+                for row in all_repertoire_targets(database, tuple(SYSTEM_REPERTOIRES))
             ]
         now = _now()
         for identifier in ids:
-            if not database.execute(
-                "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
-            ).fetchone():
+            if not storage.repertoire_exists(database, (identifier,)):
                 raise KeyError("Repertoire not found")
-            active = database.execute(
-                "SELECT run_id,status FROM repertoire_integrity_jobs WHERE repertoire_id=? AND status IN ('queued','running','finalizing')",
-                (identifier,),
-            ).fetchone()
+            active = storage.active_scan(database, (identifier,))
             if active and not restart:
                 queued.append(active["run_id"])
                 continue
-            total = database.execute(
-                "SELECT COUNT(*) FROM (SELECT id FROM repertoire_lines WHERE repertoire_id=? UNION ALL SELECT DISTINCT c.id FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id WHERE (rc.repertoire_id=? OR c.repertoire_id=?) AND c.archived=0 AND c.content_type='opening')",
-                (identifier, identifier, identifier),
-            ).fetchone()[0]
+            total = storage.source_count(database, (identifier, identifier, identifier))
             run_id = str(uuid.uuid4())
-            database.execute(
-                "INSERT INTO repertoire_integrity_jobs(repertoire_id,run_id,status,source_offset,total_sources,updated_at) VALUES(?,?, 'queued',0,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET run_id=excluded.run_id,status='queued',source_offset=0,total_sources=excluded.total_sources,attempts=0,last_error=NULL,updated_at=excluded.updated_at",
-                (identifier, run_id, total, now),
-            )
-            database.execute(
-                "INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,scan_completed_sources,scan_total_sources,scan_error) VALUES(?, 'unchecked','queued',NULL,0,?,NULL) ON CONFLICT(repertoire_id) DO UPDATE SET scan_status='queued',scan_generation=excluded.scan_generation,scan_completed_sources=0,scan_total_sources=excluded.scan_total_sources,scan_error=NULL",
-                (identifier, total),
-            )
+            storage.queue_scan_job(database, (identifier, run_id, total, now))
+            storage.queue_scan_state(database, (identifier, total))
             queued.append(run_id)
     return queued
 
@@ -384,31 +316,17 @@ def claim_integrity_slice() -> dict | None:
     from .background_activity import claimable, control_order
 
     with connection(background=True) as database:
-        database.execute("BEGIN IMMEDIATE")
-        row = database.execute(
-            f"SELECT * FROM repertoire_integrity_jobs WHERE status IN ('queued','running','finalizing') AND {claimable('integrity', 'repertoire_integrity_jobs.repertoire_id')} ORDER BY {control_order('integrity', 'repertoire_integrity_jobs.repertoire_id')}updated_at,repertoire_id LIMIT 1"
-        ).fetchone()
+        storage.begin_write(database)
+        row = storage.next_scan_job(database)
         if not row:
             return None
         now = _now()
         if row["status"] == "finalizing" or row["source_offset"] >= row["total_sources"]:
-            database.execute(
-                "UPDATE repertoire_integrity_jobs SET status='finalizing',updated_at=? WHERE repertoire_id=?",
-                (now, row["repertoire_id"]),
-            )
-            database.execute(
-                "UPDATE repertoire_integrity_state SET scan_status='running' WHERE repertoire_id=?",
-                (row["repertoire_id"],),
-            )
+            storage.mark_scan_finalizing(database, (now, row["repertoire_id"]))
+            storage.mark_state_running(database, (row["repertoire_id"],))
             return {**dict(row), "status": "finalizing"}
-        database.execute(
-            "UPDATE repertoire_integrity_jobs SET status='running',attempts=attempts+1,updated_at=? WHERE repertoire_id=?",
-            (now, row["repertoire_id"]),
-        )
-        database.execute(
-            "UPDATE repertoire_integrity_state SET scan_status='running' WHERE repertoire_id=?",
-            (row["repertoire_id"],),
-        )
+        storage.mark_scan_running(database, (now, row["repertoire_id"]))
+        storage.mark_state_running(database, (row["repertoire_id"],))
         return {**dict(row), "status": "running"}
 
 
@@ -420,19 +338,13 @@ def execute_integrity_slice(job: dict) -> None:
     with activity_gate.background_job("integrity", job["repertoire_id"]):
         if job["status"] == "finalizing":
             with connection(background=True) as database:
-                staged = database.execute(
-                    "SELECT observations_json,invalid_json FROM repertoire_integrity_source_runs WHERE run_id=? ORDER BY source_offset",
-                    (job["run_id"],),
-                ).fetchall()
+                staged = storage.staged_observations(database, (job["run_id"],))
             observations = [json.loads(row[0]) for row in staged]
             invalid = [item for row in staged for item in json.loads(row[1])]
             issues = _issues_from_observations(job["repertoire_id"], observations, invalid)
             now = _now()
             with connection(background=True) as database:
-                current_job = database.execute(
-                    "SELECT run_id FROM repertoire_integrity_jobs WHERE repertoire_id=?",
-                    (job["repertoire_id"],),
-                ).fetchone()
+                current_job = storage.current_run(database, (job["repertoire_id"],))
                 if not current_job or current_job["run_id"] != job["run_id"]:
                     _LOGGER.info(
                         "discarded stale integrity publication repertoire_id=%s run_id=%s",
@@ -440,17 +352,11 @@ def execute_integrity_slice(job: dict) -> None:
                         job["run_id"],
                     )
                     return
-                database.execute("DELETE FROM repertoire_integrity_issues WHERE repertoire_id=?", (job["repertoire_id"],))
+                storage.clear_issues(database, (job["repertoire_id"],))
                 for issue in issues:
-                    database.execute(
-                        "INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                        (issue["id"], job["repertoire_id"], issue["kind"], issue.get("fen_key"), issue.get("fen"), issue.get("trained_color"), issue["signature"], json.dumps(sorted(set(issue.get("moves", [])))), json.dumps(issue.get("sources", [])), now, now),
-                    )
+                    storage.insert_staged_issue(database, (issue["id"], job["repertoire_id"], issue["kind"], issue.get("fen_key"), issue.get("fen"), issue.get("trained_color"), issue["signature"], json.dumps(sorted(set(issue.get("moves", [])))), json.dumps(issue.get("sources", [])), now, now))
                 status = "needs_repair" if issues else "clean"
-                database.execute(
-                    "UPDATE repertoire_integrity_state SET status=?,checked_at=?,scan_status='idle',scan_generation=?,scan_completed_sources=scan_total_sources,scan_error=NULL WHERE repertoire_id=?",
-                    (status, now, job["run_id"], job["repertoire_id"]),
-                )
+                storage.publish_scan_state(database, (status, now, job["run_id"], job["repertoire_id"]))
                 _publish_card_blocks(
                     database,
                     job["repertoire_id"],
@@ -458,10 +364,7 @@ def execute_integrity_slice(job: dict) -> None:
                     job["run_id"],
                     now,
                 )
-                database.execute(
-                    "UPDATE repertoire_integrity_jobs SET status='complete',last_error=NULL,updated_at=? WHERE repertoire_id=?",
-                    (now, job["repertoire_id"]),
-                )
+                storage.complete_scan_job(database, (now, job["repertoire_id"]))
             from tempo_legacy_database.adapters.database_executor import database_writer
             from .durable_tasks import enqueue_task
 
@@ -478,52 +381,26 @@ def execute_integrity_slice(job: dict) -> None:
 
         with connection(background=True) as database:
             sources = _source_rows(database, job["repertoire_id"])
-            current_job = database.execute(
-                """SELECT run_id,total_sources FROM repertoire_integrity_jobs
-                   WHERE repertoire_id=?""",
-                (job["repertoire_id"],),
-            ).fetchone()
+            current_job = storage.current_run_sources(database, (job["repertoire_id"],))
             if not current_job or current_job["run_id"] != job["run_id"]:
                 return
             if len(sources) != int(current_job["total_sources"]):
-                database.execute(
-                    """UPDATE repertoire_integrity_jobs
-                       SET source_offset=0,total_sources=?,status='running',updated_at=?
-                       WHERE repertoire_id=? AND run_id=?""",
-                    (len(sources), _now(), job["repertoire_id"], job["run_id"]),
-                )
-                database.execute(
-                    "DELETE FROM repertoire_integrity_source_runs WHERE run_id=?",
-                    (job["run_id"],),
-                )
+                storage.restart_changed_sources(database, (len(sources), _now(), job["repertoire_id"], job["run_id"]))
+                storage.clear_staged_sources(database, (job["run_id"],))
                 return
             if int(job["source_offset"]) >= len(sources):
-                database.execute(
-                    """UPDATE repertoire_integrity_jobs
-                       SET status='finalizing',updated_at=?
-                       WHERE repertoire_id=? AND run_id=?""",
-                    (_now(), job["repertoire_id"], job["run_id"]),
-                )
+                storage.finish_source_scanning(database, (_now(), job["repertoire_id"], job["run_id"]))
                 return
             source = sources[job["source_offset"]]
             repertoire_color = next((item.get("trained_color") for item in sources if item.get("trained_color") in {"white", "black"}), None)
         positions, invalid = _scan_source(source, repertoire_color)
         now = _now()
         with connection(background=True) as database:
-            database.execute(
-                "INSERT OR REPLACE INTO repertoire_integrity_source_runs(run_id,source_offset,observations_json,invalid_json) VALUES(?,?,?,?)",
-                (job["run_id"], job["source_offset"], json.dumps(list(positions.values())), json.dumps(invalid)),
-            )
+            storage.stage_source_observations(database, (job["run_id"], job["source_offset"], json.dumps(list(positions.values())), json.dumps(invalid)))
             next_offset = job["source_offset"] + 1
             status = "finalizing" if next_offset >= job["total_sources"] else "running"
-            database.execute(
-                "UPDATE repertoire_integrity_jobs SET status=?,source_offset=?,attempts=0,last_error=NULL,updated_at=? WHERE repertoire_id=? AND run_id=?",
-                (status, next_offset, now, job["repertoire_id"], job["run_id"]),
-            )
-            database.execute(
-                "UPDATE repertoire_integrity_state SET scan_status='running',scan_completed_sources=?,scan_total_sources=?,scan_error=NULL WHERE repertoire_id=?",
-                (next_offset, job["total_sources"], job["repertoire_id"]),
-            )
+            storage.advance_scan_job(database, (status, next_offset, now, job["repertoire_id"], job["run_id"]))
+            storage.advance_scan_state(database, (next_offset, job["total_sources"], job["repertoire_id"]))
         emit_progress("integrity", job["repertoire_id"], job["run_id"], "Scanning sources", next_offset, job["total_sources"])
 
 
@@ -535,29 +412,14 @@ def requeue_integrity_slice(job: dict, error: Exception) -> None:
     message = str(error)
     now = _now()
     with connection(background=True) as database:
-        attempts = database.execute(
-            "SELECT attempts FROM repertoire_integrity_jobs WHERE repertoire_id=? AND run_id=?",
-            (job["repertoire_id"], job["run_id"]),
-        ).fetchone()
+        attempts = storage.scan_attempts(database, (job["repertoire_id"], job["run_id"]))
         attempt_count = int(attempts[0]) if attempts else int(job.get("attempts") or 0)
         if attempt_count >= 5:
-            database.execute(
-                "UPDATE repertoire_integrity_jobs SET status='failed',last_error=?,updated_at=? WHERE repertoire_id=? AND run_id=?",
-                (message, now, job["repertoire_id"], job["run_id"]),
-            )
-            database.execute(
-                "UPDATE repertoire_integrity_state SET scan_status='failed',scan_error=? WHERE repertoire_id=?",
-                (message, job["repertoire_id"]),
-            )
+            storage.fail_scan_job(database, (message, now, job["repertoire_id"], job["run_id"]))
+            storage.fail_scan_state(database, (message, job["repertoire_id"]))
         else:
-            database.execute(
-                "UPDATE repertoire_integrity_jobs SET status='queued',last_error=?,updated_at=? WHERE repertoire_id=? AND run_id=?",
-                (message, now, job["repertoire_id"], job["run_id"]),
-            )
-            database.execute(
-                "UPDATE repertoire_integrity_state SET scan_status='retrying',scan_error=? WHERE repertoire_id=?",
-                (message, job["repertoire_id"]),
-            )
+            storage.requeue_scan_job(database, (message, now, job["repertoire_id"], job["run_id"]))
+            storage.requeue_scan_state(database, (message, job["repertoire_id"]))
     _LOGGER.warning(
         "integrity slice requeued job_type=integrity job_id=%s retry=%s error=%s",
         job["repertoire_id"],
@@ -567,25 +429,11 @@ def requeue_integrity_slice(job: dict, error: Exception) -> None:
 
 
 def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
-    row = database.execute(
-        """SELECT r.id,COALESCE(s.status,'unchecked') integrity_status,s.checked_at integrity_checked_at,
-                  COALESCE(s.scan_status,'idle') scan_status,s.scan_generation,
-                  COALESCE(s.scan_completed_sources,0) scan_completed_sources,
-                  COALESCE(s.scan_total_sources,0) scan_total_sources,s.scan_error
-           FROM repertoires r LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
-           WHERE r.id=?""",
-        (repertoire_id,),
-    ).fetchone()
+    row = storage.summary_state(database, (repertoire_id,))
     if not row:
         raise KeyError("Repertoire not found")
-    issue = database.execute(
-        "SELECT id FROM repertoire_integrity_issues WHERE repertoire_id=? ORDER BY updated_at,id LIMIT 1",
-        (repertoire_id,),
-    ).fetchone()
-    count = database.execute(
-        "SELECT COUNT(*) FROM repertoire_integrity_issues WHERE repertoire_id=?",
-        (repertoire_id,),
-    ).fetchone()[0]
+    issue = storage.first_issue(database, (repertoire_id,))
+    count = storage.issue_count(database, (repertoire_id,))
     return {
         "status": row["integrity_status"],
         "issue_count": count,
@@ -602,11 +450,7 @@ def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
 
 
 def list_integrity_issues(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
-    rows = database.execute(
-        """SELECT id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json
-           FROM repertoire_integrity_issues WHERE repertoire_id=? ORDER BY updated_at,id""",
-        (repertoire_id,),
-    ).fetchall()
+    rows = storage.issue_details(database, (repertoire_id,))
     results = []
     for row in rows:
         sources = json.loads(row["sources_json"])
@@ -624,9 +468,7 @@ def list_integrity_issues(database: sqlite3.Connection, repertoire_id: str) -> l
                 bucket["line_count"] += 1
             elif source.get("type") == "card":
                 bucket["card_count"] += 1
-                bucket["review_count"] += database.execute(
-                    "SELECT COUNT(*) FROM reviews WHERE card_id=?", (source["id"],)
-                ).fetchone()[0]
+                bucket["review_count"] += storage.card_review_count(database, (source["id"],))
         results.append(
             {
                 "id": row["id"],
@@ -668,12 +510,8 @@ def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[st
     ).hexdigest()
     if new_id == row["id"]:
         return False
-    database.execute(
-        """INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-           VALUES(?,?,?,?,?,?,?)""",
-        (new_id, row["repertoire_id"], row["name"], row["trained_color"], row["start_fen"], json.dumps(moves), row["created_at"]),
-    )
-    database.execute("DELETE FROM repertoire_lines WHERE id=?", (row["id"],))
+    storage.insert_replacement_line(database, (new_id, row["repertoire_id"], row["name"], row["trained_color"], row["start_fen"], json.dumps(moves), row["created_at"]))
+    storage.delete_source_line(database, (row["id"],))
     if certify:
         certify_admitted_route(database, row["repertoire_id"], validated_route)
     return True
@@ -686,21 +524,18 @@ def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3
     new_id = card_id(row["start_fen"], moves)
     if new_id == row["id"]:
         return False
-    existing = database.execute("SELECT 1 FROM cards WHERE id=?", (new_id,)).fetchone()
+    existing = storage.card_exists(database, (new_id,))
     if not existing:
         columns = card_columns(database)
         values = dict(row)
         values.update({"id": new_id, "repertoire_id": repertoire_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None, "canonical_route_source": 1})
-        database.execute(
-            f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
-            tuple(values.get(column) for column in columns),
-        )
-    database.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (new_id,))
-    database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, new_id))
-    database.execute("DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?", (repertoire_id, row["id"]))
-    remaining = database.execute("SELECT 1 FROM repertoire_cards WHERE card_id=? LIMIT 1", (row["id"],)).fetchone()
+        storage.insert_replacement_card(database, columns, values)
+    storage.mark_card_authored(database, (new_id,))
+    storage.upsert_authored_membership(database, (repertoire_id, new_id))
+    storage.delete_membership(database, (repertoire_id, row["id"]))
+    remaining = storage.card_has_membership(database, (row["id"],))
     if not remaining:
-        database.execute("UPDATE cards SET archived=1,superseded_by=? WHERE id=?", (new_id, row["id"]))
+        storage.archive_superseded_card(database, (new_id, row["id"]))
     if certify:
         certify_admitted_route(database, repertoire_id, validated_route)
     return True
@@ -708,21 +543,12 @@ def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3
 
 def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -> int:
     """Reconcile unsupported generated memberships, preserving authored routes."""
-    lines = database.execute(
-        "SELECT start_fen,moves_json FROM repertoire_lines WHERE repertoire_id=?",
-        (repertoire_id,),
-    ).fetchall()
+    lines = storage.line_routes(database, (repertoire_id,))
     line_routes = [
         (canonical_fen(row["start_fen"]), json.loads(row["moves_json"]))
         for row in lines
     ]
-    cards = database.execute(
-        """SELECT c.* FROM cards c LEFT JOIN repertoire_cards rc
-             ON rc.card_id=c.id AND rc.repertoire_id=?
-           WHERE c.content_type='opening' AND c.archived=0
-             AND (c.repertoire_id=? OR rc.repertoire_id IS NOT NULL)""",
-        (repertoire_id, repertoire_id),
-    ).fetchall()
+    cards = storage.derived_cards(database, (repertoire_id, repertoire_id))
     changed = 0
     for card in cards:
         supported = any(
@@ -740,47 +566,26 @@ def _archive_unsupported_card(
 ) -> bool:
     """Detach an already-computed unsupported card without chess traversal."""
 
-    card = database.execute(
-        "SELECT repertoire_id,canonical_route_source FROM cards WHERE id=? AND archived=0",
-        (card_identifier,),
-    ).fetchone()
+    card = storage.active_card_authority(database, (card_identifier,))
     if not card:
         return False
-    membership = database.execute(
-        "SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
-        (repertoire_id, card_identifier),
-    ).fetchone()
+    membership = storage.membership_authority(database, (repertoire_id, card_identifier))
     if membership is not None and membership["canonical_route_source"]:
         return False
     if membership is None and (card["repertoire_id"] != repertoire_id or card["canonical_route_source"]):
         return False
-    remaining = database.execute(
-        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? AND repertoire_id<>? ORDER BY repertoire_id LIMIT 1",
-        (card_identifier, repertoire_id),
-    ).fetchone()
+    remaining = storage.remaining_membership(database, (card_identifier, repertoire_id))
     if remaining and card["repertoire_id"] == repertoire_id:
-        database.execute(
-            "UPDATE cards SET repertoire_id=? WHERE id=?",
-            (remaining["repertoire_id"], card_identifier),
-        )
+        storage.reassign_card_owner(database, (remaining["repertoire_id"], card_identifier))
     elif not remaining and (not card["canonical_route_source"] or card["repertoire_id"] == repertoire_id):
-        database.execute(
-            "UPDATE cards SET archived=1,state='locked',superseded_by=NULL WHERE id=?",
-            (card_identifier,),
-        )
-    database.execute(
-        "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
-        (repertoire_id, card_identifier),
-    )
+        storage.archive_unsupported_card(database, (card_identifier,))
+    storage.delete_membership(database, (repertoire_id, card_identifier))
     return True
 
 
 @refresh_game_publications_after_mutation
 def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: str, signature: str, selected_move: str) -> dict:
-    row = database.execute(
-        "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
-        (issue_id, repertoire_id),
-    ).fetchone()
+    row = storage.issue(database, (issue_id, repertoire_id))
     if not row:
         raise KeyError("Integrity issue not found")
     if row["signature"] != signature:
@@ -802,14 +607,14 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
     target_fen = row["fen_key"]
     for source in json.loads(row["sources_json"]):
         if source.get("type") == "line":
-            source_row = database.execute("SELECT * FROM repertoire_lines WHERE id=?", (source["id"],)).fetchone()
+            source_row = storage.source_line(database, (source["id"],))
             if not source_row:
                 continue
             moves, changed = _transform_source(source_row["start_fen"], json.loads(source_row["moves_json"]), source_row["trained_color"], target_fen, selected)
             if changed:
                 line_changes.append((source_row, moves, ensure_line_in_scope(database, repertoire_id, source_row["start_fen"], moves, remember=False)))
         elif source.get("type") == "card":
-            source_row = database.execute("SELECT * FROM cards WHERE id=?", (source["id"],)).fetchone()
+            source_row = storage.source_card(database, (source["id"],))
             if not source_row:
                 continue
             trained = source_row["trained_color"] or row["trained_color"]
@@ -841,30 +646,18 @@ def prepare_issue_resolution(
     """Read and compute a guided repair without holding a SQLite connection."""
 
     with read_connection() as database:
-        issue_row = database.execute(
-            "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
-            (issue_id, repertoire_id),
-        ).fetchone()
+        issue_row = storage.issue(database, (issue_id, repertoire_id))
         if not issue_row:
             raise KeyError("Integrity issue not found")
         issue = dict(issue_row)
         source_descriptors = json.loads(issue["sources_json"])
         line_rows = {
             row["id"]: dict(row)
-            for row in database.execute(
-                "SELECT * FROM repertoire_lines WHERE repertoire_id=?",
-                (repertoire_id,),
-            ).fetchall()
+            for row in storage.prepared_lines(database, (repertoire_id,))
         }
         card_rows = {
             row["id"]: dict(row)
-            for row in database.execute(
-                """SELECT DISTINCT c.* FROM cards c
-                   LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
-                   WHERE c.content_type='opening' AND c.archived=0
-                     AND (c.repertoire_id=? OR rc.repertoire_id=?)""",
-                (repertoire_id, repertoire_id),
-            ).fetchall()
+            for row in storage.prepared_cards(database, (repertoire_id, repertoire_id))
         }
     if issue["signature"] != signature:
         raise RuntimeError("This integrity issue changed; refresh and try again")
@@ -948,25 +741,18 @@ def execute_durable_integrity_repair(task: dict) -> None:
 
     @refresh_game_publications_after_mutation
     def publish(database: sqlite3.Connection) -> None:
-        current = database.execute(
-            "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
-            (prepared["issue_id"], prepared["repertoire_id"]),
-        ).fetchone()
+        current = storage.issue_signature(database, (prepared["issue_id"], prepared["repertoire_id"]))
         if not current or current["signature"] != prepared["signature"]:
             raise RuntimeError("This integrity issue changed; refresh and try again")
         from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
         line_changes = []
         card_changes = []
         for source_id, moves in prepared["changed_lines"].items():
-            source_row = database.execute(
-                "SELECT * FROM repertoire_lines WHERE id=?", (source_id,)
-            ).fetchone()
+            source_row = storage.source_line(database, (source_id,))
             if source_row:
                 line_changes.append((source_row, moves, ensure_line_in_scope(database, prepared["repertoire_id"], source_row["start_fen"], moves, remember=False)))
         for source_id, moves in prepared["changed_cards"].items():
-            source_row = database.execute(
-                "SELECT * FROM cards WHERE id=?", (source_id,)
-            ).fetchone()
+            source_row = storage.source_card(database, (source_id,))
             if source_row:
                 card_changes.append((source_row, moves, ensure_line_in_scope(database, prepared["repertoire_id"], source_row["start_fen"], moves, remember=False)))
         admitted_routes = []

@@ -126,7 +126,7 @@ or model execution. `tests/test_maia_work.py` exercises these moved boundaries
 with the actual composition/fixed operations and fake rows; existing contract
 validation and native durability/concurrency proofs retain their separate owners.
 The [full Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
-accounts for the retained Store authority/composition and all 35 AnalysisStore
+accounts for the retained Store authority/composition and all 36 AnalysisStore
 methods; the latter still contains substantial application work.
 
 ## Provider-source claim and publication boundary

@@ -561,3 +561,18 @@ command serialization, and reply digest mutation stays at the canonical writer
 call point. Existing public-schema and optional-metadata page-digest cases retain
 wire/hash identity. Native lock/rollback/concurrency proofs remain separate and
 were not run by this move.
+
+## Analysis run, command, receipt and dismissal composition
+
+`tests/test_analysis_runs.py` owns existing run submission, action and two-phase
+dismissal workflow boundaries with actual fixed operations and synthetic rows.
+It retains captured-input/evidence admission, generation/hash timing, 64-position
+batch transactions and superseded-head return without head overwrite. Continue,
+retry, resume and cancel keep their effect order; replay precedes stale revision
+and receipt conflict prevents effects. Dismissal keeps first and second receipt
+replays, finding lookup between writes, user-state lock and stale guard. Receipt
+result digest mutation remains before the canonical writer and returns the same
+response object. Private status/head lookup order precedes argument evaluation.
+Existing input-finalization cases exercise these same moved receipt helpers;
+position-order and public-schema cases remain unchanged. Native locking,
+publication concurrency and real engine/provider work were not run.

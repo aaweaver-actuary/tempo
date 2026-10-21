@@ -14,6 +14,8 @@ from tempo_intelligence.analysis.read_work import (require_workspace, read_input
 from tempo_intelligence_database.adapters.analysis_reads import AnalysisReads
 from tempo_intelligence.analysis.input_work import admit_manifest, admit_page, finalize_input
 from tempo_intelligence_database.adapters.analysis_inputs import AnalysisInputs
+from tempo_intelligence.analysis.run_work import submit_run, receipt_result, save_receipt_result, command_run, dismiss_finding
+from tempo_intelligence_database.adapters.analysis_runs import AnalysisRunOperations
 
 
 class AnalysisStore:
@@ -55,47 +57,14 @@ class AnalysisStore:
             raise DomainError("analysis_run_not_found",404)
         return row
 
+    @contextmanager
+    def run_transaction(self):
+        with self.owner.transaction() as db:
+            yield AnalysisRunOperations(self,db)
+
     def submit(self,value):
-        self._workspace(value.workspace_id)
-        source,games=self._input(value.input_id,value.input_revision)
-        if source["state"] != "accepted":
-            raise DomainError("analysis_input_not_accepted")
-        records=self.evidence_records(value.source_evidence_ids)
-        for record in records:
-            if value.ranking_evidence_id==record["evidence_id"] and record["descriptor"]["kind"]!=value.ranking_source:
-                raise DomainError("ranking_population_mismatch",422)
-        positions=ordered_positions(games)
-        if len(positions)>10000:
-            raise DomainError("analysis_scope_exceeds_position_limit",422)
-        payload={**value.model_dump(mode="json"), "derivation_version":2}
-        with self.owner.transaction() as db:
-            # Per-run transaction lock prevents concurrent first submissions/head replacement.
-            db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("analysis:"+value.run_id,))
-            old=db.execute("SELECT * FROM analysis_runs WHERE run_id=%s AND revision=%s",(value.run_id,value.revision)).fetchone()
-            head=db.execute("SELECT revision FROM analysis_heads WHERE run_id=%s",(value.run_id,)).fetchone()
-            if old and old["digest"] != payload_digest(value):
-                raise DomainError("analysis_run_conflict")
-            if head and (not old or old["state"]=="staging") and (value.expected_revision != head["revision"] or value.revision<=head["revision"]):
-                raise DomainError("stale_analysis_run")
-            if not head and value.expected_revision is not None:
-                raise DomainError("stale_analysis_run")
-            previous=db.execute("SELECT requested_generation,last_complete_generation FROM analysis_runs WHERE run_id=%s AND revision=%s",(value.run_id,head["revision"])).fetchone() if head else None
-            next_generation=previous["requested_generation"]+1 if previous else 1
-            db.execute("INSERT INTO analysis_runs(run_id,revision,payload,digest,budget,requested_generation,last_complete_generation) VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(value.run_id,value.revision,Jsonb(payload),payload_digest(value),value.position_budget,next_generation,previous["last_complete_generation"] if previous else None))
-        for start in range(0,len(positions),64):
-            with self.owner.transaction() as db:
-                for ordinal,position in enumerate(positions[start:start+64],start):
-                    position_id=digest({"game":position["game_id"],"revision":position["source_revision"],"ply":position["ply"]})
-                    position.update(position_id=position_id,workspace_id=self.workspace)
-                    db.execute("INSERT INTO analysis_positions(run_id,revision,ordinal,position_id,payload,state) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(value.run_id,value.revision,ordinal,position_id,Jsonb(position),"pending" if ordinal<value.position_budget else "unbudgeted"))
-        with self.owner.transaction() as db:
-            db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("analysis:"+value.run_id,))
-            head=db.execute("SELECT revision FROM analysis_heads WHERE run_id=%s FOR UPDATE",(value.run_id,)).fetchone()
-            if head and head["revision"]>value.revision:
-                return self._status(db,self._head(db,value.run_id))
-            db.execute("UPDATE analysis_runs SET state='pending' WHERE run_id=%s AND revision=%s AND state='staging'",(value.run_id,value.revision))
-            db.execute("INSERT INTO analysis_heads VALUES(%s,%s) ON CONFLICT(run_id) DO UPDATE SET revision=EXCLUDED.revision WHERE analysis_heads.revision<EXCLUDED.revision",(value.run_id,value.revision))
-            return self._status(db,self._head(db,value.run_id))
+        return submit_run(value,lambda:self._workspace,lambda:self._input,lambda:self.evidence_records,
+            lambda:self.workspace,self.run_transaction)
 
     def _status(self,db,run):
         return run_status(run,lambda:self.workspace,AnalysisReads(self,db))
@@ -112,53 +81,16 @@ class AnalysisStore:
         return GamesReader(self.owner).games(run_id,after,limit)
 
     def _receipt(self,db,command_id,payload):
-        db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("analysis-command:"+command_id,))
-        row=db.execute("SELECT * FROM analysis_commands WHERE command_id=%s",(command_id,)).fetchone()
-        if row and row["digest"]!=digest(payload):
-            raise DomainError("analysis_command_conflict")
-        return {**row["payload"], "request_digest": row["digest"]} if row else None
+        return receipt_result(command_id,payload,AnalysisRunOperations(self,db))
 
     def _save_receipt(self,db,command_id,payload,result):
-        result["request_digest"] = digest(payload)
-        db.execute("INSERT INTO analysis_commands VALUES(%s,%s,%s)",(command_id,digest(payload),Jsonb(result)))
+        return save_receipt_result(command_id,payload,result,AnalysisRunOperations(self,db))
 
     def receipt(self,command_id):
         return read_receipt(command_id,self.read_transaction)
 
     def command(self,run_id,command):
-        payload={"run_id":run_id,**command.model_dump(mode="json")}
-        with self.owner.transaction() as db:
-            run=self._head(db,run_id,True)
-            saved=self._receipt(db,command.command_id,payload)
-            if saved:
-                return saved
-            if run["revision"]!=command.expected_revision:
-                raise DomainError("stale_analysis_run")
-            if run["state"]=="cancel_requested" and command.action!="cancel" or run["state"]=="cancelled" and command.action!="resume" and command.action!="cancel":
-                raise DomainError("analysis_cancellation_incomplete")
-            if command.action in {"continue","resume","retry"} and run["payload"].get("derivation_version",1)!=2:
-                raise DomainError("legacy_analysis_revision_required")
-            if command.action in {"continue","resume","retry"}:
-                if command.action=="continue":
-                    db.execute("UPDATE analysis_runs SET budget=budget+%s WHERE run_id=%s AND revision=%s",(command.budget,run_id,run["revision"]))
-                    db.execute("UPDATE analysis_positions SET state='pending' WHERE run_id=%s AND revision=%s AND state='unbudgeted' AND ordinal<%s",(run_id,run["revision"],run["budget"]+command.budget))
-                if command.action=="retry":
-                    db.execute("UPDATE analysis_positions SET state='pending',stage='root',accepted_root=NULL,accepted_played=NULL,attempts=0,next_attempt_at=NULL,error_code=NULL WHERE run_id=%s AND revision=%s AND state='complete' AND error_code='insufficient_quality'",(run_id,run["revision"]))
-                if command.action in {"retry","resume"}:
-                    db.execute("UPDATE analysis_positions SET state='pending',attempts=0,next_attempt_at=NULL WHERE run_id=%s AND revision=%s AND state IN ('failed','cancelled') AND error_code IS DISTINCT FROM 'incompatible_engine_profile'",(run_id,run["revision"]))
-                db.execute("UPDATE analysis_runs SET state='pending',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
-            elif command.action=="cancel":
-                db.execute("UPDATE analysis_positions SET state='cancelled',lease_token=NULL,leased_until=NULL WHERE run_id=%s AND revision=%s AND state='running' AND leased_until<=now()",(run_id,run["revision"]))
-                db.execute("UPDATE analysis_runs SET state='cancel_requested',requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
-                db.execute("UPDATE analysis_positions SET state='cancelled' WHERE run_id=%s AND revision=%s AND state IN ('pending','retry_wait')",(run_id,run["revision"]))
-                running=db.execute("SELECT 1 FROM analysis_positions WHERE run_id=%s AND revision=%s AND state='running' LIMIT 1",(run_id,run["revision"])).fetchone()
-                if not running:
-                    db.execute("UPDATE analysis_runs SET state='cancelled' WHERE run_id=%s AND revision=%s",(run_id,run["revision"]))
-            else:
-                raise DomainError("invalid_run_action",422)
-            result=self._status(db,self._head(db,run_id)); result.update(accepted=True,command_id=command.command_id)
-            self._save_receipt(db,command.command_id,payload,result)
-            return result
+        return command_run(run_id,command,self.run_transaction)
 
     def capture(self,run_id):
         with self.owner.transaction(read_only=True) as db:
@@ -252,26 +184,7 @@ class AnalysisStore:
         return read_finding(run_id,finding_id,generation,lambda:self.workspace,self.read_transaction)
 
     def dismiss(self,run_id,finding_id,generation,command):
-        payload={"run_id":run_id,"finding_id":finding_id,"generation":generation,**command.model_dump(mode="json")}
-        with self.owner.transaction() as db:
-            saved=self._receipt(db,command.command_id,payload)
-            if saved:
-                return saved
-        item=self.finding(run_id,finding_id,generation)["finding"]
-        with self.owner.transaction() as db:
-            db.execute("SELECT pg_advisory_xact_lock(hashtextextended('analysis-user-state',0))")
-            run=self._head(db,run_id,True)
-            saved=self._receipt(db,command.command_id,payload)
-            if saved:
-                return saved
-            if command.action not in {"dismiss","reopen"} or command.expected_revision!=item["finding_revision"] or run["published_generation"]!=generation:
-                raise DomainError("stale_analysis_finding")
-            state="dismissed" if command.action=="dismiss" else "open"
-            db.execute("INSERT INTO analysis_dismissals VALUES(%s,1,%s,%s) ON CONFLICT(finding_id) DO UPDATE SET revision=analysis_dismissals.revision+1,state=EXCLUDED.state,supporting_games=EXCLUDED.supporting_games",(finding_id,state,Jsonb(item["supporting_games"])))
-            db.execute("UPDATE analysis_runs r SET requested_generation=requested_generation+1 FROM analysis_heads h WHERE r.run_id=h.run_id AND r.revision=h.revision AND (r.run_id=%s OR EXISTS(SELECT 1 FROM analysis_report_items i WHERE i.run_id=r.run_id AND i.revision=r.revision AND i.generation=r.published_generation AND i.finding_id=%s))",(run_id,finding_id))
-            result={"schema_version":1,"workspace_id":self.workspace,"accepted":True,"command_id":command.command_id,"dismissal_state":state,"publication_pending":True}
-            self._save_receipt(db,command.command_id,payload,result)
-        return result
+        return dismiss_finding(run_id,finding_id,generation,command,lambda:self.finding,lambda:self.workspace,self.run_transaction)
 
     def export(self,run_id,finding_id,generation,kind):
         return export_finding(run_id,finding_id,generation,kind,lambda:self.finding,lambda:self.report,lambda:self.workspace)

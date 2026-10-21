@@ -81,7 +81,7 @@ lookup order. Existing packaged schemas and legacy report contracts remain
 selected owning checks. No DDL, foreign key, write workflow, deadline, provider,
 engine, private credential or live resource behavior is changed or exercised.
 The [complete method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-continues to identify 12 mixed Analysis methods; this is a bounded read slice,
+continues to identify seven mixed Analysis methods; this is a bounded read slice,
 not completion of the whole owner.
 
 ## Input admission and finalization boundary
@@ -121,4 +121,45 @@ page-digest cases remain unchanged. Real locking, rollback durability and native
 concurrency are separate proofs and were not run. This adds no new schema,
 model, generic query API, transaction/receipt writer or engine/provider dependency.
 The [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-retains twelve mixed methods; completion of input admission is a bounded slice.
+retains seven mixed methods; completion of input admission is a bounded slice.
+
+## Run, command and dismissal boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`run_work.py`](run_work.py) owns the existing run submission, command decisions,
+receipt response/digest mutation and dismissal application workflows. It reuses
+existing position ordering, model/hash helpers and public responses; it has no
+query/driver API. [`AnalysisRunOperations`](../../../../../database/tempo_intelligence_database/adapters/analysis_runs.py)
+retains complete bound queries, atomic guards, locks and canonical receipt writer.
+
+```mermaid
+flowchart LR
+  store[AnalysisStore transaction composition] --> app[Run and command application]
+  app -->|same admission / 64-position batches / promotion contexts| fixed[Fixed run and receipt operations with atomic guards]
+  app -->|original command / two-phase dismissal contexts| fixed
+  fixed --> tables[(Intelligence run / head / position / command / dismissal tables)]
+  app -->|lazy original lookup points| facts[Existing input / evidence / finding capabilities]
+  app --> pure[Existing position ordering and model/hash helpers]
+```
+
+Run admission keeps captured input/evidence decisions before staging, existing
+per-run locks, generation inheritance, 64-position write batches and final guarded
+head promotion. Hash and position-state callbacks evaluate the same existing
+application expressions at the original query-parameter points. Commands preserve
+head lock → receipt replay → revision/cancellation/legacy guard → selected effects
+→ status → receipt order. Dismissal preserves its first receipt transaction,
+subsequent finding read and second user-state-locked transaction with a fresh
+receipt guard before revision checks/writes. No receipt or transaction authority
+is split. Bound receipt/writer and status/head capabilities preserve private-method
+lookup before argument/model evaluation; receipt digest mutation and original
+response object identity remain at their original call points.
+
+`tests/test_analysis_runs.py` exercises fixed operations and actual composition
+with synthetic rows: generation/hash timing, 64-item batch boundary and superseded
+head return, all four command actions, replay before stale revision, receipt
+conflict, first/second dismissal replay and stale dismissal. Existing input
+composition, position-order and packaged-schema cases remain selected checks.
+Real atomicity/concurrency, engine work and live resource isolation remain
+unverified; no schema/model/provider/security behavior is changed. The
+[complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+identifies seven remaining mixed methods; whole-owner separation is unfinished.
