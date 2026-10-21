@@ -5169,3 +5169,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Card and repertoire deletion storage
 
 `backend/tests/test_card_deletion_storage_boundary.py` owns seven fake boundaries for cancellation recheck,dialect locks,purge/tombstone timing,shared learned ownership,occurrence-aware ancestry and stale rejection. The original transaction and callback authority stay with the caller; native deletion/rollback and domain isolation remain unverified.
+
+
+## Authored Studies command storage
+
+`backend/tests/test_study_command_database_split.py` owns four focused SQLite/boundary cases for chapter order,exercise links,finite record allowlist and complete operation delegation. Existing content command and practice assertions remain unchanged. No Study/Studies independence or native transaction qualification follows from this mechanical move.
