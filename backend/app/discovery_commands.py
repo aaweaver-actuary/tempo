@@ -13,7 +13,7 @@ from .services.discovery_acceptance_application import (
     DiscoveryAcceptanceError, accept_discovery as apply_discovery_acceptance,
 )
 from .services.discovery_acceptance_contracts import DiscoveryAcceptanceReason, DiscoveryChoice
-from tempo_legacy_database.adapters.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
+from .services.discovery_acceptance_store import PostgresDiscoveryAcceptanceStore
 from .services.discovery_admission import (
     admission_intent_id, recommend_missing_continuations,
 )

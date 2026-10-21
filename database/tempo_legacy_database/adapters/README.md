@@ -5,7 +5,7 @@
 | File | Role |
 | --- | --- |
 | [database_executor.py](database_executor.py) | Single-owner SQLite writer with foreground-priority scheduling. |
-| [discovery_acceptance_store.py](discovery_acceptance_store.py) | PostgreSQL Discovery acceptance adapter; never opens or completes a transaction. |
+| [discovery_acceptance_store.py](discovery_acceptance_store.py) | Six fixed PostgreSQL acceptance queries on the borrowed transaction; [application coordination](../../../backend/app/services/discovery_acceptance_store.py) retains scope locks, contract projection and task policy. |
 | [defensive_analysis.py](defensive_analysis.py) | Existing defensive settings read and SQL admission/recommendation predicates; task policy and HTTP errors stay with application composition. |
 | [frozen_order.py](frozen_order.py) | Frozen-order reads, staging/activation and conditional rollback on the caller's transaction; [Study policy and composition](../../../backend/app/study/frozen_order/README.md). |
 | [legacy_game_evidence_scope.py](legacy_game_evidence_scope.py) | Native accepted-scope exclusion owned by feedback persistence. |
@@ -62,7 +62,7 @@
 [Introduction-priority storage](introduction_priorities/README.md) holds complete coverage/personal-evidence/card/settings projections, priority job claims and generation publication operations. Scoring, bounded read/page/chunk loops, clocks, foreground yielding, stale-generation decisions and callbacks remain in the existing application owner.
 
 
-[HTTP composition storage](http_composition/README.md) holds complete system/settings and queue-maintenance queries separated from the existing HTTP composition root. Application settings/HTTP/admission/refresh/lifecycle decisions remain there; `main.py` is still pending until its remaining database operations are extracted.
+[HTTP composition storage](http_composition/README.md) holds complete system/settings and queue-maintenance queries separated from the existing HTTP composition root. Application settings/HTTP/admission/refresh/lifecycle decisions remain there; all203 original direct/alias query sites, builders and selectors are now root-owned. Backend application responsibility organization remains a separate next phase.
 
 
 [Priority preparation and retention](priority_lifecycle/README.md) contains existing source-epoch locks, preparation/staging/publication queries and native/SQLite retention statements. Application generation/lease/freshness checks, row budgets, clocks, slice progression and durable callbacks remain outside; complete operations reuse exact introduction-priority queries.
