@@ -18,6 +18,7 @@
 | [provider_operations.py](provider_operations.py) | Fixed source selection, lease/fence, evidence publication and registration-result writes on the owner's background transaction. |
 | [credential_operations.py](credential_operations.py) | Fixed credential row/head/registration operations and atomic generation/retirement guards on the owner's read/write contexts. |
 | [store.py](store.py) | Intelligence owns every transaction here; no provider executes inside this boundary. |
+| [background_connection.py](background_connection.py) | Unchanged deadline-bounded Psycopg connection subclass; reads the single application-owned deadline context and retains existing wait/close/errors. |
 
 The existing finding merge/ranking block now lives in the component's
 [`analysis/findings.py`](../../../services/intelligence/src/tempo_intelligence/analysis/findings.py),
@@ -27,9 +28,9 @@ and then merges the captured facts in that order. SQL and transaction ownership
 remain here.
 
 The initial mixed-method audit of Store and AnalysisStore is now closed at source
-level, with fixed authority and composition explicitly retained below. A separate
-pre-existing driver subclass in application runtime remains to be moved; this is
-not whole-owner centralization or deployed independence. Complete request admission,
+level, with fixed authority and composition explicitly retained below. The separate
+runtime driver subclass is now centralized as well; this is not whole-backend or
+deployed independence. Complete request admission,
 including snapshot preparation,
 sorted cache work and expired-cache refresh, now lives in `source_requests.submit_request`.
 `inspect` now only composes the complete application inspection workflow with
@@ -74,8 +75,8 @@ The four previously inventoried mixed Store credential workflows now delegate
 the existing status/expiry/configuration and registration orchestration outside
 this tree. Store retains transaction composition, startup/workspace validation,
 fixed guards/writers and the existing ordered failure effects. This is not
-completion of all Intelligence centralization: the driver-specific runtime edge
-below remains. The full Store/Analysis method audits distinguish retained fixed
+a whole-backend or deployment acceptance claim. The separate runtime driver split
+is complete below. Full Store/Analysis method audits distinguish retained fixed
 authority/composition from the completed application moves.
 
 `RequestCommands` retains six fixed SQL operations and the existing receipt and
@@ -176,8 +177,8 @@ SQL/parameters and transaction authority are preserved.
 No mixed application/SQL method remains in this original Store/Analysis audit.
 Retained fixed read/identity/lease/replay guards and startup/workspace/grant checks
 are database authority; the source table below names composition explicitly. This
-is not a whole-owner or whole-backend completion claim: the pre-existing runtime
-driver edge remains below. See the
+is not a whole-backend or deployed-independence claim. The separate runtime
+driver move is recorded below. See the
 [read](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#read-cursor-and-export-boundary),
 [input](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#input-admission-and-finalization-boundary),
 [run](../../../services/intelligence/src/tempo_intelligence/analysis/README.md#run-command-and-dismissal-boundary),
@@ -228,20 +229,42 @@ boundaries.
 | [`evidence_records`](analysis_store.py#L160) (160–166) | fixed | Empty-input short circuit, complete ordered owner evidence read and identity-set completeness guard; retain as fixed owner projection. |
 | [`input_status`](analysis_store.py#L168) (168–169) | composition | Delegates existing application logic to analysis/read_work.read_input_status through fixed owner reads/lazy workspace or capability lookup; original context/guard order preserved. |
 
-## Remaining runtime driver edge
+## Background connection and deadline boundary
 
-A bounded source scan found [`runtime.py`](../../../services/intelligence/src/tempo_intelligence/runtime.py#L15)
-`BackgroundConnection(Connection)` (lines 15–33), with its Psycopg import at line 8,
-still outside the root tree. It shares a file with application `DatabaseRunner`
-and deadline orchestration. This was outside the original two-entry SQL checklist
-(`games_reader.py`, now split; `worker.py`, whose execute is an engine-client call).
-It is unfinished physical organization, not an accepted exception. The next small
-split should move the existing driver subclass root and retain runner/context
-orchestration outside, preserving the single shared deadline and wait/close/error
-behavior. No runtime split was included in this engine workflow batch.
+**Implemented source in this unmerged extraction; deployment unverified.**
+The pre-existing Psycopg `BackgroundConnection` subclass now lives in
+[`background_connection.py`](background_connection.py). Its class and `wait`
+method are an exact source move from application `runtime.py`. Async
+[`DatabaseRunner`, `drain_operation`, constants and deadline context](../../../services/intelligence/src/tempo_intelligence/runtime.py)
+remain outside the database tree as application operation/lifecycle orchestration,
+with all original statements unchanged. Runtime has no driver or database-package
+import. Store is the only current class consumer and imports it directly here;
+no compatibility export, wrapper, extra context or import cycle was introduced.
 
-The retained Store is byte-identical to its credential-workflow integration: all
-38 methods remain classified as 11 database authority/fixed and 27 composition/
-ordered fixed effects. Neither audit proves whole-backend/domain independence,
-native concurrency or deployment/resource isolation. No actual engine/provider,
-live state, migration or schema operation was performed by these source moves.
+```mermaid
+flowchart LR
+  runner[Application DatabaseRunner] -->|same set / reset| context[One application deadline ContextVar]
+  store[Owner Store background transaction] -->|same fallback set / reset| context
+  store -->|same pool connection_class| driver[Centralized BackgroundConnection]
+  driver -->|same deadline get| context
+  driver -->|same wait / close / public errors| psycopg[Existing Psycopg connection]
+```
+
+The driver, Store and runner import/use the same `background_deadline` object;
+there is exactly one declaration. No-deadline waits preserve the caller's
+interval/timeout unchanged. Bounded waits retain the original monotonic-clock
+point, minimum timeout, expiry close and public-error translation. The Store's
+only change is the subclass import path; every method/SQL/transaction statement
+is AST-identical. All 38 Store and 40 AnalysisStore methods remain accounted for
+as retained fixed authority, ordered effects or explicit composition.
+
+`tests/test_background_connection.py` uses a fake base wait, a subclass with no
+native initializer/finalizer and a fake clock for all wait paths. It also checks
+shared context identity and reset across the actual application runner's thread.
+Existing synthetic runner cancellation/close/join tests remain selected proofs.
+The scoped application source scan finds no Psycopg/SQLite import or SQL cursor
+call outside this root; `analysis/worker.py` still calls its engine client's
+`execute`, which is not database SQL. This closes the recorded owner source
+remainder, not whole-backend/domain independence, native timeout acceptance or
+deployed resource isolation. No actual connection, provider, engine, live state,
+migration or schema operation was performed by this source move.

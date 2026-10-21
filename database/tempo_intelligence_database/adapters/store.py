@@ -13,7 +13,8 @@ from tempo_intelligence.errors import DomainError
 from tempo_intelligence.identity import canonical_json, digest
 from tempo_intelligence.maia_work import accept_maia, create_maia_job, maia_jobs, maia_status, require_profile
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
-from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
+from tempo_intelligence.runtime import BACKGROUND_OPERATION_SECONDS, background_deadline
+from tempo_intelligence_database.adapters.background_connection import BackgroundConnection
 from tempo_intelligence.source_requests import (command_request, failure_transition, inspect_request,
     read_evidence, retry_eligible, submit_request)
 from tempo_intelligence.provider_work import claim_source, publish_source

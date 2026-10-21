@@ -456,13 +456,15 @@ keeps finding/dismissal/model/metadata/callback policy outside the database tree
 fixed operations retain snapshots, guarded publication, conditional reopen
 propagation and writes at the original call points. The complete Analysis audit
 records all 40 AnalysisStore methods as fixed authority or composition. The
-separate runtime driver edge remains unfinished, and deployed resource isolation
+separate runtime driver move is complete, while deployed resource isolation
 remains unverified.
 
 The [engine work state boundary](src/tempo_intelligence/analysis/README.md#engine-work-state-boundary)
 keeps existing job/model/comparison/transition policy outside the root tree; fixed
 capacity/lease/replay/execution guards and writes retain the original background
 transaction. The initial Store/Analysis mixed-method audit is complete at source
-level (38/40 methods); [the pre-existing runtime driver subclass](../../database/tempo_intelligence_database/adapters/README.md#remaining-runtime-driver-edge)
-is an explicitly unfinished owner file move. Neither status establishes whole-
-backend/domain independence or native/deployed qualification.
+level (38/40 methods). The [pre-existing runtime driver subclass](../../database/tempo_intelligence_database/adapters/README.md#background-connection-and-deadline-boundary)
+is now centralized with the same shared deadline context; application runner and
+shutdown/cancellation orchestration remain outside the root tree. These source
+moves do not establish whole-backend/domain independence or native/deployed
+qualification.

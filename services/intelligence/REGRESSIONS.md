@@ -603,3 +603,14 @@ lifecycle, profile/quality and public schema checks remain selected proofs.
 Complete SQL/parameters, locks, clock short circuits and transaction/lease authority
 remain unchanged. Retained native PostgreSQL lease/replay/concurrency proofs were
 not run; no actual engine, provider or live database participates in these tests.
+
+## Centralized background connection driver
+
+`tests/test_background_connection.py` owns the unchanged Psycopg subclass move
+from application runtime to the root database adapters. Five fake wait paths
+preserve unbounded/caller-limited/deadline-limited waiting, expiry close and
+public error translation; the same five cases pass the original class. No native
+connection initializer/finalizer or protocol runs. The sixth case proves driver,
+Store and runner share one deadline context and the runner resets it after the
+operation. Existing fake runner cancellation/close/executor-join cases remain
+selected; native blocked-I/O timing and database tests are retained and unrun.

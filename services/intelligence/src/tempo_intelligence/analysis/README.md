@@ -81,8 +81,8 @@ lookup order. Existing packaged schemas and legacy report contracts remain
 selected owning checks. No DDL, foreign key, write workflow, deadline, provider,
 engine, private credential or live resource behavior is changed or exercised.
 The [complete method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-records all completed AnalysisStore method splits and the separate remaining
-runtime driver edge; this read slice does not establish whole-owner completion.
+records all completed AnalysisStore method splits and the separate runtime driver
+move; this read slice does not establish deployed or whole-backend independence.
 
 ## Input admission and finalization boundary
 
@@ -121,8 +121,8 @@ page-digest cases remain unchanged. Real locking, rollback durability and native
 concurrency are separate proofs and were not run. This adds no new schema,
 model, generic query API, transaction/receipt writer or engine/provider dependency.
 The [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-records the completed AnalysisStore splits and the separate runtime driver edge;
-completion of input admission alone does not establish whole-owner completion.
+records the completed AnalysisStore splits and separate runtime driver move;
+input admission alone does not establish deployed or whole-backend independence.
 
 ## Run, command and dismissal boundary
 
@@ -163,8 +163,8 @@ composition, position-order and packaged-schema cases remain selected checks.
 Real atomicity/concurrency, engine work and live resource isolation remain
 unverified; no schema/model/provider/security behavior is changed. The
 [complete inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-records completed AnalysisStore method splits; the separate runtime driver edge
-keeps whole-owner centralization unfinished.
+records completed AnalysisStore method splits and the separate runtime driver
+move; deployed and whole-backend independence remain unverified.
 
 ## Capture, derivation and publication boundary
 
@@ -212,8 +212,8 @@ read closure. Existing finding/schema/legacy contracts remain selected proofs.
 Native atomicity, concurrent publication and live resource isolation remain
 unverified. This slice changes no schema/FK, model, engine/provider or security
 behavior. The [complete 40-method inventory](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
-records completed engine workflow splits and the separate runtime driver edge;
-whole-owner centralization remains unfinished.
+records completed engine workflow splits and the separate runtime driver move;
+deployed and whole-backend independence remain unverified.
 
 ## Engine work state boundary
 
@@ -264,6 +264,7 @@ compatibility/quality and packaged-schema cases remain selected owning checks.
 The [complete 40-method audit](../../../../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
 contains three fixed and 37 composition methods, with no remaining mixed method
 in the original AnalysisStore audit. The separate pre-existing runtime Psycopg
-subclass remains an unfinished owner file move. Native locking/concurrency,
+subclass is now [centralized](../../../../../database/tempo_intelligence_database/adapters/README.md#background-connection-and-deadline-boundary),
+with the same application-owned deadline context. Native locking/concurrency,
 engine/provider execution and deployment/resource independence remain unverified;
 this is no claim of whole-backend or sibling-domain independence.
