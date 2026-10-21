@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **69 files**; one candidate is confirmed non-database application code, and **86 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **71 files**; one candidate is confirmed non-database application code, and **84 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -98,7 +98,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/priority_retention.py](../backend/app/services/priority_retention.py)
 - [backend/app/services/queue_admission_adapter.py](../backend/app/services/queue_admission_adapter.py)
 - [backend/app/services/queue_application.py](../backend/app/services/queue_application.py)
-- [backend/app/services/redis_admission_gate.py](../backend/app/services/redis_admission_gate.py)
+- Completed Redis admission/policy storage split: [backend/app/services/redis_admission_gate.py](tempo_legacy_database/adapters/redis_control/README.md).
 - Completed queue/lifecycle storage split: [backend/app/services/refresh_requests.py](tempo_legacy_database/adapters/lifecycle/README.md).
 - Completed legacy read/publication projection split: [backend/app/services/repertoire_comparison.py](tempo_legacy_database/adapters/projections/README.md).
 - Completed authored-Studies policy / database line-projection split: [backend/app/services/repertoire_conflicts.py](../backend/app/studies/README.md).
@@ -113,7 +113,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/services/study_attempts.py](../backend/app/services/study_attempts.py)
 - Completed controls SQL split: [backend/app/services/study_mode.py](tempo_legacy_database/adapters/controls/README.md).
 - [backend/app/services/study_portable.py](../backend/app/services/study_portable.py)
-- [backend/app/services/study_priority.py](../backend/app/services/study_priority.py)
+- Completed Redis admission/policy storage split: [backend/app/services/study_priority.py](tempo_legacy_database/adapters/redis_control/README.md).
 - Completed intact SQL-only helper move: [database/tempo_legacy_database/adapters/tactic_admission.py](tempo_legacy_database/adapters/tactic_admission.py).
 - [backend/app/services/tactic_capture.py](../backend/app/services/tactic_capture.py)
 - [backend/app/services/tactical_catalog.py](../backend/app/services/tactical_catalog.py)
@@ -181,7 +181,7 @@ The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive pr
 | [writer_latency.py](../backend/benchmarks/writer_latency.py) | Disposable SQLite connection/schema/inserts and writer contention tooling. | Existing benchmark reporting; whole dedicated benchmark may relocate intact. |
 | [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) | Existing native fixture setup statements, including two test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
 
-The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis operations/key/value layout must move along with SQL while preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
+The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis factories/Lua/pipeline/operations and Study-settings query now live under [redis_control](tempo_legacy_database/adapters/redis_control/README.md), preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 
 
 The scan excludes the centralized tree and tests. Historical evidence/qualification receipts retain their recorded source paths; current active references were relocated. Redis orchestration and host resource coordination remain in their existing infrastructure owners.
@@ -217,13 +217,13 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
-| Legacy backend | 46 | 0 | 74 |
+| Legacy backend | 48 | 0 | 72 |
 | Learning runtime | 14 | 0 | 12 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **69** | **1** | **86** |
+| **Total baseline** | **71** | **1** | **84** |
 
 The six additional storage/tooling sources above and application computation inside originally moved adapters are additional unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 

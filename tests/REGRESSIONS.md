@@ -5057,3 +5057,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Foreground control database extraction
 
 `backend/tests/test_legacy_foreground_control_database_split.py` guards direct operations in the three selected command handlers and checks prefix acceptance/idempotency, rejection, usage conversion and caller rollback. Existing omitted-settings/cutover, main-selection, dispatch and repertoire-checkpoint cases retain their assertions. These fakes/task-owned SQLite checks do not establish native locking or full-domain separation.
+
+
+## Redis admission and Study-policy storage extraction
+
+`backend/tests/test_legacy_redis_control_database_split.py` owns cached factory compatibility/deadlines, application-selected key/pipeline behavior and async client/clock evaluation before worker I/O. Existing generation/private-owner/session/lifecycle checks retain their assertions. The selected cutover browser-activity case still fails with its pre-existing eval-only fake missing `zrem`; unchanged-source reproduction is recorded, and no test was skipped/weakened. Native Redis/Lua/PostgreSQL remains unverified.
