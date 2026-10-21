@@ -62,11 +62,12 @@ still invoking the atomic guard. Existing preparation tests follow the moved
 monkeypatch targets with unchanged assertions. There is no new command protocol,
 generic SQL capability, schema or activation behavior.
 
-Remaining application/storage coordination is source staging/admission across short transactions.
-Atomic identity,
+Source staging/admission across short transactions now lives in
+[source loading](../source/README.md). Atomic identity,
 fence, epoch, manifest, provenance and generation checks belong to persistence.
 The inventory-status projection lives in [source policy](../policy/README.md).
-These splits do not claim the entire root adapter is application-free.
+The [store audit](../../../../../database/tempo_content_database/adapters/README.md#store-responsibility-audit)
+classifies retained read projections, storage lifecycle and native guards.
 The complete [binding](../worker/README.md#binding-phase),
 [route](../worker/README.md#route-phase) and [exercise](../worker/README.md#exercise-phase)
 phases live in the worker application;
