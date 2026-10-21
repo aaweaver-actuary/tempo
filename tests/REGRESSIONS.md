@@ -5134,3 +5134,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Legacy Study remediation persistence
 
 `backend/tests/test_legacy_remediation_storage_separation.py` owns sixteen semantic source/snapshot boundaries for accepted contributions, availability heads, settlement/queue-priority decisions and borrowed reader/writer order. Nine existing synthetic Study/scripted PostgreSQL cases retain assertions. No native race/resource/deployment behavior follows from the isolated source-snapshot proof.
+
+
+## Queue admission fixed storage and capacity route policy
+
+`backend/tests/test_queue_admission_database_split.py` owns five fake/boundary cases for complete borrowed-query operations, two-clock order and lazy row/route policy interleaving. Existing selection has41passes/two previously recorded native-SQL-in-SQLite fixture failures; no fixtures/assertions or native behavior are repaired or certified by this move.

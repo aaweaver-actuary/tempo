@@ -67,7 +67,7 @@ existing availability builder is reused from its root owner.
 All **39 original direct calls plus the existing sparse-selector call** from
 queue application now live in root operations. The application has zero direct
 DB calls, SQL literals or dialect checks; compatibility SQL names stay exported.
-The separate queue admission adapter remains pending, not an accepted exception.
+The separate queue admission adapter is now split as described below.
 No connection or transaction lifecycle moved. Focused existing SQLite/fake cases
 and exact one-time source comparison establish this mechanical extraction, not
 native PostgreSQL execution, deployment or optional-feature resource isolation.
@@ -76,3 +76,45 @@ Proposal only: the parallel native/legacy queue paths and byte-different
 projection statements could later share fewer fixed implementations after
 separate behavioral review. This move retains their differences; no policy,
 schema, storage or framework consolidation was implemented.
+
+
+## Legacy admission adapter facts
+
+[admission.py](admission.py) owns the existing 13 database sites from
+[QueueAdmissionAdapter](../../../../../backend/app/services/queue_admission_adapter.py):
+unseen-entry keyset pages, historical introduction counts, retain/remove writes,
+priority projection and its capacity SQL transformation, candidate/repertoire
+pages, current allowance, introduction append and opportunity-resolution writes.
+The compatibility candidate SQL constant remains exported under its original
+application name. Exact SQL bytes, predicates, parameters, query/result order and
+caller-owned rollback/transaction authority are unchanged.
+
+The application keeps bounded-page decisions and value/page construction,
+miss/frozen policy and existing semantic collaborators. Its introduction path
+still appends, invokes its retain hook, evaluates **two independent clock reads**
+and then resolves the opportunity. It creates no new connection or commit.
+
+The fixed borrowed capacity row operation contains the existing reader internally
+and reuses [capacity.py](../capacity.py)'s same lazy bounded cursor generator.
+`capacity_routes_from_rows` in the [application bridge](../../../../../backend/app/services/opening_capacity_admission.py)
+contains the original pure `CapacityRoute` construction and deterministic winner
+comparison. Its existing `read_capacity_routes(read, repertoire_id,
+normal_parent_ids)` signature remains a compatibility wrapper. Both paths consume
+rows lazily and interleave each row with the same route decision; no generic SQL
+executor, reader factory or database-to-application import was added. The borrowed
+path does not close a connection; the caller retains its lifetime.
+
+| Admission facts/effects | Source fields, keys and ownership |
+| --- | --- |
+| Historical allowance and unseen membership | The same Learning queue/card/review facts above; `(queue_date,card_id,cycle)` distinguishes repeated attempts, and the admitting-repertoire association remains logical without a new FK. Shared card counts and old introductions keep their existing meaning despite later integrity changes. |
+| Published and legacy introduction priorities | `repertoire_card_introduction_priorities(repertoire_id text PK/FK,card_id text PK/FK)` and `repertoire_card_priority_generations(repertoire_id text PK/FK,generation bigint PK,card_id text PK/FK)` store score and JSON evidence; publication chooses a `generation bigint`. The selected generation association is logical unless explicitly constrained in the [canonical fields/ER dictionary](../../../schema/discovery-priority/README.md). This move does not merge their models. |
+| Repertoire opportunities | `repertoire_opportunities.id text PK`, `repertoire_id text FK`, nullable `card_id text FK`, `kind/status text`, `evidence_json text`, nullable `resolved_at text`, and non-null `updated_at text`. The same weak-known-decision resolution excludes analysis-derived evidence. [Every stored field/type and actual FK/cardinality](../../../schema/discovery-priority/README.md). |
+| Legacy miss priority | Current active-miss and gameplay-priority projections retain the existing reason/date source and exclusion semantics. These legacy associations are unchanged and do not establish optional-producer isolation. [Feedback projection dictionary](../../../schema/game-projections-2/README.md). |
+
+Both application facades now contain zero direct database calls or SQL literals.
+Focused task-owned SQLite/fake checks cover shared membership, page boundaries,
+retained historical counts, rollback after the retain hook, route witnesses,
+lazy query/policy order and the two-clock sequence. Two previously identified
+capacity-worker SQLite fixtures still reject the unchanged native active-miss
+cast before this adapter runs; no assertion or fixture was changed. Native
+PostgreSQL execution, live schema and deployment remain unverified.

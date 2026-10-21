@@ -37,10 +37,15 @@ def read_capacity_routes(
 
     read closes each connection before returning; only frontier metadata escapes.
     """
-    routes_by_card = {}
-    for row in capacity_storage.read_capacity_route_rows(
+    return capacity_routes_from_rows(capacity_storage.read_capacity_route_rows(
         read, repertoire_id, normal_parent_ids, CAPACITY_READ_BATCH_SIZE,
-    ):
+    ))
+
+
+def capacity_routes_from_rows(rows) -> tuple[tuple[str, CapacityRoute], ...]:
+    """Retain the existing deterministic route selection over lazy row facts."""
+    routes_by_card = {}
+    for row in rows:
         route = CapacityRoute(
             row[1], int(row[2]), row[3], int(row[4]), row[5], bool(row[6])
         )
