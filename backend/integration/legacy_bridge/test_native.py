@@ -188,7 +188,7 @@ def test_native_module_effect_and_complete_operation_receipt_roll_back_together(
 
 def feedback_store(raw):
     from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-    from tempo_legacy_database.adapters.real_game_feedback import BorrowedFeedbackStore
+    from app.services.real_game_feedback_store import BorrowedFeedbackStore
     raw.row_factory = tempo_row_factory
     return BorrowedFeedbackStore(PostgresConnection(raw))
 

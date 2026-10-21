@@ -12,6 +12,7 @@ import chess
 
 from tempo_legacy_database.connections import background_read_connection, connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.authored_repertoires.discovery_admission import storage
 from .activity_gate import activity_gate
 from . import canonical_scope_freshness
 from .canonical_scope_freshness import opportunity_is_current, coverage_run_is_current, coverage_scope_predicate
@@ -97,27 +98,17 @@ def _source_game(database, opportunity) -> dict | None:
         mistake_ply = support.get("mistake_ply")
         if game_id is None or mistake_ply is None:
             continue
-        game = database.execute(
-            """SELECT id,start_fen,moves_json,color,analysis_version FROM imported_games
-               WHERE id=? AND adaptive_excluded=0 AND analysis_state='ready'""",
-            (game_id,),
-        ).fetchone()
+        game = storage.analyzed_source_game(database, (game_id,))
         if not game or not game_in_scope(game["start_fen"], json.loads(game["moves_json"]), prefix["moves"]):
             continue
         return {**dict(game), "ply": int(mistake_ply)}
     if opportunity["kind"] == "missing_response" and opportunity["opponent_move_uci"]:
         node_id = evidence.get("coverage_node_id")
-        node = database.execute(
-            "SELECT node.fen_key,node.routes_json,run.settings_json FROM repertoire_coverage_nodes node JOIN repertoire_coverage_runs run ON run.id=node.run_id WHERE node.id=? AND node.repertoire_id=?",
-            (node_id, opportunity["repertoire_id"]),
-        ).fetchone()
+        node = storage.coverage_source_node(database, (node_id, opportunity["repertoire_id"]))
         if not coverage_run_is_current(database, node, opportunity["repertoire_id"]):
             return None
         routes = json.loads(node["routes_json"])
-        lines = database.execute(
-            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
-            (opportunity["repertoire_id"],),
-        ).fetchall()
+        lines = storage.coverage_source_lines(database, (opportunity["repertoire_id"],))
         return _coverage_source_game(opportunity, node_id, node, lines, routes)
     return None
 
@@ -157,31 +148,21 @@ def _background_source_game(opportunity) -> dict | None:
         if game_id is None or mistake_ply is None:
             continue
         with background_read_connection() as database:
-            game = database.execute(
-                """SELECT id,start_fen,moves_json,color,analysis_version FROM imported_games
-                   WHERE id=? AND adaptive_excluded=0 AND analysis_state='ready'""",
-                (game_id,),
-            ).fetchone()
+            game = storage.background_analyzed_source_game(database, (game_id,))
         if game:
             return {**dict(game), "ply": int(mistake_ply)}
     if opportunity["kind"] != "missing_response" or not opportunity["opponent_move_uci"]:
         return None
     node_id = evidence.get("coverage_node_id")
     with background_read_connection() as database:
-        node = database.execute(
-            "SELECT node.fen_key,node.routes_json,run.settings_json FROM repertoire_coverage_nodes node JOIN repertoire_coverage_runs run ON run.id=node.run_id WHERE node.id=? AND node.repertoire_id=?",
-            (node_id, opportunity["repertoire_id"]),
-        ).fetchone()
+        node = storage.coverage_source_node(database, (node_id, opportunity["repertoire_id"]))
     if node is None:
         return None
     with background_read_connection() as database:
         if not coverage_run_is_current(database, node, opportunity["repertoire_id"]):
             return None
     with background_read_connection() as database:
-        lines = database.execute(
-            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
-            (opportunity["repertoire_id"],),
-        ).fetchall()
+        lines = storage.coverage_source_lines(database, (opportunity["repertoire_id"],))
     return _coverage_source_game(opportunity, node_id, node, lines, json.loads(node["routes_json"]))
 
 
@@ -205,17 +186,13 @@ def _full_history_request(game: dict) -> tuple[chess.Board, AnalysisRequest]:
 def execute_recommendation_request_slice(task: dict) -> None:
     """Persist one full-history engine request in a bounded database slice."""
     activity_gate.wait_for_foreground()
-    read_section = background_read_connection if postgres_store.configured() else read_connection
+    read_section = background_read_connection if storage.configured() else read_connection
     with read_section() as database:
-        opportunity = database.execute(
-            """SELECT * FROM repertoire_opportunities WHERE id=? AND status='active'
-               AND kind IN ('post_gap_weakness','missing_response') AND card_id IS NULL""",
-            (task["payload"]["opportunity_id"],),
-        ).fetchone()
+        opportunity = storage.recommendation_opportunity(database, (task["payload"]["opportunity_id"],))
         if opportunity and not opportunity_is_current(database, opportunity):
             return
-        game = _source_game(database, opportunity) if opportunity and not postgres_store.configured() else None
-    if opportunity and postgres_store.configured():
+        game = _source_game(database, opportunity) if opportunity and not storage.configured() else None
+    if opportunity and storage.configured():
         game = _background_source_game(opportunity)
     if not game:
         return
@@ -229,47 +206,28 @@ def execute_recommendation_request_slice(task: dict) -> None:
             read_prefix(database, opportunity["repertoire_id"], lock=True)
             canonical_scope_freshness.game_scope_generation(database, lock=True)
         if "id" in task:
-            if postgres_store.configured():
+            if storage.configured():
                 if not lock_current_slice(database, task):
                     return
             else:
-                lease = database.execute(
-                    "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-                ).fetchone()
+                lease = storage.task_lease(database, (task["id"],))
                 if (not lease or lease["generation"] != task["generation"]
                         or lease["lease_token"] != task["lease_token"]):
                     return
-        current = database.execute(
-            "SELECT * FROM repertoire_opportunities WHERE id=?",
-            (task["payload"]["opportunity_id"],),
-        ).fetchone()
+        current = storage.opportunity(database, (task["payload"]["opportunity_id"],))
         if (not current or current["status"] != "active" or current["card_id"]
                 or not opportunity_is_current(database, current, lock=True)):
             return
-        database.execute(
-            """INSERT OR IGNORE INTO threat_analysis_requests(
-                 id,request_json,created_at,updated_at) VALUES(?,?,?,?)""",
-            (request.request_id, json.dumps(asdict(request)), _now(), _now()),
-        )
+        storage.insert_analysis_request(database, (request.request_id, json.dumps(asdict(request)), _now(), _now()))
         if game.get("source_kind") == "coverage":
-            database.execute(
-                """INSERT INTO coverage_discovery_recommendation_requests(
-                     opportunity_id,request_id,coverage_node_id,route_json,created_at,updated_at)
-                   VALUES(?,?,?,?,?,?)
-                   ON CONFLICT(opportunity_id) DO UPDATE SET request_id=excluded.request_id,
-                     coverage_node_id=excluded.coverage_node_id,route_json=excluded.route_json,
-                     updated_at=excluded.updated_at""",
+            storage.upsert_coverage_request(
+                database,
                 (task["payload"]["opportunity_id"], request.request_id,
                  game["coverage_node_id"], game["moves_json"], _now(), _now()),
             )
         else:
-            database.execute(
-                """INSERT INTO discovery_recommendation_requests(
-                 opportunity_id,request_id,source_game_id,source_ply,created_at,updated_at)
-               VALUES(?,?,?,?,?,?)
-               ON CONFLICT(opportunity_id) DO UPDATE SET
-                 request_id=excluded.request_id,source_game_id=excluded.source_game_id,
-                 source_ply=excluded.source_ply,updated_at=excluded.updated_at""",
+            storage.upsert_game_request(
+                database,
                 (task["payload"]["opportunity_id"], request.request_id, game["id"],
                  game["ply"], _now(), _now()),
             )
@@ -312,19 +270,13 @@ def _cached_repertoire_positions(
 
 def recommend_missing_continuations(opportunity_id: str) -> dict:
     with read_connection() as database:
-        opportunity = database.execute(
-            """SELECT * FROM repertoire_opportunities WHERE id=? AND status='active'""",
-            (opportunity_id,),
-        ).fetchone()
+        opportunity = storage.active_opportunity(database, (opportunity_id,))
         if not opportunity or not opportunity_is_current(database, opportunity):
             raise KeyError("Active discovery not found")
         if opportunity["card_id"]:
             raise ValueError("This discovery already has a saved decision card")
         game = _source_game(database, opportunity)
-        lines = [dict(row) for row in database.execute(
-            "SELECT id,name,start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=?",
-            (opportunity["repertoire_id"],),
-        )]
+        lines = [dict(row) for row in storage.repertoire_lines(database, (opportunity["repertoire_id"],))]
         fingerprint = opportunity["evidence_fingerprint"]
         repertoire_id = opportunity["repertoire_id"]
     if not game:
@@ -340,21 +292,7 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
                 "reason": "The source game does not reach a legal learner decision; inspect it in Builder",
                 "candidates": []}
     with read_connection() as database:
-        relation_table = ("coverage_discovery_recommendation_requests"
-                          if game.get("source_kind") == "coverage" else "discovery_recommendation_requests")
-        source_constraint = ("recommendation.coverage_node_id=? AND recommendation.route_json=?"
-                             if game.get("source_kind") == "coverage"
-                             else "recommendation.source_game_id=? AND recommendation.source_ply=?")
-        source_parameters = ((game["coverage_node_id"], game["moves_json"])
-                             if game.get("source_kind") == "coverage" else (game["id"], game["ply"]))
-        saved_report = database.execute(
-            f"""SELECT request.state,request.report_json,request.last_error
-               FROM {relation_table} recommendation
-               JOIN threat_analysis_requests request ON request.id=recommendation.request_id
-               WHERE recommendation.opportunity_id=? AND recommendation.request_id=?
-                 AND {source_constraint}""",
-            (opportunity_id, request.request_id, *source_parameters),
-        ).fetchone()
+        saved_report = storage.saved_recommendation(database, game, opportunity_id, request)
     if saved_report and saved_report["state"] == "failed":
         return {"state": "waiting", "opportunity_id": opportunity_id,
                 "reason": f"Engine search failed: {saved_report['last_error'] or 'retry it in Analysis activity'}",
@@ -477,18 +415,11 @@ def admission_intent_id(opportunity_id: str, selected_move_uci: str, evidence_fi
 def create_admission_intent(opportunity_id: str, selected_move_uci: str,
                             expected_fingerprint: str) -> dict:
     with read_connection() as database:
-        prior = database.execute(
-            """SELECT * FROM discovery_admission_intents
-               WHERE opportunity_id=? AND selected_move_uci=? AND evidence_fingerprint=?""",
-            (opportunity_id, selected_move_uci, expected_fingerprint),
-        ).fetchone()
+        prior = storage.matching_intent(database, (opportunity_id, selected_move_uci, expected_fingerprint))
     if prior:
         if prior["state"] != "queued":
             with read_connection() as database:
-                existing_task = database.execute(
-                    "SELECT state,priority FROM background_tasks WHERE kind='discovery_admission' AND deduplication_key=?",
-                    (prior["id"],),
-                ).fetchone()
+                existing_task = storage.admission_task_state(database, (prior["id"],))
             if not existing_task or existing_task["state"] == "failed":
                 with connection() as database:
                     enqueue_task_in_transaction(
@@ -498,11 +429,7 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
             elif (existing_task["state"] in {"queued", "retrying"}
                   and existing_task["priority"] > DISCOVERY_ADMISSION_PRIORITY):
                 with connection() as database:
-                    database.execute(
-                        """UPDATE background_tasks SET priority=? WHERE kind='discovery_admission'
-                           AND deduplication_key=? AND state IN ('queued','retrying') AND priority>?""",
-                        (DISCOVERY_ADMISSION_PRIORITY, prior["id"], DISCOVERY_ADMISSION_PRIORITY),
-                    )
+                    storage.promote_admission_task(database, (DISCOVERY_ADMISSION_PRIORITY, prior["id"], DISCOVERY_ADMISSION_PRIORITY))
         return {"id": prior["id"], "line_id": prior["line_id"],
                 "repertoire_id": prior["repertoire_id"],
                 "starting_fen": prior["starting_fen"],
@@ -524,28 +451,19 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
     ).hexdigest()
     intent_id = admission_intent_id(opportunity_id, selected_move_uci, expected_fingerprint)
     with connection() as database:
-        database.execute("BEGIN IMMEDIATE")
-        current_opportunity = database.execute(
-            "SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,),
-        ).fetchone()
+        storage.begin_write(database)
+        current_opportunity = storage.opportunity(database, (opportunity_id,))
         if (not current_opportunity or not opportunity_is_current(database, current_opportunity) or current_opportunity["status"] != "active"
                 or current_opportunity["evidence_fingerprint"] != expected_fingerprint):
             raise ValueError("Discovery evidence changed; refresh the preview")
-        inserted = database.execute(
-            """INSERT OR IGNORE INTO discovery_admission_intents(
-                 id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,
-                 selected_move_uci,preview_moves_json,recommendation_json,line_id,
-                 created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        inserted = storage.insert_intent(
+            database,
             (intent_id, opportunity_id, repertoire_id, expected_fingerprint,
              starting_fen, selected_move_uci, json.dumps(preview_moves),
              json.dumps(selected), line_id, _now(), _now()),
         )
-        if inserted.rowcount:
-            database.execute(
-                """UPDATE repertoire_opportunities SET admission_state='preparing',
-                     seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=? AND evidence_fingerprint=?""",
-                (_now(), _now(), opportunity_id, expected_fingerprint),
-            )
+        if inserted:
+            storage.mark_preparing(database, (_now(), _now(), opportunity_id, expected_fingerprint))
             enqueue_task_in_transaction(
                 database, "discovery_admission", intent_id, {"intent_id": intent_id},
                 priority=DISCOVERY_ADMISSION_PRIORITY,
@@ -563,21 +481,16 @@ def enqueue_admission_intent(intent_id: str) -> None:
 
 def _materialize_admission_branch(task: dict) -> None:
     """Write one selected branch and its rebuild request in a short transaction."""
-    read_section = background_read_connection if postgres_store.configured() else read_connection
+    read_section = background_read_connection if storage.configured() else read_connection
     with read_section() as database:
-        intent = database.execute(
-            "SELECT * FROM discovery_admission_intents WHERE id=?",
-            (task["payload"]["intent_id"],),
-        ).fetchone()
+        intent = storage.intent(database, (task["payload"]["intent_id"],))
         if not intent or intent["state"] == "queued":
             return
-        if database.execute(
-            "SELECT 1 FROM repertoire_lines WHERE id=?", (intent["line_id"],),
-        ).fetchone():
+        if storage.source_line_exists(database, (intent["line_id"],)):
             return
         prefix = read_prefix(database, intent["repertoire_id"])
         origin = line_origin(database, prefix["preview_id"], intent["starting_fen"]) if prefix["moves"] else None
-        opportunity_snapshot = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (intent["opportunity_id"],)).fetchone() if prefix["moves"] and "opportunity_id" in dict(intent) else None
+        opportunity_snapshot = storage.opportunity(database, (intent["opportunity_id"],)) if prefix["moves"] and "opportunity_id" in dict(intent) else None
         if opportunity_snapshot and opportunity_snapshot["canonical_prefix_revision"] != prefix["revision"]:
             raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
     if prefix["moves"] and origin is None and opportunity_snapshot:
@@ -600,16 +513,14 @@ def _materialize_admission_branch(task: dict) -> None:
     activity_gate.wait_for_foreground()
     from .repertoire_game_refresh import refreshing_game_scope
     with connection(background=True) as database, refreshing_game_scope(database):
-        if postgres_store.configured():
+        if storage.configured():
             read_prefix(database, intent["repertoire_id"], lock=True)
             canonical_scope_freshness.game_scope_generation(database, lock=True)
             if not lock_current_slice(database, task):
                 return
         else:
-            database.execute("BEGIN IMMEDIATE")
-            lease = database.execute(
-                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-            ).fetchone()
+            storage.begin_write(database)
+            lease = storage.task_lease(database, (task["id"],))
             if (not lease or lease["generation"] != task["generation"]
                     or lease["lease_token"] != task["lease_token"]):
                 return
@@ -618,32 +529,24 @@ def _materialize_admission_branch(task: dict) -> None:
             raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
         if current_prefix["source_revision"] != prefix["source_revision"]:
             raise ValueError("The repertoire routes changed; refresh this discovery before adding it")
-        opportunity = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (intent["opportunity_id"],)).fetchone() if "opportunity_id" in dict(intent) else None
+        opportunity = storage.opportunity(database, (intent["opportunity_id"],)) if "opportunity_id" in dict(intent) else None
         if opportunity and not opportunity_is_current(database, opportunity):
             raise ValueError("Opening routes or game scope changed; refresh this discovery before adding it")
-        inserted = database.execute(
-            """INSERT OR IGNORE INTO repertoire_lines(
-                 id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-               VALUES(?,?,'Discovery continuation',?,?,?,?)""",
+        inserted = storage.insert_source_line(
+            database,
             (intent["line_id"], intent["repertoire_id"], learner_color,
              intent["starting_fen"], json.dumps(preview_moves), _now()),
-        ).rowcount
+        )
         if inserted:
             if current_prefix["moves"] and current_prefix["preview_id"]:
                 # The source check above precedes this additive write. Re-establish
                 # only the verified admitted route against its committed source version.
                 store_positions(database, current_prefix["preview_id"], scoped_line["positions"],
                                 source_revision=read_prefix(database, intent["repertoire_id"])["source_revision"])
-            depth = database.execute(
-                "SELECT initial_depth FROM settings WHERE id=1",
-            ).fetchone()[0]
-            database.execute(
-                """INSERT OR IGNORE INTO repertoire_line_training_depths(
-                     line_id,learner_decision_count) VALUES(?,?)""",
-                (intent["line_id"], depth),
-            )
+            depth = storage.initial_depth(database)
+            storage.insert_training_depth(database, (intent["line_id"], depth))
             enqueue_in_transaction = (enqueue_compact_postgres_task_in_transaction
-                                      if postgres_store.configured() else enqueue_task_in_transaction)
+                                      if storage.configured() else enqueue_task_in_transaction)
             enqueue_in_transaction(
                 database, "opening_graph_rebuild", intent["repertoire_id"],
                 {"repertoire_id": intent["repertoire_id"], "local_day": date.today().isoformat()},
@@ -653,30 +556,19 @@ def _materialize_admission_branch(task: dict) -> None:
 
 def _ensure_admission_coverage_refresh(task: dict) -> None:
     """Resume the existing coverage pipeline after branch materialization."""
-    read_section = background_read_connection if postgres_store.configured() else read_connection
+    read_section = background_read_connection if storage.configured() else read_connection
     with read_section() as database:
-        intent = database.execute(
-            "SELECT repertoire_id,line_id,state FROM discovery_admission_intents WHERE id=?",
-            (task["payload"]["intent_id"],),
-        ).fetchone()
+        intent = storage.coverage_intent(database, (task["payload"]["intent_id"],))
         if not intent or intent["state"] == "queued":
             return
-        line = database.execute(
-            "SELECT created_at FROM repertoire_lines WHERE id=?", (intent["line_id"],),
-        ).fetchone()
+        line = storage.source_line_created_at(database, (intent["line_id"],))
         if not line:
             return
-        run = database.execute(
-            f"""SELECT 1 FROM repertoire_coverage_runs r
-               WHERE repertoire_id=? AND created_at>=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} LIMIT 1""",
-            (intent["repertoire_id"], line["created_at"]),
-        ).fetchone()
-        lease = None if postgres_store.configured() else database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
+        run = storage.coverage_started_since_line(database, intent, line)
+        lease = None if storage.configured() else storage.task_lease(database, (task["id"],))
     if run:
         return
-    if postgres_store.configured():
+    if storage.configured():
         from .postgres_coverage_seed import request_coverage_seed_in_transaction
 
         activity_gate.wait_for_foreground()
@@ -700,86 +592,46 @@ def execute_admission_intent_slice(task: dict) -> bool:
     _materialize_admission_branch(task)
     _ensure_admission_coverage_refresh(task)
     activity_gate.wait_for_foreground()
-    read_section = background_read_connection if postgres_store.configured() else read_connection
+    read_section = background_read_connection if storage.configured() else read_connection
     with read_section() as database:
-        intent = database.execute(
-            "SELECT * FROM discovery_admission_intents WHERE id=?",
-            (task["payload"]["intent_id"],),
-        ).fetchone()
+        intent = storage.intent(database, (task["payload"]["intent_id"],))
         if not intent or intent["state"] == "queued":
             return False
-        step = database.execute(
-            """SELECT step.card_id FROM opening_graph_steps step
-               JOIN opening_graph_publications publication
-                 ON publication.repertoire_id=step.repertoire_id
-                AND publication.generation=step.generation
-               WHERE step.repertoire_id=? AND step.line_id=? AND step.card_id IS NOT NULL
-               ORDER BY step.decision_index LIMIT 1""",
-            (intent["repertoire_id"], intent["line_id"]),
-        ).fetchone()
+        step = storage.published_line_card(database, (intent["repertoire_id"], intent["line_id"]))
         card_id_value = step["card_id"] if step else None
-        integrity = database.execute(
-            """SELECT checked_at,scan_status,status FROM repertoire_integrity_state
-               WHERE repertoire_id=?""",
-            (intent["repertoire_id"],),
-        ).fetchone()
+        integrity = storage.integrity_publication(database, (intent["repertoire_id"],))
         integrity_published = bool(integrity and integrity["scan_status"] == "idle"
                                    and integrity["checked_at"]
                                    and integrity["checked_at"] >= intent["created_at"])
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        if postgres_store.configured():
+        if storage.configured():
             if not lock_current_slice(database, task):
                 return False
         else:
-            database.execute("BEGIN IMMEDIATE")
-            lease = database.execute(
-                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-            ).fetchone()
+            storage.begin_write(database)
+            lease = storage.task_lease(database, (task["id"],))
             if (not lease or lease["generation"] != task["generation"]
                     or lease["lease_token"] != task["lease_token"]):
                 return True
-        current = database.execute("SELECT * FROM discovery_admission_intents WHERE id=?",
-                                   (task["payload"]["intent_id"],)).fetchone()
+        current = storage.intent(database, (task["payload"]["intent_id"],))
         if not current or current["state"] == "queued":
             return False
         if card_id_value and integrity_published:
-            card = database.execute(
-                "SELECT id,archived,pending_validation FROM cards WHERE id=?", (card_id_value,),
-            ).fetchone()
-            blocked = database.execute(
-                """SELECT 1 FROM repertoire_integrity_card_blocks
-                   WHERE repertoire_id=? AND card_id=?""",
-                (current["repertoire_id"], card_id_value),
-            ).fetchone()
+            card = storage.available_card(database, (card_id_value,))
+            blocked = storage.card_integrity_block(database, (current["repertoire_id"], card_id_value))
             if card and not card["archived"] and not card["pending_validation"] and not blocked:
                 today = date.today().isoformat()
-                database.execute(
-                    """UPDATE cards SET state=CASE WHEN state IN ('locked','new') THEN 'learning' ELSE state END,
-                         introduced_at=COALESCE(introduced_at,?) WHERE id=?""",
-                    (today, card_id_value),
-                )
+                storage.introduce_card(database, (today, card_id_value))
                 ensure_card_queued_after(database, card_id_value, after_cards=0,
                                          attempt_state="guided", priority_reason="Discovery · added continuation")
-                database.execute(
-                    """UPDATE daily_queue SET admission_kind='explicit',admission_source=?
-                       WHERE queue_date=? AND card_id=? AND status='queued'""",
-                    (f"discovery:{current['opportunity_id']}", today, card_id_value),
-                )
-                database.execute(
-                    """UPDATE discovery_admission_intents SET state='queued',card_id=?,updated_at=? WHERE id=?""",
-                    (card_id_value, _now(), current["id"]),
-                )
-                database.execute(
-                    """UPDATE repertoire_opportunities SET admission_state='queued',
-                         handled_evidence_json=evidence_json,card_id=COALESCE(card_id,?),
-                         admitted_card_id=?,updated_at=? WHERE id=? AND evidence_fingerprint=?""",
-                    (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"]),
-                )
-                if postgres_store.configured():
+                storage.mark_explicit_admission(database, (f"discovery:{current['opportunity_id']}", today, card_id_value))
+                storage.mark_intent_queued(database, (card_id_value, _now(), current["id"]))
+                storage.complete_opportunity_admission(database, (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"]))
+                if storage.configured():
                     complete_task_slice_in_transaction(database, task)
                 return False
-        if postgres_store.configured():
+        if storage.configured():
             enqueue_compact_postgres_task_in_transaction(
                 database, "discovery_admission", task["payload"]["intent_id"],
                 task["payload"], priority=DISCOVERY_ADMISSION_PRIORITY,
@@ -787,11 +639,8 @@ def execute_admission_intent_slice(task: dict) -> bool:
             )
             return True
         retry_at = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
-        database.execute(
-            """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
-                 payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
-                 lease_expires_at=NULL,updated_at=?
-               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+        storage.requeue_task(
+            database,
             (json.dumps(task["payload"]), retry_at, _now(), task["id"],
              task["generation"], task["lease_token"]),
         )

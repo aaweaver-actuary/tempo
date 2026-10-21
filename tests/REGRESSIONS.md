@@ -5129,3 +5129,38 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Authored Studies portable persistence
 
 `backend/tests/test_study_portable_storage_boundary.py` owns six fake boundaries for lazy export/column shape/UUID-reference remapping/replay/conflict/nonmutation behavior. Two existing contract/corpus checks remain selected; the seven authored-content tables are exercised by the existing bundle format, without personal practice history or unused-table claims.
+
+
+## Legacy Study remediation persistence
+
+`backend/tests/test_legacy_remediation_storage_separation.py` owns sixteen semantic source/snapshot boundaries for accepted contributions, availability heads, settlement/queue-priority decisions and borrowed reader/writer order. Nine existing synthetic Study/scripted PostgreSQL cases retain assertions. No native race/resource/deployment behavior follows from the isolated source-snapshot proof.
+
+
+## Queue admission fixed storage and capacity route policy
+
+`backend/tests/test_queue_admission_database_split.py` owns five fake/boundary cases for complete borrowed-query operations, two-clock order and lazy row/route policy interleaving. Existing selection has41passes/two previously recorded native-SQL-in-SQLite fixture failures; no fixtures/assertions or native behavior are repaired or certified by this move.
+
+
+## Queue admission feedback projection compatibility export
+
+`backend/tests/test_feedback_boundary_integration.py::test_combined_queue_uses_feedback_projection_and_semantic_store[False]` and `[True]` preserve the existing `outstanding_miss_query` identity, miss reason and semantic-store consumer behavior. The admission extraction briefly removed that export; restoring the exact root-factory import repairs the regression without duplicate SQL or behavior changes.
+
+
+## PGN import and discard persistence
+
+`backend/tests/test_pgn_import_storage_boundary.py` owns eight fake-only cases for empty/multi-result batches, identity/clock/certification/callback order, discard receipts and validation before reads. Exact source proof also covers unchanged models, decorators and registrations; the fake inner function does not qualify outer refresh wiring/native import behavior.
+
+
+## Authored card edit and archive persistence
+
+`backend/tests/test_card_edits_storage_boundary.py` owns eight fake boundaries for expected revision, legal move/scope checks, sorted locks, replacement/history/review/queue transitions, archive and callback order. Models/decorators/registrations preserve exact source AST; outer Games refresh wiring and native execution remain unverified.
+
+
+## Initial borrowed feedback application and storage separation
+
+`backend/tests/test_feedback_store_separation.py` owns nine semantic boundaries for borrowed facts/typed mapping, priority choices, lazy batches and queue/remediation callback order. Existing storage,policy and consumer checks preserve assertions; source snapshot and differential evidence do not qualify a backend wheel,native concurrency or Study isolation.
+
+
+## Queue command storage and warm projection ordering
+
+`backend/tests/test_queue_command_database_split.py` owns four focused boundaries for complete query capture, warming compiler/completion order, advisory lock behavior and application/database direction. Existing queue issuance/ensure/bury cases preserve assertions; native locks and whole-system behavior remain unverified.

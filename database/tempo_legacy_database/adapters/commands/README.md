@@ -30,3 +30,40 @@ Focused proof: six existing command cases and eight cases across `backend/tests/
 Coverage Maia composition retains invalid/stale-lease/current-run HTTP decisions, five-minute expiry clocks, UUID, duplicate-move final-value selection, probability JSON, recalculation and priority/opportunity refresh calls. The new storage helper keeps the original selected node → prefix lock → row recheck sequence, `FOR UPDATE OF n,r` / `FOR UPDATE SKIP LOCKED`, and all twelve bound query expressions. Stored node IDs/run/repertoire/FEN, Maia status/lease/expiry/error/time, candidate `(node_id,move_uci)` probabilities/covered/source state and run settings/status remain unchanged; canonical linked dictionaries show all types/keys/FKs. Lease identity and latest-attempt/generation/current-scope checks retain their logical freshness meaning without added constraints. Three existing fake-native claim/submit cases pass, including pause, row lease, duplicate-move collapse and bounded candidate/progress/refresh effects. Whole application non-import AST restoration and source compilation pass. No native PostgreSQL, live schema, worker/service execution or full-system qualification ran.
 
 Defensive analysis commands keep four-priority traversal and ordinary-game fairness selection, HTTP/report validation, request parsing, UUID/two-minute lease policy, retry/status response mapping, metric and candidate-task callbacks outside database. The fixed request reader captures the original recommendation predicate once before expired-lease reclamation, then executes only the original indexed four SQL variants on the borrowed transaction. It accepts no SQL or query callback and creates no registry/dispatch framework. The application iterates the same four indices and applies the promoted probe at index one; exact original filters/orderings and lock suffixes are unchanged. Claim returns the existing affected-row count rather than transporting its private cursor. Candidate query execution remains eager with lazy iteration. Six existing command tests pass, and source restoration reproduces the complete original application after expanding fixed operations and its finite SQL tuple loop. Eleven native query callsites/parameters are identical. No native execution or schema/constraint change occurred.
+
+## Foreground queue commands
+
+[queue.py](queue.py) contains the 15 existing database sites from
+[queue_commands.py](../../../../backend/app/queue_commands.py), including complete
+card/advisory locks, availability/head/origin facts, head issuance, failure and
+burial writes, and current-task/projection ensuring. The original task read →
+absent-task advisory lock → task recheck → conditional projection lock sequence
+is unchanged. Card-edit locks still precede queue-date locks in application
+composition; first-issuance binding still precedes the origin stamp. The command
+gateway retains receipt, transaction and commit authority.
+
+Availability/head projections bind the same SQL and driver-specific lock suffix
+before the application evaluates its original date or payload. Their fixed day
+readers accept only the day for that already bound semantic projection, never
+SQL. HTTP/date validation, identified-attempt/issued-origin decisions, conflict
+and response mapping, order capture/preservation, task-enqueue decisions and all
+clock calls remain outside database. SQL warming captures the compiler before
+the existing completion-warming callback, then compiles the same projection;
+the cached driver import now lives here. Public/private compatibility aliases
+and original handler signatures remain available.
+
+| Stored facts/effects | Actual fields and relationships |
+| --- | --- |
+| Queue and retained origins | Existing `daily_queue.id bigint PK`, `queue_date text`, `card_id text FK`, `cycle bigint`, `position bigint`, `status text` and `attempt_failed bigint`; `queue_attempt_origins.queue_entry_id bigint PK` retains card/revision/cycle/head-issuance evidence. Available-entry eligibility still comes from the existing root availability owner. [Every field/type/key and enforced versus logical relation](../../schema/study-queue-review-1/README.md). |
+| Task ensuring | `background_tasks.id text PK`, unique `(kind text,deduplication_key text)`, `state text`, `payload_json text`, nullable `last_error text` and existing generation/lease facts. Advisory keys are transaction controls, not persisted FK relationships. [Complete task dictionary](../../schema/runtime-metadata/README.md). |
+| Projection state | `queue_projections.queue_date text PK`, `state text`, `generation bigint`, `refresh_pending bigint`, nullable `last_error text`, existing time/count fields. Its date association to queue/task payload is logical without an enforced FK. [Canonical ER and full fields](../queue_refresh/README.md#opening-and-presentation-publication). |
+
+No schema, permissions, application policy, new execution port or separate
+transaction owner was introduced. Thirty selected existing issuance/ensure/burial
+cases and four focused storage/capture/lock-order/warming cases pass with
+fakes/task-owned SQLite. Exact source comparison preserves the moved SQL bytes,
+parameters, query results, application decisions and original module bindings.
+Native PostgreSQL execution, deployment and complete system qualification remain
+unverified. Proposal only: equivalent foreground/worker queue reads may be
+simplified later after separate behavior review; this move retains their current
+SQL and authority boundaries.

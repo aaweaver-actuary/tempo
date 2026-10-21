@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
+from tempo_legacy_database.adapters.authored_repertoires.pgn_import.storage import PostgresConnection
 from .services.cards import card_id
 from .services.canonical_prefix import ensure_batch_lines_in_scope, certify_admitted_route
 from .services.opening_graph import decision_segments
@@ -85,36 +86,14 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     source_name = payload.source_name
     trained_color = payload.trained_color
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-        ("tempo:main-repertoire",),
-    )
-    existing_repertoire = database.execute_native(
-        "SELECT repertoire.id FROM repertoires repertoire "
-        "WHERE repertoire.source_name=%s "
-        "AND repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') "
-        "AND EXISTS(SELECT 1 FROM repertoire_lines line "
-        "WHERE line.repertoire_id=repertoire.id AND line.trained_color=%s) "
-        "ORDER BY repertoire.created_at DESC LIMIT 1",
-        (source_name, trained_color),
-    ).fetchone()
+    storage.lock_main_repertoire(database)
+    existing_repertoire = storage.matching_repertoire(database, source_name, trained_color)
     repertoire_id = existing_repertoire[0] if existing_repertoire else str(uuid.uuid4())
-    database.execute_native(
-        "UPDATE repertoires SET is_main=0 "
-        "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"
-    )
-    database.execute_native(
-        "INSERT INTO repertoires(id,name,source_name,created_at,is_main) "
-        "VALUES(%s,%s,%s,%s,1) ON CONFLICT(id) DO UPDATE SET "
-        "is_main=1,source_name=excluded.source_name",
-        (repertoire_id, source_name.rsplit(".", 1)[0], source_name, now),
-    )
+    storage.clear_main_repertoire(database)
+    storage.upsert_main_repertoire(database, repertoire_id, source_name.rsplit(".", 1)[0], source_name, now)
     existing_lines = {
         (row["start_fen"], row["moves_json"]): row["id"]
-        for row in database.execute_native(
-            "SELECT id,start_fen,moves_json FROM repertoire_lines WHERE repertoire_id=%s",
-            (repertoire_id,),
-        )
+        for row in storage.existing_lines(database, repertoire_id)
     }
     admitted_routes = {}
     lines_to_insert = []
@@ -137,31 +116,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
              json.dumps(annotation.arrows), json.dumps(annotation.squares), now)
             for annotation in line.annotations
         )
-    with database.raw.cursor() as cursor:
-        cursor.executemany(
-            "INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING RETURNING id",
-            lines_to_insert, returning=True,
-        )
-        inserted_line_ids = set()
-        if lines_to_insert:
-            while True:
-                inserted_line_ids.update(row[0] for row in cursor.fetchall())
-                if not cursor.nextset():
-                    break
-        cursor.executemany(
-            "INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) "
-            "VALUES(%s,%s) ON CONFLICT(line_id) DO UPDATE SET "
-            "learner_decision_count=excluded.learner_decision_count",
-            depths_to_upsert,
-        )
-        cursor.executemany(
-            "INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at) "
-            "VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET "
-            "comment=excluded.comment,arrows_json=excluded.arrows_json,"
-            "squares_json=excluded.squares_json,updated_at=excluded.updated_at",
-            annotations_to_upsert,
-        )
+    inserted_line_ids = storage.insert_import_rows(database, lines_to_insert, depths_to_upsert, annotations_to_upsert)
     for line_id in inserted_line_ids:
         certify_admitted_route(database, repertoire_id, admitted_routes[line_id])
     segment_ids = set(payload.segment_ids)
@@ -169,13 +124,9 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     if not prefix_ids.issubset(segment_ids):
         raise ValueError("Prefix segment IDs must belong to this import")
     existing_card_ids = {
-        row[0] for row in database.execute_native(
-            "SELECT id FROM cards WHERE id=ANY(%s::text[])", (payload.segment_ids,),
-        )
+        row[0] for row in storage.existing_card_ids(database, payload.segment_ids)
     } if segment_ids else set()
-    deleted_ids = {row[0] for row in database.execute_native(
-        "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])", (payload.segment_ids,),
-    )} if segment_ids else set()
+    deleted_ids = {row[0] for row in storage.deleted_card_ids(database, payload.segment_ids)} if segment_ids else set()
     excluded_segments = [segment for line in payload.lines
         for segment in decision_segments(line.starting_fen, line.moves, trained_color, payload.depth)
         if segment.card_id in deleted_ids] if deleted_ids else []
@@ -212,27 +163,15 @@ def discard_pgn_import(database: PostgresConnection, payload: dict[str, Any]) ->
     discarded_error_json = json.dumps({
         "code": "import_discarded", "message": "PGN import discarded.", "status_code": 410,
     })
-    database.raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (operation_id,))
-    database.raw.execute(
-        "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,error_json) "
-        "VALUES(%s,'imports.pgn.admit',%s,'failed',%s) ON CONFLICT(operation_id) DO NOTHING",
-        (operation_id, f"discarded:{operation_id}", discarded_error_json),
-    )
-    receipt = database.raw.execute(
-        "SELECT command_name,state,response_json FROM operation_receipts WHERE operation_id=%s FOR UPDATE",
-        (operation_id,),
-    ).fetchone()
+    storage.lock_discard_operation(database, operation_id)
+    storage.insert_discard_receipt(database, operation_id, f"discarded:{operation_id}", discarded_error_json)
+    receipt = storage.discard_receipt(database, operation_id)
     if receipt[0] != "imports.pgn.admit":
         raise HTTPException(409, "Only PGN imports can be discarded")
     if receipt[1] == "complete":
         return {"operation_id": operation_id, "outcome": "already_complete",
                 "import_result": json.loads(receipt[2])}
-    database.raw.execute(
-        "UPDATE operation_receipts SET state='failed',payload_json=NULL,response_json=NULL,"
-        "error_json=%s,last_error_json=NULL,next_retry_at=NULL,lease_expires_at=NULL,"
-        "attempt_token=NULL,updated_at=NOW() WHERE operation_id=%s",
-        (discarded_error_json, operation_id),
-    )
+    storage.mark_discarded(database, discarded_error_json, operation_id)
     return {"operation_id": operation_id, "outcome": "discarded"}
 
 

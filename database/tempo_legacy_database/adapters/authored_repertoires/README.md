@@ -50,3 +50,9 @@ The pasted-line extraction preserves all eight statement strings. Snapshot mappi
 [Integrity scan/repair persistence](integrity/README.md) now owns all original query/batch and fixed scan-target construction. Application source grouping, issue/repair/lease/generation/time/queue decisions remain outside; two local fixed target closures preserve placeholder preparation before connection entry without accepting arbitrary SQL.
 
 [Repertoire opportunity storage](opportunities/README.md) holds every current discovery-feed/scoring-input/refresh/training query, native/compatibility driver details and fixed lock/filter preparation. Scoring/chess/evidence/windows/admission/queue/task/clock decisions remain outside; existing direct legacy card/queue coupling stays explicitly disclosed.
+
+[PGN import/discard persistence](pgn_import/README.md) owns complete repertoire/line/depth/annotation/receipt/tombstone queries and original RETURNING/batch cursor scope. Parsing/models, identity/time/UUID, line annotation preparation, source certification, deletion counts and graph/integrity/receipt responses remain outside. Existing Games refresh decorator is preserved and disclosed.
+
+[Card edit and archive persistence](card_edits/README.md) owns existing card/revision/membership/review/queue queries and locks. Application legal-move, identity, revision, replacement/archive, clock and callback decisions stay outside. Existing shared review/queue writes and Games refresh composition remain disclosed.
+
+[Discovery admission persistence](discovery_admission/README.md) holds existing recommendation, request, materialization and source/coverage/card/task operations. Existing validation, ranking, freshness, lease/admission/queue decisions and acceptance composition remain outside; complete queries and caller transaction authority remain unchanged.

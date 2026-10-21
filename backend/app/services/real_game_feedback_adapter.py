@@ -2,7 +2,7 @@
 from datetime import date
 
 from tempo_legacy_database.connections import connection
-from tempo_legacy_database.adapters.real_game_feedback import BorrowedFeedbackStore
+from app.services.real_game_feedback_store import BorrowedFeedbackStore
 from . import real_game_feedback as policy
 from .real_game_feedback import MISS_REASON
 from .activity_gate import activity_gate

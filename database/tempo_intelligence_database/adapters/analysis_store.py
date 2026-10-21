@@ -1,6 +1,5 @@
 """Intelligence-owned durable analysis. Network/engine work never holds a transaction."""
 from contextlib import contextmanager
-from collections import defaultdict
 from datetime import datetime, timezone
 import uuid
 from psycopg.types.json import Jsonb
@@ -16,6 +15,8 @@ from tempo_intelligence.analysis.input_work import admit_manifest, admit_page, f
 from tempo_intelligence_database.adapters.analysis_inputs import AnalysisInputs
 from tempo_intelligence.analysis.run_work import submit_run, receipt_result, save_receipt_result, command_run, dismiss_finding
 from tempo_intelligence_database.adapters.analysis_runs import AnalysisRunOperations
+from tempo_intelligence.analysis.publication_work import capture_run, derive_report, derive_next_report
+from tempo_intelligence_database.adapters.analysis_publication import AnalysisPublicationOperations
 
 
 class AnalysisStore:
@@ -92,15 +93,23 @@ class AnalysisStore:
     def command(self,run_id,command):
         return command_run(run_id,command,self.run_transaction)
 
-    def capture(self,run_id):
+    @contextmanager
+    def capture_transaction(self):
         with self.owner.transaction(read_only=True) as db:
-            run=self._head(db,run_id)
-            rows=db.execute("SELECT * FROM analysis_positions WHERE run_id=%s AND revision=%s ORDER BY ordinal",(run_id,run["revision"])).fetchall()
-            result_ids={r[k] for r in rows for k in ("accepted_root","accepted_played") if r[k]}
-            results={r["result_id"]:r["payload"] for r in db.execute("SELECT * FROM analysis_results WHERE result_id=ANY(%s)",(list(result_ids),))} if result_ids else {}
-            dismissals={r["finding_id"]:r for r in db.execute("SELECT * FROM analysis_dismissals")}
-        source,games=self._input(run["payload"]["input_id"],run["payload"]["input_revision"])
-        return run,rows,results,dismissals,source,games
+            yield AnalysisPublicationOperations(self,db)
+
+    @contextmanager
+    def publication_read_transaction(self):
+        with self.owner.transaction(background=True,read_only=True) as db:
+            yield AnalysisPublicationOperations(self,db)
+
+    @contextmanager
+    def publication_transaction(self):
+        with self.owner.transaction(background=True) as db:
+            yield AnalysisPublicationOperations(self,db)
+
+    def capture(self,run_id):
+        return capture_run(run_id,lambda:self._input,self.capture_transaction)
 
     def _derive_evidence(self,run,rows,results,source,games):
         findings,unknown=source_findings(source["payload"],games)
@@ -109,72 +118,8 @@ class AnalysisStore:
         return merge_findings(self.workspace,run,rows,results,source,games,findings,unknown,source_records)
 
     def derive(self,run_id,before_publish=None):
-        run,rows,results,dismissals,source,games=self.capture(run_id)
-        if run["published_generation"]==run["requested_generation"]:
-            return False
-        legacy_metadata=None
-        if run["payload"].get("derivation_version",1)!=2:
-            with self.owner.transaction(background=True,read_only=True) as db:
-                saved=db.execute("SELECT payload FROM analysis_reports WHERE run_id=%s AND revision=%s AND generation=%s",(run_id,run["revision"],run["published_generation"])).fetchone()
-                if not saved:
-                    raise DomainError("legacy_analysis_revision_required")
-                legacy_metadata=saved["payload"]
-                findings=[row["payload"] for row in db.execute("SELECT payload FROM analysis_report_items WHERE run_id=%s AND revision=%s AND generation=%s ORDER BY ordinal",(run_id,run["revision"],run["published_generation"]))]
-            unknown=legacy_metadata.get("unknown_coverage",[])
-            incompatible_positions=set()
-        else:
-            findings,unknown,incompatible_positions=self._derive_evidence(run,rows,results,source,games)
-        automatic_reopens=[]
-        incident_findings=defaultdict(list)
-        for item in findings:incident_findings[item["incident_id"]].append({"finding_id":item["finding_id"],"category":item["category"]})
-        for item in findings:
-            item["related_findings"]=[other for other in incident_findings[item["incident_id"]] if other["finding_id"]!=item["finding_id"]]
-            item["dismissal_state"]="open"
-            dismissed=dismissals.get(item["finding_id"])
-            if legacy_metadata is None:
-                item["evidence_revision"]=digest(item)
-            item["finding_revision"]=run["requested_generation"]
-            if dismissed and dismissed["state"]=="dismissed" and len(set(item["supporting_games"])-set(dismissed["supporting_games"]))<3:
-                item["dismissal_state"]="dismissed"
-            if dismissed and dismissed["state"]=="dismissed" and item["dismissal_state"]=="open":
-                automatic_reopens.append((item["finding_id"],dismissed["revision"],item["supporting_games"]))
-            item["actions"]["dismiss"]={"available":item["dismissal_state"]!="dismissed","reason":"already_dismissed" if item["dismissal_state"]=="dismissed" else None}
-            item["actions"]["reopen"]={"available":item["dismissal_state"]=="dismissed","reason":"not_dismissed" if item["dismissal_state"]!="dismissed" else None}
-            item["input_id"]=source["input_id"];item["input_revision"]=source["revision"]
-        from tempo_intelligence.analysis.read_models import Finding
-        findings=[Finding.model_validate(item).model_dump(mode="json") for item in findings]
-        generation=run["requested_generation"]
-        for start in range(0,len(findings),64):
-            with self.owner.transaction(background=True) as db:
-                for ordinal,item in enumerate(findings[start:start+64],start):
-                    db.execute("INSERT INTO analysis_report_items VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(run_id,run["revision"],generation,item["finding_id"],ordinal,Jsonb(item)))
-        complete=not incompatible_positions and source["payload"]["completeness"]=="complete" and all(r["state"]=="complete" and r["error_code"] is None for r in rows)
-        metadata={"derivation_version":2,"ordering":"source-rank-semantic-v2","schema_version":1,"workspace_id":self.workspace,"run_id":run_id,"revision":run["revision"],"generation":generation,"input_id":source["input_id"],"input_revision":source["revision"],"input_producer":source["payload"]["producer"],"source_provenance":(source["payload"].get("producer_manifest") or {}).get("provenance",{"kind":"synthetic"}),"scope":{key:source["payload"][key] for key in ("game_ids","window_start","window_end","selections","producer_version","source_artifact_digest")},"source_completeness":source["payload"]["completeness"],"reasons":source["payload"]["reasons"]+(["incompatible_engine_profile"] if incompatible_positions or any(row["error_code"]=="incompatible_engine_profile" for row in rows) else []),"unknown_coverage":unknown[:100],"unknown_coverage_count":len(unknown),"engine_scan_complete":not incompatible_positions and all(r["state"]=="complete" for r in rows),"unprocessed_count":sum(r["state"]!="complete" or r["position_id"] in incompatible_positions for r in rows),"engine_availability":"unavailable" if any(r["error_code"]=="engine_unavailable" for r in rows) else "pending_or_available","insufficient_quality_count":sum(r["error_code"]=="insufficient_quality" for r in rows),"finding_count":len(findings),"complete":complete,"policy_version":"c-analysis-v1"}
-        if legacy_metadata is not None:
-            complete=legacy_metadata["complete"]
-            metadata={**legacy_metadata,"generation":generation,"derivation_version":1,"ordering":legacy_metadata.get("ordering","category-source-rank-semantic-v1")}
-        if before_publish:
-            before_publish()
-        with self.owner.transaction(background=True) as db:
-            db.execute("SELECT pg_advisory_xact_lock(hashtextextended('analysis-user-state',0))")
-            current=self._head(db,run_id,True)
-            if current["revision"]!=run["revision"] or current["requested_generation"]!=generation:
-                return False
-            # A sibling run can dismiss this identity before our first publication.
-            revisions={row['finding_id']:row['revision'] for row in db.execute('SELECT finding_id,revision FROM analysis_dismissals WHERE finding_id=ANY(%s)',([item['finding_id'] for item in findings],))}
-            captured_revisions={identity:dismissals[identity]['revision'] for identity in revisions if identity in dismissals}
-            if revisions!=captured_revisions:
-                db.execute('UPDATE analysis_runs SET requested_generation=requested_generation+1 WHERE run_id=%s AND revision=%s',(run_id,run['revision']))
-                return False
-            for finding_id,dismissal_revision,supporting_games in automatic_reopens:
-                changed=db.execute("UPDATE analysis_dismissals SET state='open',revision=revision+1,supporting_games=%s WHERE finding_id=%s AND revision=%s AND state='dismissed' RETURNING finding_id",(Jsonb(supporting_games),finding_id,dismissal_revision)).fetchone()
-                if changed:
-                    db.execute("UPDATE analysis_runs r SET requested_generation=requested_generation+1 FROM analysis_heads h WHERE r.run_id=h.run_id AND r.revision=h.revision AND r.run_id<>%s AND EXISTS(SELECT 1 FROM analysis_report_items i WHERE i.run_id=r.run_id AND i.revision=r.revision AND i.generation=r.published_generation AND i.finding_id=%s)",(run_id,finding_id))
-            db.execute("INSERT INTO analysis_reports VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",(run_id,run["revision"],generation,Jsonb(metadata)))
-            pending=any(r["state"] in {"pending","running","retry_wait"} for r in rows)
-            state="complete" if complete else "pending" if pending else "budget_exhausted" if any(r["state"]=="unbudgeted" for r in rows) else "partial"
-            db.execute("UPDATE analysis_runs SET published_generation=%s,last_complete_generation=CASE WHEN %s THEN %s ELSE last_complete_generation END,state=CASE WHEN state IN ('cancel_requested','cancelled') THEN state ELSE %s END WHERE run_id=%s AND revision=%s",(generation,complete,generation,state,run_id,run["revision"]))
-        return True
+        return derive_report(run_id,before_publish,lambda:self.capture,lambda:self._derive_evidence,
+            lambda:self.workspace,self.publication_read_transaction,self.publication_transaction)
 
     def report(self,run_id,*,after=None,limit=50,category=None,dismissal=None,generation=None):
         return read_report(run_id,lambda:self.workspace,self.read_transaction,after=after,limit=limit,
@@ -293,9 +238,7 @@ class AnalysisStore:
         return read_remaining(run_id,lambda:self.workspace,self.read_transaction,after,limit)
 
     def derive_next(self):
-        with self.owner.transaction(background=True,read_only=True) as db:
-            row=db.execute("SELECT r.run_id FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision) WHERE r.state<>'staging' AND (r.payload->>'derivation_version'='2' OR r.published_generation IS NOT NULL) AND r.requested_generation IS DISTINCT FROM r.published_generation ORDER BY r.created_at,r.run_id LIMIT 1").fetchone()
-        return self.derive(row["run_id"]) if row else False
+        return derive_next_report(lambda:self.derive,self.publication_read_transaction)
 
     def mark_engine_unavailable(self,run_id):
         with self.owner.transaction(background=True) as db:

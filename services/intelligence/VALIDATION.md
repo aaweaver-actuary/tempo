@@ -905,3 +905,86 @@ artifacts remain unchanged. Task-owned resources are retained for integration;
 the shared toolchain is unchanged. No git/global-doc, native/live, actual engine/
 provider/private credential, config/security/grant, full-system, CI, deployment,
 issue or merge action was performed.
+
+## Analysis capture/derivation/publication move — October 21, 2026
+
+Three complete existing application blocks now compose `analysis/publication_work.py`:
+`capture`, `derive` and `derive_next`. Fixed `AnalysisPublicationOperations` retains
+snapshot/result/dismissal extraction, legacy/next reads, staged report items,
+user-state locking, revision/generation and captured-dismissal guards, conditional
+reopen/sibling-run invalidation and report/head writes. Three explicit composition
+contexts lend the original foreground read, background read and background write
+transactions; no independent transaction or publication authority was added.
+
+The selected command passed **19 current cases**:
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src \
+  /tmp/tempo-db-review-venv/bin/python -m pytest \
+  services/intelligence/tests/test_analysis_publication.py \
+  services/intelligence/tests/test_findings.py \
+  services/intelligence/tests/test_repairs.py::test_R1_R2_legacy_report_contract_retains_historical_fields \
+  services/intelligence/tests/test_analysis.py::test_packaged_analysis_v1_schemas_match_public_models \
+  -q --rootdir=. -o pythonpath= --import-mode=importlib
+```
+
+The same 13 new publication cases also passed against the saved original adapter
+(comparison evidence, not 32 distinct current cases). Synthetic fixed-row responses
+prove capture cursor iteration and late input read, already-current early return,
+65-finding staging in two committed batches, metadata/callback timing, revision/
+generation/dismissal fences, conditional reopen propagation, legacy metadata and
+evidence preservation, and next-run read closure. The tests do not parse SQL or
+freeze query strings. No selected check failed or was skipped.
+
+Task-local exact expansion proof:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-analysis-publication-source-proof.py
+```
+
+It reconstructs all three original method bodies from the application functions
+and fixed operations: 14 query call points/14 distinct strings, complete parameter
+bindings, finding hash/model/dismissal/metadata/state statements, original 64-item
+batches, callback/return points and publication guards all match. The other 33
+AnalysisStore methods, including `_derive_evidence`, optional-lock `_head` and
+four remaining engine workflows, are AST-identical. Public signatures, original
+context keyword options and lazy owner capability/workspace lookups are exact.
+The application module has no driver/cursor/query calls.
+
+Fresh artifacts built without installing or changing the shared environment:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation \
+  --outdir /tmp/tempo-intelligence-analysis-publication-build
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-analysis-publication-artifact-proof.py
+/tmp/tempo-db-review-venv/bin/python -I /tmp/tempo-intelligence-analysis-publication-wheel-smoke.py
+```
+
+Five current implementation/owner-document files match wheel bytes; eight current
+implementation/test/document files match sdist bytes. Both contain no bytecode or
+cache files. Three moved/composition modules import from the fresh wheel, with
+only declared pure contract/chess sources supplied; no owner, pool, connection,
+worker, engine or provider is instantiated. Scoped syntax, whitespace/conflicts
+and local Markdown links pass. All six Analysis owner Mermaid blocks parse with
+the existing `/tmp/tempo-db-extraction-diagrams` parser; hosted GitHub rendering
+was not inspected.
+
+- Wheel SHA-256: `ed422325049098221fe09af80675a810398c780453dbd7cc4b4befcce9b94e6e`.
+- Source distribution SHA-256: `bf00ad63f5c89c0d3ef5e92bdd466e35ee95121658611f29926ff7fa22b36eae`.
+
+The [complete 39-method audit](../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+accounts for three fixed operations, 32 composition methods and four unfinished
+mixed engine workflows: `claim`, `accept`, `failure`, `mark_engine_unavailable`.
+Their existing job/model validation, stage/comparison, retry/status/backoff and
+unavailable decisions still need separation from fixed capacity/lease/replay/
+fence/event/result/position/run operations. Estimated next bounded batch:
+75–105 minutes. No permanent mixed-root exception is introduced.
+
+No DDL/FK, public model, engine/provider/credential/security behavior or live state
+changed. Native PostgreSQL publication/locking/concurrency and deployment/resource
+isolation remain unverified; retained native tests were not run. No full-system,
+provider, native engine, private material, live database, service, CI or issue
+action occurred. Evidence and before-source snapshots are retained under
+`/tmp/tempo-intelligence-analysis-publication-*` for integration review, including
+source/artifact/fake-test logs and the exact hash manifest. This receipt is not a
+claim of whole-owner completion or hosted merge qualification.
