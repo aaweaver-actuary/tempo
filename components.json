@@ -68,6 +68,7 @@
       ],
       "buildInputs": [
         "src",
+        "../../database/browser/adapters/workbench",
         "public",
         "index.html",
         "tsconfig.json",
@@ -90,32 +91,36 @@
         {
           "owner": "workbench-web",
           "kind": "node",
-          "command": "npm test",
+          "cwd": ".",
+          "command": "npm --prefix apps/workbench-web test",
           "inputs": [
-            "src",
-            "tests",
-            "public",
-            "index.html",
-            "tsconfig.json",
-            "package.json",
-            "package-lock.json",
-            "test.mjs",
-            "vite.config.ts"
+            "apps/workbench-web/src",
+            "database/browser/adapters/workbench",
+            "apps/workbench-web/tests",
+            "apps/workbench-web/public",
+            "apps/workbench-web/index.html",
+            "apps/workbench-web/tsconfig.json",
+            "apps/workbench-web/package.json",
+            "apps/workbench-web/package-lock.json",
+            "apps/workbench-web/test.mjs",
+            "apps/workbench-web/vite.config.ts"
           ]
         },
         {
           "owner": "workbench-web",
           "kind": "node",
-          "command": "npm run test:browser -- tests/fixtures/producer.json",
+          "cwd": ".",
+          "command": "npm --prefix apps/workbench-web run test:browser -- tests/fixtures/producer.json",
           "inputs": [
-            "src",
-            "tests",
-            "public",
-            "package.json",
-            "package-lock.json",
-            "index.html",
-            "tsconfig.json",
-            "vite.config.ts"
+            "apps/workbench-web/src",
+            "database/browser/adapters/workbench",
+            "apps/workbench-web/tests",
+            "apps/workbench-web/public",
+            "apps/workbench-web/package.json",
+            "apps/workbench-web/package-lock.json",
+            "apps/workbench-web/index.html",
+            "apps/workbench-web/tsconfig.json",
+            "apps/workbench-web/vite.config.ts"
           ]
         }
       ],
@@ -2126,7 +2131,10 @@
         "static",
         "public",
         "scripts/prove-study-learning.mjs",
+        "database/tests/browser",
         "scripts/offline-shell-assets.ts",
+        "scripts/maia-cache-asset.ts",
+        "database/browser",
         "vite.static.config.ts",
         "module-resolution.ts",
         "package.json",

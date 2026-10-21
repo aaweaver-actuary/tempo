@@ -4,7 +4,7 @@ from datetime import date
 from fastapi import HTTPException
 import pytest
 
-from app.prefix_transition_contracts import PrefixTransitionApplyRequest
+from app.contracts.prefix_transition import PrefixTransitionApplyRequest
 from app.services.prefix_transition_application import validate_approved_plan
 from app.services.prefix_transition import plan_transition
 from test_prefix_transition import prepared_snapshot

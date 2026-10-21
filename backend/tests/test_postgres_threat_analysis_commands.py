@@ -9,7 +9,8 @@ from fastapi import HTTPException
 
 from app import command_dispatch, main, threat_analysis_commands
 from tempo_legacy_database.adapters import postgres_store
-from app.models import GameAnalysisLeaseRequest, ThreatAnalysisFailureRequest, ThreatAnalysisSubmission
+from app.contracts.transport.game_analysis import GameAnalysisLeaseRequest
+from app.contracts.transport.defense import ThreatAnalysisFailureRequest, ThreatAnalysisSubmission
 
 
 class Cursor:

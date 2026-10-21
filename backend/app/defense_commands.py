@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import DefenseAttemptRequest, DefenseRecognitionRequest
+from app.contracts.transport.defense import DefenseAttemptRequest, DefenseRecognitionRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction

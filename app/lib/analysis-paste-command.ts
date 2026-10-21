@@ -1,9 +1,9 @@
+import { readPendingAnalysisPasteRecord, writePendingAnalysisPasteRecord, clearPendingAnalysisPasteRecord } from "../../database/browser/adapters/authoring/analysis-paste";
 import { API_URL } from "../const";
 import { analysisPasteCommitSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
-const PENDING_KEY = "tempo-pending-analysis-paste-v1";
 type AnalysisPasteCommand = {
   text: string;
   starting_fen: string | null;
@@ -18,9 +18,8 @@ type AnalysisPasteCommand = {
 type PendingPaste = { operationId: string; body: string };
 
 function readPending(): PendingPaste | null {
-  const stored = localStorage.getItem(PENDING_KEY);
-  if (!stored) return null;
-  const parsed: unknown = JSON.parse(stored);
+  const parsed = readPendingAnalysisPasteRecord();
+  if (parsed === undefined) return null;
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("body" in parsed) || typeof parsed.body !== "string")
@@ -38,11 +37,11 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "failed") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingAnalysisPasteRecord();
       throw new Error(receipt.error?.message ?? "The earlier analysis save failed.");
     }
     if (receipt.state === "complete") {
-      localStorage.removeItem(PENDING_KEY);
+      clearPendingAnalysisPasteRecord();
       if (pending.body === body) return analysisPasteCommitSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "pending") {
@@ -51,7 +50,7 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    writePendingAnalysisPasteRecord(pending);
   }
   let response = await fetch(`${API_URL}/api/repertoire/paste/commit`, {
     method: "POST",
@@ -60,6 +59,6 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
   });
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, analysisPasteCommitSchema, "saved pasted analysis");
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingAnalysisPasteRecord();
   return result;
 }

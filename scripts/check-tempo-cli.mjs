@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 import { postgresCommandTiming } from "./test-scenario-timings.mjs";
-import { verifyPersistedRedisReadiness } from "./check-redis-readiness.mjs";
+import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
+import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision, measure = null }) {
   const root = process.cwd();
@@ -137,8 +138,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const mutatingRun = async (command, args, options) => {
       const result = await run(command, args, options);
       if (args.includes("database/tooling/apply_postgres_migrations.py") && !args.includes("--check"))
-        await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
-          "UPDATE reviews SET rating='incorrect' WHERE card_id='cli-history'"]);
+        await markHistoryIncorrect(compose);
       return result;
     };
     const runtime = makeRuntime(target, { run: mutatingRun, stateDirectory, revision, evidence, preparedImages });
@@ -146,7 +146,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     await assert.rejects(lifecycle("history_mutation_rejected", { recreate: true }, runtime), /Original migration history verification failed/);
     const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
     assert.equal(originalGuard.state, "pending");
-    const failedReceipt = await compose(["exec", "-T", "postgres", "psql", "-tA", "-U", "postgres", "-d", "tempo", "-c", "SELECT MAX(version) FROM tempo_schema_migrations"]);
+    const failedReceipt = await readLatestMigration(compose);
     assert.equal(Number(failedReceipt.stdout.trim()), schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")));
     const retryRuntime = () => makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
     const failedRetry = retryRuntime(); await failedRetry.inspectTarget();
@@ -156,7 +156,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert(!commandLog.slice(retryStart).some(call => call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check")));
     assert.deepEqual(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).study_invariants, originalGuard.study_invariants);
     assert(!(await failedRetry.runningServices()).includes("api"));
-    await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c", "UPDATE reviews SET rating='correct' WHERE card_id='cli-history'"]);
+    await markHistoryCorrect(compose);
     const repairedRetry = retryRuntime(); await repairedRetry.inspectTarget();
     await lifecycle("history_repaired_retry", { recreate: false }, repairedRetry);
     assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
@@ -267,8 +267,7 @@ await executeLifecycle({ recreate: false }, runtime);
     assert.match(recoveryFailure.failure, /incompatible/);
     assert(readdirSync(stateDirectory).includes(`failure-${recoveryFailure.id}.log`));
     assert.deepEqual(await readHistory(), expected);
-    assert.equal(Number((await compose(["exec", "-T", "postgres", "psql", "-tA", "-U", "postgres", "-d", "tempo", "-c",
-      "SELECT MAX(version) FROM tempo_schema_migrations"])).stdout.trim()), record.schema);
+    assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), record.schema);
     console.log("PASS Tempo CLI interrupted uncommitted application rollout quiesces writers before incompatible fallback without database rollback");
     // Restore only the test's legitimate current receipt; fix forward restarts
     // the compatible application without touching PostgreSQL or migration H0.
@@ -311,8 +310,7 @@ await executeLifecycle({ recreate: false }, runtime);
     // IF NOT EXISTS; the latest migration may be safely replayable view DDL.
     // Remove the ledger suffix while retaining that column to force duplicate DDL.
     await repeat.stopApplications();
-    await repeat.compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
-      `DELETE FROM tempo_schema_migrations WHERE version>=40`]);
+    await forgetMigrationSuffix(repeat);
     const rejected = makeRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
     await rejected.inspectTarget();
     await assert.rejects(lifecycle("migration_rejected", { recreate: true }, rejected), /already exists/);

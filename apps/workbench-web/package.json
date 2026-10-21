@@ -5,8 +5,8 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
-      "import": "./lib/index.js"
+      "types": "./lib/apps/workbench-web/src/index.d.ts",
+      "import": "./lib/apps/workbench-web/src/index.js"
     }
   },
   "files": [

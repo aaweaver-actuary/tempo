@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import TeachingStateRequest
+from app.contracts.transport.study import TeachingStateRequest
 from tempo_legacy_database.adapters.commands import teaching as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 

@@ -4,7 +4,7 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.controls import opening_evidence as storage
 from .command_gateway import register_command
 from tempo_legacy_database.connections import background_read_connection
-from .opening_evidence_contracts import OpeningEvidenceCheckpoint
+from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from .services.activity_gate import activity_gate
 from .services.postgres_opening_evidence import (
     decision_evidence, evidence_error, prepare_standalone_checkpoint, commit_standalone_checkpoint,

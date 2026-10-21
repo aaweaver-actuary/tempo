@@ -67,7 +67,7 @@ def snapshot(case):
 
 def add_evidence(case):
     from app.services.postgres_opening_evidence import queue_manifests, prepare_checkpoint
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     card = {"id":case["payload"]["card_id"],"content_type":"opening","revision":1,
         "start_fen":FEN,"moves":["e2e4"],"queue_entry_id":case["entries"][0]}
     queue_manifests([card])
@@ -144,7 +144,7 @@ def test_native_failure_rolls_back_all_logical_effects(case, stage):
 
 
 def test_native_handled_conflict_rolls_back_evidence_history_and_logical_receipt(case):
-    from app.review_conflicts import ReviewConflict
+    from app.contracts.review_conflicts import ReviewConflict
     add_evidence(case)
     before = snapshot(case)
     original = LearningReviewAdapter.save_receipt
@@ -269,7 +269,7 @@ from app.command_gateway import execute_command
 assert 'app.main' not in sys.modules and 'app.tasks' not in sys.modules
 payload=json.loads(sys.stdin.read())
 if payload["review"].get("opening_evidence_completion"):
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.services.postgres_opening_evidence import prepare_checkpoint
     payload["prepared_manifest"]=prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(payload["review"]["opening_evidence_completion"]))
 print(json.dumps(execute_command(sys.argv[1],"cards.review",payload)))
@@ -300,7 +300,7 @@ def test_native_frozen_reader_admission_fences_successor_without_reordering(case
 
 def test_native_existing_issuance_edit_and_deletion_regression_uses_relocated_seam(case):
     import database.tests.check_postgres_training_transition as legacy_proof
-    from app.models import ReviewRequest
+    from app.contracts.transport.study import ReviewRequest
     identities = {}
     with postgres_store.connection() as database:
         database.execute("UPDATE daily_queue SET status='buried' WHERE status='queued'")
@@ -346,7 +346,7 @@ def local_host_admission(monkeypatch):
 
 def test_native_proportional_presentation_preserves_frozen_selection_quota_and_retry(case, local_host_admission):
     from app.services import frozen_opening_order as frozen, postgres_queue_refresh as refresh, queue_application
-    from app.services.frozen_maia_math import content_fingerprint
+    from app.study.openings.frozen_math import content_fingerprint
     with postgres_store.connection() as database:
         database.execute("UPDATE daily_queue SET status='buried' WHERE status='queued' AND id!=?", (case['entries'][0],))
         database.execute("UPDATE daily_queue SET position=0 WHERE id=?", (case['entries'][0],))
@@ -435,7 +435,7 @@ def test_native_priority_overlay_retains_issued_position_without_stamping_unmixe
 
 def test_native_replacement_frozen_rank_is_not_certified_by_interleaved_burial(case, local_host_admission):
     from app.services import frozen_opening_order as frozen, postgres_queue_refresh as refresh, queue_application
-    from app.services.frozen_maia_math import content_fingerprint
+    from app.study.openings.frozen_math import content_fingerprint
     with postgres_store.connection() as database:
         for position,suffix in enumerate(('c','d')):
             identifier = case['identity']+'-'+suffix

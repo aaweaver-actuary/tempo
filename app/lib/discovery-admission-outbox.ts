@@ -1,23 +1,13 @@
+import { readDiscoveryAdmissionRecords, writeDiscoveryAdmissionRecords } from "../../database/browser/adapters/authoring/discovery-admission";
+import type { PendingDiscoveryAdmission } from "../domain/authoring-discovery-admission-record";
+export type { PendingDiscoveryAdmission } from "../domain/authoring-discovery-admission-record";
 import { notifications, publishNotification } from "./notifications";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError } from "./operation-status";
 
-export type PendingDiscoveryAdmission = {
-  opportunityId: string;
-  selectedMoveUci: string;
-  evidenceFingerprint: string;
-  operationId: string;
-  intentId?: string;
-  state: "pending" | "accepted" | "failed";
-  error?: string;
-  retryCount?: number;
-  nextAttemptAt?: number;
-  confirmationPollOrder?: number;
-};
 
 export const DISCOVERY_ADMISSIONS_CHANGED = "tempo-discovery-admissions-changed";
 export const DISCOVERY_ADMISSION_QUEUED = "tempo-discovery-admission-queued";
-const storageKey = "tempo-pending-discovery-admissions-v1";
 const requestTimeoutMs = 15_000;
 const retryDelayMs = 3_000;
 const maximumSubmissionsPerFlush = 2;
@@ -30,9 +20,8 @@ function notifyChanged() {
 }
 
 export function pendingDiscoveryAdmissions(): PendingDiscoveryAdmission[] {
-  const stored = localStorage.getItem(storageKey);
-  if (!stored) return [];
-  const parsed: unknown = JSON.parse(stored);
+  const parsed = readDiscoveryAdmissionRecords();
+  if (parsed === undefined) return [];
   if (!Array.isArray(parsed) || parsed.some((item) =>
     !item || typeof item !== "object" ||
     typeof item.opportunityId !== "string" ||
@@ -55,14 +44,14 @@ export function pendingDiscoveryAdmissions(): PendingDiscoveryAdmission[] {
   if (admissions.some((admission) => !admission.operationId)) {
     const upgraded = admissions.map((admission) => ({ ...admission,
       operationId: admission.operationId || crypto.randomUUID() }));
-    localStorage.setItem(storageKey, JSON.stringify(upgraded));
+    writeDiscoveryAdmissionRecords(upgraded);
     return upgraded;
   }
   return admissions;
 }
 
 function writeAdmissions(admissions: PendingDiscoveryAdmission[]) {
-  localStorage.setItem(storageKey, JSON.stringify(admissions));
+  writeDiscoveryAdmissionRecords(admissions);
   notifyChanged();
 }
 

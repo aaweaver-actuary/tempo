@@ -116,7 +116,7 @@ def _decoded_evidence(raw, expected_type, label, unavailable):
 
 
 def _project_snapshot(decoded, captured_at, study_day, repertoire_ids, *, production_timezone="America/New_York", policy_id=None):
-    from .opening_capacity_frontier import plan_prioritized_opening_admissions
+    from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
     from .real_game_feedback import MISS_REASON
     rows = decoded["candidates"]
     if policy_id is not None:

@@ -9,7 +9,7 @@ import chess
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import PositionAnnotationRequest
+from app.contracts.transport.authored_repertoire import PositionAnnotationRequest
 from tempo_legacy_database.adapters.commands import annotations as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 

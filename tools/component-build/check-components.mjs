@@ -1,6 +1,6 @@
 import ts from "typescript";
-import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
-import { resolve, dirname, sep } from "node:path";
+import { readFileSync, readdirSync, realpathSync, existsSync, statSync } from "node:fs";
+import { resolve, dirname, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
 import { checkWorker } from "./worker-qualifier.mjs";
@@ -84,9 +84,29 @@ export function imports(source, path = "input.ts", strictLoaders = true) {
   visit(syntax);
   return found;
 }
-export function checkTypeScript(root, component) {
+export function checkTypeScript(root, component, repositoryRoot = repository) {
   const sourceRoot = resolve(root, "src");
+  const sourceBoundaries = [{ path: sourceRoot, realPath: realpathSync(sourceRoot), directory: true }];
   const files = sourceFiles(sourceRoot);
+  // Workbench's independently packaged outbox has one canonical database owner.
+  // Only its explicitly listed inputs enter the same checked source closure.
+  if (component.id === "workbench-web" && component.root === "apps/workbench-web") {
+    const ownerRoot = resolve(repositoryRoot, "database/browser/adapters/workbench");
+    for (const input of component.buildInputs) {
+      const inputPath = resolve(root, input);
+      if (!inside(ownerRoot, inputPath)) continue;
+      if (!existsSync(inputPath)) throw new Error("Unavailable database source input: " + input);
+      const realInput = realpathSync(inputPath);
+      const expectedInput = resolve(realpathSync(repositoryRoot), relative(resolve(repositoryRoot), inputPath));
+      if (realInput !== expectedInput) throw new Error("Source symlink/escape: " + input);
+      const directory = statSync(inputPath).isDirectory();
+      sourceBoundaries.push({ path: inputPath, realPath: realInput, directory });
+      files.push(...(directory ? sourceFiles(inputPath) : /\.[cm]?tsx?$/.test(inputPath) ? [inputPath] : []));
+    }
+  }
+  const within = (boundary, path, real = false) => boundary.directory
+    ? inside(real ? boundary.realPath : boundary.path, path)
+    : path === (real ? boundary.realPath : boundary.path);
   const packageMetadata = readJson(resolve(root, "package.json"));
   if (packageMetadata.name !== component.artifact.name || packageMetadata.version !== component.artifact.version) throw new Error("Artifact identity differs from manifest");
   if (Object.keys(packageMetadata.dependencies ?? {}).sort().join() !== [...component.dependencies].sort().join()) throw new Error("Dependencies differ from manifest");
@@ -94,9 +114,9 @@ export function checkTypeScript(root, component) {
   for (const file of files) for (const imported of imports(readFileSync(file, "utf8"), file)) {
     if (imported.startsWith(".")) {
       const target = resolve(dirname(file), imported);
-      if (!inside(sourceRoot, target)) throw new Error("Source escape: " + imported);
-      const candidates = [target, target.replace(/\.js$/, ".ts"), target + ".ts", resolve(target, "index.ts")];
-      if (!candidates.some(candidate => existsSync(candidate) && inside(sourceRoot, realpathSync(candidate)))) throw new Error("Unavailable local dependency: " + imported);
+      const candidates = [target, target.replace(/\.js$/, ".ts"), target.replace(/\.mjs$/, ".mts"), target.replace(/\.cjs$/, ".cts"), target + ".ts", target + ".mts", target + ".cts", resolve(target, "index.ts"), resolve(target, "index.mts"), resolve(target, "index.cts")];
+      if (!candidates.some(candidate => sourceBoundaries.some(boundary => within(boundary, candidate)))) throw new Error("Source escape: " + imported);
+      if (!candidates.some(candidate => existsSync(candidate) && sourceBoundaries.some(boundary => within(boundary, candidate) && within(boundary, realpathSync(candidate), true)))) throw new Error("Unavailable local dependency: " + imported);
     } else {
       const packageName = imported.startsWith("@") ? imported.split("/").slice(0, 2).join("/") : imported.split("/")[0];
       if (!component.dependencies.includes(packageName)) throw new Error("Undeclared dependency: " + imported);
@@ -128,7 +148,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   for (const component of selected) {
     const componentRoot = resolve(root, component.root);
     if (component.type === "worker") results.push({ id: component.id, ...checkWorker(root, component) });
-    else if (existsSync(resolve(componentRoot, "package.json"))) results.push({ id: component.id, ...checkTypeScript(componentRoot, component) });
+    else if (existsSync(resolve(componentRoot, "package.json"))) results.push({ id: component.id, ...checkTypeScript(componentRoot, component, root) });
     else {
       const argumentsList = component.type === "contract"
         ? [resolve(repository, "tools/component-build/check-contract.py"), componentRoot, JSON.stringify(component), resolve(root, component.catalog ?? "contracts/catalog.json")]

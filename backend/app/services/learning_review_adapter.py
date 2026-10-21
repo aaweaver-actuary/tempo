@@ -9,9 +9,9 @@ import tempo_learning_review as learning
 from tempo_legacy_database.adapters.learning_bridge import review as storage
 from tempo_legacy_database.adapters.queue_refresh.foreground import mark_queue_refreshing
 from tempo_legacy_database.connections import connection, read_connection
-from ..models import ReviewRequest
+from app.contracts.transport.study import ReviewRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from ..review_conflicts import ReviewConflict
+from app.contracts.review_conflicts import ReviewConflict
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from . import queue_application
 from .review_service import apply_scheduling_review, capture_daily_queue_order, preserve_daily_queue_order

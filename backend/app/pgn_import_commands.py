@@ -16,10 +16,10 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import.storage import PostgresConnection
-from .services.cards import card_id
+from app.chess.cards import card_id
 from .services.canonical_prefix import ensure_batch_lines_in_scope, certify_admitted_route
 from .services.opening_graph import decision_segments
-from .services.pgn import ParsedLine
+from app.chess.pgn import ParsedLine
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.repertoire_integrity import integrity_summary

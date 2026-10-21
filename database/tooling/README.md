@@ -19,3 +19,10 @@ Existing explicit maintenance commands, physically relocated from `scripts/`. No
 | [tempo-schema-update.sh](tempo-schema-update.sh) | Existing operator-specific interactive wrapper; its existing live path/stop behavior is preserved. Do not use for source checks. |
 
 Focused source check: `node database/tooling/check-migration-inventory.mjs`. [Existing disposable proof scripts](../tests/README.md) and [database/source-schema index](../README.md).
+
+[Fixed CLI probes and backup operations](cli/README.md) contain the existing
+migration-ledger read, Redis readiness/diagnostic probes and PostgreSQL
+backup/restore commands. The caller retains target selection, ownership,
+lifecycle, deadlines, reporting and cleanup decisions. Commands/arguments and
+credential handling are unchanged; importing the fixed helpers runs no probe or
+backup. No command in this category was executed against a service in this task.

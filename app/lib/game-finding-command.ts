@@ -1,3 +1,4 @@
+import { readPendingGameFinding, storePendingGameFinding, clearPendingGameFinding } from "../../database/browser/adapters/games-analysis/game-finding";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -15,7 +16,7 @@ type FindingAction = { kind: "curation" | "decision"; value: string };
 type PendingFindingAction = FindingAction & { operationId: string };
 
 function readPending(storageKey: string): PendingFindingAction | null {
-  const saved = localStorage.getItem(storageKey);
+  const saved = readPendingGameFinding(storageKey);
   if (!saved) return null;
   const parsed: unknown = JSON.parse(saved);
   if (typeof parsed !== "object" || parsed === null ||
@@ -37,12 +38,12 @@ async function saveFindingAction(findingId: string, action: FindingAction) {
       state?: string; response?: unknown; error?: { message?: string };
     };
     if (receipt.state === "complete") {
-      localStorage.removeItem(storageKey);
+      clearPendingGameFinding(storageKey);
       if (pending.kind === action.kind && pending.value === action.value)
         return resultSchema.parse(receipt.response);
       pending = null;
     } else if (receipt.state === "failed") {
-      localStorage.removeItem(storageKey);
+      clearPendingGameFinding(storageKey);
       throw new Error(receipt.error?.message ?? "The earlier finding decision failed.");
     } else if (receipt.state === "pending") {
       if (pending.kind !== action.kind || pending.value !== action.value)
@@ -51,7 +52,7 @@ async function saveFindingAction(findingId: string, action: FindingAction) {
   }
   if (!pending) {
     pending = { ...action, operationId: crypto.randomUUID() };
-    localStorage.setItem(storageKey, JSON.stringify(pending));
+    storePendingGameFinding(storageKey, pending);
   }
   const body = action.kind === "curation" ? { action: action.value } : { decision: action.value };
   let response = await fetch(
@@ -72,7 +73,7 @@ async function saveFindingAction(findingId: string, action: FindingAction) {
     ? parseData(curationResult, raw, "finding curation")
     : parseData(decisionResult, raw, "finding decision");
   if (result.id !== findingId) throw new Error("Finding decision response did not match the request.");
-  localStorage.removeItem(storageKey);
+  clearPendingGameFinding(storageKey);
   return result;
 }
 

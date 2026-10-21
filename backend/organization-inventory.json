@@ -1,0 +1,3461 @@
+{
+  "version": 1,
+  "scope": "Finite backend/app organization; tests retain logical owners; independent service packages remain separate",
+  "baseline_revision": "55539695ee468c366a8505ebd6e75bf61bc9fa53",
+  "original_module_count": 202,
+  "reviewed_original_modules": 202,
+  "review_coverage_is_implementation_completion": false,
+  "original_status_counts": {
+    "reviewed-awaiting-owner-closure": 169,
+    "split-transport-contracts": 1,
+    "moved-cohesive-module": 29,
+    "partial-contract-extraction": 3
+  },
+  "new_python_paths_separately_tracked": [
+    "backend/app/authoring/__init__.py",
+    "backend/app/authoring/discovery/__init__.py",
+    "backend/app/authoring/discovery/acceptance.py",
+    "backend/app/authoring/discovery/contracts.py",
+    "backend/app/chess/__init__.py",
+    "backend/app/chess/cards.py",
+    "backend/app/chess/evaluation.py",
+    "backend/app/chess/motifs.py",
+    "backend/app/chess/opening_segments.py",
+    "backend/app/chess/pgn.py",
+    "backend/app/chess/position_identity.py",
+    "backend/app/chess/threat_geometry.py",
+    "backend/app/contracts/__init__.py",
+    "backend/app/contracts/defense.py",
+    "backend/app/contracts/next_opponent.py",
+    "backend/app/contracts/opening_evidence.py",
+    "backend/app/contracts/opening_graph.py",
+    "backend/app/contracts/opening_move_probability.py",
+    "backend/app/contracts/prefix_diagnostics.py",
+    "backend/app/contracts/prefix_evaluation.py",
+    "backend/app/contracts/prefix_transition.py",
+    "backend/app/contracts/review_conflicts.py",
+    "backend/app/contracts/runtime_timing.py",
+    "backend/app/contracts/studies.py",
+    "backend/app/contracts/transport/__init__.py",
+    "backend/app/contracts/transport/authored_import.py",
+    "backend/app/contracts/transport/authored_integrity.py",
+    "backend/app/contracts/transport/authored_lines.py",
+    "backend/app/contracts/transport/authored_repertoire.py",
+    "backend/app/contracts/transport/content.py",
+    "backend/app/contracts/transport/defense.py",
+    "backend/app/contracts/transport/discovery.py",
+    "backend/app/contracts/transport/endgames.py",
+    "backend/app/contracts/transport/engine.py",
+    "backend/app/contracts/transport/game_analysis.py",
+    "backend/app/contracts/transport/game_findings.py",
+    "backend/app/contracts/transport/game_sync.py",
+    "backend/app/contracts/transport/games.py",
+    "backend/app/contracts/transport/guided_review.py",
+    "backend/app/contracts/transport/settings.py",
+    "backend/app/contracts/transport/study.py",
+    "backend/app/contracts/transport/tactics.py",
+    "backend/app/games/__init__.py",
+    "backend/app/games/contracts.py",
+    "backend/app/games/ingestion/__init__.py",
+    "backend/app/games/ingestion/normalizer.py",
+    "backend/app/games/ingestion/serialization.py",
+    "backend/app/games/opponents/__init__.py",
+    "backend/app/games/opponents/profile.py",
+    "backend/app/games/providers/__init__.py",
+    "backend/app/games/providers/chesscom.py",
+    "backend/app/games/providers/lichess.py",
+    "backend/app/games/records.py",
+    "backend/app/studies/pgn.py",
+    "backend/app/study/openings/__init__.py",
+    "backend/app/study/openings/capacity_frontier.py",
+    "backend/app/study/openings/frozen_math.py",
+    "backend/app/study/openings/policy_reach.py",
+    "backend/app/study/openings/preparedness.py",
+    "backend/app/study/review/__init__.py",
+    "backend/app/study/review/feedback_contracts.py"
+  ],
+  "current_python_module_count": 234,
+  "modules": [
+    {
+      "original_path": "backend/app/__init__.py",
+      "current_paths": [
+        "backend/app/__init__.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Local API package namespace",
+      "responsibility": "One docstring, no imports/exports/registration or I/O.",
+      "next_step": "No split required; keep namespace light and avoid turning it into a wildcard composition barrel."
+    },
+    {
+      "original_path": "backend/app/account_commands.py",
+      "current_paths": [
+        "backend/app/account_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_accounts",
+      "responsibility": "Foreground provider-account settings reconciliation and next-opponent refresh intent.",
+      "next_step": "Move intact to games/accounts/commands.py; keep command registration at composition."
+    },
+    {
+      "original_path": "backend/app/activity_commands.py",
+      "current_paths": [
+        "backend/app/activity_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Background Activity / foreground command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "control_activity"
+          ],
+          "lines": [
+            18,
+            26
+          ],
+          "responsibility": "Validate control request and translate result into current HTTP errors"
+        },
+        {
+          "symbols": [
+            "report_analysis_progress"
+          ],
+          "lines": [
+            32,
+            52
+          ],
+          "responsibility": "Validate Game analysis generation/lease and persist progress through fixed adapter"
+        },
+        {
+          "symbols": [
+            "retry_failed_task"
+          ],
+          "lines": [
+            55,
+            70
+          ],
+          "responsibility": "Retry terminal durable work; special daily-queue status/wakeup followup"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            29,
+            74
+          ],
+          "responsibility": "Three import-time registrations at their existing positions"
+        }
+      ],
+      "next_step": "Move the complete 74-line module to the outer command-composition area grouped under Activity. Preserve all three handlers/registrations together; do not create a progress/retry framework. If later extracting domain policy, keep payload validation/projection in Activity and wire concrete control/task/queue capabilities from the outer layer."
+    },
+    {
+      "original_path": "backend/app/analysis_paste_commands.py",
+      "current_paths": [
+        "backend/app/analysis_paste_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Saved repertoire-line authoring admission, not general engine Analysis or authored Studies chapters",
+      "responsibility": [
+        "commit_analysis_paste validates the existing request/prepared-line envelope, translates existing paste errors, and schedules integrity/graph refresh for each affected repertoire."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/annotation_commands.py",
+      "current_paths": [
+        "backend/app/annotation_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Saved repertoire position annotations",
+      "responsibility": [
+        "FEN-key normalization, trimmed comment/arrow/square DTO projection, empty-note deletion versus save, and existing timestamp/result."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/background_worker.py",
+      "current_paths": [
+        "backend/app/background_worker.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer process composition: legacy embedded background worker",
+      "responsibility": "Cohesive process bootstrap, with a concrete backward dependency on the HTTP composition root; not a Games or Study domain module.",
+      "next_step": "Move this complete entry point into outer worker composition. Extract the existing registration statements plus their required existing handler callbacks out of main into an explicit worker-composition function; import coordinator from its actual owner rather than importing main. Retain current wait/start/signal/stop order until any separate lifecycle change is authorized."
+    },
+    {
+      "original_path": "backend/app/branch_commands.py",
+      "current_paths": [
+        "backend/app/branch_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Saved repertoire branch authoring",
+      "responsibility": [
+        "add_repertoire_branch normalizes legal moves, stable line identity, source-gap admission and certification; remove_repertoire_branch selects matching saved-line prefixes and schedules rebuilds."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/canonical_prefix_api.py",
+      "current_paths": [
+        "backend/app/canonical_prefix_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Canonical saved-source scope HTTP, preview command and save workflow",
+      "responsibility": [
+        "Request DTOs/router endpoints, preview dispatch/read projections and save_prefix revision/source checks with dependent work requests."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/card_commands.py",
+      "current_paths": [
+        "backend/app/card_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Card-definition edit/archive with legacy practice-history coordination",
+      "responsibility": [
+        "_validated_moves is pure legal normalization; revise_card chooses same-ID/merge/copy and preserve/reset history; archive_card and delete_card coordinate destructive changes; integrity refresh selects scan versus rebuild."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/card_deletion.py",
+      "current_paths": [
+        "backend/app/card_deletion.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Cross-owner deletion/retention orchestration and opening-route ancestor policy",
+      "responsibility": [
+        "Tombstone guard facade; task cancellation JSON matching; learned/shared-card retention; opening-evidence summary rebuild; preview/permanent deletion; pure occurrence-aware omit_deleted_graph_steps."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/celery_app.py",
+      "current_paths": [
+        "backend/app/celery_app.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer broker/worker transport composition",
+      "responsibility": "Cohesive configuration: queues/routes, broker/result deadlines, worker delivery settings and periodic maintenance schedule all configure one Celery application. No split justified by its different task names.",
+      "next_step": "Move intact into transport/composition. Update include/task-route/beat/custom-transport import strings and launcher references atomically if task module paths move; keep registered public Celery task names compatible."
+    },
+    {
+      "original_path": "backend/app/command_dispatch.py",
+      "current_paths": [
+        "backend/app/command_dispatch.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "HTTP command transport adapter / API composition",
+      "responsibility": "One cohesive publish/wait/read-receipt/HTTP-result operation. The review-specific exception branches are explicit policy coupling inside that transport function, not evidence that every branch needs a new file.",
+      "next_step": "Move complete HTTP adapter intact first, preserving request digest, idempotency and uncertain-publication behavior. If enforcing domains in a subsequent bounded change, supply the existing review-conflict translation at outer composition instead of letting a generic dispatcher reach into review internals."
+    },
+    {
+      "original_path": "backend/app/command_gateway.py",
+      "current_paths": [
+        "backend/app/command_gateway.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational command receipt lifecycle / transaction application, with command-specific hooks",
+      "responsibility": "Receipt identity, retry/recovery and singular transaction execution are cohesive; the concrete command-specific decisions are separable mixed policy.",
+      "next_step": "Move the receipt transaction application intact into operational commands first. Then lift the existing command-specific identity/prepare/error/after-commit rules to existing owner command registration or explicit outer command wiring. Preserve one transaction/receipt authority and existing compatibility names; split HTTP envelope formatting as a small existing function only when its callers actually need separation."
+    },
+    {
+      "original_path": "backend/app/coverage_commands.py",
+      "current_paths": [
+        "backend/app/coverage_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Durable coverage refresh admission command",
+      "responsibility": [
+        "One thin foreground command delegates a coverage build request and translates missing repertoire."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/coverage_maia_commands.py",
+      "current_paths": [
+        "backend/app/coverage_maia_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Optional coverage provider lease/result application",
+      "responsibility": [
+        "_lease enforces source/run freshness and active lease; claim/heartbeat/release/fail/submit implement one provider result protocol with last-value duplicate move behavior."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/defense_commands.py",
+      "current_paths": [
+        "backend/app/defense_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Defense practice / foreground command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "submit_recognition"
+          ],
+          "lines": [
+            21,
+            30
+          ],
+          "responsibility": "Validate recognition model and translate KeyError/ValueError"
+        },
+        {
+          "symbols": [
+            "submit_attempt"
+          ],
+          "lines": [
+            33,
+            46
+          ],
+          "responsibility": "Validate defense model; forward borrowed transaction and light interval"
+        },
+        {
+          "symbols": [
+            "change_candidate_state"
+          ],
+          "lines": [
+            53,
+            81
+          ],
+          "responsibility": "Dismiss/approve/train-now/pause/resume routing with queue/admission followups"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            49,
+            84
+          ],
+          "responsibility": "Three import-time public command registrations"
+        }
+      ],
+      "next_step": "Keep all 84 lines as one Defense command adapter under outer composition, update registration importer only. Later move existing Defense application methods into the Defense/practice owner with injected Learning admission/completion capabilities; do not route domain implementation through a sibling public import."
+    },
+    {
+      "original_path": "backend/app/defensive_admin_commands.py",
+      "current_paths": [
+        "backend/app/defensive_admin_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Defense / operational audit and backfill command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "request_defensive_audit"
+          ],
+          "lines": [
+            12,
+            19
+          ],
+          "responsibility": "Receipt-backed saved-report audit admission"
+        },
+        {
+          "symbols": [
+            "request_defensive_backfill"
+          ],
+          "lines": [
+            22,
+            29
+          ],
+          "responsibility": "Receipt-backed analyzed-game backfill admission"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            32,
+            33
+          ],
+          "responsibility": "Import-time audit/backfill registration"
+        }
+      ],
+      "next_step": "A first small whole-file move: 33 lines intact to outer composition commands grouped under Defense/admin; update tasks.py import, preserve priorities135/160, deduplication keys and exact initial payloads. No new helper/interface machinery needed merely to move the file."
+    },
+    {
+      "original_path": "backend/app/discovery_commands.py",
+      "current_paths": [
+        "backend/app/discovery_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Prepared Discovery acceptance command composition",
+      "responsibility": [
+        "prepare_discovery_acceptance skips costly recommendation for a matching intent; accept_discovery calls the existing pure acceptance application with a borrowed concrete adapter and maps reason to HTTP."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/endgame_commands.py",
+      "current_paths": [
+        "backend/app/endgame_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Endgames / foreground command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "create_endgame_template"
+          ],
+          "lines": [
+            16,
+            17
+          ],
+          "responsibility": "Preserve removed on-demand calculation HTTP410"
+        },
+        {
+          "symbols": [
+            "create_endgame_attempt"
+          ],
+          "lines": [
+            23,
+            34
+          ],
+          "responsibility": "Lock enabled saved template, create attempt identity/time and existing response"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            20,
+            37
+          ],
+          "responsibility": "Import-time template/attempt registrations"
+        }
+      ],
+      "next_step": "First small cohesive move: keep 37 lines intact as Endgames command composition; update tasks.py:45 and direct test import/source guard paths. Retain removed-template endpoint and returned moves exactly; do not revive endgame calculation."
+    },
+    {
+      "original_path": "backend/app/finding_card_commands.py",
+      "current_paths": [
+        "backend/app/finding_card_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_findings",
+      "responsibility": "Preview/deduplicated save of tactical or middlegame study content from a finding.",
+      "next_step": "Keep finding selection in games/findings; move card/tactic/Study integration to outer bridge; split existing pure line preparation from storage lookups without changing call order."
+    },
+    {
+      "original_path": "backend/app/finding_commands.py",
+      "current_paths": [
+        "backend/app/finding_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_findings",
+      "responsibility": "Receipt-backed curation and explicit acceptance/rejection of imported-game findings.",
+      "next_step": "Move intact commands to games/findings; retain error/registration translation outside pure finding policy."
+    },
+    {
+      "original_path": "backend/app/game_analysis_commands.py",
+      "current_paths": [
+        "backend/app/game_analysis_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_analysis",
+      "responsibility": "Parent/position lease commands, out-of-transaction chess/engine preparation, report callbacks and historical repair admissions.",
+      "next_step": "Move lease/callback commands intact to games/analysis/commands; move existing pure position/plan/report preparation into games/analysis policy helpers."
+    },
+    {
+      "original_path": "backend/app/game_analysis_publication.py",
+      "current_paths": [
+        "backend/app/game_analysis_publication.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_analysis",
+      "responsibility": "Analysis admission, eight-ply invisible staging, complete generation switch and durable cross-feature follow-ups.",
+      "next_step": "Move publication commands/worker operations intact under games/analysis/publication; move _slice_rows as an existing pure helper; place cross-feature follow-up wiring outside domain."
+    },
+    {
+      "original_path": "backend/app/game_commands.py",
+      "current_paths": [
+        "backend/app/game_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_controls",
+      "responsibility": "Adaptive game exclusion plus downstream refresh intents, and explicit defensive-scan admission.",
+      "next_step": "Move exclusion command intact to games/control; put defensive-scan handoff in outer Games\u2192Defense composition."
+    },
+    {
+      "original_path": "backend/app/game_evidence_commands.py",
+      "current_paths": [
+        "backend/app/game_evidence_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "legacy_evidence_bridge",
+      "responsibility": "Legacy Evidence envelope preparation, current-source recheck and Learning receiver composition; separate accepted-card admission command.",
+      "next_step": "Move intact into composition/legacy_evidence command boundary; isolate HTTP envelope errors from pure authority decisions only when moving that block; root borrowed connection remains root-owned."
+    },
+    {
+      "original_path": "backend/app/game_evidence_routes.py",
+      "current_paths": [
+        "backend/app/game_evidence_routes.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "legacy_evidence_bridge",
+      "responsibility": "HTTP dispatch for legacy delivery/accepted-card admission and read-only receiving-card status.",
+      "next_step": "Move intact to composition/legacy_evidence/routes.py; keep endpoints/headers and command IDs."
+    },
+    {
+      "original_path": "backend/app/game_sync_commands.py",
+      "current_paths": [
+        "backend/app/game_sync_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_sync",
+      "responsibility": "Durable sync admission/recovery and bounded provider-window planning.",
+      "next_step": "Move intact admission to games/sync/commands first; extract only existing cutoff/window descriptor block if isolating pure planning."
+    },
+    {
+      "original_path": "backend/app/guided_review_commands.py",
+      "current_paths": [
+        "backend/app/guided_review_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_guided_review",
+      "responsibility": "Receipt-backed correction-first guided game review start/attempt commands, separate from ordinary Study/FSRS review.",
+      "next_step": "Move intact commands under games/guided_review; move existing ranking/grading blocks to same-owner helpers when separating policy from transport."
+    },
+    {
+      "original_path": "backend/app/integrity_repair_commands.py",
+      "current_paths": [
+        "backend/app/integrity_repair_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Prepared source/card integrity repair",
+      "responsibility": [
+        "Prepared repair DTO; stable replacement-line mutation; signature/expected-source checks and graph-task-before-card repair sequence."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/legacy_game_observation.py",
+      "current_paths": [
+        "backend/app/legacy_game_observation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "legacy_evidence_bridge",
+      "responsibility": "Read-only one-game source/capture export plus exclusive-output CLI.",
+      "next_step": "Move CLI main intact to tools/legacy_evidence (outside database because it exports domain observation); keep capture_game in bridge application/capture."
+    },
+    {
+      "original_path": "backend/app/main.py",
+      "current_paths": [
+        "backend/app/main.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer HTTP composition plus embedded application workflows across domains",
+      "responsibility": "See original reviewed definitions and imports.",
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/models.py",
+      "current_paths": [
+        "backend/app/models.py",
+        "backend/app/contracts/transport/settings.py",
+        "backend/app/contracts/transport/study.py",
+        "backend/app/contracts/transport/authored_lines.py",
+        "backend/app/contracts/transport/authored_integrity.py",
+        "backend/app/contracts/transport/content.py",
+        "backend/app/contracts/transport/authored_repertoire.py",
+        "backend/app/contracts/transport/tactics.py",
+        "backend/app/contracts/transport/endgames.py",
+        "backend/app/contracts/transport/game_analysis.py",
+        "backend/app/contracts/transport/engine.py",
+        "backend/app/contracts/transport/defense.py",
+        "backend/app/contracts/transport/discovery.py",
+        "backend/app/contracts/transport/game_findings.py",
+        "backend/app/contracts/transport/game_sync.py",
+        "backend/app/contracts/transport/games.py",
+        "backend/app/contracts/transport/authored_import.py",
+        "backend/app/contracts/transport/guided_review.py"
+      ],
+      "status": "split-transport-contracts",
+      "owner": "Multiple explicit feature transport contracts",
+      "responsibility": "Class fields/validators are mostly cohesive individually. The global model module forces unrelated consumers through one mixed-owner import path; group classes by actual owner, not file size.",
+      "next_step": "Only explicit compatibility exports remain in models.py; no duplicate model definitions."
+    },
+    {
+      "original_path": "backend/app/next_opponent_contract.py",
+      "current_paths": [
+        "backend/app/contracts/next_opponent.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games opponent-profile public contracts",
+      "responsibility": "Coherent immutable profile/cohort/evidence quality/freshness envelope; no profile estimation or provider behavior here.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/opening_evidence_api.py",
+      "current_paths": [
+        "backend/app/opening_evidence_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Optional opening shadow evidence transport and command composition",
+      "responsibility": [
+        "Deliver bounded checkpoint requests to the existing durable command; expose decision/attempt evidence projections and registration of the prepared standalone checkpoint handler."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/opening_evidence_contracts.py",
+      "current_paths": [
+        "backend/app/contracts/opening_evidence.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Learning-owned opening practice observation/checkpoint contract",
+      "responsibility": "Manifest, decision event, terminal and checkpoint shapes are cohesive. Event-field validator is supplied-data validation, not scheduling policy.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/opening_move_probability_contracts.py",
+      "current_paths": [
+        "backend/app/contracts/opening_move_probability.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Shared opening move evidence contract and pure supplied-data transformations",
+      "responsibility": "Pure records/validators and pure transformation functions are two logical responsibilities; no provider/store/clock evaluation inside them, but import purity is false today.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/opening_segmentation_api.py",
+      "current_paths": [
+        "backend/app/opening_segmentation_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Read-only structural segmentation preview and preference/refresh commands",
+      "responsibility": [
+        "Segmentation DTO/router; state/projection/snapshot pagination; preference freshness checks; refresh admission."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/operations/__init__.py",
+      "current_paths": [
+        "backend/app/operations/__init__.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer operational health/maintenance composition namespace",
+      "responsibility": [
+        {
+          "symbols": [
+            "module docstring"
+          ],
+          "lines": [
+            1,
+            1
+          ],
+          "responsibility": "Docstring-only namespace marker; no imports, exports, registrations or I/O"
+        }
+      ],
+      "next_step": "Retain this marker with its operations children; no standalone move/split or new public barrel is justified by a one-line docstring."
+    },
+    {
+      "original_path": "backend/app/operations/postgres_readiness.py",
+      "current_paths": [
+        "backend/app/operations/postgres_readiness.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational product readiness HTTP adapter",
+      "responsibility": "Cohesive readiness operation: database source facts, queue progress and required worker presence implement one existing product-health contract. Do not split into domains solely because facts name different systems.",
+      "next_step": "Move intact under operational readiness / HTTP composition if directory layout changes; root database health facts remain database-owned. Do not change required queue readiness semantics as a move."
+    },
+    {
+      "original_path": "backend/app/opportunity_commands.py",
+      "current_paths": [
+        "backend/app/opportunity_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Discovery opportunity state actions and practice admission composition",
+      "responsibility": [
+        "Dismiss/acknowledge/snooze/refresh are coherent opportunity actions; train_opportunity is a cross-owner admission transaction."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/pgn_import_commands.py",
+      "current_paths": [
+        "backend/app/pgn_import_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Saved repertoire PGN source import and import-operation discard",
+      "responsibility": [
+        "Payload models and preparation count chess segments; admit_pgn_import stores/certifies chosen lines and refreshes projections; discard_pgn_import fences the durable operation without undoing committed practice."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/prefix_diagnostics_api.py",
+      "current_paths": [
+        "backend/app/prefix_diagnostics_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Optional prefix-evidence diagnostic read/projection",
+      "responsibility": [
+        "Bounded background-admitted graph/evidence snapshot reads, presentation-manifest construction, pagination and diagnostic projection."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/prefix_diagnostics_contracts.py",
+      "current_paths": [
+        "backend/app/contracts/prefix_diagnostics.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Read-only opening observation diagnostics public contract",
+      "responsibility": "Cohesive bounded list/detail/window/observation schema over v1 shadow evidence; no scheduling or grading implementation.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/prefix_evaluation_api.py",
+      "current_paths": [
+        "backend/app/prefix_evaluation_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Bounded structural opening evaluation snapshot/application and HTTP admission",
+      "responsibility": [
+        "Diagnostic route/error translation; foreground/deadline admission; coherent bounded source capture/hydration; pure evaluator driving and stale recheck."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/prefix_evaluation_contracts.py",
+      "current_paths": [
+        "backend/app/contracts/prefix_evaluation.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Authored opening structural evaluation public contract",
+      "responsibility": "Cohesive source/current/proposed structures and metric/delta schema; no graph construction algorithm or persistence.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/prefix_split_commands.py",
+      "current_paths": [
+        "backend/app/prefix_split_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Card prefix shortening plus practice/history and graph coordination",
+      "responsibility": [
+        "Accept split enforces expected revision, queue lock, split mutation, validation markers and linked refresh; reject records the latest failed Study review boundary."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/prefix_transition_api.py",
+      "current_paths": [
+        "backend/app/prefix_transition_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Reader-only whole-source transition planning",
+      "responsibility": [
+        "Membership discovery, bounded transition/source snapshot assembly, generator driving and fresh-plan verification; no saved plans or receipts here."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/prefix_transition_apply_api.py",
+      "current_paths": [
+        "backend/app/prefix_transition_apply_api.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "HTTP delivery adapter for existing durable transition apply",
+      "responsibility": [
+        "Single route validates authoritative backend and dispatches the existing operation with exact idempotency identity and zero wait."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/prefix_transition_contracts.py",
+      "current_paths": [
+        "backend/app/contracts/prefix_transition.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Authored opening transition plan/application public contract",
+      "responsibility": "Request/disposition/plan/apply/result types are coherent one transition boundary; do not split merely because responses differ.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/queue_attempt_origins.py",
+      "current_paths": [
+        "backend/app/queue_attempt_origins.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study daily practice / queue attempt authority",
+      "responsibility": "Reconstruct or validate one durable queue-attempt identity against retained provenance and current content.",
+      "next_step": "Move both functions intact as attempt_origins.py; keep retained-completion and SQLite-initializer compatibility exports pointing at the single root implementations."
+    },
+    {
+      "original_path": "backend/app/queue_commands.py",
+      "current_paths": [
+        "backend/app/queue_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study daily practice / queue command composition",
+      "responsibility": "Execute identified queue issuance, guided-failure/bury mutations and durable refresh requests on the command caller transaction.",
+      "next_step": "Move the eight functions and four explicit command registrations intact as commands.py. SQL/compiler aliases stay compatibility exports to their existing single root home; no command consolidation."
+    },
+    {
+      "original_path": "backend/app/repertoire_commands.py",
+      "current_paths": [
+        "backend/app/repertoire_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Repertoire metadata commands with deletion/queue/Games composition",
+      "responsibility": [
+        "Select main, rename, delete delegation and daily-limit update/result projection."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/repertoire_settings.py",
+      "current_paths": [
+        "backend/app/repertoire_settings.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Repertoire-specific daily admission-limit facts/response",
+      "responsibility": [
+        "effective_opening_limits materializes root projection; repertoire_settings_response rejects reserved/missing sources and produces the existing DTO."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/review_commands.py",
+      "current_paths": [
+        "backend/app/review_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study daily practice / review command composition",
+      "responsibility": "Register the existing Learning review commands and fence reconciliation before converting a handled conflict into a successful transport receipt.",
+      "next_step": "Move intact as commands.py, retaining both handlers and register_review_commands call. Keep savepoint operations in the existing root adapter."
+    },
+    {
+      "original_path": "backend/app/review_conflicts.py",
+      "current_paths": [
+        "backend/app/contracts/review_conflicts.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Study review HTTP transport error contract",
+      "responsibility": "ReviewConflict constructor and information method express one machine-readable HTTP conflict; no size-based split.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/__init__.py",
+      "current_paths": [
+        "backend/app/services/__init__.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Legacy application services namespace marker",
+      "responsibility": [
+        {
+          "symbols": [
+            "module docstring"
+          ],
+          "lines": [
+            1,
+            1
+          ],
+          "responsibility": "Docstring-only namespace; no wildcard barrel or runtime public contract"
+        }
+      ],
+      "next_step": "Leave the marker while remaining children are moved by owner; remove only if the package actually becomes empty in a later bounded move. Do not create a replacement global services barrel."
+    },
+    {
+      "original_path": "backend/app/services/activity_gate.py",
+      "current_paths": [
+        "backend/app/services/activity_gate.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Shared operational foreground/background admission and process context",
+      "responsibility": "ApplicationActivityGate mixes local admission/context ownership with concrete external admission observation and telemetry composition.",
+      "next_step": "Move intact into operational admission first. The smallest genuine split is to extract the existing external foreground observation/lease operations into a transport-admission adapter while local condition/context state remains the gate; retain telemetry hooks as injected context managers/no-op callbacks from outer wiring."
+    },
+    {
+      "original_path": "backend/app/services/analysis.py",
+      "current_paths": [
+        "backend/app/services/analysis.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Analysis / local integration capabilities",
+      "responsibility": [
+        {
+          "symbols": [
+            "AnalysisCapabilities",
+            "STOCKFISH_VERSION",
+            "MAIA_VERSION"
+          ],
+          "lines": [
+            5,
+            18
+          ],
+          "responsibility": "Immutable local capability metadata"
+        },
+        {
+          "symbols": [
+            "explorer_url"
+          ],
+          "lines": [
+            21,
+            31
+          ],
+          "responsibility": "Pure public Explorer URL construction"
+        }
+      ],
+      "next_step": "Move the cohesive module intact into Analysis integration/contracts. Do not confuse it with Games-derived analysis or a worker/runtime implementation."
+    },
+    {
+      "original_path": "backend/app/services/analysis_paste.py",
+      "current_paths": [
+        "backend/app/services/analysis_paste.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Saved repertoire-line paste parsing, matching and admission",
+      "responsibility": [
+        "Pure PGN variation/token parsing and legal route preparation; cached saved-line matching, conflict/destination previews, and an atomic selected-line admission workflow."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/background_activity.py",
+      "current_paths": [
+        "backend/app/services/background_activity.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational activity control application and tray read presentation",
+      "responsibility": "Concrete two related actions: write-side progress/control policy and read-side tray presentation. Their shared nine-source storage projection is already centralized.",
+      "next_step": "Move progress/control functions together into operational activity commands and tray mapping/list into operational activity queries when separating by logical action. Keep the exact existing source list and root fixed operations; do not split transactions or add per-domain database access."
+    },
+    {
+      "original_path": "backend/app/services/background_diagnostic_types.py",
+      "current_paths": [
+        "backend/app/services/background_diagnostic_types.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Shared operational diagnostic validation contract",
+      "responsibility": "Cohesive timestamp/kind/state primitive definitions; no I/O and no mixed feature implementation.",
+      "next_step": "Move intact alongside diagnostic DTOs and label allowlist. Retain one canonical identity for annotations and validation; avoid a new global domain wildcard barrel."
+    },
+    {
+      "original_path": "backend/app/services/background_diagnostics.py",
+      "current_paths": [
+        "backend/app/services/background_diagnostics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational bounded diagnostic read projection/application",
+      "responsibility": "Cohesive snapshot projection. Its concrete private owner predicates and storage/runtime wiring are boundary debt; not a reason to split every projection loop.",
+      "next_step": "Move whole projection under operational diagnostics. Repoint model imports to pure diagnostic contracts. Outer composition should supply existing engine-eligibility facts/read operation and runtime snapshot capability, rather than projection importing a domain command internal; keep all complete queries/root deadline resources root-owned."
+    },
+    {
+      "original_path": "backend/app/services/background_metric_kinds.py",
+      "current_paths": [
+        "backend/app/services/background_metric_kinds.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Shared operational diagnostic contract labels",
+      "responsibility": "Cohesive finite string allowlist; it imports no feature implementation and needs no split.",
+      "next_step": "Move intact alongside shared diagnostic contracts. Keep a single canonical allowlist and old export where needed; do not turn labels into a domain registry or handler dispatcher."
+    },
+    {
+      "original_path": "backend/app/services/background_metrics.py",
+      "current_paths": [
+        "backend/app/services/background_metrics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational transaction-fenced metrics emission plus public diagnostic response contracts",
+      "responsibility": "Concrete two-way mix: mutation policy/functions and read-response model definitions. Model consumers currently load persistence/runtime implementation.",
+      "next_step": "Move DTO classes intact into shared diagnostic contracts with WorkerStage/RuntimeSnapshot and primitive types. Keep emission functions/event mapping together in operational metrics; root counter SQL stays root. Re-export old names during mechanical consumer path updates."
+    },
+    {
+      "original_path": "backend/app/services/background_runtime.py",
+      "current_paths": [
+        "backend/app/services/background_runtime.py",
+        "backend/app/contracts/runtime_timing.py"
+      ],
+      "status": "partial-contract-extraction",
+      "owner": "Operational observability: training spans, worker status and HTTP response timing",
+      "responsibility": "Three concrete responsibilities with different consumers and side effects; a file move alone leaves them coupled.",
+      "next_step": "The shared declaration is separated; the original mixed workflow still needs owner/composition closure."
+    },
+    {
+      "original_path": "backend/app/services/background_wakes.py",
+      "current_paths": [
+        "backend/app/services/background_wakes.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Celery/Kombu maintenance wake transport adapter",
+      "responsibility": "Cohesive end-to-end token-fenced wake transport, despite multiple framework subclasses. Publication/consume/redelivery behavior belongs together.",
+      "next_step": "Move the complete transport module intact, updating custom transport import path and wrapper references in celery_app. Keep public Celery task names/headers and root Redis storage module unchanged."
+    },
+    {
+      "original_path": "backend/app/services/canonical_prefix.py",
+      "current_paths": [
+        "backend/app/services/canonical_prefix.py",
+        "backend/app/chess/position_identity.py"
+      ],
+      "status": "partial-contract-extraction",
+      "owner": "Saved-source canonical scope policy and certificate application",
+      "responsibility": [
+        "Pure position/prefix parsing, scope/assumption and origin rules; source fact hydration, batch scope validation, admitted-route certification and epoch-guarded position publication."
+      ],
+      "next_step": "The shared declaration is separated; the original mixed workflow still needs owner/composition closure."
+    },
+    {
+      "original_path": "backend/app/services/canonical_prefix_preview.py",
+      "current_paths": [
+        "backend/app/services/canonical_prefix_preview.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Canonical source preview lifecycle and bounded retention application",
+      "responsibility": [
+        "Preview request/reuse/projection; bounded item-by-item validation/certification with stale-source fences; retention victim retirement, invalidation and bounded cleanup."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/canonical_scope_freshness.py",
+      "current_paths": [
+        "backend/app/services/canonical_scope_freshness.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Current source identity and report/opportunity freshness policy",
+      "responsibility": [
+        "Construct canonical scope identity and compare coverage/opportunity snapshots against current source and game epoch."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/cards.py",
+      "current_paths": [
+        "backend/app/chess/cards.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Shared chess identity compatibility / tempo_chess_core",
+      "responsibility": [
+        {
+          "symbols": [
+            "card_id",
+            "__all__"
+          ],
+          "lines": [
+            1,
+            4
+          ],
+          "responsibility": "Only a re-export; canonical implementation is already tempo_chess_core"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/chesscom_client.py",
+      "current_paths": [
+        "backend/app/games/providers/chesscom.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / ingestion / Chess.com provider adapter",
+      "responsibility": [
+        {
+          "symbols": [
+            "_validate_json",
+            "fetch_chesscom_games",
+            "fetch_chesscom_archive_urls",
+            "fetch_chesscom_archive_month"
+          ],
+          "lines": [
+            14,
+            136
+          ],
+          "responsibility": "One HTTP archive transport/validation/normalization responsibility; monthly slices remain bounded"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/decision_readiness.py",
+      "current_paths": [
+        "backend/app/services/decision_readiness.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Project versioned card/decision readiness from supplied immutable practice/observation/inheritance snapshots and an as-of instant.",
+      "responsibility": "Project versioned card/decision readiness from supplied immutable practice/observation/inheritance snapshots and an as-of instant.",
+      "next_step": "Keep the readiness evidence/estimate model and projection intact; separately resolve the current private scheduler-factory import through an explicit owning scheduling capability/public pure API, not another private sibling module."
+    },
+    {
+      "original_path": "backend/app/services/defensive_analysis.py",
+      "current_paths": [
+        "backend/app/services/defensive_analysis.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Defense admission policy + outer database compatibility surface",
+      "responsibility": [
+        {
+          "symbols": [
+            "DEFENSIVE_TASK_KINDS"
+          ],
+          "lines": [
+            6,
+            9
+          ],
+          "responsibility": "Fixed defensive task classification shared with durable scheduling/Activity"
+        },
+        {
+          "symbols": [
+            "analysis_enabled"
+          ],
+          "lines": [
+            12,
+            16
+          ],
+          "responsibility": "Read current settings fact and preserve missing-setting503/bool decision"
+        },
+        {
+          "symbols": [
+            "task_admission_sql",
+            "recommendation_sql",
+            "search_admission_sql",
+            "recommendation_request_ids_sql"
+          ],
+          "lines": [
+            19,
+            32
+          ],
+          "responsibility": "Four forwarding SQL-string helpers; actual SQL lives in root DB adapter"
+        }
+      ],
+      "next_step": "Move the existing task-kind value and bool/missing-setting decision into Defense admission policy with a supplied settings fact; keep transport503 translation and root storage binding in outer composition. Route SQL-fragment consumers to the already-existing root DB implementation through their owning composition rather than moving/duplicating SQL or declaring string-returning helpers a public domain API."
+    },
+    {
+      "original_path": "backend/app/services/discovery_acceptance_application.py",
+      "current_paths": [
+        "backend/app/authoring/discovery/acceptance.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Pure prepared Discovery acceptance application",
+      "responsibility": [
+        "Currentness policy and replay-safe prepared acceptance through an existing typed owned Protocol; stable line identity, choice validation and semantic failures."
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/discovery_acceptance_contracts.py",
+      "current_paths": [
+        "backend/app/authoring/discovery/contracts.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Discovery acceptance owned immutable contracts and borrowed-transaction Protocol",
+      "responsibility": [
+        "Explicit choice/intent/scope/opportunity DTOs, semantic failure enum and fixed-purpose acceptance operations with documented caller transaction and lock-order obligations."
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/discovery_acceptance_store.py",
+      "current_paths": [
+        "backend/app/services/discovery_acceptance_store.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Concrete borrowed-transaction acceptance adapter and cross-owner task/source wiring",
+      "responsibility": [
+        "Hydrate exact acceptance DTOs from root query results; coordinate source/game epoch/opportunity locks; write encoded intent/marker and enqueue or requeue task under the caller transaction."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/discovery_admission.py",
+      "current_paths": [
+        "backend/app/services/discovery_admission.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Discovery continuation recommendation, intent lifecycle and optional cross-owner materialization/admission",
+      "responsibility": [
+        "Pure board similarity, rank, route-example and intent identity rules; evidence/source/report preparation; bounded recommendation read/calculate result; legacy intent creation, branch materialization, coverage waiting and practice admission worker phases."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/durable_scheduling.py",
+      "current_paths": [
+        "backend/app/services/durable_scheduling.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational durable-worker fairness policy",
+      "responsibility": "Cohesive persisted-turn scheduling policy plus thin existing root query wrappers. Domain names appear as finite work-kind data, not implementation imports except defensive-kind constants.",
+      "next_step": "Move intact under operational durable queue scheduling. Extract only the finite work-kind/policy label configuration into explicit shared contract or outer wiring if needed for domain import enforcement; keep state-machine/turn selection in one module and persistence root-owned."
+    },
+    {
+      "original_path": "backend/app/services/durable_tasks.py",
+      "current_paths": [
+        "backend/app/services/durable_tasks.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational durable task lifecycle, with owner-specific effect hooks and sanitized task read presentation",
+      "responsibility": "Core retry/lease/generation lifecycle is cohesive. Concrete queue, graph/prefix and producer status updates are real mixed owner hooks, and serialization/list presentation is a separate read action.",
+      "next_step": "First move lifecycle module intact under operational durable queue application. Then extract serialize_task/list_tasks into the operator read action. Move existing source-specific validation/status/publication hooks into owning application functions supplied by explicit outer composition at the same call points; retain generic lifecycle authority and exact caller transaction. Do not replace finite hooks with a plugin/dispatch framework."
+    },
+    {
+      "original_path": "backend/app/services/engine_diagnostics.py",
+      "current_paths": [
+        "backend/app/services/engine_diagnostics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Background diagnostics / engine outcome accounting",
+      "responsibility": [
+        {
+          "symbols": [
+            "record_engine_outcome"
+          ],
+          "lines": [
+            6,
+            37
+          ],
+          "responsibility": "One cohesive diagnostics-validation/counter projection plus one transaction-borrowing metric effect"
+        }
+      ],
+      "next_step": "Move intact with Background diagnostics and the existing metric owner. Do not split a cohesive 37-line counter projector merely for size; inject/wire the one semantic counter writer where strict adapter boundaries require it."
+    },
+    {
+      "original_path": "backend/app/services/engine_scheduling.py",
+      "current_paths": [
+        "backend/app/services/engine_scheduling.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational shared-engine arbitration application",
+      "responsibility": "One cohesive reservation/fairness decision using root fixed facts; HTTP error translation is the narrow adapter concern embedded in it.",
+      "next_step": "Move intact into shared engine-resource scheduling application; optionally move missing-state HTTP translation to caller adapter while preserving existing externally visible error. Keep root SQL compatibility exports at storage/contracts as appropriate, not a public sibling-domain barrel."
+    },
+    {
+      "original_path": "backend/app/services/frozen_maia_math.py",
+      "current_paths": [
+        "backend/app/study/openings/frozen_math.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Estimate represented-path/decision mass and greedy marginal coverage for the existing frozen-order model.",
+      "responsibility": "Estimate represented-path/decision mass and greedy marginal coverage for the existing frozen-order model.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/frozen_maia_plan.py",
+      "current_paths": [
+        "backend/app/services/frozen_maia_plan.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Interpret a supplied source snapshot into a lineage-aware, inspectable frozen-order plan and activation diagnostics.",
+      "responsibility": "Interpret a supplied source snapshot into a lineage-aware, inspectable frozen-order plan and activation diagnostics.",
+      "next_step": "Move intact, including lineage recovery, inventory classification and create_plan; the long function is one cohesive plan-production action."
+    },
+    {
+      "original_path": "backend/app/services/frozen_opening_order.py",
+      "current_paths": [
+        "backend/app/services/frozen_opening_order.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study opening frozen-preference compatibility composition",
+      "responsibility": "Bind caller transaction and existing pure frozen-order policy to current publication, exposure, definition and legacy-priority facts.",
+      "next_step": "Move intact as frozen_preference.py, preserving all eight root-operation aliases and helper exports. Keep existing app.study.frozen_order policy and root storage single implementations."
+    },
+    {
+      "original_path": "backend/app/services/game_analysis.py",
+      "current_paths": [
+        "backend/app/chess/evaluation.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / evaluation-derived findings",
+      "responsibility": [
+        {
+          "symbols": [
+            "classify_swings"
+          ],
+          "lines": [
+            4,
+            19
+          ],
+          "responsibility": "Pure first-major-mistake/missed-punishment classification from White-relative evaluations"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/game_analysis_worker.py",
+      "current_paths": [
+        "backend/app/services/game_analysis_worker.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_analysis",
+      "responsibility": "Legacy per-position analysis workflow and evaluation projection, with pure replay/scoring/confirmation helpers.",
+      "next_step": "Move _positions/_white_score/_confirmed_indices intact to games/analysis policy; keep legacy claim/save/release orchestration separate from native command path, not consolidated."
+    },
+    {
+      "original_path": "backend/app/services/game_findings.py",
+      "current_paths": [
+        "backend/app/services/game_findings.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_findings",
+      "responsibility": "Repertoire/engine-derived findings and tactical opportunities plus pack recommendations.",
+      "next_step": "Keep findings application owner under games/findings; split existing capture, pure derivation and publication blocks. Place recommendation joining with Tactics outside Games domain."
+    },
+    {
+      "original_path": "backend/app/services/game_normalizer.py",
+      "current_paths": [
+        "backend/app/games/ingestion/normalizer.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / ingestion normalization",
+      "responsibility": [
+        {
+          "symbols": [
+            "RejectedGame",
+            "_provider_game_id",
+            "_played_at",
+            "_speed"
+          ],
+          "lines": [
+            18,
+            48
+          ],
+          "responsibility": "Provider-input admission helpers"
+        },
+        {
+          "symbols": [
+            "normalize_provider_pgn"
+          ],
+          "lines": [
+            51,
+            156
+          ],
+          "responsibility": "One legal PGN-to-GameRecord normalizer, canonical identity and rating projection"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/game_record.py",
+      "current_paths": [
+        "backend/app/games/records.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / ingestion public intermediate record",
+      "responsibility": [
+        {
+          "symbols": [
+            "GameRecord"
+          ],
+          "lines": [
+            7,
+            24
+          ],
+          "responsibility": "Immutable normalized provider game fields, including source identity, ratings and UCI moves"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/game_sync.py",
+      "current_paths": [
+        "backend/app/services/game_sync.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_sync",
+      "responsibility": "Compatibility provider synchronization, import idempotency and per-provider public result/error reporting.",
+      "next_step": "Move intact compatibility workflow to games/sync/application; keep provider client assembly in games/sync/adapters and existing record/starting-point pure decisions in same owner."
+    },
+    {
+      "original_path": "backend/app/services/game_sync_coordinator.py",
+      "current_paths": [
+        "backend/app/services/game_sync_coordinator.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "background_composition",
+      "responsibility": "Shared legacy background lifecycle and fairness across sync, derivation, coverage, integrity, statistics, priority, graph tasks and maintenance.",
+      "next_step": "Keep/move GameSyncCoordinator and existing handler/maintenance registration to composition/background, extract existing Games sync helpers separately. Keep cross-owner seven-step derivation wiring in outer composition."
+    },
+    {
+      "original_path": "backend/app/services/game_sync_serialization.py",
+      "current_paths": [
+        "backend/app/games/ingestion/serialization.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / sync public projection",
+      "responsibility": [
+        {
+          "symbols": [
+            "serialize_job"
+          ],
+          "lines": [
+            6,
+            19
+          ],
+          "responsibility": "Public job envelope; parses stored result_json only for completed jobs"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/gameplay_events.py",
+      "current_paths": [
+        "backend/app/services/gameplay_events.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_findings",
+      "responsibility": "Versioned tactical gameplay events from candidate analysis with an explicit legacy no-candidate path.",
+      "next_step": "Move under games/events; extract the existing46-236 derivation block from captured facts, leaving root capture/publication in application composition."
+    },
+    {
+      "original_path": "backend/app/services/guided_review.py",
+      "current_paths": [
+        "backend/app/services/guided_review.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_guided_review",
+      "responsibility": "Durable correction-only game-review policy, reconciliation and public session presentation.",
+      "next_step": "Move intact under games/guided_review; keep _impact/_public_item as explicit same-owner policy/presentation helpers; extract existing grading/reconciliation computation only as needed."
+    },
+    {
+      "original_path": "backend/app/services/introduction_priorities.py",
+      "current_paths": [
+        "backend/app/services/introduction_priorities.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study opening introduction ranking, evidence composition and priority-job lifecycle",
+      "responsibility": "Currently combines the existing line-completion/frontier scoring kernel, acquisition of public/personal/miss evidence and refresh/publication/status orchestration.",
+      "next_step": "Split at existing functions: preserve the scoring kernel and four DTOs intact; move evidence acquisition/derivation functions together into priority_evidence.py; keep enqueue/claim/execute/publish/status actions in priority_jobs.py. No scoring-model consolidation or generic lifecycle runner."
+    },
+    {
+      "original_path": "backend/app/services/learning_review_adapter.py",
+      "current_paths": [
+        "backend/app/services/learning_review_adapter.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Translate legacy review requests/failures and supply the Learning review application\u2019s concrete legacy capabilities.",
+      "responsibility": "Translate legacy review requests/failures and supply the Learning review application\u2019s concrete legacy capabilities.",
+      "next_step": "Keep LearningReviewAdapter intact as the coherent existing ReviewStore implementation. Move request/conflict translation (command_from_request/translate_failure/submit wrapper) as whole functions to transport/study/review; composition retains store construction and transaction/deferred-effect ownership."
+    },
+    {
+      "original_path": "backend/app/services/legacy_game_authority.py",
+      "current_paths": [
+        "backend/app/services/legacy_game_authority.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "legacy_evidence_bridge",
+      "responsibility": "Legacy source authority/historical physical decision verification and small source-capture composition.",
+      "next_step": "Keep captured authority verifier and source capture under composition/legacy_evidence/authority; move existing pure values/chronology helpers to a neutral receiving-owned contract area before Games folder moves."
+    },
+    {
+      "original_path": "backend/app/services/legacy_game_capture.py",
+      "current_paths": [
+        "backend/app/services/legacy_game_capture.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "legacy_evidence_bridge",
+      "responsibility": "Finite all-stream source traversal and bounded retained decision-scope proof, with no partial authority.",
+      "next_step": "Move capture/traversal intact into legacy bridge/capture with its authority data/helpers; isolate existing source projection/route relevance blocks only for a later policy boundary."
+    },
+    {
+      "original_path": "backend/app/services/legacy_game_evidence_scope.py",
+      "current_paths": [
+        "backend/app/services/legacy_game_evidence_scope.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "legacy_evidence_bridge",
+      "responsibility": "Two shared legacy workspace/reason constants consumed by both receiver and ordinary Learning queue presentation.",
+      "next_step": "Move intact to a neutral Learning-owned legacy-bridge contract/value location, not Games implementation."
+    },
+    {
+      "original_path": "backend/app/services/legacy_study_remediation.py",
+      "current_paths": [
+        "backend/app/services/legacy_study_remediation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Bridge retained legacy accepted authority/issuance/review outcomes to the public Learning remediation owner on the caller transaction.",
+      "responsibility": "Bridge retained legacy accepted authority/issuance/review outcomes to the public Learning remediation owner on the caller transaction.",
+      "next_step": "Move intact as the existing legacy integration adapter; do not scatter its current_fact/issuance/settlement lock and identity fences or copy another owner\u2019s implementation."
+    },
+    {
+      "original_path": "backend/app/services/lichess_client.py",
+      "current_paths": [
+        "backend/app/games/providers/lichess.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / ingestion / Lichess provider adapter",
+      "responsibility": [
+        {
+          "symbols": [
+            "ProviderRequestError"
+          ],
+          "lines": [
+            14,
+            18
+          ],
+          "responsibility": "Shared provider failure value currently declared in one transport module"
+        },
+        {
+          "symbols": [
+            "fetch_lichess_games",
+            "fetch_lichess_games_window"
+          ],
+          "lines": [
+            21,
+            87
+          ],
+          "responsibility": "Bounded PGN export transport, content/status checks and normalization"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/motif_detectors.py",
+      "current_paths": [
+        "backend/app/chess/motifs.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Tactics / deterministic motif evidence",
+      "responsibility": [
+        {
+          "symbols": [
+            "EngineCandidate",
+            "MotifEvidence"
+          ],
+          "lines": [
+            40,
+            76
+          ],
+          "responsibility": "Explicit candidate/evidence values"
+        },
+        {
+          "symbols": [
+            "_PinGeometry",
+            "geometry/replay/consequence helpers",
+            "detect_pins",
+            "detect_forks",
+            "detect_skewers",
+            "detect_discovered_attacks",
+            "detect_hanging_pieces",
+            "detect_mating_patterns"
+          ],
+          "lines": [
+            80,
+            747
+          ],
+          "responsibility": "Cohesive legal evidence-based detector implementation"
+        },
+        {
+          "symbols": [
+            "MotifDetector",
+            "DETECTORS",
+            "classify_tactical_motifs",
+            "select_primary_motif",
+            "classify_candidate_lines"
+          ],
+          "lines": [
+            750,
+            870
+          ],
+          "responsibility": "Common bounded MultiPV detector contract, stable precedence and evidence deduplication"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/next_opponent_profile.py",
+      "current_paths": [
+        "backend/app/games/opponents/profile.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Games / next-opponent insight policy",
+      "responsibility": [
+        {
+          "symbols": [
+            "utc_time",
+            "semantic_digest",
+            "_valid_rating"
+          ],
+          "lines": [
+            20,
+            36
+          ],
+          "responsibility": "Pure evidence normalization and identity helpers"
+        },
+        {
+          "symbols": [
+            "build_profile"
+          ],
+          "lines": [
+            39,
+            155
+          ],
+          "responsibility": "Cohesive bounded chronological cohort/recency/prior estimation"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/opening_capacity_admission.py",
+      "current_paths": [
+        "backend/app/services/opening_capacity_admission.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Read/project bounded capacity routes and revalidate a proposed capacity witness on the existing admission transaction.",
+      "responsibility": "Read/project bounded capacity routes and revalidate a proposed capacity witness on the existing admission transaction.",
+      "next_step": "Move intact as the capacity evidence/witness adapter. Keep capacity_routes_from_rows as its coherent deterministic projection; no new policy model or forced tiny-file split."
+    },
+    {
+      "original_path": "backend/app/services/opening_capacity_frontier.py",
+      "current_paths": [
+        "backend/app/study/openings/capacity_frontier.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Make pure normal-opening and one-step capacity introduction proposals under existing limits, order and route facts.",
+      "responsibility": "Make pure normal-opening and one-step capacity introduction proposals under existing limits, order and route facts.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/opening_card_valuation.py",
+      "current_paths": [
+        "backend/app/services/opening_card_valuation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Evaluate/replay one caller-selected opening-policy valuation snapshot using readiness, reach, explicit effects and the shadow ranking schema.",
+      "responsibility": "Evaluate/replay one caller-selected opening-policy valuation snapshot using readiness, reach, explicit effects and the shadow ranking schema.",
+      "next_step": "Move intact with its Study opening evaluation collaborators; no new live-data capture, admission behavior or merger with frozen Maia ordering."
+    },
+    {
+      "original_path": "backend/app/services/opening_decision_evidence.py",
+      "current_paths": [
+        "backend/app/services/opening_decision_evidence.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Preserve legacy imports for Learning-owned opening decision manifests, checkpoints and observation reduction.",
+      "responsibility": "Preserve legacy imports for Learning-owned opening decision manifests, checkpoints and observation reduction.",
+      "next_step": "Move the facade intact and update consumers; keep the single executable implementation in tempo_learning_runtime."
+    },
+    {
+      "original_path": "backend/app/services/opening_frontier.py",
+      "current_paths": [
+        "backend/app/services/opening_frontier.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Project read-only per-route/per-card opening sequence eligibility, including the selected-policy view, without admission or scheduling.",
+      "responsibility": "Project read-only per-route/per-card opening sequence eligibility, including the selected-policy view, without admission or scheduling.",
+      "next_step": "Move both related projection variants intact; they answer eligibility, not ranking or curriculum selection."
+    },
+    {
+      "original_path": "backend/app/services/opening_graph.py",
+      "current_paths": [
+        "backend/app/services/opening_graph.py",
+        "backend/app/contracts/opening_graph.py"
+      ],
+      "status": "partial-contract-extraction",
+      "owner": "Pure hybrid route graph plus legacy migration seeding and compatibility publication",
+      "responsibility": [
+        "DecisionSegment/GraphStep/GraphInput and cumulative-prefix/decision-descendant construction; saved split expansion; legacy decision mapping/FSRS seed calculation; bounded compatibility staging/publication and downstream refresh."
+      ],
+      "next_step": "The shared declaration is separated; the original mixed workflow still needs owner/composition closure."
+    },
+    {
+      "original_path": "backend/app/services/opening_graph_recovery.py",
+      "current_paths": [
+        "backend/app/services/opening_graph_recovery.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Explicit single-source maintenance planning, selected execution and preservation proof",
+      "responsibility": [
+        "Distinct failed-first-publication and pinned untouched-queued-rebuild modes; exact target/source/day/task/predecessor validation; bounded explicit claims of existing graph/integrity/segmentation handlers; evidence capture and preservation comparison."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/opening_policy_reach.py",
+      "current_paths": [
+        "backend/app/study/openings/policy_reach.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Propagate unique decision reach under one deterministic learner policy and explicit selected opponent evidence.",
+      "responsibility": "Propagate unique decision reach under one deterministic learner policy and explicit selected opponent evidence.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/opening_preparedness.py",
+      "current_paths": [
+        "backend/app/study/openings/preparedness.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Compute pure expected-correct unique-decision preparedness and marginal card effects with exact/bounded/unknown evidence.",
+      "responsibility": "Compute pure expected-correct unique-decision preparedness and marginal card effects with exact/bounded/unknown evidence.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/opening_ranking_evaluation.py",
+      "current_paths": [
+        "backend/app/services/opening_ranking_evaluation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Compare/replay identity-preserving opening rankings and serialize their inspectable snapshot schema.",
+      "responsibility": "Compare/replay identity-preserving opening rankings and serialize their inspectable snapshot schema.",
+      "next_step": "Move intact as the ranking comparison/replay action. JSON parsing is data transformation, not filesystem access; do not infer an I/O split from serializer names."
+    },
+    {
+      "original_path": "backend/app/services/opening_ranking_snapshot.py",
+      "current_paths": [
+        "backend/app/services/opening_ranking_snapshot.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Opt-in Study opening evaluation capture composition plus snapshot projection",
+      "responsibility": "Capture a bounded authoritative evidence snapshot, then project its supplied immutable data into the existing ranking replay document.",
+      "next_step": "Move capture_snapshot/_raw_rows/_check_capture_available intact into capture.py; extract _decoded_evidence/_project_snapshot as complete functions into Study opening evaluation only after passing captured source metadata/schema version and miss-reason fact explicitly. No evaluation-model merger."
+    },
+    {
+      "original_path": "backend/app/services/opening_segmentation.py",
+      "current_paths": [
+        "backend/app/chess/opening_segments.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Pure presentation-independent opening identity and advisory segmentation rules",
+      "responsibility": [
+        "Versioned position/decision identity; bounded presentation occurrence traversal; candidate segment construction; small-fixture reference recommendation estimate."
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/pgn.py",
+      "current_paths": [
+        "backend/app/chess/pgn.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Repertoire import plus shared pure move-line legality",
+      "responsibility": [
+        {
+          "symbols": [
+            "ParsedLine",
+            "ParsedAnnotation",
+            "_annotation",
+            "_collect_lines",
+            "parse_pgn"
+          ],
+          "lines": [
+            10,
+            76
+          ],
+          "responsibility": "Repertoire PGN variation/comment/arrow parsing, using in-memory streams"
+        },
+        {
+          "symbols": [
+            "prefix_through_user_moves",
+            "ends_on_trained_move"
+          ],
+          "lines": [
+            79,
+            134
+          ],
+          "responsibility": "Pure legal trained-side line selection/admission, consumed outside import"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/postgres_coverage_candidates.py",
+      "current_paths": [
+        "backend/app/services/postgres_coverage_candidates.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Coverage probability projection application over fixed owner rows",
+      "responsibility": [
+        "Read candidate probability facts, blend and normalize them, select required moves, determine source-state labels and save a fixed candidate projection batch."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_coverage_explorer.py",
+      "current_paths": [
+        "backend/app/services/postgres_coverage_explorer.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Durable one-node Explorer coverage preparation and publication",
+      "responsibility": [
+        "Prepare next leased/current node; cached-or-provider payload acquisition; pure candidate projection; missing-token failure and fenced one-node progress publication."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_coverage_recovery.py",
+      "current_paths": [
+        "backend/app/services/postgres_coverage_recovery.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Bounded Coverage orphan Explorer-run task admission",
+      "responsibility": [
+        "When authoritative storage is configured, select at most one recoverable run and enqueue its compact existing Explorer task in the same background transaction."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_coverage_seed.py",
+      "current_paths": [
+        "backend/app/services/postgres_coverage_seed.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Durable Coverage generation seed preparation and activation application",
+      "responsibility": [
+        "Admit/supersede an active generation with current scope/cohort settings; prepare one scoped source line outside writes; merge node routes/replies; fence and checkpoint build/activation phases; schedule Explorer work."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_daily_statistics.py",
+      "current_paths": [
+        "backend/app/services/postgres_daily_statistics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Optional Games daily aggregate and insight publication",
+      "responsibility": [
+        "Read provider watermarks/game analysis readiness; calculate daily outcome/tactical totals; publish one snapshot and threshold-based insights under a current task lease."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_derivation.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_derivation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "Single-position replay preparation and generation-fenced position-index slice/publication.",
+      "next_step": "Move PreparedGamePosition/prepare_game_position intact to games/indexing policy; move execute handler intact to Games derivation application/composition."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_events.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_events.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "Bounded event staging, source-signature restart and atomic complete-generation publication.",
+      "next_step": "Move intact to Games derivation/events application handler."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_features.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_features.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "Publish a prepared game feature row and hand off priorities under one generation fence.",
+      "next_step": "Move intact to outer Games\u2192Statistics derivation composition, not Games-internal imports of Statistics implementation."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_findings.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_findings.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "Prepare immutable finding/opportunity/priority item set, stage one item and publish complete generation.",
+      "next_step": "Move handlers intact under Games derivation/findings; move existing item projection/hash block to same-owner preparation helper."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_misses.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_misses.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "Bounded legacy real-game miss handoff under derivation lease and phase checkpoint.",
+      "next_step": "Move intact to outer Games/Learning feedback composition."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_priorities.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_priorities.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "One-repertoire-at-a-time handoff to priority/opportunity owners, then complete derivation.",
+      "next_step": "Move intact to outer Games\u2192repertoire priority/opportunity composition."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_repertoire.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_repertoire.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_derivation",
+      "responsibility": "Capture authored snapshot, prepare per-game repertoire comparisons, stage matches/events and switch generation.",
+      "next_step": "Move handler intact under Games derivation/comparison; source snapshot acquisition is outer authored-owner composition, pure comparison is same-owner supplied-value policy."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_sync.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_sync.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_sync",
+      "responsibility": "Atomic normalized game import/update with analysis/derivation intents and one-record durable task publication.",
+      "next_step": "Move intact to Games sync application publication; move existing write-value/result-count blocks to local pure helpers only if useful for policy isolation."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_sync_completion.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_sync_completion.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_sync",
+      "responsibility": "Complete sync result only after every window/record receipt, persist per-provider results and trigger next-opponent refresh.",
+      "next_step": "Move intact to Games sync completion; keep result formatting local and next-opponent refresh supplied by composition."
+    },
+    {
+      "original_path": "backend/app/services/postgres_game_sync_windows.py",
+      "current_paths": [
+        "backend/app/services/postgres_game_sync_windows.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_sync",
+      "responsibility": "Restartable provider window fetch, bounded staged response and one-record/month dispatch.",
+      "next_step": "Move _fetch_window intact to Games provider adapter; window orchestration remains Games sync application. Extract only existing time-partition/month descriptor blocks."
+    },
+    {
+      "original_path": "backend/app/services/postgres_integrity.py",
+      "current_paths": [
+        "backend/app/services/postgres_integrity.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Durable saved-source integrity scan, publication and follow-up coordination",
+      "responsibility": [
+        "Read current integrity certificate and pure readiness predicate; source scan preparation; bounded source aggregation/issue evaluation; issue/card-block publication, card validation, completion and derived task targets."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_next_opponent.py",
+      "current_paths": [
+        "backend/app/services/postgres_next_opponent.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Optional Games-derived next-opponent profile admission, publication and read projection",
+      "responsibility": [
+        "O(1) account/input-generation refresh intent; bounded sample/rating/future-evidence preparation; existing profile calculation outside connection/lease; generation-fenced publication and stale/availability response projection."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_opening_evidence.py",
+      "current_paths": [
+        "backend/app/services/postgres_opening_evidence.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Opening shadow journal preparation, reduction and replay-safe publication",
+      "responsibility": [
+        "Immutable presentation/manifest validation and optional queue decoration; event identity/terminal/contiguous-prefix reduction; incremental observation summaries; standalone prepared compare-and-publish; aggregate-review atomic completion and bounded evidence query projection."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_opening_graph.py",
+      "current_paths": [
+        "backend/app/services/postgres_opening_graph.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Durable saved-source graph lifecycle and generated-card publication",
+      "responsibility": [
+        "Request monotonic graph generation; prepare one source line outside writes; bounded eight-step/card stages and links; generation visibility, role/classification/block refresh; two-card obsolete membership cleanup and integrity follow-up."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_opening_segmentation.py",
+      "current_paths": [
+        "backend/app/services/postgres_opening_segmentation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Durable advisory segmentation scan, paged group aggregation and publication",
+      "responsibility": [
+        "Invalidate/admit source projection; stage bounded presentation occurrences; paged group/source/part aggregation; bounded old-run cleanup and ready publication."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/postgres_priority.py",
+      "current_paths": [
+        "backend/app/services/postgres_priority.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study opening-priority durable worker composition",
+      "responsibility": "Prepare one evidence/scoring generation once and atomically publish resumable bounded native slices under task/source/job fences.",
+      "next_step": "Move all six functions intact as postgres_worker.py. Preparation and staging are one coherent resumable publication lifecycle, not separate domains; retain the installed source input/scorer boundary."
+    },
+    {
+      "original_path": "backend/app/services/postgres_queue_refresh.py",
+      "current_paths": [
+        "backend/app/services/postgres_queue_refresh.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Run one bounded durable PostgreSQL queue-refresh phase with read/compute/write fences and atomic checkpoints.",
+      "responsibility": "Run one bounded durable PostgreSQL queue-refresh phase with read/compute/write fences and atomic checkpoints.",
+      "next_step": "Move the phase runner and its coherent phase helpers intact; do not split because it is 827 lines or turn phases into a generic dispatch framework."
+    },
+    {
+      "original_path": "backend/app/services/prefix_diagnostics.py",
+      "current_paths": [
+        "backend/app/services/prefix_diagnostics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Pure bounded opening shadow evidence diagnostic projection",
+      "responsibility": [
+        "Classify unassisted responses and aggregate persisted reducer observations into per-decision coverage/outcomes and a bounded recent-attempt window."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/prefix_evaluation.py",
+      "current_paths": [
+        "backend/app/services/prefix_evaluation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Pure bounded structural depth comparison and presentation projection",
+      "responsibility": [
+        "Immutable source/split/card/evaluation snapshots and identity; source/override validation; current/proposed production graph comparison; cooperative bounded generator and structural counts."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/prefix_split.py",
+      "current_paths": [
+        "backend/app/services/prefix_split.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Source prefix shortening with legacy practice history and queue migration",
+      "responsibility": [
+        "Pure legal two-child split and response shape; source/color preview; history-preserving child/revision/membership mutation; guided two-card follow-up placement and prior queue-order preservation."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/prefix_transition.py",
+      "current_paths": [
+        "backend/app/services/prefix_transition.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Pure approved shorter-prefix plan over source and practice snapshot facts",
+      "responsibility": [
+        "Immutable transition snapshot/identity and freshness; shortening/source/route preservation checks; card/membership/lifecycle/schedule/attempt/submission classification; stable blockers and approved plan identity."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/prefix_transition_application.py",
+      "current_paths": [
+        "backend/app/services/prefix_transition_application.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Exact-plan transition receipt/staging/activation and linked publication composition",
+      "responsibility": [
+        "Prepare/recompute approved plan with coherent source/Study evidence; receipt/reservation lock and stale recheck; invisible eight-step graph stage; strict atomic activation; linked graph/integrity/queue publication recovery/completion and receipt failure reporting."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/priority_retention.py",
+      "current_paths": [
+        "backend/app/services/priority_retention.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Clean one bounded slice of superseded/rebuildable opening-priority generations while retaining current publication/preparation authority.",
+      "responsibility": "Clean one bounded slice of superseded/rebuildable opening-priority generations while retaining current publication/preparation authority.",
+      "next_step": "Move intact. Native/SQLite deletion branches serve one retention use case and retain their original job\u2192task ordering; do not split because there are two dialects."
+    },
+    {
+      "original_path": "backend/app/services/puzzles.py",
+      "current_paths": [
+        "backend/app/services/puzzles.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Tactics / Lichess puzzle content and packaged assets",
+      "responsibility": [
+        {
+          "symbols": [
+            "LichessPuzzle",
+            "parse_lichess_puzzle_row"
+          ],
+          "lines": [
+            9,
+            37
+          ],
+          "responsibility": "Canonical setup-move and CSV metadata representation"
+        },
+        {
+          "symbols": [
+            "load_packaged_decks"
+          ],
+          "lines": [
+            40,
+            49
+          ],
+          "responsibility": "Explicit filesystem JSON asset read and required deck-size admission"
+        },
+        {
+          "symbols": [
+            "validate_puzzle_record"
+          ],
+          "lines": [
+            52,
+            67
+          ],
+          "responsibility": "Pure legal setup/solution validation"
+        }
+      ],
+      "next_step": "Keep pure puzzle/solution rules together under Tactics content; move only the complete asset-loader function to its asset adapter when enforcing I/O separation. Do not split the cohesive chess rules by method."
+    },
+    {
+      "original_path": "backend/app/services/queue_admission.py",
+      "current_paths": [
+        "backend/app/services/queue_admission.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Choose/reconcile opening introductions from bounded semantic facts, allowances and frozen/capacity witnesses.",
+      "responsibility": "Choose/reconcile opening introductions from bounded semantic facts, allowances and frozen/capacity witnesses.",
+      "next_step": "Move the policy functions intact. If another domain needs its DTOs/port, move only declarations at lines 19\u2013102 to explicit Study queue contracts; keep a compatibility re-export while references migrate."
+    },
+    {
+      "original_path": "backend/app/services/queue_admission_adapter.py",
+      "current_paths": [
+        "backend/app/services/queue_admission_adapter.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Implement the existing borrowed queue-admission capability using root fixed operations and typed page mapping.",
+      "responsibility": "Implement the existing borrowed queue-admission capability using root fixed operations and typed page mapping.",
+      "next_step": "Move QueueAdmissionAdapter intact; preserve bounded paging and the restored outstanding_miss_query compatibility export."
+    },
+    {
+      "original_path": "backend/app/services/queue_application.py",
+      "current_paths": [
+        "backend/app/services/queue_application.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Compose the existing complete legacy queue eligibility, admission, ordering, quarantine and refresh publication workflow.",
+      "responsibility": "Compose the existing complete legacy queue eligibility, admission, ordering, quarantine and refresh publication workflow.",
+      "next_step": "Keep the queue workflow intact as outer composition first. Isolate only identified optional influence blocks; keep the existing queue writer and transaction singular."
+    },
+    {
+      "original_path": "backend/app/services/queue_ordering.py",
+      "current_paths": [
+        "backend/app/services/queue_ordering.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Adapt the legacy bridge priority label to the existing Learning-owned queue presentation/order implementation.",
+      "responsibility": "Adapt the legacy bridge priority label to the existing Learning-owned queue presentation/order implementation.",
+      "next_step": "Move this small facade intact. Keep the actual ordering implementation in its existing Learning package; do not copy it or merge it with another ranking model."
+    },
+    {
+      "original_path": "backend/app/services/queue_refresh_wakeup.py",
+      "current_paths": [
+        "backend/app/services/queue_refresh_wakeup.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Queue refresh post-commit request context and advisory broker transport",
+      "responsibility": "Two concrete responsibilities: transaction-local wake intent capture and Celery publication/retry hint transport.",
+      "next_step": "Split existing flag dataclass/context functions into a narrow queue-refresh intent contract/context module; move publication functions intact into outer broker wake adapter. Existing caller composition invokes publisher only after committed/closed command transaction."
+    },
+    {
+      "original_path": "backend/app/services/real_game_feedback.py",
+      "current_paths": [
+        "backend/app/services/real_game_feedback.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Decide how accepted legacy miss facts affect practice using a semantic feedback store, without concrete I/O.",
+      "responsibility": "Decide how accepted legacy miss facts affect practice using a semantic feedback store, without concrete I/O.",
+      "next_step": "Move intact as optional practice-influence policy; keep separate from ordinary Study domain implementation."
+    },
+    {
+      "original_path": "backend/app/services/real_game_feedback_adapter.py",
+      "current_paths": [
+        "backend/app/services/real_game_feedback_adapter.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Compose legacy feedback policy with the borrowed capability and snapshot-then-short-transaction intake lifecycle.",
+      "responsibility": "Compose legacy feedback policy with the borrowed capability and snapshot-then-short-transaction intake lifecycle.",
+      "next_step": "Move intact; preserve close-snapshot-before-per-event writes and foreground yielding. Keep its file distinct from the store instead of consolidating them."
+    },
+    {
+      "original_path": "backend/app/services/real_game_feedback_ports.py",
+      "current_paths": [
+        "backend/app/study/review/feedback_contracts.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Declare semantic feedback/projection capabilities, immutable miss facts and the existing pure UTC timestamp helper.",
+      "responsibility": "Declare semantic feedback/projection capabilities, immutable miss facts and the existing pure UTC timestamp helper.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/real_game_feedback_store.py",
+      "current_paths": [
+        "backend/app/services/real_game_feedback_store.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Implement the existing borrowed feedback port by mapping typed facts and composing canonical queue/remediation effects.",
+      "responsibility": "Implement the existing borrowed feedback port by mapping typed facts and composing canonical queue/remediation effects.",
+      "next_step": "Move the fourteen-method class intact; retain fixed database operations in their root module and preserve single-cursor lazy mapping."
+    },
+    {
+      "original_path": "backend/app/services/redis_admission_gate.py",
+      "current_paths": [
+        "backend/app/services/redis_admission_gate.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Operational Redis admission lease adapter/application",
+      "responsibility": "Cohesive lease lifecycle: synchronous/async foreground renewal and short background reservation are transport-specific variants of the same admission responsibility. No domain split justified.",
+      "next_step": "Move intact under operational admission transport. Move BackgroundAdmissionDeferred to a shared admission contract with compatibility re-export if consumers must be independent of the Redis implementation; use neutral timing hook rather than importing worker presentation."
+    },
+    {
+      "original_path": "backend/app/services/refresh_requests.py",
+      "current_paths": [
+        "backend/app/services/refresh_requests.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored repertoire derived-work refresh coalescing application",
+      "responsibility": "One cohesive refresh intent coalescing workflow, with a separable concrete source-version/scoring input provider inside input_version.",
+      "next_step": "Move intact into authored-repertoire refresh-intent application. Extract the existing source/scoring input provider as an explicit owner fact function or inject those facts from outer composition while keeping its source-lock timing. Leave quiet-window/retention decisions together; root refresh storage/publication remains canonical."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_comparison.py",
+      "current_paths": [
+        "backend/app/services/repertoire_comparison.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "games_comparison",
+      "responsibility": "Legacy transposition-aware authored repertoire index/cache and per-game comparison publication.",
+      "next_step": "Separate existing pure graph/card-index/compare functions from authored snapshot IO/cache and Games comparison publication. Preserve cache state/lock lifetime and algorithm unchanged."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_conflicts.py",
+      "current_paths": [
+        "backend/app/services/repertoire_conflicts.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Saved-line snapshot to existing conflict-rule composition",
+      "responsibility": [
+        "Two small wrappers pass root saved-line snapshots to the existing trained-move/conflict algorithms in app.studies.repertoire_conflicts."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_coverage.py",
+      "current_paths": [
+        "backend/app/services/repertoire_coverage.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Coverage rules, compatibility workflows, provider adapter and projections",
+      "responsibility": [
+        "Pure reply probability/required-move and opponent route rules; recent player cohort selection; source/currentness and compatibility run/node/MAIA lifecycle; Explorer token/cache/HTTP and progress publication; summary/gap projection."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_game_refresh.py",
+      "current_paths": [
+        "backend/app/services/repertoire_game_refresh.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Optional saved-source mutation to Games refresh composition and sweep worker",
+      "responsibility": [
+        "Compare game-scope generation around a source mutation and request reset-cursor refresh; bounded Games derivation sweep with native and compatibility enqueue branches."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_integrity.py",
+      "current_paths": [
+        "backend/app/services/repertoire_integrity.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Repertoire integrity / scan, guided repair and worker composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "_issue_id",
+            "_signature",
+            "_scan_source",
+            "_record_position",
+            "_issues_from_observations"
+          ],
+          "lines": [
+            32,
+            311
+          ],
+          "responsibility": "Existing pure integrity scan/issue identity helpers at32\u201355,70\u2013117,155\u2013182,285\u2013311; other functions within this range remain composition"
+        },
+        {
+          "symbols": [
+            "_source_rows",
+            "_scan_sources",
+            "_publish_card_blocks",
+            "sweep_repertoire",
+            "sweep_all"
+          ],
+          "lines": [
+            58,
+            240
+          ],
+          "responsibility": "Source snapshot and synchronous scan/publication composition; root fixed persistence"
+        },
+        {
+          "symbols": [
+            "enqueue_integrity_scans",
+            "claim_integrity_slice",
+            "execute_integrity_slice",
+            "requeue_integrity_slice"
+          ],
+          "lines": [
+            243,
+            428
+          ],
+          "responsibility": "Durable scan lifecycle and staged generation publication"
+        },
+        {
+          "symbols": [
+            "integrity_summary",
+            "list_integrity_issues"
+          ],
+          "lines": [
+            431,
+            484
+          ],
+          "responsibility": "Read and response projection including per-card review counts"
+        },
+        {
+          "symbols": [
+            "_transform_source"
+          ],
+          "lines": [
+            487,
+            501
+          ],
+          "responsibility": "Pure source-route repair choice"
+        },
+        {
+          "symbols": [
+            "_rewrite_line",
+            "_rewrite_card",
+            "_reconcile_derived_cards",
+            "_archive_unsupported_card"
+          ],
+          "lines": [
+            504,
+            583
+          ],
+          "responsibility": "Authored line/card membership repair; card/history/prefix authority"
+        },
+        {
+          "symbols": [
+            "resolve_issue",
+            "prepare_issue_resolution",
+            "execute_durable_integrity_repair"
+          ],
+          "lines": [
+            587,
+            776
+          ],
+          "responsibility": "Guided repair validation/plan and guarded durable publication"
+        }
+      ],
+      "next_step": "Keep this as one Authored Repertoire Integrity owner rather than splitting because776lines. Move complete existing pure helpers (listed exact definitions) into integrity policy, keep scan/repair lifecycle in same owner application, and keep database binding, Game refresh decorator/queue wakeup and borrowed transaction wiring in outer composition. Existing _source_rows and storage operations provide bounded read seam; preserve synchronous and durable APIs separately, no algorithm consolidation."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_move_verification.py",
+      "current_paths": [
+        "backend/app/services/repertoire_move_verification.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Bounded saved repertoire legal-move verification",
+      "responsibility": [
+        "Pure bounded line replay and a paged coherent-source verification workflow with input errors, cursor/tri-state result, deadline and stale-source recheck."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_opportunities.py",
+      "current_paths": [
+        "backend/app/services/repertoire_opportunities.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Discoveries / repertoire opportunity evidence and admission composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "_stable_id",
+            "_fingerprint",
+            "_materially_new"
+          ],
+          "lines": [
+            46,
+            74
+          ],
+          "responsibility": "Existing deterministic opportunity/evidence identity and materiality helpers"
+        },
+        {
+          "symbols": [
+            "_calculate_card_evidence",
+            "_calculate_recurring_decisions",
+            "_calculate_node_opportunities",
+            "_calculate_post_gap_opportunity"
+          ],
+          "lines": [
+            174,
+            522
+          ],
+          "responsibility": "Four cohesive evidence/scoring functions at174\u2013220,237\u2013295,393\u2013459,498\u2013522; do not move intervening loaders/apply functions with pure policy"
+        },
+        {
+          "symbols": [
+            "_window_days",
+            "_load_decision_summary",
+            "_publish_decision_summary",
+            "_publish",
+            "_resolve",
+            "_route_keys",
+            "card_evidence",
+            "_load_card_inputs",
+            "refresh_card_opportunity",
+            "_load_recurring_decisions",
+            "_apply_recurring_decisions",
+            "_apply_card_opportunity",
+            "refresh_node_opportunities",
+            "_latest_coverage_node",
+            "_coverage_source_snapshot",
+            "_load_node_inputs",
+            "_load_position_inputs",
+            "_apply_node_opportunities",
+            "refresh_post_gap_opportunity",
+            "_load_post_gap_inputs",
+            "_apply_post_gap_opportunity"
+          ],
+          "lines": [
+            37,
+            533
+          ],
+          "responsibility": "Existing fixed-read/application-publication composition surrounding calculations"
+        },
+        {
+          "symbols": [
+            "enqueue_opportunity_refresh_in_transaction",
+            "enqueue_opportunity_refresh",
+            "_advance_slice",
+            "_cleanup_opportunity",
+            "execute_opportunity_slice"
+          ],
+          "lines": [
+            536,
+            712
+          ],
+          "responsibility": "Debounced durable refresh and one-item phase lifecycle with scope/source/lease guards"
+        },
+        {
+          "symbols": [
+            "_accepted_moves_by_line_snapshot"
+          ],
+          "lines": [
+            716,
+            733
+          ],
+          "responsibility": "Existing cached pure line-snapshot accepted-move calculation; actual keys are tuple transposition keys despite annotation"
+        },
+        {
+          "symbols": [
+            "list_opportunities"
+          ],
+          "lines": [
+            736,
+            860
+          ],
+          "responsibility": "Read feed plus source-game/route/SAN/chess response projection"
+        },
+        {
+          "symbols": [
+            "active_opportunity_for_state_change",
+            "dismiss_opportunity",
+            "acknowledge_opportunity",
+            "snooze_opportunity"
+          ],
+          "lines": [
+            863,
+            898
+          ],
+          "responsibility": "Scoped row-locked action guards and existing state projections"
+        },
+        {
+          "symbols": [
+            "_existing_decision_training_plan",
+            "existing_decision_training_eligibility",
+            "admit_existing_decision"
+          ],
+          "lines": [
+            901,
+            991
+          ],
+          "responsibility": "Explicit reviewed-evidence admission, optional prefix split and Learning queue effect"
+        }
+      ],
+      "next_step": "Keep coherent Discoveries owner; no split just because991lines. A bounded first policy move can relocate the four existing calculation functions plus their scoring constants/identity helpers and the cached accepted-move function unchanged. Keep loaders, scoped publication/cleanup and refresh lifecycle in owning application/composition at same call points. Split the explicit Learning training handoff only by existing semantic capabilities and outer wiring; do not redesign scopes/queries, merge admission models, optimize N+1 reads or consolidate recommendation paths."
+    },
+    {
+      "original_path": "backend/app/services/repertoire_statistics.py",
+      "current_paths": [
+        "backend/app/services/repertoire_statistics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Cross-owner repertoire reporting and attention-position projection",
+      "responsibility": [
+        "Coherent source/publication/task/practice/Games snapshot gathering; daily-attempt dedupe, due/upcoming/paused totals and game outcome denominators; attention/frequency position grouping, sorting and page projection."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/services/review_reconciliation.py",
+      "current_paths": [
+        "backend/app/services/review_reconciliation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Expose the existing Learning-owned schedule snapshot/reconciliation behavior to legacy callers.",
+      "responsibility": "Expose the existing Learning-owned schedule snapshot/reconciliation behavior to legacy callers.",
+      "next_step": "Move the facade intact and preserve original exports; do not duplicate its runtime implementation or merge reconciliation with scheduling policy."
+    },
+    {
+      "original_path": "backend/app/services/review_service.py",
+      "current_paths": [
+        "backend/app/services/review_service.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Currently combines defense schedule repair, queue-order/mutation handling, and scheduling-review follow-up composition.",
+      "responsibility": "Currently combines defense schedule repair, queue-order/mutation handling, and scheduling-review follow-up composition.",
+      "next_step": "Split by existing complete functions: defense repair\u2192composition/defense/rebuild_schedule.py; queue receipt/requeue functions\u2192composition/study/queue/mutations.py; apply_scheduling_review\u2192composition/study/review/apply.py. Preserve each function/body and canonical writer first."
+    },
+    {
+      "original_path": "backend/app/services/scheduler.py",
+      "current_paths": [
+        "backend/app/services/scheduler.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Adapt legacy wall-clock/calendar/FSRS identity defaults around the installed strict scheduling API.",
+      "responsibility": "Adapt legacy wall-clock/calendar/FSRS identity defaults around the installed strict scheduling API.",
+      "next_step": "Move intact; keep the entire legacy signature and the supplied-state/no-replacement-identity guarantee. The pure scheduler stays in tempo_scheduling."
+    },
+    {
+      "original_path": "backend/app/services/scheduling_review_application.py",
+      "current_paths": [
+        "backend/app/services/scheduling_review_application.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Forward scheduling-review decisions to the Learning-owned application using explicit store, schedule and unlock functions.",
+      "responsibility": "Forward scheduling-review decisions to the Learning-owned application using explicit store, schedule and unlock functions.",
+      "next_step": "Move intact. It already forwards schedule_review_function and unlock_ready_function, so reuse that seam instead of adding another abstraction or copying scheduling logic."
+    },
+    {
+      "original_path": "backend/app/services/scheduling_review_contracts.py",
+      "current_paths": [
+        "backend/app/services/scheduling_review_contracts.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Preserve legacy type imports for the existing Learning-owned scheduling review contract definitions.",
+      "responsibility": "Preserve legacy type imports for the existing Learning-owned scheduling review contract definitions.",
+      "next_step": "Move this declaration-only compatibility facade intact; preserve class identity or point consumers directly to the actual public owning contract module."
+    },
+    {
+      "original_path": "backend/app/services/stalemate_swindles.py",
+      "current_paths": [
+        "backend/app/services/stalemate_swindles.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies / offline corpus tooling",
+      "responsibility": [
+        {
+          "symbols": [
+            "MiningFilters",
+            "iter_game_blocks",
+            "extract_candidate",
+            "mine_candidates",
+            "select_candidates",
+            "verify_candidate"
+          ],
+          "lines": [
+            34,
+            357
+          ],
+          "responsibility": "Cohesive bounded corpus mining/verification and deterministic selection"
+        },
+        {
+          "symbols": [
+            "mini_pgn",
+            "exercise_specification",
+            "build_bundle",
+            "selected_distribution"
+          ],
+          "lines": [
+            360,
+            441
+          ],
+          "responsibility": "Authored Studies content/bundle assembly for the same corpus"
+        }
+      ],
+      "next_step": "Move intact under authored Studies offline tooling with its PGN/bundle capabilities; it is not a Games runtime service just because input is historical games. Do not split mining versus bundle code solely because the file is 441 lines."
+    },
+    {
+      "original_path": "backend/app/services/statistics.py",
+      "current_paths": [
+        "backend/app/services/statistics.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Statistics / game-performance features, reports and materialization",
+      "responsibility": [
+        {
+          "symbols": [
+            "_player_score",
+            "_local_datetime",
+            "_evaluation_before_ply",
+            "refresh_game_features"
+          ],
+          "lines": [
+            30,
+            116
+          ],
+          "responsibility": "Feature preparation from game/analysis/event/comparison facts"
+        },
+        {
+          "symbols": [
+            "_confidence_interval",
+            "statistics_overview",
+            "statistics_breakdown"
+          ],
+          "lines": [
+            119,
+            176
+          ],
+          "responsibility": "Denominator-transparent read/report policy"
+        },
+        {
+          "symbols": [
+            "refresh_daily_snapshot"
+          ],
+          "lines": [
+            179,
+            225
+          ],
+          "responsibility": "Provider-watermark/analysis completeness and daily insight materialization"
+        },
+        {
+          "symbols": [
+            "enqueue_daily_snapshot",
+            "claim_daily_snapshot",
+            "execute_daily_snapshot"
+          ],
+          "lines": [
+            228,
+            259
+          ],
+          "responsibility": "Background job orchestration/claim/progress/completion effects"
+        }
+      ],
+      "next_step": "Keep the cohesive Statistics owner; a 259-line file does not justify separate microdomains. Move complete feature/report/materialization workflows with their helpers, and put concrete root readers/writers, clock/activity/progress wiring in outer composition. If separating files, use the existing complete action blocks above; do not extract dozens of arithmetic helpers."
+    },
+    {
+      "original_path": "backend/app/services/study_attempts.py",
+      "current_paths": [
+        "backend/app/services/study_attempts.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies attempt completion \u2194 receiving Study practice composition",
+      "responsibility": "Finalize one authored attempt, applying receiving Study scheduling/requeue only for review context and burying answer-exposed siblings.",
+      "next_step": "Move both functions intact as completion.py. Context-specific scheduling and sibling exposure are one completion use case; do not split the borrowed transaction or introduce another review writer."
+    },
+    {
+      "original_path": "backend/app/services/study_grading.py",
+      "current_paths": [
+        "backend/app/services/study_grading.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Existing Learning-owned pure exercise-grading compatibility surface",
+      "responsibility": "Expose the existing exercise specification/answer types, validation and deterministic grading implementation to legacy callers.",
+      "next_step": "Move the alias-only facade intact as grading_adapter.py initially. Preserve canonical class/function identity, including private compatibility aliases; do not copy the grading implementation into Studies."
+    },
+    {
+      "original_path": "backend/app/services/study_mode.py",
+      "current_paths": [
+        "backend/app/services/study_mode.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Resolve authoritative installation-wide Study-only admission state and optional-work command/task allowlists.",
+      "responsibility": "Resolve authoritative installation-wide Study-only admission state and optional-work command/task allowlists.",
+      "next_step": "Move intact; its small Redis/foreground/background/broker lookup branches implement one control-state resolution responsibility."
+    },
+    {
+      "original_path": "backend/app/services/study_pgn.py",
+      "current_paths": [
+        "backend/app/studies/pgn.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Authored/imported Studies PGN source preview",
+      "responsibility": "Parse bounded PGN input into stable source-record/occurrence trees, annotations and diagnostics without creating cards or opening storage.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/study_portable.py",
+      "current_paths": [
+        "backend/app/services/study_portable.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies versioned content transfer / borrowed import-export composition",
+      "responsibility": "Validate one content bundle and export/import its exact source/rubric identities, excluding personal review history.",
+      "next_step": "Move validate_bundle and its schema constants to content/bundle.py once grading ownership is explicit; move export_bundle/import_bundle intact to composition/studies/content_transfer.py. Keep nested rows_by_identity with import_bundle and one canonical validation implementation."
+    },
+    {
+      "original_path": "backend/app/services/study_priority.py",
+      "current_paths": [
+        "backend/app/services/study_priority.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Publish and validate expiring installation-wide optional-work control snapshots, including the API-owned refresher lifecycle.",
+      "responsibility": "Publish and validate expiring installation-wide optional-work control snapshots, including the API-owned refresher lifecycle.",
+      "next_step": "Move the module intact; generation fencing, Redis/local fallback and refresher startup/shutdown are one control-publication lifecycle."
+    },
+    {
+      "original_path": "backend/app/services/tactic_capture.py",
+      "current_paths": [
+        "backend/app/services/tactic_capture.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Tactics capture policy plus outer Learning card/queue admission",
+      "responsibility": [
+        {
+          "symbols": [
+            "game_capture_id"
+          ],
+          "lines": [
+            17,
+            18
+          ],
+          "responsibility": "Stable game-finding capture key"
+        },
+        {
+          "symbols": [
+            "validate_tactic_line"
+          ],
+          "lines": [
+            21,
+            40
+          ],
+          "responsibility": "Pure legal content admission with current FastAPI error translation"
+        },
+        {
+          "symbols": [
+            "capture_tactic"
+          ],
+          "lines": [
+            43,
+            88
+          ],
+          "responsibility": "Foreground receipt/card/repertoire/queue materialization using one caller-owned transaction"
+        }
+      ],
+      "next_step": "Move stable key/legal-content functions under Tactics contracts/policy; keep the complete atomic capture workflow as outer foreground composition over Tactics validation and the Learning-owned card/queue admission capability. Preserve current HTTP response/error identity at the outer boundary. Do not split receipts/card/queue into independent commits."
+    },
+    {
+      "original_path": "backend/app/services/tactical_catalog.py",
+      "current_paths": [
+        "backend/app/services/tactical_catalog.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Tactics catalog/application plus outer Learning introduction admission",
+      "responsibility": [
+        {
+          "symbols": [
+            "DATA_ROOT",
+            "catalog",
+            "pack_records",
+            "puzzle_membership",
+            "progress_pack_id"
+          ],
+          "lines": [
+            13,
+            38
+          ],
+          "responsibility": "Cached packaged assets and membership"
+        },
+        {
+          "symbols": [
+            "catalog_status",
+            "activate"
+          ],
+          "lines": [
+            41,
+            62
+          ],
+          "responsibility": "Catalog status/activation application using owner projections"
+        },
+        {
+          "symbols": [
+            "seed_tactical_introductions"
+          ],
+          "lines": [
+            65,
+            98
+          ],
+          "responsibility": "Tactics selection plus deletion checks, Learning card/progress/queue effects under daily admission lock"
+        }
+      ],
+      "next_step": "Keep catalog/membership/activation under Tactics with a concrete asset reader. Put the complete seeding orchestration in outer composition (or the Learning admission owner with injected catalog facts), retaining daily lock, deletion checks, reservation/rotation order and one existing queue writer. A folder-only move cannot certify Study independence."
+    },
+    {
+      "original_path": "backend/app/services/tactical_opportunities.py",
+      "current_paths": [
+        "backend/app/services/tactical_opportunities.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Games / tactical-performance insights",
+      "responsibility": [
+        {
+          "symbols": [
+            "opportunity_id"
+          ],
+          "lines": [
+            13,
+            16
+          ],
+          "responsibility": "Persisted game/analysis/ply/motif finding identity"
+        },
+        {
+          "symbols": [
+            "_percentage",
+            "_summary",
+            "tactical_statistics",
+            "_postgres_tactical_statistics"
+          ],
+          "lines": [
+            19,
+            123
+          ],
+          "responsibility": "One game-history tactical aggregation/report projection, including pin evidence breakdown"
+        }
+      ],
+      "next_step": "Move the cohesive game-history insights module intact under Games analytics, leaving fixed projections root. Outer composition supplies the existing dialect-specific reader/context rather than private postgres_store inspection in domain policy."
+    },
+    {
+      "original_path": "backend/app/services/threat_detection.py",
+      "current_paths": [
+        "backend/app/chess/threat_geometry.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Tactics / game-derived defensive-threat evidence",
+      "responsibility": [
+        {
+          "symbols": [
+            "defensive_fork_geometry",
+            "_replay_legal",
+            "find_defensive_knight_forks",
+            "trace_knight_route",
+            "propose_exercise_anchors"
+          ],
+          "lines": [
+            17,
+            181
+          ],
+          "responsibility": "One pure legal evidence/actual-knight/real-decision anchor pipeline"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/threat_grading.py",
+      "current_paths": [
+        "backend/app/services/threat_grading.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer compatibility to existing Learning defensive grading",
+      "responsibility": [
+        {
+          "symbols": [
+            "DefenseExercise",
+            "MoveGrade",
+            "GradeStatus",
+            "grade_defense_move",
+            "private helper aliases"
+          ],
+          "lines": [
+            2,
+            21
+          ],
+          "responsibility": "Only Learning runtime aliases; no backend grading implementation"
+        }
+      ],
+      "next_step": "Do not copy or move the executable grading algorithm out of Learning. Keep this as outer compatibility while actual consumers migrate; wire Learning public grading capability at composition, and keep only explicit contract access inside domains."
+    },
+    {
+      "original_path": "backend/app/services/threat_models.py",
+      "current_paths": [
+        "backend/app/contracts/defense.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Explicit defensive-threat contracts, currently Learning runtime compatibility",
+      "responsibility": [
+        {
+          "symbols": [
+            "Color",
+            "LineOrigin",
+            "GameSnapshot",
+            "SourceLine",
+            "ForkTarget",
+            "ForkGeometry",
+            "ThreatSeed",
+            "KnightHop",
+            "PositionContext",
+            "ExerciseAnchor",
+            "ThreatPolicy"
+          ],
+          "lines": [
+            2,
+            15
+          ],
+          "responsibility": "Only aliases to immutable Learning-owned contract dataclasses"
+        }
+      ],
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/services/threat_pipeline.py",
+      "current_paths": [
+        "backend/app/services/threat_pipeline.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Defensive Analysis / threat derivation, validation and worker composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "DETECTOR_VERSION",
+            "ENGINE_VERSION",
+            "NETWORK_VERSION",
+            "POLICY"
+          ],
+          "lines": [
+            39,
+            42
+          ],
+          "responsibility": "Current policy/version values; engine constants are shared by Games and Discovery consumers"
+        },
+        {
+          "symbols": [
+            "_digest",
+            "_request_from_json",
+            "report_from_json",
+            "validate_analysis_report",
+            "_seed_from_json",
+            "_anchor_from_json"
+          ],
+          "lines": [
+            51,
+            159
+          ],
+          "responsibility": "Pure digest/codec/validation helpers at51\u201394/137\u2013159, excluding durable audit97\u2013134"
+        },
+        {
+          "symbols": [
+            "execute_threat_report_audit"
+          ],
+          "lines": [
+            97,
+            134
+          ],
+          "responsibility": "Saved evidence audit read/validate then lease/same-value guarded repair and progress"
+        },
+        {
+          "symbols": [
+            "enqueue_threat_scan",
+            "enqueue_threat_backfill",
+            "execute_threat_backfill_slice"
+          ],
+          "lines": [
+            162,
+            229
+          ],
+          "responsibility": "Scan/backfill durable task admission, one-game/repertoire slice"
+        },
+        {
+          "symbols": [
+            "_advance_scan",
+            "_upsert_seed",
+            "_prepare_seed",
+            "execute_threat_scan_slice"
+          ],
+          "lines": [
+            232,
+            363
+          ],
+          "responsibility": "Threat seed planning and source-version/lease guarded findings/candidate/request publication"
+        },
+        {
+          "symbols": [
+            "execute_threat_validation",
+            "enqueue_candidate_validation"
+          ],
+          "lines": [
+            366,
+            433
+          ],
+          "responsibility": "Validate saved role reports then guarded result/admission handoff"
+        },
+        {
+          "symbols": [
+            "claim_analysis_request",
+            "save_analysis_report"
+          ],
+          "lines": [
+            436,
+            486
+          ],
+          "responsibility": "Existing legacy claim/report composition and ordinary-game fairness"
+        }
+      ],
+      "next_step": "Move cohesive durable pipeline as Defensive Analysis application plus explicit outer storage/task composition. Extract the existing pure codec/report validation/digest and seed/anchor helpers intact into a logical validation/serialization module owned by the appropriate existing public capability; then wire consumers through contracts/injected functions, preserving one implementation. `_prepare_seed`304\u2013314 is a complete existing pure-planning seam already before writer. Keep scan/audit/backfill/validation workflows coherent; do not consolidate native command and legacy claim algorithms."
+    },
+    {
+      "original_path": "backend/app/services/threat_training.py",
+      "current_paths": [
+        "backend/app/services/threat_training.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Defense practice / Learning admission and review completion composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "DEFENSE_REPERTOIRE_ID",
+            "RECOGNITION_RUBRIC_VERSION",
+            "_persist_audited_rubric_validation",
+            "execute_defense_rubric_audit_slice"
+          ],
+          "lines": [
+            40,
+            135
+          ],
+          "responsibility": "Rubric audit planning and guarded validation/review invalidation/rebuild/queue followups"
+        },
+        {
+          "symbols": [
+            "_now",
+            "_candidate",
+            "_require_current"
+          ],
+          "lines": [
+            138,
+            151
+          ],
+          "responsibility": "Clock, fixed read forwarding and pure current-generation check"
+        },
+        {
+          "symbols": [
+            "dismiss_defense_candidate",
+            "_approve_in_transaction",
+            "approve_defense_candidate",
+            "pause_defense_candidate",
+            "train_defense_candidate_now"
+          ],
+          "lines": [
+            154,
+            228
+          ],
+          "responsibility": "Candidate lifecycle, authored defense-card admission and explicit Learning queue handoff"
+        },
+        {
+          "symbols": [
+            "enqueue_defense_admission",
+            "execute_defense_admission_slice"
+          ],
+          "lines": [
+            231,
+            351
+          ],
+          "responsibility": "Daily deterministic control/threat choice, verified report/preview planning and guarded one-candidate admission"
+        },
+        {
+          "symbols": [
+            "_exercise_from_rows",
+            "read_defense_exercise"
+          ],
+          "lines": [
+            354,
+            404
+          ],
+          "responsibility": "Completed-report loading plus existing DefenseExercise/recognition preview response"
+        },
+        {
+          "symbols": [
+            "_complete_defense_in_transaction"
+          ],
+          "lines": [
+            407,
+            461
+          ],
+          "responsibility": "Single review+queue completion, lock/replay/current revision/order and receipt-last authority"
+        },
+        {
+          "symbols": [
+            "submit_defense_recognition"
+          ],
+          "lines": [
+            464,
+            570
+          ],
+          "responsibility": "Recognition answer/replay validation, existing grading/feedback and optional control completion"
+        },
+        {
+          "symbols": [
+            "submit_defense_attempt"
+          ],
+          "lines": [
+            573,
+            648
+          ],
+          "responsibility": "Existing Defense move grading, need-analysis request admission or atomic completion"
+        }
+      ],
+      "next_step": "Keep related Defense practice workflows together; separate concrete complete existing policy blocks (current candidate check, exercise decoding/preview, recognition answer/feedback and grading response) into Defense practice policy at the same call points. Root fixed persistence stays root. Keep review/queue completion and card/deletion/admission authority with Learning via explicit semantic operation supplied by outer composition; preserve original single transaction, no second queue writer or generic dispatcher. Rubric audit/admission stay bounded worker composition, not arbitrary tiny helper modules."
+    },
+    {
+      "original_path": "backend/app/services/threat_validation.py",
+      "current_paths": [
+        "backend/app/services/threat_validation.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer compatibility to existing Learning evidence validation",
+      "responsibility": [
+        {
+          "symbols": [
+            "EngineScore",
+            "AnalysisRequest",
+            "AnalysisLine",
+            "AnalysisReport",
+            "ValidationPlan",
+            "ValidationResult",
+            "RecognitionPreview",
+            "validation functions/private aliases"
+          ],
+          "lines": [
+            2,
+            27
+          ],
+          "responsibility": "Aliases public contract values and executable Learning validation into one backend shim"
+        }
+      ],
+      "next_step": "Keep executable validation in canonical Learning runtime. Separate existing explicit request/report/value access from executable capability wiring; retain the backend shim only as outer compatibility while consumers migrate, without copying algorithms."
+    },
+    {
+      "original_path": "backend/app/settings_commands.py",
+      "current_paths": [
+        "backend/app/settings_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Settings / cross-feature foreground command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "_SETTINGS_COLUMNS",
+            "_DEFERRED_REFRESH_COLUMNS"
+          ],
+          "lines": [
+            17,
+            22
+          ],
+          "responsibility": "Import-time settings schema columns and explicitly deferred coverage fields"
+        },
+        {
+          "symbols": [
+            "update_settings"
+          ],
+          "lines": [
+            25,
+            61
+          ],
+          "responsibility": "Validate/preserve omitted booleans, write settings/accounts then gated profile and queue refresh"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            64,
+            64
+          ],
+          "responsibility": "Import-time settings.update registration"
+        }
+      ],
+      "next_step": "Move the 64-line command adapter intact to Settings command composition first. Only if separating its responsibilities later, lift existing validation/boolean merge response choices into Settings application with existing row facts, while preserving the fixed lock/store/accounts/profile/queue sequence in composition; do not split into independent transactions."
+    },
+    {
+      "original_path": "backend/app/statistics_commands.py",
+      "current_paths": [
+        "backend/app/statistics_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Statistics / daily-refresh command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "request_daily_statistics_refresh"
+          ],
+          "lines": [
+            16,
+            29
+          ],
+          "responsibility": "Validate existing date parse, record refresh and enqueue one daily task"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            32,
+            32
+          ],
+          "responsibility": "Import-time statistics.daily.refresh registration"
+        }
+      ],
+      "next_step": "First small cohesive move: relocate all32 lines into Statistics outer command composition, update tasks.py:54 and test/static paths. Keep datetime.fromisoformat acceptance exactly; do not tighten day parsing or change task priority120."
+    },
+    {
+      "original_path": "backend/app/studies/__init__.py",
+      "current_paths": [
+        "backend/app/studies/__init__.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored/imported Studies namespace",
+      "responsibility": "One docstring distinguishes authored/imported Studies from daily practice.",
+      "next_step": "Keep lightweight owner namespace; no move or split needed."
+    },
+    {
+      "original_path": "backend/app/studies/repertoire_conflicts.py",
+      "current_paths": [
+        "backend/app/studies/repertoire_conflicts.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies trained-line conflict computation",
+      "responsibility": "Both index and cached conflict reporting operate on supplied immutable six-field line snapshots; no mixed storage/transport.",
+      "next_step": "Keep already-correct owner placement. Preserve index/cache/invalid-line/chess ordering logic, optional conflict_fens fact collection and four-entry snapshot cache; no new interface framework needed."
+    },
+    {
+      "original_path": "backend/app/study/__init__.py",
+      "current_paths": [
+        "backend/app/study/__init__.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Daily Study practice namespace",
+      "responsibility": "One docstring; no imports, lifecycle or composition.",
+      "next_step": "Keep existing owner namespace; no split/move needed."
+    },
+    {
+      "original_path": "backend/app/study/frozen_order/__init__.py",
+      "current_paths": [
+        "backend/app/study/frozen_order/__init__.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study frozen-order public interface",
+      "responsibility": "Exports only own facts/capabilities/policies through finite __all__, no wildcard or sibling implementation imports.",
+      "next_step": "Keep already-correct layout/explicit exports; no move needed. Outer composition may import these public policy capabilities and inject them to consumers."
+    },
+    {
+      "original_path": "backend/app/study/frozen_order/interfaces.py",
+      "current_paths": [
+        "backend/app/study/frozen_order/interfaces.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Study frozen-order facts and semantic capability contract",
+      "responsibility": "NamedTuple fact snapshots plus callable predicate/fingerprint types; no I/O or mixed implementation.",
+      "next_step": "Keep in Study-owned interface home; no split needed. If independent packaging later requires shared exposure, move the exact existing definitions once and re-export without copying class identities."
+    },
+    {
+      "original_path": "backend/app/study/frozen_order/policy.py",
+      "current_paths": [
+        "backend/app/study/frozen_order/policy.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Daily Study frozen preference/eligibility/slot-order policy",
+      "responsibility": "annotate/proposal_valid/order_queue_slots form one frozen preference decision boundary over supplied facts.",
+      "next_step": "Keep current layout and reuse existing policy/capability seams; no mechanical move needed. Any later implementation consolidation is proposal-only and separate from this file organization."
+    },
+    {
+      "original_path": "backend/app/study_attempt_commands.py",
+      "current_paths": [
+        "backend/app/study_attempt_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies attempts \u2194 receiving Study practice composition",
+      "responsibility": "Accept, grade, replay or self-assess an authored exercise attempt, with a queue-identity fence when the attempt is a daily review.",
+      "next_step": "Move all four functions and two registrations intact as attempt_commands.py. _lock_review_queue remains with these handlers; practice versus review branches are one coherent attempt lifecycle, not a size-based split."
+    },
+    {
+      "original_path": "backend/app/study_commands.py",
+      "current_paths": [
+        "backend/app/study_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies content plus explicit receiving-practice bridge",
+      "responsibility": "Currently assembles authored content metadata/chapters/links, exercise rubric revisions, source/bundle import and exercise-to-practice lifecycle commands.",
+      "next_step": "Split only at complete existing functions: content_commands.py for study/chapter/link actions; import_commands.py for commit_study_import/import_study_bundle; exercise_commands.py for create/revise plus the practice lifecycle functions kept in practice/commands.py. Leave mixed atomic functions whole until the existing receiving-owner capability is wired."
+    },
+    {
+      "original_path": "backend/app/study_contracts.py",
+      "current_paths": [
+        "backend/app/contracts/studies.py"
+      ],
+      "status": "moved-cohesive-module",
+      "owner": "Authored/imported Studies endpoint envelopes and shared Learning exercise/answer type aliases",
+      "responsibility": "Authored collection/import/exercise/link envelopes and practice attempt envelopes are distinguishable groups; executable exercise/answer models already have one canonical Learning-owned identity.",
+      "next_step": "No remaining implementation split in this moved leaf; retain scoped boundary guard."
+    },
+    {
+      "original_path": "backend/app/study_routes.py",
+      "current_paths": [
+        "backend/app/study_routes.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Authored Studies HTTP transport plus SQLite application composition",
+      "responsibility": "Currently serves content/chapter/link/import/exercise endpoints and practice attempts, with PostgreSQL dispatch or in-process SQLite use-case execution.",
+      "next_step": "First move complete decorated handlers into content_routes.py, import_routes.py and practice_routes.py under one Studies HTTP composition; reuse one router and shared helpers. Then extract only existing SQLite use-case blocks from mixed handlers into Studies composition. Do not replace them with PostgreSQL handlers as a shortcut."
+    },
+    {
+      "original_path": "backend/app/tactic_commands.py",
+      "current_paths": [
+        "backend/app/tactic_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Tactics / cross-owner foreground practice composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "create_tactic_capture"
+          ],
+          "lines": [
+            25,
+            28
+          ],
+          "responsibility": "Tactic capture plus Learning daily-queue refresh"
+        },
+        {
+          "symbols": [
+            "submit_tactic_attempt"
+          ],
+          "lines": [
+            34,
+            72
+          ],
+          "responsibility": "Attempt admission/replay, tactic progress/card schedule and failed-attempt Learning queue effect"
+        },
+        {
+          "symbols": [
+            "set_tactic_activation"
+          ],
+          "lines": [
+            78,
+            84
+          ],
+          "responsibility": "Catalog activation and queue refresh"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            31,
+            87
+          ],
+          "responsibility": "Three import-time tactic command registrations"
+        }
+      ],
+      "next_step": "Move coherent command module to outer Tactics composition; do not call it an independent Tactics domain. The real next split keeps existing attempt validation/result/scheduling choice blocks in Tactics application and connects existing Learning admission/deletion/queue operations via outer wiring. Preserve the one receipt/transaction and lock/replay order; do not introduce generic execution ports or another queue writer."
+    },
+    {
+      "original_path": "backend/app/tasks.py",
+      "current_paths": [
+        "backend/app/tasks.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Outer Celery delivery and worker composition, with domain maintenance wiring",
+      "responsibility": "Concrete mixing is command registration + generic delivery/recovery + owner-specific periodic work, not simply its 493-line size.",
+      "next_step": "First move the whole Celery module to explicit outer worker composition, preserving decorators/task names and import registration order. Then separate registration statements/concrete handler bindings into a finite worker wiring function and keep generic delivery policy together; owner maintenance functions can move intact to their respective queue/coverage application composition callbacks. Do not generate a new dispatch framework."
+    },
+    {
+      "original_path": "backend/app/teaching_commands.py",
+      "current_paths": [
+        "backend/app/teaching_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Daily practice card teaching progress",
+      "responsibility": [
+        "Validate current card/teaching DTO, record revision/ply timestamp idempotently and return stored taught-at value."
+      ],
+      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+    },
+    {
+      "original_path": "backend/app/threat_analysis_commands.py",
+      "current_paths": [
+        "backend/app/threat_analysis_commands.py"
+      ],
+      "status": "reviewed-awaiting-owner-closure",
+      "owner": "Defensive Analysis / engine command composition",
+      "responsibility": [
+        {
+          "symbols": [
+            "_now"
+          ],
+          "lines": [
+            28,
+            29
+          ],
+          "responsibility": "Existing UTC timestamp helper"
+        },
+        {
+          "symbols": [
+            "claim_threat_analysis"
+          ],
+          "lines": [
+            34,
+            73
+          ],
+          "responsibility": "Reclaim, sparse-priority search/fairness, lease claim and metrics"
+        },
+        {
+          "symbols": [
+            "submit_threat_report"
+          ],
+          "lines": [
+            76,
+            104
+          ],
+          "responsibility": "Decode/validate locked request, replay/fence, completion/metrics then candidate-validation task fanout"
+        },
+        {
+          "symbols": [
+            "fail_threat_analysis",
+            "release_threat_analysis",
+            "retry_threat_analysis"
+          ],
+          "lines": [
+            107,
+            126
+          ],
+          "responsibility": "Lease-fenced failure/release/retry and exact HTTP/status projections"
+        },
+        {
+          "symbols": [
+            "register_command"
+          ],
+          "lines": [
+            129,
+            133
+          ],
+          "responsibility": "Five import-time command registrations"
+        }
+      ],
+      "next_step": "Keep the133-line callback/claim module coherent as outer Defensive Analysis command composition. Existing pure codec/validator should be exposed/injected separately from the durable pipeline (see proposal); exact five callbacks and fixed storage remain. Do not consolidate its native command claim with the SQLite/legacy claim implementation because fairness/priority semantics differ."
+    }
+  ],
+  "limitations": [
+    "No native/live/process/full-system acceptance.",
+    "Original review records can precede the final database extraction; original paths define the finite scope, current source remains authoritative.",
+    "New shared contracts and neutral chess support are not sibling domain implementation entry points.",
+    "Original mixed workflows and remaining database composition reverse imports are unfinished.",
+    "No consolidation, canonical-model/schema or frontend domain redesign."
+  ]
+}

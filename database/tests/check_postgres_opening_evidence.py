@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 from celery.exceptions import TimeoutError as CeleryTimeout
 import psycopg
 from tempo_legacy_database.adapters import postgres_store
-from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from app.services.postgres_opening_evidence import prepare_checkpoint, persist_checkpoint, decision_evidence, canonical_json, queue_manifests
 from app.review_commands import submit_review
 

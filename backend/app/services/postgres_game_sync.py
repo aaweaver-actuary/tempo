@@ -13,7 +13,7 @@ from .durable_tasks import (
     complete_task_slice_in_transaction, enqueue_compact_postgres_task_in_transaction,
     lock_current_slice,
 )
-from .game_record import GameRecord
+from app.games.records import GameRecord
 from .postgres_game_sync_completion import finish_game_sync_if_complete
 from .redis_admission_gate import background_lease
 

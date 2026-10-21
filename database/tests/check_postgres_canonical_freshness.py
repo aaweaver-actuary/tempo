@@ -41,7 +41,7 @@ from app.services.postgres_game_derivation import execute_game_position_index_sl
 from app.services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from app.services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
-from app.services.pgn import ParsedLine
+from app.chess.pgn import ParsedLine
 from app.integrity_repair_commands import _replace_repertoire_line
 
 ITALIAN = ['e2e4','e7e5','g1f3','b8c6','f1c4']
@@ -390,7 +390,7 @@ def prove_guided_review_boundary(repertoire_id):
 def prove_card_mutation_coverage_status():
     for mutation in ('revise', 'archive'):
         repertoire_id = 'canonical-status-' + uuid.uuid4().hex
-        from app.services.cards import card_id
+        from app.chess.cards import card_id
         identifier = card_id(chess.STARTING_FEN, [*ITALIAN, 'f8c5', 'c2c3', 'g8f6'])
         try:
             with postgres_store.connection() as database:
@@ -425,7 +425,7 @@ def prove_card_mutation_coverage_status():
 
 
 def prove_last_generated_membership_cleanup():
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     from app.repertoire_commands import delete_repertoire
     route = ['d2d4', 'd7d5', 'c2c4', 'e7e6', 'b1c3', 'g8f6', 'c1g5']
     for owner_scope in ('generated-owner', 'unlinked-authored-owner'):
@@ -642,7 +642,7 @@ def prove_selected_batch_canonical_routes():
     """CF-13: selected route closure, atomic admission and final receipts."""
     from app import analysis_paste_commands
     from app.command_gateway import execute_command, read_operation
-    from app.services.pgn import parse_pgn
+    from app.chess.pgn import parse_pgn
     repertoire_ids = []
     operation_ids = []
     permutation_results = {}
@@ -813,7 +813,8 @@ def prove_selected_batch_canonical_routes():
 def prove_deterministic_route_certification():
     """CF-14 / CP-1,7: native upserts and committed SQLite/PG parity."""
     import sqlite3
-    from app.services.canonical_prefix import store_positions, validate_scoped_line, position_key
+    from app.services.canonical_prefix import store_positions, validate_scoped_line
+    from app.chess.position_identity import position_key
     fixture = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/canonical-prefix-routes.json').read_text())
     repeated = fixture['repeated_connector']
     short, tie = repeated[:7], repeated[:9]
@@ -875,7 +876,7 @@ def prove_canonical_scope_lifecycle():
     from app import main as api, coverage_commands, opportunity_commands, card_commands, repertoire_commands
     from app.command_gateway import execute_command, read_operation
     from app.services import postgres_coverage_explorer as explorer, repertoire_coverage as coverage
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     from app.services.canonical_scope_freshness import scope_identity
     repertoire_ids, operation_ids, game_ids = [], [], []
     saved_fetch = explorer._fetch_explorer

@@ -10,7 +10,7 @@ from pydantic import TypeAdapter
 
 from tempo_legacy_database.adapters.studies.portable import storage
 from tempo_legacy_database.adapters.studies.portable.storage import PostgresConnection
-from ..study_contracts import ExerciseSpecification
+from app.contracts.studies import ExerciseSpecification
 from .study_grading import validate_exercise
 
 

@@ -12,7 +12,7 @@ def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict
 
 
 def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
-    from .review_conflicts import ReviewConflict
+    from app.contracts.review_conflicts import ReviewConflict
 
     # A handled conflict becomes a successful transport receipt, so the gateway
     # cannot roll back its handler savepoint for us. Fence the entire ordinary

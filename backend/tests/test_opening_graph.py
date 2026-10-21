@@ -625,7 +625,7 @@ def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
         route = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
         with database.connection() as connection:
             _insert_repertoire_line(connection, "migration-repertoire", "line-1", route)
-            from app.services.cards import card_id
+            from app.chess.cards import card_id
 
             legacy_id = card_id(STARTING_FEN, route)
             scheduled = schedule_review("correct")
@@ -704,7 +704,7 @@ def test_graph_publication_never_rewrites_completed_queue_attempts(
             _insert_repertoire_line(
                 connection, "completed-attempt-repertoire", "line-1", route
             )
-            from app.services.cards import card_id
+            from app.chess.cards import card_id
 
             legacy_card_id = card_id(STARTING_FEN, route)
             connection.execute(
@@ -748,7 +748,7 @@ def test_graph_publication_never_rewrites_completed_queue_attempts(
 def test_synthesized_prefix_evidence_caps_stability_and_copies_no_reviews(
     tmp_path, monkeypatch
 ):
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app):

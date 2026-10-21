@@ -1,3 +1,4 @@
+import { observePreparedAcknowledgementsDuringBootstrap, readStudyIntentRecords, denyStudyIntentStorage, seedLegacyStudyIntent, failReviewIntentStorage, seedIncompatibleStudyIntentStorage, readPreparedCardCount, readPreparedAttemptCounts, readFirstPreparedAttempt } from "../database/tests/browser/study-learning-storage.mjs";
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
@@ -103,10 +104,7 @@ async function move(page, from='e2', to='e4') {
   for (const square of [from,to]) await page.mouse.click(box.x + ((flipped ? 7-(square.charCodeAt(0)-97) : square.charCodeAt(0)-97)+0.5)*box.width/8, box.y+((flipped ? Number(square[1])-1 : 8-Number(square[1]))+0.5)*box.height/8);
 }
 async function records(page) {
-  return page.evaluate(() => new Promise((resolve,reject) => {
-    const opened=indexedDB.open('tempo-study-intents'); opened.onerror=()=>reject(opened.error);
-    opened.onsuccess=()=>{const db=opened.result;const read=db.transaction('intents').objectStore('intents').getAll();read.onsuccess=()=>{resolve(read.result);db.close();};read.onerror=()=>reject(read.error);};
-  }));
+  return page.evaluate(readStudyIntentRecords);
 }
 async function proveMultipleAuthorities(first) {
   await expect(first.locator('cg-board:visible')).toBeVisible();
@@ -175,64 +173,13 @@ try {
       if (event.phase==='body-failure') {proof.body_read_failed=true;proof.failure_name=event.name;}
       interruptObservedBootstrap();
     });
-    await page.addInitScript(endpoint=>{
-      const nativePut=IDBObjectStore.prototype.put;
-      IDBObjectStore.prototype.put=function(value,...keys) {
-        const request=nativePut.call(this,value,...keys);
-        if (this.name==='training' && keys[0]==='prepared-daily-queue') {
-          const acknowledged=structuredClone(value?.attempts?.filter(attempt=>attempt.serverAcknowledged)??[]);
-          if (acknowledged.length) this.transaction.addEventListener('complete',()=>{
-            void window.__tempoObserveOfflineAcknowledgement(acknowledged);
-          },{once:true});
-        }
-        return request;
-      };
-      const nativeFetch=window.fetch;
-      window.fetch=async(...argumentsList)=>{
-        const response=await nativeFetch(...argumentsList);
-        const input=argumentsList[0];
-        const url=new URL(input instanceof Request?input.url:String(input),location.href);
-        if (url.origin===endpoint && url.pathname==='/api/study/bootstrap' && response.status===200) {
-          void window.__tempoObserveBootstrap({phase:'headers',status:response.status});
-          for (const method of ['text','json']) {
-            const nativeRead=response[method].bind(response);
-            response[method]=(...readArguments)=>{
-              const reading=nativeRead(...readArguments);
-              void window.__tempoObserveBootstrap({phase:'body-start',status:response.status});
-              return reading.catch(cause=>{
-                void window.__tempoObserveBootstrap({phase:'body-failure',status:response.status,name:cause.name});
-                throw cause;
-              });
-            };
-          }
-        }
-        return response;
-      };
-    },endpoint);
+    await page.addInitScript(observePreparedAcknowledgementsDuringBootstrap,endpoint);
   }
-  if (scenario === 'storage-denied') await page.addInitScript(() => { Object.defineProperty(window,'indexedDB',{get(){throw new DOMException('Storage denied','SecurityError');}}); });
-  if (scenario === 'origin-transition') await page.addInitScript(() => {
-    const opening=indexedDB.open('tempo-study-intents',1);
-    opening.onupgradeneeded=()=>{const store=opening.result.createObjectStore('intents',{keyPath:['workspace','key']});store.add({workspace:'http://old-learning.invalid:study',key:'review:old',state:'pending',endpoint:'/api/cards/original/review',payload:{outcome:'correct'}});};
-    opening.onsuccess=()=>opening.result.close();
-  });
+  if (scenario === 'storage-denied') await page.addInitScript(denyStudyIntentStorage);
+  if (scenario === 'origin-transition') await page.addInitScript(seedLegacyStudyIntent);
   if (operation) await page.addInitScript(operation => { crypto.randomUUID = () => operation; }, operation);
-  if (['quota','aborted-storage'].includes(scenario)) await page.addInitScript(mode => {
-    const add = IDBObjectStore.prototype.add;
-    IDBObjectStore.prototype.add = function(value,...keys) {
-      if (this.name==='intents' && value.kind==='review') {
-        if (mode==='quota') throw new DOMException('Study storage quota exhausted','QuotaExceededError');
-        const request = add.call(this,value,...keys);
-        request.addEventListener('success',()=>this.transaction.abort()); return request;
-      }
-      return add.call(this,value,...keys);
-    };
-  },scenario);
-  if (scenario==='incompatible-storage') await page.addInitScript(() => {
-    const opening=indexedDB.open('tempo-study-intents',2);
-    opening.onupgradeneeded=()=>opening.result.createObjectStore('intents',{keyPath:['workspace','key']});
-    opening.onsuccess=()=>opening.result.close();
-  });
+  if (['quota','aborted-storage'].includes(scenario)) await page.addInitScript(failReviewIntentStorage,scenario);
+  if (scenario==='incompatible-storage') await page.addInitScript(seedIncompatibleStudyIntentStorage);
   await connect(page);
   if (['multi-authority-resume','registered-authority-recovery'].includes(scenario)) {
     await proveMultipleAuthorities(page);
@@ -263,11 +210,7 @@ try {
     let second;
     if (scenario==='two-tabs') { second=await context.newPage();await connect(second);await expect(second.locator('cg-board:visible')).toBeVisible(); }
     if (offlineScenario) {
-      await expect.poll(()=>page.evaluate(async()=>{
-        const registry=JSON.parse(localStorage.getItem('tempo-learning-authorities-v1'));
-        const databaseName=Object.values(registry)[0].offlineDatabase;
-        return new Promise(resolve=>{const opening=indexedDB.open(databaseName);opening.onsuccess=()=>{const db=opening.result;const read=db.transaction('training').objectStore('training').get('prepared-daily-queue');read.onsuccess=()=>{resolve(read.result?.cards?.length??0);db.close();};};});
-      })).toBe(1);
+      await expect.poll(()=>page.evaluate(readPreparedCardCount)).toBe(1);
       await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
       await expect.poll(()=>page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
       await page.reload(); await expect(page.locator('cg-board:visible')).toBeVisible();
@@ -281,15 +224,8 @@ try {
         assert.ok(bootstrapBodyFaults.length>0);assert.equal(await page.evaluate(()=>navigator.onLine),true);
       }
       await move(page);
-      await expect.poll(()=>page.evaluate(async()=>{
-        const registry=JSON.parse(localStorage.getItem('tempo-learning-authorities-v1'));
-        return new Promise(resolve=>{const opening=indexedDB.open(Object.values(registry)[0].offlineDatabase);opening.onsuccess=()=>{const db=opening.result;const read=db.transaction('training').objectStore('training').get('prepared-daily-queue');read.onsuccess=()=>{resolve({attempts:read.result?.attempts?.length??0,cards:read.result?.cards?.length??0});db.close();};};});
-      })).toEqual({attempts:1,cards:0});
-      originalOfflineAttempt = await page.evaluate(() => new Promise(resolve => {
-        const registry=JSON.parse(localStorage.getItem('tempo-learning-authorities-v1'));
-        const opening=indexedDB.open(Object.values(registry)[0].offlineDatabase);
-        opening.onsuccess=()=>{const db=opening.result;const read=db.transaction('training').objectStore('training').get('prepared-daily-queue');read.onsuccess=()=>{resolve(read.result.attempts[0]);db.close();};};
-      }));
+      await expect.poll(()=>page.evaluate(readPreparedAttemptCounts)).toEqual({attempts:1,cards:0});
+      originalOfflineAttempt = await page.evaluate(readFirstPreparedAttempt);
       assert.equal((await records(page)).filter(item=>item.kind==='review'&&item.state==='committed').length,0);
       assert.equal(traffic.filter(item=>item.method==='POST'&&/\/cards\/[^/]+\/review$/.test(item.path)).length,0);
       assert.ok(!originalOfflineAttempt.serverReviewId&&!originalOfflineAttempt.serverAcknowledged);

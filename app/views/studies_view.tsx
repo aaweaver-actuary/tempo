@@ -8,6 +8,7 @@ import { useBoardPublisher } from "../hooks/use-board-publisher";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import StudyExerciseRunner from "./study_exercise_runner";
 import { publishNotification } from "../lib/notifications";
+import { readPendingStudyCommandKey, writePendingStudyCommandKey, removePendingStudyCommandKey } from "../../database/browser/adapters/authored-studies/pending-command-keys";
 
 type Study = { id: string; title: string; description: string; archived: number };
 type Chapter = { id: string; study_id: string; title: string; description: string; position: number };
@@ -37,12 +38,12 @@ async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> 
     `tempo-pending-study-command:${method}:${path}:${commandFingerprint(JSON.stringify(body) ?? "")}`;
   let idempotencyKey = "";
   if (commandStorageKey) {
-    try { idempotencyKey = sessionStorage.getItem(commandStorageKey) ?? ""; } catch { /* Session storage may be disabled. */ }
+    try { idempotencyKey = readPendingStudyCommandKey(commandStorageKey) ?? ""; } catch { /* Session storage may be disabled. */ }
     if (!idempotencyKey) idempotencyKey = crypto.randomUUID();
-    try { sessionStorage.setItem(commandStorageKey, idempotencyKey); } catch { /* The key still protects this request. */ }
+    try { writePendingStudyCommandKey(commandStorageKey, idempotencyKey); } catch { /* The key still protects this request. */ }
   }
   const clearCommandKey = () => {
-    if (commandStorageKey) try { sessionStorage.removeItem(commandStorageKey); } catch { /* Ignore disabled storage. */ }
+    if (commandStorageKey) try { removePendingStudyCommandKey(commandStorageKey); } catch { /* Ignore disabled storage. */ }
   };
   let response: Response;
   try {

@@ -11,10 +11,10 @@ from tempo_legacy_database.adapters.authored_repertoires.opening_advisory.evalua
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.authored_repertoires.opening_advisory import evaluation as storage
-from .prefix_evaluation_contracts import PrefixEvaluationRequest, PrefixEvaluationResponse, SourceResponse
+from app.contracts.prefix_evaluation import PrefixEvaluationRequest, PrefixEvaluationResponse, SourceResponse
 from .services.activity_gate import activity_gate
 from .services import redis_admission_gate
-from .services.opening_graph import GraphStep
+from app.contracts.opening_graph import GraphStep
 from .services.prefix_evaluation import (
     EVALUATION_VERSION, ESTIMATE_BASIS, MAX_SOURCE_LINES, MAX_GRAPH_STEPS,
     EvaluationSnapshot, SourceLine, SplitOverride, PublishedCard, PrefixEvaluationError,

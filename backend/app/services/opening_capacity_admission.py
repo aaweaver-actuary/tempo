@@ -7,7 +7,7 @@ import os
 from tempo_legacy_database.adapters.queue_refresh import capacity as capacity_storage
 from tempo_legacy_database.adapters.queue_refresh.capacity import _available_route_card, _CAPACITY_ROUTE_FROM, capacity_priority_statement
 
-from .opening_capacity_frontier import CapacityRoute
+from app.study.openings.capacity_frontier import CapacityRoute
 # Compatibility exports: policy has one pure owner; existing consumers keep
 # their imports while the storage adapter retains route queries and validation.
 from .queue_admission import (

@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import AnalysisPasteCommitRequest
+from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.analysis_paste import (
     PastedLine, PasteInputError, StalePastePreview, commit_pasted_lines,

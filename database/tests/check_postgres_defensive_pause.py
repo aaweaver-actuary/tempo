@@ -25,10 +25,10 @@ from database.tooling.apply_postgres_migrations import apply_migrations
 from app import activity_commands, main as application, settings_commands, threat_analysis_commands
 from tempo_legacy_database import connections as database
 from tempo_legacy_database.adapters import postgres_store
-from app.models import Settings
+from app.contracts.transport.settings import Settings
 from app.services import background_activity, background_diagnostics, durable_tasks
-from app.services.threat_detection import find_defensive_knight_forks
-from app.services.threat_models import GameSnapshot, SourceLine
+from app.chess.threat_geometry import find_defensive_knight_forks
+from app.contracts.defense import GameSnapshot, SourceLine
 from app.services.threat_pipeline import _upsert_seed
 
 ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'

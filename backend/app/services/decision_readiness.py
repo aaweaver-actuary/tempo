@@ -10,7 +10,7 @@ from typing import Literal
 import chess
 from fsrs import Card
 
-from .opening_segmentation import decision_identity, presentation_occurrences
+from app.chess.opening_segments import decision_identity, presentation_occurrences
 from .scheduler import _scheduler
 
 READINESS_VERSION = 1

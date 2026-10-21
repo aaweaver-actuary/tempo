@@ -7,7 +7,7 @@ import chess
 import pytest
 
 from app.services import postgres_queue_refresh as worker, study_mode
-from app.services.cards import card_id
+from app.chess.cards import card_id
 
 
 def candidate(moves=None):

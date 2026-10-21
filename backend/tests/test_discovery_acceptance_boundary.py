@@ -11,10 +11,10 @@ import sys
 import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-POLICY = REPOSITORY / "backend/app/services/discovery_acceptance_application.py"
-CONTRACT = POLICY.with_name("discovery_acceptance_contracts.py")
+POLICY = REPOSITORY / "backend/app/authoring/discovery/acceptance.py"
+CONTRACT = POLICY.with_name("contracts.py")
 ALLOWED_IMPORTS = {"datetime", "hashlib", "typing", "dataclasses", "enum", "tempo_chess_core",
-                   "discovery_acceptance_contracts"}
+                   "contracts"}
 
 
 def violations(source):
@@ -56,7 +56,7 @@ def test_discovery_acceptance_boundary_rejects_infrastructure_regressions(additi
 
 
 def test_discovery_acceptance_store_exposes_semantic_capabilities_only():
-    from app.services.discovery_acceptance_contracts import DiscoveryAcceptanceStore
+    from app.authoring.discovery.contracts import DiscoveryAcceptanceStore
     assert {name for name in DiscoveryAcceptanceStore.__dict__ if not name.startswith("_")} == {
         "has_matching_intent", "lock_matching_intent", "lock_opportunity_scope",
         "task_state", "requeue_intent", "persist_intent_and_task",
@@ -78,8 +78,8 @@ from qualification import Inventory
 class RejectInfrastructure(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname.startswith('app.') and fullname not in {
-            'app.services', 'app.services.discovery_acceptance_application',
-            'app.services.discovery_acceptance_contracts'}:
+            'app.authoring', 'app.authoring.discovery', 'app.authoring.discovery.acceptance',
+            'app.authoring.discovery.contracts'}:
             raise AssertionError('Unexpected backend dependency: ' + fullname)
         if fullname.split('.')[0] in {'psycopg','psycopg_pool','redis','celery','fastapi','sqlite3'}:
             raise AssertionError('Infrastructure dependency: ' + fullname)

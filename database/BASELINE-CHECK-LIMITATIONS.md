@@ -49,3 +49,16 @@ The embedded installed guard in `services/intelligence/integration/qualify_artif
 ## Learning application native-runner resource-cap fake (relocation selection)
 
 The100 existing mocked native/qualification-policy cases partition into82 retained application cases and18 moved native-runner cases. Current selection reports93 passes/seven failures. The same seven failure families reproduce against captured original runner/test bodies: the unchanged NativeHarness.docker fake lacks the runner's pre-existing container-inspection resource-cap response. Assertions/helpers were not redesigned or weakened. Initial equal-basename collection selected zero cases; the relocated native guard now has its unique test_native_runner.py name and all100 identities collect. No native contract,container or service ran; these failures do not become native passes or full artifact qualification. No issue was published.
+
+## Workbench pinned build qualification
+
+The focused moved-outbox artifact proof uses available Vite 8.0.13 while the existing independent Workbench package pins 8.3.4. Twenty-one installed fake recovery cases, contained archive/declaration/source checks and static public exports pass; the complete pinned qualifier/browser workflow was not run or claimed. No package dependency version was changed to hide the difference.
+
+## Existing readiness scheduling import (source inspection)
+
+Both `backend/app/services/scheduler.py` and `decision_readiness.py` remain byte-identical to main `14ad5754`. The latter imports `_scheduler`, which the former does not export. This is an existing source-level import gap in readiness-specific checks, not a database relocation regression or a passing readiness proof. No application import/native startup or unrelated scheduler repair was attempted; keep this separate from mechanical backend organization and do not publish a new issue in this task.
+
+
+## Existing fast-manifest path drift discovered during backend organization
+
+The single selected regular runner case `emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases` fails because its existing inventory references absent `app/lib/endgame-generator.ts`. Both the absent source path and the inventory entry are unchanged from PR353 `55539695`. This is not reported as a pass or repaired in this relocation stage. The newly relocated backend mappings and new owner paths are checked directly for existence/uniqueness; no full runner/native campaign executes.

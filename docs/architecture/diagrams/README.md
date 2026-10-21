@@ -10,6 +10,8 @@ drawing and disclose the discrepancy.
 
 Database table/key/field views live in the [database directory index](../../../database/README.md); physical colocation preserves the component owners shown here. The [unmerged frozen-order extraction](../../../backend/app/study/frozen_order/README.md) documents its bounded policy/storage wiring and remaining legacy caller coupling. The subsequent [authored Studies conflict split](../../../backend/app/studies/README.md) keeps line queries in the legacy database owner and pure conflict computation outside it.
 
+The [unmerged backend organization view](../../../backend/app/README.md) maps the first separated policy/contract leaves and shared timing declaration. Its [finite checklist](../../../backend/ORGANIZATION.md) keeps remaining legacy workflows and technical composition gaps explicit; it does not change the MAIN/deployment status below.
+
 ## Source and status
 
 Baseline reviewed: main at

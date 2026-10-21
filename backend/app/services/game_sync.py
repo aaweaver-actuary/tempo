@@ -13,10 +13,10 @@ import httpx
 from tempo_legacy_database.connections import connection
 from tempo_legacy_database.adapters.games.imports import legacy as storage
 from tempo_legacy_database.adapters.games.sync import records as sync_storage
-from ..models import GameSyncRequest
-from .chesscom_client import fetch_chesscom_games
-from .game_record import GameRecord
-from .lichess_client import ProviderRequestError, fetch_lichess_games
+from app.contracts.transport.game_sync import GameSyncRequest
+from app.games.providers.chesscom import fetch_chesscom_games
+from app.games.records import GameRecord
+from app.games.providers.lichess import ProviderRequestError, fetch_lichess_games
 from .activity_gate import activity_gate
 
 

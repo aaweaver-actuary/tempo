@@ -4,9 +4,8 @@ import json
 import chess
 import pytest
 
-from app.services.opening_segmentation import (decision_identity, opening_position_key,
-    presentation_occurrences, recommendation_estimate)
-from app.services.cards import card_id
+from app.chess.opening_segments import decision_identity, opening_position_key, presentation_occurrences, recommendation_estimate
+from app.chess.cards import card_id
 
 
 def presentation(moves, start=chess.STARTING_FEN, color='white'):

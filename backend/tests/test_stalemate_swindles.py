@@ -22,7 +22,7 @@ import pytest
 from app.services import stalemate_swindles as swindles
 from app.services.study_grading import evaluate_answer
 from app.services.study_portable import import_bundle, validate_bundle
-from app.study_contracts import MoveAnswer
+from app.contracts.studies import MoveAnswer
 from tempo_legacy_database.ddl.study_migration import STUDY_TABLES
 
 

@@ -5,12 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.opening_move_probability_contracts import (
-    CountEvidence, EvidenceFreshness, FusedMoveDistribution, FusionRequest,
-    MethodDescriptor, MoveWeight, OpeningMoveEvidence, OpeningMoveEvidenceBundle,
-    PositionMoveUniverse, ScoreEvidence, coverage_mass_summary, empirical_frequencies,
-    fuse_move_evidence, move_universe, normalize_evidence_weights, serialize_contract,
-)
+from app.contracts.opening_move_probability import CountEvidence, EvidenceFreshness, FusedMoveDistribution, FusionRequest, MethodDescriptor, MoveWeight, OpeningMoveEvidence, OpeningMoveEvidenceBundle, PositionMoveUniverse, ScoreEvidence, coverage_mass_summary, empirical_frequencies, fuse_move_evidence, move_universe, normalize_evidence_weights, serialize_contract
 
 EXAMPLES = json.loads((Path(__file__).resolve().parents[2] /
                       "tests/fixtures/opening-move-probability/examples.json").read_text())

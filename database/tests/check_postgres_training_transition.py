@@ -131,7 +131,7 @@ def prove_optional_handoff(identifier):
     """Real locks, post-review head validation and both durable receipt layers."""
     from tempo_legacy_database.adapters import postgres_store
     from app.command_gateway import execute_command, request_digest
-    from app.models import ReviewRequest
+    from app.contracts.transport.study import ReviewRequest
 
     today = date.today().isoformat()
     with psycopg.connect(DSN) as connection:

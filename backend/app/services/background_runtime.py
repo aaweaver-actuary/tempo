@@ -16,8 +16,8 @@ import time
 from tempo_legacy_database.adapters.redis_control.wake_runtime import runtime as storage
 from tempo_legacy_database.adapters.redis_control.wake_runtime.runtime import _diagnostic_client
 
-# Bounded spans extend existing diagnostics; disable explicitly for paired probes.
-_training_timing: ContextVar[dict | None] = ContextVar("training_timing", default=None)
+# Explicit compatibility aliases share the neutral timing contract's context.
+from app.contracts.runtime_timing import _training_timing, current_training_timing
 
 
 @lru_cache(maxsize=1)
@@ -59,9 +59,6 @@ def training_timing_stage(label: str):
             stages = measurement["stages_ms"]
             stages[label] = stages.get(label, 0.0) + (time.perf_counter() - started) * 1000
 
-
-def current_training_timing():
-    return _training_timing.get()
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal

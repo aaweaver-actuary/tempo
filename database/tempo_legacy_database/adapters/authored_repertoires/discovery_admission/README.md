@@ -8,7 +8,7 @@
 | [Existing root acceptance queries](../../discovery_acceptance_store.py) | Six fixed native operations: matching intent, owner lookup, locked opportunity, task-state lookup, intent insert and preparing marker. No application imports, scope orchestration or task enqueue. |
 | [Discovery admission application](../../../../../backend/app/services/discovery_admission.py) | Source/history/chess selection, engine report validation/ranking, preview/cache/fingerprint/route identity, scope/source/lease fences, foreground waits, clocks/JSON, materialization/coverage/admission/retry policy and queue/task callbacks. |
 | [Acceptance composition](../../../../../backend/app/services/discovery_acceptance_store.py) | Existing `PostgresDiscoveryAcceptanceStore` class/constructor and contract projection, scope-before-opportunity locking and priority/task coordination, borrowing the caller's transaction. |
-| [Acceptance command](../../../../../backend/app/discovery_commands.py) | Existing HTTP translation and composition. Its import now points to the application composition class. The [pure policy](../../../../../backend/app/services/discovery_acceptance_application.py) and [public contract](../../../../../backend/app/services/discovery_acceptance_contracts.py) are unchanged. |
+| [Acceptance command](../../../../../backend/app/discovery_commands.py) | Existing HTTP translation and composition. Its import now points to the application composition class. The [pure policy](../../../../../backend/app/authoring/discovery/acceptance.py) and [public contract](../../../../../backend/app/authoring/discovery/contracts.py) are unchanged. |
 
 ```mermaid
 flowchart LR

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import chess
 
-from app.services.motif_detectors import classify_candidate_lines
+from app.chess.motifs import classify_candidate_lines
 
 
 FIXTURE_PATH = Path("tests/fixtures/motif-parity.json")

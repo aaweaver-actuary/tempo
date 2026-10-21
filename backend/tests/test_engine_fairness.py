@@ -239,7 +239,7 @@ def test_engine_missing_scheduling_state_reports_actionable_error(engine_store):
 @pytest.mark.parametrize('receipt_state', ['complete', 'executing', 'retrying', 'blocked'])
 def test_engine_position_journal_replays_receipt_before_preparing_stale_hint(engine_store, monkeypatch, receipt_state):
     from app import game_analysis_commands
-    from app.models import GameAnalysisPositionClaimRequest
+    from app.contracts.transport.game_analysis import GameAnalysisPositionClaimRequest
     saved = {'job': {'game_id': 'already-leased', 'lease_id': 'original-lease', 'kind': 'search'}}
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(main, 'read_operation', lambda operation_id, **options:

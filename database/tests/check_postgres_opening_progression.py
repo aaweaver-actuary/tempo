@@ -23,7 +23,7 @@ from psycopg import sql
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from app import main, review_commands
 from tempo_legacy_database.adapters import postgres_store
-from app.models import ReviewRequest
+from app.contracts.transport.study import ReviewRequest
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 from app.services.durable_tasks import claim_task
 from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice

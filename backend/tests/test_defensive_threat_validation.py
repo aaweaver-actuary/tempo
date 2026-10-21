@@ -1,9 +1,7 @@
 """Issue 11 regressions for compatible analysis and concrete consequences."""
 
-from app.services.threat_detection import (
-    find_defensive_knight_forks, propose_exercise_anchors,
-)
-from app.services.threat_models import GameSnapshot, SourceLine, ThreatPolicy
+from app.chess.threat_geometry import find_defensive_knight_forks, propose_exercise_anchors
+from app.contracts.defense import GameSnapshot, SourceLine, ThreatPolicy
 from app.services.threat_validation import (
     AnalysisLine, AnalysisReport, EngineScore, make_validation_plan,
     validate_threat_anchor,

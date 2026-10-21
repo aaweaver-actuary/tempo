@@ -1,3 +1,4 @@
+import { readPendingFindingCard, storePendingFindingCard, clearPendingFindingCard } from "../../database/browser/adapters/games-analysis/finding-card";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -19,7 +20,7 @@ type FindingCardRequest = {
 type PendingCard = { operationId: string; body: string };
 
 function readPending(storageKey: string): PendingCard | null {
-  const saved = localStorage.getItem(storageKey);
+  const saved = readPendingFindingCard(storageKey);
   if (!saved) return null;
   const parsed: unknown = JSON.parse(saved);
   if (typeof parsed !== "object" || parsed === null ||
@@ -58,11 +59,11 @@ export async function prepareFindingCard(findingId: string, request: FindingCard
     };
     if (receipt.state === "complete") {
       const result = cardResult.parse(receipt.response);
-      localStorage.removeItem(storageKey);
+      clearPendingFindingCard(storageKey);
       if (pending.body === body) return result;
       pending = null;
     } else if (receipt.state === "failed") {
-      localStorage.removeItem(storageKey);
+      clearPendingFindingCard(storageKey);
       throw new Error(receipt.error?.message ?? "The earlier finding card save failed.");
     } else if (receipt.state === "pending") {
       if (pending.body !== body) throw new PendingOperationError(pending.operationId);
@@ -70,7 +71,7 @@ export async function prepareFindingCard(findingId: string, request: FindingCard
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(storageKey, JSON.stringify(pending));
+    storePendingFindingCard(storageKey, pending);
   }
   let response = await fetch(url, {
     method: "POST",
@@ -81,6 +82,6 @@ export async function prepareFindingCard(findingId: string, request: FindingCard
   const result = await readCardResponse(response);
   if (!result.saved || !result.card_id)
     throw new Error("The study card save has no confirmed card ID.");
-  localStorage.removeItem(storageKey);
+  clearPendingFindingCard(storageKey);
   return result;
 }

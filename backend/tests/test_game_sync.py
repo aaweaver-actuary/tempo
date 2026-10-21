@@ -10,14 +10,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tempo_legacy_database import connections as database
-from app.models import GameSyncRequest, GameSyncJob
+from app.contracts.transport.game_sync import GameSyncRequest, GameSyncJob
 from app.main import app
 import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
 
 
 def test_game_sync_public_projection_preserves_coordinator_import_contract():
-    from app.services.game_sync_serialization import serialize_job
+    from app.games.ingestion.serialization import serialize_job
 
     assert game_sync_coordinator.serialize_job is serialize_job
     assert serialize_job(None) is None
@@ -52,10 +52,8 @@ def test_completed_game_sync_rejects_partial_result_in_public_model():
                "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}}})}
     with pytest.raises(ValueError):
         GameSyncJob.model_validate(game_sync_coordinator.serialize_job(row))
-from app.services.lichess_client import fetch_lichess_games_window
-from app.services.chesscom_client import (
-    fetch_chesscom_archive_urls, fetch_chesscom_archive_month,
-)
+from app.games.providers.lichess import fetch_lichess_games_window
+from app.games.providers.chesscom import fetch_chesscom_archive_urls, fetch_chesscom_archive_month
 
 
 def test_lichess_sync_window_bounds_provider_request_before_persistence():

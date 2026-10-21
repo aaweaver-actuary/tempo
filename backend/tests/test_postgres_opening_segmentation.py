@@ -7,7 +7,7 @@ import re
 import chess
 
 from app.services import postgres_opening_segmentation as worker
-from app.services import opening_segmentation
+from app.chess import opening_segments as opening_segmentation
 
 
 def test_segmentation_migration_has_unique_number_and_matches_schema_readiness():

@@ -10,19 +10,13 @@ from datetime import date, datetime, timezone
 import json
 
 from .decision_readiness import READINESS_VERSION, ReadinessSnapshot, decision_readiness
-from .opening_policy_reach import (
-    REACH_VERSION, LearnerPolicy, PolicyReachContext, PolicyReachRoute,
-    SelectedOpponentEvidence, propagate_policy_reach,
-)
-from .opening_preparedness import (
-    MODEL_VERSION, CardLearningEffect, DecisionReadiness, ProbabilityEvidence,
-    marginal_card_value, preparedness,
-)
+from app.study.openings.policy_reach import REACH_VERSION, LearnerPolicy, PolicyReachContext, PolicyReachRoute, SelectedOpponentEvidence, propagate_policy_reach
+from app.study.openings.preparedness import MODEL_VERSION, CardLearningEffect, DecisionReadiness, ProbabilityEvidence, marginal_card_value, preparedness
 from .opening_ranking_evaluation import (
     SCHEMA_VERSION, OpeningRankingCandidate, OpeningRankingContext, ProductionOrderScorer, ScoreResult,
     canonical_json, compare, load_snapshot, rank, snapshot_document,
 )
-from .opening_segmentation import decision_identity, opening_position_key, presentation_occurrences
+from app.chess.opening_segments import decision_identity, opening_position_key, presentation_occurrences
 
 VALUATION_VERSION = "selected-policy-card-valuation-v1"
 SCORE_KIND = "marginal-expected-correct-decisions"

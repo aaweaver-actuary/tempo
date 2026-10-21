@@ -11,7 +11,7 @@ import pytest
 
 from app import main
 from app.services import postgres_next_opponent as service
-from app.services.next_opponent_profile import METHOD_VERSION, build_profile
+from app.games.opponents.profile import METHOD_VERSION, build_profile
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 from test_next_opponent_profile import CUTOFF, game
 

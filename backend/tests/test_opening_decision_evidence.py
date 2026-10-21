@@ -3,7 +3,7 @@ import json
 import hashlib
 import pytest
 import chess
-from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from app.services.opening_decision_evidence import decision_manifest, reduce_observations, validate_checkpoint, EvidenceConflict
 
 

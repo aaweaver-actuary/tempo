@@ -1,3 +1,6 @@
+import type { AttemptHeader, SavedAttempt, SavedOpeningJournal, OpeningEvidenceReceipt, CompletionSignal } from "../domain/opening-evidence-journal";
+import * as journalStorage from "../../database/browser/opening-evidence-journal-storage";
+import { completionSignalKey, readRecoveryAttempt } from "../../database/browser/opening-evidence-journal-storage";
 import { LEARNING_URL as API_URL } from "./study-connection";
 import type { PracticeCard } from "../domain/cards";
 import type { AssistanceKind, OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
@@ -8,13 +11,6 @@ import { notifications, publishNotification, resolveNotification } from "./notif
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError, openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "./opening-evidence-recovery-policy";
 import { subscribeOperationStatusChange } from "./operation-status-events";
 
-type AttemptHeader = Omit<OpeningEvidenceCheckpoint, "events">;
-type SavedAttempt = AttemptHeader & { owner_session_id: string; final_sequence: number;
-  delivery_state: "idle" | "pending" | "complete" | "rejected" | "retained"; rejection?: string;
-  retention_reason?: "local_storage_quota";
-  local_capture_gap?: string;
-  delivery?: { checkpoint: OpeningEvidenceCheckpoint; operationKey: string } };
-type SavedEvent = OpeningDecisionEvent & { attempt_id: string };
 const captures = new Map<string, OpeningAttemptJournal>();
 const sessionId = crypto.randomUUID();
 let activeFlush: Promise<void> | undefined;
@@ -26,8 +22,7 @@ const leasedRecoveryAttempts = new Set<string>();
 const blockedRecoveryAttempts = new Map<string, string>();
 const retryingRecoveryAttempts = new Map<string, { failures: number; retryAt: number; operationKey?: string }>();
 const appendListeners = new Set<() => void>();
-const completionSignalKey = "tempo-opening-evidence-completion-v1";
-type CompletionSignal = { attemptId: string; signalId: string; sourceSessionId: string };
+
 let completionChannel: BroadcastChannel | undefined;
 
 function receiveCompletionSignal(value: unknown): void {
@@ -46,7 +41,7 @@ function completionStorageChanged(event: StorageEvent): void {
 
 function publishCompletionSignal(attemptId: string): void {
   const signal: CompletionSignal = { attemptId, signalId: crypto.randomUUID(), sourceSessionId: sessionId };
-  try { localStorage.setItem(completionSignalKey, JSON.stringify(signal)); return; }
+  try { journalStorage.writeOpeningCompletionSignal(signal); return; }
   catch { /* IndexedDB may work even when local storage is full or disabled. */ }
   let sender: BroadcastChannel | undefined;
   try {
@@ -218,22 +213,7 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
   const pendingEvents = [...journal.uncommittedEvents.values()];
   const writing = writeTail.catch(() => undefined).then(async () => {
     const database = await offlineTrainingDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-      const attempts = transaction.objectStore("opening_attempts");
-      const prior = attempts.get(attempt.attempt_id);
-      prior.onsuccess = () => attempts.put({ ...attempt,
-        ...(prior.result?.delivery ? { delivery: prior.result.delivery } : {}),
-        ...(["rejected", "retained"].includes(prior.result?.delivery_state)
-          ? { delivery_state: prior.result.delivery_state, rejection: prior.result.rejection,
-            retention_reason: prior.result.retention_reason } : {}),
-      });
-      // Normally one row; retries also repair this attempt's failed local appends.
-      for (const pendingEvent of pendingEvents) transaction.objectStore("opening_events").put({ ...pendingEvent, attempt_id: snapshot.attempt_id });
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
+    await journalStorage.appendOpeningAttempt(database, attempt, pendingEvents, snapshot);
     for (const pendingEvent of pendingEvents) journal.uncommittedEvents.delete(pendingEvent.sequence);
     if (!journal.uncommittedEvents.size) journal.storageError = undefined;
     if (snapshot.terminal) releaseLeases.get(snapshot.attempt_id)?.();
@@ -283,38 +263,16 @@ export function completeOpeningAttempt(attemptId: string | undefined, endedAt?: 
   return attemptId ? captures.get(attemptId)?.finish("complete", endedAt) : undefined;
 }
 
-async function savedJournal(attemptId?: string): Promise<{ attempt: SavedAttempt; events: SavedEvent[] } | undefined> {
+async function savedJournal(attemptId?: string): Promise<SavedOpeningJournal | undefined> {
   const database = await offlineTrainingDatabase();
   await reconcileRecoveryGuards(database);
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["opening_attempts", "opening_events"]);
-    const attempts = transaction.objectStore("opening_attempts");
-    const request = attemptId ? attempts.get(attemptId) : attempts.openCursor();
-    request.onsuccess = () => {
-      const cursor = attemptId ? undefined : request.result as IDBCursorWithValue | null;
-      const attempt = (attemptId ? request.result : cursor?.value) as SavedAttempt | undefined;
-      if (cursor && (attempt?.delivery_state !== "pending" || blockedRecoveryAttempts.has(attempt.attempt_id))) { cursor.continue(); return; }
-      if (!attempt || blockedRecoveryAttempts.has(attempt.attempt_id) || attempt.delivery_state !== "pending") { resolve(undefined); return; }
-      const events = transaction.objectStore("opening_events").index("attempt_id").getAll(attempt.attempt_id, 256);
-      events.onsuccess = () => resolve({ attempt, events: events.result as SavedEvent[] });
-      events.onerror = () => reject(events.error);
-    };
-    request.onerror = () => reject(request.error);
-  });
+  return journalStorage.readSavedOpeningJournal(database, attemptId, attemptId => blockedRecoveryAttempts.has(attemptId));
 }
 
 export async function rejectOpeningEvidence(attemptId: string, message: string): Promise<void> {
   if (typeof indexedDB !== "undefined") {
     const database = await offlineTrainingDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction("opening_attempts", "readwrite");
-      const store = transaction.objectStore("opening_attempts");
-      const read = store.get(attemptId);
-      read.onsuccess = () => { if (read.result && read.result.delivery_state !== "retained") store.put({ ...read.result, delivery_state: "rejected", rejection: message }); };
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
+    await journalStorage.rejectOpeningAttempt(database, attemptId, message);
   }
   retryingRecoveryAttempts.delete(attemptId);
   blockedRecoveryAttempts.delete(attemptId);
@@ -327,21 +285,7 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
   await writeTail.catch(() => undefined);
   const database = await offlineTrainingDatabase();
   let attemptRemoved = false;
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-    const attempts = transaction.objectStore("opening_attempts");
-    const read = attempts.get(attemptId);
-    read.onsuccess = () => {
-      if (!read.result || ["rejected", "retained"].includes(read.result.delivery_state)) return;
-      attempts.delete(attemptId);
-      attemptRemoved = true;
-      const cursor = transaction.objectStore("opening_events").index("attempt_id").openCursor(attemptId);
-      cursor.onsuccess = () => { if (cursor.result) { cursor.result.delete(); cursor.result.continue(); } };
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
-  });
+  await journalStorage.removeAcknowledgedOpeningAttempt(database, attemptId, () => { attemptRemoved = true; });
   captures.delete(attemptId);
   retryingRecoveryAttempts.delete(attemptId);
   blockedRecoveryAttempts.delete(attemptId);
@@ -356,18 +300,7 @@ export function retainOpeningEvidenceForStorageFallback(completion: OpeningEvide
     if (typeof indexedDB === "undefined") throw new Error("IndexedDB is unavailable");
     const database = await offlineTrainingDatabase();
     const { events, ...header } = snapshot;
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-      const attempts = transaction.objectStore("opening_attempts");
-      const prior = attempts.get(snapshot.attempt_id);
-      prior.onsuccess = () => attempts.put({ ...prior.result, ...header, owner_session_id: prior.result?.owner_session_id ?? sessionId,
-        final_sequence: events.length, delivery_state: "retained", retention_reason: "local_storage_quota" });
-      // Restore the full bounded envelope even if earlier checkpoints were acknowledged.
-      for (const event of events) transaction.objectStore("opening_events").put({ ...event, attempt_id: snapshot.attempt_id });
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
+    await journalStorage.retainOpeningAttempt(database, snapshot, events, header, sessionId);
     publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence:${snapshot.attempt_id}`,
       message: "Opening evidence could not fit in review storage and is retained separately for diagnosis. The aggregate review can still save." });
   });
@@ -397,19 +330,11 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     if (!frozenDelivery) {
       // Commit the exact delivery before sending. Later appends cannot alter an ambiguous retry.
       const database = await offlineTrainingDatabase();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction("opening_attempts", "readwrite");
-        const attempts = transaction.objectStore("opening_attempts");
-        const read = attempts.get(checkpoint.attempt_id);
-        read.onsuccess = () => { if (read.result) attempts.put({ ...read.result, delivery: { checkpoint, operationKey } }); };
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error);
-      });
+      await journalStorage.freezeOpeningDelivery(database, checkpoint, operationKey);
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
-    let receipt: { persisted?: boolean; attempt_id?: string; received_sequences?: number[]; contiguous_sequence?: number };
+    let receipt: OpeningEvidenceReceipt;
     try {
       let response = frozenDelivery ? await readOperationResponse(operationKey, { background: true, signal: controller.signal, fetch: openingEvidenceFetch, allowMissing: true }) : undefined;
       if (!response || response.status === 404) response = await confirmOperationResponse(await openingEvidenceFetch(`${API_URL}/api/opening-evidence/checkpoints`, {
@@ -441,29 +366,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     } finally { clearTimeout(timeout); }
     const database = await offlineTrainingDatabase();
     let checkpointConfirmed = false;
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-      const attemptStore = transaction.objectStore("opening_attempts");
-      const eventStore = transaction.objectStore("opening_events");
-      const current = attemptStore.get(checkpoint.attempt_id);
-      current.onsuccess = () => {
-        if (!current.result || ["rejected", "retained"].includes(current.result.delivery_state)) return;
-        checkpointConfirmed = true;
-        for (const event of checkpoint.events) if (receipt.received_sequences!.includes(event.sequence)) eventStore.delete([checkpoint.attempt_id, event.sequence]);
-        const remaining = eventStore.index("attempt_id").count(checkpoint.attempt_id);
-        remaining.onsuccess = () => {
-          const terminalPending = current.result.terminal?.state === "partial" &&
-            JSON.stringify(current.result.terminal) !== JSON.stringify(checkpoint.terminal);
-          if (checkpoint.terminal?.state === "partial" && receipt.contiguous_sequence === checkpoint.terminal.final_sequence && !remaining.result && !terminalPending) attemptStore.delete(checkpoint.attempt_id);
-          else attemptStore.put({ ...current.result, delivery: undefined,
-            local_capture_gap: receipt.contiguous_sequence === current.result.final_sequence ? undefined : current.result.local_capture_gap,
-            delivery_state: remaining.result || terminalPending ? "pending" : "idle" });
-        };
-      };
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
+    await journalStorage.confirmOpeningDelivery(database, checkpoint, receipt, () => { checkpointConfirmed = true; });
     if (checkpointConfirmed) publishCompletionSignal(checkpoint.attempt_id);
     retryingRecoveryAttempts.delete(checkpoint.attempt_id);
     if (attemptId) return;
@@ -490,31 +393,12 @@ function recoveryDeadlineArrived(attemptId: string): boolean {
   return (retryingRecoveryAttempts.get(attemptId)?.retryAt ?? 0) <= Date.now();
 }
 
-function readRecoveryAttempt(database: IDBDatabase, attemptId: string): Promise<SavedAttempt | undefined> {
-  return new Promise((resolve, reject) => {
-    const request = database.transaction("opening_attempts").objectStore("opening_attempts").get(attemptId);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
 /** Durable journal state fences process-local retry and blocked-operation hints. */
 async function reconcileRecoveryGuards(database: IDBDatabase): Promise<Map<string, SavedAttempt | undefined>> {
   const guardedIds = new Set([...retryingRecoveryAttempts.keys(), ...blockedRecoveryAttempts.keys()]);
   const persistedAttempts = new Map<string, SavedAttempt | undefined>();
   if (!guardedIds.size) return persistedAttempts;
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction("opening_attempts");
-    const store = transaction.objectStore("opening_attempts");
-    for (const attemptId of guardedIds) {
-      const request = store.get(attemptId);
-      request.onsuccess = () => persistedAttempts.set(attemptId, request.result);
-      request.onerror = () => reject(request.error);
-    }
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
-  });
+  await journalStorage.readGuardedOpeningAttempts(database, guardedIds, persistedAttempts);
   for (const [attemptId, attempt] of persistedAttempts) {
     const retry = retryingRecoveryAttempts.get(attemptId);
     const stillRecoverable = attempt && attempt.final_sequence && !["rejected", "retained"].includes(attempt.delivery_state) &&
@@ -529,26 +413,12 @@ async function reconcileRecoveryGuards(database: IDBDatabase): Promise<Map<strin
 
 /** Read one eligible row in primary-key order, without loading the journal table. */
 function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<string | undefined>): Promise<SavedAttempt | undefined> {
-  return new Promise((resolve, reject) => {
-    const request = database.transaction("opening_attempts").objectStore("opening_attempts").openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) { resolve(undefined); return; }
-      const attempt = cursor.value as SavedAttempt;
-      if (hasRecoveryWork(attempt, pendingAggregateIds) && recoveryDeadlineArrived(attempt.attempt_id)) resolve(attempt);
-      else cursor.continue();
-    };
-    request.onerror = () => reject(request.error);
-  });
+  return journalStorage.readOpeningRecoveryCandidate(database, attempt => hasRecoveryWork(attempt, pendingAggregateIds) && recoveryDeadlineArrived(attempt.attempt_id));
 }
 
 async function pendingAggregateAttempts(database: IDBDatabase): Promise<Set<string | undefined>> {
-  const pendingReviews = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]") as { attemptId?: string }[];
-  const prepared = await new Promise<{ attempts?: { attemptId?: string; serverReviewId?: number; serverAcknowledged?: boolean }[] } | undefined>((resolve, reject) => {
-    const request = database.transaction("training").objectStore("training").get("prepared-daily-queue");
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  const pendingReviews = journalStorage.readPendingOpeningReviewAttempts();
+  const prepared = await journalStorage.readPreparedOpeningAggregate(database);
   return new Set([
     ...pendingReviews.map(review => review.attemptId),
     ...(prepared?.attempts ?? []).filter(attempt => !attempt.serverReviewId && !attempt.serverAcknowledged)
@@ -614,18 +484,7 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
               } else if (response.status !== 404) throw new OpeningEvidenceHttpError(response.status);
             } catch (error) { markOpeningEvidenceTimeout(error, controller.signal); throw error; } finally { clearTimeout(timeout); }
           }
-          await new Promise<void>((resolve, reject) => {
-            const transaction = database.transaction("opening_attempts", "readwrite");
-            const store = transaction.objectStore("opening_attempts");
-            const read = store.get(attempt.attempt_id);
-            read.onsuccess = () => {
-              if (read.result && read.result.terminal?.state !== "partial" && !["rejected", "retained"].includes(read.result.delivery_state)) store.put({ ...read.result, delivery_state: "pending",
-                terminal: { state: "partial", final_sequence: read.result.final_sequence,
-                  ended_at: read.result.terminal?.ended_at ?? new Date().toISOString() } });
-            };
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error);
-          });
+          await journalStorage.markOrphanedOpeningAttemptPartial(database, attempt, () => new Date().toISOString());
         });
       }
       if (deliver) {

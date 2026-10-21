@@ -49,3 +49,102 @@ forbidden_modules =
     redis
     sqlite3
     httpx
+
+[importlinter:contract:organized-contracts]
+name = Organized contracts has no sibling implementation imports
+type = forbidden
+source_modules =
+    app.contracts
+    app.contracts.**
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.contracts.** -> app.contracts.**
+    app.contracts.** -> app.chess.**
+unmatched_ignore_imports_alerting = none
+broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.
+
+[importlinter:contract:organized-chess]
+name = Organized chess has no sibling implementation imports
+type = forbidden
+source_modules =
+    app.chess
+    app.chess.**
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.chess.** -> app.chess.**
+    app.chess.** -> app.contracts.**
+unmatched_ignore_imports_alerting = none
+broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.
+
+[importlinter:contract:organized-games]
+name = Organized games has no sibling implementation imports
+type = forbidden
+source_modules =
+    app.games
+    app.games.**
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.games.** -> app.games.**
+    app.games.** -> app.contracts.**
+    app.games.** -> app.chess.**
+unmatched_ignore_imports_alerting = none
+broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.
+
+[importlinter:contract:organized-study]
+name = Organized study has no sibling implementation imports
+type = forbidden
+source_modules =
+    app.study
+    app.study.openings
+    app.study.openings.**
+    app.study.review
+    app.study.review.**
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.study.openings.** -> app.study.openings.**
+    app.study.review.** -> app.study.review.**
+    app.study.openings.** -> app.contracts.**
+    app.study.openings.** -> app.chess.**
+    app.study.review.** -> app.contracts.**
+unmatched_ignore_imports_alerting = none
+broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.
+
+[importlinter:contract:organized-authoring]
+name = Organized authoring has no sibling implementation imports
+type = forbidden
+source_modules =
+    app.authoring
+    app.authoring.**
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.authoring.** -> app.authoring.**
+    app.authoring.** -> app.contracts.**
+    app.authoring.** -> app.chess.**
+unmatched_ignore_imports_alerting = none
+broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.
+
+[importlinter:contract:organized-studies]
+name = Organized studies has no sibling implementation imports
+type = forbidden
+source_modules =
+    app.studies
+    app.studies.**
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.studies.** -> app.studies.**
+    app.studies.** -> app.contracts.**
+    app.studies.** -> app.chess.**
+unmatched_ignore_imports_alerting = none
+broken_contract_guidance = Keep own implementation, explicit contracts and neutral chess support; outer composition wires other capabilities.

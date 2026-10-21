@@ -34,7 +34,7 @@ from .threat_pipeline import (
 from .threat_validation import (
     AnalysisReport, make_validation_plan, recognition_preview, validate_threat_anchor,
 )
-from .threat_models import ThreatPolicy
+from app.contracts.defense import ThreatPolicy
 
 
 DEFENSE_REPERTOIRE_ID = "__defense__"
