@@ -68,7 +68,7 @@ def initialize_scope_schema(database) -> None:
     database.execute('CREATE VIEW IF NOT EXISTS current_gameplay_card_priorities AS SELECT priority.* FROM gameplay_card_priorities priority WHERE priority.finding_id IS NULL OR EXISTS(SELECT 1 FROM current_game_findings finding WHERE finding.id=priority.finding_id)')
     database.execute('CREATE TRIGGER IF NOT EXISTS canonical_opportunity_insert AFTER INSERT ON repertoire_opportunities BEGIN UPDATE repertoire_opportunities SET game_scope_generation=(SELECT generation FROM repertoire_game_scope WHERE id=1) WHERE id=NEW.id; END')
 
-    from app.services.canonical_scope_freshness import coverage_scope_predicate, opportunity_scope_predicate
+    from tempo_legacy_database.adapters.repertoire_scope.freshness import coverage_scope_predicate, opportunity_scope_predicate
     database.execute(f'CREATE VIEW IF NOT EXISTS current_repertoire_opportunities AS SELECT opportunity.* FROM repertoire_opportunities opportunity WHERE {opportunity_scope_predicate()}')
     for table in ('repertoire_card_priority_generations','repertoire_card_introduction_priorities'):
         predicate = coverage_scope_predicate(database, settings='publication.evidence_json', repertoire_id='publication.repertoire_id')

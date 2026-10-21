@@ -126,7 +126,7 @@ or model execution. `tests/test_maia_work.py` exercises these moved boundaries
 with the actual composition/fixed operations and fake rows; existing contract
 validation and native durability/concurrency proofs retain their separate owners.
 The [full Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
-accounts for the retained Store authority/composition and all 39 AnalysisStore
+accounts for the retained Store authority/composition and all 40 AnalysisStore
 methods; the latter still contains substantial application work.
 
 ## Provider-source claim and publication boundary
@@ -455,5 +455,16 @@ The [capture/derivation/publication boundary](src/tempo_intelligence/analysis/RE
 keeps finding/dismissal/model/metadata/callback policy outside the database tree;
 fixed operations retain snapshots, guarded publication, conditional reopen
 propagation and writes at the original call points. The complete Analysis audit
-still identifies four mixed engine workflows; source separation and deployed
-resource isolation remain distinct claims.
+records all 40 AnalysisStore methods as fixed authority or composition. The
+separate runtime driver move is complete, while deployed resource isolation
+remains unverified.
+
+The [engine work state boundary](src/tempo_intelligence/analysis/README.md#engine-work-state-boundary)
+keeps existing job/model/comparison/transition policy outside the root tree; fixed
+capacity/lease/replay/execution guards and writes retain the original background
+transaction. The initial Store/Analysis mixed-method audit is complete at source
+level (38/40 methods). The [pre-existing runtime driver subclass](../../database/tempo_intelligence_database/adapters/README.md#background-connection-and-deadline-boundary)
+is now centralized with the same shared deadline context; application runner and
+shutdown/cancellation orchestration remain outside the root tree. These source
+moves do not establish whole-backend/domain independence or native/deployed
+qualification.

@@ -988,3 +988,192 @@ action occurred. Evidence and before-source snapshots are retained under
 `/tmp/tempo-intelligence-analysis-publication-*` for integration review, including
 source/artifact/fake-test logs and the exact hash manifest. This receipt is not a
 claim of whole-owner completion or hosted merge qualification.
+
+## Analysis engine-work move and initial method-audit closure — October 21, 2026
+
+Four complete existing application blocks now compose `analysis/engine_work.py`:
+`claim`, `accept`, `failure` and `mark_engine_unavailable`. Fixed
+`AnalysisEngineOperations` retains complete SQL, atomic head/capacity/lease/replay/
+execution guards and ordered writes on the original background transaction.
+Application job/result/status validation, compatibility, comparison, transitions,
+retry/backoff/cancellation choices, UUID/hash preparation and responses stay at
+the original call points. Fixed bindings execute only the existing application
+expressions at their original query-parameter slots; no generic query port,
+framework, dispatcher, extra transaction or new lease authority was introduced.
+Unused application imports were removed from the composition adapter; nested
+contract imports, clock checks and lazy head/workspace lookups remain ordered.
+
+The selected command passed **32 current cases**:
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src \
+  /tmp/tempo-db-review-venv/bin/python -m pytest \
+  services/intelligence/tests/test_analysis_engine_work.py \
+  services/intelligence/tests/test_analysis.py::test_worker_session_is_closed_before_durable_failure \
+  services/intelligence/tests/test_analysis.py::test_worker_acknowledged_cancellation_is_not_a_failed_search \
+  services/intelligence/tests/test_analysis.py::test_packaged_analysis_v1_schemas_match_public_models \
+  services/intelligence/tests/test_repairs.py::test_R5_incompatible_worker_identity_rejected \
+  services/intelligence/tests/test_repairs.py::test_R5_completed_depth_and_typed_mate_preserved \
+  -q --rootdir=. -o pythonpath= --import-mode=importlib
+```
+
+The same 24 new cases also passed against the saved original adapter (comparison
+evidence, not 56 distinct current cases). Synthetic fixed-row scripts, fake UUID/
+clock and real pure wire models preserve capacity read/lock/recheck, cancellation
+recovery, model/input validation before leasing, validation/digest before result
+writes, replay before lease/clock/execution guards, root/played write order,
+active-claim fencing before failure/status work, event before transition/backoff
+writes, cancellation settlement and conditional unavailable generation changes.
+Tests ignore SQL strings and do not execute a worker, engine or provider. No
+selected check failed or was skipped.
+
+Task-local exact expansion proof:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-analysis-engine-source-proof.py
+```
+
+It reconstructs all four original method bodies, preserving 30 query call points/
+23 distinct strings and complete bound parameters, guards, clock short circuits,
+contract imports, callback/UUID/model/hash/comparison/status/backoff statements,
+transaction and return order. The other 35 AnalysisStore methods are AST-identical;
+public signatures are unchanged. Bound head lookup precedes dynamic claim-field
+access. Application functions have no driver/cursor/query calls. The original
+state/error tuple and event-digest/backoff expressions remain application-owned
+and expand to the original query-binding sequence.
+
+Fresh artifacts built without installing or changing the shared environment:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation \
+  --outdir /tmp/tempo-intelligence-analysis-engine-build
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-analysis-engine-artifact-proof.py
+/tmp/tempo-db-review-venv/bin/python -I /tmp/tempo-intelligence-analysis-engine-wheel-smoke.py
+```
+
+Five current implementation/owner-document files match wheel bytes; eight current
+implementation/test/document files match sdist bytes, without bytecode/cache
+files. Three moved/composition modules import from the fresh wheel with only the
+declared pure contract/chess source dependencies supplied; no owner, pool,
+connection, worker, provider or engine is instantiated. The build was repeated
+once after trimming only extra final blank lines in the two new modules, so the
+final artifacts match their final source. Scoped syntax, whitespace/EOF/conflict
+checks and local Markdown links pass. All seven Analysis owner Mermaid blocks
+parse using the existing parser; hosted GitHub rendering was not inspected.
+
+- Wheel SHA-256: `cb27acfe79486bc36e3f350c8f20c1fabf36c3994c7dc267e88fca994abffb1f`.
+- Source distribution SHA-256: `8e463d6910575aa112992621ad4f49813109a4b95dbb457921de106e96e5c9e3`.
+
+The [complete audit](../../database/tempo_intelligence_database/adapters/README.md#complete-analysisstore-source-audit)
+now accounts for all 40 AnalysisStore methods: the original 33 plus seven explicit
+transaction contexts; three fixed owner/head/evidence methods and 37 composition
+methods, with no remaining mixed method in that initial audit. Only the fixed
+optional-lock head query and ordered evidence read remain directly in the class.
+The full 38-method Store classification was reread and its source hash remains
+identical to the credential-workflow integration: 11 database authority/fixed and
+27 composition/ordered fixed-effect methods, with startup/workspace/grant checks,
+canonical writers and failure guards explicitly retained.
+
+A bounded source scan also found a **separate unfinished driver remainder**:
+`services/intelligence/src/tempo_intelligence/runtime.py:15–33` still contains
+`BackgroundConnection(Connection)` and imports Psycopg at line 8, mixed with
+application `DatabaseRunner`/deadline orchestration. It was outside the original
+two-entry SQL checklist. The next narrow split should move the existing driver
+subclass root and retain runner/context orchestration outside, preserving one
+shared deadline, wait/close/error behavior and imports. Estimate: 20–40 minutes
+including synthetic deadline and discovery checks. No runtime move is included
+in this engine batch; this is not a permanent exception or whole-owner completion.
+The remaining `worker.py` execute call is an engine-client call, not database SQL.
+
+No DDL/FK, public schema/model, native engine/provider/security behavior or live
+state changed. Native PostgreSQL lease/replay/locking/concurrency and deployment/
+resource isolation remain unverified; retained native tests were not run. No
+actual engine/provider, private material, live database, service, full-system, CI,
+issue or git action occurred. Initial method-audit closure does not establish
+whole-backend/domain independence or hosted merge qualification. Source snapshots,
+proof/test/artifact logs, full audit and exact hash manifest remain under
+`/tmp/tempo-intelligence-analysis-engine-*` for integration review.
+
+## Runtime Psycopg subclass move — October 21, 2026
+
+The recorded driver remainder is now centralized:
+`BackgroundConnection` moved unchanged from `runtime.py` into
+`database/tempo_intelligence_database/adapters/background_connection.py`. Store
+imports the same class from its new owner path; its methods, SQL, transaction and
+pool settings are unchanged. Runtime keeps its original constants, one deadline
+ContextVar, DatabaseRunner and drain/shutdown/cancellation orchestration outside
+the database tree. It imports no driver or database package. Current source found
+only Store consuming the class, so no compatibility export or import cycle was
+needed. Shared context identity, timing, close behavior and public error strings
+remain unchanged.
+
+The selected command passed **12 current cases**:
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src \
+  /tmp/tempo-db-review-venv/bin/python -m pytest \
+  services/intelligence/tests/test_background_connection.py \
+  services/intelligence/tests/test_worker.py::test_cancellation_during_executor_join_remains_authoritative \
+  services/intelligence/tests/test_worker.py::test_repeated_cancellation_during_final_executor_join_preserves_provider_cancellation \
+  services/intelligence/tests/test_worker.py::test_lifespan_cancellation_during_owned_store_close_drains_and_joins_runner \
+  services/intelligence/tests/test_worker.py::test_lifespan_startup_cancellation_closes_eventually_created_store_and_runner \
+  -q --rootdir=. -o pythonpath= --import-mode=importlib
+```
+
+Six new cases use a fake base wait and clock, without the native connection
+initializer/finalizer or protocol: no deadline, remaining deadline, caller timeout,
+expired deadline and wait-error translation, plus shared context/reset across the
+actual application runner's thread. Six existing fake runner lifecycle/cancel/
+close/join cases remain selected. The five wait cases also passed against the
+saved original class; the new relocated-wiring identity case was intentionally
+deselected from that comparison (5 passed, 1 deselected), not counted as an
+original-class proof. No selected case failed or was skipped. All credentials,
+providers and Stores in the selected lifecycle tests are existing local fakes.
+
+Task-local exact source proof:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-runtime-driver-source-proof.py
+```
+
+The moved class and wait method are AST-identical. Runtime's complete remaining
+module is AST-identical after removing only that class and its Psycopg import;
+Store's complete module is AST-identical after the one class import relocation.
+The application runner/deadline/cancellation statements and every Store query,
+transaction and pool option are preserved. The driver imports the same existing
+ContextVar; no second declaration or compatibility shim was added.
+
+Fresh artifacts built and checked without installing or changing the shared
+environment:
+
+```sh
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation \
+  --outdir /tmp/tempo-intelligence-runtime-driver-build
+/tmp/tempo-db-review-venv/bin/python /tmp/tempo-intelligence-runtime-driver-artifact-proof.py
+/tmp/tempo-db-review-venv/bin/python -I /tmp/tempo-intelligence-runtime-driver-wheel-smoke.py
+```
+
+Five current source/owner-document files match wheel bytes; eight current source/
+test/document files match sdist bytes, without bytecode/cache files. Three cold
+fresh-wheel import orders (runtime first, Store first and driver first) all import
+runtime/driver/Store from that wheel and preserve one shared context/class binding;
+no Store, pool or native connection is created. Scoped syntax, whitespace/EOF,
+conflict and local-link checks pass. The new canonical adapter deadline diagram
+and seven existing Analysis diagrams parse using the existing Mermaid parser;
+hosted GitHub rendering was not inspected.
+
+- Wheel SHA-256: `e7c10ffff0bdb444fdab09781b44f2413258e23ab8ad4a55b180481cebb181db`.
+- Source distribution SHA-256: `bdd60a39467eeac11ff3c4fdc083a0045afd102408a963ca7ebf47df09e91daf`.
+
+The scoped current application source scan finds no Psycopg/SQLite driver import
+or SQL cursor call outside the root tree; its one `execute` is the unchanged
+Analysis worker engine-client call. Full audits still account for 38 Store and
+40 AnalysisStore methods (three fixed/37 composition in Analysis), with the
+previously recorded runtime driver edge now resolved. This source audit does not
+establish whole-backend/sibling-domain independence or native/deployed acceptance.
+No schema/FK, query, model, grant/security/configuration, credential behavior,
+actual worker/provider/engine, live data, service, CI or git action changed or ran.
+Native blocked-I/O timing, PostgreSQL locking/concurrency and deployment/resource
+isolation remain unverified. Task-owned source snapshots, selected logs, source/
+artifact proofs, audit and exact manifest remain under
+`/tmp/tempo-intelligence-runtime-driver-*` for integration review.

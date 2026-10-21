@@ -50,3 +50,8 @@ Add concise evidence as more modules are reviewed. Do not implement these propos
 
 - **Code:** `backend/app/services/discovery_admission.py::_source_game` and `_background_source_game` repeat source-query and coverage-route selection concepts. Review whether a pure route-selection helper can remove duplication while retaining distinct native short read scopes, close-before-chess and freshness checks. Similar results do not establish identical connection lifetimes; no consolidation was implemented.
 - **Schema:** `discovery_recommendation_requests` and `coverage_discovery_recommendation_requests` share opportunity/request/timestamp facts, but have distinct enforced source FKs and source-ply versus route payloads. A future reduction could simplify request navigation only after confirming consumers, provenance/cardinality and rebuild requirements. They are not established redundant or unused; no table/data/constraint changes are authorized here.
+
+### Durable enqueue variants and compatibility retirement (proposals only)
+
+- **Observed related code:** ordinary task upsert/event sequencing and the compact native CTE share enqueue/reset fields but differ in event/metric/returned-identity and bounded-round-trip contracts. A future owner-level specification could reduce drift; consolidation would require preserving those transaction/budget differences. These are related variants,not proven interchangeable duplicates.
+- **Compatibility question:** native/compatibility phase suffixes and parameter arities express different observable checkpoint semantics. A later retirement could reduce variants only with actual consumer/deployment evidence. Names do not prove any path/table unused; no retirement is implemented here.
