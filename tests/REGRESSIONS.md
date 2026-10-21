@@ -5159,3 +5159,8 @@ The final `test_queue_application_database_split.py` selection also covers compl
 ## Initial borrowed feedback application and storage separation
 
 `backend/tests/test_feedback_store_separation.py` owns nine semantic boundaries for borrowed facts/typed mapping, priority choices, lazy batches and queue/remediation callback order. Existing storage,policy and consumer checks preserve assertions; source snapshot and differential evidence do not qualify a backend wheel,native concurrency or Study isolation.
+
+
+## Queue command storage and warm projection ordering
+
+`backend/tests/test_queue_command_database_split.py` owns four focused boundaries for complete query capture, warming compiler/completion order, advisory lock behavior and application/database direction. Existing queue issuance/ensure/bury cases preserve assertions; native locks and whole-system behavior remain unverified.
