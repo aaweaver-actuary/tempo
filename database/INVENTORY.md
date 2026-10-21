@@ -213,3 +213,6 @@ Content’s additional five existing source/exercise/binding/publication/coverag
 
 
 Game Evidence’s root store additionally delegates import preparation, snapshot-cache choice and response shaping to its own application helpers. Snapshot staleness/affected-position computation, worker dispatch/retry, comparison computation/report construction and import-status formatting remain unfinished extraction candidates inside that store. Persistence replay guards, lock/lease fences, atomic writes and cursor batches remain database operations.
+
+
+Intelligence’s existing finding merge/ranking/proposal block now lives in its application `analysis/findings.py`. Request/cache/credential/retry decisions in `Store`, and admission/command/publication/report/export/engine transitions in `AnalysisStore`, remain identified extraction work inside their root adapters. No baseline candidate count changes for these additional moved-adapter internals.

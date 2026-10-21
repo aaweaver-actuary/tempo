@@ -1,5 +1,16 @@
 # Intelligence regression ownership
 
+## Database-free finding assembly
+
+`tests/test_findings.py` owns synthetic advice identity merge/deduplication,
+engine-supported draft proposal enrichment and ranking, unknown repertoire
+association, incompatible-profile uncertainty and the existing source-classify /
+background-evidence-read / merge composition order. Finding assembly lives in
+`src/tempo_intelligence/analysis/findings.py`; the store retains evidence capture
+and publication authority. These pure/fake cases complement the existing analysis,
+ranking and native report/publication regressions; they do not prove native SQL,
+locking, rollback, deployment or optional-service resource independence.
+
 `test_C3_route_reference_capacity_matches_complete_authored_source_bound` owns
 lossless shared-prefix route references within the producer's 10,000-route bound
 and rejection beyond it. The external pilot's regular

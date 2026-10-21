@@ -257,3 +257,47 @@ limits remain unchanged: trusted operator credential identity, configured Maia
 artifact binding without independent result attestation, one rating/no speed pair,
 and no repetition history from one FEN. No live-provider check, full-product gate,
 live migration, independent production provisioning, deployment or merge occurred.
+
+## Database-free findings extraction — October 21, 2026
+
+This receipt covers the uncommitted extraction in the isolated database worktree,
+not a rerun of the historical qualification above. The existing 49-line finding
+merge/ranking tail of `AnalysisStore._derive_evidence` moved to
+`src/tempo_intelligence/analysis/findings.py`. Its statements are AST-identical
+except that `self.workspace` is the explicit `workspace` argument. Every other
+`AnalysisStore` method and every adapter SQL statement literal is unchanged.
+Source classification still precedes the existing background evidence read,
+which precedes merging. No transaction, lock, publication order, schema or public
+wire contract changed. [Ownership and composition](src/tempo_intelligence/analysis/README.md#finding-assembly)
+and the [remaining mixed adapter inventory](../../database/tempo_intelligence_database/adapters/README.md)
+are explicit; this is not a claim of complete separation.
+
+The selected source-root pure/fake tests passed **62 cases**. After tightening one
+new evidence-identity assertion, all **four new cases** passed again. These cover
+source advice merge/deduplication, draft proposal enrichment/ranking, unknown
+repertoire association, incompatible engine profile and the unchanged composition
+order; the existing classification/ranking/engine tests retain their assertions.
+The existing Starlette/AnyIO deprecation warning remains unsuppressed.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_findings.py services/intelligence/tests/test_analysis.py services/intelligence/tests/test_repairs.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_findings.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-findings-build
+```
+
+The shared review environment was read only; explicit source roots supply only
+the declared local dependencies. The source distribution rebuilt its wheel, and
+both include the new helper and centralized adapter. Their wheel bytes match
+current source and contain no bytecode/cache files. Artifact SHA-256 values:
+
+- Wheel: `298068de27ac326047678023bc158004ded7729fe0757968dc096272bbb2f76d`.
+- Source distribution: `a5e15ddad8025c9c97b3e18b9fa6c2f583e8fb0e7e4237fa9330a8077bbe4960`.
+
+Artifacts remain under `/tmp/tempo-intelligence-findings-build` for integration;
+the pre-extraction adapter snapshot remains at
+`/tmp/tempo-intelligence-findings-before.py` for the statement comparison. These
+artifacts predate this receipt-only edit. Owner documentation links resolve.
+Mermaid rendering was not checked because this checkout lacks the parser package;
+no new documentation toolchain was installed. No installed-consumer runtime,
+native PostgreSQL, server, worker, provider, live data, full-system suite,
+deployment, security operation or CI change ran for this extraction.
