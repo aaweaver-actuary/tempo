@@ -17,10 +17,8 @@ from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix.retent
 )
 from tempo_legacy_database.ddl.canonical_prefix_preview_schema import TABLE_DEFINITIONS, initialize_sqlite_schema
 from tempo_legacy_database.connections import background_read_connection, connection
-from .canonical_prefix import (
-    line_origin, position_key, prefix_projection, read_prefix, store_positions,
-    validate_scoped_line,
-)
+from app.services.canonical_prefix import line_origin, prefix_projection, read_prefix, store_positions, validate_scoped_line
+from app.chess.position_identity import position_key
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_task_in_transaction, lock_current_slice, warm_completion_sql,

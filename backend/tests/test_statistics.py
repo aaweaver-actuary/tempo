@@ -7,7 +7,7 @@ from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.statistics import refresh_game_features
 from app.services.statistics import refresh_daily_snapshot
-from app.services.game_record import GameRecord
+from app.games.records import GameRecord
 from app.services.game_sync import _persist_game_once
 
 

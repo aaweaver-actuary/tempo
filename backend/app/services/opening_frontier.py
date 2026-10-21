@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, Literal
 
 import chess
 
-from .cards import card_id
-from .opening_preparedness import ProbabilityEvidence
-from .opening_segmentation import decision_identity, opening_position_key
+from app.chess.cards import card_id
+from app.study.openings.preparedness import ProbabilityEvidence
+from app.chess.opening_segments import decision_identity, opening_position_key
 
 if TYPE_CHECKING:
-    from .opening_graph import GraphStep
-    from .opening_policy_reach import LearnerPolicy
+    from app.contracts.opening_graph import GraphStep
+    from app.study.openings.policy_reach import LearnerPolicy
 
 
 FrontierStatus = Literal[

@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import GameFindingCurationRequest, GameFindingDecisionRequest
+from app.contracts.transport.game_findings import GameFindingCurationRequest, GameFindingDecisionRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import findings as storage
 from .services.real_game_feedback_adapter import prioritize_real_game_miss

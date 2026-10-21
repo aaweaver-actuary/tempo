@@ -17,9 +17,7 @@ from .queue_commands import request_queue_refresh_in_transaction
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .services.study_grading import GRADER_VERSION, evaluate_answer
 from .services.study_attempts import finish_study_attempt
-from .study_contracts import (
-    ExerciseSpecification, StudyAttemptRequest, StudySelfAssessmentRequest,
-)
+from app.contracts.studies import ExerciseSpecification, StudyAttemptRequest, StudySelfAssessmentRequest
 
 
 _SPECIFICATION_ADAPTER = TypeAdapter(ExerciseSpecification)

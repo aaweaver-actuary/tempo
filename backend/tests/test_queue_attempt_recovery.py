@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 from tempo_legacy_database import connections as database
 from app import main
-from app.models import ReviewRequest
+from app.contracts.transport.study import ReviewRequest
 from app.services.postgres_queue_refresh import _reconcile_one_unseen_entry
-from app.review_conflicts import ReviewConflict
+from app.contracts.review_conflicts import ReviewConflict
 
 
 class NativeSqlite:

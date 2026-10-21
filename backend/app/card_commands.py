@@ -13,9 +13,9 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.authored_repertoires.card_edits import storage
 from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import card_columns
-from .models import CardRevisionRequest
+from app.contracts.transport.content import CardRevisionRequest
 from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import PostgresConnection
-from .services.cards import card_id
+from app.chess.cards import card_id
 from .services.postgres_integrity import (
     invalidate_integrity_in_transaction, request_integrity_scan_in_transaction,
 )

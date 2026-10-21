@@ -14,10 +14,10 @@ from pydantic import TypeAdapter
 
 from tempo_legacy_database import connections as database
 from app.main import app, enqueue_daily_queue_refresh
-from app.study_contracts import ExerciseAnswer, ExerciseSpecification
+from app.contracts.studies import ExerciseAnswer, ExerciseSpecification
 from tempo_legacy_database.ddl.study_migration import migrate_studies
 from app.services.study_grading import evaluate_answer, validate_exercise
-from app.services.study_pgn import preview_pgn
+from app.studies.pgn import preview_pgn
 
 
 FEN = "4k3/8/8/8/8/8/8/4K1N1 w - - 0 1"

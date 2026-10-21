@@ -11,7 +11,7 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.prefix_application import storage
 from app import prefix_evaluation_api as structural, prefix_transition_api as planner_api
 from ..command_gateway import register_command
-from ..prefix_transition_contracts import PrefixTransitionApplyRequest, PrefixTransitionPlan
+from app.contracts.prefix_transition import PrefixTransitionApplyRequest, PrefixTransitionPlan
 from tempo_legacy_database.adapters.snapshot_reads import SnapshotRead, snapshot_rows
 from .durable_tasks import enqueue_task_in_transaction, lock_current_slice, advance_task_slice_in_transaction, complete_task_slice_in_transaction
 from .prefix_evaluation import snapshot_identity

@@ -15,11 +15,8 @@ from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
-from .study_contracts import (
-    ChapterCreate, StudyBundleImportRequest, StudyCreate, StudyImportCommitRequest,
-    StudyLinkCreate,
-)
-from .study_contracts import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
+from app.contracts.studies import ChapterCreate, StudyBundleImportRequest, StudyCreate, StudyImportCommitRequest, StudyLinkCreate
+from app.contracts.studies import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
 from .services.study_grading import validate_exercise
 from .services.study_portable import import_bundle
 from pydantic import TypeAdapter

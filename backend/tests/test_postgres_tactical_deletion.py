@@ -82,7 +82,7 @@ def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(mon
     import importlib.util
     from pathlib import Path
     import chess
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     from app.services.puzzles import validate_puzzle_record
 
     script_path = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_deletion.py"

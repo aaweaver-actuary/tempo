@@ -5,7 +5,7 @@ from collections import defaultdict
 import heapq
 import math
 import chess
-from .opening_segmentation import decision_identity, opening_position_key, stable_key
+from app.chess.opening_segments import decision_identity, opening_position_key, stable_key
 
 VERSION = 'frozen-maia-v1'
 READER_VERSION = 'frozen-maia-v2'

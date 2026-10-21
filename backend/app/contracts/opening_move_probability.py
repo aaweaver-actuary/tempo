@@ -11,7 +11,7 @@ import chess
 from pydantic import (AfterValidator, BaseModel, ConfigDict, Field, JsonValue,
                       StrictInt, StrictStr, field_validator, model_validator)
 
-from .services.canonical_prefix import position_key
+from ..chess.position_identity import position_key
 
 PROBABILITY_TOLERANCE = 1e-9
 MAX_EXACT_JSON_INTEGER = 2**53 - 1

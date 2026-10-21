@@ -419,7 +419,7 @@ def shadow_proof_admission_configuration():
 def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
     """Real SQL enforcement, domain nonmutation, foreground denial and offline replay."""
     from tempo_legacy_database.adapters import postgres_store
-    from app.services import opening_capacity_frontier
+    from app.study.openings import capacity_frontier as opening_capacity_frontier
     from app.services import opening_ranking_evaluation as evaluation
     from app.services import opening_ranking_snapshot as snapshot
     from app.services import redis_admission_gate

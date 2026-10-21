@@ -7,12 +7,9 @@ from dataclasses import dataclass
 import json
 from typing import Iterator
 
-from ..prefix_transition_contracts import (
-    AttemptDisposition, Blocker, CardDisposition, DepthChange, MembershipDisposition,
-    PrefixTransitionPlan, SubmissionDisposition,
-)
-from .opening_graph import GraphStep
-from .opening_segmentation import POLICY_VERSION, POSITION_VERSION, stable_key
+from app.contracts.prefix_transition import AttemptDisposition, Blocker, CardDisposition, DepthChange, MembershipDisposition, PrefixTransitionPlan, SubmissionDisposition
+from app.contracts.opening_graph import GraphStep
+from app.chess.opening_segments import POLICY_VERSION, POSITION_VERSION, stable_key
 from .prefix_evaluation import EVALUATION_VERSION, EvaluationSnapshot, PrefixEvaluationError, snapshot_identity, validate_source, evaluate_prefix
 from .review_reconciliation import SCHEDULE_COLUMNS
 

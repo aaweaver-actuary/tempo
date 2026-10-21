@@ -6,7 +6,7 @@ from typing import Any
 
 from tempo_chess_core import card_id
 
-from .discovery_acceptance_contracts import (
+from .contracts import (
     DiscoveryAcceptanceReason, DiscoveryAcceptanceStore, DiscoveryChoice, LockedDiscoveryOpportunity,
     NewDiscoveryIntent,
 )

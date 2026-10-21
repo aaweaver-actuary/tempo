@@ -3,11 +3,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.services.analysis import MAIA_VERSION, STOCKFISH_VERSION, explorer_url
-from app.services.cards import card_id
+from app.chess.cards import card_id
 from app.services.puzzles import load_packaged_decks, validate_puzzle_record
-from app.services.pgn import parse_pgn, prefix_through_user_moves
+from app.chess.pgn import parse_pgn, prefix_through_user_moves
 from app.services.scheduler import schedule_review, unlock_ready
-from app.services.game_analysis import classify_swings
+from app.chess.evaluation import classify_swings
 import chess
 
 

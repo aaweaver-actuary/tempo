@@ -1,5 +1,5 @@
 """Engine counters are accepted once with the existing fenced callback."""
-from ..models import EngineAttemptDiagnostics
+from app.contracts.transport.engine import EngineAttemptDiagnostics
 from .background_metrics import increment
 
 

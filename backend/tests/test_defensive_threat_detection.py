@@ -3,11 +3,8 @@
 import chess
 import pytest
 
-from app.services.threat_detection import (
-    defensive_fork_geometry, find_defensive_knight_forks,
-    propose_exercise_anchors, trace_knight_route,
-)
-from app.services.threat_models import GameSnapshot, SourceLine, ThreatPolicy
+from app.chess.threat_geometry import defensive_fork_geometry, find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route
+from app.contracts.defense import GameSnapshot, SourceLine, ThreatPolicy
 
 
 FORK_FEN = "4k3/8/8/8/1n6/8/8/R3K3 b Q - 0 1"
@@ -115,7 +112,7 @@ def test_issue10_black_learner_nonstandard_fen_uses_board_turn():
     fen = "4k3/8/8/8/1N6/8/8/R3K3 b Q - 0 1"
     game = GameSnapshot("game", 1, fen, ("e8e7",), "black")
     # Anchor selection is independent of a later fork's geometry.
-    from app.services.threat_models import ForkGeometry, ForkTarget, ThreatSeed
+    from app.contracts.defense import ForkGeometry, ForkTarget, ThreatSeed
     seed = ThreatSeed("seed", "game", 1, SourceLine("engine", 1, ("b4c2",)), 0,
                       ForkGeometry("white", "b4", "c2", ForkTarget("e8", "king"),
                                    ForkTarget("a8", "rook")))

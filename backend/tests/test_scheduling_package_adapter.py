@@ -135,7 +135,7 @@ def test_invalid_legacy_outcome_does_not_generate_identity(monkeypatch):
 
 
 def test_legacy_identity_adapter_preserves_shared_digests_and_public_identity():
-    from app.services import cards
+    from app.chess import cards
     import tempo_chess_core
     assert cards.card_id is tempo_chess_core.card_id
     fixtures = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/card-id-parity.json').read_text())

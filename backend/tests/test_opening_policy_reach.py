@@ -7,16 +7,10 @@ from pathlib import Path
 import chess
 import pytest
 
-from app.opening_move_probability_contracts import OpeningMoveEvidence, FusedMoveDistribution, move_universe
-from app.services.opening_policy_reach import (
-    LearnerPolicy, LearnerPolicyAction, PolicyReachContext, PolicyReachRoute,
-    SelectedOpponentEvidence, propagate_policy_reach,
-)
-from app.services.opening_preparedness import (
-    ProbabilityEvidence as P, DecisionReadiness, CardLearningEffect,
-    preparedness, marginal_card_value, rank_card_values,
-)
-from app.services.opening_segmentation import opening_position_key
+from app.contracts.opening_move_probability import OpeningMoveEvidence, FusedMoveDistribution, move_universe
+from app.study.openings.policy_reach import LearnerPolicy, LearnerPolicyAction, PolicyReachContext, PolicyReachRoute, SelectedOpponentEvidence, propagate_policy_reach
+from app.study.openings.preparedness import ProbabilityEvidence as P, DecisionReadiness, CardLearningEffect, preparedness, marginal_card_value, rank_card_values
+from app.chess.opening_segments import opening_position_key
 
 EXAMPLES = json.loads((Path(__file__).resolve().parents[2] /
                       "tests/fixtures/opening-move-probability/examples.json").read_text())

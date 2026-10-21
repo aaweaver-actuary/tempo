@@ -17,7 +17,7 @@ from tempo_legacy_database.adapters.opening_graph import recovery as storage
 from tempo_legacy_database.adapters.opening_graph.recovery import read_rows
 from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import defer_task_for_contention, fail_task, warm_completion_sql
-from .opening_segmentation import stable_key
+from app.chess.opening_segments import stable_key
 from .postgres_opening_graph import execute_postgres_opening_graph_slice, prepare_next_graph_line
 from .postgres_integrity import execute_postgres_integrity_slice
 from .redis_admission_gate import BackgroundAdmissionDeferred, background_lease

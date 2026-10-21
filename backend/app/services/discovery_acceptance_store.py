@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from app.services.canonical_prefix import read_prefix
 from app.services.canonical_scope_freshness import game_scope_generation
-from app.services.discovery_acceptance_contracts import DiscoveryChoice, DiscoveryOpportunity, DiscoveryScope, LockedDiscoveryOpportunity, MatchingDiscoveryIntent, NewDiscoveryIntent
+from app.authoring.discovery.contracts import DiscoveryChoice, DiscoveryOpportunity, DiscoveryScope, LockedDiscoveryOpportunity, MatchingDiscoveryIntent, NewDiscoveryIntent
 from app.services.discovery_admission import DISCOVERY_ADMISSION_PRIORITY
 from app.services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 

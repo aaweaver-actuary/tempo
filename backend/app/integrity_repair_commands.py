@@ -14,7 +14,7 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.authored_repertoires import integrity_commands as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from .services.cards import card_id
+from app.chess.cards import card_id
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_integrity import _archive_unsupported_card, _rewrite_card

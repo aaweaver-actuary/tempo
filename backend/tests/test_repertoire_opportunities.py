@@ -567,7 +567,7 @@ def _complete_discovery_admission_lifecycle(tmp_path, monkeypatch, *, republish_
             "SELECT 1 FROM repertoire_coverage_runs WHERE repertoire_id='rep' AND created_at>=?",
             (intent["created_at"],),
         ).fetchone()
-        from app.services.cards import card_id
+        from app.chess.cards import card_id
         target_card_id = card_id(position_fen, ["b1c3"])
         db.execute(
             """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,

@@ -1,8 +1,8 @@
 """Issue 13 move-rubric regressions; scheduling is tested at the API boundary."""
 
-from app.services.threat_detection import find_defensive_knight_forks, propose_exercise_anchors
+from app.chess.threat_geometry import find_defensive_knight_forks, propose_exercise_anchors
 from app.services.threat_grading import DefenseExercise, grade_defense_move
-from app.services.threat_models import GameSnapshot, SourceLine, ThreatPolicy
+from app.contracts.defense import GameSnapshot, SourceLine, ThreatPolicy
 from app.services.threat_validation import (
     AnalysisLine, AnalysisReport, EngineScore, make_validation_plan,
 )

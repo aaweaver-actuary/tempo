@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.prefix_reads import diagnostics as storage
-from .prefix_diagnostics_contracts import PrefixDiagnosticsList, PrefixDiagnosticsDetail
+from app.contracts.prefix_diagnostics import PrefixDiagnosticsList, PrefixDiagnosticsDetail
 from .services.activity_gate import activity_gate
 from .services.opening_decision_evidence import decision_manifest
 from .services.postgres_opening_evidence import _manifest_snapshot

@@ -14,11 +14,11 @@ from typing import Iterable, Literal
 
 import chess
 
-from app.opening_move_probability_contracts import (
+from app.contracts.opening_move_probability import (
     FusedMoveDistribution, OpeningMoveEvidence, serialize_contract,
 )
-from .opening_preparedness import ProbabilityEvidence, RouteReach, decision_reach, route_probability
-from .opening_segmentation import decision_identity, opening_position_key
+from .preparedness import ProbabilityEvidence, RouteReach, decision_reach, route_probability
+from app.chess.opening_segments import decision_identity, opening_position_key
 
 REACH_VERSION = "explicit-policy-reach-v1"
 

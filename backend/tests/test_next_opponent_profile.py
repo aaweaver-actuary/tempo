@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.services.next_opponent_profile import build_profile
+from app.games.opponents.profile import build_profile
 
 CUTOFF = datetime(2026, 10, 8, tzinfo=timezone.utc)
 
@@ -135,7 +135,7 @@ def test_issue107_naive_historical_cutoff_is_utc_in_every_host_timezone():
     import sys
     script = """import json,sys
 from datetime import datetime
-from app.services.next_opponent_profile import build_profile
+from app.games.opponents.profile import build_profile
 profile=build_profile('alice',json.loads(sys.argv[1]),as_of=datetime(2026,10,8))
 print(profile.model_dump_json())
 """

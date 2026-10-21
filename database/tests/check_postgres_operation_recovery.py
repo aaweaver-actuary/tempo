@@ -39,7 +39,7 @@ from app.command_gateway import (
 
 def verify_pgn_discard_fencing() -> None:
     from app.pgn_import_commands import discard_pgn_import, prepare_import_payload
-    from app.services.pgn import parse_pgn
+    from app.chess.pgn import parse_pgn
     owned_ids = []
     source_name = f"discard-proof-{uuid.uuid4().hex}.pgn"
     games_found, lines = parse_pgn('1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *')

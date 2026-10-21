@@ -7,11 +7,8 @@ import re
 import sqlite3
 
 import chess
+from ..chess.position_identity import position_key
 from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import scope as storage
-
-
-def position_key(fen: str) -> str:
-    return " ".join(chess.Board(fen).fen().split()[:4])
 
 
 def parse_prefix(movetext: str) -> list[str]:

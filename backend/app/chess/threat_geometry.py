@@ -8,7 +8,7 @@ import json
 
 import chess
 
-from .threat_models import (
+from app.contracts.defense import (
     ExerciseAnchor, ForkGeometry, ForkTarget, GameSnapshot, KnightHop,
     PositionContext, SourceLine, ThreatPolicy, ThreatSeed,
 )

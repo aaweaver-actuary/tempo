@@ -22,8 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'backend'))
 from app.services.frozen_maia_plan import (create_plan, source_fingerprint, DEFAULT_DEFERRED_LIMIT,
                                          LOCALIZED_SCORING_GAPS, LINEAGE_UNCERTAINTY_POLICY)
-from app.services.frozen_maia_math import validate_distribution, content_fingerprint, card_decisions, anchor, VERSION, READER_VERSION
-from app.services.opening_segmentation import stable_key, opening_position_key
+from app.study.openings.frozen_math import validate_distribution, content_fingerprint, card_decisions, anchor, VERSION, READER_VERSION
+from app.chess.opening_segments import stable_key, opening_position_key
 from app.services import frozen_opening_order as order
 from tempo_legacy_database.connections import read_connection, background_connection
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred

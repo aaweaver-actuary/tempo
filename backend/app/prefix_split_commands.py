@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.foreground_controls import prefix_splits as storage
-from .models import PrefixSplitRequest
+from app.contracts.transport.content import PrefixSplitRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from .services.postgres_integrity import invalidate_integrity_in_transaction

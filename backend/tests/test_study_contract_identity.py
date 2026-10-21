@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app import study_contracts as legacy
+from app.contracts import studies as legacy
 from app.services.study_portable import validate_bundle
 from tempo_learning_runtime import study_contracts as owned
 
@@ -27,7 +27,7 @@ def test_legacy_study_contracts_share_learning_grader_model_identity():
     assert CORPORA, 'The real checked-in portable corpora must remain selected'
     mismatches = [name for name in EXECUTABLE_CONTRACTS if getattr(legacy, name) is not getattr(owned, name)]
     assert not mismatches, f'Legacy consumers construct contracts the Learning grader cannot recognize: {mismatches}'
-    assert all(getattr(legacy, name).__module__ == 'app.study_contracts' for name in REQUEST_ENVELOPES), \
+    assert all(getattr(legacy, name).__module__ == 'app.contracts.studies' for name in REQUEST_ENVELOPES), \
         'Legacy endpoint envelopes retain their existing owner and fields'
 
 

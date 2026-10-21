@@ -15,7 +15,7 @@ from fastapi.encoders import jsonable_encoder
 from tempo_legacy_database import connections as database
 from app import main, command_gateway
 from tempo_legacy_database.adapters import postgres_store
-from app.models import ReviewRequest
+from app.contracts.transport.study import ReviewRequest
 
 
 class FixtureDate(date):

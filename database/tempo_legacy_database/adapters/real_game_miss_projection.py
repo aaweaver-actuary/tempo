@@ -5,7 +5,7 @@ Application policy uses RealGameFeedbackStore instead of importing these fragmen
 """
 from datetime import datetime, timezone
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from app.services.real_game_feedback_ports import utc_instant
+from app.study.review.feedback_contracts import utc_instant
 
 def _instant_microseconds(timestamp: str) -> int:
     elapsed = utc_instant(timestamp) - datetime(1970, 1, 1, tzinfo=timezone.utc)

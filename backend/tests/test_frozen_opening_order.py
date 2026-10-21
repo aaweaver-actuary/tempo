@@ -4,8 +4,8 @@ import sqlite3
 import pytest
 from app.services import frozen_opening_order as order
 from tempo_legacy_database.ddl.frozen_opening_schema import SCHEMA
-from app.services.frozen_maia_math import content_fingerprint
-from app.services.opening_capacity_frontier import plan_prioritized_opening_admissions
+from app.study.openings.frozen_math import content_fingerprint
+from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
 
 
 @pytest.fixture
@@ -167,7 +167,7 @@ def test_partial_teaching_and_attempted_cards_are_exposure_not_admission(databas
 
 def test_frozen_capacity_uses_existing_parent_gate_without_disabling_expansion():
     from app.services.opening_capacity_admission import plan_frozen_with_capacity
-    from app.services.opening_capacity_frontier import CapacityRoute
+    from app.study.openings.capacity_frontier import CapacityRoute
     rows=[candidate('parent',frozen_rank=2,frozen_valid=True,frozen_token=['run',1]),candidate('ordinary',frozen_rank=3,frozen_valid=True,frozen_token=['run',1])]
     child=candidate('child',frozen_rank=1,frozen_valid=True,frozen_token=['run',1])
     routes=(('child',CapacityRoute('repertoire',1,'line',1,'parent',False)),)

@@ -16,8 +16,9 @@ from tempo_legacy_database.adapters.authored_repertoires.discovery_admission imp
 from .activity_gate import activity_gate
 from . import canonical_scope_freshness
 from .canonical_scope_freshness import opportunity_is_current, coverage_run_is_current, coverage_scope_predicate
-from .canonical_prefix import read_prefix, game_in_scope, line_origin, position_key, validate_scoped_line, store_positions
-from .cards import card_id
+from app.services.canonical_prefix import read_prefix, game_in_scope, line_origin, validate_scoped_line, store_positions
+from app.chess.position_identity import position_key
+from app.chess.cards import card_id
 from .durable_tasks import (
     complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction,

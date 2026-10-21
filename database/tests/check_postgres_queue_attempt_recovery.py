@@ -286,7 +286,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
 
 
 def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe():
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.services.postgres_opening_evidence import prepare_checkpoint, persist_checkpoint
     from database.tests.check_postgres_opening_evidence import (
         _create_color_fixture, _transport_color_fixture, _color_checkpoint,

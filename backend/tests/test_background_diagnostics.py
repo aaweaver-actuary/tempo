@@ -420,7 +420,8 @@ def test_background_oldest_eligible_age_excludes_delayed_paused_and_blocked(diag
 
 
 def test_background_public_diagnostics_reject_invalid_counters_and_old_engine_fields(diagnostic_database):
-    from app.models import ThreatAnalysisSubmission, EngineAttemptDiagnostics
+    from app.contracts.transport.defense import ThreatAnalysisSubmission
+    from app.contracts.transport.engine import EngineAttemptDiagnostics
     from app.services.background_metrics import MetricCounts
     assert ThreatAnalysisSubmission(lease_id='old',report={}).diagnostics is None
     for fields in ({'engine_preemptions':-1},{'engine_preemptions':'1'},{'engine_abandoned_seconds':float('inf')},{'payload':{}}):

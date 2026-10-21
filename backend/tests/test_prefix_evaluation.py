@@ -6,7 +6,7 @@ import chess
 import pytest
 
 from app.services.opening_graph import GraphInput, build_graph
-from app.services.cards import card_id
+from app.chess.cards import card_id
 from app.services.prefix_evaluation import (
     EvaluationSnapshot, SourceLine, SplitOverride, PublishedCard, PrefixEvaluationError,
     evaluate_prefix, snapshot_identity,

@@ -19,7 +19,7 @@ def checkpoint_http_envelope():
 def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(monkeypatch, checkpoint_http_envelope, background_header):
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.services.activity_gate import activity_gate
     monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
@@ -215,8 +215,8 @@ def test_opening_attempt_http_closes_read_before_event_decoding(attempt_http_bou
 
 def test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch(monkeypatch):
     from app import main, command_dispatch, opening_evidence_api
-    from app.models import ReviewRequest
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.transport.study import ReviewRequest
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
     request = OpeningEvidenceCheckpoint(attempt_id='background-checkpoint', manifest=fixture,
         origin_queue_entry_id=101, started_at='2026-09-30T12:00:00Z', study_timezone='UTC')
@@ -271,7 +271,7 @@ def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revisio
 
 def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(monkeypatch):
     from app import main, command_dispatch
-    from app.models import ReviewRequest
+    from app.contracts.transport.study import ReviewRequest
     from app.command_gateway import request_digest
     requests=[]
     monkeypatch.setattr(main.postgres_store,'configured',lambda:True)
@@ -292,7 +292,7 @@ def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(
 
 def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeypatch):
     from app.services import postgres_opening_evidence as service
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     fixture=json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
     request=OpeningEvidenceCheckpoint(attempt_id='attempt',manifest=fixture,origin_queue_entry_id=101,
         started_at='2026-09-30T12:00:00Z',study_timezone='UTC')
@@ -343,7 +343,7 @@ def test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence
     import pytest
     from fastapi import HTTPException
     from app import main
-    from app.models import ReviewRequest
+    from app.contracts.transport.study import ReviewRequest
     fixture=json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
     monkeypatch.setattr(main.postgres_store,'configured',lambda:False)
     monkeypatch.setattr(main,'_apply_review',lambda *args,**kwargs:{'persisted':True})
@@ -496,7 +496,7 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
 
 def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(monkeypatch):
     from app import review_commands
-    from app.review_conflicts import ReviewConflict
+    from app.contracts.review_conflicts import ReviewConflict
     from app.services import postgres_opening_evidence as evidence
     from app.services import learning_review_adapter
     from tempo_learning_review import apply_review as installed_apply_review

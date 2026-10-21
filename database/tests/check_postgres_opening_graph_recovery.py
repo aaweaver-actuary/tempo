@@ -33,7 +33,7 @@ from app.services import frozen_opening_order as frozen
 from app.services import opening_graph_recovery as recovery
 from app.services import postgres_queue_refresh as queue
 from app.services.durable_tasks import enqueue_task_in_transaction, lock_current_slice
-from app.services.frozen_maia_math import content_fingerprint
+from app.study.openings.frozen_math import content_fingerprint
 from app.services.opening_graph import GraphInput, build_graph
 from app.services.postgres_opening_graph import stage_graph_steps, create_graph_cards
 

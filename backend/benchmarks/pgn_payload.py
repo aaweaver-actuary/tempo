@@ -25,7 +25,7 @@ from kombu.serialization import dumps
 
 from app.celery_app import celery_app
 from app.pgn_import_commands import prepare_import_payload
-from app.services.pgn import parse_pgn
+from app.chess.pgn import parse_pgn
 
 
 def branching_fixture(plies: int) -> bytes:

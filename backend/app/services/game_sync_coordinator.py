@@ -16,12 +16,12 @@ import chess
 
 from tempo_legacy_database.connections import connection, read_connection
 from tempo_legacy_database.adapters.games.coordinator import storage
-from ..models import GameSyncRequest
+from app.contracts.transport.game_sync import GameSyncRequest
 from .game_findings import refresh_game_findings
 from .real_game_feedback_adapter import apply_real_game_misses
 from .gameplay_events import refresh_gameplay_events
 from .game_sync import sync_providers
-from .game_sync_serialization import serialize_job
+from app.games.ingestion.serialization import serialize_job
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
 from .repertoire_coverage import claim_coverage_node, execute_coverage_node

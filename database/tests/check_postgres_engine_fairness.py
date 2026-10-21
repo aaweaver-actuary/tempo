@@ -309,7 +309,7 @@ class EngineFairnessProof:
         assert self.operation('games.analysis.position.claim', plan, ordinary_operation) == json.loads(json.dumps(result))
         assert self.streak() == 1
         from app import main
-        from app.models import GameAnalysisPositionClaimRequest
+        from app.contracts.transport.game_analysis import GameAnalysisPositionClaimRequest
         assert main.claim_game_analysis_position(GameAnalysisPositionClaimRequest(preferred_game_id=self.game_id),
             engine_worker='docker', idempotency_key=ordinary_operation) == json.loads(json.dumps(result))
         assert self.streak() == 1
@@ -319,7 +319,7 @@ class EngineFairnessProof:
         from fastapi.responses import JSONResponse
         from app import command_dispatch, main
         from app.command_gateway import record_operation_attempt
-        from app.models import GameAnalysisPositionClaimRequest
+        from app.contracts.transport.game_analysis import GameAnalysisPositionClaimRequest
 
         for original_request in ({'preferred_game_id': self.game_id}, {}):
             self.reset(streak=3)

@@ -10,7 +10,7 @@ import uuid
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import GameSyncRequest
+from app.contracts.transport.game_sync import GameSyncRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import synchronization as storage
 from .services.durable_tasks import enqueue_task_in_transaction

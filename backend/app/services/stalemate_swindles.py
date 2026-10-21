@@ -15,8 +15,8 @@ import uuid
 import chess
 import chess.pgn
 
-from ..study_contracts import MoveExercise
-from .study_pgn import preview_pgn
+from app.contracts.studies import MoveExercise
+from app.studies.pgn import preview_pgn
 from .study_portable import TABLES, validate_bundle
 
 

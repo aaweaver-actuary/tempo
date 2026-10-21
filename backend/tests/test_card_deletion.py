@@ -16,8 +16,8 @@ from app.card_deletion import (
 )
 from app.services.durable_tasks import enqueue_task_in_transaction
 from app.services.opening_graph import GraphInput, build_graph
-from app.models import ReviewRequest
-from app.review_conflicts import ReviewConflict
+from app.contracts.transport.study import ReviewRequest
+from app.contracts.review_conflicts import ReviewConflict
 
 
 @pytest.fixture
@@ -199,7 +199,7 @@ def test_retained_deck_is_protected_and_hidden_after_its_last_card_is_deleted(wo
 
 def test_automatic_tactic_admission_skips_deleted_content_without_consuming_allowance(workspace, monkeypatch):
     from app.services import tactical_catalog
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     from app.services.puzzles import validate_puzzle_record
     pack_id = "hangingPiece-easy-01"
     records = tactical_catalog.pack_records(pack_id)[:2]

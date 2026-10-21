@@ -6,8 +6,8 @@ import json
 import math
 from zoneinfo import ZoneInfo
 import chess
-from .frozen_maia_math import anchor, card_decisions, represented_reach, greedy_order, content_fingerprint, VERSION, READER_VERSION
-from .opening_segmentation import opening_position_key, decision_identity, stable_key
+from app.study.openings.frozen_math import anchor, card_decisions, represented_reach, greedy_order, content_fingerprint, VERSION, READER_VERSION
+from app.chess.opening_segments import opening_position_key, decision_identity, stable_key
 
 DEFAULT_DEFERRED_LIMIT = 0.01
 LINEAGE_UNCERTAINTY_POLICY = 'represented_position_descendants_v1'

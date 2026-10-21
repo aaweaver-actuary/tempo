@@ -501,7 +501,7 @@ def quiet_prefix_writes(monkeypatch):
 @pytest.mark.parametrize('mutation', ['delete', 'change'])
 def test_canonical_prefix_current_route_required_after_source_disappears_at_branch_boundary(prefix_database, quiet_prefix_writes, mutation):
     from app.main import branch
-    from app.models import BranchRequest
+    from app.contracts.transport.authored_lines import BranchRequest
     from fastapi import HTTPException
     from app.services.canonical_prefix import line_origin, read_prefix
     route = [*ITALIAN, 'f8c5', 'c2c3']
@@ -546,7 +546,7 @@ def study_snapshot():
 @pytest.mark.parametrize('linked_prefix', [ITALIAN, ['e2e4', 'e7e5', 'g1f3', 'd7d6']])
 def test_sqlite_shared_card_edit_validates_all_memberships_before_study_mutation(prefix_database, quiet_prefix_writes, linked_prefix):
     from app.main import revise_card
-    from app.models import CardRevisionRequest
+    from app.contracts.transport.content import CardRevisionRequest
     from fastapi import HTTPException
     add_line(ITALIAN)
     apply_preview(prepare_prefix())
@@ -1076,7 +1076,7 @@ def test_canonical_downstream_admission_certifies_final_source_without_renewing_
         before = read_prefix(connection, 'italian')['source_revision']
     if admission == 'branch':
         from app.main import branch
-        from app.models import BranchRequest
+        from app.contracts.transport.authored_lines import BranchRequest
         branch(BranchRequest(repertoire_id='italian', name='New downstream', trained_color='white', starting_fen=downstream, moves=['g8f6', 'd2d4']))
     elif admission == 'pgn':
         import asyncio
@@ -1108,9 +1108,9 @@ def test_canonical_downstream_admission_certifies_final_source_without_renewing_
 @pytest.mark.parametrize('mutation', ['revise', 'archive'])
 def test_canonical_sqlite_card_scope_mutation_admits_durable_game_refresh(prefix_database, quiet_prefix_writes, mutation):
     from app import main
-    from app.models import CardRevisionRequest
+    from app.contracts.transport.content import CardRevisionRequest
     from app.services.canonical_scope_freshness import game_scope_generation
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     identifier = card_id(chess.STARTING_FEN, ITALIAN)
     with database.connection() as connection:
         connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,'italian','response',?,?,'2026-10-02')", (identifier, chess.STARTING_FEN, json.dumps(ITALIAN)))
@@ -1129,8 +1129,8 @@ def test_canonical_sqlite_card_scope_mutation_admits_durable_game_refresh(prefix
 
 def test_canonical_sqlite_existing_generated_replacement_promotes_only_edited_membership(prefix_database, quiet_prefix_writes):
     from app.main import revise_card
-    from app.models import CardRevisionRequest
-    from app.services.cards import card_id
+    from app.contracts.transport.content import CardRevisionRequest
+    from app.chess.cards import card_id
     from app.services.canonical_prefix import read_prefix
     from app.services.repertoire_integrity import _reconcile_derived_cards
     first = card_id(chess.STARTING_FEN, ITALIAN)
@@ -1274,8 +1274,8 @@ def test_canonical_unrelated_integrity_repair_preserves_authored_standalone_sour
 
 def test_canonical_card_promotion_does_not_invalidate_generated_shared_membership(prefix_database, quiet_prefix_writes):
     from app.main import revise_card
-    from app.models import CardRevisionRequest
-    from app.services.cards import card_id
+    from app.contracts.transport.content import CardRevisionRequest
+    from app.chess.cards import card_id
     from app.services.canonical_prefix import read_prefix, line_origin
     from app.services.canonical_scope_freshness import coverage_run_is_current
     from app.services import repertoire_coverage as coverage
@@ -1382,9 +1382,9 @@ def test_canonical_structural_edit_invalidates_both_authored_shared_memberships(
 @pytest.mark.parametrize("mutation", ["revise", "archive"])
 def test_canonical_card_mutation_without_coverage_work_reports_actionable_recheck(prefix_database, quiet_prefix_writes, mutation):
     from app import main
-    from app.models import CardRevisionRequest
+    from app.contracts.transport.content import CardRevisionRequest
     from app.services import repertoire_coverage as coverage
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
 
     add_line([*ITALIAN, "f8c5", "c2c3"])
     identifier = card_id(chess.STARTING_FEN, ITALIAN)
@@ -1430,8 +1430,8 @@ def test_canonical_prefix_without_coverage_work_is_not_started(prefix_database):
 @pytest.mark.parametrize("mutation", ["revise", "archive"])
 def test_canonical_shared_card_owner_cleanup_never_resurrects_generated_source(prefix_database, quiet_prefix_writes, observation, mutation):
     from app import main
-    from app.models import CardRevisionRequest
-    from app.services.cards import card_id
+    from app.contracts.transport.content import CardRevisionRequest
+    from app.chess.cards import card_id
     from app.services.canonical_prefix import read_prefix
     from app.services.canonical_prefix_preview import _next_item
     from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
@@ -1923,7 +1923,7 @@ def test_canonical_route_certification_preserves_best_verified_origin_for_each_s
 def seed_canonical_publication_lifecycle():
     from datetime import datetime, timezone
     from app import main
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     route = [*ITALIAN, 'f8c5', 'c2c3']
     add_line(route)
     identifier = card_id(chess.STARTING_FEN, ITALIAN)
@@ -2004,7 +2004,7 @@ def assert_canonical_publication_visible(target_key):
 
 def revise_lifecycle_source(identifier):
     from app import main
-    from app.models import CardRevisionRequest
+    from app.contracts.transport.content import CardRevisionRequest
     main.revise_card(identifier, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5'], history_mode='preserve', expected_revision=1), None)
 
 

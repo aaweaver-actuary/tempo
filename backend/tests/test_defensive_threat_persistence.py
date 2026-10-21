@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 
 from tempo_legacy_database import connections as database
 from app.main import app, materialize_daily_queue
-from app.services.threat_detection import find_defensive_knight_forks
-from app.services.threat_models import GameSnapshot, SourceLine
+from app.chess.threat_geometry import find_defensive_knight_forks
+from app.contracts.defense import GameSnapshot, SourceLine
 from app.services.threat_pipeline import (
     _upsert_seed, claim_analysis_request, execute_threat_scan_slice, execute_threat_validation,
 )
@@ -210,7 +210,7 @@ def test_reported_rc4_preview_grades_c4_only_after_proposed_move(tmp_path, monke
 def test_reported_rc4_audit_preserves_attempts_and_removes_invalid_review_effect(tmp_path, monkeypatch, request):
     from app.services.durable_tasks import enqueue_task_in_transaction
     from tempo_legacy_database.adapters.database_executor import database_writer
-    from app.models import DefenseRecognitionRequest
+    from app.contracts.transport.defense import DefenseRecognitionRequest
     from app.services.review_service import apply_scheduling_review
     from app.services.threat_training import (
         approve_defense_candidate, execute_defense_rubric_audit_slice,

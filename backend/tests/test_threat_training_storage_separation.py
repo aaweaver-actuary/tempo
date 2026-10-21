@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models import DefenseRecognitionRequest
+from app.contracts.transport.defense import DefenseRecognitionRequest
 from app.services import threat_training as training
 from test_defensive_threat_grading import exercise
 

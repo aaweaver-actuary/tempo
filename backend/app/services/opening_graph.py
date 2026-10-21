@@ -12,7 +12,8 @@ from time import perf_counter
 import chess
 from fsrs import Card, State
 
-from .cards import card_id
+from app.chess.cards import card_id
+from ..contracts.opening_graph import GraphStep
 from tempo_legacy_database.adapters.opening_graph import compatibility as storage
 
 
@@ -27,23 +28,6 @@ class DecisionSegment:
     starting_fen: str
     moves: tuple[str, ...]
     parent_card_id: str | None
-    trained_color: str
-
-
-@dataclass(frozen=True)
-class GraphStep:
-    repertoire_id: str
-    line_id: str
-    decision_index: int
-    segment_kind: str
-    first_decision_index: int
-    last_decision_index: int
-    decision_fen_keys: tuple[str, ...]
-    card_id: str
-    parent_card_id: str | None
-    decision_fen_key: str
-    starting_fen: str
-    moves: tuple[str, ...]
     trained_color: str
 
 

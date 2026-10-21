@@ -25,7 +25,7 @@ from psycopg.rows import RowMaker
 from psycopg_pool import ConnectionPool
 import sqlglot
 
-from app.services.background_runtime import current_training_timing
+from app.contracts.runtime_timing import current_training_timing
 
 
 class _TimingCursor(psycopg.Cursor):

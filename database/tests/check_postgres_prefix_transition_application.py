@@ -165,7 +165,7 @@ def create_fixture(label, *, source_line_count=None):
                  ('-qgd', 'QGD', ['d2d4','d7d5','c2c4','e7e6','b1c3','g8f6']))]
     if source_line_count is not None:
         import random
-        from app.services.cards import card_id
+        from app.chess.cards import card_id
         generator = random.Random(102)
         lines = []
         used_identities = set()
@@ -333,7 +333,7 @@ def test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer()
 
 def test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling():
     import random
-    from app.services.cards import card_id
+    from app.chess.cards import card_id
     original_lock = application.lock_and_revalidate
     original_activate = application.activate_application
     measurements = []
@@ -1049,7 +1049,7 @@ def test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reus
 def test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements():
     from app.services.opening_decision_evidence import decision_manifest
     from app.services.postgres_opening_evidence import persist_checkpoint,prepare_standalone_checkpoint,commit_standalone_checkpoint
-    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.review_commands import submit_review
     from app.command_gateway import request_digest
     with fixture('attempts') as (rep,other,lines,steps):

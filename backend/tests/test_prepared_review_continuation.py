@@ -10,7 +10,7 @@ from test_queue_attempt_issuance import queued_attempts
 
 def test_legacy_review_payload_omits_absent_prepared_identity_and_keeps_request_hash():
     from app.command_gateway import request_digest
-    from app.models import ReviewRequest
+    from app.contracts.transport.study import ReviewRequest
     legacy = {"outcome": "correct", "guided": False, "queue_entry_id": 12, "recorded_at": None,
               "expected_review_id": None, "expected_revision": 1, "attempt_id": "legacy"}
     request = ReviewRequest.model_validate(legacy)
@@ -58,7 +58,7 @@ def test_prepared_continuation_replay_preserves_exactly_once_scheduling(queued_a
 
 
 def test_legacy_receipt_confirmation_retains_authoritative_refresh(queued_attempts, monkeypatch):
-    from app.models import ReviewRequest
+    from app.contracts.transport.study import ReviewRequest
     monkeypatch.setattr(main.coordinator, "wake", lambda: None)
     recorded_at = datetime.now(timezone.utc).isoformat()
     with database.connection() as connection:
@@ -100,7 +100,7 @@ def test_pr229_invalidated_successor_declines_without_duplicate_review(queued_at
 
 
 def test_pr229_no_hint_receipt_cannot_acquire_continuation_on_replay(queued_attempts, monkeypatch):
-    from app.review_conflicts import ReviewConflict
+    from app.contracts.review_conflicts import ReviewConflict
 
     monkeypatch.setattr(main.coordinator, "wake", lambda: None)
     original_payload = payload(queued_attempts)
@@ -122,8 +122,8 @@ def test_pr229_no_hint_receipt_cannot_acquire_continuation_on_replay(queued_atte
 @pytest.mark.parametrize("invalidation", ["archived", "revision", "buried", "pending_validation", "deleted"])
 def test_pr229_historical_continuation_does_not_authorize_invalidated_mutation(queued_attempts, monkeypatch, invalidation):
     from app.queue_commands import mark_attempt_failed
-    from app.review_conflicts import ReviewConflict
-    from app.models import ReviewRequest
+    from app.contracts.review_conflicts import ReviewConflict
+    from app.contracts.transport.study import ReviewRequest
 
     monkeypatch.setattr(main.coordinator, "wake", lambda: None)
     original_payload = payload(queued_attempts)

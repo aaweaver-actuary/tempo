@@ -3,8 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .prefix_evaluation_contracts import Depth
-from .services.opening_graph import GraphStep
+from .prefix_evaluation import Depth
+from .opening_graph import GraphStep
 
 
 class FrozenRecord(BaseModel):

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 
-from ..next_opponent_contract import NextOpponentProfile, OpponentCohort, RatingWeight, SpeedWeight
+from app.contracts.next_opponent import NextOpponentProfile, OpponentCohort, RatingWeight, SpeedWeight
 
 SUPPORTED_SPEEDS = ("blitz", "rapid", "classical")
 METHOD_VERSION = "next-opponent-v1"

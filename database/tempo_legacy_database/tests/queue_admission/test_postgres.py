@@ -16,7 +16,7 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
 from app.services import queue_admission, queue_application
 from app.services.queue_admission_adapter import QueueAdmissionAdapter, _PRIORITY_OPENING_CANDIDATE_BODY
-from app.services.opening_capacity_frontier import plan_prioritized_opening_admissions
+from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
 from queue_fixture_guard import owned_target, verify_owned_target
 
 FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'

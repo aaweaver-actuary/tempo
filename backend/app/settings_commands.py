@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.foreground_controls import settings as storage
-from .models import Settings
+from app.contracts.transport.settings import Settings
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 

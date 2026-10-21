@@ -7,13 +7,7 @@ import sys
 
 import pytest
 
-from app.services.opening_capacity_frontier import (
-    CapacityCandidate,
-    CapacityRoute,
-    CapacitySnapshot,
-    propose_capacity_expansion,
-    plan_prioritized_opening_admissions,
-)
+from app.study.openings.capacity_frontier import CapacityCandidate, CapacityRoute, CapacitySnapshot, propose_capacity_expansion, plan_prioritized_opening_admissions
 
 DAY = "2026-10-12"
 MISS = "miss"
@@ -291,7 +285,7 @@ def guarded_import(name, *args, **kwargs):
     return original_import(name, *args, **kwargs)
 import dataclasses, json
 builtins.__import__ = guarded_import
-from app.services.opening_capacity_frontier import CapacitySnapshot, propose_capacity_expansion
+from app.study.openings.capacity_frontier import CapacitySnapshot, propose_capacity_expansion
 assert propose_capacity_expansion(CapacitySnapshot(True,'day',(),(),0),miss_reason='miss') == ()
 """
     subprocess.run([sys.executable, "-c", script], check=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 
-from ..models import GameSyncRequest
+from app.contracts.transport.game_sync import GameSyncRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games.sync import completion as storage
 

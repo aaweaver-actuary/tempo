@@ -1,7 +1,7 @@
 """Read-only diagnostics over the v1 shadow observations; no scheduling contract."""
 from typing import Literal
 from pydantic import Field
-from .opening_evidence_contracts import EvidenceModel, OpeningDecisionManifest, OpeningManifestDecision, AssistanceKind
+from .opening_evidence import EvidenceModel, OpeningDecisionManifest, OpeningManifestDecision, AssistanceKind
 
 
 class DiagnosticPrefix(EvidenceModel):
