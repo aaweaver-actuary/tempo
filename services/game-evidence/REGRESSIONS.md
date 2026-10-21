@@ -36,6 +36,13 @@ read and write call points, including rejection without writes. Native snapshot
 installation/generation, concurrency and rollback proof remains with the existing
 PostgreSQL regressions.
 
+`tests/test_worker.py` owns the moved worker control flow: no-work and existing
+job-kind/fallback paths, exact job/callback forwarding, work exception identity,
+fenced failure-write timing, claim-error/cancellation exclusion and unmasked
+failure-write exceptions. It uses installed store/application wiring and synthetic
+capabilities; actual leases, contention, persistence and restart remain native
+suite responsibilities.
+
 `tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
 legacy observation: exact original physical card/interior offset, played/expected
 move, deterministic immutable identity, unknown/no-miss without an envelope,

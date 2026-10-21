@@ -13,7 +13,8 @@ from tempo_game_evidence.reporting import build_comparison_report, comparison_re
 
 
 from tempo_game_evidence.payloads import make_delivery
-from tempo_game_evidence.reconciliation import finalize, request_reconciliation, resume_reconciliation
+from tempo_game_evidence.reconciliation import finalize, request_reconciliation
+from tempo_game_evidence.worker import process_comparison_job
 
 
 class EvidenceStore:
@@ -130,23 +131,13 @@ class EvidenceStore:
             return job
 
     def process_one(self, *, before_publish=None):
-        job = self.claim_job()
-        if not job:
-            return False
-        try:
-            if job["kind"] == "rescope":
-                self._rescope(job)
-            elif job["kind"] == "reconcile":
-                resume_reconciliation(self, job)
-            else:
-                self._compare(job, before_publish)
-        except Exception:
-            with self.connect() as database:
-                database.execute("""UPDATE jobs SET lease_token=NULL,leased_until=NULL,attempts=attempts+1,
+        return process_comparison_job(self, before_publish=before_publish)
+
+    def record_job_failure(self, job):
+        with self.connect() as database:
+            database.execute("""UPDATE jobs SET lease_token=NULL,leased_until=NULL,attempts=attempts+1,
                   error='comparison_failed',next_attempt_at=now()+interval '5 seconds'
                   WHERE job_key=%s AND lease_token=%s""", (job["job_key"],job["lease_token"]))
-            raise
-        return True
 
     def _rescope(self, job):
         with self.connect() as database:
