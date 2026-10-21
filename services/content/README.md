@@ -310,4 +310,4 @@ validation runs whether evidence is retained or temporary.
 
 Database implementation, DDL and source-schema charts: [central database owner](../../database/tempo_content_database/README.md).
 
-Existing reconciliation orchestration lives in the [Content worker application](src/tempo_content/worker/README.md); source decisions live in [Content source policy](src/tempo_content/policy/README.md). The database adapter wires their owner-specific facts and operations. Route traversal and publication build/orchestration remain extraction work.
+Existing reconciliation and bounded route-window computation live in the [Content worker application](src/tempo_content/worker/README.md); source decisions and inventory-status projection live in [Content source policy](src/tempo_content/policy/README.md), and construction/provenance lives in [publication preparation](src/tempo_content/publication/README.md). The database adapter supplies owner-specific facts and operations. Phase and I/O coordination, source staging and publication read/reservation/write sequencing remain extraction work.

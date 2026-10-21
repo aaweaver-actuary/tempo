@@ -54,3 +54,8 @@ def publication_report(workspace_id: str, status: dict, definition_count: int) -
 
 def coverage_reply(reply: dict, authored: bool, direct: dict | None, transposed: dict | None) -> dict:
     return {**reply,'legal':True,'authored':authored,'covered':bool(direct),'transposition_supported':bool(transposed) and not bool(direct),'status':'covered' if direct else 'transposition_supported' if transposed else 'uncovered'}
+
+
+def inventory_report(source: dict, task: dict, definition_count: int) -> dict:
+    state = 'retirement_required' if task['state']=='complete' and definition_count==0 else task['state']
+    return {**source,**task,'state':state,'status':state,'stale':source['last_complete_revision']!=source['requested_revision']}
