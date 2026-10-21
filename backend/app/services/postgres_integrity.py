@@ -9,6 +9,7 @@ from typing import Any
 
 from tempo_legacy_database.connections import background_read_connection
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.authored_repertoires.integrity import native as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
@@ -46,14 +47,7 @@ def current_integrity_certificate(database, repertoire_id: str, graph_generation
     This projection does not enqueue, validate, repair or duplicate scan analysis.
     Callers fence source/publication/state and encompass card locks before writes.
     """
-    row = database.execute_native("""SELECT state.status integrity_status,state.scan_status,
-        state.scan_generation,state.checked_at,state.scan_completed_sources,state.scan_total_sources,state.scan_error,
-        graph.generation graph_task_generation,graph.state graph_task_state,
-        scan.id scan_task_id,scan.generation scan_task_generation,scan.state scan_task_state,scan.payload_json
-        FROM repertoire_integrity_state state
-        JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=state.repertoire_id
-        JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=state.repertoire_id
-        WHERE state.repertoire_id=%s""", (repertoire_id,)).fetchone()
+    row = storage.certificate_facts(database, (repertoire_id,))
     return integrity_certificate_from_row(dict(row), repertoire_id, graph_generation) if row else None
 
 
@@ -87,10 +81,7 @@ def request_integrity_scan_in_transaction(
     """Make a completed graph generation's integrity scan durable."""
 
     invalidate_integrity_in_transaction(database, repertoire_id)
-    database.execute_native(
-        "UPDATE repertoire_integrity_state SET scan_status='queued' "
-        "WHERE repertoire_id=%s", (repertoire_id,),
-    )
+    storage.queue_scan_state(database, (repertoire_id,))
     queued_task = enqueue_task_in_transaction(
         database, "integrity_scan", repertoire_id,
         {"repertoire_id": repertoire_id, "graph_generation": graph_generation,
@@ -98,11 +89,7 @@ def request_integrity_scan_in_transaction(
          "source_offset": 0},
         priority=40, minimum_generation=graph_generation,
     )
-    database.execute_native(
-        "UPDATE repertoire_integrity_state SET scan_generation=%s "
-        "WHERE repertoire_id=%s",
-        (f"{queued_task['id']}:{queued_task['generation']}", repertoire_id),
-    )
+    storage.set_scan_generation(database, (f"{queued_task['id']}:{queued_task['generation']}", repertoire_id))
     from .prefix_transition_application import record_integrity_target
     record_integrity_target(database, repertoire_id, graph_generation, queued_task)
     return queued_task
@@ -116,28 +103,12 @@ def prepare_next_integrity_source(
     if source_type not in {"line", "card"}:
         raise ValueError("Unknown integrity source type")
     with background_read_connection() as database:
-        first_line = database.execute_native(
-            "SELECT trained_color FROM repertoire_lines WHERE repertoire_id=%s "
-            "ORDER BY created_at,id LIMIT 1", (repertoire_id,),
-        ).fetchone()
+        first_line = storage.first_source_color(database, (repertoire_id,))
         repertoire_color = str(first_line[0]) if first_line else None
         if source_type == "line":
-            source_row = database.execute_native(
-                "SELECT id,repertoire_id,name,trained_color,start_fen,moves_json,created_at "
-                "FROM repertoire_lines WHERE repertoire_id=%s AND id>%s "
-                "ORDER BY id LIMIT 1", (repertoire_id, after_source_id),
-            ).fetchone()
+            source_row = storage.next_line_source(database, (repertoire_id, after_source_id))
         else:
-            source_row = database.execute_native(
-                "SELECT card.id,card.repertoire_id,card.kind,card.start_fen,"
-                "card.moves_json,COALESCE(card.trained_color,%s) trained_color "
-                "FROM cards card WHERE card.id>%s AND card.archived=0 "
-                "AND card.content_type='opening' AND "
-                "(card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards link "
-                "WHERE link.repertoire_id=%s AND link.card_id=card.id)) "
-                "ORDER BY card.id LIMIT 1",
-                (repertoire_color, after_source_id, repertoire_id, repertoire_id),
-            ).fetchone()
+            source_row = storage.next_card_source(database, (repertoire_color, after_source_id, repertoire_id, repertoire_id))
         source = dict(source_row) if source_row else None
     if source is None:
         return None
@@ -157,16 +128,7 @@ def invalidate_integrity_in_transaction(
     from .postgres_opening_segmentation import invalidate_segmentation_in_transaction
     invalidate_segmentation_in_transaction(database, repertoire_id)
 
-    database.execute_native(
-        "INSERT INTO repertoire_integrity_state("
-        "repertoire_id,status,checked_at,scan_status,scan_generation,"
-        "scan_completed_sources,scan_total_sources,scan_error) "
-        "VALUES(%s,'unchecked',NULL,'idle',NULL,0,0,NULL) "
-        "ON CONFLICT(repertoire_id) DO UPDATE SET "
-        "status='unchecked',checked_at=NULL,scan_status='idle',"
-        "scan_generation=NULL,scan_completed_sources=0,scan_total_sources=0,scan_error=NULL",
-        (repertoire_id,),
-    )
+    storage.invalidate_scan_state(database, (repertoire_id,))
 
 
 def stage_integrity_source_in_transaction(
@@ -186,9 +148,8 @@ def stage_integrity_source_in_transaction(
                 database, task, next_phase="scan",
                 next_payload={**payload, "source_type": "card", "after_source_id": ""},
             )
-        database.execute_native(
-            "UPDATE repertoire_integrity_state SET scan_total_sources=%s "
-            "WHERE repertoire_id=%s AND scan_generation=%s",
+        storage.set_scan_source_total(
+            database,
             (int(payload.get("source_offset", 0)), payload["repertoire_id"],
              f"{task['id']}:{task['generation']}"),
         )
@@ -203,22 +164,12 @@ def stage_integrity_source_in_transaction(
     if source_offset < 0:
         raise ValueError("Integrity source offset cannot be negative")
     run_id = f"{task['id']}:{task['generation']}"
-    database.execute_native(
-        "INSERT INTO repertoire_integrity_source_runs("
-        "run_id,source_offset,observations_json,invalid_json) "
-        "VALUES(%s,%s,%s,%s) ON CONFLICT(run_id,source_offset) DO UPDATE SET "
-        "observations_json=excluded.observations_json,"
-        "invalid_json=excluded.invalid_json",
+    storage.stage_source(
+        database,
         (run_id, source_offset, json.dumps(prepared_source.positions),
          json.dumps(prepared_source.invalid)),
     )
-    database.execute_native(
-        "UPDATE repertoire_integrity_state SET status='unchecked',"
-        "scan_status='running',scan_generation=%s,"
-        "scan_completed_sources=%s,scan_error=NULL "
-        "WHERE repertoire_id=%s AND scan_generation=%s",
-        (run_id, source_offset + 1, payload["repertoire_id"], run_id),
-    )
+    storage.advance_source_state(database, (run_id, source_offset + 1, payload["repertoire_id"], run_id))
     return advance_task_slice_in_transaction(
         database, task, next_phase="scan",
         next_payload={**payload, "after_source_id": prepared_source.source_id,
@@ -243,12 +194,7 @@ def prepare_next_integrity_run(
     """Read one staged source, then parse observations outside PostgreSQL."""
 
     with background_read_connection() as database:
-        source_run = database.execute_native(
-            "SELECT observations_json,invalid_json "
-            "FROM repertoire_integrity_source_runs "
-            "WHERE run_id=%s AND source_offset=%s",
-            (run_id, source_offset),
-        ).fetchone()
+        source_run = storage.staged_source(database, (run_id, source_offset))
         staged = tuple(source_run) if source_run else None
     if staged is None:
         return None
@@ -281,13 +227,9 @@ def aggregate_integrity_run_in_transaction(
         raise ValueError("Integrity aggregation cursor does not match staged source")
     run_id = f"{task['id']}:{task['generation']}"
     if position_offset == 0:
-        with database.raw.cursor() as cursor:
-            cursor.executemany(
-                "INSERT INTO repertoire_integrity_issue_candidates("
-                "run_id,id,repertoire_id,kind,fen_key,fen,trained_color,"
-                "signature,moves_json,sources_json) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                "ON CONFLICT(run_id,id) DO NOTHING",
+        with storage.integrity_cursor(database) as cursor:
+            storage.stage_invalid_candidates(
+                cursor,
                 [(run_id, issue["id"], payload["repertoire_id"], issue["kind"],
                   issue.get("fen_key"), issue.get("fen"), issue.get("trained_color"),
                   issue["signature"], json.dumps(issue.get("moves", [])),
@@ -295,15 +237,9 @@ def aggregate_integrity_run_in_transaction(
                  for issue in prepared_run.invalid],
             )
     positions = prepared_run.positions[position_offset:position_offset + 2]
-    with database.raw.cursor() as cursor:
-        cursor.executemany(
-            "INSERT INTO repertoire_integrity_position_accumulators("
-            "run_id,fen_key,fen,trained_color,moves_json,sources_json) "
-            "VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(run_id,fen_key) DO UPDATE SET "
-            "moves_json=(repertoire_integrity_position_accumulators.moves_json::jsonb "
-            "|| excluded.moves_json::jsonb)::text,"
-            "sources_json=(repertoire_integrity_position_accumulators.sources_json::jsonb "
-            "|| excluded.sources_json::jsonb)::text",
+    with storage.integrity_cursor(database) as cursor:
+        storage.merge_position_observations(
+            cursor,
             [(run_id, position["fen_key"], position["fen"],
               position.get("trained_color"), json.dumps(position.get("moves", [])),
               json.dumps(position.get("sources", []))) for position in positions],
@@ -335,12 +271,7 @@ def prepare_next_integrity_position(
     """Read one accumulated position and derive any issue after closing PostgreSQL."""
 
     with background_read_connection() as database:
-        row = database.execute_native(
-            "SELECT fen_key,fen,trained_color,moves_json,sources_json "
-            "FROM repertoire_integrity_position_accumulators "
-            "WHERE run_id=%s AND fen_key>%s ORDER BY fen_key LIMIT 1",
-            (run_id, after_fen_key),
-        ).fetchone()
+        row = storage.next_accumulated_position(database, (run_id, after_fen_key))
         position = dict(row) if row else None
     if position is None:
         return None
@@ -375,12 +306,8 @@ def stage_integrity_issue_in_transaction(
         )
     issue = prepared_position.issue
     if issue is not None:
-        database.execute_native(
-            "INSERT INTO repertoire_integrity_issue_candidates("
-            "run_id,id,repertoire_id,kind,fen_key,fen,trained_color,"
-            "signature,moves_json,sources_json) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-            "ON CONFLICT(run_id,id) DO NOTHING",
+        storage.stage_issue(
+            database,
             (f"{task['id']}:{task['generation']}", issue["id"], payload["repertoire_id"],
              issue["kind"], issue.get("fen_key"), issue.get("fen"),
              issue.get("trained_color"), issue["signature"],
@@ -406,15 +333,8 @@ def execute_integrity_evaluate_slice(task: dict[str, Any]) -> bool:
 def _graph_generation_is_current(
     database: PostgresConnection, repertoire_id: str, graph_generation: int,
 ) -> bool:
-    graph_task = database.execute_native(
-        "SELECT generation,state FROM background_tasks "
-        "WHERE kind='opening_graph_rebuild' AND deduplication_key=%s",
-        (repertoire_id,),
-    ).fetchone()
-    publication = database.execute_native(
-        "SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s",
-        (repertoire_id,),
-    ).fetchone()
+    graph_task = storage.graph_task(database, (repertoire_id,))
+    publication = storage.graph_publication(database, (repertoire_id,))
     return bool(
         graph_task and int(graph_task[0]) == graph_generation
         and graph_task[1] == "complete" and publication
@@ -436,45 +356,16 @@ def publish_integrity_issues_in_transaction(
     ):
         return complete_task_slice_in_transaction(database, task)
     run_id = f"{task['id']}:{task['generation']}"
-    issue_count = database.execute_native(
-        "SELECT COUNT(*) FROM repertoire_integrity_issue_candidates WHERE run_id=%s",
-        (run_id,),
-    ).fetchone()[0]
+    issue_count = storage.issue_candidate_count(database, (run_id,))
     if issue_count > 32:
         raise RuntimeError("Integrity publication exceeds one bounded transaction; retain unchecked state")
-    card_block_count = database.execute_native(
-        "SELECT COUNT(*) FROM repertoire_integrity_issue_candidates candidate "
-        "CROSS JOIN LATERAL jsonb_array_elements(candidate.sources_json::jsonb) source "
-        "WHERE candidate.run_id=%s AND source->>'type'='card'",
-        (run_id,),
-    ).fetchone()[0]
+    card_block_count = storage.card_source_block_count(database, (run_id,))
     if card_block_count > 64:
         raise RuntimeError("Integrity card blocks exceed one bounded transaction; retain unchecked state")
     published_at = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "DELETE FROM repertoire_integrity_issues WHERE repertoire_id=%s",
-        (repertoire_id,),
-    )
-    database.execute_native(
-        "INSERT INTO repertoire_integrity_issues("
-        "id,repertoire_id,kind,fen_key,fen,trained_color,signature,"
-        "moves_json,sources_json,created_at,updated_at) "
-        "SELECT id,repertoire_id,kind,fen_key,fen,trained_color,signature,"
-        "moves_json,sources_json,%s,%s "
-        "FROM repertoire_integrity_issue_candidates WHERE run_id=%s",
-        (published_at, published_at, run_id),
-    )
-    database.execute_native(
-        "INSERT INTO repertoire_integrity_card_blocks("
-        "repertoire_id,card_id,issue_id,scan_generation,published_at) "
-        "SELECT DISTINCT %s,source->>'id',candidate.id,%s,%s "
-        "FROM repertoire_integrity_issue_candidates candidate "
-        "CROSS JOIN LATERAL jsonb_array_elements(candidate.sources_json::jsonb) source "
-        "JOIN cards card ON card.id=source->>'id' "
-        "WHERE candidate.run_id=%s AND source->>'type'='card' "
-        "ON CONFLICT(repertoire_id,card_id,issue_id) DO NOTHING",
-        (repertoire_id, run_id, published_at, run_id),
-    )
+    storage.clear_issues(database, (repertoire_id,))
+    storage.publish_issues(database, (published_at, published_at, run_id))
+    storage.publish_card_blocks(database, (repertoire_id, run_id, published_at, run_id))
     return advance_task_slice_in_transaction(
         database, task, next_phase="validate_cards",
         next_payload={**payload, "after_card_id": ""},
@@ -491,14 +382,7 @@ def prepare_next_integrity_cards(
     repertoire_id: str, after_card_id: str,
 ) -> tuple[str, ...]:
     with background_read_connection() as database:
-        rows = database.execute_native(
-            "SELECT card.id FROM cards card WHERE card.id>%s "
-            "AND card.archived=0 AND card.content_type='opening' "
-            "AND (card.repertoire_id=%s OR EXISTS("
-            "SELECT 1 FROM repertoire_cards link WHERE link.repertoire_id=%s "
-            "AND link.card_id=card.id)) ORDER BY card.id LIMIT 2",
-            (after_card_id, repertoire_id, repertoire_id),
-        ).fetchall()
+        rows = storage.next_cards_to_validate(database, (after_card_id, repertoire_id, repertoire_id))
     return tuple(str(row[0]) for row in rows)
 
 
@@ -512,13 +396,8 @@ def validate_integrity_cards_in_transaction(
         return advance_task_slice_in_transaction(
             database, task, next_phase="complete", next_payload=payload,
         )
-    with database.raw.cursor() as cursor:
-        cursor.executemany(
-            "UPDATE cards SET pending_validation=CASE WHEN EXISTS("
-            "SELECT 1 FROM repertoire_integrity_card_blocks block "
-            "WHERE block.card_id=cards.id) THEN 1 ELSE 0 END WHERE id=%s",
-            [(card_id,) for card_id in card_ids],
-        )
+    with storage.integrity_cursor(database) as cursor:
+        storage.validate_cards(cursor, [(card_id,) for card_id in card_ids])
     return advance_task_slice_in_transaction(
         database, task, next_phase="validate_cards",
         next_payload={**payload, "after_card_id": card_ids[-1]},
@@ -547,17 +426,8 @@ def complete_integrity_scan_in_transaction(
     ):
         return complete_task_slice_in_transaction(database, task)
     run_id = f"{task['id']}:{task['generation']}"
-    status = "needs_repair" if database.execute_native(
-        "SELECT 1 FROM repertoire_integrity_issues WHERE repertoire_id=%s LIMIT 1",
-        (repertoire_id,),
-    ).fetchone() else "clean"
-    updated_state = database.execute_native(
-        "UPDATE repertoire_integrity_state SET status=%s,checked_at=%s,"
-        "scan_status='idle',scan_generation=%s,"
-        "scan_completed_sources=scan_total_sources,scan_error=NULL "
-        "WHERE repertoire_id=%s AND scan_generation=%s",
-        (status, datetime.now(timezone.utc).isoformat(), run_id, repertoire_id, run_id),
-    ).rowcount
+    status = "needs_repair" if storage.has_published_issue(database, (repertoire_id,)) else "clean"
+    updated_state = storage.complete_scan_state(database, (status, datetime.now(timezone.utc).isoformat(), run_id, repertoire_id, run_id))
     if updated_state != 1:
         if not complete_task_slice_in_transaction(database, task):
             raise RuntimeError("Integrity lease changed before stale scan completion")
@@ -568,10 +438,7 @@ def complete_integrity_scan_in_transaction(
     from ..queue_commands import request_queue_refresh_in_transaction
 
     from .prefix_transition_application import record_queue_target
-    transitioning = database.execute_native(
-        "SELECT 1 FROM prefix_transition_applications WHERE repertoire_id=%s AND graph_generation=%s "
-        "AND state IN ('publishing','recovery_required')", (repertoire_id, int(payload['graph_generation'])),
-    ).fetchone()
+    transitioning = storage.active_prefix_transition(database, (repertoire_id, int(payload['graph_generation'])))
     queue_day = date.today().isoformat() if transitioning else str(payload['local_day'])
     queue_task = request_queue_refresh_in_transaction(database, queue_day)
     record_queue_target(database, repertoire_id, int(payload['graph_generation']), queue_task, queue_day)
