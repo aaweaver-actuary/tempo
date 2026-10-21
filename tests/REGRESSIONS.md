@@ -5082,3 +5082,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Introduction-priority database extraction
 
 `backend/tests/test_introduction_priority_database_split.py` owns four focused boundaries: direct-operation delegation, legacy delete→clock→insert evaluation order, actual task-SQLite personal-evidence scope/color/speed/exclusion/keyset behavior, and pause/promotion/Study-only conditional claim authority. Existing scoring/parity/coalescing/replay/stale-generation/paging/publication tests retain their assertions. Native PostgreSQL locking and deployed optional-feature isolation remain unverified.
+
+
+## Legacy priority preparation and retention extraction
+
+`backend/tests/test_priority_lifecycle_database_split.py` owns focused direct-driver/dialect delegation, lease→source→job→task lock sequencing, absent-source fencing and task-SQLite epoch identity. Existing preparation fixtures and two SQLite retention cases retain generation, row-budget/publication and task assertions. Native PostgreSQL locking/translation and deployed isolation remain unverified.

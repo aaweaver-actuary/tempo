@@ -63,3 +63,6 @@
 
 
 [HTTP composition storage](http_composition/README.md) holds complete system/settings and queue-maintenance queries separated from the existing HTTP composition root. Application settings/HTTP/admission/refresh/lifecycle decisions remain there; `main.py` is still pending until its remaining database operations are extracted.
+
+
+[Priority preparation and retention](priority_lifecycle/README.md) contains existing source-epoch locks, preparation/staging/publication queries and native/SQLite retention statements. Application generation/lease/freshness checks, row budgets, clocks, slice progression and durable callbacks remain outside; complete operations reuse exact introduction-priority queries.
