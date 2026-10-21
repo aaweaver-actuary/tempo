@@ -230,7 +230,7 @@ Run the new `backend/tests/test_frozen_maia_*.py` and
 files, the Maia helper/parity unit files, and:
 
 ```sh
-backend/.venv/bin/python scripts/test-frozen-postgres.py
+backend/.venv/bin/python database/tests/test-frozen-postgres.py
 make ui-file FILE=frozen-opening-order.spec.ts
 ```
 
@@ -267,7 +267,7 @@ against their projected columns. Capture fails with the relation name if a
 stable key cannot be established; it does not fall back to a full table scan or
 all-column ordering. Pages remain bounded at 128 rows, and two complete passes
 must agree. The SELECT-only `tempo_reader` role is exercised by
-`backend/.venv/bin/python scripts/test-frozen-postgres.py`.
+`backend/.venv/bin/python database/tests/test-frozen-postgres.py`.
 
 The full disposable command proof is
 `backend/.venv/bin/python database/tests/test-frozen-cli.py`. It creates a unique

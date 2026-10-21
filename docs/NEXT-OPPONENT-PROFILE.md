@@ -63,7 +63,7 @@ short publication. Source generation, account identity, method and durable task
 lease fence that commit. Snapshots reject updates and deletes. Retried tasks
 retain existing complete evidence; outdated work never replaces newer evidence.
 The regular disposable PostgreSQL upgrade stage runs the named proof in
-`scripts/check_postgres_next_opponent.py`, including process termination/restart,
+`database/tests/check_postgres_next_opponent.py`, including process termination/restart,
 Redis foreground contention, source races and client recreation.
 
 The read envelope separately reports pending/failed/sync-error refreshes,

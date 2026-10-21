@@ -18,6 +18,7 @@ from psycopg import sql
 
 HERE = Path(__file__).resolve().parent
 SERVICE = HERE.parent
+ROOT = SERVICE.parents[1]
 
 
 def docker(*arguments, check=True):
@@ -39,12 +40,15 @@ def main():
     report={"owner":owner,"complete":False,"container_removed":False,"volume_removed":False,
             "commands":[],"external_database_accepted":False}
     report["revision"]=subprocess.check_output(["git","rev-parse","HEAD"],cwd=SERVICE,text=True).strip()
-    report["source_inputs"]={str(path.relative_to(SERVICE)):hashlib.sha256(path.read_bytes()).hexdigest()
-        for directory in (SERVICE/"src",SERVICE/"fixtures",HERE) for path in directory.rglob("*")
+    report["source_inputs"]={str(path.relative_to(SERVICE) if path.is_relative_to(SERVICE) else path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in [*(path for directory in (SERVICE/"src",SERVICE/"fixtures",HERE,ROOT/"database/tempo_game_evidence_database")
+                      for path in directory.rglob("*")),SERVICE/"hatch_build.py"]
         if path.is_file() and "__pycache__" not in path.parts}
     learning=SERVICE.parent/"learning/remediation"
-    report["receiver_inputs"]={str(path.relative_to(learning)):hashlib.sha256(path.read_bytes()).hexdigest()
-        for name in ("src","migrations") for path in (learning/name).rglob("*") if path.is_file() and "__pycache__" not in path.parts}
+    report["receiver_inputs"]={str(path.relative_to(learning) if path.is_relative_to(learning) else path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in [*(path for directory in (learning/"src",ROOT/"database/tempo_remediation_database")
+                      for path in directory.rglob("*")),learning/"hatch_build.py"]
+        if path.is_file() and "__pycache__" not in path.parts}
     created_container=created_volume=False
     secrets_to_redact=[]
     try:

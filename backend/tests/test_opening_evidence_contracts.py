@@ -314,7 +314,7 @@ def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeyp
 
 def test_evidence_migration_is_unique_additive_and_matches_readiness():
     from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
-    directory=Path(__file__).resolve().parents[1]/'migrations'
+    directory=Path(__file__).resolve().parents[2]/'database/tempo_legacy_database/ddl/migrations'
     migrations=sorted(directory.glob('[0-9][0-9][0-9]_*.sql'))
     assert [int(path.name[:3]) for path in migrations]==list(range(1,POSTGRES_SCHEMA_VERSION+1))
     migration=next(path for path in migrations if path.name.endswith('_opening_decision_evidence.sql'))
@@ -391,7 +391,7 @@ def test_scoped_color_adapter_rejects_unknown_and_explicit_mismatch():
 
 
 def test_evidence_migration_captures_valid_scope_color_without_overwriting_context():
-    source = (Path(__file__).resolve().parents[1]/'migrations/030_opening_decision_evidence.sql').read_text()
+    source = (Path(__file__).resolve().parents[2]/'database/tempo_legacy_database/ddl/migrations/030_opening_decision_evidence.sql').read_text()
     assert "effective_trained_color TEXT NOT NULL CHECK(effective_trained_color IN ('white','black'))" in source
     assert 'WHERE line.repertoire_id=scope.repertoire_id ORDER BY line.created_at,line.id LIMIT 1' in source
     binding = source.split('CREATE FUNCTION opening_evidence_bind_queue',1)[1].split('CREATE FUNCTION opening_evidence_capture_queue_context',1)[0]
