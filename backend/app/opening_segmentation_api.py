@@ -7,6 +7,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.authored_repertoires.opening_advisory import segmentation as storage
 from .command_gateway import register_command
 from tempo_legacy_database.connections import read_connection
 from .services.opening_segmentation import RECOMMENDATION_VERSION, POLICY_VERSION, stable_key
@@ -25,18 +26,14 @@ class SegmentationPreference(BaseModel):
 
 
 def require_postgres():
-    if not postgres_store.configured():
+    if not storage.postgres_is_configured():
         raise HTTPException(409, 'Recommended segmentation requires the PostgreSQL product. Practice remains available.')
 
 
 def state_projection(database, repertoire_id: str) -> dict:
-    if not database.execute_native('SELECT 1 FROM repertoires WHERE id=%s', (repertoire_id,)).fetchone():
+    if not storage.repertoire(database, repertoire_id):
         raise HTTPException(404, 'Repertoire not found')
-    row = database.execute_native(
-        "SELECT state.*,task.state task_state,task.last_error FROM opening_segmentation_state state "
-        "LEFT JOIN background_tasks task ON task.kind='opening_segmentation' AND task.deduplication_key=state.repertoire_id "
-        "WHERE state.repertoire_id=%s", (repertoire_id,),
-    ).fetchone()
+    row = storage.state_row(database, repertoire_id)
     if row is None:
         return {'state': 'unavailable', 'content_version': 0, 'graph_generation': None, 'run_id': None, 'error': None}
     state = dict(row)
@@ -47,9 +44,7 @@ def state_projection(database, repertoire_id: str) -> dict:
 
 
 def source_fingerprint(database, run_id: str, recommendation_id: str) -> str:
-    return database.execute_native(
-        "SELECT source_fingerprint FROM opening_segmentation_recommendations WHERE run_id=%s AND id=%s", (run_id, recommendation_id),
-    ).fetchone()[0]
+    return storage.source_fingerprint(database, run_id, recommendation_id)
 
 
 def recommendation_snapshot(state: dict, recommendation: dict) -> str:
@@ -65,7 +60,7 @@ def recommendation_projection(state: dict, recommendation) -> dict:
 
 def consistent_preview_read(database):
     # First statement: all bounded reads see one publication, even during a concurrent rebuild.
-    database.execute_native('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
+    storage.consistent_preview_read(database)
 
 
 @router.get('/api/repertoires/{identifier}/segmentation')
@@ -74,21 +69,8 @@ def segmentation_list(identifier: str):
     with read_connection() as database:
         consistent_preview_read(database)
         state = state_projection(database, identifier)
-        rows = database.execute_native(
-            "SELECT recommendation.* FROM opening_segmentation_recommendations recommendation "
-            "LEFT JOIN opening_segmentation_preferences preference ON preference.repertoire_id=recommendation.repertoire_id "
-            "AND preference.recommendation_id=recommendation.id "
-            "AND preference.source_fingerprint=recommendation.source_fingerprint "
-            "WHERE recommendation.run_id=%s AND preference.recommendation_id IS NULL "
-            "ORDER BY decisions_avoided DESC,additional_starts,segment_count,id LIMIT 20", (state['run_id'],),
-        ).fetchall() if state['state'] == 'ready' else []
-        invalidated_pins = database.execute_native(
-            "SELECT COUNT(*) FROM opening_segmentation_preferences preference WHERE preference.repertoire_id=%s "
-            "AND preference.choice='keep_current' AND NOT EXISTS(SELECT 1 FROM opening_segmentation_recommendations recommendation "
-            "WHERE recommendation.run_id=%s AND recommendation.id=preference.recommendation_id "
-            "AND recommendation.source_fingerprint=preference.source_fingerprint)",
-            (identifier, state['run_id']),
-        ).fetchone()[0] if state['state'] == 'ready' else 0
+        rows = storage.visible_recommendations(database, state['run_id']) if state['state'] == 'ready' else []
+        invalidated_pins = storage.invalidated_pin_count(database, identifier, state['run_id']) if state['state'] == 'ready' else 0
     return {'version': RECOMMENDATION_VERSION, 'preview_only': True, 'state': state['state'],
             'content_version': state['content_version'], 'graph_generation': state['graph_generation'],
             'error': state['error'], 'invalidated_pins': invalidated_pins,
@@ -105,26 +87,14 @@ def segmentation_detail(identifier: str, recommendation_id: str, after_segment: 
         state = state_projection(database, identifier)
         if state['state'] != 'ready':
             raise HTTPException(409, 'The repertoire changed. Refresh recommended segmentation.')
-        recommendation = database.execute_native(
-            'SELECT * FROM opening_segmentation_recommendations WHERE run_id=%s AND id=%s',
-            (state['run_id'], recommendation_id),
-        ).fetchone()
+        recommendation = storage.recommendation(database, state['run_id'], recommendation_id)
         if recommendation is None:
             raise HTTPException(409 if snapshot_id else 404, 'Recommendation not found in the current source. Refresh the preview.')
         snapshot = recommendation_snapshot(state, dict(recommendation))
         if snapshot_id is not None and snapshot_id != snapshot:
             raise HTTPException(409, 'This preview snapshot changed. Refresh the recommendation before continuing.')
-        parts = database.execute_native(
-            'SELECT segment_id,segment_json FROM opening_segmentation_parts WHERE run_id=%s AND recommendation_id=%s '
-            'AND segment_id>%s ORDER BY segment_id LIMIT 9', (state['run_id'], recommendation_id, after_segment or ''),
-        ).fetchall()
-        routes = database.execute_native(
-            "SELECT DISTINCT line.id,line.name FROM opening_segmentation_sources source "
-            "JOIN opening_graph_steps step ON step.card_id=source.card_id AND step.repertoire_id=%s AND step.generation=%s "
-            "JOIN repertoire_lines line ON line.id=step.line_id "
-            "WHERE source.run_id=%s AND source.recommendation_id=%s AND line.id>%s ORDER BY line.id LIMIT 9",
-            (identifier, state['graph_generation'], state['run_id'], recommendation_id, after_route or ''),
-        ).fetchall()
+        parts = storage.segment_rows(database, state['run_id'], recommendation_id, after_segment or '')
+        routes = storage.source_route_rows(database, identifier, state['graph_generation'], state['run_id'], recommendation_id, after_route or '')
         fingerprint = source_fingerprint(database, state['run_id'], recommendation_id)
     kind = recommendation['kind']
     return {'version': RECOMMENDATION_VERSION, 'preview_only': True, 'content_version': state['content_version'],
@@ -141,45 +111,29 @@ def segmentation_detail(identifier: str, recommendation_id: str, after_segment: 
 def save_preference(database, payload: dict) -> dict:
     request = SegmentationPreference.model_validate(payload['request'])
     repertoire_id = payload['repertoire_id']
-    database.execute_native('SELECT repertoire_id FROM opening_segmentation_state WHERE repertoire_id=%s FOR UPDATE', (repertoire_id,))
+    storage.lock_state(database, repertoire_id)
     state = state_projection(database, repertoire_id)
     if (state['state'] != 'ready' or state['content_version'] != request.content_version
             or state['graph_generation'] != request.graph_generation):
         raise HTTPException(409, 'The repertoire changed. Refresh the recommendation before saving this choice.')
-    recommendation = database.execute_native(
-        'SELECT * FROM opening_segmentation_recommendations WHERE run_id=%s AND id=%s',
-        (state['run_id'], payload['recommendation_id']),
-    ).fetchone()
+    recommendation = storage.recommendation(database, state['run_id'], payload['recommendation_id'])
     if recommendation is None:
         raise HTTPException(409, 'This recommendation is no longer current')
     if request.snapshot_id is not None and request.snapshot_id != recommendation_snapshot(state, dict(recommendation)):
         raise HTTPException(409, 'This preview snapshot changed. Refresh before saving this choice.')
     if source_fingerprint(database, state['run_id'], payload['recommendation_id']) != request.source_fingerprint:
         raise HTTPException(409, 'The recommendation sources changed. Refresh before saving.')
-    database.execute_native(
-        'INSERT INTO opening_segmentation_preferences(repertoire_id,recommendation_id,choice,source_fingerprint,updated_at) '
-        'VALUES(%s,%s,%s,%s,%s) ON CONFLICT(repertoire_id,recommendation_id) DO UPDATE SET '
-        'choice=excluded.choice,source_fingerprint=excluded.source_fingerprint,updated_at=excluded.updated_at',
-        (repertoire_id, payload['recommendation_id'], request.choice, request.source_fingerprint, datetime.now(timezone.utc).isoformat()),
-    )
+    storage.upsert_preference(database, (repertoire_id, payload['recommendation_id'], request.choice, request.source_fingerprint, datetime.now(timezone.utc).isoformat()))
     return {'saved': True, 'choice': request.choice}
 
 
 def refresh_segmentation(database, payload: dict) -> dict:
     repertoire_id = payload['repertoire_id']
-    graph = database.execute_native(
-        "SELECT graph.generation FROM opening_graph_publications graph JOIN repertoire_integrity_state integrity "
-        "ON integrity.repertoire_id=graph.repertoire_id WHERE graph.repertoire_id=%s AND integrity.scan_status='idle' "
-        "AND integrity.status IN ('clean','needs_repair')", (repertoire_id,),
-    ).fetchone()
+    graph = storage.prepared_graph(database, repertoire_id)
     if graph is None:
         raise HTTPException(409, 'Wait for repertoire preparation and integrity checks, then retry.')
     # A failed run is retried through a new durable generation; ordinary ready reads stay cached.
-    database.execute_native(
-        "UPDATE opening_segmentation_state SET state='stale' WHERE repertoire_id=%s AND state='building' "
-        "AND EXISTS(SELECT 1 FROM background_tasks WHERE kind='opening_segmentation' AND deduplication_key=%s AND state='failed')",
-        (repertoire_id, repertoire_id),
-    )
+    storage.invalidate_failed_build(database, repertoire_id)
     return request_segmentation_in_transaction(database, repertoire_id, int(graph[0]))
 
 

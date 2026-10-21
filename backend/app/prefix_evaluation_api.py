@@ -7,11 +7,10 @@ from time import monotonic
 from fastapi import APIRouter, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-import psycopg
-from psycopg_pool import PoolTimeout
-import redis
+from tempo_legacy_database.adapters.authored_repertoires.opening_advisory.evaluation import psycopg, PoolTimeout, redis
 
 from tempo_legacy_database.adapters import postgres_store
+from tempo_legacy_database.adapters.authored_repertoires.opening_advisory import evaluation as storage
 from .prefix_evaluation_contracts import PrefixEvaluationRequest, PrefixEvaluationResponse, SourceResponse
 from .services.activity_gate import activity_gate
 from .services import redis_admission_gate
@@ -62,7 +61,7 @@ def check_available(deadline):
 
 @contextmanager
 def diagnostic_request():
-    if not postgres_store.configured():
+    if not storage.postgres_is_configured():
         raise diagnostic_error('unsupported_backend', 'Prefix evaluation requires the authoritative PostgreSQL product.')
     deadline = monotonic() + COMPUTATION_SECONDS
     try:
@@ -86,58 +85,25 @@ def load_snapshot(identifier, deadline, *, capture=None, reads=None):
     """
     check_available(deadline)
     # No chess, JSON interpretation or application fingerprinting inside this transaction.
-    with postgres_store.connection(read_only=True, background=True, repeatable_read=True) as database:
-        if reads is not None:
-            from tempo_legacy_database.adapters.snapshot_reads import RecordingReader
-            database = RecordingReader(database, reads)
-        if database.execute_native('SELECT id FROM repertoires WHERE id=%s', (identifier,)).fetchone() is None:
+    with storage.structural_snapshot(reads) as database:
+        if storage.repertoire(database, identifier) is None:
             raise diagnostic_error('repertoire_not_found', 'Repertoire not found.', 404)
-        publication = database.execute_native(
-            "SELECT publication.generation,publication.state,task.generation task_generation,task.state task_state "
-            "FROM opening_graph_publications publication LEFT JOIN background_tasks task "
-            "ON task.kind='opening_graph_rebuild' AND task.deduplication_key=publication.repertoire_id "
-            "WHERE publication.repertoire_id=%s", (identifier,),
-        ).fetchone()
+        publication = storage.graph_publication(database, identifier)
         if publication is None or publication['state'] != 'ready' or (publication['task_generation'] is not None and
                 (publication['task_generation'] > publication['generation'] or publication['task_state'] != 'complete')):
             raise diagnostic_error('graph_not_ready', 'Wait for the repertoire graph to finish publishing, then refresh the source.')
-        sizes = database.execute_native(
-            "SELECT COUNT(*) line_count,COALESCE(SUM(octet_length(moves_json)),0) source_bytes "
-            "FROM repertoire_lines WHERE repertoire_id=%s", (identifier,),
-        ).fetchone()
+        sizes = storage.source_sizes(database, identifier)
         if sizes['line_count'] > MAX_SOURCE_LINES or sizes['source_bytes'] > MAX_SOURCE_BYTES:
             raise PrefixEvaluationError('limit_exceeded', 'Repertoire exceeds the bounded source evaluation limits.')
-        source_rows = database.execute_native(
-            "SELECT line.id,line.name,line.start_fen,line.moves_json,line.trained_color,depth.learner_decision_count "
-            "FROM repertoire_lines line LEFT JOIN repertoire_line_training_depths depth ON depth.line_id=line.id "
-            "WHERE line.repertoire_id=%s ORDER BY line.id LIMIT %s", (identifier, MAX_SOURCE_LINES + 1),
-        ).fetchall()
-        step_rows = database.execute_native(
-            "SELECT * FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s "
-            "ORDER BY line_id,decision_index LIMIT %s", (identifier, publication['generation'], MAX_GRAPH_STEPS + 1),
-        ).fetchall()
+        source_rows = storage.source_rows(database, identifier, MAX_SOURCE_LINES + 1)
+        step_rows = storage.graph_steps(database, identifier, publication['generation'], MAX_GRAPH_STEPS + 1)
         if len(step_rows) > MAX_GRAPH_STEPS:
             raise PrefixEvaluationError('limit_exceeded', 'Repertoire exceeds the bounded graph evaluation limit.')
         # Production currently applies a global split map. Fence that same map conservatively.
-        split_rows = database.execute_native(
-            "SELECT split.source_card_id,split.source_revision,split.shortened_card_id,"
-            "shortened.start_fen shortened_start_fen,shortened.moves_json shortened_moves_json,"
-            "shortened.revision shortened_revision,split.continuation_card_id,"
-            "continuation.start_fen continuation_start_fen,continuation.moves_json continuation_moves_json,"
-            "continuation.revision continuation_revision FROM prefix_splits split "
-            "LEFT JOIN cards shortened ON shortened.id=split.shortened_card_id "
-            "LEFT JOIN cards continuation ON continuation.id=split.continuation_card_id "
-            "ORDER BY split.source_card_id LIMIT %s", (MAX_GRAPH_STEPS + 1,),
-        ).fetchall()
+        split_rows = storage.split_rows(database, MAX_GRAPH_STEPS + 1)
         if len(split_rows) > MAX_GRAPH_STEPS:
             raise PrefixEvaluationError('limit_exceeded', 'Saved split map exceeds the bounded evaluation limit.')
-        card_rows = database.execute_native(
-            "SELECT DISTINCT step.card_id id,card.start_fen,card.moves_json,card.trained_color,card.revision,card.archived,"
-            "EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.repertoire_id=step.repertoire_id AND link.card_id=step.card_id) linked "
-            "FROM opening_graph_steps step LEFT JOIN cards card ON card.id=step.card_id "
-            "WHERE step.repertoire_id=%s AND step.generation=%s ORDER BY step.card_id",
-            (identifier, publication['generation']),
-        ).fetchall()
+        card_rows = storage.published_cards(database, identifier, publication['generation'])
         additional_rows = capture(database) if capture is not None else None
     check_available(deadline)
     try:

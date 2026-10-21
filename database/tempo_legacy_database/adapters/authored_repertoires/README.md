@@ -37,3 +37,6 @@ The discovery/repair slice passes nine existing task-SQLite/fake-native cases fo
 
 
 [Existing canonical-prefix implementation storage](canonical_prefix/README.md) now holds prefix/route reads and guarded writes, preview projections, bounded retention operations and the link to the moved SQLite compatibility DDL. Chess/source/revision/ranking decisions, preview passes/suggestions, row/victim budgets and callbacks remain in their existing application files. These are the existing preview/source tables and behavior, not the proposed canonical-model redesign.
+
+
+[Opening advisory API projections](opening_advisory/README.md) holds existing segmentation state/recommendation/preference and structural prefix-evaluation queries, including the unchanged repeatable-read/optional recording wrapper. Snapshot/HTTP/chess/JSON/deadline/row-budget/capture decisions remain in the existing APIs. Existing read/configuration/presence helpers are reused; no proposed schema or feature is implemented.
