@@ -9,7 +9,7 @@ from psycopg.types.json import Jsonb
 from tempo_game_evidence.comparison import compare_game
 from tempo_game_evidence.snapshot import ComparisonSnapshot, parse_snapshot, snapshot_storage, validated_snapshot_cache
 from tempo_game_evidence.source import INDEX_VERSION, identity, prepare_import_identity, prepare_import_document, replay_positions, utc_now
-from tempo_game_evidence.reporting import comparison_report_response
+from tempo_game_evidence.reporting import build_comparison_report, comparison_report_response, import_status_response
 
 
 from tempo_game_evidence.payloads import make_delivery
@@ -215,14 +215,7 @@ class EvidenceStore:
             existing = database.execute("SELECT 1 FROM comparisons WHERE game_id=%s AND input_token=%s", (job["game_id"],token)).fetchone()
             if not existing:
                 revision = current_game["report_revision"] + 1
-                report = {"schema_version": 1, "game": game, "comparison_revision": revision,
-                          "readiness": "unknown" if not snapshot or not snapshot.serving_current() or "source_error" in game else "ready",
-                          "reason": game.get("source_error") or ("snapshot_missing" if not snapshot else None),
-                          "snapshot": {"digest": inputs["snapshot_digest"], "snapshot_id": snapshot.snapshot_id,
-                              "revision": snapshot.revision, "publication_id": snapshot.publication.publication_id,
-                              "publication_generation": snapshot.publication.publication_generation,
-                              "source_revision": snapshot.publication.source_revision} if snapshot else None,
-                          "findings": findings}
+                report = build_comparison_report(game, revision, snapshot, inputs["snapshot_digest"], findings)
                 database.execute("INSERT INTO comparisons VALUES(%s,%s,%s,%s)", (game["game_id"],revision,token,Jsonb(report)))
                 database.execute("UPDATE games SET report_revision=%s,positions=%s,index_receipt=%s WHERE game_id=%s",
                                  (revision,Jsonb(positions),Jsonb({"input_digest": row["input_digest"], "version": INDEX_VERSION,
@@ -254,7 +247,4 @@ class EvidenceStore:
         with self.connect() as database:
             result=database.execute("SELECT import_id,status,reason,cursor,next_attempt_at,attempts FROM import_cursors WHERE workspace_id=%s AND import_id=%s",
                                     (workspace,import_id)).fetchone()
-        if not result:
-            raise KeyError(import_id)
-        result["next_attempt_at"]=result["next_attempt_at"].isoformat()
-        return result
+        return import_status_response(result, import_id)

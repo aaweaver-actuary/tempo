@@ -212,7 +212,10 @@ Learning’s six-file deletion/miss/frozen-order and recovery/bootstrap/teaching
 Content’s additional five existing source/exercise/binding/publication/coverage decisions now live in its application `policy/` folder. Worker dispatch, route traversal and publication orchestration still inside the database store are further extraction work beyond the original mixed-file checklist, not permanent exceptions.
 
 
-Game Evidence’s root store additionally delegates import preparation, snapshot-cache choice and response shaping to its own application helpers. Snapshot staleness/affected-position computation, worker dispatch/retry, comparison computation/report construction and import-status formatting remain unfinished extraction candidates inside that store. Persistence replay guards, lock/lease fences, atomic writes and cursor batches remain database operations.
+Game Evidence’s root store additionally delegates import preparation, snapshot-cache choice and response shaping to its own application helpers. Snapshot staleness/affected-position computation, worker dispatch/retry, comparison computation/receipt/reconciliation orchestration and list-page validation remain unfinished extraction candidates inside that store. Persistence replay guards, lock/lease fences, atomic writes and cursor batches remain database operations.
 
 
 Intelligence’s existing finding merge/ranking/proposal block now lives in its application `analysis/findings.py`. Request/cache/credential/retry decisions in `Store`, and admission/command/publication/report/export/engine transitions in `AnalysisStore`, remain identified extraction work inside their root adapters. No baseline candidate count changes for these additional moved-adapter internals.
+
+
+Game Evidence’s import-status response tail and comparison report dictionary have also moved to its application `reporting.py`; snapshot preparation/staleness, worker dispatch/retry and comparison computation/receipt/reconciliation orchestration still need separation at their original call points.

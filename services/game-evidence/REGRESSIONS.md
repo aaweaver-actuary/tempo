@@ -20,6 +20,13 @@ pending fallback and source-revision-before-snapshot readiness precedence.
 retains the prior per-worker tuple, while digest/document changes still invalidate
 it. These are application/installed-wiring checks, not native transaction proof.
 
+`tests/test_reporting.py` owns comparison construction and import-status response
+shaping: unchanged source/authority readiness precedence and fact identities,
+timestamp/missing-result handling after closing the read, and report construction
+only after the callback, locked reads and current-input fences when no comparison
+already exists. It retains the original publication order with synthetic facts;
+the native suite still owns actual locks, rollback and publication races.
+
 `tests/test_legacy_payloads.py` owns offline initial-v3 production from a scoped
 legacy observation: exact original physical card/interior offset, played/expected
 move, deterministic immutable identity, unknown/no-miss without an envelope,
