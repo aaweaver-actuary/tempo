@@ -130,7 +130,7 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
             storage.record_import_failure(database, 'pending' if error.reason=='import_cancelled' else 'blocked' if error.terminal else 'retrying', error.reason, utc_now()+timedelta(seconds=max(error.retry_after,min(900,2**min(row['attempts'],10)))), row['import_id'], token)
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         with store.connect() as database:
-            storage.record_unavailable_source(database, row['import_id'], token)
+            storage.record_unavailable_source(database, row['import_id'], token, timedelta(seconds=60))
     finally:
         if owned:
             client.close()

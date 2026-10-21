@@ -7,12 +7,11 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from tempo_game_evidence.comparison import comparison_index_receipt, prepare_game_comparison
-from tempo_game_evidence.snapshot import ComparisonSnapshot, prepare_snapshot, snapshot_changed_positions, snapshot_storage, validated_snapshot_cache
-from tempo_game_evidence.source import prepare_import_identity, prepare_import_document, utc_now
+from tempo_game_evidence.snapshot import prepare_snapshot, snapshot_changed_positions, snapshot_storage, validated_snapshot_cache
+from tempo_game_evidence.source import prepare_import_identity, prepare_import_document, stamp_import_document, normalized_import_player, utc_now
 from tempo_game_evidence.reporting import build_comparison_report, comparison_report_response, import_status_response, validate_game_page_limit
 
 
-from tempo_game_evidence.payloads import make_delivery
 from tempo_game_evidence.reconciliation import reconcile_comparison
 from tempo_game_evidence.worker import process_comparison_job
 
@@ -72,14 +71,13 @@ class EvidenceStore:
         if previous and previous["input_digest"] == input_digest:
             return game_id
         revision = previous["revision"] + 1 if previous else 1
-        document["revision"] = revision
-        document["imported_at"] = utc_now().isoformat()
+        stamp_import_document(document, revision)
         database.execute("""INSERT INTO games(game_id,workspace_id,provider,provider_game_id,player,revision,
           input_digest,source_digest,raw_source,document) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
           ON CONFLICT(game_id) DO UPDATE SET revision=excluded.revision,input_digest=excluded.input_digest,
           source_digest=excluded.source_digest,raw_source=excluded.raw_source,document=excluded.document,
           index_receipt=NULL,positions=NULL""",
-          (game_id,workspace,provider,source_id,player.casefold(),revision,input_digest,raw_digest,raw,Jsonb(document)))
+          (game_id,workspace,provider,source_id,normalized_import_player(player),revision,input_digest,raw_digest,raw,Jsonb(document)))
         database.execute("INSERT INTO game_sources VALUES(%s,%s,%s,%s,%s,%s)",
                          (game_id,revision,input_digest,raw_digest,raw,Jsonb(document)))
         self._request(database, workspace, game_id)
@@ -133,11 +131,11 @@ class EvidenceStore:
     def process_one(self, *, before_publish=None):
         return process_comparison_job(self, before_publish=before_publish)
 
-    def record_job_failure(self, job):
+    def record_job_failure(self, job, retry_after):
         with self.connect() as database:
             database.execute("""UPDATE jobs SET lease_token=NULL,leased_until=NULL,attempts=attempts+1,
-                  error='comparison_failed',next_attempt_at=now()+interval '5 seconds'
-                  WHERE job_key=%s AND lease_token=%s""", (job["job_key"],job["lease_token"]))
+                  error='comparison_failed',next_attempt_at=now()+%s
+                  WHERE job_key=%s AND lease_token=%s""", (retry_after,job["job_key"],job["lease_token"]))
 
     def _rescope(self, job):
         with self.connect() as database:

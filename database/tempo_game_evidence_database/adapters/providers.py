@@ -61,8 +61,8 @@ def record_import_failure(database: Connection, status, reason, next_attempt_at,
                reason,next_attempt_at,import_id,token))
 
 
-def record_unavailable_source(database: Connection, import_id, token):
-    database.execute("UPDATE import_cursors SET status='retrying',reason='provider_source_unavailable_or_invalid',next_attempt_at=now()+interval '60 seconds' WHERE import_id=%s AND lease_token=%s AND status!='cancelled'",(import_id,token))
+def record_unavailable_source(database: Connection, import_id, token, retry_after):
+    database.execute("UPDATE import_cursors SET status='retrying',reason='provider_source_unavailable_or_invalid',next_attempt_at=now()+%s WHERE import_id=%s AND lease_token=%s AND status!='cancelled'",(retry_after,import_id,token))
 
 
 def release_import_lease(database: Connection, import_id, token):

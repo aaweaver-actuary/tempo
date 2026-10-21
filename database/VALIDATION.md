@@ -388,3 +388,10 @@ TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /
 ```
 
 This uses existing task-temporary SQLite and fake-native claims, including rollback/restart/stale receipt proofs. No engine, native PostgreSQL/broker/live store or full-system check ran. No schema/migration/contract, key/security/credential, lifecycle, fairness bound or CI behavior changed. Package discovery is unchanged because these adapters reside in the already included legacy owner tree; installed-wheel execution and deployed isolation remain unverified.
+
+
+## Game Evidence final import/retry policy separation
+
+Import document stamping and player normalization move at the original replay/clock/argument points. Worker/provider applications pass the existing five/sixty-second retry delays as timedeltas. **Exactly two Python SQL expressions change** from `now()+interval 'N seconds'` to `now()+%s`, with that interval first and the original fence arguments in the same relative order. Server `now()`, transaction/fence/status/reason/error/finally behavior and all other statements remain unchanged. This is the narrow binding necessary to move those policy values outside database, without a scheduler or client-clock substitution.
+
+Sixty-three selected installed cases pass. Actual installed psycopg AUTO/BINARY/TEXT interval adaptation round-trips preserve both values and interval OID1186 without a connection. Fresh sdist→wheel, twenty-five runtime-module bytes/migrations, 164 static references/patches, syntax/links and whitespace pass. Eighteen other store methods and all other provider adapter functions are unchanged. Exact commands/hashes and final method/constant classification are task `evidence/game-evidence-final-policy/{HANDOFF,FINAL-SOURCE-AUDIT}.md`. No further pure application block was found in the audited owner store; required persistence guards/resource limits/atomic fanout and the preserved compatibility cache holder are disclosed. Native PostgreSQL SQL execution, actual deployment/resource independence and full-system behavior remain unverified. No schema/migration/data/security/credential/CI change occurred.
