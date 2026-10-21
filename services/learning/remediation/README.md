@@ -139,7 +139,7 @@ historical query-plan regression.
 
 Install only this component with `uv sync --locked --no-editable` from this
 directory, then `uv run --locked --no-editable python -m pytest tests`.
-`integration/run_postgres.py` runs the actual repository on a uniquely owned
+`../../../database/tempo_remediation_database/tooling/run_postgres.py` runs the actual repository on a uniquely owned
 disposable PostgreSQL fixture and refuses external database targets. See
 REGRESSIONS.md and VALIDATION.md for executed identities and limits.
 

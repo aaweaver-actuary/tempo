@@ -59,7 +59,7 @@ previously visited 1,001,000 history rows and failed the unchanged bound.
 # F1 runtime interface extensions
 
 `tests/test_policy.py` owns smaller preparation bounds, one-card cursor advancement
-and SQL-alias validation. `integration/test_postgres.py` additionally owns
+and SQL-alias validation. `../../../database/tempo_remediation_database/tests/native/test_postgres.py` additionally owns
 `test_native_single_card_page_advances_past_rejected_rows_without_skipping_pending`
 and `test_native_correlated_queue_predicate_matches_repository_and_settlement`.
 The original frontier-first query-plan checks and their row limits are unchanged.

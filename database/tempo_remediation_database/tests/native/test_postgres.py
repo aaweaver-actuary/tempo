@@ -16,7 +16,7 @@ from tempo_game_evidence_contracts import v2
 from tempo_learning_remediation import (AdmissionResult, AttemptAuthority, Candidate, PostgresRepository,
     RemediationError, ReviewOutcome, apply_admission, prepare_admissions)
 
-spec = importlib.util.spec_from_file_location("remediation_fixtures", Path(__file__).parents[1] / "tests/support.py")
+spec = importlib.util.spec_from_file_location("remediation_fixtures", Path(__file__).resolve().parents[4] / "services/learning/remediation/tests/support.py")
 support = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(support)
 DECISION, NOW, delivery, context, withdrawal = support.DECISION, support.NOW, support.delivery, support.context, support.withdrawal

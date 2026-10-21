@@ -9,7 +9,8 @@ import sys
 import uuid
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[3]
+ROOT = HERE.parents[2]
+COMPONENT = ROOT / "services/learning/remediation"
 
 
 def load(name, path):
@@ -60,8 +61,8 @@ def main():
         for stage, extra in (("collected", ["--collect-only", "-q"]), ("executed", ["-q", "--junitxml=" + str(junit)])):
             receipt = run / (stage + ".json")
             command = [sys.executable, str(ROOT / "services/learning/application/qualification.py"), str(receipt),
-                "-c", str(HERE.parent / "pyproject.toml"), "-o", "addopts=", "-p", "no:cacheprovider",
-                str(HERE / "test_postgres.py"), *extra]
+                "-c", str(COMPONENT / "pyproject.toml"), "-o", "addopts=", "-p", "no:cacheprovider",
+                str(HERE.parent / "tests/native/test_postgres.py"), *extra]
             result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, text=True)
             (run / (stage + ".log")).write_text(result.stdout + result.stderr)
             print(result.stdout, end=""); print(result.stderr, end="", file=sys.stderr)

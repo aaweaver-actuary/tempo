@@ -1601,7 +1601,7 @@
         "pyproject.toml",
         "uv.lock",
         "src",
-        "migrations",
+        "../../../database/tempo_remediation_database/ddl/migrations",
         "tests",
         "integration",
         "run_suite.py",
@@ -1648,16 +1648,19 @@
             "database/tempo_remediation_database/ddl/migrations",
             "contracts/game-evidence/src",
             "contracts/game-evidence/pyproject.toml",
-            "services/learning/remediation/tests"
+            "services/learning/remediation/tests",
+            "database/tempo_remediation_database/tooling/run_postgres.py",
+            "database/tempo_remediation_database/tests/native/test_runner.py"
           ]
         },
         {
           "owner": "learning-remediation",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python services/learning/remediation/integration/run_postgres.py",
+          "command": "python database/tempo_remediation_database/tooling/run_postgres.py",
           "inputs": [
-            "services/learning/remediation/integration",
+            "database/tempo_remediation_database/tooling/run_postgres.py",
+            "database/tempo_remediation_database/tests/native/test_postgres.py",
             "database/tempo_remediation_database/ddl/migrations",
             "services/learning/remediation/tests/support.py",
             "services/learning/application/qualification.py",
