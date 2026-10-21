@@ -1,13 +1,14 @@
 # Legacy HTTP composition persistence
 
-**Current source; live schema and deployment unverified.** These named operations are mechanically separated from [the existing HTTP composition root](../../../../backend/app/main.py). They borrow its connection/transaction, preserve the existing complete SQL and parameter order, and return fetched facts or lazily yielded rows. They never open/commit/rollback a transaction, construct HTTP responses, choose scheduling/settings policy or import an application implementation.
+**Current source; live schema and deployment unverified.** These named operations are mechanically separated from [the existing HTTP composition root](../../../../backend/app/main.py). They borrow its connection/transaction, preserve the existing complete SQL and parameter order, and return fetched facts or lazily yielded rows. They never open a connection, commit/rollback the caller’s transaction, construct HTTP responses, choose scheduling/settings policy or import an application implementation.
 
-This directory currently covers 128 direct database call sites in `main.py`: system status, global settings, queue maintenance, queue read projections, head/entry operations, repertoire browsing/metadata, portable snapshot/export reads and PGN/branch authoring persistence, card revision/split/archive, progress, discovery/coverage controls and supplemental practice facts. **The remaining inline database operations in that file are unfinished extraction work.** It is not yet a completed centralization claim.
+This directory currently covers 155 direct database call sites in `main.py`: system status, global settings, queue maintenance, queue read projections, head/entry operations, repertoire browsing/metadata, portable snapshot/export reads and PGN/branch authoring persistence, card revision/split/archive, progress, discovery/coverage controls and supplemental practice facts, Games sync and analysis lease/repair controls. **The remaining inline database operations in that file are unfinished extraction work.** It is not yet a completed centralization claim.
 
 | Module | Persistence responsibility | Decisions retained in `main.py` |
 | --- | --- | --- |
 | [system.py](system.py) | Frozen target/active-run identity; SQLite settings-read probe; recent queue projections; analysis threshold fact. | Health/HTTP availability, target key/presentation, task counts and writer status. |
 | [settings.py](settings.py) | Public/previous settings facts, fixed settings update and clean eligible repertoire rows. | Omitted-flag preservation, model values, account normalization, coverage/discovery change detection and refresh callbacks. Identical account writes reuse [the existing account operations](../commands/accounts.py). |
+| [game_sync.py](game_sync.py), [game_analysis_control.py](game_analysis_control.py) | Sync provider/job facts; existing native availability, claim/lease/failure/repair statements and parent-finalization read. Reuses the existing Games claim begin and position-error insert. | Account normalization, dispatch/HTTP, ordinary-selection fairness, five-minute lease/UUID, expiry/repair clocks, version increment/error text, evaluation construction/classification and finalization admission. |
 | [practice.py](practice.py) | Progress state/review/due/blocked facts, tactic-progress rows, enabled endgames and saved operation payload. Nine tactic-attempt statements reuse [existing tactic storage](../tactics/attempts.py). | Calendar/summary/pack mapping, puzzle legality/membership, clean/mode/due/requeue/identity/receipt handling, saved-endgame recovery and removed-feature HTTP behavior. |
 | [discovery.py](discovery.py) | Existing current-opportunity counts/page identities and admission/task state facts; exact repertoire presence reuses existing projection storage. | Pagination/group/detail assembly, missing/stale/failure presentation, refresh callbacks, HTTP and dispatch. |
 | [coverage.py](coverage.py) | Existing native availability query using root scope/attempt predicates; exact heartbeat/release/failure lease rows/writes. | Study-only/reader routing, lease validation, two heartbeat clocks and duration, failure text, HTTP/stale result, refresh callback and worker dispatch. |
@@ -25,6 +26,7 @@ flowchart LR
   store --> queue[Queue projections, attempts and durable task facts]
   store --> source[Repertoire integrity, discovery, coverage and defense facts]
   store --> authoring[Existing lines, card revisions, annotations, teaching state and portable sources]
+  store --> games[Games sync, analysis leases, repair errors and parent facts]
   jobs --> lifecycle[Existing coordinator and shared legacy lifecycle]
 ```
 
@@ -62,6 +64,14 @@ The application still owns the seven-day progress calendar/summary, discovery pa
 
 All nine tactic-attempt operations reuse their existing exact root implementations. Pack/historical membership, legal puzzle normalization, clean/correct decisions, light scheduling dates, wrong-attempt requeue, UUID/receipt replay and canonical/legacy progress aliases remain in main. Legacy connection choices stay intact. Saved endgame payload is read only at the original receipt-recovery point; on-demand calculation remains removed. No native command, schema, policy, queue authority or isolation behavior changes.
 
+## Games sync and analysis controls
+
+The original sync enqueue/wake/read sequence, username normalization and status JSON/public response stay in the application. Provider and latest-job facts retain their exact query and fetch order. Analysis claim keeps its browser-worker idle shortcut, native availability check before dispatch, original caller-owned transaction, ordinary-selection guard/record callbacks and five-minute lease/UUID preparation. The adapter reuses the existing Games `begin_claim` operation and root claim predicates at the original points; there is no additional claim or scheduling authority.
+
+Repair candidate selection, fixed writes and error storage remain in that borrowed transaction. Both repairs reuse the exact existing Games position-error insert. Repeated pending-state statements share one fixed operation at their unchanged call sites; no repair or retry workflow is combined. Timeout repair keeps two separate clock reads; network repair keeps its original single clock, version calculation, legacy network marker and message. Failure/release/retry rowcount and lease checks, heartbeat expiry, background/foreground routing and retry control callback stay in main.
+
+Finalization moves only the parent-job read. Its connection closes before evaluation construction, incomplete-analysis errors, submission identity/version construction, validation/classification/threshold and worker admission or legacy publication. Analysis publication itself remains unfinished inline extraction work. No statement text, server/client clock choice, lock, schema or callback changes.
+
 ## Storage map
 
 The linked schema README views remain canonical for actual stored fields/types, primary/composite keys, enforced foreign keys and explicitly logical relationships. No constraints or ownership are inferred from this call graph.
@@ -69,6 +79,7 @@ The linked schema README views remain canonical for actual stored fields/types, 
 | Existing storage | Facts touched by this slice | Canonical source schema |
 | --- | --- | --- |
 | `settings` | Singleton `id=1`; daily quotas, study/defense flags, depth/timezone, provider usernames, engine/light/draw policy and coverage settings. | [Runtime metadata dictionary](../../schema/runtime-metadata/README.md#publicsettings) |
+| `game_sync_state`, `game_sync_jobs`, `game_analysis_jobs`, `game_analysis_position_errors`, current comparison view | Provider sync state/result JSON and latest job state; existing analysis version/evidence, status, lease/expiry/attempt/error, parent game/move/divergence facts, repair error identity/time and existing activity progress. The comparison source is a view; no new table or ownership is introduced. | [Sync dictionaries](../../schema/game-projections-2/README.md#publicgame_sync_jobs), [analysis job/error dictionaries](../../schema/game-projections-1/README.md#publicgame_analysis_jobs), [runtime activity](../../schema/runtime-metadata/README.md) |
 | `game_accounts` | `provider` identity and normalized `username`. | [Game projections](../../schema/game-projections-1/README.md#publicgame_accounts) |
 | `repertoires`, `repertoire_lines`, `repertoire_cards`, opening graph and integrity metadata | Existing repertoire names/source/order/limits/prefix, route FEN/moves/color, memberships, graph generation/readiness and integrity counts/signatures. | [Authored source dictionaries](../../schema/README.md) |
 | Current opportunity read view, `discovery_admission_intents`, coverage nodes/runs and activity controls | Current publication view counts/identities; existing admission state/errors; scope-fenced Maia status/lease/expiry/run/error and pause facts. The current-opportunity source is a view, not a new stored table. | [Discovery/coverage dictionaries](../../schema/discovery-priority/README.md), [activity/runtime metadata](../../schema/runtime-metadata/README.md) |
@@ -89,4 +100,4 @@ The linked schema README views remain canonical for actual stored fields/types, 
 
 The legacy composition root still wires Study, Games and other optional-feature helpers and their shared lifecycle; this move preserves that pre-existing coupling and table access. It does not establish optional-feature/Study failure isolation or grant cross-owner table permission. The existing [Study loaded-graph guard](../../../../scripts/study-composition.ts) is unchanged.
 
-Focused existing status tests and one-time old/new fake traces check the moved read/iterator/settings/maintenance paths, including omitted flags, callbacks, errors, repertoire/annotation/teaching/export/snapshot/import/branch behavior and server-style identity facts. No lifespan/bootstrap, real PostgreSQL, live data/schema, provider, deployment or full-system validation is claimed.
+Focused existing status tests and one-time old/new fake traces check the moved read/iterator/settings/maintenance paths, including omitted flags, callbacks, errors, repertoire/annotation/teaching/export/snapshot/import/branch behavior, Games sync/lease/repair/finalization and server-style identity facts. No lifespan/bootstrap, real PostgreSQL, live data/schema, provider, deployment or full-system validation is claimed.

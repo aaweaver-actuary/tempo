@@ -37,6 +37,8 @@ from tempo_legacy_database.adapters.http_composition import (
     practice as practice_storage,
     discovery as http_discovery_storage,
     coverage as http_coverage_storage,
+    game_sync as game_sync_storage,
+    game_analysis_control as game_analysis_control_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
@@ -152,7 +154,7 @@ from .services.game_sync_coordinator import (
 )
 from tempo_legacy_database.adapters.database_executor import database_writer, submit_background_write, submit_foreground_write
 from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
-from .services.background_activity import claimable, control_order, list_activity, report_progress, set_control
+from .services.background_activity import list_activity, report_progress, set_control
 from .services.background_metrics import BackgroundDiagnostics
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
@@ -3219,9 +3221,7 @@ def sync(request: GameSyncRequest,
     job_id = enqueue_sync(normalized_request, background=background)
     coordinator.wake()
     with connection(background=background) as db:
-        job = db.execute(
-            "SELECT status FROM game_sync_jobs WHERE id=?", (job_id,)
-        ).fetchone()
+        job = game_sync_storage.job_status(db, job_id)
     return {
         "imported": 0,
         "job_id": job_id,
@@ -3247,12 +3247,8 @@ def next_opponent_profile(speed: ProfileSpeed = "auto"):
 @app.get("/api/games/sync/status", response_model=GameSyncStatusResponse)
 def sync_status():
     with connection(background=activity_gate.in_background) as db:
-        rows = db.execute("SELECT * FROM game_sync_state ORDER BY provider").fetchall()
-        job_row = db.execute(
-            """SELECT * FROM game_sync_jobs
-               ORDER BY CASE WHEN status IN ('queued','running','paused','retrying') THEN 0 ELSE 1 END,
-                        created_at DESC LIMIT 1"""
-        ).fetchone()
+        rows = game_sync_storage.provider_states(db)
+        job_row = game_sync_storage.latest_job(db)
     providers = []
     for row in rows:
         provider = dict(row)
@@ -3281,15 +3277,7 @@ def claim_game_analysis(
         return {"job": None}
     if postgres_store.configured():
         with background_read_connection() as database:
-            available = database.execute_native(
-                "SELECT 1 FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
-                "LEFT JOIN background_activity control ON control.source='game_analysis' "
-                "AND control.work_id=j.game_id "
-                "WHERE (j.status='queued' OR (j.status='leased' AND j.lease_expires_at<%s)) "
-                "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
-                "AND COALESCE(control.paused,0)=0 LIMIT 1",
-                (datetime.now(timezone.utc).isoformat(),),
-            ).fetchone()
+            available = game_analysis_control_storage.available(database, datetime.now(timezone.utc).isoformat())
         if available is None:
             return {"job": None}
         from .command_dispatch import dispatch_command
@@ -3305,41 +3293,20 @@ def _claim_game_analysis(preferred_game_id: str | None = None):
     lease_expires_at = now + timedelta(minutes=5)
     lease_id = str(uuid.uuid4())
     with connection(background=activity_gate.in_background) as db:
-        db.execute("BEGIN IMMEDIATE")
+        game_analysis_control_storage.begin_claim(db)
         if not ordinary_selection_allowed(db):
             return {"job": None}
-        db.execute(
-            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,updated_at=?
-               WHERE status='leased' AND lease_expires_at<?""",
-            (now.isoformat(), now.isoformat()),
-        )
-        job = db.execute(
-            f"""SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
-                      g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,
-                      c.divergence_ply
-               FROM game_analysis_jobs j
-               JOIN imported_games g ON g.id=j.game_id
-               LEFT JOIN current_repertoire_comparisons c ON c.game_id=g.id
-               WHERE j.status='queued' AND g.rated=1 AND g.speed IN ('blitz','rapid','classical')
-                 AND {claimable('game_analysis', 'j.game_id')}
-                 AND (? IS NULL OR j.game_id=?)
-               ORDER BY {control_order('game_analysis', 'j.game_id')}g.played_at DESC LIMIT 1""",
-            (preferred_game_id, preferred_game_id),
-        ).fetchone()
+        game_analysis_control_storage.expire_leases(db, now.isoformat(), now.isoformat())
+        job = game_analysis_control_storage.claimable_job(db, preferred_game_id)
         if not job:
             return {"job": None}
-        updated = db.execute(
-            """UPDATE game_analysis_jobs SET status='leased',lease_id=?,lease_expires_at=?,attempts=attempts+1,updated_at=?
-               WHERE game_id=? AND status='queued'""",
-            (lease_id, lease_expires_at.isoformat(), now.isoformat(), job["game_id"]),
-        ).rowcount
+        updated = game_analysis_control_storage.lease_queued_job(
+            db, lease_id, lease_expires_at.isoformat(), now.isoformat(), job["game_id"],
+        )
         if not updated:
             return {"job": None}
         record_ordinary_selection(db)
-        db.execute(
-            "UPDATE imported_games SET analysis_state='analyzing' WHERE id=?",
-            (job["game_id"],),
-        )
+        game_analysis_control_storage.mark_analyzing(db, job["game_id"])
     return {
         "job": {
             **dict(job),
@@ -3468,13 +3435,7 @@ def finalize_game_analysis_position(
     _require_docker_engine(engine_worker)
     read_section = background_read_connection if postgres_store.configured() else read_connection
     with read_section() as database:
-        row = database.execute(
-            """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
-                      j.lease_id,g.color,g.start_fen,g.moves_json,c.divergence_ply
-               FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id
-               LEFT JOIN current_repertoire_comparisons c ON c.game_id=j.game_id
-               WHERE j.status='leased' AND j.lease_id=?""", (request.lease_id,),
-        ).fetchone()
+        row = game_analysis_control_storage.leased_parent(database, request.lease_id)
     if not row:
         raise HTTPException(409, "Analysis lease is no longer active")
     parent_job = {**dict(row), "moves": json.loads(row["moves_json"])}
@@ -3528,25 +3489,17 @@ def repair_one_stockfish_timeout(
             background=True,
         )
     with connection(background=activity_gate.in_background) as database:
-        row = database.execute(
-            """SELECT game_id,last_error FROM game_analysis_jobs
-               WHERE status='failed' AND last_error='Stockfish took too long'
-               ORDER BY updated_at,game_id LIMIT 1"""
-        ).fetchone()
+        row = game_analysis_control_storage.timeout_repair_candidate(database)
         if not row:
             return {"requeued": False}
-        database.execute(
-            "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) VALUES(?,?,?,?)",
-            (f"legacy:{row['game_id']}", row["game_id"], row["last_error"],
-             datetime.now(timezone.utc).isoformat()),
+        game_analysis_control_storage.record_position_error(
+            database, f"legacy:{row['game_id']}", row["game_id"], row["last_error"],
+            datetime.now(timezone.utc).isoformat(),
         )
-        database.execute(
-            """UPDATE game_analysis_jobs SET status='queued',last_error=NULL,
-                   lease_id=NULL,lease_expires_at=NULL,updated_at=? WHERE game_id=?""",
-            (datetime.now(timezone.utc).isoformat(), row["game_id"]),
+        game_analysis_control_storage.requeue_timeout(
+            database, datetime.now(timezone.utc).isoformat(), row["game_id"],
         )
-        database.execute("UPDATE imported_games SET analysis_state='pending' WHERE id=?",
-                         (row["game_id"],))
+        game_analysis_control_storage.mark_pending(database, row["game_id"])
     return {"requeued": True, "game_id": row["game_id"]}
 
 
@@ -3563,31 +3516,18 @@ def repair_one_legacy_network_identity(
             background=True,
         )
     with connection(background=activity_gate.in_background) as database:
-        row = database.execute(
-            """SELECT j.game_id,j.analysis_version,g.analysis_version AS published_version
-               FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id
-               WHERE j.status='complete' AND j.analysis_evidence_version<3
-                 AND EXISTS(SELECT 1 FROM game_move_analysis move
-                            WHERE move.game_id=j.game_id
-                              AND move.network_version='nn-1c0000000000.nnue')
-               ORDER BY j.updated_at,j.game_id LIMIT 1"""
-        ).fetchone()
+        row = game_analysis_control_storage.network_repair_candidate(database)
         if not row:
             return {"requeued": False}
         now = datetime.now(timezone.utc).isoformat()
-        database.execute(
-            """UPDATE game_analysis_jobs SET status='queued',analysis_version=?,
-                   analysis_evidence_version=3,lease_id=NULL,lease_expires_at=NULL,
-                   last_error=NULL,updated_at=? WHERE game_id=? AND status='complete'""",
-            (max(row["analysis_version"] + 1, row["published_version"] + 1),
-             now, row["game_id"]),
+        game_analysis_control_storage.requeue_network(
+            database, max(row["analysis_version"] + 1, row["published_version"] + 1),
+            now, row["game_id"],
         )
-        database.execute("UPDATE imported_games SET analysis_state='pending' WHERE id=?",
-                         (row["game_id"],))
-        database.execute(
-            "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) VALUES(?,?,?,?)",
-            (f"legacy-network:{row['game_id']}", row["game_id"],
-             "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now),
+        game_analysis_control_storage.mark_pending(database, row["game_id"])
+        game_analysis_control_storage.record_position_error(
+            database, f"legacy-network:{row['game_id']}", row["game_id"],
+            "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now,
         )
     return {"requeued": True, "game_id": row["game_id"]}
 
@@ -3603,20 +3543,13 @@ def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest,
             idempotency_key=idempotency_key, background=True,
         )
     with connection(background=activity_gate.in_background) as db:
-        job = db.execute(
-            "SELECT lease_id,status FROM game_analysis_jobs WHERE game_id=?", (game_id,)
-        ).fetchone()
+        job = game_analysis_control_storage.lease_state(db, game_id)
         if not job:
             raise HTTPException(404, "Analysis job not found")
         if job["status"] != "leased" or job["lease_id"] != request.lease_id:
             raise HTTPException(409, "Analysis lease is no longer active")
-        db.execute(
-            """UPDATE game_analysis_jobs SET status='failed',lease_id=NULL,lease_expires_at=NULL,last_error=?,updated_at=? WHERE game_id=?""",
-            (request.error, datetime.now(timezone.utc).isoformat(), game_id),
-        )
-        db.execute(
-            "UPDATE imported_games SET analysis_state='failed' WHERE id=?", (game_id,)
-        )
+        game_analysis_control_storage.fail_job(db, request.error, datetime.now(timezone.utc).isoformat(), game_id)
+        game_analysis_control_storage.mark_failed(db, game_id)
     return {"status": "failed", "retryable": True}
 
 
@@ -3631,16 +3564,10 @@ def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
         )
     now = datetime.now(timezone.utc)
     with connection(background=activity_gate.in_background) as db:
-        updated = db.execute(
-            """UPDATE game_analysis_jobs SET lease_expires_at=?,updated_at=?
-               WHERE game_id=? AND status='leased' AND lease_id=?""",
-            (
-                (now + timedelta(minutes=5)).isoformat(),
-                now.isoformat(),
-                game_id,
-                request.lease_id,
-            ),
-        ).rowcount
+        updated = game_analysis_control_storage.renew_lease(
+            db, (now + timedelta(minutes=5)).isoformat(), now.isoformat(),
+            game_id, request.lease_id,
+        )
     if not updated:
         raise HTTPException(409, "Analysis lease is no longer active")
     return {"status": "leased"}
@@ -3656,21 +3583,9 @@ def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
             idempotency_key=idempotency_key, background=True,
         )
     with connection(background=activity_gate.in_background) as db:
-        updated = db.execute(
-            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
-                      lease_expires_at=NULL,updated_at=?
-               WHERE game_id=? AND status='leased' AND lease_id=?""",
-            (
-                datetime.now(timezone.utc).isoformat(),
-                game_id,
-                request.lease_id,
-            ),
-        ).rowcount
+        updated = game_analysis_control_storage.release_lease(db, datetime.now(timezone.utc).isoformat(), game_id, request.lease_id)
         if updated:
-            db.execute(
-                "UPDATE imported_games SET analysis_state='pending' WHERE id=?",
-                (game_id,),
-            )
+            game_analysis_control_storage.mark_pending(db, game_id)
     return {"status": "queued" if updated else "stale"}
 
 
@@ -3683,21 +3598,11 @@ def retry_game_analysis(game_id: str,
             "games.analysis.retry", {"game_id": game_id}, idempotency_key=idempotency_key,
         )
     with connection() as db:
-        updated = db.execute(
-            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=?
-               WHERE game_id=? AND status='failed'""",
-            (datetime.now(timezone.utc).isoformat(), game_id),
-        ).rowcount
+        updated = game_analysis_control_storage.retry_failed(db, datetime.now(timezone.utc).isoformat(), game_id)
         if not updated:
             raise HTTPException(409, "Only failed analysis jobs can be retried")
-        db.execute(
-            "UPDATE imported_games SET analysis_state='pending' WHERE id=?", (game_id,)
-        )
-        db.execute(
-            """UPDATE background_activity SET phase='Queued',completed_units=NULL,
-               total_units=NULL,updated_at=? WHERE source='game_analysis' AND work_id=?""",
-            (datetime.now(timezone.utc).isoformat(), game_id),
-        )
+        game_analysis_control_storage.mark_pending(db, game_id)
+        game_analysis_control_storage.queue_activity(db, datetime.now(timezone.utc).isoformat(), game_id)
     set_control("game_analysis", game_id, "resume")
     return {"status": "queued"}
 
