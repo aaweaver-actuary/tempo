@@ -5072,3 +5072,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Legacy derived-publication storage
 
 `backend/tests/test_legacy_derived_publication_database_split.py` guards direct storage operations and preserves profile account/clock order, daily missing-watermark early return and insight/publication fences through fixed fake capabilities. Existing next-opponent and daily-statistics cases retain their assertions; native PostgreSQL/deployment remains unverified.
+
+
+## Legacy statistics persistence
+
+`backend/tests/test_legacy_statistics_database_split.py` guards direct operations and preserves dimension rejection, one-time projection capture before clock/connection, current-comparison filtering and daily job claims. Existing statistics cases retain metric/date/math assertions. These selected fakes/task-SQLite checks do not establish native PostgreSQL or deployed isolation.
