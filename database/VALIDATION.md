@@ -373,3 +373,18 @@ Thirteen selected fake/task-SQLite cases pass: seven finding cases, four analysi
 ## Legacy next-opponent and daily-statistics publications
 
 Twenty-three original operations now live in `derived_publications/`; one identical account lookup is shared, leaving twenty-two physical query sites. All query/method/parameter expressions and retained application functions reconstruct exactly, including clocks, account/sync freshness, profile/daily metrics, serialization, read/borrowed-write scopes, canonical task callbacks and publication fences. Twenty existing cases and four new focused boundary cases pass. Six Python sources, owner Mermaid/links, source proof and whitespace pass. Exact selections: `/tmp/tempo-db-derived-check-command.txt`; logs/proof: `/tmp/tempo-db-derived-{existing-tests,boundary-tests,source-proof}.log`. Native PostgreSQL, installed-package discovery, deployment/independent resources and full-system checks remain unverified. No schema/migration/contract/security/CI behavior changed; existing optional feature/legacy data coupling is retained and disclosed.
+
+
+## Legacy engine and durable scheduling storage
+
+Existing SQL constants/builders, dialect/lock handling, query execution and warming move into root `adapters/scheduling/`. Application class/turn/fairness, threshold/interactive decisions, HTTP outcomes and caller transaction authority remain outside. The existing executor and SQL-only exports move intact; the durable builder receives the same defensive task tuple. Warm preparation retains translator import→class selection→translation order, before the original fail-fast budget.
+
+Specific reconstructed ASTs match all moved constants/functions, original selected application bodies and query/parameter expressions. A one-time before/current comparison matches 186 fake paths and 422 executions across SQLite/native dialect branches, state guards, finite preferences, empty/new kinds and warming. No direct query/driver operation remains in either original. Proof/baselines: `/tmp/tempo-db-scheduling-{proof.py,before/}`. Five Python sources compile.
+
+The following existing focused selection passes **34 cases** (only the pre-existing Starlette alias deprecation warning):
+
+```sh
+TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database /tmp/tempo-db-review-venv/bin/python -m pytest backend/tests/test_engine_fairness.py backend/tests/test_scheduling_turns.py backend/tests/test_postgres_cutover.py::test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape backend/tests/test_postgres_cutover.py::test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds -q --rootdir=.
+```
+
+This uses existing task-temporary SQLite and fake-native claims, including rollback/restart/stale receipt proofs. No engine, native PostgreSQL/broker/live store or full-system check ran. No schema/migration/contract, key/security/credential, lifecycle, fairness bound or CI behavior changed. Package discovery is unchanged because these adapters reside in the already included legacy owner tree; installed-wheel execution and deployed isolation remain unverified.

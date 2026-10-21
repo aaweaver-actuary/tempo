@@ -1,7 +1,8 @@
 """Persist one scheduling turn with the lease it selects."""
 
-from .background_activity import claimable, control_order
-from .defensive_analysis import DEFENSIVE_TASK_KINDS, task_admission_sql
+from .defensive_analysis import DEFENSIVE_TASK_KINDS
+from tempo_legacy_database.adapters.scheduling import durable as storage
+from tempo_legacy_database.adapters.scheduling.durable import persist_scheduling_turn
 
 
 # Interleave the two larger pipelines instead of giving them consecutive bursts.
@@ -21,20 +22,10 @@ CLASS_KINDS = {
 # User-dependent publications and controls get prompt, but finite, preference.
 CONTROL_KINDS = ('daily_queue', 'prefix_transition_application',
                  'canonical_prefix_preview', 'discovery_admission', 'game_analysis_publish')
-_SCHEDULER_SQL = 'SELECT * FROM background_scheduling_turns WHERE lane=\'durable\''
-_TURN_UPDATE_SQL = ('UPDATE background_scheduling_turns SET next_turn=?, '
-                    'promoted_since_turn=?,control_streak=? WHERE lane=\'durable\'')
 
 
 def _candidate_sql(kinds, *, promoted=False, control=False):
-    eligibility = f"{claimable('durable', 'background_tasks.id')} AND {task_admission_sql('background_tasks.kind')}"
-    if promoted:
-        eligibility += (" AND EXISTS(SELECT 1 FROM background_activity a "
-                        "WHERE a.source='durable' AND a.work_id=background_tasks.id AND a.promoted=1)")
-    order = (f"priority,{control_order('durable', 'background_tasks.id')}" if control else '')
-    return ("SELECT * FROM background_tasks WHERE state IN ('queued','retrying') "
-            "AND next_attempt_at<=? AND kind IN (" + ','.join('?' for _ in kinds) + ") AND "
-            + eligibility + ' ORDER BY ' + order + 'COALESCE(pending_since,created_at),id LIMIT 1')
+    return storage.candidate_sql(kinds, DEFENSIVE_TASK_KINDS, promoted=promoted, control=control)
 
 
 def _selected_classes(allowed_kinds):
@@ -51,26 +42,12 @@ def _selected_classes(allowed_kinds):
 
 def warm_scheduling_sql(allowed_kinds):
     """Translate before entering the fail-fast background database budget."""
-    from tempo_legacy_database.adapters.postgres_store import postgres_sql
-    classes, controls, ordinary = _selected_classes(allowed_kinds)
-    statements = [_SCHEDULER_SQL, _TURN_UPDATE_SQL]
-    for kinds in classes.values():
-        if kinds:
-            statements.append(_candidate_sql(kinds))
-    if controls:
-        statements.append(_candidate_sql(controls, control=True))
-    if ordinary:
-        statements.append(_candidate_sql(ordinary, promoted=True))
-    for statement in statements:
-        postgres_sql(statement)
+    storage.warm_scheduling_sql(allowed_kinds, _selected_classes, DEFENSIVE_TASK_KINDS)
 
 
 def select_scheduled_task(database, allowed_kinds, now):
     """Return a candidate plus its next turn; the caller commits both with a lease."""
-    if hasattr(database, 'execute_native'):
-        scheduler = database.execute_native(_SCHEDULER_SQL + ' FOR UPDATE SKIP LOCKED').fetchone()
-    else:
-        scheduler = database.execute(_SCHEDULER_SQL).fetchone()
+    scheduler = storage.scheduling_turn(database)
     if not scheduler:
         return None, None
     classes, controls, ordinary = _selected_classes(allowed_kinds)
@@ -81,12 +58,7 @@ def select_scheduled_task(database, allowed_kinds, now):
     def candidate(kinds, **kwargs):
         if not kinds:
             return None
-        statement = _candidate_sql(kinds, **kwargs)
-        if hasattr(database, 'execute_native'):
-            from tempo_legacy_database.adapters.postgres_store import postgres_sql
-            return database.execute_native(
-                postgres_sql(statement) + ' FOR UPDATE OF background_tasks SKIP LOCKED', (now, *kinds)).fetchone()
-        return database.execute(statement, (now, *kinds)).fetchone()
+        return storage.candidate(database, kinds, now, DEFENSIVE_TASK_KINDS, **kwargs)
 
     if control_streak < 2:
         row = candidate(controls, control=True)
@@ -103,7 +75,3 @@ def select_scheduled_task(database, allowed_kinds, now):
             return row, ((selected_turn + 1) % len(SCHEDULING_TURNS), 0, 0)
     row = candidate(controls, control=True)
     return (row, (next_turn, promoted_since_turn, 2)) if row else (None, None)
-
-
-def persist_scheduling_turn(database, turn):
-    database.execute(_TURN_UPDATE_SQL, turn)
