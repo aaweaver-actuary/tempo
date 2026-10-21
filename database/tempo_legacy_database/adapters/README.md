@@ -45,3 +45,6 @@
 
 
 [Repertoire scope and saved moves](repertoire_scope/README.md) contains existing generation/freshness SQL, game-refresh queries and bounded line/digest/dialect operations. Application freshness validation, chess/deadline/cursor and task policy remain outside.
+
+
+[Authored repertoire commands](authored_repertoires/README.md) contains existing canonical-prefix/branch reads, locks and writes. Payload/chess/HTTP validation, revision/route/callback policy and responses remain in the original command compositions.
