@@ -207,4 +207,3 @@ def _reset_stale_opening_introductions(database, queue_date: str) -> None:
                             WHERE queue.card_id=cards.id AND queue.queue_date=?)""",
         (queue_date, queue_date),
     )
-
