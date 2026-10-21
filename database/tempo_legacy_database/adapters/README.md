@@ -57,3 +57,6 @@
 
 
 [Bounded prefix reads](prefix_reads/README.md) contains existing diagnostic graph/evidence projections and the complete native-typed transition state capture, preserving one read-only MVCC scope, query/size/payload order and resource/stale-link guards. Algorithms, typed responses and existing planning authority remain unchanged outside database.
+
+
+[Introduction-priority storage](introduction_priorities/README.md) holds complete coverage/personal-evidence/card/settings projections, priority job claims and generation publication operations. Scoring, bounded read/page/chunk loops, clocks, foreground yielding, stale-generation decisions and callbacks remain in the existing application owner.
