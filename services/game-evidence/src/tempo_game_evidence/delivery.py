@@ -1,10 +1,10 @@
 """Immutable v2 delivery with durable, acknowledgement-aware reconciliation."""
+from tempo_game_evidence_database.adapters import delivery as storage
 from datetime import timedelta
 import uuid
 from pathlib import Path
 
 import httpx
-from psycopg.types.json import Jsonb
 from tempo_game_evidence_contracts.v2 import EvidenceAcknowledgement, EvidenceDelivery
 
 from .reconciliation import apply_completed, request_reconciliation, validate_receipt
@@ -14,8 +14,7 @@ from .transport import RemoteFailure, request_bytes
 
 def inspect_delivery(database, game_id, comparison_revision, reconciliation_status, reconciliation_reason, *, has_report=True):
     """The report/export read port; existing outbox and receipts remain authority."""
-    batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (comparison_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
-                               (game_id,comparison_revision)).fetchall()
+    batches = storage.delivery_batches(database, game_id, comparison_revision)
     priority = ['blocked','terminal_failure','conflict','stale_revision','retryable_failure','waiting_predecessor','accepted_pending','pending','completed']
     status = next((status for status in priority if any(batch['status']==status for batch in batches)), 'not_required' if has_report else 'not_ready')
     if reconciliation_status in {'pending','waiting_predecessor','blocked'}:
@@ -45,43 +44,23 @@ def deliver_one(store, endpoint, *, client=None, token=None):
     with store.connect() as database:
         # The game lock serializes claims, comparisons, receipt projection and
         # reconciliation. An in-flight attempt fences every later game delivery.
-        game = database.execute("""SELECT games.* FROM games WHERE heads_initialized
-          AND NOT EXISTS(SELECT 1 FROM outbox WHERE outbox.game_id=games.game_id AND attempts>0
-            AND (status IN ('conflict','stale_revision','blocked') OR (status='terminal_failure' AND acknowledgement IS NULL)))
-          AND NOT EXISTS(SELECT 1 FROM outbox WHERE outbox.game_id=games.game_id AND attempts>0
-            AND status IN ('pending','accepted_pending','retryable_failure')
-            AND (next_attempt_at>now() OR leased_until>now()))
-          AND EXISTS(SELECT 1 FROM outbox
-            JOIN comparisons comparison ON comparison.game_id=outbox.game_id AND comparison.revision=outbox.comparison_revision
-            JOIN workspace_inputs inputs ON inputs.workspace_id=games.workspace_id
-            WHERE outbox.game_id=games.game_id AND status IN ('pending','accepted_pending','retryable_failure')
-            AND next_attempt_at<=now() AND (leased_until IS NULL OR leased_until<now())
-            AND (attempts>0 OR (comparison_revision=games.report_revision AND
-              (payload->>'game_revision')::bigint=games.revision AND
-              comparison.report->'snapshot'->>'digest'=inputs.snapshot_digest)))
-          ORDER BY game_id LIMIT 1 FOR UPDATE SKIP LOCKED""").fetchone()
+        game = storage.claimable_game(database)
         if not game:
             return False
-        if database.execute("""SELECT 1 FROM outbox WHERE game_id=%s AND attempts>0
-          AND status IN ('conflict','stale_revision','blocked') LIMIT 1""",(game['game_id'],)).fetchone():
+        if storage.has_delivery_conflict(database, game['game_id']):
             return False
-        row = database.execute("""SELECT * FROM outbox WHERE game_id=%s
-          AND status IN ('pending','accepted_pending','retryable_failure')
-          ORDER BY (attempts>0) DESC,evidence_revision,bucket LIMIT 1 FOR UPDATE""",(game['game_id'],)).fetchone()
+        row = storage.current_delivery(database, game['game_id'])
         if row['next_attempt_at']>utc_now() or row['leased_until'] and row['leased_until']>utc_now():
             return False
         if not row['attempts']:
-            report = database.execute('SELECT report FROM comparisons WHERE game_id=%s AND revision=%s',
-                                      (game['game_id'],row['comparison_revision'])).fetchone()['report']
-            inputs = database.execute('SELECT snapshot_digest FROM workspace_inputs WHERE workspace_id=%s',
-                                      (game['workspace_id'],)).fetchone()
+            report = storage.comparison_report(database, game['game_id'], row['comparison_revision'])['report']
+            inputs = storage.workspace_snapshot(database, game['workspace_id'])
             if (row['comparison_revision'] != game['report_revision'] or
                     row['payload']['game_revision'] != game['revision'] or
                     (report.get('snapshot') or {}).get('digest') != inputs['snapshot_digest']):
                 return False
         lease_token = uuid.uuid4().hex
-        database.execute("UPDATE outbox SET lease_token=%s,leased_until=now()+interval '90 seconds',attempts=attempts+1 WHERE delivery_id=%s",
-                         (lease_token,row['delivery_id']))
+        storage.begin_attempt(database, lease_token, row['delivery_id'])
     payload = EvidenceDelivery.model_validate(row['payload'])
     owned = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(15,read=10),follow_redirects=False)
@@ -108,11 +87,8 @@ def deliver_one(store, endpoint, *, client=None, token=None):
         if owned:
             client.close()
     with store.connect() as database:
-        database.execute('SELECT game_id FROM games WHERE game_id=%s FOR UPDATE',(row['game_id'],))
-        changed = database.execute("""UPDATE outbox SET status=%s,reason=%s,acknowledgement=%s,
-          next_attempt_at=%s,lease_token=NULL,leased_until=NULL WHERE delivery_id=%s AND lease_token=%s
-          RETURNING *""",(status,reason,Jsonb(acknowledgement.model_dump(mode='json')) if acknowledgement else None,
-          utc_now()+timedelta(seconds=delay),row['delivery_id'],lease_token)).fetchone()
+        storage.lock_game(database, row['game_id'])
+        changed = storage.save_receipt(database, status, reason, acknowledgement.model_dump(mode='json') if acknowledgement else None, utc_now()+timedelta(seconds=delay), row['delivery_id'], lease_token)
         if changed:
             if status=='completed':
                 apply_completed(database,changed)
@@ -127,14 +103,13 @@ class AuthRetryRefused(ValueError):
 def retry_auth_delivery(store, workspace, delivery_id):
     """Requeue one original legacy 401 delivery, never infer non-acceptance."""
     with store.connect() as database:
-        identity = database.execute('SELECT game_id FROM outbox WHERE delivery_id=%s', (delivery_id,)).fetchone()
+        identity = storage.delivery_game_identity(database, delivery_id)
         if identity is None:
             raise AuthRetryRefused('auth_delivery_not_found')
-        game = database.execute('SELECT * FROM games WHERE game_id=%s FOR UPDATE', (identity['game_id'],)).fetchone()
+        game = storage.locked_game(database, identity['game_id'])
         if game['workspace_id'] != workspace:
             raise AuthRetryRefused('auth_delivery_workspace_mismatch')
-        row = database.execute('SELECT * FROM outbox WHERE delivery_id=%s AND game_id=%s FOR UPDATE',
-                               (delivery_id, game['game_id'])).fetchone()
+        row = storage.locked_delivery(database, delivery_id, game['game_id'])
         if row['leased_until'] and row['leased_until'] > utc_now():
             raise AuthRetryRefused('auth_delivery_active_lease')
         if row['status'] == 'completed':
@@ -144,6 +119,5 @@ def retry_auth_delivery(store, workspace, delivery_id):
             raise AuthRetryRefused('auth_delivery_not_legacy_401_block')
         if row['status'] == 'retryable_failure':
             return {'delivery_id': delivery_id, 'status': row['status'], 'requeued': False}
-        database.execute("""UPDATE outbox SET status='retryable_failure',next_attempt_at=now(),
-            lease_token=NULL,leased_until=NULL WHERE delivery_id=%s""", (delivery_id,))
+        storage.requeue_auth_delivery(database, delivery_id)
     return {'delivery_id': delivery_id, 'status': 'retryable_failure', 'requeued': True}

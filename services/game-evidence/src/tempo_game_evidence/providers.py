@@ -1,4 +1,5 @@
 """Explicit account windows and durable source-first provider checkpoints."""
+from tempo_game_evidence_database.adapters import providers as storage
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -6,7 +7,6 @@ from urllib.parse import quote
 import uuid
 
 import httpx
-from psycopg.types.json import Jsonb
 from pydantic import Field, model_validator
 from typing import Literal
 
@@ -44,35 +44,27 @@ def enqueue_import(store, config):
     cursor = {"since_ms": since_ms, "seen": []} if config.provider == "lichess" else {
         "year": config.since.year, "month": config.since.month, "offset": 0}
     with store.connect() as database:
-        database.execute("INSERT INTO import_cursors(import_id,workspace_id,configuration,cursor) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                         (import_id,config.workspace_id,Jsonb(document),Jsonb(cursor)))
+        storage.enqueue_import(database, import_id, config.workspace_id, document, cursor)
     return import_id
 
 
 def cancel_import(store, import_id):
     with store.connect() as database:
-        database.execute("UPDATE import_cursors SET status='cancelled' WHERE import_id=%s", (import_id,))
+        storage.cancel_import(database, import_id)
 
 
 def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+https://github.com/aaweaver-actuary/tempo)", cancelled=lambda: False):
     # A provider lease serializes all requests from this service, across accounts.
     token = uuid.uuid4().hex
     with store.connect() as database:
-        row = database.execute("""SELECT * FROM import_cursors WHERE status IN ('pending','retrying')
-          AND next_attempt_at<=now() AND (leased_until IS NULL OR leased_until<now())
-          AND NOT EXISTS(SELECT 1 FROM provider_leases provider WHERE provider.provider=configuration->>'provider'
-            AND (provider.cooldown_until>now() OR provider.leased_until>now()))
-          ORDER BY import_id LIMIT 1 FOR UPDATE SKIP LOCKED""").fetchone()
+        row = storage.claimable_import(database)
         if not row:
             return False
         config = AccountImport.model_validate_json(json.dumps(row["configuration"]))
-        locked = database.execute("""INSERT INTO provider_leases(provider,token,leased_until) VALUES(%s,%s,now()+interval '90 seconds')
-          ON CONFLICT(provider) DO UPDATE SET token=excluded.token,leased_until=excluded.leased_until
-          WHERE (provider_leases.leased_until IS NULL OR provider_leases.leased_until<now())
-            AND provider_leases.cooldown_until<=now() RETURNING token""", (config.provider,token)).fetchone()
+        locked = storage.acquire_provider_lease(database, config.provider, token)
         if not locked:
             return False
-        database.execute("UPDATE import_cursors SET lease_token=%s,leased_until=now()+interval '90 seconds',attempts=attempts+1 WHERE import_id=%s", (token,row["import_id"]))
+        storage.begin_import_attempt(database, token, row['import_id'])
     owned = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(15,read=10),follow_redirects=False,
                                    headers={"User-Agent":user_agent})
@@ -82,7 +74,7 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
         cursor = row["cursor"]
         page_id = identity({key:value for key,value in cursor.items() if key != "offset"})
         with store.connect() as database:
-            saved = database.execute("SELECT raw_response FROM import_pages WHERE import_id=%s AND page_id=%s AND validation_status!='invalid'", (row["import_id"],page_id)).fetchone()
+            saved = storage.saved_import_page(database, row['import_id'], page_id)
         if saved:
             raw = bytes(saved["raw_response"])
         else:
@@ -122,34 +114,29 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
                             provider_game_id=source_id,source_digest=source_digest)
             prepared.append((source_id,source_bytes,played_at,document,game_id,source_digest))
         with store.connect() as database:
-            current = database.execute("SELECT status,lease_token FROM import_cursors WHERE import_id=%s FOR UPDATE",(row["import_id"],)).fetchone()
+            current = storage.locked_import(database, row['import_id'])
             if current["status"] != "cancelled" and current["lease_token"] == token:
-                provider = database.execute("SELECT token,leased_until>now() AS valid FROM provider_leases WHERE provider=%s FOR UPDATE",(config.provider,)).fetchone()
+                provider = storage.locked_provider_lease(database, config.provider)
                 if not provider or provider["token"]!=token or not provider["valid"]:
                     raise RemoteFailure("provider_lease_expired")
                 for source_id,source_bytes,played_at,document,game_id,source_digest in prepared:
                     store._import(database,config.workspace_id,config.provider,source_id,config.account,source_bytes,
                                   source_digest,identity(source_digest,str(played_at)),game_id,document)
-                database.execute("UPDATE import_cursors SET cursor=%s,status=%s,reason=NULL,attempts=0 WHERE import_id=%s",
-                                 (Jsonb(next_cursor),"completed" if complete else "pending",row["import_id"]))
+                storage.complete_import_page(database, next_cursor, 'completed' if complete else 'pending', row['import_id'])
     except RemoteFailure as error:
         with store.connect() as database:
             if error.reason == "remote_rate_limited":
-                database.execute("""UPDATE provider_leases SET cooldown_until=greatest(cooldown_until,
-                  now()+%s*interval '1 second') WHERE provider=%s""",(error.retry_after,config.provider))
-            database.execute("""UPDATE import_cursors SET status=%s,reason=%s,next_attempt_at=%s
-              WHERE import_id=%s AND lease_token=%s AND status!='cancelled'""",
-              ("pending" if error.reason=="import_cancelled" else "blocked" if error.terminal else "retrying",
-               error.reason,utc_now()+timedelta(seconds=max(error.retry_after,min(900,2**min(row["attempts"],10)))),row["import_id"],token))
+                storage.extend_provider_cooldown(database, error.retry_after, config.provider)
+            storage.record_import_failure(database, 'pending' if error.reason=='import_cancelled' else 'blocked' if error.terminal else 'retrying', error.reason, utc_now()+timedelta(seconds=max(error.retry_after,min(900,2**min(row['attempts'],10)))), row['import_id'], token)
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         with store.connect() as database:
-            database.execute("UPDATE import_cursors SET status='retrying',reason='provider_source_unavailable_or_invalid',next_attempt_at=now()+interval '60 seconds' WHERE import_id=%s AND lease_token=%s AND status!='cancelled'",(row["import_id"],token))
+            storage.record_unavailable_source(database, row['import_id'], token)
     finally:
         if owned:
             client.close()
         with store.connect() as database:
-            database.execute("UPDATE import_cursors SET lease_token=NULL,leased_until=NULL WHERE import_id=%s AND lease_token=%s",(row["import_id"],token))
-            database.execute("UPDATE provider_leases SET token=NULL,leased_until=NULL WHERE provider=%s AND token=%s",(config.provider,token))
+            storage.release_import_lease(database, row['import_id'], token)
+            storage.release_provider_lease(database, config.provider, token)
     return True
 
 
@@ -219,14 +206,10 @@ def _validate_page(config, raw):
 def _save_page(store,row,config,token,page_id,raw,status,reason=None):
     # An expired worker may retain its bytes but cannot replace a newer checkpoint.
     with store.connect() as database:
-        current=database.execute("SELECT status,lease_token,leased_until>now() AS valid FROM import_cursors WHERE import_id=%s FOR UPDATE",(row['import_id'],)).fetchone()
-        provider=database.execute("SELECT token,leased_until>now() AS valid FROM provider_leases WHERE provider=%s",(config.provider,)).fetchone()
+        current=storage.import_lease_state(database, row['import_id'])
+        provider=storage.provider_lease_state(database, config.provider)
         if current['status']=='cancelled':
             raise RemoteFailure('import_cancelled',terminal=True)
         if current['lease_token']!=token or not current['valid'] or not provider or provider['token']!=token or not provider['valid']:
             raise RemoteFailure('provider_lease_expired')
-        database.execute("""INSERT INTO import_pages(import_id,page_id,raw_response,source_digest,validation_status,validation_reason)
-          VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(import_id,page_id) DO UPDATE SET
-          raw_response=excluded.raw_response,source_digest=excluded.source_digest,
-          validation_status=excluded.validation_status,validation_reason=excluded.validation_reason""",
-          (row['import_id'],page_id,raw,hashlib.sha256(raw).hexdigest(),status,reason))
+        storage.save_import_page(database, row['import_id'], page_id, raw, hashlib.sha256(raw).hexdigest(), status, reason)

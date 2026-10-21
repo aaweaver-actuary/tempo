@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **36 files**; one candidate is confirmed non-database application code, and **119 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **41 files**; one candidate is confirmed non-database application code, and **114 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -132,11 +132,11 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [backend/app/threat_analysis_commands.py](../backend/app/threat_analysis_commands.py)
 - Completed Content bridge split: [application/public composition](../services/content/src/tempo_content/bridge/README.md) and [database operations](tempo_content_database/adapters/bridge.py).
 - Completed Content CLI readiness split: [cli.py](../services/content/src/tempo_content/cli.py) retains parsing/commands; [readiness connection](tempo_content_database/ddl/migrate.py) stays with DDL.
-- [services/game-evidence/src/tempo_game_evidence/analysis_export.py](../services/game-evidence/src/tempo_game_evidence/analysis_export.py)
-- [services/game-evidence/src/tempo_game_evidence/api.py](../services/game-evidence/src/tempo_game_evidence/api.py)
-- [services/game-evidence/src/tempo_game_evidence/delivery.py](../services/game-evidence/src/tempo_game_evidence/delivery.py)
-- [services/game-evidence/src/tempo_game_evidence/providers.py](../services/game-evidence/src/tempo_game_evidence/providers.py)
-- [services/game-evidence/src/tempo_game_evidence/reconciliation.py](../services/game-evidence/src/tempo_game_evidence/reconciliation.py)
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/analysis_export.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/api.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/delivery.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/providers.py](tempo_game_evidence_database/adapters/README.md).
+- Completed Game Evidence SQL split: [services/game-evidence/src/tempo_game_evidence/reconciliation.py](tempo_game_evidence_database/adapters/README.md).
 - Completed Intelligence read-projection split: [games_reader.py](../services/intelligence/src/tempo_intelligence/analysis/games_reader.py) retains cursor/limit/envelope/read-transaction composition; [complete owner queries](tempo_intelligence_database/adapters/games_read_projection.py) live in database.
 - Reviewed non-database false positive: [Intelligence analysis worker](../services/intelligence/src/tempo_intelligence/analysis/worker.py). Its only `execute` call is `client.execute(claim["job"])`, an engine-client operation; the file has no SQL/driver/cursor operations. Keep this application dispatcher with Analysis.
 - [services/learning/runtime/src/tempo_learning_runtime/admission.py](../services/learning/runtime/src/tempo_learning_runtime/admission.py)
@@ -210,3 +210,6 @@ Learning’s six-file deletion/miss/frozen-order and recovery/bootstrap/teaching
 
 
 Content’s additional five existing source/exercise/binding/publication/coverage decisions now live in its application `policy/` folder. Worker dispatch, route traversal and publication orchestration still inside the database store are further extraction work beyond the original mixed-file checklist, not permanent exceptions.
+
+
+Game Evidence’s root store additionally delegates import preparation, snapshot-cache choice and response shaping to its own application helpers. Snapshot staleness/affected-position computation, worker dispatch/retry, comparison computation/report construction and import-status formatting remain unfinished extraction candidates inside that store. Persistence replay guards, lock/lease fences, atomic writes and cursor batches remain database operations.

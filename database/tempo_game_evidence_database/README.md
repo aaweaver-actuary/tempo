@@ -8,6 +8,8 @@
 | [ddl](ddl/README.md) | Schema metadata, ordered migrations and explicit owner migration entry points. |
 | [schema](schema/README.md) | Rendered Mermaid relationships and complete field/type dictionaries. |
 
+The [adapter categories](adapters/README.md) now also own SQL formerly embedded in analysis export, provider import, delivery, reconciliation and HTTP readiness code. The existing [application composition](../../services/game-evidence/README.md#database-operation-location) keeps the same transaction scopes and decisions. This changes file ownership only: stored tables/fields, constraints, JSON payloads, migrations and cross-component protocols are unchanged.
+
 ## Logical relationships (not SQL foreign keys)
 
 `workspace_inputs.snapshot_digest` and snapshot documents describe accepted comparison authority; delivery JSON carries Learning obligation/card identities. Those JSON/identity links are logical unless an explicit local FK appears below. Outbox delivery crosses the Learning protocol, not a cross-database FK.

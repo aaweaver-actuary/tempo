@@ -1,4 +1,5 @@
 """Immutable serialized analysis inputs. No foreign DB or service internals."""
+from tempo_game_evidence_database.adapters import analysis_export as storage
 import hashlib
 import json
 import os
@@ -6,7 +7,6 @@ from pathlib import Path
 import tempfile
 
 import chess
-from psycopg.types.json import Jsonb
 from tempo_chess_core import canonical_fen_key
 from .snapshot import parse_snapshot, projected_definition
 from .source import INDEX_VERSION
@@ -138,12 +138,12 @@ def create_export(store, workspace, game_ids=None):
     if game_ids is not None and (not game_ids or len(game_ids) > 100 or len(set(game_ids)) != len(game_ids)):
         raise ValueError("export_game_selection_bound")
     with store.connect() as database:
-        database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        row = database.execute("SELECT snapshot_digest FROM workspace_inputs WHERE workspace_id=%s", (workspace,)).fetchone()
-        snapshot_row = database.execute("SELECT document FROM snapshots WHERE digest=%s", (row["snapshot_digest"],)).fetchone() if row else None
+        storage.begin_consistent_source_read(database)
+        row = storage.workspace_snapshot(database, workspace)
+        snapshot_row = storage.snapshot_document(database, row['snapshot_digest']) if row else None
         if not snapshot_row:
             raise ValueError("analysis_snapshot_unavailable")
-        rows = database.execute("SELECT game.*,comparison.report,comparison.input_token FROM games game LEFT JOIN comparisons comparison ON comparison.game_id=game.game_id AND comparison.revision=game.report_revision WHERE game.workspace_id=%s AND (%s::text[] IS NULL OR game.game_id=ANY(%s::text[])) ORDER BY game.game_id LIMIT 101", (workspace, game_ids, game_ids)).fetchall()
+        rows = storage.selected_games(database, workspace, game_ids)
         if not rows or len(rows) > 100 or (game_ids is not None and len(rows) != len(game_ids)):
             raise ValueError("analysis_export_requires_1_to_100_exact_games")
         deliveries={}
@@ -199,15 +199,13 @@ def create_export(store, workspace, game_ids=None):
     # The input identity is deterministic. Commit the manifest and pages atomically;
     # failed creation exposes no completed manifest or partial generation.
     with store.connect() as database:
-        database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("analysis-export:" + input_id,))
-        old = database.execute("SELECT manifest FROM analysis_exports WHERE input_id=%s", (input_id,)).fetchone()
+        storage.lock_export(database, input_id)
+        old = storage.existing_manifest(database, input_id)
         if old:
             if old["manifest"] != manifest:
                 raise ValueError("immutable_analysis_export_conflict")
             return manifest
-        database.execute("INSERT INTO analysis_exports VALUES(%s,%s,%s)", (input_id, workspace, Jsonb(manifest)))
-        with database.cursor() as cursor:
-            cursor.executemany("INSERT INTO analysis_export_pages VALUES(%s,%s,%s,%s,%s)", [(input_id, kind,index,fingerprint,Jsonb(document)) for kind,index,fingerprint,document in pages])
+        storage.persist_export(database, input_id, workspace, manifest, pages)
     return manifest
 
 
@@ -215,7 +213,7 @@ def export_page(store, workspace, input_id, kind, after=None):
     if kind not in KINDS:
         raise ValueError("unknown_analysis_page_kind")
     with store.connect() as database:
-        row = database.execute("SELECT manifest FROM analysis_exports WHERE input_id=%s AND workspace_id=%s", (input_id,workspace)).fetchone()
+        row = storage.workspace_manifest(database, input_id, workspace)
         if row is None:
             raise ValueError("analysis_export_not_found")
         manifest = row["manifest"]
@@ -226,7 +224,7 @@ def export_page(store, workspace, input_id, kind, after=None):
             if set(cursor) != set(expected) | {"page_index"} or any(type(cursor[key]) is not type(value) or cursor[key] != value for key,value in expected.items()) or type(cursor["page_index"]) is not int or cursor["page_index"] < 0:
                 raise ValueError("invalid_analysis_cursor")
             index = cursor["page_index"]
-        page = database.execute("SELECT document,digest FROM analysis_export_pages WHERE input_id=%s AND kind=%s AND page_index=%s", (input_id,kind,index)).fetchone()
+        page = storage.export_page(database, input_id, kind, index)
     references = [item for item in manifest["pages"] if item["kind"] == kind]
     if not references and index == 0:
         return {"input_id":input_id,"manifest_digest":manifest["manifest_digest"],"items":[],"next_cursor":None}
@@ -246,13 +244,12 @@ def create_directory_export(store, workspace, game_ids, directory):
         if set(reservation) != {'workspace_id','input_id','manifest_digest'} or reservation['workspace_id'] != workspace:
             raise ValueError('analysis_export_resume_scope_conflict')
         with store.connect() as database:
-            row = database.execute('SELECT manifest FROM analysis_exports WHERE input_id=%s AND workspace_id=%s',
-                                   (reservation['input_id'],workspace)).fetchone()
+            row = storage.resume_manifest(database, reservation['input_id'], workspace)
             if row is None or row['manifest']['manifest_digest'] != reservation['manifest_digest']:
                 raise ValueError('analysis_export_resume_input_unavailable')
             manifest = row['manifest']
             if game_ids is not None:
-                pages = database.execute("SELECT document FROM analysis_export_pages WHERE input_id=%s AND kind='games'", (manifest['input_id'],)).fetchall()
+                pages = storage.exported_game_pages(database, manifest['input_id'])
                 frozen_games = {item['game_id'] for page in pages for item in page['document']['items']}
                 if len(game_ids) != len(set(game_ids)) or set(game_ids) != frozen_games:
                     raise ValueError('analysis_export_resume_selection_conflict')
@@ -269,7 +266,7 @@ def write_export(store, manifest, directory):
                 {key:manifest[key] for key in ('workspace_id','input_id','manifest_digest')})
     for reference in manifest["pages"]:
         with store.connect() as database:
-            page = database.execute("SELECT document FROM analysis_export_pages WHERE input_id=%s AND kind=%s AND page_index=%s", (manifest["input_id"],reference["kind"],reference["page_index"])).fetchone()["document"]
+            page = storage.referenced_page(database, manifest['input_id'], reference['kind'], reference['page_index'])["document"]
         if digest(page) != reference["digest"]:
             raise ValueError("analysis_export_digest_mismatch")
         write_exact(directory / reference["filename"], page)
