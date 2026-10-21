@@ -170,16 +170,16 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 
 ## Additional storage candidates found after the baseline
 
-The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Six additional storage/tooling sources were found by checking Redis operations and SQL constants outside the original call scan. They do not alter baseline arithmetic and must also be extracted or relocated:
+The 156-path baseline is a conservative SQL/IndexedDB scan, not an exhaustive proof of storage placement. Six additional storage/tooling sources were found by checking Redis operations and SQL constants outside the original call scan. They do not alter baseline arithmetic; their status is shown below:
 
-| Pending source | Database operations | Application responsibility to retain outside database |
+| Additional source / status | Database operations | Application responsibility to retain outside database |
 | --- | --- | --- |
 | [background_wakes.py](../backend/app/services/background_wakes.py) | Cached Redis factory and four ownership/reserve/publish/consume/abort Lua execution sites. | Existing wake lifecycle, identity, callback and queue orchestration. |
 | [background_runtime.py](../backend/app/services/background_runtime.py) | Short-timeout Redis factory, worker-slot SET with 15-second TTL, bounded MGET of sixteen slots. | Runtime snapshot/lease timing and presentation; its ContextVar `.set` calls are not Redis. |
 | [legacy_game_observation.py](../backend/app/legacy_game_observation.py) | Accepted-head and imported-game SELECTs passed through the existing reader. | One-game capture scope, legal decision plies and export authority/format. |
 | [legacy_game_capture.py](../backend/app/services/legacy_game_capture.py) | Existing metadata, finite stream/count/high-water/page SQL fragments. | Capture budget/digest/selection and finite traversal; extract with its authority/observation callers. |
-| [writer_latency.py](../backend/benchmarks/writer_latency.py) | Disposable SQLite connection/schema/inserts and writer contention tooling. | Existing benchmark reporting; whole dedicated benchmark may relocate intact. |
-| [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) | Existing native fixture setup statements, including two test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
+| Relocated [writer_latency.py](tests/benchmarks/writer_latency.py) | Disposable SQLite connection/schema/inserts and writer contention tooling. | Existing benchmark reporting; whole dedicated benchmark may relocate intact. |
+| Extracted [qualify_legacy_bridge.py](../scripts/qualify_legacy_bridge.py) fixture operations | Five existing native setup statements now live in [ownership fixture.py](ownership/fixture.py), including the two unchanged test-table DDL definitions. | Qualification allocation/orchestration stays with its current tooling owner; move only DB fixture operations, with no native execution. |
 
 The original `redis_admission_gate.py` and `study_priority.py` entries are also real control persistence, not false positives. Their Redis factories/Lua/pipeline/operations and Study-settings query now live under [redis_control](tempo_legacy_database/adapters/redis_control/README.md), preserving private namespace/client overrides and local failure/timing behavior. No actual Redis values or live services were inspected.
 
@@ -225,7 +225,7 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 | Browser connection | 1 | 0 | 0 |
 | **Total baseline** | **71** | **1** | **84** |
 
-The six additional storage/tooling sources above and application computation inside originally moved adapters are additional unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
+Additional sources above show their current extraction status; their pending operations and application computation inside originally moved adapters are further unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 
 ### Application blocks removed from originally moved adapters
 
