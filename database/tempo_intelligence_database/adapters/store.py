@@ -1,6 +1,6 @@
 """Intelligence owns every transaction here; no provider executes inside this boundary."""
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import uuid
 import time
 
@@ -15,11 +15,14 @@ from tempo_intelligence.maia_work import accept_maia, create_maia_job, maia_jobs
 from tempo_intelligence_database.ddl.migrate import expected_migrations, ANALYSIS_IMMUTABLE_TABLES, ANALYSIS_MUTABLE_COLUMNS
 from tempo_intelligence.runtime import BackgroundConnection, BACKGROUND_OPERATION_SECONDS, background_deadline
 from tempo_intelligence.serialization import public
-from tempo_intelligence.source_requests import (admit_request, cache_identity, command_request, failure_transition, inspect_request,
-    read_evidence, request_descriptors, request_snapshot, retry_eligible, validate_request_revision)
+from tempo_intelligence.source_requests import (command_request, failure_transition, inspect_request,
+    read_evidence, retry_eligible, submit_request)
+from tempo_intelligence.provider_work import claim_source, publish_source
 from tempo_intelligence_database.adapters.request_inspection import RequestInspection
 from tempo_intelligence_database.adapters.request_commands import RequestCommands
 from tempo_intelligence_database.adapters.maia_operations import MaiaOperations
+from tempo_intelligence_database.adapters.request_admission import RequestAdmission
+from tempo_intelligence_database.adapters.provider_operations import ProviderOperations
 
 
 def utcnow():
@@ -123,43 +126,14 @@ class Store:
     def _profile(self,database,descriptor):
         return require_profile(descriptor,lambda:self.configuration.model_profiles,MaiaOperations(self,database))
 
-    def submit(self,request):
-        payload=admit_request(request,self.workspace_id)
+    @contextmanager
+    def admission_transaction(self):
         with self.transaction() as database:
-            database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",("request:"+request.request_id,))
-            old=database.execute("SELECT payload FROM requests WHERE request_id=%s AND revision=%s",(request.request_id,request.request_revision)).fetchone()
-            if old:
-                if old["payload"] != payload:
-                    raise DomainError("request_replay_conflict")
-            else:
-                head=database.execute("SELECT revision FROM request_heads WHERE request_id=%s",(request.request_id,)).fetchone()
-                validate_request_revision(request,head)
-                snapshot,immutable_snapshot,snapshot_identity=request_snapshot(request)
-                database.execute("INSERT INTO snapshots VALUES(%s,%s) ON CONFLICT DO NOTHING",(snapshot_identity,Jsonb(immutable_snapshot)))
-                existing_snapshot=database.execute("SELECT payload FROM snapshots WHERE identity=%s",(snapshot_identity,)).fetchone()
-                if existing_snapshot["payload"] != immutable_snapshot:
-                    raise DomainError("snapshot_replay_conflict")
-                descriptors=request_descriptors(request,self.configuration)
-                bindings=[]
-                descriptors.sort(key=lambda descriptor:cache_identity(self.workspace_id,descriptor))
-                for descriptor in descriptors:
-                    cache_id=cache_identity(self.workspace_id,descriptor)
-                    terminal=descriptor["terminal_reason"] is not None
-                    if descriptor["kind"] == "maia" and not terminal:
-                        self._profile(database,descriptor)
-                    database.execute("INSERT INTO caches(cache_id,descriptor,input_snapshot,kind,state) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(cache_id,Jsonb(descriptor),Jsonb(snapshot),descriptor["kind"],"terminal" if terminal else "queued"))
-                    bindings.append({"kind":descriptor["kind"],"cache_id":cache_id})
-                    cache=database.execute("SELECT * FROM caches WHERE cache_id=%s FOR UPDATE",(cache_id,)).fetchone()
-                    if not terminal and cache["state"] == "complete":
-                        accepted=database.execute("SELECT accepted_at FROM evidence WHERE evidence_id=%s",(cache["accepted_id"],)).fetchone()
-                        if accepted and accepted["accepted_at"] + timedelta(seconds=request.max_age_seconds) <= utcnow():
-                            self._new_generation(database,cache)
-                    cache=database.execute("SELECT * FROM caches WHERE cache_id=%s",(cache_id,)).fetchone()
-                    if cache["kind"] == "maia" and cache["state"] == "queued":
-                        self._maia_job(database,cache)
-                database.execute("INSERT INTO requests(request_id,revision,payload,bindings) VALUES(%s,%s,%s,%s)",(request.request_id,request.request_revision,Jsonb(payload),Jsonb(bindings)))
-                database.execute("INSERT INTO request_heads VALUES(%s,%s) ON CONFLICT(request_id) DO UPDATE SET revision=excluded.revision",(request.request_id,request.request_revision))
-        return self.inspect(request.request_id)
+            yield RequestAdmission(self,database)
+
+    def submit(self,request):
+        return submit_request(request,lambda:self.workspace_id,lambda:self.configuration,self.admission_transaction,
+            lambda:self.inspect,lambda:utcnow())
 
     def _maia_job(self,database,cache):
         return create_maia_job(cache,lambda:self.workspace_id,MaiaOperations(self,database))
@@ -257,24 +231,13 @@ class Store:
                 database.execute("UPDATE credential_registrations SET status='revoked' WHERE registration_id=%s",(head["registration_id"],))
             return self._credential_status(database)
 
-    def claim(self):
+    @contextmanager
+    def provider_transaction(self):
         with self.transaction(background=True) as database:
-            control=database.execute("SELECT * FROM provider_control WHERE id=1 FOR UPDATE SKIP LOCKED").fetchone()
-            now=utcnow()
-            if not control or (control["next_attempt_at"] and control["next_attempt_at"]>now) or (control["leased_until"] and control["leased_until"]>now):
-                return None
-            cache=database.execute("SELECT * FROM caches WHERE kind<>'maia' AND descriptor->>'provider_origin'=%s AND ((state IN ('queued','retry_wait','waiting_credentials') AND (next_attempt_at IS NULL OR next_attempt_at<=now())) OR (state='running' AND leased_until<=now())) ORDER BY updated_at,cache_id FOR UPDATE SKIP LOCKED LIMIT 1",(self.configuration.provider_base_url,)).fetchone()
-            if not cache:
-                return None
-            credential=self._credential_status(database)
-            if credential["status"] not in ("registered","accepted"):
-                database.execute("UPDATE caches SET state='waiting_credentials',error_code=%s,next_attempt_at=now()+interval '60 seconds',lease_token=NULL,leased_until=NULL WHERE cache_id=%s",(credential["status"],cache["cache_id"]))
-                return None
-            lease=uuid.uuid4().hex
-            row=database.execute("UPDATE caches SET state='running',execution_generation=execution_generation+1,lease_token=%s,leased_until=now()+interval '60 seconds',updated_at=now() WHERE cache_id=%s RETURNING *",(lease,cache["cache_id"])).fetchone()
-            database.execute("UPDATE provider_control SET lease_token=%s,leased_until=now()+interval '60 seconds' WHERE id=1",(lease,))
-            row["credential"]=credential
-            return row
+            yield ProviderOperations(self,database)
+
+    def claim(self):
+        return claim_source(self.provider_transaction,lambda:utcnow(),lambda:uuid.uuid4().hex)
 
     def _fenced(self,database,claim):
         return database.execute("SELECT * FROM caches WHERE cache_id=%s AND generation=%s AND execution_generation=%s AND lease_token=%s AND leased_until>now() AND state='running' FOR UPDATE",(claim["cache_id"],claim["generation"],claim["execution_generation"],claim["lease_token"])).fetchone()
@@ -289,17 +252,7 @@ class Store:
         return evidence_id
 
     def publish(self,claim,payload):
-        with self.transaction(background=True) as database:
-            # Provider control is always locked before a cache, matching claim order.
-            database.execute("SELECT id FROM provider_control WHERE id=1 FOR UPDATE")
-            cache=self._fenced(database,claim)
-            if not cache:
-                return False
-            self._append(database,cache,{**payload,"retrieval_id":uuid.uuid4().hex,"retrieved_at":utcnow().isoformat()})
-            credential=claim["credential"]
-            database.execute("UPDATE credential_registrations SET status='accepted' WHERE registration_id=%s AND generation=%s AND status='registered'",(credential["registration_id"],credential["generation"]))
-            self._release_provider(database,claim)
-            return True
+        return publish_source(claim,payload,self.provider_transaction,lambda:uuid.uuid4().hex,lambda:utcnow())
 
     def fail(self,claim,code,retryable=False,retry_at=None,auth_failed=False,cancelled=False):
         with self.transaction(background=True) as database:

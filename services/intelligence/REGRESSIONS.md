@@ -500,3 +500,20 @@ stale/transition rejection, historical retry constraints and current-budget
 refresh; the historical fixture now patches the builder at its moved application
 lookup. Those native proofs were preserved in source and were not executed by
 the bounded extraction checks.
+
+## Request admission and provider-source composition
+
+`tests/test_source_admission.py` owns the complete moved submit, claim and publish
+workflows with actual Store/fixed operations and synthetic fake rows. Admission
+retains sorted cache locks, same-connection profile/generation/Maia effects,
+expired accepted-evidence refresh and inspection after the write commits.
+Request/snapshot replay conflicts stop before cache work; successful replay
+inspects only after the write context closes. Claim keeps the clock observation
+after the provider lock even when no control exists, skips later operations for
+cooldown/no-cache, and preserves credential-missing versus leased-work effects.
+Publication keeps control/fence order, stale-lease rejection before metadata,
+writer lookup before UUID/clock, append before registration update and release
+last. These cases use no real credential material or provider/network access.
+Existing synthetic worker slice cases retain off-thread storage and event-loop
+HTTP ownership; native lease/concurrency proofs remain separate and unexecuted
+by this move.

@@ -557,3 +557,63 @@ now identifies seven remaining mixed methods: `submit`, `_credential_status`,
 unfinished extraction work. No native/live database, actual engine/provider,
 private credential, security/grant, full-system, CI, deployment or merge action
 was exercised or qualified by this slice.
+
+## Complete request admission and provider-source workflows — October 21, 2026
+
+`Store.submit`, `claim` and `publish` now compose complete existing application
+workflows in `source_requests.submit_request` and `provider_work.py`. Fixed
+`RequestAdmission` and `ProviderOperations` retain parameter-bound SQL,
+request/snapshot replay guards, leases/fences and ordered writes on the same
+caller-owned connections. Store lends the unchanged write and `background=True`
+contexts. This introduces three module paths; fresh package discovery is checked
+for those paths, without installing or changing the shared review environment.
+
+**52 current-source cases passed**: 11 new actual-composition/fixed-row cases,
+38 existing source-policy cases, one existing HTTP worker-payload case and two
+bounded synthetic worker cases. The same 11 new boundary cases also passed
+against the saved original Store (comparison evidence, not 63 distinct current
+cases). No selected case failed. The upstream Starlette/AnyIO deprecation remains
+unsuppressed. All provider/credential-status facts and UUIDs used here are
+synthetic; no private file, actual provider/network or native database is accessed.
+
+```sh
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest services/intelligence/tests/test_source_admission.py services/intelligence/tests/test_source_requests.py services/intelligence/tests/test_api.py::test_valid_versioned_requests_and_worker_payloads_reach_their_own_ports services/intelligence/tests/test_worker.py::test_worker_without_claim_performs_no_provider_or_failure_operation services/intelligence/tests/test_worker.py::test_successful_slice_offloads_database_calls_and_keeps_http_on_event_loop -q --rootdir=. -o pythonpath= --import-mode=importlib
+PYTHONPATH=services/intelligence/src:database:contracts/analysis-jobs/src:packages/chess-core/src /tmp/tempo-db-review-venv/bin/python -m pytest /tmp/tempo_intelligence_admission_provider_original_test.py -q --rootdir=. -o pythonpath= --import-mode=importlib
+python3 /tmp/tempo-intelligence-admission-provider-source-proof.py
+/tmp/tempo-db-review-venv/bin/python -m build services/intelligence --no-isolation --outdir /tmp/tempo-intelligence-admission-provider-build
+python3 /tmp/tempo-intelligence-admission-provider-artifact-proof.py
+```
+
+One-time fixed-operation expansion matches all three complete original method
+sequences, including all 18 moved query strings/call points, guards and parameter
+order. The other 31 Store methods and all 11 prior source-request helpers remain
+AST-identical. The original transaction options and lazy workspace/configuration/
+inspection/clock/UUID expressions match. Original/current event proofs retain
+sorted cache locks and post-commit inspection; provider lock → clock → cache →
+status → lease order and early exits; and publication fence → writer lookup →
+UUID → clock → append → registration-result update → release order.
+
+The fresh source distribution rebuilds its wheel. Six current implementation/doc
+files match wheel bytes and nine current implementation/test/doc files match
+source-distribution bytes; neither archive includes Python caches. An isolated
+import smoke loads all five moved/wired modules from the fresh wheel, using source
+paths only for declared pure contract/chess dependencies, with no initialization
+or connection. Three owner Mermaid blocks parse with the existing tooling;
+scoped Python syntax, whitespace/conflict and local Markdown links pass. GitHub
+rendering was not inspected; installed-consumer and native runtime qualification
+are not established by these checks.
+
+Original files remain under `/tmp/tempo-intelligence-admission-provider-before/`;
+logs, one-time proof scripts and distributions remain in the matching
+`/tmp/tempo-intelligence-admission-provider-*` paths. Exact final file/artifact
+hashes and the 36-method classification are in
+`/tmp/tempo-intelligence-admission-provider-evidence.json`. These task-owned
+artifacts are retained for integration; the shared toolchain remains unchanged.
+
+The remaining mixed Store methods are `_credential_status`, `credential_status`,
+`credential_reload` and `credential_revoke`; their source-only separation is a
+later batch. `fail` retains its existing fenced, ordered fixed-effect application
+around the already extracted failure decision. The separate AnalysisStore audit
+remains outstanding. No native/live database, actual engine/provider, private
+credential, security/grant, full-system, CI, deployment or merge action was
+performed or qualified here.

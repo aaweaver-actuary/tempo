@@ -122,3 +122,37 @@ def read_evidence(evidence_id,workspace,transaction):
     with transaction() as reader:
         row=reader.evidence(evidence_id)
         return public({"schema_version":1,"workspace_id":workspace(),**row})
+
+
+def submit_request(request,workspace,configuration,transaction,inspection,clock):
+    payload=admit_request(request,workspace())
+    with transaction() as operations:
+        operations.lock(request)
+        old=operations.previous(request)
+        if old:
+            operations.verify_replay(old,payload)
+        else:
+            head=operations.head(request)
+            validate_request_revision(request,head)
+            snapshot,immutable_snapshot,snapshot_identity=request_snapshot(request)
+            operations.snapshot(snapshot_identity,immutable_snapshot)
+            descriptors=request_descriptors(request,configuration())
+            bindings=[]
+            descriptors.sort(key=lambda descriptor:cache_identity(workspace(),descriptor))
+            for descriptor in descriptors:
+                cache_id=cache_identity(workspace(),descriptor)
+                terminal=descriptor["terminal_reason"] is not None
+                if descriptor["kind"] == "maia" and not terminal:
+                    operations.profile(descriptor)
+                operations.initialize_cache(cache_id,descriptor,snapshot,"terminal" if terminal else "queued")
+                bindings.append({"kind":descriptor["kind"],"cache_id":cache_id})
+                cache=operations.locked_cache(cache_id)
+                if not terminal and cache["state"] == "complete":
+                    accepted=operations.accepted(cache)
+                    if accepted and accepted["accepted_at"] + timedelta(seconds=request.max_age_seconds) <= clock():
+                        operations.new_generation(cache)
+                cache=operations.cache(cache_id)
+                if cache["kind"] == "maia" and cache["state"] == "queued":
+                    operations.maia_job(cache)
+            operations.save(request,payload,bindings)
+    return inspection()(request.request_id)

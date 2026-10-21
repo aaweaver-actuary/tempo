@@ -23,7 +23,7 @@ semantics, and [REGRESSIONS.md](REGRESSIONS.md) for owning tests.
 [`source_requests.py`](src/tempo_intelligence/source_requests.py) owns existing
 request/revision admission, snapshot preparation, source descriptor/cache identity,
 captured-source inspection, retry/failure decisions and complete request
-inspection/refresh/retry application workflows.
+admission/inspection/refresh/retry application workflows.
 [`serialization.py`](src/tempo_intelligence/serialization.py) owns nested public
 JSON value conversion. The pure decisions use existing request/configuration
 facts. The complete `inspect_request` application workflow consumes the fixed
@@ -35,6 +35,9 @@ flowchart LR
   store[Intelligence Store composition] -->|request admission and identity| policy[Source request policy]
   store -->|retry and failure decisions at existing call points| policy
   store -->|query and transaction authority| tables[(Intelligence tables)]
+  store --> admission[Request admission application]
+  admission -->|same owner write transaction| admit[Fixed request admission operations and replay guards]
+  admit --> tables
   store --> inspection[Request inspection application]
   inspection -->|one initial owner read snapshot| reader[Fixed request inspection reader]
   reader --> tables
@@ -47,8 +50,12 @@ flowchart LR
   analysis[AnalysisStore responses] --> serializer
 ```
 
-The centralized Store still prepares descriptors, initializes bindings, sorts,
-then locks/processes each cache and appends its binding in the existing order.
+The complete `submit_request` application still prepares descriptors, initializes
+bindings, sorts, then locks/processes each cache and appends its binding in the
+existing order. Store supplies its unchanged write transaction through
+[fixed request admission operations](../../database/tempo_intelligence_database/adapters/request_admission.py).
+Request/snapshot replay guards remain in that adapter; final inspection still
+begins after the write context closes.
 Provider-origin lookup remains inside the existing descriptor loop and retry
 short-circuit predicate. Source inspection and failure decisions receive the
 existing clock/retry callbacks; freshness still calls the clock only with accepted
@@ -119,7 +126,37 @@ or model execution. `tests/test_maia_work.py` exercises these moved boundaries
 with the actual composition/fixed operations and fake rows; existing contract
 validation and native durability/concurrency proofs retain their separate owners.
 The [full Store inventory](../../database/tempo_intelligence_database/adapters/README.md#complete-store-responsibility-inventory)
-still identifies seven mixed methods and the separate unfinished Analysis audit.
+still identifies four mixed credential methods and the separate unfinished Analysis audit.
+
+## Provider-source claim and publication boundary
+
+**Implemented source in this unmerged extraction; deployment unverified.**
+[`provider_work.py`](src/tempo_intelligence/provider_work.py) owns the existing
+source claim/admission and accepted-publication workflow. It consumes fixed
+owner operations and synthetic/configured facts; network work and private
+credential loading remain in their existing separate owners.
+
+```mermaid
+flowchart LR
+  store[Store background transaction owner] --> claim[Source claim application]
+  store --> publish[Source publication application]
+  claim -->|control / cache / status / leases| fixed[Fixed provider operations]
+  publish -->|control lock / fence / append / accept / release| fixed
+  fixed --> tables[(Intelligence provider / cache / evidence / registration tables)]
+  fixed --> facts[Existing credential-status capability]
+```
+
+The [fixed adapter](../../database/tempo_intelligence_database/adapters/provider_operations.py)
+keeps complete queries, configured-origin binding, lease/fence operations and
+registration-result writes in the one root database tree. Store supplies the
+existing `background=True` transaction. Claim retains control-lock → clock →
+cache → credential-status → UUID → cache lease → provider lease order and every
+early exit. The status capability here reads existing owner facts; it does not
+load private material. Publication retains control-lock → fence → writer lookup
+→ UUID → clock → append → registration-result update → release order. No query
+port, independent commit, provider call, private credential access or lease redesign is
+introduced. `tests/test_source_admission.py` owns the moved request/provider
+boundaries with actual fixed operations, fake rows and synthetic metadata.
 
 ## Install and run
 
