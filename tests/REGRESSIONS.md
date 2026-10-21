@@ -5026,3 +5026,8 @@ retained incomplete inventory. They do not execute a real tool, build or Docker.
 - `backend/tests/test_frozen_opening_schema.py`: `test_frozen_sqlite_schema_import_is_independent_of_application_and_connections`, `test_frozen_sqlite_schema_replay_preserves_activation_and_foreign_keys`, and the three operations in `test_frozen_sqlite_guards_invalidate_only_pending_runs_in_the_callers_transaction` preserve SQLite DDL replay, constraints and transactional invalidation. They open only in-memory SQLite, never live storage.
 - `backend/tests/test_frozen_opening_order.py::test_frozen_annotation_preserves_generator_and_inactive_input_behavior` preserves the composition seam's existing iterable and no-active-order behavior. The original 19 selection, exposure, stale-plan and rollback cases remain unchanged apart from importing relocated fixture DDL.
 - Existing native PostgreSQL proofs remain in `database/tests/test-frozen-postgres.py`. Source SQL/DDL equality and SQLite passes do not establish native PostgreSQL execution; no live database or native service was opened for this split.
+
+
+## Database browser connection-storage relocation
+
+Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-regressions.test.tsx` and `study-composition-regressions.test.ts` retain their assertions after IndexedDB inspection and Web Storage operations move to `database/browser/study-connection-storage.ts`. They continue to own retained records, authority fences, storage failures, cached startup and the Study loaded-graph boundary. The application wrapper keeps its public signatures; no live browser storage is read by these fake-IndexedDB tests.
