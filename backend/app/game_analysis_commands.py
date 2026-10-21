@@ -15,6 +15,7 @@ from .services.engine_diagnostics import record_engine_outcome
 from .services.background_metrics import increment
 from tempo_legacy_database.connections import background_read_connection
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.games import analysis_leases as storage
 from .services.game_analysis_worker import _confirmed_indices, _positions
 from .services.threat_pipeline import ENGINE_VERSION, NETWORK_VERSION
 from .services.threat_pipeline import report_from_json, validate_analysis_report
@@ -27,36 +28,15 @@ def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) 
     now_text = now.isoformat()
     if not ordinary_selection_allowed(database):
         return {"job": None}
-    job = database.execute_native(
-        "SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,"
-        "g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,"
-        "c.divergence_ply "
-        "FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
-        "LEFT JOIN current_repertoire_comparisons c ON c.game_id=g.id "
-        "LEFT JOIN background_activity control ON control.source='game_analysis' "
-        "AND control.work_id=j.game_id "
-        "WHERE (j.status='queued' OR (j.status='leased' AND j.lease_expires_at<%s)) "
-        "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
-        "AND COALESCE(control.paused,0)=0 "
-        "ORDER BY COALESCE(control.promoted,0) DESC,g.played_at DESC,j.game_id "
-        "LIMIT 1 FOR UPDATE OF j,g SKIP LOCKED",
-        (now_text,),
-    ).fetchone()
+    job = storage.next_parent(database, now_text)
     if job is None:
         return {"job": None}
     lease_id = str(uuid.uuid4())
     expires_at = (now + timedelta(minutes=5)).isoformat()
-    accepted_parent = database.execute_native(
-        "UPDATE game_analysis_jobs SET status='leased',lease_id=%s,lease_expires_at=%s,"
-        "attempts=attempts+1,updated_at=%s WHERE game_id=%s",
-        (lease_id, expires_at, now_text, job["game_id"]),
-    )
-    if accepted_parent.rowcount != 1:
+    accepted_parent = storage.lease_parent(database, job["game_id"], lease_id, expires_at, now_text)
+    if accepted_parent != 1:
         return {"job": None}
-    database.execute_native(
-        "UPDATE imported_games SET analysis_state='analyzing' WHERE id=%s",
-        (job["game_id"],),
-    )
+    storage.mark_game_analyzing(database, job["game_id"])
     record_ordinary_selection(database)
     return {"job": {**dict(job), "moves": json.loads(job["moves_json"]),
                     "lease_id": lease_id, "lease_expires_at": expires_at}}
@@ -69,27 +49,10 @@ def prepare_position_claim(preferred_game_id: str | None = None) -> dict[str, An
     """Read a candidate, then traverse its chess history after closing PostgreSQL."""
 
     with background_read_connection() as database:
-        candidate = database.execute_native(
-            "SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,"
-            "g.start_fen,g.moves_json,c.divergence_ply "
-            "FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
-            "LEFT JOIN current_repertoire_comparisons c ON c.game_id=g.id "
-            "LEFT JOIN background_activity control ON control.source='game_analysis' "
-            "AND control.work_id=j.game_id "
-            "WHERE (j.status='queued' OR (j.status='leased' AND j.lease_expires_at<%s)) "
-            "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
-            "AND COALESCE(control.paused,0)=0 "
-            + ("AND j.game_id=%s " if preferred_game_id is not None else "") +
-            "ORDER BY COALESCE(control.promoted,0) DESC,g.played_at DESC,j.game_id LIMIT 1",
-            (datetime.now(timezone.utc).isoformat(), *((preferred_game_id,) if preferred_game_id is not None else ())),
-        ).fetchone()
+        candidate = storage.prepared_candidate(database, preferred_game_id, datetime.now(timezone.utc).isoformat())
         if candidate is None:
             return None
-        saved_reports = [dict(row) for row in database.execute_native(
-            "SELECT scan_pass,position_index,report_json,state FROM game_analysis_position_reports "
-            "WHERE game_id=%s AND analysis_version=%s",
-            (candidate["game_id"], candidate["analysis_version"]),
-        )]
+        saved_reports = storage.saved_position_reports(database, candidate["game_id"], candidate["analysis_version"])
     moves = json.loads(candidate["moves_json"])
     positions = _positions(candidate["start_fen"], moves)
     completed = {(row["scan_pass"], row["position_index"]): json.loads(row["report_json"])
@@ -132,12 +95,7 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
     now_text = now.isoformat()
     if not ordinary_selection_allowed(database):
         return {"job": None}
-    parent = database.execute_native(
-        "SELECT j.analysis_version,j.analysis_evidence_version,j.status,j.lease_expires_at,"
-        "g.rated,g.speed FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
-        "WHERE j.game_id=%s FOR UPDATE OF j,g SKIP LOCKED",
-        (plan["game_id"],),
-    ).fetchone()
+    parent = storage.lock_parent(database, plan["game_id"])
     if (parent is None or parent["analysis_version"] != plan["analysis_version"]
             or parent["analysis_evidence_version"] != plan["analysis_evidence_version"]
             or not parent["rated"] or parent["speed"] not in {"blitz", "rapid", "classical"}
@@ -145,46 +103,26 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
                     parent["status"] == "leased" and parent["lease_expires_at"] is not None
                     and parent["lease_expires_at"] < now_text)):
         return {"job": None}
-    control = database.execute_native(
-        "SELECT paused FROM background_activity WHERE source='game_analysis' AND work_id=%s",
-        (plan["game_id"],),
-    ).fetchone()
+    control = storage.analysis_control(database, plan["game_id"])
     if control is not None and control["paused"]:
         return {"job": None}
     position_index = plan["position_index"]
     existing = None
     if position_index is not None:
-        existing = database.execute_native(
-            "SELECT id,state,lease_expires_at FROM game_analysis_position_reports "
-            "WHERE game_id=%s AND analysis_version=%s AND scan_pass=%s AND position_index=%s FOR UPDATE",
-            (plan["game_id"], plan["analysis_version"], plan["scan_pass"], position_index),
-        ).fetchone()
+        existing = storage.lock_position(database, plan["game_id"], plan["analysis_version"], plan["scan_pass"], position_index)
         if existing is not None and existing["state"] == "failed":
-            database.execute_native(
-                "UPDATE game_analysis_jobs SET status='failed',lease_id=NULL,lease_expires_at=NULL,"
-                "last_error='A game position exhausted its engine retries',updated_at=%s "
-                "WHERE game_id=%s", (now_text, plan["game_id"]),
-            )
-            database.execute_native(
-                "UPDATE imported_games SET analysis_state='failed' WHERE id=%s",
-                (plan["game_id"],),
-            )
+            storage.fail_exhausted_parent(database, plan["game_id"], now_text)
+            storage.mark_game_failed(database, plan["game_id"])
             return {"job": None}
         if existing is not None and (existing["state"] == "complete" or
                 existing["state"] == "leased" and existing["lease_expires_at"] is not None
                 and existing["lease_expires_at"] >= now_text):
             return {"job": None}
     parent_lease_id = str(uuid.uuid4())
-    accepted_parent = database.execute_native(
-        "UPDATE game_analysis_jobs SET status='leased',lease_id=%s,lease_expires_at=%s,"
-        "attempts=attempts+1,updated_at=%s WHERE game_id=%s",
-        (parent_lease_id, (now + timedelta(minutes=5)).isoformat(), now_text, plan["game_id"]),
-    )
-    if accepted_parent.rowcount != 1:
+    accepted_parent = storage.lease_parent(database, plan["game_id"], parent_lease_id, (now + timedelta(minutes=5)).isoformat(), now_text)
+    if accepted_parent != 1:
         return {"job": None}
-    database.execute_native(
-        "UPDATE imported_games SET analysis_state='analyzing' WHERE id=%s", (plan["game_id"],),
-    )
+    storage.mark_game_analyzing(database, plan["game_id"])
     increment(database, "engine_game", plan["game_id"], claims=1,
               **({"lease_expiries": 1, "lease_reclaims": 1, "generation_restarts": 1}
                  if parent["status"] == "leased" else {}))
@@ -193,23 +131,11 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
         return {"job": {"kind": "finalize", "game_id": plan["game_id"],
                         "lease_id": parent_lease_id}}
     if plan["kind"] == "terminal":
-        accepted_position = database.execute_native(
-            "INSERT INTO game_analysis_position_reports("
-            "id,game_id,analysis_version,scan_pass,position_index,request_json,report_json,state,updated_at) "
-            "VALUES(%s,%s,%s,%s,%s,'{}',%s,'complete',%s) "
-            "ON CONFLICT(game_id,analysis_version,scan_pass,position_index) DO NOTHING",
-            (str(uuid.uuid4()), plan["game_id"], plan["analysis_version"], plan["scan_pass"],
-             position_index, json.dumps({"terminal": plan["terminal"]}), now_text),
-        )
-        if accepted_position.rowcount != 1:
+        accepted_position = storage.add_terminal_position(database, str(uuid.uuid4()), plan["game_id"], plan["analysis_version"], plan["scan_pass"], position_index, json.dumps({"terminal": plan["terminal"]}), now_text)
+        if accepted_position != 1:
             raise HTTPException(409, "Game position changed; retry the claim")
-        database.execute_native(
-            "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
-            "updated_at=%s WHERE game_id=%s", (now_text, plan["game_id"]),
-        )
-        database.execute_native(
-            "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (plan["game_id"],),
-        )
+        storage.requeue_terminal_parent(database, plan["game_id"], now_text)
+        storage.mark_game_pending(database, plan["game_id"])
         record_ordinary_selection(database)
         return {"job": None}
     position_lease_id = str(uuid.uuid4())
@@ -217,22 +143,10 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
     request_json = json.dumps(plan["request"], sort_keys=True)
     expires_at = (now + timedelta(minutes=2)).isoformat()
     if existing:
-        accepted_position = database.execute_native(
-            "UPDATE game_analysis_position_reports SET state='leased',lease_id=%s,"
-            "parent_lease_id=%s,lease_expires_at=%s,request_json=%s,attempts=attempts+1,"
-            "updated_at=%s WHERE id=%s",
-            (position_lease_id, parent_lease_id, expires_at, request_json, now_text, report_id),
-        )
+        accepted_position = storage.lease_existing_position(database, report_id, position_lease_id, parent_lease_id, expires_at, request_json, now_text)
     else:
-        accepted_position = database.execute_native(
-            "INSERT INTO game_analysis_position_reports("
-            "id,game_id,analysis_version,scan_pass,position_index,request_json,state,"
-            "lease_id,parent_lease_id,lease_expires_at,attempts,updated_at) "
-            "VALUES(%s,%s,%s,%s,%s,%s,'leased',%s,%s,%s,1,%s)",
-            (report_id, plan["game_id"], plan["analysis_version"], plan["scan_pass"],
-             position_index, request_json, position_lease_id, parent_lease_id, expires_at, now_text),
-        )
-    if accepted_position.rowcount != 1:
+        accepted_position = storage.lease_new_position(database, report_id, plan["game_id"], plan["analysis_version"], plan["scan_pass"], position_index, request_json, position_lease_id, parent_lease_id, expires_at, now_text)
+    if accepted_position != 1:
         raise HTTPException(409, "Game position changed; retry the claim")
     record_ordinary_selection(database)
     return {"job": {"kind": "search", "id": report_id, "game_id": plan["game_id"],
@@ -245,9 +159,7 @@ register_command("games.analysis.position.claim", claim_game_analysis_position)
 
 def prepare_position_report(report_id: str, raw_report: dict[str, Any]) -> str:
     with background_read_connection() as database:
-        row = database.execute_native(
-            "SELECT request_json FROM game_analysis_position_reports WHERE id=%s", (report_id,),
-        ).fetchone()
+        row = storage.report_request(database, report_id)
     if row is None:
         raise KeyError("Game position request not found")
     request_json = row["request_json"]
@@ -263,10 +175,7 @@ def publish_position_report(database: PostgresConnection, payload: dict[str, Any
     report_id = str(payload["report_id"])
     lease_id = str(payload["lease_id"])
     raw_report = payload["report"]
-    stored = database.execute_native(
-        "SELECT game_id,request_json,report_json,state,lease_id,parent_lease_id "
-        "FROM game_analysis_position_reports WHERE id=%s FOR UPDATE", (report_id,),
-    ).fetchone()
+    stored = storage.lock_report_for_publication(database, report_id)
     report_json = json.dumps(raw_report)
     if stored is None:
         raise HTTPException(422, "Game position request not found")
@@ -276,21 +185,11 @@ def publish_position_report(database: PostgresConnection, payload: dict[str, Any
             or stored["request_json"] != payload["request_json"]):
         raise HTTPException(422, "Game position lease is stale")
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "UPDATE game_analysis_position_reports SET state='complete',report_json=%s,"
-        "lease_id=NULL,parent_lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=%s "
-        "WHERE id=%s", (report_json, now, report_id),
-    )
+    storage.complete_position(database, report_id, report_json, now)
     record_engine_outcome(database, "engine_game", report_id, payload, completed=True)
-    released = database.execute_native(
-        "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
-        "last_error=NULL,updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s "
-        "RETURNING game_id", (now, stored["game_id"], stored["parent_lease_id"]),
-    ).fetchone()
+    released = storage.release_completed_position_parent(database, stored["game_id"], stored["parent_lease_id"], now)
     if released is not None:
-        database.execute_native(
-            "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (stored["game_id"],),
-        )
+        storage.mark_game_pending(database, stored["game_id"])
     return {"status": "complete"}
 
 
@@ -298,37 +197,18 @@ def release_position_report(database: PostgresConnection, payload: dict[str, Any
     report_id = str(payload["report_id"])
     lease_id = str(payload["lease_id"])
     error = payload.get("error")
-    row = database.execute_native(
-        "SELECT game_id,parent_lease_id,attempts FROM game_analysis_position_reports "
-        "WHERE id=%s AND state='leased' AND lease_id=%s FOR UPDATE",
-        (report_id, lease_id),
-    ).fetchone()
+    row = storage.lock_position_release(database, report_id, lease_id)
     if row is None:
         return {"status": "stale"}
     failed = error is not None and row["attempts"] >= 3
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "UPDATE game_analysis_position_reports SET state=%s,lease_id=NULL,parent_lease_id=NULL,"
-        "lease_expires_at=NULL,last_error=%s,updated_at=%s WHERE id=%s",
-        ("failed" if failed else "queued", error, now, report_id),
-    )
+    storage.release_position(database, report_id, "failed" if failed else "queued", error, now)
     record_engine_outcome(database, "engine_game", report_id, payload)
     if error:
-        database.execute_native(
-            "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) "
-            "VALUES(%s,%s,%s,%s)", (report_id, row["game_id"], error, now),
-        )
-    parent = database.execute_native(
-        "UPDATE game_analysis_jobs SET status=%s,lease_id=NULL,lease_expires_at=NULL,"
-        "last_error=%s,updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s "
-        "RETURNING game_id",
-        ("failed" if failed else "queued", error, now, row["game_id"], row["parent_lease_id"]),
-    ).fetchone()
+        storage.record_position_error(database, report_id, row["game_id"], error, now)
+    parent = storage.release_failed_position_parent(database, row["game_id"], row["parent_lease_id"], "failed" if failed else "queued", error, now)
     if parent is not None:
-        database.execute_native(
-            "UPDATE imported_games SET analysis_state=%s WHERE id=%s",
-            ("failed" if failed else "pending", row["game_id"]),
-        )
+        storage.set_game_analysis_state(database, row["game_id"], "failed" if failed else "pending")
     return {"status": "failed" if failed else "queued"}
 
 
@@ -340,31 +220,18 @@ def fail_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) 
     game_id, lease_id = str(payload["game_id"]), str(payload["lease_id"])
     error = str(payload["error"])
     now = datetime.now(timezone.utc).isoformat()
-    failed = database.execute_native(
-        "UPDATE game_analysis_jobs SET status='failed',lease_id=NULL,lease_expires_at=NULL,"
-        "last_error=%s,updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s "
-        "RETURNING game_id", (error, now, game_id, lease_id),
-    ).fetchone()
+    failed = storage.fail_parent(database, game_id, lease_id, error, now)
     if failed is None:
-        exists = database.execute_native(
-            "SELECT 1 FROM game_analysis_jobs WHERE game_id=%s", (game_id,),
-        ).fetchone()
+        exists = storage.parent_exists(database, game_id)
         raise HTTPException(409 if exists else 404,
                             "Analysis lease is no longer active" if exists else "Analysis job not found")
-    database.execute_native(
-        "UPDATE imported_games SET analysis_state='failed' WHERE id=%s", (game_id,),
-    )
+    storage.mark_game_failed(database, game_id)
     return {"status": "failed", "retryable": True}
 
 
 def heartbeat_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
     now = datetime.now(timezone.utc)
-    updated = database.execute_native(
-        "UPDATE game_analysis_jobs SET lease_expires_at=%s,updated_at=%s "
-        "WHERE game_id=%s AND status='leased' AND lease_id=%s RETURNING game_id",
-        ((now + timedelta(minutes=5)).isoformat(), now.isoformat(),
-         str(payload["game_id"]), str(payload["lease_id"])),
-    ).fetchone()
+    updated = storage.heartbeat_parent(database, str(payload["game_id"]), str(payload["lease_id"]), (now + timedelta(minutes=5)).isoformat(), now.isoformat())
     if updated is None:
         raise HTTPException(409, "Analysis lease is no longer active")
     return {"status": "leased"}
@@ -372,44 +239,21 @@ def heartbeat_parent_analysis(database: PostgresConnection, payload: dict[str, A
 
 def release_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
     game_id = str(payload["game_id"])
-    updated = database.execute_native(
-        "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
-        "updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s RETURNING game_id",
-        (datetime.now(timezone.utc).isoformat(), game_id, str(payload["lease_id"])),
-    ).fetchone()
+    updated = storage.release_parent(database, game_id, str(payload["lease_id"]), datetime.now(timezone.utc).isoformat())
     if updated is not None:
-        database.execute_native(
-            "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (game_id,),
-        )
+        storage.mark_game_pending(database, game_id)
     return {"status": "queued" if updated is not None else "stale"}
 
 
 def retry_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
     game_id = str(payload["game_id"])
     now = datetime.now(timezone.utc).isoformat()
-    retried = database.execute_native(
-        "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
-        "last_error=NULL,updated_at=%s WHERE game_id=%s AND status='failed' "
-        "RETURNING analysis_version", (now, game_id),
-    ).fetchone()
+    retried = storage.retry_failed_parent(database, game_id, now)
     if retried is None:
         raise HTTPException(409, "Only failed analysis jobs can be retried")
-    database.execute_native(
-        "UPDATE game_analysis_position_reports SET state='queued',attempts=0,"
-        "lease_id=NULL,parent_lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=%s "
-        "WHERE game_id=%s AND analysis_version=%s AND state='failed'",
-        (now, game_id, retried["analysis_version"]),
-    )
-    database.execute_native(
-        "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (game_id,),
-    )
-    database.execute_native(
-        "INSERT INTO background_activity(source,work_id,paused,phase,updated_at) "
-        "VALUES('game_analysis',%s,0,'Queued',%s) "
-        "ON CONFLICT(source,work_id) DO UPDATE SET paused=0,phase='Queued',"
-        "completed_units=NULL,total_units=NULL,updated_at=excluded.updated_at",
-        (game_id, now),
-    )
+    storage.retry_failed_positions(database, game_id, retried["analysis_version"], now)
+    storage.mark_game_pending(database, game_id)
+    storage.mark_activity_queued(database, game_id, now)
     return {"status": "queued"}
 
 
@@ -423,28 +267,13 @@ def repair_one_stockfish_timeout(
     database: PostgresConnection, _payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Requeue one legacy timeout while fencing concurrent repair workers."""
-    row = database.execute_native(
-        "SELECT game_id,last_error FROM game_analysis_jobs "
-        "WHERE status='failed' AND last_error='Stockfish took too long' "
-        "ORDER BY updated_at,game_id LIMIT 1 FOR UPDATE SKIP LOCKED"
-    ).fetchone()
+    row = storage.legacy_timeout_candidate(database)
     if row is None:
         return {"requeued": False}
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) "
-        "VALUES(%s,%s,%s,%s)",
-        (f"legacy:{row['game_id']}", row["game_id"], row["last_error"], now),
-    )
-    database.execute_native(
-        "UPDATE game_analysis_jobs SET status='queued',last_error=NULL,lease_id=NULL,"
-        "lease_expires_at=NULL,updated_at=%s WHERE game_id=%s",
-        (now, row["game_id"]),
-    )
-    database.execute_native(
-        "UPDATE imported_games SET analysis_state='pending' WHERE id=%s",
-        (row["game_id"],),
-    )
+    storage.record_position_error(database, f"legacy:{row['game_id']}", row["game_id"], row["last_error"], now)
+    storage.requeue_legacy_timeout(database, row["game_id"], now)
+    storage.mark_game_pending(database, row["game_id"])
     return {"requeued": True, "game_id": row["game_id"]}
 
 
@@ -452,34 +281,13 @@ def repair_one_legacy_network_identity(
     database: PostgresConnection, _payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Queue one completed game with invalid historical NNUE provenance."""
-    row = database.execute_native(
-        "SELECT j.game_id,j.analysis_version,g.analysis_version AS published_version "
-        "FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
-        "WHERE j.status='complete' AND j.analysis_evidence_version<3 "
-        "AND EXISTS(SELECT 1 FROM game_move_analysis move WHERE move.game_id=j.game_id "
-        "AND move.network_version='nn-1c0000000000.nnue') "
-        "ORDER BY j.updated_at,j.game_id LIMIT 1 FOR UPDATE OF j SKIP LOCKED"
-    ).fetchone()
+    row = storage.legacy_network_candidate(database)
     if row is None:
         return {"requeued": False}
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        "UPDATE game_analysis_jobs SET status='queued',analysis_version=%s,"
-        "analysis_evidence_version=3,lease_id=NULL,lease_expires_at=NULL,"
-        "last_error=NULL,updated_at=%s WHERE game_id=%s AND status='complete'",
-        (max(row["analysis_version"] + 1, row["published_version"] + 1),
-         now, row["game_id"]),
-    )
-    database.execute_native(
-        "UPDATE imported_games SET analysis_state='pending' WHERE id=%s",
-        (row["game_id"],),
-    )
-    database.execute_native(
-        "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) "
-        "VALUES(%s,%s,%s,%s)",
-        (f"legacy-network:{row['game_id']}", row["game_id"],
-         "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now),
-    )
+    storage.requeue_legacy_network(database, row["game_id"], max(row["analysis_version"] + 1, row["published_version"] + 1), now)
+    storage.mark_game_pending(database, row["game_id"])
+    storage.record_position_error(database, f"legacy-network:{row['game_id']}", row["game_id"], "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now)
     return {"requeued": True, "game_id": row["game_id"]}
 
 

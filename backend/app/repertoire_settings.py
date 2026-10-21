@@ -2,25 +2,19 @@
 from fastapi import HTTPException
 
 from .models import RepertoireSettingsResponse
+from tempo_legacy_database.adapters.controls import settings as storage
 
 from .card_deletion import SYSTEM_REPERTOIRE_IDS as SYSTEM_REPERTOIRES
 
 
 def effective_opening_limits(database) -> dict[str, int]:
-    return dict(database.execute(
-        'SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) '
-        'FROM repertoires r CROSS JOIN settings s WHERE s.id=1'
-    ).fetchall())
+    return dict(storage.effective_opening_limit_rows(database))
 
 
 def repertoire_settings_response(database, repertoire_id: str) -> dict:
     if repertoire_id in SYSTEM_REPERTOIRES:
         raise HTTPException(404, 'Repertoire not found')
-    row = database.execute(
-        'SELECT r.new_cards_per_day,COALESCE(r.new_cards_per_day,s.new_cards_per_day) '
-        'FROM repertoires r CROSS JOIN settings s WHERE r.id=? AND s.id=1',
-        (repertoire_id,),
-    ).fetchone()
+    row = storage.repertoire_limit_row(database, repertoire_id)
     if row is None:
         raise HTTPException(404, 'Repertoire not found')
     return RepertoireSettingsResponse(

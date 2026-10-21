@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .models import GameFindingCardRequest, TacticCaptureRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.games import finding_cards as storage
 from .services.cards import card_id
 from .services.review_service import ensure_card_queued_after
 from .services.tactic_capture import capture_tactic, game_capture_id, validate_tactic_line
@@ -21,28 +21,7 @@ from .queue_commands import request_queue_refresh_in_transaction
 
 def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequest,
                          *, lock: bool) -> tuple[dict, dict, str, list[str], str | None]:
-    if lock:
-        source = database.execute(
-            "SELECT game_id,source_opportunity_id FROM current_game_findings game_findings WHERE id=? FOR UPDATE",
-            (finding_id,),
-        ).fetchone()
-        if source is not None:
-            database.execute(
-                "SELECT id FROM imported_games WHERE id=? FOR UPDATE", (source["game_id"],),
-            )
-            if source["source_opportunity_id"]:
-                database.execute(
-                    "SELECT id FROM tactical_opportunities WHERE id=? FOR UPDATE",
-                    (source["source_opportunity_id"],),
-                )
-    finding = database.execute(
-        """SELECT f.*,g.color,g.adaptive_excluded,g.analysis_version AS game_analysis_version,
-                  o.active AS opportunity_active,o.analysis_version AS opportunity_analysis_version,
-                  o.accepted_moves_json,o.evidence_json AS opportunity_evidence_json
-           FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id
-           LEFT JOIN tactical_opportunities o ON o.id=f.source_opportunity_id WHERE f.id=?""",
-        (finding_id,),
-    ).fetchone()
+    finding = storage.finding_card_context(database, finding_id, lock=lock)
     if finding is None:
         raise HTTPException(404, "Gameplay finding not found")
     if finding["kind"] not in {"first big mistake", "repertoire gap", "tactical miss"}:
@@ -90,15 +69,9 @@ def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequ
     normalized_fen = chess.Board(starting_fen).fen()
     if finding["kind"] == "tactical miss":
         normalized_fen, normalized_moves, trained_color = validate_tactic_line(starting_fen, normalized_moves)
-        existing = database.execute(
-            "SELECT id FROM cards WHERE id=? AND content_type='tactic' AND archived=0 AND superseded_by IS NULL",
-            (card_id(normalized_fen, normalized_moves),),
-        ).fetchone()
+        existing = storage.existing_tactic_card(database, card_id(normalized_fen, normalized_moves))
     else:
-        existing = database.execute(
-            "SELECT id FROM cards WHERE content_type='middlegame' AND source_fen=? AND moves_json=? AND archived=0",
-            (normalized_fen, json.dumps(normalized_moves)),
-        ).fetchone()
+        existing = storage.existing_middlegame_card(database, normalized_fen, json.dumps(normalized_moves))
     existing_card_id = existing["id"] if existing else None
     preview = {
         "starting_fen": starting_fen, "moves": normalized_moves,
@@ -121,7 +94,7 @@ def save_finding_card(database: PostgresConnection, payload: dict[str, Any]) -> 
     if not request.save:
         raise HTTPException(422, "Save command requires save=true")
     finding, preview, normalized_fen, normalized_moves, existing_card_id = (
-        _finding_card_inputs(database, finding_id, request, lock=hasattr(database, "execute_native"))
+        _finding_card_inputs(database, finding_id, request, lock=storage.requires_native_queue_refresh(database))
     )
     created_at = datetime.now(timezone.utc).isoformat()
     if finding["kind"] == "tactical miss":
@@ -129,56 +102,35 @@ def save_finding_card(database: PostgresConnection, payload: dict[str, Any]) -> 
             capture_id=game_capture_id(finding_id), starting_fen=preview["starting_fen"],
             moves=normalized_moves, source_kind="game", source_ref=finding_id,
         ), game_finding=True)
-        database.execute(
-            "UPDATE game_findings SET card_id=?,status='accepted',updated_at=? WHERE id=?",
-            (captured["card_id"], created_at, finding_id),
-        )
-        if hasattr(database, "execute_native"):
+        storage.accept_finding_card(database, finding_id, captured["card_id"], created_at)
+        if storage.requires_native_queue_refresh(database):
             request_queue_refresh_in_transaction(database, date.today().isoformat())
         return {"preview": {**preview, "existing_card_id": captured["card_id"]},
                 "saved": True, "card_id": captured["card_id"], "reused": captured["reused"]}
     repertoire_id = "__game_mistakes__"
     repertoire_name = "Game mistakes"
-    database.execute(
-        """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at,is_main)
-           VALUES(?,?,?, ?,0)""",
-        (repertoire_id, repertoire_name, "Accepted personal game findings", created_at),
-    )
+    storage.ensure_mistakes_repertoire(database, repertoire_id, repertoire_name, created_at)
     study_card_id = existing_card_id or card_id(preview["starting_fen"], normalized_moves)
     reused = existing_card_id is not None
     if existing_card_id is None:
-        inserted_card = database.execute(
-            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-               content_type,source_ref,source_fen,trained_color,introduced_at)
-               VALUES(?,?,?,?,?,'learning',?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING""",
-            (study_card_id, repertoire_id, "checkpoint", preview["starting_fen"],
-             json.dumps(normalized_moves), date.today().isoformat(),
-             "middlegame",
-             finding_id, normalized_fen, preview["trained_color"], date.today().isoformat()),
+        inserted_card = storage.insert_middlegame_card(
+            database, study_card_id, repertoire_id, preview["starting_fen"],
+            json.dumps(normalized_moves), date.today().isoformat(),
+            finding_id, normalized_fen, preview["trained_color"], date.today().isoformat(),
         )
-        reused = inserted_card.rowcount == 0
-        database.execute(
-            "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?) ON CONFLICT DO NOTHING",
-            (repertoire_id, study_card_id),
-        )
-    saved_card = database.execute(
-        "SELECT archived,content_type,source_fen,moves_json FROM cards WHERE id=?"
-        + (" FOR UPDATE" if hasattr(database, "execute_native") else ""),
-        (study_card_id,),
-    ).fetchone()
+        reused = inserted_card == 0
+        storage.link_repertoire_card(database, repertoire_id, study_card_id)
+    saved_card = storage.saved_card(database, study_card_id)
     expected_content_type = "middlegame"
     if (saved_card is None or saved_card["archived"]
             or saved_card["content_type"] != expected_content_type
             or saved_card["source_fen"] != normalized_fen
             or saved_card["moves_json"] != json.dumps(normalized_moves)):
         raise HTTPException(409, "The study card changed while this save was pending")
-    if hasattr(database, "execute_native"):
-        lock_queue_date_for_position(database, date.today().isoformat())
+    if storage.requires_native_queue_refresh(database):
+        storage.lock_native_queue_position(database, date.today().isoformat())
     ensure_card_queued_after(database, study_card_id, 4)
-    database.execute(
-        "UPDATE game_findings SET card_id=?,status='accepted',updated_at=? WHERE id=?",
-        (study_card_id, created_at, finding_id),
-    )
+    storage.accept_finding_card(database, finding_id, study_card_id, created_at)
     return {"preview": {**preview, "existing_card_id": study_card_id},
             "saved": True, "card_id": study_card_id, "reused": reused}
 

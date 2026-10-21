@@ -392,6 +392,12 @@ other failures, states, results and other runs.
 
 `tests/test_game_browser.py` owns read-only game paging, complete selected scope,
 strict limits, malformed cursors and cursor fencing across runs/revisions.
+`test_game_projection_keeps_bounded_reads_in_one_owning_read_transaction` and
+the two operations in `test_game_projection_scope_envelopes_retain_the_owner_read_boundary`
+retain the same contract after complete SQL queries move to
+`tempo_intelligence_database.adapters.games_read_projection`: scope/input/page
+parameters remain bound, the one-row lookahead remains bounded, and the caller
+owns one read-only transaction. These use fake rows, not a live database.
 `integration/test_analysis_postgres.py::test_C3_actual_game_read_is_exact_paginated_and_side_effect_free`
 compares responses with actual accepted input, checks authentication/workspace
 rejection and proves unchanged run/job progress across reads. The native

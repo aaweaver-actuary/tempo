@@ -10,15 +10,11 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .models import GameFindingCurationRequest, GameFindingDecisionRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.games import findings as storage
 from .services.real_game_feedback_adapter import prioritize_real_game_miss
 
 
-def _locked_finding(database: PostgresConnection, finding_id: str):
-    return database.execute_native(
-        "SELECT f.*,g.adaptive_excluded FROM current_game_findings f "
-        "JOIN imported_games g ON g.id=f.game_id WHERE f.id=%s FOR UPDATE OF f,g",
-        (finding_id,),
-    ).fetchone()
+_locked_finding = storage.locked_finding
 
 
 def curate_finding(database: PostgresConnection, payload: dict[str, Any]) -> dict:
@@ -32,15 +28,9 @@ def curate_finding(database: PostgresConnection, payload: dict[str, Any]) -> dic
     now = datetime.now(timezone.utc)
     if request.action == "skip":
         review_after = (now + timedelta(days=1)).isoformat()
-        database.execute(
-            "UPDATE game_findings SET review_after=?,updated_at=? WHERE id=?",
-            (review_after, now.isoformat(), finding_id),
-        )
+        storage.defer_finding(database, finding_id, review_after, now.isoformat())
         return {"id": finding_id, "status": "pending", "review_after": review_after}
-    database.execute(
-        "UPDATE game_findings SET status='ignored',review_after=NULL,updated_at=? WHERE id=?",
-        (now.isoformat(), finding_id),
-    )
+    storage.ignore_finding(database, finding_id, now.isoformat())
     return {"id": finding_id, "status": "ignored"}
 
 
@@ -56,21 +46,13 @@ def decide_finding(database: PostgresConnection, payload: dict[str, Any]) -> dic
     if request.decision == "accepted" and finding["kind"] == "repertoire lapse":
         if not finding["card_id"]:
             raise HTTPException(422, "This repertoire lapse is not linked to a study card")
-        linked_event = database.execute(
-            """SELECT id FROM current_repertoire_decision_events repertoire_decision_events
-               WHERE game_id=? AND repertoire_id=? AND ply=? AND card_id=? AND outcome='miss'""",
-            (finding["game_id"], finding["repertoire_id"],
-             finding["ply"], finding["card_id"]),
-        ).fetchone()
+        linked_event = storage.linked_miss_event(database, finding)
         if linked_event is None:
             raise HTTPException(
                 409, "Canonical game decision is unavailable. Reanalyze this game and try again.",
             )
         queued = prioritize_real_game_miss(database, linked_event["id"])
-    database.execute(
-        "UPDATE game_findings SET status=?,updated_at=? WHERE id=?",
-        (request.decision, datetime.now(timezone.utc).isoformat(), finding_id),
-    )
+    storage.set_finding_decision(database, finding_id, request.decision, datetime.now(timezone.utc).isoformat())
     return {"id": finding_id, "status": request.decision,
             "scheduling": None, "queued": queued}
 

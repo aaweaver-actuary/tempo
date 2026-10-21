@@ -76,6 +76,12 @@ pagination selects at most 11 game payloads in PostgreSQL, without loading every
 accepted page. Existing statement, lock, transaction and pool bounds apply. This is enforcement in the server and
 adapter; the UI capability is discovery, not the security boundary.
 
+The [reader/storage source map](src/tempo_intelligence/analysis/README.md#games-reader-storage-boundary)
+records the unchanged read transaction and cursor boundary. Complete Games-view
+queries live in the single root Intelligence database directory; the application
+reader retains validation and response shaping. This is file organization, not a
+new wire interface or live-schema/grant change.
+
 Workbench's public `GamesReader` exposes `listScopes`, `readScope` and `readGames`.
 Its HTTP adapter uses `GET /v1/analysis/game-scopes`,
 `GET /v1/analysis/game-scopes/{run_id}` and the existing game-page route.

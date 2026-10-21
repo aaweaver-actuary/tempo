@@ -9,32 +9,22 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .models import TeachingStateRequest
+from tempo_legacy_database.adapters.commands import teaching as storage
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 
 
 def record_teaching_state(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     card_id = str(payload["card_id"])
     request = TeachingStateRequest.model_validate(payload["teaching_state"])
-    if database.execute(
-        "SELECT 1 FROM cards WHERE id=? AND archived=0 FOR UPDATE", (card_id,),
-    ).fetchone() is None:
+    if storage.active_card_for_update(database, card_id) is None:
         raise HTTPException(404, "Card not found")
     taught_at = datetime.now(timezone.utc).isoformat()
-    inserted_state = database.execute(
-        "INSERT INTO teaching_states(card_id,revision,ply,taught_at) VALUES(?,?,?,?) "
-        "ON CONFLICT(card_id,revision,ply) DO NOTHING RETURNING taught_at",
-        (card_id, request.revision, request.ply, taught_at),
-    ).fetchone()
-    if inserted_state is None:
-        inserted_state = database.execute(
-            "SELECT taught_at FROM teaching_states WHERE card_id=? AND revision=? AND ply=?",
-            (card_id, request.revision, request.ply),
-        ).fetchone()
+    stored_taught_at = storage.record_teaching_timestamp(database, card_id, request.revision, request.ply, taught_at)
     return {
         "cardId": card_id,
         "revision": request.revision,
         "ply": request.ply,
-        "taughtAt": inserted_state[0],
+        "taughtAt": stored_taught_at,
     }
 
 

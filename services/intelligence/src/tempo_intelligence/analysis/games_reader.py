@@ -2,6 +2,8 @@
 import base64
 import json
 
+from tempo_intelligence_database.adapters import games_read_projection as storage
+
 from ..errors import DomainError
 from ..identity import canonical_json
 
@@ -12,22 +14,14 @@ class GamesReader:
         self.workspace = owner.workspace_id
 
     def _scope(self, database, run_id):
-        row = database.execute("""SELECT r.run_id,r.revision,
-            r.payload->>'input_id' AS input_id,
-            (r.payload->>'input_revision')::bigint AS input_revision
-            FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision)
-            WHERE r.run_id=%s""", (run_id,)).fetchone()
+        row = storage.read_run_scope(database,run_id)
         if not row:
             raise DomainError("analysis_run_not_found",404)
         return row
 
     def scopes(self):
         with self.owner.transaction(read_only=True) as database:
-            rows = database.execute("""SELECT r.run_id,r.revision,
-                r.payload->>'input_id' AS input_id,
-                (r.payload->>'input_revision')::bigint AS input_revision
-                FROM analysis_runs r JOIN analysis_heads h USING(run_id,revision)
-                ORDER BY r.created_at DESC,r.run_id LIMIT 100""").fetchall()
+            rows = storage.list_run_scopes(database)
         return {"schema_version":1,"workspace_id":self.workspace,"items":rows}
 
     def scope(self, run_id):
@@ -36,17 +30,10 @@ class GamesReader:
         return {"schema_version":1,"workspace_id":self.workspace,**scope}
 
     def _input_scope(self, database, scope):
-        return database.execute("""SELECT state,payload->'game_ids' AS game_ids,
-            payload->'selections' AS selections FROM analysis_inputs
-            WHERE input_id=%s AND revision=%s""",(scope['input_id'],scope['input_revision'])).fetchone()
+        return storage.read_input_scope(database,scope['input_id'],scope['input_revision'])
 
     def _game_page(self, database, scope, after, limit):
-        rows=database.execute("""SELECT game AS payload FROM analysis_pages p
-            CROSS JOIN LATERAL jsonb_array_elements(p.payload->'games') AS game
-            WHERE p.input_id=%s AND p.revision=%s AND game->>'game_id'>%s
-            ORDER BY game->>'game_id' LIMIT %s""",
-            (scope['input_id'],scope['input_revision'],after,limit)).fetchall()
-        return [row['payload'] for row in rows]
+        return storage.read_game_page(database,scope['input_id'],scope['input_revision'],after,limit)
 
     def games(self, run_id, after=None, limit=10):
         if type(limit) is not int or not 1<=limit<=10:

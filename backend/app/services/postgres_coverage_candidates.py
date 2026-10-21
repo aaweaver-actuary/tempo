@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
-
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_legacy_database.adapters.controls import coverage as storage
 from .repertoire_coverage import CoverageCandidate, blend_probabilities, required_reply_moves
 
 
@@ -12,10 +11,7 @@ def recalculate_coverage_node(
     database: PostgresConnection, node_id: str, settings: dict,
     explorer_games: int,
 ) -> None:
-    candidates = database.execute_native(
-        "SELECT move_uci,explorer_probability,maia_probability "
-        "FROM repertoire_coverage_candidates WHERE node_id=%s", (node_id,),
-    ).fetchall()
+    candidates = storage.candidate_probability_rows(database, node_id)
     blended = {
         candidate["move_uci"]: blend_probabilities(
             candidate["explorer_probability"], candidate["maia_probability"],
@@ -43,12 +39,4 @@ def recalculate_coverage_node(
         if candidate["maia_probability"] is not None else "unknown",
     } for candidate in candidates]
     if updates:
-        database.execute_native(
-            "UPDATE repertoire_coverage_candidates candidate SET "
-            "blended_probability=updated.blended,required=updated.required,"
-            "source_state=updated.source_state "
-            "FROM jsonb_to_recordset(%s::jsonb) AS updated("
-            "move_uci text,blended double precision,required bigint,source_state text) "
-            "WHERE candidate.node_id=%s AND candidate.move_uci=updated.move_uci",
-            (json.dumps(updates), node_id),
-        )
+        storage.save_candidate_projection(database, node_id, updates)
