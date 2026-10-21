@@ -29,7 +29,7 @@
 | [api.py](api.py) | Existing complete HTTP read projections, saved-attempt/savepoint statements and driver identities; [API/defense composition](api-defense/README.md). |
 | [defense.py](defense.py) | Existing accepted-defense/queue/recognition facts, dialect predicate and persistence; rubric/grading/replay/scheduling decisions remain in runtime. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
-| [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
+| [postgres_opening_evidence.py](postgres_opening_evidence.py) | Fixed shadow-evidence SQL, locks and managed reads; [runtime policy/composition](opening-evidence/README.md) keeps manifest/checkpoint/reduction/HTTP decisions outside database. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |
 | [tactic_admission.py](tactic_admission.py) | Existing Learning-owned transaction-scoped tactic admission lock, moved intact. |
 | [postgres_store.py](postgres_store.py) | Learning-owned SQL compatibility adapter; no connection/commit authority. |
