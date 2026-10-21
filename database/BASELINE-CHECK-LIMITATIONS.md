@@ -52,8 +52,8 @@ The100 existing mocked native/qualification-policy cases partition into82 retain
 
 ## Workbench pinned build qualification
 
-The focused moved-outbox artifact proof uses available Vite8.0.13 while the existing independent Workbench package pins8.3.4. Twenty-one installed fake recovery cases,contained archive/declaration/source checks and static public exports pass; the complete pinned qualifier/browser workflow was not run or claimed. No package dependency version was changed to hide the difference.
+The focused moved-outbox artifact proof uses available Vite 8.0.13 while the existing independent Workbench package pins 8.3.4. Twenty-one installed fake recovery cases, contained archive/declaration/source checks and static public exports pass; the complete pinned qualifier/browser workflow was not run or claimed. No package dependency version was changed to hide the difference.
 
 ## Existing readiness scheduling import (source inspection)
 
-Both `backend/app/services/scheduler.py` and `decision_readiness.py` remain byte-identical to main14ad5754. The latter imports `_scheduler`,which the former does not export. This is an existing source-level import gap in readiness-specific checks,not a database relocation regression or a passing readiness proof. No application import/native startup or unrelated scheduler repair was attempted; keep this separate from mechanical backend organization and do not publish a new issue in this task.
+Both `backend/app/services/scheduler.py` and `decision_readiness.py` remain byte-identical to main `14ad5754`. The latter imports `_scheduler`, which the former does not export. This is an existing source-level import gap in readiness-specific checks, not a database relocation regression or a passing readiness proof. No application import/native startup or unrelated scheduler repair was attempted; keep this separate from mechanical backend organization and do not publish a new issue in this task.
