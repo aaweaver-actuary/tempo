@@ -5062,3 +5062,8 @@ Existing `study-learning-connection-regressions.test.ts`, `study-cached-startup-
 ## Redis admission and Study-policy storage extraction
 
 `backend/tests/test_legacy_redis_control_database_split.py` owns cached factory compatibility/deadlines, application-selected key/pipeline behavior and async client/clock evaluation before worker I/O. Existing generation/private-owner/session/lifecycle checks retain their assertions. The selected cutover browser-activity case still fails with its pre-existing eval-only fake missing `zrem`; unchanged-source reproduction is recorded, and no test was skipped/weakened. Native Redis/Lua/PostgreSQL remains unverified.
+
+
+## Maintenance-wake and runtime Redis storage
+
+`backend/tests/test_legacy_wake_runtime_database_split.py` guards the two selected application modules against direct storage operations and preserves factory caching, runtime serialization/slot/read/clock order. Existing `test_background_wakes.py` retains all coalescing, token fencing, queue/ack/recovery and failure assertions; two diagnostic reservation/timing cases retain their boundaries. Native Redis/Lua/Kombu and deployed resource isolation remain unverified.
