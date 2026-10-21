@@ -13,6 +13,9 @@
 | [durable_tasks.py](durable_tasks.py) | Original task enqueue/event/create-or-lock/fenced claim SQL; [essential-work decisions/composition](essential-work/README.md). |
 | [maintenance.py](maintenance.py) | Existing task fences, retained operation retry and queue/day/projection writes; caller transaction/lifecycle remain outside database. |
 | [evidence_receipts.py](evidence_receipts.py) | Historical delivery receipt and accepted revision frontier reads; receipt authority/conflicts remain in runtime intake. |
+| [study_attempts.py](study_attempts.py) | Existing Study exercise completion facts and finalization/queue/sibling writes; [attempt decisions/composition](practice-attempts/README.md). |
+| [study_attempt_commands.py](study_attempt_commands.py) | Existing Study identity/card/queue/attempt locks, source facts and answer insertion; grading/replay/conflicts stay in application. |
+| [tactic_commands.py](tactic_commands.py) | Existing puzzle/receipt/progress/card/queue/result persistence; light/guided scheduling decisions stay in application. |
 | [endgame_store.py](endgame_store.py) | Saved endgame template and immutable receipt reads; no calculation/provider. |
 | [postgres_opening_evidence.py](postgres_opening_evidence.py) | Bounded shadow persistence. No card, review, quota or queue mutation lives here. |
 | [opening_progression.py](opening_progression.py) | Existing Learning-owned completed-practice predicate and legacy-child update, moved intact. |

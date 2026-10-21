@@ -15,6 +15,7 @@ from .gateway import register_command
 from tempo_learning_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from tempo_learning_database.adapters.queue_position_lock import lock_queue_date_for_position
+from tempo_learning_database.adapters import study_attempt_commands as storage
 from .study_grading import GRADER_VERSION, evaluate_answer
 from .study_attempts import finish_study_attempt
 from .study_contracts import (
@@ -34,37 +35,20 @@ def _json(value: Any) -> str:
 def _lock_review_queue(
     database: PostgresConnection, request: StudyAttemptRequest, exercise_id: str
 ):
-    card = database.execute(
-        """SELECT * FROM cards WHERE id=? AND study_exercise_id=?
-           AND archived=0 AND pending_validation=0 AND serving_active=1 FOR UPDATE""",
-        (request.card_id, exercise_id),
-    ).fetchone()
+    card = storage.review_card_for_update(database, request.card_id, exercise_id)
     if card is None:
         raise HTTPException(409, "The selected exercise is no longer queued")
-    queue_day = database.execute(
-        "SELECT queue_date FROM daily_queue WHERE id=?",
-        (request.queue_entry_id,),
-    ).fetchone()
+    queue_day = storage.review_queue_date(database, request.queue_entry_id)
     if queue_day is None:
         raise HTTPException(409, "The selected exercise is no longer queued")
     lock_queue_date_for_position(database, queue_day[0])
-    queue = database.execute(
-        """SELECT * FROM daily_queue WHERE id=? AND card_id=? AND cycle=?
-           AND status='queued' FOR UPDATE""",
-        (request.queue_entry_id, request.card_id, request.queue_cycle),
-    ).fetchone()
+    queue = storage.review_queue_for_update(database, request.queue_entry_id, request.card_id, request.queue_cycle)
     if queue is None or card["revision"] != request.revision:
         raise HTTPException(409, "The selected exercise is no longer queued")
-    if database.execute(
-        "SELECT 1 FROM study_attempts WHERE queue_entry_id=?",
-        (queue["id"],),
-    ).fetchone():
+    if storage.existing_queue_answer(database, queue["id"]):
         raise HTTPException(409, "This queue attempt already has an answer")
     if request.expected_review_id is not None:
-        latest = database.execute(
-            "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=?",
-            (card["id"],),
-        ).fetchone()[0]
+        latest = storage.latest_review_id(database, card["id"])
         if latest != request.expected_review_id:
             raise HTTPException(409, "Another device already reviewed this card")
     return queue
@@ -76,21 +60,12 @@ def submit_study_attempt(
     request = StudyAttemptRequest.model_validate(payload["attempt"])
     if len(request.attempt_id) > 100:
         raise HTTPException(422, "Attempt ID is too long")
-    database.execute_native(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-        (f"tempo:study-attempt:{request.attempt_id}",),
-    )
+    storage.lock_attempt_identity(database, request.attempt_id)
     request_data = request.model_dump(mode="json")
     answer_hash = hashlib.sha256(_json({"request": request_data}).encode()).hexdigest()
-    existing = database.execute(
-        "SELECT * FROM study_attempts WHERE id=?",
-        (request.attempt_id,),
-    ).fetchone()
+    existing = storage.attempt_by_id(database, request.attempt_id)
     if existing:
-        owner = database.execute(
-            "SELECT study_id FROM study_exercises WHERE id=?",
-            (existing["exercise_id"],),
-        ).fetchone()
+        owner = storage.exercise_owner(database, existing["exercise_id"])
         if (
             existing["answer_hash"] != answer_hash
             or existing["exercise_id"] != str(payload["exercise_id"])
@@ -110,10 +85,7 @@ def submit_study_attempt(
             }
         )
     exercise_id = str(payload["exercise_id"])
-    exercise = database.execute(
-        "SELECT * FROM study_exercises WHERE id=? FOR UPDATE",
-        (exercise_id,),
-    ).fetchone()
+    exercise = storage.exercise_for_update(database, exercise_id)
     if exercise is None:
         raise HTTPException(404, "Study Exercises not found")
     if (
@@ -122,21 +94,12 @@ def submit_study_attempt(
         or exercise["current_revision"] != request.revision
     ):
         raise HTTPException(409, "Exercise revision changed; reload before answering")
-    if not database.execute(
-        "SELECT 1 FROM cards WHERE study_exercise_id=? AND serving_active=1 AND archived=0",
-        (exercise_id,),
-    ).fetchone():
+    if not storage.serving_exercise_card(database, exercise_id):
         raise HTTPException(409, "Exercise publication was retired")
-    position = database.execute(
-        "SELECT fen FROM study_positions WHERE id=?",
-        (exercise["position_id"],),
-    ).fetchone()
+    position = storage.exercise_position(database, exercise["position_id"])
     if position is None:
         raise HTTPException(404, "Study Positions not found")
-    revision = database.execute(
-        "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
-        (exercise_id, exercise["current_revision"]),
-    ).fetchone()
+    revision = storage.revision_specification(database, exercise_id, exercise["current_revision"])
     if revision is None:
         raise HTTPException(409, "Exercise revision is unavailable")
     specification = _SPECIFICATION_ADAPTER.validate_python(json.loads(revision[0]))
@@ -151,31 +114,18 @@ def submit_study_attempt(
     ):
         raise HTTPException(422, "Practice attempts cannot name a queue entry")
     now = datetime.now(timezone.utc).isoformat()
-    database.execute(
-        """INSERT INTO study_attempts(id,exercise_id,revision,card_id,queue_entry_id,cycle,context,
-           answer_json,answer_hash,assessment_json,assessment_method,grader_version,hint_seen,
-           solution_seen_before_answer,started_at,committed_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            request.attempt_id,
-            exercise_id,
-            request.revision,
-            request.card_id,
-            request.queue_entry_id,
-            request.queue_cycle,
-            request.context,
-            _json(request.answer.model_dump(mode="json")),
-            answer_hash,
-            _json(assessment),
-            "self_assessed"
-            if assessment["outcome"] in {"unrecognized", "needs_self_assessment"}
-            else "automatic",
-            GRADER_VERSION,
-            int(request.hint_seen),
-            int(request.solution_seen_before_answer),
-            request.started_at or now,
-            now,
-        ),
+    storage.record_attempt(
+        database, attempt_id=request.attempt_id, exercise_id=exercise_id,
+        revision=request.revision, card_id=request.card_id,
+        queue_entry_id=request.queue_entry_id, cycle=request.queue_cycle,
+        context=request.context, answer_json=_json(request.answer.model_dump(mode="json")),
+        answer_hash=answer_hash, assessment_json=_json(assessment),
+        assessment_method="self_assessed"
+        if assessment["outcome"] in {"unrecognized", "needs_self_assessment"}
+        else "automatic",
+        grader_version=GRADER_VERSION, hint_seen=int(request.hint_seen),
+        solution_seen_before_answer=int(request.solution_seen_before_answer),
+        started_at=request.started_at or now, committed_at=now,
     )
     if assessment["outcome"] in {"unrecognized", "needs_self_assessment"}:
         return {
@@ -183,10 +133,7 @@ def submit_study_attempt(
             "assessment": assessment,
             "pending_self_assessment": True,
         }
-    persisted_attempt = database.execute(
-        "SELECT * FROM study_attempts WHERE id=?",
-        (request.attempt_id,),
-    ).fetchone()
+    persisted_attempt = storage.attempt_by_id(database, request.attempt_id)
     result = finish_study_attempt(
         database,
         persisted_attempt,
@@ -203,36 +150,18 @@ def self_assess_study_attempt(
     attempt_id = str(payload["attempt_id"])
     if len(attempt_id) > 100:
         raise HTTPException(422, "Attempt ID is too long")
-    pending_attempt = database.execute(
-        "SELECT card_id,queue_entry_id,context FROM study_attempts WHERE id=?",
-        (attempt_id,),
-    ).fetchone()
+    pending_attempt = storage.pending_assessment_attempt(database, attempt_id)
     if pending_attempt is None:
         raise HTTPException(404, "Attempt not found")
     if pending_attempt["context"] == "review":
-        database.execute(
-            "SELECT id FROM cards WHERE id=? FOR UPDATE",
-            (pending_attempt["card_id"],),
-        )
-        queue_day = database.execute(
-            "SELECT queue_date FROM daily_queue WHERE id=?",
-            (pending_attempt["queue_entry_id"],),
-        ).fetchone()
+        storage.lock_assessment_card(database, pending_attempt["card_id"])
+        queue_day = storage.review_queue_date(database, pending_attempt["queue_entry_id"])
         if queue_day is None:
             raise HTTPException(409, "Queue entry or card changed before completion")
         lock_queue_date_for_position(database, queue_day[0])
-        database.execute(
-            "SELECT id FROM daily_queue WHERE id=? FOR UPDATE",
-            (pending_attempt["queue_entry_id"],),
-        )
-    attempt = database.execute(
-        "SELECT * FROM study_attempts WHERE id=? AND exercise_id=? FOR UPDATE",
-        (attempt_id, str(payload["exercise_id"])),
-    ).fetchone()
-    exercise = database.execute(
-        "SELECT * FROM study_exercises WHERE id=?",
-        (str(payload["exercise_id"]),),
-    ).fetchone()
+        storage.lock_assessment_queue(database, pending_attempt["queue_entry_id"])
+    attempt = storage.assessment_attempt_for_update(database, attempt_id, str(payload["exercise_id"]))
+    exercise = storage.assessment_exercise(database, str(payload["exercise_id"]))
     if (
         exercise is None
         or exercise["study_id"] != str(payload["study_id"])

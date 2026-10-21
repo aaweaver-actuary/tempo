@@ -2,7 +2,7 @@
 
 [Root index](README.md). Dedicated DDL, connection managers, concrete persistence adapters, SQL-only helpers, PostgreSQL maintenance/proof scripts, IndexedDB connection/record stores and backup adapters were moved into this single tree. Owner public APIs continue to wire their own implementations; no component imports another database package's private adapters as a new dependency.
 
-The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **66 files**; one candidate is confirmed non-database application code, and **89 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
+The original PR334 checklist contains **156 mixed application/SQL candidates**. Completed batches cover **69 files**; one candidate is confirmed non-database application code, and **86 remain for review/extraction**. Complete centralization is unfinished while database operations remain outside the root tree or application policy remains inside it. This is a working checklist, not a permanent exception. Preserve one implementation and the owning component's interfaces, packaging and transaction authority. Application-facing tests and wire schemas retain their owners. No table is declared unused from its name or lack of a text match.
 
 Baseline mixed source files found by a conservative database-call/IndexedDB text scan: **156**. False positives (SQL examples/comments) are possible; this is a navigation inventory, not dependency proof.
 
@@ -159,11 +159,11 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - [services/learning/runtime/src/tempo_learning_runtime/review_adapter.py](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py)
 - [services/learning/runtime/src/tempo_learning_runtime/review_reconciliation.py](../services/learning/runtime/src/tempo_learning_runtime/review_reconciliation.py)
 - [services/learning/runtime/src/tempo_learning_runtime/review_service.py](../services/learning/runtime/src/tempo_learning_runtime/review_service.py)
-- [services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py](../services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py)
-- [services/learning/runtime/src/tempo_learning_runtime/study_attempts.py](../services/learning/runtime/src/tempo_learning_runtime/study_attempts.py)
+- Completed Learning practice-attempt storage split: [services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py](tempo_learning_database/adapters/practice-attempts/README.md).
+- Completed Learning practice-attempt storage split: [services/learning/runtime/src/tempo_learning_runtime/study_attempts.py](tempo_learning_database/adapters/practice-attempts/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/study_bootstrap.py](tempo_learning_database/adapters/README.md).
 - Completed intact Learning-owned SQL-only helper move: [database/tempo_learning_database/adapters/tactic_admission.py](tempo_learning_database/adapters/tactic_admission.py).
-- [services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py](../services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py)
+- Completed Learning practice-attempt storage split: [services/learning/runtime/src/tempo_learning_runtime/tactic_commands.py](tempo_learning_database/adapters/practice-attempts/README.md).
 - Completed Learning storage/application split: [services/learning/runtime/src/tempo_learning_runtime/teaching_commands.py](tempo_learning_database/adapters/README.md).
 
 </details>
@@ -218,12 +218,12 @@ PR334 owns the dedicated-file moves, source-schema charts and discovery repairs.
 | Original checklist owner | Extracted / relocated | Confirmed false positives | Pending review / extraction |
 | --- | ---: | ---: | ---: |
 | Legacy backend | 46 | 0 | 74 |
-| Learning runtime | 11 | 0 | 15 |
+| Learning runtime | 14 | 0 | 12 |
 | Content | 2 | 0 | 0 |
 | Game Evidence | 5 | 0 | 0 |
 | Intelligence | 1 | 1 | 0 |
 | Browser connection | 1 | 0 | 0 |
-| **Total baseline** | **66** | **1** | **89** |
+| **Total baseline** | **69** | **1** | **86** |
 
 The six additional storage/tooling sources above and application computation inside originally moved adapters are additional unfinished work. Zero pending baseline rows for a service does not mean its original database adapter is application-free.
 
