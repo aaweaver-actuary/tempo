@@ -94,6 +94,26 @@ def test_manifest_preview_saves_raw_schema_and_reports_validated_counts_without_
     assert set(output.parent.iterdir()) == {source, output}
 
 
+@pytest.mark.parametrize('prefix', [b'{An authored comment}\n', b' \n\t{An authored comment}\n'])
+def test_preview_accepts_leading_brace_comment_and_saved_manifest_maps_the_exact_bytes(
+    preview_files, capsys, prefix,
+):
+    source, output, _ = preview_files
+    raw = prefix + b'1. e4 e5 2. Nf3 *\n'
+    source.write_bytes(raw)
+
+    assert cli.main(preview_arguments(source, output)) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result['status'] == 'validated'
+    assert result['source_sha256'] == hashlib.sha256(raw).hexdigest()
+    manifest = ImportManifest.model_validate_json(output.read_bytes())
+    assert manifest.provenance.source_sha256 == hashlib.sha256(raw).hexdigest()
+    source_snapshot, _ = map_import(raw, manifest.model_dump(mode='json'))
+    assert len(source_snapshot.routes) == 1
+    assert source_snapshot.routes[0].moves == ['e2e4', 'e7e5', 'g1f3']
+
+
 @pytest.mark.parametrize('missing', ['file', '--workspace', '--source-key', '--title', '--color', '--output'])
 def test_manifest_preview_requires_file_and_every_flag(preview_files, capsys, missing):
     source, output, _ = preview_files

@@ -1,6 +1,7 @@
 """Fresh authored manifests preserve complete routes and explicit identity."""
 
 import hashlib
+import json
 
 import chess
 import pytest
@@ -146,6 +147,45 @@ def test_fen_start_including_exact_en_passant_state_is_part_of_route_identity():
     assert len({item.route_key for item in manifest.route_assignments}) == 2
     source, _ = map_import(raw, manifest.model_dump(mode="json"))
     assert {route.starting_fen for route in source.routes} == set(starts)
+
+
+@pytest.mark.parametrize("raw", [
+    b"{An authored comment}\n1. e4 e5 2. Nf3 *\n",
+    b" \n\t{An authored comment}\n1. e4 e5 2. Nf3 *\n",
+])
+def test_leading_brace_comment_pgn_keeps_raw_digest_and_maps_with_its_manifest(raw):
+    manifest = manifest_for(raw)
+
+    assert manifest.provenance.source_sha256 == hashlib.sha256(raw).hexdigest()
+    source, _ = map_import(raw, manifest.model_dump(mode="json"))
+    assert len(source.routes) == 1
+    assert source.routes[0].moves == ["e2e4", "e7e5", "g1f3"]
+
+
+def test_structured_json_remains_strict_and_uses_the_exact_raw_digest():
+    pgn = b"1. e4 e5 2. Nf3 *\n"
+    manifest = manifest_for(pgn)
+    source, _ = map_import(pgn, manifest.model_dump(mode="json"))
+    structured = source.model_dump_json().encode()
+    matching = manifest.model_copy(update={
+        "provenance": manifest.provenance.model_copy(update={
+            "source_sha256": hashlib.sha256(structured).hexdigest(),
+        }),
+    })
+
+    decoded, _ = map_import(structured, matching.model_dump(mode="json"))
+    assert decoded == source
+    with pytest.raises(ValueError):
+        map_import(structured, manifest.model_dump(mode="json"))
+
+    malformed_source = json.dumps({"schema_version": 1, "kind": "unsupported"}).encode()
+    invalid_schema = manifest.model_copy(update={
+        "provenance": manifest.provenance.model_copy(update={
+            "source_sha256": hashlib.sha256(malformed_source).hexdigest(),
+        }),
+    })
+    with pytest.raises(ValueError):
+        map_import(malformed_source, invalid_schema.model_dump(mode="json"))
 
 
 @pytest.mark.parametrize("raw", [
