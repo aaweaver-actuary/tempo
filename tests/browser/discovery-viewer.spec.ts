@@ -250,6 +250,25 @@ test("late removed preview cannot be reused when the discovery returns", async (
 });
 
 
+test("ineligible saved discovery explains why direct training is unavailable", async ({ page }) => {
+  await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
+    discoveryFixture("unsupported", "revision", "prefix-card"),
+  ]) }));
+  let trainPosts = 0;
+  await page.route("**/api/repertoires/rep/opportunities/unsupported/train", route => {
+    trainPosts++;
+    return route.fulfill({ status: 409, json: { detail: "The target decision cannot be isolated from this prefix card" } });
+  });
+  await page.route("**/api/repertoires/rep/opportunities/unsupported/training-eligibility", route =>
+    route.fulfill({ json: { eligible: false, reason: "The target decision cannot be isolated from this prefix card" } }));
+  await prepareUI(page);
+  await openDiscoveries(page);
+  const viewer = page.getByRole("dialog", { name: "Discoveries" });
+  await expect(viewer.getByText(/target decision cannot be isolated/)).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
+  expect(trainPosts).toBe(0);
+});
+
 test("supported saved discovery checks eligibility before direct training", async ({ page }) => {
   await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
     discoveryFixture("supported", "revision", "response-card"),

@@ -166,7 +166,7 @@ test("sample deletion uses repertoire identity and does not delete its same-file
 
 
 
-test("Repertoire PGN import publishes a queue card after pending issuance", async ({
+test("Repertoire PGN import eventually publishes a queue card", async ({
   page,
   request,
 }) => {
@@ -190,16 +190,9 @@ test("Repertoire PGN import publishes a queue card after pending issuance", asyn
   ]);
   const importedRepertoireId = (await importResponse.json()).repertoire_id as string;
   expect(importedRepertoireId).toEqual(expect.any(String));
-  let pendingIssuanceProbe = true;
   await expect.poll(async () => {
-    // The real service can report pending issuance without a cards array.
-    // Include that observed boundary before proving the real imported queue.
-    const queueResponse = pendingIssuanceProbe ? {
-      ok: () => false, status: () => 503,
-      text: async () => "Queue changed or attempt issuance is pending. Retry loading the queue.",
-      json: async () => ({ detail: "Queue changed or attempt issuance is pending. Retry loading the queue." }),
-    } : await request.get(`${api}/queue/today`);
-    pendingIssuanceProbe = false;
+    // A pending issuance response has no cards yet; poll the actual queue response until it settles.
+    const queueResponse = await request.get(`${api}/queue/today`);
     if (!queueResponse.ok()) return `HTTP ${queueResponse.status()}: ${await queueResponse.text()}`;
     const queue = await queueResponse.json();
     return (queue.cards as { repertoire_id: string }[]).some((card) => card.repertoire_id === importedRepertoireId);

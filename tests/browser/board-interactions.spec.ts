@@ -9,6 +9,7 @@ import {
   move,
 } from "./product-fixtures";
 import type { APIRequestContext } from "@playwright/test";
+import { prepareVisualUI } from "./visual-fixtures";
 
 async function waitForPriorFixturePublication(request: APIRequestContext) {
   // Prior fixture deletion schedules queue publication. Let that empty
@@ -23,6 +24,81 @@ async function waitForPriorFixturePublication(request: APIRequestContext) {
     .toEqual({ state: "ready", pending: 0, count: 0 });
 }
 
+test("checked king gets a persistent translucent red cue that clears when the position changes", async ({ page }) => {
+  const startingFen = "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4";
+  const checkCard = {
+    id: "checked-king-visual-card",
+    queue_entry_id: 991,
+    start_fen: startingFen,
+    moves: ["h5f7"],
+    content_type: "opening" as const,
+    repertoire_name: "Scholar's mate check cue",
+    repertoire_source: "PGN",
+    first_correct_at: "2026-09-17T12:00:00Z",
+    trained_color: "white" as const,
+  };
+  await prepareVisualUI(page, false, [checkCard]);
+  await nav(page, "Train");
+  const board = page.locator(".board-frame").first();
+  const expectedPosition = new Chess(startingFen);
+  expectedPosition.move({ from: "h5", to: "f7", promotion: "q" });
+  await expect(board).toHaveAttribute("data-fen", startingFen);
+  await move(page, "h5", "f7");
+  await expect(board).toHaveAttribute("data-fen", expectedPosition.fen());
+
+  const checkedSquare = board.locator(".cg-wrap cg-board square.check:visible");
+  const checkedKing = board.locator(".cg-wrap piece.king.black");
+  await expect(checkedSquare).toHaveCount(1);
+  const [squareBounds, kingBounds] = await Promise.all([
+    checkedSquare.boundingBox(),
+    checkedKing.boundingBox(),
+  ]);
+  expect(squareBounds).not.toBeNull();
+  expect(kingBounds).not.toBeNull();
+  expect(
+    Math.abs(
+      squareBounds!.x + squareBounds!.width / 2 -
+        (kingBounds!.x + kingBounds!.width / 2),
+    ),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(
+      squareBounds!.y + squareBounds!.height / 2 -
+        (kingBounds!.y + kingBounds!.height / 2),
+    ),
+  ).toBeLessThan(1);
+  expect(await checkedSquare.evaluate((square) => getComputedStyle(square).backgroundImage)).toContain("radial-gradient");
+
+  await page.keyboard.press("f");
+  await expect(board).toHaveAttribute("data-orientation", "black");
+  await expect(checkedSquare).toHaveCount(1);
+  const [flippedSquareBounds, flippedKingBounds] = await Promise.all([
+    checkedSquare.boundingBox(),
+    checkedKing.boundingBox(),
+  ]);
+  expect(flippedSquareBounds).not.toBeNull();
+  expect(flippedKingBounds).not.toBeNull();
+  expect(
+    Math.abs(
+      flippedSquareBounds!.x + flippedSquareBounds!.width / 2 -
+        (flippedKingBounds!.x + flippedKingBounds!.width / 2),
+    ),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(
+      flippedSquareBounds!.y + flippedSquareBounds!.height / 2 -
+        (flippedKingBounds!.y + flippedKingBounds!.height / 2),
+    ),
+  ).toBeLessThan(1);
+
+  await page
+    .locator(".shared-board-toolbar .board-tools")
+    .getByRole("button", { name: /Back/ })
+    .click();
+  expectedPosition.undo();
+  await expect(board).toHaveAttribute("data-fen", expectedPosition.fen());
+  await expect(checkedSquare).toHaveCount(0);
+});
 
 
 test("local import respects the daily limit and keeps the Black Study queue playable", async ({
