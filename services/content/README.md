@@ -117,28 +117,67 @@ third-party requirements. No checkout, test tooling, development dependency,
 or other Tempo service is required by the installed runtime. The artifact
 qualification below proves that installation on Python 3.12 and 3.14.
 
-## Preview a new authored PGN without a database
+## Import and deliver a fresh authored PGN
 
-Supply explicit identities and color for a new authored source; the output
-directory must exist and the manifest path must be unused:
+The manifest preview is database-free. Give a new authored source an explicit
+workspace, source key, title and learner color. The output directory must exist
+and the manifest path must be unused:
 
-```sh
-tempo-content import manifest opening.pgn --workspace content-example --source-key opening --title "My opening" --color white --output opening.manifest.json
+```text
+tempo-content import manifest FILE --workspace ID --source-key ID --title TEXT --color white|black --output PATH
 ```
 
-The saved file is the raw `ImportManifest` JSON. Stdout reports `validated`, its
+This writes raw `ImportManifest` JSON. Stdout reports `validated`, the manifest
 path and source SHA256, plus route/exercise counts. Validation does not import,
-activate, or teach any content, and it does not convert historical cards or
-change an existing source's learner color. After configuring the Content database
-and the same workspace as described below, the existing next step consumes it:
+activate or teach content, convert historical cards, or change an existing
+source's learner color. Configure the Content database and workspace as described
+below before planning. The manifest output has no source revision. Use the current
+Content `requested_revision` from prior state output as `N` (for an existing
+source, `tempo-content source show SOURCE_KEY` reports it); if no current revision
+is available, resolve it before planning rather than guessing or copying an
+example value:
 
-```sh
-tempo-content import plan opening.pgn --manifest opening.manifest.json --expected-revision 0
+```text
+tempo-content import plan FILE --manifest PATH --expected-revision N
+tempo-content draft show DRAFT_ID
+tempo-content draft approve DRAFT_ID --digest HASH
+tempo-a-bridge --content-cli PATH --learning-origin ORIGIN --operator-token-file FILE apply OPERATION_ID --max-slices 64
 ```
 
-Inspect the returned draft with `tempo-content draft show DRAFT_ID`; approval
-remains explicit with `tempo-content draft approve DRAFT_ID --digest DRAFT_DIGEST`.
-Planning and approval are separate from Learning delivery and activation.
+Inspect the actual draft and use the exact draft ID and digest shown by prior
+output for the explicit approval. Use the operation ID returned by approval for
+`apply`. Keep the operator token in a private file; reuse the same approved
+operation ID and original Learning origin for pending work or an uncertain
+response. `pending_validation` means bounded Content validation remains;
+`pending_activation` means Learning has not yet returned a terminal receipt.
+`complete` is Learning's verified durable receipt (the local Content operation
+may display `completed`). `failed` is a recorded terminal failure; inspect the
+operation before planning a corrected draft. Transport uncertainty alone is not
+failure. A retry never needs another approval or operation ID.
+
+This uses the existing bridge only: no automatic approval, Games snapshot,
+Workbench, direct Learning SQL, or new delivery mechanism. Preserve
+[`tempo_a_bridge.cli.Operator` and `execution_bundle`](../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py)
+and its [`tempo-a-bridge` entry point](../../tools/analysis-restoration/a_bridge/pyproject.toml)
+if cleaning up `analysis-restoration`; together they contain the retained import
+operator and Learning execution-bundle mapping. See the [operator workflow](../../docs/analysis-restoration/a-bridge.md)
+for its recovery contract.
+
+**Illustrative transcript only — synthetic, not executed acceptance:**
+
+```text
+# Prior Content state output for this source: {"requested_revision":7}
+$ tempo-content import manifest opening.pgn --workspace demo --source-key opening --title "Demo" --color white --output /tmp/opening.json
+{"status":"validated","manifest_path":"/tmp/opening.json","source_sha256":"<synthetic-sha256>","route_count":3,"exercise_count":1}
+$ tempo-content import plan opening.pgn --manifest /tmp/opening.json --expected-revision 7
+{"draft_id":"demo-draft","digest":"<synthetic-digest>","expected_revision":7}
+$ tempo-content draft show demo-draft
+{"id":"demo-draft","digest":"<synthetic-digest>","source":"<inspect actual draft>"}
+$ tempo-content draft approve demo-draft --digest <synthetic-digest>
+{"operation_id":"demo-operation"}
+$ tempo-a-bridge --content-cli /opt/bin/tempo-content --learning-origin https://learning.example --operator-token-file /private/operator-token apply demo-operation --max-slices 64
+{"operation_id":"demo-operation","state":"pending_activation"}
+```
 
 ## Database and operation
 
