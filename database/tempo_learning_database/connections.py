@@ -9,6 +9,14 @@ from tempo_learning_runtime.clock import workspace_timezone
 current_database = ContextVar("learning_database")
 
 
+class RuntimeRoleScopeError(RuntimeError):
+    """The configured runtime credential is privileged or outside runtime scope."""
+
+
+class WorkspaceBindingError(RuntimeError):
+    """The configured workspace does not match the migrated database owner state."""
+
+
 class Database:
     def __init__(self, configuration):
         self.configuration = configuration
@@ -78,7 +86,7 @@ class Database:
                 "SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls OR has_schema_privilege(current_user,'learning','CREATE') FROM pg_roles WHERE rolname=current_user"
             ).fetchone()
             if privileged is None or privileged[0]:
-                raise RuntimeError(
+                raise RuntimeRoleScopeError(
                     "Learning startup requires a restricted runtime/reader role"
                 )
             row = raw.execute(
@@ -89,7 +97,7 @@ class Database:
                 or row[0] != self.configuration.workspace_id
                 or row[1] != self.configuration.timezone
             ):
-                raise RuntimeError(
+                raise WorkspaceBindingError(
                     "Learning database workspace does not match configuration"
                 )
             yield PostgresConnection(raw, read_only=read_only)

@@ -5,6 +5,8 @@ from threading import Event
 import json, uuid
 import chess, psycopg, pytest
 from fastapi import HTTPException
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
 from tempo_chess_core import card_id
 from tempo_learning_runtime.frozen_maia_math import content_fingerprint
 from tempo_learning_runtime import gateway, publications
@@ -112,18 +114,213 @@ def test_workspace_binding_migration_history_and_admin_credentials_fail_readines
     with TestClient(
         create_app(replace(case.configuration, workspace_id="wrong-workspace"))
     ) as client:
-        assert client.get("/health/ready").status_code == 503
+        response = client.get("/health/ready")
+        assert response.status_code == 503
+        assert response.json() == {
+            "status": "unavailable",
+            "domain": "credentials",
+            "reason": "workspace_binding_mismatch",
+        }
     with TestClient(
         create_app(
             replace(case.configuration, database_url=case.admin, reader_url=case.admin)
         )
     ) as client:
-        assert client.get("/health/ready").status_code == 503
+        response = client.get("/health/ready")
+        assert response.status_code == 503
+        assert response.json() == {
+            "status": "unavailable",
+            "domain": "credentials",
+            "reason": "restricted_role_required",
+        }
     with psycopg.connect(case.admin) as database:
         database.execute(
             "UPDATE learning.migration_history SET checksum='changed' WHERE id=(SELECT MIN(id) FROM learning.migration_history)"
         )
-    assert case.client.get("/health/ready").status_code == 503
+    response = case.client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "unavailable",
+        "domain": "schema",
+        "reason": "migration_history_outdated",
+    }
+
+
+def test_readiness_requires_explicit_owner_migration_and_never_runs_it_implicitly(case):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from tempo_learning_runtime import create_app
+
+    name = "learning_" + uuid.uuid4().hex[:12]
+    owner = name + "_owner"
+    writer = name + "_writer"
+    reader = name + "_reader"
+    password = uuid.uuid4().hex
+    writer_url = make_conninfo(case.admin, dbname=name, user=writer, password=password)
+    reader_url = make_conninfo(case.admin, dbname=name, user=reader, password=password)
+    with psycopg.connect(case.admin, autocommit=True) as database:
+        database.execute(
+            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(owner))
+        )
+        for role in [writer, reader]:
+            database.execute(
+                sql.SQL("CREATE ROLE {} LOGIN NOINHERIT PASSWORD {}").format(
+                    sql.Identifier(role), sql.Literal(password)
+                )
+            )
+        database.execute(
+            sql.SQL("ALTER ROLE {} SET default_transaction_read_only=on").format(
+                sql.Identifier(reader)
+            )
+        )
+        database.execute(
+            sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                sql.Identifier(name), sql.Identifier(owner)
+            )
+        )
+        for role in [writer, reader]:
+            database.execute(
+                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                    sql.Identifier(name), sql.Identifier(role)
+                )
+            )
+    try:
+        with TestClient(
+            create_app(
+                replace(
+                    case.configuration,
+                    database_url=writer_url,
+                    reader_url=reader_url,
+                )
+            )
+        ) as client:
+            response = client.get("/health/ready")
+            assert response.status_code == 503
+            assert response.json() == {
+                "status": "unavailable",
+                "domain": "schema",
+                "reason": "migration_state_unavailable",
+            }
+        with psycopg.connect(writer_url) as database:
+            assert database.execute(
+                "SELECT to_regclass('learning.migration_history')"
+            ).fetchone()[0] is None
+            assert database.execute(
+                "SELECT to_regclass('learning.instance')"
+            ).fetchone()[0] is None
+    finally:
+        with psycopg.connect(case.admin, autocommit=True) as database:
+            database.execute(
+                sql.SQL("DROP DATABASE {}").format(sql.Identifier(name))
+            )
+            for role in [writer, reader, owner]:
+                database.execute(
+                    sql.SQL("DROP ROLE {}").format(sql.Identifier(role))
+                )
+
+
+def test_readiness_rejects_writer_only_privileged_credentials(case):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from tempo_learning_runtime import create_app
+
+    with TestClient(
+        create_app(replace(case.configuration, database_url=case.admin))
+    ) as client:
+        response = client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "unavailable",
+        "domain": "credentials",
+        "reason": "restricted_role_required",
+    }
+
+
+def test_readiness_rejects_unavailable_writer_with_healthy_reader(case):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from tempo_learning_runtime import create_app
+
+    missing_database = "learning_missing_" + uuid.uuid4().hex[:12]
+    with psycopg.connect(case.admin) as database:
+        assert (
+            database.execute(
+                "SELECT 1 FROM pg_database WHERE datname=%s", (missing_database,)
+            ).fetchone()
+            is None
+        )
+    with TestClient(
+        create_app(
+            replace(
+                case.configuration,
+                database_url=make_conninfo(case.admin, dbname=missing_database),
+            )
+        )
+    ) as client:
+        response = client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "unavailable",
+        "domain": "database",
+        "reason": "connection_unavailable",
+    }
+
+
+def test_readiness_is_data_preserving_for_both_pools(case):
+    def readiness_snapshot():
+        return {
+            "cards": [
+                tuple(row)
+                for row in case.query(
+                    "SELECT id,revision,serving_active,archived,state,due_date,repetitions,interval_days FROM learning.cards ORDER BY id"
+                )
+            ],
+            "queue": [
+                tuple(row)
+                for row in case.query(
+                    "SELECT id,card_id,queue_date,cycle,position,status,attempt_failed FROM learning.daily_queue ORDER BY id"
+                )
+            ],
+            "reviews": [
+                tuple(row)
+                for row in case.query(
+                    "SELECT id,card_id,rating,reviewed_at,previous_interval,next_interval,source_kind,source_ref FROM learning.reviews ORDER BY id"
+                )
+            ],
+            "receipts": [
+                tuple(row)
+                for row in case.query(
+                    "SELECT operation_id,command_name,state,request_hash,payload_json,response_json,error_json FROM learning.operation_receipts ORDER BY operation_id"
+                )
+            ],
+            "review_receipts": [
+                tuple(row)
+                for row in case.query(
+                    "SELECT attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json FROM learning.review_attempt_receipts ORDER BY attempt_id"
+                )
+            ],
+            "instance": tuple(
+                case.query(
+                    "SELECT i.workspace_id,s.timezone FROM learning.instance i JOIN learning.settings s ON s.id=i.id WHERE i.id=1"
+                )[0]
+            ),
+            "migrations": [
+                tuple(row)
+                for row in case.query(
+                    "SELECT id,checksum FROM learning.migration_history ORDER BY id"
+                )
+            ],
+        }
+
+    before = readiness_snapshot()
+    for _ in range(3):
+        response = case.client.get("/health/ready")
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "status": "ready",
+            "workspace_id": case.configuration.workspace_id,
+        }
+    assert readiness_snapshot() == before
 
 
 def opening_bundle(moves=("e2e4", "d2d4"), identity="publication-a", generation=1):

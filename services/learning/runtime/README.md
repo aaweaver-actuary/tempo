@@ -188,7 +188,21 @@ services/learning/runtime/.venv/bin/tempo-learning serve --port 8001
 services/learning/runtime/.venv/bin/tempo-learning maintain --once
 ```
 
-`/health/live` proves process liveness. `/health/ready` returns 503 when connectivity, the installed migration checksums, restricted roles or workspace binding are unavailable. Every queue read that issues an attempt authenticates before database access. Browser Origin and configured Host checks apply to reads and writes. Non-browser callers may omit Origin; `X-Tempo-Workspace`, when supplied, must match configuration.
+### Runtime image and readiness contract (consumed by #359-D)
+
+- Image entrypoint is fixed to `python -I -m tempo_learning_runtime.cli`; default command is `serve --host 0.0.0.0 --port 8001`.
+- The service exposes only HTTP port `8001`; no broker, worker scheduler, legacy backend, Games producer, engine runtime or Workbench sidecar is required.
+- Owner migration is an explicit prerequisite (`tempo-learning migrate` + `migrate.grant_runtime(...)`). HTTP startup never creates schema objects or runs migrations.
+- `/health/live` proves process liveness only.
+- `/health/ready` returns:
+  - `200 {"status":"ready","workspace_id":"..."}` only after sequential metadata checks through both pools (reader probe first, then writer), with restricted roles, workspace/timezone binding and migration state all valid.
+  - `503 {"status":"unavailable","domain":"database","reason":"connection_unavailable"|"query_failed"}` for connection/query failures.
+  - `503 {"status":"unavailable","domain":"schema","reason":"migration_state_unavailable"|"migration_history_outdated"}` when schema objects are missing or checksums differ.
+  - `503 {"status":"unavailable","domain":"credentials","reason":"restricted_role_required"|"workspace_binding_mismatch"|"insufficient_privileges"}` when runtime credentials or workspace binding are invalid.
+- The readiness path performs only these metadata reads and does not issue review/queue/publication commands or write migration/application data.
+- On shutdown, HTTP accepts no new requests, signals optional maintenance, closes host-activity reporting and then closes runtime-owned pools. No external queue/broker drain is required.
+
+Every queue read that issues an attempt authenticates before database access. Browser Origin and configured Host checks apply to reads and writes. Non-browser callers may omit Origin; `X-Tempo-Workspace`, when supplied, must match configuration.
 
 A command first durably accepts its immutable intent, then executes its handler directly. The gateway owns commit/rollback and nested handler savepoints. Borrowed application transactions cannot commit. Exact transport retries return the recorded response; a different request under the same identity conflicts. Logical review, Study, tactical and defense identities retain their family-specific bindings. Reconciliation has its own savepoint, and optional successor locks use nonblocking acquisition.
 
