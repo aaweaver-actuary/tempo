@@ -11,7 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from tempo_learning_database.adapters.api import psycopg, PoolTimeout
 from .config import Configuration
-from tempo_learning_database.connections import Database, connection
+from tempo_learning_database.connections import (
+    Database,
+    RuntimeRoleScopeError,
+    WorkspaceBindingError,
+    connection,
+)
 from . import gateway, queue_commands, queue_application, study_attempt_commands
 from .clock import date
 from tempo_learning_database.adapters import api as storage
@@ -248,6 +253,12 @@ def create_app(configuration: Configuration):
     def live():
         return {"status": "alive"}
 
+    def readiness_unavailable(domain, reason):
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "domain": domain, "reason": reason},
+        )
+
     @app.post("/api/study/activity")
     async def study_activity(session_id: str = Query(pattern=r"^[A-Za-z0-9_-]{1,80}$"),
                              expires_in_ms: int = Query(default=3000, ge=1, le=3000)):
@@ -262,10 +273,24 @@ def create_app(configuration: Configuration):
         try:
             with connection(read_only=True) as db:
                 applied, expected = storage.migration_state(db)
-                if applied != expected:
-                    raise RuntimeError("Learning migration history is not current")
-        except (psycopg.Error, PoolTimeout, RuntimeError):
-            return JSONResponse(status_code=503, content={"status": "unavailable"})
+        except RuntimeRoleScopeError:
+            return readiness_unavailable("credentials", "restricted_role_required")
+        except WorkspaceBindingError:
+            return readiness_unavailable("credentials", "workspace_binding_mismatch")
+        except psycopg.errors.InsufficientPrivilege:
+            return readiness_unavailable("credentials", "insufficient_privileges")
+        except (
+            psycopg.errors.InvalidSchemaName,
+            psycopg.errors.UndefinedTable,
+            psycopg.errors.UndefinedColumn,
+        ):
+            return readiness_unavailable("schema", "migration_state_unavailable")
+        except (psycopg.OperationalError, psycopg.InterfaceError, PoolTimeout):
+            return readiness_unavailable("database", "connection_unavailable")
+        except psycopg.Error:
+            return readiness_unavailable("database", "query_failed")
+        if applied != expected:
+            return readiness_unavailable("schema", "migration_history_outdated")
         return {"status": "ready", "workspace_id": configuration.workspace_id}
 
     @app.get("/api/operations/{operation_id}")

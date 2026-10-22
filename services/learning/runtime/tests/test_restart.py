@@ -199,7 +199,13 @@ def test_owned_database_restart_exposes_unready_then_recovers_existing_receipts(
                 text=True,
             )
             stopped = True
-            assert client.get("/health/ready").status_code == 503
+            unready = client.get("/health/ready")
+            assert unready.status_code == 503
+            assert unready.json() == {
+                "status": "unavailable",
+                "domain": "database",
+                "reason": "connection_unavailable",
+            }
             assert client.get("/health/live").status_code == 200
         finally:
             if stopped:

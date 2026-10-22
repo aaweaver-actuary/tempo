@@ -55,7 +55,34 @@ def test_readiness_decision_retains_source_migration_correspondence(monkeypatch,
     monkeypatch.setattr(api.storage,'migration_state',lambda _: ({'one':'hash'},{'one':'hash'} if matching else {'one':'changed'}))
     response=endpoints['/health/ready']()
     if matching:assert response==dict(status='ready',workspace_id='workspace')
-    else:assert response.status_code==503 and json.loads(response.body)==dict(status='unavailable')
+    else:assert response.status_code==503 and json.loads(response.body)==dict(
+        status='unavailable',domain='schema',reason='migration_history_outdated'
+    )
+
+
+@pytest.mark.parametrize(
+    'failure,expected',
+    [
+        (api.RuntimeRoleScopeError('restricted'),
+         dict(status='unavailable',domain='credentials',reason='restricted_role_required')),
+        (api.WorkspaceBindingError('workspace'),
+         dict(status='unavailable',domain='credentials',reason='workspace_binding_mismatch')),
+        (api.psycopg.errors.InsufficientPrivilege('denied'),
+         dict(status='unavailable',domain='credentials',reason='insufficient_privileges')),
+        (api.psycopg.errors.UndefinedTable('missing'),
+         dict(status='unavailable',domain='schema',reason='migration_state_unavailable')),
+        (api.psycopg.OperationalError('down'),
+         dict(status='unavailable',domain='database',reason='connection_unavailable')),
+    ],
+)
+def test_readiness_classifies_database_schema_and_credential_failures(
+    monkeypatch,endpoints,failure,expected
+):
+    def broken_connection(**_):
+        raise failure
+    monkeypatch.setattr(api,'connection',broken_connection)
+    response=endpoints['/health/ready']()
+    assert response.status_code==503 and json.loads(response.body)==expected
 
 
 @pytest.mark.parametrize('status,head,day,expected',[

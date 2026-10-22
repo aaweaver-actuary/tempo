@@ -4,6 +4,7 @@ COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /build
 COPY services/learning/application/pyproject.toml services/learning/application/pyproject.toml
 COPY services/learning/application/src services/learning/application/src
+COPY services/learning/application/hatch_build.py services/learning/application/hatch_build.py
 COPY services/learning/remediation/pyproject.toml services/learning/remediation/pyproject.toml
 COPY services/learning/remediation/src services/learning/remediation/src
 COPY packages/scheduling/pyproject.toml packages/scheduling/pyproject.toml

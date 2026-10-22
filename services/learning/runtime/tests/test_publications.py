@@ -5,6 +5,8 @@ from threading import Event
 import json, uuid
 import chess, psycopg, pytest
 from fastapi import HTTPException
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
 from tempo_chess_core import card_id
 from tempo_learning_runtime.frozen_maia_math import content_fingerprint
 from tempo_learning_runtime import gateway, publications
@@ -112,18 +114,101 @@ def test_workspace_binding_migration_history_and_admin_credentials_fail_readines
     with TestClient(
         create_app(replace(case.configuration, workspace_id="wrong-workspace"))
     ) as client:
-        assert client.get("/health/ready").status_code == 503
+        assert client.get("/health/ready").json() == {
+            "status": "unavailable",
+            "domain": "credentials",
+            "reason": "workspace_binding_mismatch",
+        }
     with TestClient(
         create_app(
             replace(case.configuration, database_url=case.admin, reader_url=case.admin)
         )
     ) as client:
-        assert client.get("/health/ready").status_code == 503
+        assert client.get("/health/ready").json() == {
+            "status": "unavailable",
+            "domain": "credentials",
+            "reason": "restricted_role_required",
+        }
     with psycopg.connect(case.admin) as database:
         database.execute(
             "UPDATE learning.migration_history SET checksum='changed' WHERE id=(SELECT MIN(id) FROM learning.migration_history)"
         )
-    assert case.client.get("/health/ready").status_code == 503
+    assert case.client.get("/health/ready").json() == {
+        "status": "unavailable",
+        "domain": "schema",
+        "reason": "migration_history_outdated",
+    }
+
+
+def test_readiness_requires_explicit_owner_migration_and_never_runs_it_implicitly(case):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from tempo_learning_runtime import create_app
+
+    name = "learning_" + uuid.uuid4().hex[:12]
+    owner = name + "_owner"
+    writer = name + "_writer"
+    reader = name + "_reader"
+    password = uuid.uuid4().hex
+    writer_url = make_conninfo(case.admin, dbname=name, user=writer, password=password)
+    reader_url = make_conninfo(case.admin, dbname=name, user=reader, password=password)
+    with psycopg.connect(case.admin, autocommit=True) as database:
+        database.execute(
+            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(owner))
+        )
+        for role in [writer, reader]:
+            database.execute(
+                sql.SQL("CREATE ROLE {} LOGIN NOINHERIT PASSWORD {}").format(
+                    sql.Identifier(role), sql.Literal(password)
+                )
+            )
+        database.execute(
+            sql.SQL("ALTER ROLE {} SET default_transaction_read_only=on").format(
+                sql.Identifier(reader)
+            )
+        )
+        database.execute(
+            sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                sql.Identifier(name), sql.Identifier(owner)
+            )
+        )
+        for role in [writer, reader]:
+            database.execute(
+                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                    sql.Identifier(name), sql.Identifier(role)
+                )
+            )
+    try:
+        with TestClient(
+            create_app(
+                replace(
+                    case.configuration,
+                    database_url=writer_url,
+                    reader_url=reader_url,
+                )
+            )
+        ) as client:
+            assert client.get("/health/ready").json() == {
+                "status": "unavailable",
+                "domain": "schema",
+                "reason": "migration_state_unavailable",
+            }
+        with psycopg.connect(writer_url) as database:
+            assert database.execute(
+                "SELECT to_regclass('learning.migration_history')"
+            ).fetchone()[0] is None
+            assert database.execute(
+                "SELECT to_regclass('learning.instance')"
+            ).fetchone()[0] is None
+    finally:
+        with psycopg.connect(case.admin, autocommit=True) as database:
+            database.execute(
+                sql.SQL("DROP DATABASE {}").format(sql.Identifier(name))
+            )
+            for role in [writer, reader, owner]:
+                database.execute(
+                    sql.SQL("DROP ROLE {}").format(sql.Identifier(role))
+                )
 
 
 def opening_bundle(moves=("e2e4", "d2d4"), identity="publication-a", generation=1):
