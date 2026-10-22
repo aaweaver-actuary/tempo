@@ -85,8 +85,6 @@ for (const viewport of [
     "Repertoire",
     "Builder",
     "Games",
-    "Progress",
-    "Statistics",
     "Settings",
   ]) {
     test(`${workspace} ${viewport.width}`, async ({ page }) => {
@@ -149,21 +147,6 @@ for (const width of [390, 1280]) {
     });
   });
 }
-test("service-unavailable", async ({ page }) => {
-  await prepareVisualUI(page);
-  await page.route("**/api/progress", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { detail: "Local database unavailable. Check the data mount." },
-    }),
-  );
-  await navigate(page, "Progress");
-  await expect(page.locator(".ui-notice.error")).toContainText(
-    "Review history unavailable: Could not load /api/progress (HTTP 503)",
-  );
-  await expect(page).toHaveScreenshot("service-unavailable.png");
-});
-
 test("laptop header navigation and actions remain separate", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await prepareVisualUI(page);

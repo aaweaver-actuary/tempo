@@ -30,6 +30,15 @@ it("tab preloading prepares the first unfinished tactic stage and shares the val
   expect(fetcher.mock.calls.filter(([url]) => url.includes("/progress"))).toHaveLength(1);
 });
 
+it("retired dashboard aliases do not preload dashboard data", async () => {
+  const fetcher = vi.fn(async () => Response.json({}));
+  vi.stubGlobal("fetch", fetcher);
+  await preloadView("insights");
+  await preloadView("progress");
+  await preloadView("statistics");
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
 it("failed asset requests report HTTP errors and remain retryable without sample fallback", async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response("Forbidden", { status: 403 })).mockResolvedValueOnce(Response.json(records));
   vi.stubGlobal("fetch", fetcher);

@@ -371,6 +371,37 @@ test("new unclassified specs fail planning and every test has nightly and releas
   assert(plan().collection.filter(item => item.critical).every(item => item.selected));
 });
 
+test("non-persistence backend ownership accepts only services and the two moved providers", () => {
+  const mapping = inventory.development.nonPersistenceBackend[0];
+  for (const path of [
+    "backend/app/services/game_sync.py",
+    "backend/app/games/providers/chesscom.py",
+    "backend/app/games/providers/lichess.py",
+  ]) {
+    const scopedInventory = {
+      ...inventory,
+      development: {
+        ...inventory.development,
+        nonPersistenceBackend: [{ ...mapping, paths: [path] }],
+      },
+    };
+    validateInventory([], scopedInventory);
+  }
+  for (const paths of [
+    ["backend/app/games/providers/unowned.py"],
+    ["backend/app/games/providers/chesscom.py", "backend/app/games/providers/chesscom.py"],
+  ]) {
+    const scopedInventory = {
+      ...inventory,
+      development: {
+        ...inventory.development,
+        nonPersistenceBackend: [{ ...mapping, paths }],
+      },
+    };
+    assert.throws(() => validateInventory([], scopedInventory), /Invalid non-persistence backend source ownership/);
+  }
+});
+
 test("leaf source selection includes complete families and rendering selects pinned checks", () => {
   const planned = plan({ paths: ["app/components/discoveries-tray.tsx"] });
   assert.equal(planned.scope, "targeted"); assert(planned.jobs.visual.required);
@@ -574,7 +605,6 @@ test("shared subsystem sources select complete consumer families without unrelat
     ["backend/app/services/study_grading.py", ["studies", "training"]],
     ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
     ["app/lib/discovery-preview-scheduler.ts", ["discoveries", "training"]],
-    ["app/lib/comparison.ts", ["games"]],
   ];
   for (const [sourcePath, expectedFamilies] of examples) {
     const planned = plan({ paths: [sourcePath, "tests/REGRESSIONS.md"] });
@@ -583,7 +613,7 @@ test("shared subsystem sources select complete consumer families without unrelat
     const requiredSpecs = new Set(expectedFamilies.flatMap(family => inventory.families[family]));
     assert.deepEqual(selectedIds(planned), planned.collection.filter(item => item.critical || requiredSpecs.has(item.file)).map(item => item.id).sort(), sourcePath);
   }
-  for (const [sourcePath, expectedFamilies] of [["app/views/studies_view.tsx", ["studies", "training"]], ["app/views/comparison_view.tsx", ["games"]]]) {
+  for (const [sourcePath, expectedFamilies] of [["app/views/studies_view.tsx", ["studies", "training"]]]) {
     const planned = plan({ paths: [sourcePath] });
     assert.deepEqual(planned.families, expectedFamilies);
     assert(planned.jobs.visual.required, "Narrow browser families must retain pinned rendering checks");
@@ -608,10 +638,9 @@ test("cross-cutting browser infrastructure and uncertain inputs require the comp
 
 test("renamed and copied subsystem paths union both complete family selections", () => {
   for (const status of ["R100", "C100"]) {
-    const paths = changedPathsFromNameStatus(`${status}\0app/lib/comparison.ts\0app/domain/study-exercises.ts\0`);
-    assert.deepEqual(plan({ paths }).families, ["games", "studies", "training"]);
+    const paths = changedPathsFromNameStatus(`${status}\0app/lib/opening-evidence-review.ts\0app/domain/study-exercises.ts\0`);
+    assert.deepEqual(plan({ paths }).families, ["defense", "studies", "training"]);
   }
-  assert.deepEqual(plan({ paths: changedPathsFromNameStatus("D\0app/lib/comparison.ts\0") }).families, ["games"]);
 });
 
 test("complete verification and non-PR boundaries retain the full collected browser matrix", () => {

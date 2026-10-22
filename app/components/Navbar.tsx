@@ -15,7 +15,6 @@ export const WORKSPACES: { id: View; label: string }[] = [
   { id: "builder", label: "Builder" },
   { id: "studies", label: "Studies" },
   { id: "games", label: "Games" },
-  { id: "insights", label: "Insights" },
   { id: "settings", label: "Settings" },
 ];
 const workspaces = WORKSPACES.filter(item => canOpenWorkspace(item.id, independentStudy));
@@ -83,7 +82,7 @@ export default function Navbar({
         aria-controls="workspace-menu"
         onClick={() => setMenuOpen(!menuOpen)}
       >
-        {workspaces.find((item) => item.id === view)?.label ?? "Compare"} ▾
+        {workspaces.find((item) => item.id === view)?.label ?? "Train"} ▾
       </Button>
       {menuOpen && (
         <div

@@ -34,7 +34,7 @@ export type LegacyWorkspaceSlots = {
   content?: ReactNode;
   dialogs?: ReactNode;
   onEditCard?: (card: PracticeCard | null) => void;
-  onOpenPosition?: (target: 'analysis' | 'builder' | 'games' | 'compare', position?: TrainingPositionContext) => void;
+  onOpenPosition?: (target: 'analysis' | 'builder' | 'games', position?: TrainingPositionContext) => void;
 };
 export type LegacyWorkspaceProps = {
   controllerRef: MutableRefObject<LegacyWorkspaceController | null>;

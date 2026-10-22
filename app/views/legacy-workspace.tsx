@@ -13,9 +13,7 @@ import { invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
 import { useShallow } from "zustand/react/shallow";
 import { useTrainingStore } from "../state/training-store";
 import { canonicalFenKey } from "../utils/canonical-line";
-import { trainedColor } from "../utils/cards";
 import { trainingBuilderSession, type TrainingPositionContext } from "../lib/training-builder-route";
-import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
 import type { DiscoveryItem } from "../components/discoveries-tray";
 import type { AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
@@ -26,9 +24,7 @@ import LegacyGamesWorkspace from "./legacy-games-workspace";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
 const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 const BuilderView = lazy(() => import("./analysis_view"));
-const ComparisonView = lazy(() => import("./comparison_view"));
 const CardEditor = lazy(() => import("./card_editor"));
-const InsightsView = lazy(() => import("./insights_view"));
 const RepertoireView = lazy(() => import("./repertoire_view"));
 const SettingsView = lazy(() => import("./settings_view"));
 const StudiesView = lazy(() => import("./studies_view"));
@@ -38,7 +34,13 @@ const ServiceStatusPanel = lazy(() => import("../components/service-status-panel
 const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then(module => ({ default: module.DiscoveriesTray })));
 import { TreeBrowser } from "./tree_browser";
 
-/** Full workspace owner: authoring, discoveries, comparison, repair, and their handoffs. */
+export function prepareLegacyWorkspaceNavigation(view: View): View {
+  return view === "compare" || view === "insights" || view === "progress" || view === "statistics"
+    ? "train"
+    : view;
+}
+
+/** Full workspace owner: authoring, discoveries, repair, and their handoffs. */
 export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
   const { currentView, changeWorkspace, boardTheme, pieceSet, soundOn, changeBoardTheme,
     changePieceSet, changeSound, studyOnlyMode, safeBreakCounter, incrementSafeBreak,
@@ -73,8 +75,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     deletionRecoveryStarted.current = true;
     void recoverCardDeletion();
   }, [databaseQueue, offlineQueue, recoverCardDeletion]);
-  const [comparisonLaunch, setComparisonLaunch] = useState<ComparisonLaunch>();
-  const [comparisonOpenError, setComparisonOpenError] = useState("");
+  const [positionOpenError, setPositionOpenError] = useState("");
   const [discoveryReturn, setDiscoveryReturn] = useState<{
     view: View;
     id: string;
@@ -112,9 +113,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     openRepairRepertoireId.current = undefined;
     setRepairRepertoireId(undefined);
   }, []);
-  const [insightsTab, setInsightsTab] = useState<"training" | "games">(
-    "training",
-  );
   const [gamesFenFilter, setGamesFenFilter] = useState("");
   const [gamesRepertoireFilter, setGamesRepertoireFilter] = useState("");
   const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
@@ -192,33 +190,10 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     checkIntegrity: checkPendingIntegrity,
     deferRepair: deferRepairDialog,
     prepareNavigation(view) {
-      if (view === "progress" || view === "statistics") {
-        setInsightsTab(view === "statistics" ? "games" : "training");
-        return "insights";
-      }
-      return view;
+      return prepareLegacyWorkspaceNavigation(view);
     },
   }), [checkPendingIntegrity, deferRepairDialog]);
-  function openReviewPosition(target: "analysis" | "builder" | "games" | "compare", displayed: TrainingPositionContext = { fen: currentFenString, cursor: step }) {
-    if (target === "compare") {
-      try {
-        const session = trainingBuilderSession(card, displayed, false);
-        const source: ComparisonBoard = {
-          id: "source", label: card.title || "Training card", cardId: card.backendId ?? card.id,
-          orientation: trainedColor(card), startingFen: card.startingFen,
-          history: session.history, cursor: session.cursor,
-        };
-        setComparisonOpenError("");
-        setComparisonLaunch({
-          source, sourceKey: `${source.cardId}:${card.revision ?? 1}:${source.cursor}:${displayed.fen}`,
-          repertoireId: card.repertoireId, returnView: "train",
-        });
-        changeWorkspace("compare");
-      } catch (error) {
-        setComparisonOpenError(`Cannot compare this card until its move route is repaired. ${String(error)}`);
-      }
-      return;
-    }
+  function openReviewPosition(target: "analysis" | "builder" | "games", displayed: TrainingPositionContext = { fen: currentFenString, cursor: step }) {
     if (target === "games") {
       setGamesFenFilter(canonicalFenKey(displayed.fen));
       setGamesRepertoireFilter("");
@@ -228,9 +203,9 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     let session: BuilderSession;
     try {
       session = trainingBuilderSession(card, displayed, target === "builder");
-      setComparisonOpenError("");
+      setPositionOpenError("");
     } catch (error) {
-      setComparisonOpenError(`Cannot open this card's route. ${String(error)}`);
+      setPositionOpenError(`Cannot open this card's route. ${String(error)}`);
       return;
     }
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
@@ -346,7 +321,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
 
 </>,
     trainingNotice: <>
-      {comparisonOpenError && currentView === "train" && <div className="ui-notice error" role="alert">{comparisonOpenError}</div>}
+      {positionOpenError && currentView === "train" && <div className="ui-notice error" role="alert">{positionOpenError}</div>}
       {deletionRecoveryError && <div className="ui-notice error" role="alert">{deletionRecoveryError} <Button onClick={() => void recoverCardDeletion()}>Check card deletion</Button></div>}
     </>,
     repairNotice: pausedIntegrity && <TrainingRepairNotice
@@ -433,27 +408,9 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
               imported={importedRepertoires}
               settings={new Settings()}
               onPasteAnalysis={setPasteContext}
-              onCompare={(source, repertoireId) => {
-                setComparisonLaunch({
-                  source,
-                  sourceKey: `${source.startingFen}:${source.cursor}:${source.history.map((move) => move.uci).join(" ")}`,
-                  repertoireId,
-                  returnView: "builder",
-                });
-                changeWorkspace("compare");
-              }}
               useSharedBoard
             />
           </>
-        )}
-        {currentView === "compare" && comparisonLaunch && (
-          <ComparisonView
-            key={comparisonLaunch.sourceKey}
-            launch={comparisonLaunch}
-            theme={boardTheme}
-            pieceSet={pieceSet}
-            onReturn={() => changeWorkspace(comparisonLaunch.returnView)}
-          />
         )}
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
@@ -464,15 +421,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
           onClearFilter={() => { setGamesFenFilter(""); setGamesRepertoireFilter(""); }}
           onQueueUpdated={refreshQueueOnly} onNavigate={changeWorkspace}
         />}
-        {currentView === "insights" && (
-          <InsightsView
-            initialTab={insightsTab}
-            onTabChange={setInsightsTab}
-            reviewed={reviewed}
-            cardsLeft={cardsLeft}
-            totalCards={totalCards}
-          />
-        )}
         {currentView === "settings" && (
           <SettingsView
             theme={boardTheme}

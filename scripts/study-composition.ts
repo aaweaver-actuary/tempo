@@ -16,8 +16,6 @@ export const optionalStudyImplementations = {
   authoring: ['app/views/analysis_view.tsx', 'app/views/repertoire_view.tsx',
     'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',
     'app/ImportDialogBox.tsx', 'app/AnalysisPasteDialog.tsx'],
-  comparison: ['app/views/comparison_view.tsx'],
-  insights: ['app/views/insights_view.tsx', 'app/views/statistics_view.tsx', 'app/views/progress_view.tsx'],
   workspaceAdministration: ['app/views/settings_view.tsx', 'app/components/service-status-panel.tsx',
     'app/components/integrity-repair-status.tsx', 'app/components/repertoire-integrity-dialog.tsx',
     'app/components/discoveries-tray.tsx'],

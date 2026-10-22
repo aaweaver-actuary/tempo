@@ -261,9 +261,6 @@ export async function preloadView(view: View) {
     repertoire: ["repertoires"],
     games: ["games/summary", "repertoire/lines"],
     endgames: ["endgames/templates"],
-    insights: ["progress"],
-    progress: ["progress"],
-    statistics: ["statistics/overview?window_days=30"],
     settings: ["settings"],
     studies: ["studies"],
   };

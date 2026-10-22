@@ -90,7 +90,6 @@ import {
   type TranspositionResult,
 } from "../lib/position-similarity";
 import CloseButton from "../components/buttons/CloseButton";
-import type { ComparisonBoard } from "../lib/comparison";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
 type TrainingRouteLookup = { attempt: number; task: StudyTask };
@@ -181,7 +180,6 @@ export default function BuilderView({
   theme,
   pieceSet,
   onPasteAnalysis,
-  onCompare,
   useSharedBoard = false,
 }: {
   imported: LocalRepertoire[];
@@ -192,7 +190,6 @@ export default function BuilderView({
     startingFen: string;
     sourceGapId?: string;
   }) => void;
-  onCompare?: (source: ComparisonBoard, repertoireId?: string) => void;
   useSharedBoard?: boolean;
 }) {
   const tools = useTaskTabs(
@@ -1251,11 +1248,6 @@ export default function BuilderView({
       <div className="analysis-heading compact-analysis">
         <h1>Builder</h1>
         <div className="analysis-switches">
-          {onCompare && usesLocalApi() && <Button className="analysis-compare-trigger" onClick={() => onCompare({
-            id: "source", label: "Builder position", startingFen, orientation,
-            history: history.map((move) => ({ uci: move.uci, san: move.san, fen: move.fen })),
-            cursor,
-          }, selectedRepertoireId)}>Compare positions</Button>}
           {onPasteAnalysis && (
             <Button
               className="analysis-paste-trigger"
