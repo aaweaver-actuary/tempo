@@ -6,7 +6,8 @@ export const optionalStudyImplementations = {
   games: ['app/views/games_view.tsx', 'app/components/workbench-game-sync.tsx',
     'app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
   composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx', 'app/views/legacy-games-workspace.tsx'],
-  workbench: ['app/components/workbench-launch.tsx', 'app/lib/workbench-navigation.ts'],
+  // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
+  workbench: ['app/components/workbench-launch.tsx'],
   discovery: ['app/lib/discovery-admission-outbox.ts', 'app/lib/discovery-preview-scheduler.ts',
     'app/lib/opportunity-command.ts', 'app/lib/opportunity-refresh-command.ts'],
   engines: ['app/lib/analysis-engines.ts', 'app/lib/engine-broker.ts', 'app/lib/maia-broker.ts',
@@ -41,8 +42,11 @@ type SharedDependencies = {
 };
 
 function modulePath(root: string, id: string) {
-  const path = relative(root, id.split('?')[0]).replaceAll('\\', '/');
-  return path.startsWith('..') ? null : path;
+  const resolved = id.split('?')[0].replaceAll('\\', '/');
+  const path = relative(root, resolved).replaceAll('\\', '/');
+  if (!path.startsWith('..')) return path;
+  const nodeModules = resolved.lastIndexOf('/node_modules/');
+  return nodeModules >= 0 ? resolved.slice(nodeModules + 1) : null;
 }
 
 function appModule(path: string | null) {
