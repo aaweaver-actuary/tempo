@@ -1,0 +1,33 @@
+FROM node:22-slim AS build
+WORKDIR /app
+
+# Install the root dependency graph and the three local workspace packages.
+COPY package.json package-lock.json ./
+COPY packages/chess-line/package.json ./packages/chess-line/package.json
+COPY database/browser-intents/package.json ./database/browser-intents/package.json
+COPY packages/study-session/package.json ./packages/study-session/package.json
+RUN npm ci
+
+# Inputs for build:study and its retained Study source closure. Optional
+# implementation roots are removed from this context by the paired ignore file.
+COPY tsconfig.json vite.static.config.ts module-resolution.ts ./
+COPY static/index.html ./static/index.html
+COPY static/src/ ./static/src/
+COPY app/ ./app/
+COPY database/browser/ ./database/browser/
+COPY packages/chess-line/src/ ./packages/chess-line/src/
+COPY packages/chess-line/tsconfig.json ./packages/chess-line/tsconfig.json
+COPY database/browser-intents/src/ ./database/browser-intents/src/
+COPY database/browser-intents/tsconfig.json ./database/browser-intents/tsconfig.json
+COPY packages/study-session/src/ ./packages/study-session/src/
+COPY packages/study-session/tsconfig.json ./packages/study-session/tsconfig.json
+COPY scripts/study-composition.ts scripts/offline-shell-assets.ts scripts/maia-cache-asset.ts ./scripts/
+COPY public/ ./public/
+
+ARG TEMPO_WORKBENCH_URL=""
+RUN npm run build:study
+
+FROM nginx:1.28-alpine
+COPY nginx.study.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/local-dist/ /usr/share/nginx/html/
+EXPOSE 80
