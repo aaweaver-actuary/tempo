@@ -271,8 +271,11 @@ def create_app(configuration: Configuration):
     @app.get("/health/ready")
     def ready():
         try:
-            with connection(read_only=True) as db:
-                applied, expected = storage.migration_state(db)
+            for read_only in (True, False):
+                with connection(read_only=read_only) as db:
+                    applied, expected = storage.migration_state(db)
+                    if applied != expected:
+                        return readiness_unavailable("schema", "migration_history_outdated")
         except RuntimeRoleScopeError:
             return readiness_unavailable("credentials", "restricted_role_required")
         except WorkspaceBindingError:
@@ -289,8 +292,6 @@ def create_app(configuration: Configuration):
             return readiness_unavailable("database", "connection_unavailable")
         except psycopg.Error:
             return readiness_unavailable("database", "query_failed")
-        if applied != expected:
-            return readiness_unavailable("schema", "migration_history_outdated")
         return {"status": "ready", "workspace_id": configuration.workspace_id}
 
     @app.get("/api/operations/{operation_id}")

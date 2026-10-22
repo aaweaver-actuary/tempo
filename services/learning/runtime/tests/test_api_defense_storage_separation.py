@@ -85,6 +85,130 @@ def test_readiness_classifies_database_schema_and_credential_failures(
     assert response.status_code==503 and json.loads(response.body)==expected
 
 
+def test_readiness_requires_both_database_roles(monkeypatch,endpoints):
+    scenarios=[
+        dict(
+            name='both healthy',
+            reader_failure=None,
+            writer_failure=None,
+            expected=None,
+            probes=[True,False],
+            migrations=[True,False],
+            releases=[True,False],
+        ),
+        dict(
+            name='writer runtime role',
+            reader_failure=None,
+            writer_failure=api.RuntimeRoleScopeError('restricted'),
+            expected=dict(status='unavailable',domain='credentials',reason='restricted_role_required'),
+            probes=[True,False],
+            migrations=[True],
+            releases=[True],
+        ),
+        dict(
+            name='writer workspace binding',
+            reader_failure=None,
+            writer_failure=api.WorkspaceBindingError('workspace'),
+            expected=dict(status='unavailable',domain='credentials',reason='workspace_binding_mismatch'),
+            probes=[True,False],
+            migrations=[True],
+            releases=[True],
+        ),
+        dict(
+            name='writer timeout',
+            reader_failure=None,
+            writer_failure=api.PoolTimeout('timeout'),
+            expected=dict(status='unavailable',domain='database',reason='connection_unavailable'),
+            probes=[True,False],
+            migrations=[True],
+            releases=[True],
+        ),
+        dict(
+            name='writer connection down',
+            reader_failure=None,
+            writer_failure=api.psycopg.OperationalError('down'),
+            expected=dict(status='unavailable',domain='database',reason='connection_unavailable'),
+            probes=[True,False],
+            migrations=[True],
+            releases=[True],
+        ),
+        dict(
+            name='reader restricted role',
+            reader_failure=api.RuntimeRoleScopeError('restricted'),
+            writer_failure=None,
+            expected=dict(status='unavailable',domain='credentials',reason='restricted_role_required'),
+            probes=[True],
+            migrations=[],
+            releases=[],
+        ),
+        dict(
+            name='reader missing schema',
+            reader_failure=api.psycopg.errors.UndefinedTable('missing'),
+            writer_failure=None,
+            expected=dict(status='unavailable',domain='schema',reason='migration_state_unavailable'),
+            probes=[True],
+            migrations=[],
+            releases=[],
+        ),
+    ]
+    for scenario in scenarios:
+        probes=[];migrations=[];entered=[];released=[]
+        class Probe:
+            def __init__(self,read_only):self.read_only=read_only
+            def __enter__(self):
+                entered.append(self.read_only)
+                return SimpleNamespace(read_only=self.read_only)
+            def __exit__(self,*_):released.append(self.read_only)
+        def readiness_connection(*,read_only=False,**_):
+            probes.append(read_only)
+            if read_only and scenario['reader_failure'] is not None:
+                raise scenario['reader_failure']
+            if not read_only and scenario['writer_failure'] is not None:
+                raise scenario['writer_failure']
+            return Probe(read_only)
+        def migration_state(database):
+            migrations.append(database.read_only)
+            return {'one':'hash'},{'one':'hash'}
+        monkeypatch.setattr(api,'connection',readiness_connection)
+        monkeypatch.setattr(api.storage,'migration_state',migration_state)
+        response=endpoints['/health/ready']()
+        if scenario['expected'] is None:
+            assert response==dict(status='ready',workspace_id='workspace'),scenario['name']
+        else:
+            assert response.status_code==503,scenario['name']
+            assert json.loads(response.body)==scenario['expected'],scenario['name']
+        assert probes==scenario['probes'],scenario['name']
+        assert migrations==scenario['migrations'],scenario['name']
+        assert entered==scenario['migrations'],scenario['name']
+        assert released==scenario['releases'],scenario['name']
+
+
+def test_readiness_checks_writer_migration_state(monkeypatch,endpoints):
+    probes=[];migrations=[];released=[]
+    class Probe:
+        def __init__(self,read_only):self.read_only=read_only
+        def __enter__(self):return SimpleNamespace(read_only=self.read_only)
+        def __exit__(self,*_):released.append(self.read_only)
+    def readiness_connection(*,read_only=False,**_):
+        probes.append(read_only)
+        return Probe(read_only)
+    def migration_state(database):
+        migrations.append(database.read_only)
+        if database.read_only:
+            return {'one':'hash'},{'one':'hash'}
+        return {'one':'changed'},{'one':'hash'}
+    monkeypatch.setattr(api,'connection',readiness_connection)
+    monkeypatch.setattr(api.storage,'migration_state',migration_state)
+    response=endpoints['/health/ready']()
+    assert response.status_code==503
+    assert json.loads(response.body)==dict(
+        status='unavailable',domain='schema',reason='migration_history_outdated'
+    )
+    assert probes==[True,False]
+    assert migrations==[True,False]
+    assert released==[True,False]
+
+
 @pytest.mark.parametrize('status,head,day,expected',[
     ('queued',4,DAY.isoformat(),'head'),('queued',5,DAY.isoformat(),'queued'),
     ('complete',4,DAY.isoformat(),'completed'),('superseded',None,DAY.isoformat(),'unavailable'),
