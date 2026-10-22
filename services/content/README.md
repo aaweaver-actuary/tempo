@@ -117,6 +117,29 @@ third-party requirements. No checkout, test tooling, development dependency,
 or other Tempo service is required by the installed runtime. The artifact
 qualification below proves that installation on Python 3.12 and 3.14.
 
+## Preview a new authored PGN without a database
+
+Supply explicit identities and color for a new authored source; the output
+directory must exist and the manifest path must be unused:
+
+```sh
+tempo-content import manifest opening.pgn --workspace content-example --source-key opening --title "My opening" --color white --output opening.manifest.json
+```
+
+The saved file is the raw `ImportManifest` JSON. Stdout reports `validated`, its
+path and source SHA256, plus route/exercise counts. Validation does not import,
+activate, or teach any content, and it does not convert historical cards or
+change an existing source's learner color. After configuring the Content database
+and the same workspace as described below, the existing next step consumes it:
+
+```sh
+tempo-content import plan opening.pgn --manifest opening.manifest.json --expected-revision 0
+```
+
+Inspect the returned draft with `tempo-content draft show DRAFT_ID`; approval
+remains explicit with `tempo-content draft approve DRAFT_ID --digest DRAFT_DIGEST`.
+Planning and approval are separate from Learning delivery and activation.
+
 ## Database and operation
 
 An operator provisions a separate logical Content database, a Content owner
