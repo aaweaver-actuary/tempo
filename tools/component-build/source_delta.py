@@ -134,10 +134,10 @@ def _tree(repo: Path, commit: str) -> dict[str, str]:
     return objects
 
 
-def _changed_paths(repo: Path, base: str, head: str) -> list[dict[str, str]]:
+def _changed_paths(repo: Path, base: str, head: str) -> list[dict[str, Any]]:
     raw = _git(repo, "diff", "--name-status", "-z", "--find-renames", "--no-ext-diff", base, head, "--")
     fields = raw.split(b"\0")
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     index = 0
     while index < len(fields) and fields[index]:
         status = fields[index].decode("ascii")
@@ -149,8 +149,9 @@ def _changed_paths(repo: Path, base: str, head: str) -> list[dict[str, str]]:
             new_path = _decode_git_path(fields[index + 1])
             index += 2
             if status.startswith("R"):
-                rows.append({"status": status, "path": old_path, "role": "old"})
-                rows.append({"status": status, "path": new_path, "role": "new"})
+                pair = [old_path, new_path]
+                rows.append({"status": status, "path": old_path, "role": "old", "rename_paths": pair})
+                rows.append({"status": status, "path": new_path, "role": "new", "rename_paths": pair})
             else:
                 rows.append({"status": status, "path": old_path, "role": "source"})
                 rows.append({"status": status, "path": new_path, "role": "copy"})
@@ -189,7 +190,11 @@ def build_report(repo: Path, base_arg: str, head_arg: str, classification_file: 
     changes = _changed_paths(repo, base, head)
 
     changed_names = {row["path"] for row in changes}
-    missing = sorted(name for name in changed_names if _is_protected(name) and name not in classifications)
+    missing_names = {name for name in changed_names if _is_protected(name) and name not in classifications}
+    for row in changes:
+        if row["status"].startswith("R") and any(_is_protected(name) for name in row["rename_paths"]):
+            missing_names.update(name for name in row["rename_paths"] if name not in classifications)
+    missing = sorted(missing_names)
     if missing:
         raise SourceDeltaError("missing classifications for changed protected paths: " + ", ".join(repr(x) for x in missing))
     absent = sorted(name for name in classifications if name not in base_tree and name not in head_tree)

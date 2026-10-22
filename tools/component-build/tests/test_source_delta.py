@@ -119,6 +119,56 @@ class SourceDeltaTests(unittest.TestCase):
         report = self.report(base, head)
         self.assertEqual(report["totals"]["broad-production"]["net"], 0)
 
+    def test_protected_to_outside_rename_requires_both_classifications(self):
+        self.write("backend/source.py", b"alpha\nbeta\n")
+        base = self.commit("base")
+        (self.root / "app").mkdir()
+        (self.root / "backend/source.py").rename(self.root / "app/source.py")
+        head = self.commit("move outside protected roots")
+
+        for entries in (
+            [{"path": "backend/source.py", "category": "broad-production"}],
+            [{"path": "app/source.py", "category": "broad-production"}],
+        ):
+            self.manifest(entries)
+            result = self.run_tool(base, head)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"missing classifications", result.stderr)
+
+        self.manifest(
+            [
+                {"path": "backend/source.py", "category": "broad-production"},
+                {"path": "app/source.py", "category": "broad-production"},
+            ]
+        )
+        report = self.report(base, head)
+        self.assertEqual(report["totals"]["broad-production"]["net"], 0)
+
+    def test_outside_to_protected_rename_requires_both_classifications(self):
+        self.write("app/source.py", b"alpha\nbeta\n")
+        base = self.commit("base")
+        (self.root / "workers").mkdir()
+        (self.root / "app/source.py").rename(self.root / "workers/source.py")
+        head = self.commit("move into protected roots")
+
+        for entries in (
+            [{"path": "app/source.py", "category": "broad-production"}],
+            [{"path": "workers/source.py", "category": "broad-production"}],
+        ):
+            self.manifest(entries)
+            result = self.run_tool(base, head)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"missing classifications", result.stderr)
+
+        self.manifest(
+            [
+                {"path": "app/source.py", "category": "broad-production"},
+                {"path": "workers/source.py", "category": "broad-production"},
+            ]
+        )
+        report = self.report(base, head)
+        self.assertEqual(report["totals"]["broad-production"]["net"], 0)
+
     def test_test_only_change_does_not_reduce_production(self):
         self.write("backend/core.py", b"code\n")
         self.write("tools/example_test.py", b"old\n")
