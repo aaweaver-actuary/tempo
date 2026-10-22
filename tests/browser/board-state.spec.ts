@@ -15,42 +15,14 @@ test("every directed workspace transition isolates annotations and board input",
         "data-board-owner",
         destination.toLowerCase(),
       );
-      if (destination === "Builder")
-        await expect(page.locator(".board-frame")).toHaveAttribute(
-          "data-input-enabled",
-          "true",
-        );
     }
-});
-test("builder annotations never appear in Train", async ({ page }) => {
-  await prepareVisualUI(page);
-  await navigate(page, "Builder");
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await expect(
-    page.getByRole("textbox", { name: "Position comment" }),
-  ).toBeEnabled();
-  const board = page.locator(".cg-wrap");
-  const bounds = (await board.boundingBox())!;
-  await page.mouse.move(
-    bounds.x + (4.5 * bounds.width) / 8,
-    bounds.y + (4.5 * bounds.height) / 8,
-  );
-  await page.mouse.down({ button: "right" });
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-  );
-  await page.mouse.up({ button: "right" });
-  await expect(board.locator("svg.cg-shapes circle")).toHaveCount(1);
-  await navigate(page, "Train");
-  await expect(board.locator("svg.cg-shapes circle")).toHaveCount(0);
 });
 test("pointer resizing persists and clamps without horizontal overflow", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await prepareVisualUI(page);
-  await navigate(page, "Builder");
+  await navigate(page, "Train");
   const divider = page.getByRole("separator", { name: "Board size" });
   const before = (await divider.boundingBox())!;
   await page.mouse.move(before.x + 10, before.y + 80);
@@ -69,12 +41,10 @@ test("pointer resizing persists and clamps without horizontal overflow", async (
 });
 
 test('owner changes clear an unfinished square selection at the same position', async ({page}) => {
-  await prepareVisualUI(page); await navigate(page,'Builder');
-  await page.getByRole('tab',{name:'Notes',exact:true}).click();
-  await expect(page.getByRole('textbox',{name:'Position comment'})).toBeEnabled();
+  await prepareVisualUI(page); await navigate(page,'Train');
   const surface=(await page.locator('.cg-wrap').boundingBox())!;
   await page.mouse.click(surface.x+4.5*surface.width/8,surface.y+6.5*surface.height/8);
   await expect(page.locator('cg-board square.selected').filter({visible:true})).toHaveCount(1);
-  await navigate(page,'Train');
+  await navigate(page,'Tactics');
   await expect(page.locator('cg-board square.selected').filter({visible:true})).toHaveCount(0);
 });

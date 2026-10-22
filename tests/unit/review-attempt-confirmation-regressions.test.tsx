@@ -28,9 +28,8 @@ vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMo
 // This separate pipeline is unchanged; isolate review recovery's idle opportunities.
 vi.mock("../../app/hooks/use-opening-evidence-recovery", () => ({ useOpeningEvidenceRecovery: vi.fn() }));
 vi.mock("../../app/lib/background-study", async () => {
-  const { createStudyPositionStore } = await import("../../app/lib/study-position-store");
-  const compute = createStudyPositionStore();
-  return { runStudyTask: vi.fn(async task => compute(task)) };
+  const { computeStudyTask } = await import("../../app/lib/study-computation");
+  return { runStudyTask: vi.fn(async task => computeStudyTask(task)) };
 });
 
 const queueCard = (id: string, entryId: number) => ({ id, queue_entry_id: entryId,

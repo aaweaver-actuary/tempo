@@ -83,7 +83,6 @@ for (const viewport of [
     "Tactics",
     "Endgames",
     "Repertoire",
-    "Builder",
     "Settings",
   ]) {
     test(`${workspace} ${viewport.width}`, async ({ page }) => {
@@ -114,10 +113,6 @@ for (const viewport of [
       }
       if (workspace === "Tactics")
         await expect(page.getByText(/Puzzle \d+ of/)).toBeVisible();
-      if (workspace === "Builder")
-        await expect(
-          page.getByRole("combobox", { name: "Active repertoire" }),
-        ).toHaveValue("visual-repertoire");
       await expect(page).toHaveScreenshot(
         `${workspace.toLowerCase()}-${viewport.width}.png`,
         { animations: "disabled", fullPage: true },

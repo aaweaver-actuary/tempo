@@ -61,8 +61,6 @@ export default function RepertoireView({
   onImport,
   onPaste,
   onPasteGap,
-  onBrowse,
-  onResolveGap,
   onRepair,
   onDeleteLocal,
   onRenameLocal,
@@ -76,8 +74,6 @@ export default function RepertoireView({
   onImport: () => void;
   onPaste?: () => void;
   onPasteGap?: (repertoireId: string, gap: GapTarget) => void;
-  onBrowse: (id: string) => void;
-  onResolveGap: (repertoireId: string, gap: GapTarget) => void;
   onRepair: (id: string) => void;
   onDeleteLocal: (id: string) => void;
   onRenameLocal: (id: string, name: string) => void;
@@ -542,19 +538,11 @@ export default function RepertoireView({
                   </small>
                   {coverageByRepertoire[item.id].last_error && <p role="alert">{coverageByRepertoire[item.id].last_error}</p>}
                   {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => (
-                    <span key={gap.gap_id}>
-                      <Button onClick={() => onResolveGap(item.id, gap)}>
-                        Fill {gap.move_uci} gap ·{" "}
-                        {gap.probability === null
-                          ? "unknown"
-                          : `${Math.round(gap.probability * 1000) / 10}%`}
+                    onPasteGap && (
+                      <Button key={gap.gap_id} onClick={() => onPasteGap(item.id, gap)}>
+                        Paste line for gap
                       </Button>
-                      {onPasteGap && (
-                        <Button onClick={() => onPasteGap(item.id, gap)}>
-                          Paste line for gap
-                        </Button>
-                      )}
-                    </span>
+                    )
                   ))}
                 </div>
               )}
@@ -655,7 +643,7 @@ export default function RepertoireView({
                             .
                           </p>
                         )}
-                        {opportunity.card_id ? (
+                        {opportunity.card_id && (
                           <Button
                             disabled={opportunity.admission_state === "queued"}
                             onClick={() =>
@@ -676,25 +664,6 @@ export default function RepertoireView({
                               ? "In training queue"
                               : "Train this decision"}
                           </Button>
-                        ) : (
-                          opportunity.opponent_move_uci && (
-                            <Button
-                              onClick={() =>
-                                onResolveGap(item.id, {
-                                  gap_id:
-                                    typeof evidence.coverage_node_id ===
-                                    "string"
-                                      ? `${evidence.coverage_node_id}:${opportunity.opponent_move_uci}`
-                                      : "",
-                                  fen: opportunity.fen,
-                                  move_uci: opportunity.opponent_move_uci!,
-                                  trained_color: opportunity.trained_color,
-                                })
-                              }
-                            >
-                              Investigate branch
-                            </Button>
-                          )
                         )}
                         {opportunity.kind === "post_gap_weakness" && (
                           <>
@@ -767,13 +736,6 @@ export default function RepertoireView({
                 </div>
               )}
               <div className="repertoire-actions">
-                <Button
-                  disabled={item.id === "__retained_cards__"}
-                  className="browse-button"
-                  onClick={() => onBrowse(item.id)}
-                >
-                  Browse tree
-                </Button>
                 {item.backend && item.id !== "__retained_cards__" && (
                   <Button onClick={() => {
                     sessionStorage.setItem("tempo-statistics-repertoire", item.id);

@@ -249,25 +249,6 @@ test("late removed preview cannot be reused when the discovery returns", async (
   expect(previewReads).toBeGreaterThanOrEqual(2);
 });
 
-test("unsupported saved discovery explains Builder route without sending train", async ({ page }) => {
-  await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
-    discoveryFixture("unsupported", "revision", "prefix-card"),
-  ]) }));
-  let trainPosts = 0;
-  await page.route("**/api/repertoires/rep/opportunities/unsupported/train", route => {
-    trainPosts++;
-    return route.fulfill({ status: 409, json: { detail: "The target decision cannot be isolated from this prefix card" } });
-  });
-  await page.route("**/api/repertoires/rep/opportunities/unsupported/training-eligibility", route =>
-    route.fulfill({ json: { eligible: false, reason: "The target decision cannot be isolated from this prefix card" } }));
-  await prepareUI(page);
-  await openDiscoveries(page);
-  const viewer = page.getByRole("dialog", { name: "Discoveries" });
-  await expect(viewer.getByText(/target decision cannot be isolated/)).toBeVisible();
-  await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
-  await expect(viewer.getByRole("button", { name: "Open in Builder" })).toBeEnabled();
-  expect(trainPosts).toBe(0);
-});
 
 test("supported saved discovery checks eligibility before direct training", async ({ page }) => {
   await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
@@ -412,7 +393,7 @@ test("black repertoire discovery keeps black at the bottom through route and pre
 });
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1470, height: 836 }]) {
-  test(`discovery viewer compares one learner decision and returns from Builder ${viewport.width}`, async ({ page }) => {
+  test(`discovery viewer compares one learner decision ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.route("**/api/discoveries?**", route => route.fulfill({ json: {
       discoveries: [{ id: "gap", repertoire_id: "rep", kind: "missing_response",
@@ -469,13 +450,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1470, height: 836 
     await expect(viewer.getByText("Nf3 selected.", { exact: false })).toBeVisible();
     await expect(viewer.getByRole("button", { name: "Add and train" })).toBeEnabled();
     await noPageOverflow(page);
-    await viewer.getByRole("button", { name: "Open in Builder" }).click();
-    await expect(page.getByRole("button", { name: "Return to discovery" })).toBeVisible();
-    await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", decisionFen.replace(" c6 ", " - "));
-    await expect(page.locator(".analysis-moves")).toContainText("e4");
-    await expect(page.locator(".analysis-moves")).toContainText("c5");
-    await page.getByRole("button", { name: "Return to discovery" }).click();
-    await expect(viewer).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(viewer).toHaveCount(0);
   });

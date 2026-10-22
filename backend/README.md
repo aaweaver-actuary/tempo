@@ -21,9 +21,8 @@ SQLite compatibility paths also exist; see [storage](../docs/STORAGE.md).
 
 ```mermaid
 flowchart TB
-  Home["Full legacy entry + optional workspace composition"] -->|"feature imports / shared<br/>browser state"| Views["Legacy Games and other<br/>workspaces"]
+  Home["Full legacy entry + optional workspace composition"] -->|"feature imports / shared<br/>browser state"| Views["Retained optional workspace<br/>surfaces and dialogs"]
   Home -->|"queue/review and feature<br/>HTTP"| API["backend/app/main.py -<br/>all-domain composition"]
-  Views -->|"legacy Games HTTP"| API
   API -->|"durable command dispatch"| Broker["Redis / Celery"]
   Broker -->|"foreground and background<br/>workers"| Commands["Legacy command gateway and<br/>handlers"]
   Commands -->|"borrow caller transaction"| Policy["Queue/review/feedback<br/>policies and storage<br/>adapters"]
@@ -49,7 +48,7 @@ The legacy [evidence command](app/game_evidence_commands.py)
 also borrows the existing [command gateway](app/command_gateway.py)
 transaction. This legacy-local bridge is not the independent Learning receiver
 and must not be mistaken for permission for another service to write these tables.
-[Games view](../app/views/games_view.tsx),
+[legacy workspace](../app/views/legacy-workspace.tsx),
 [legacy root](app/main.py), [command dispatch](app/command_dispatch.py),
 [Celery root](app/celery_app.py) and
 [Compose](../docker-compose.yml) are the source anchors for the graph.

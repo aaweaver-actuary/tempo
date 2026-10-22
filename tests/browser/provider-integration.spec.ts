@@ -1,45 +1,5 @@
 import { test, expect, api, nav, boardVisible } from "./product-fixtures";
-test("production Stockfish returns playable engine moves without clipping the board", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("tempo-stockfish-on", "true");
-    localStorage.setItem("tempo-maia-on", "false");
-  });
-  await page.goto("/");
-  await nav(page, "Builder");
-  await expect(
-    page.locator(".engine-panel .candidate-list button").first(),
-  ).toBeVisible({ timeout: 45_000 });
-  await boardVisible(page);
-});
 
-test("Maia initializes matching runtime assets and returns legal playable probabilities", async ({
-  page,
-}) => {
-  const runtime = await page.request.get("/ort/ort-wasm-simd-threaded.mjs");
-  expect(runtime.ok()).toBeTruthy();
-  expect(runtime.headers()["content-type"]).toMatch(/javascript/);
-  await page.addInitScript(() => {
-    localStorage.setItem("tempo-stockfish-on", "false");
-    localStorage.setItem("tempo-maia-on", "true");
-  });
-  await page.goto("/");
-  await nav(page, "Builder");
-  const panel = page.locator(".analysis-panel").filter({ hasText: "Maia 3" });
-  const candidate = panel.locator(".candidate-list button").first();
-  await expect(candidate).toBeVisible({ timeout: 45_000 });
-  await expect(candidate.locator("small")).toContainText(/\d+%/);
-  const startingFen = await page
-    .locator(".board-frame")
-    .getAttribute("data-fen");
-  await candidate.click();
-  await expect(page.locator(".board-frame")).not.toHaveAttribute(
-    "data-fen",
-    startingFen!,
-  );
-  await boardVisible(page);
-});
 
 test("real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics", async ({
   page,

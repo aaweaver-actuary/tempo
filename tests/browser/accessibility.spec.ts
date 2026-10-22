@@ -10,7 +10,6 @@ for (const width of [390, 1280])
       "Train",
       "Tactics",
       "Endgames",
-      "Builder",
       "Repertoire",
       "Settings",
     ]) {

@@ -9,11 +9,9 @@ import { usePositionSolutionEditor } from "../hooks/use-position-solution-editor
 import { PositionSolutionTabs, PositionSolutionBoard, PositionFenField } from "../components/position-solution-editor";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import {
-  BuilderSession,
   PracticeCard,
   asFenString,
   asSanMove,
-  asUciMove,
 } from "../types";
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
@@ -39,7 +37,6 @@ export default function CardEditor({
   onClose,
   onSave,
   onDelete,
-  onOpenBuilderForLineRemoval,
 }: {
   practiceCard: PracticeCard;
   boardTheme: BoardTheme;
@@ -47,7 +44,6 @@ export default function CardEditor({
   onClose: () => void;
   onSave: (card: PracticeCard) => void;
   onDelete?: (card: PracticeCard) => Promise<void>;
-  onOpenBuilderForLineRemoval?: (session: BuilderSession) => void;
 }) {
   const dialogRef = useDialogRef<HTMLDivElement>(null);
   const [deletePreview, setDeletePreview] = useState<z.infer<typeof deletionPreviewSchema>>();
@@ -246,38 +242,6 @@ export default function CardEditor({
     } finally { setSaveBusy(false); }
   }
 
-  function openBuilderForLineRemoval() {
-    try {
-      const position = new Chess(currentFenString);
-      const history = solutionSanMovesList.map((san) => {
-        const move = position.move(san);
-        return {
-          san: asSanMove(move.san),
-          uci: asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`),
-          fen: asFenString(position.fen()),
-        };
-      });
-      const orientation =
-        card.orientation ?? (position.turn() === "b" ? "black" : "white");
-      onOpenBuilderForLineRemoval?.({
-        version: 1,
-        activeRepertoireByColor: {},
-        activeRepertoireId: card.repertoireId,
-        orientation,
-        startingFen: asFenString(currentFenString),
-        history,
-        cursor: Math.min(currentPositionInMoveList, history.length),
-        branchStart: null,
-        dismissedTranspositions: [],
-      });
-      onClose();
-    } catch {
-      setError(
-        "The line cannot be opened in Builder until all moves are legal.",
-      );
-    }
-  }
-
   return (
     <div className="modal-backdrop" onMouseDown={closeEditor}>
       <section
@@ -373,11 +337,6 @@ export default function CardEditor({
             )}
             {(error || deletionJournal.error) && <p className="editor-error" role="alert">{error || deletionJournal.error}</p>}
             <div className="editor-actions">
-              {usesLocalApi() && card.kind === "opening" && (
-                <Button onClick={openBuilderForLineRemoval}>
-                  Open Builder to remove line
-                </Button>
-              )}
               {usesLocalApi() && card.backendId && onDelete && <Button variant="danger" pending={deleteBusy} disabled={saveBusy} onClick={() => void previewDeletion()}>{deletePending ? "Check deletion" : "Delete card"}</Button>}
               <Button onClick={closeEditor} disabled={deleteBusy || saveBusy}>Cancel</Button>
               <Button

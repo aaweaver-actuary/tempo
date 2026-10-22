@@ -18,7 +18,6 @@ export type OptionalWorkspaceProps = {
 import type { MutableRefObject, ReactNode } from 'react';
 import type { PracticeCard } from '../domain/cards';
 import type { LocalRepertoire } from '../types';
-import type { TrainingPositionContext } from '../lib/training-builder-route';
 
 /** Legacy-only operations invoked at the shared shell's navigation/queue boundary. */
 export type LegacyWorkspaceController = {
@@ -34,7 +33,6 @@ export type LegacyWorkspaceSlots = {
   content?: ReactNode;
   dialogs?: ReactNode;
   onEditCard?: (card: PracticeCard | null) => void;
-  onOpenPosition?: (target: 'analysis' | 'builder', position?: TrainingPositionContext) => void;
 };
 export type LegacyWorkspaceProps = {
   controllerRef: MutableRefObject<LegacyWorkspaceController | null>;
@@ -49,9 +47,6 @@ export type LegacyWorkspaceProps = {
   studyOnlyMode: boolean | null;
   safeBreakCounter: number;
   incrementSafeBreak: () => void;
-  card: PracticeCard;
-  currentFenString: string;
-  step: number;
   attemptPhase: string;
   reviewed: number;
   cardsLeft: number;

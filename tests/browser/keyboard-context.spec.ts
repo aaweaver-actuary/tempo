@@ -79,14 +79,9 @@ test("training arrows never uncover the next answer and R restores the decision 
   expect(writes).toEqual([]);
 });
 
-test("Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys", async ({ page }) => {
-  await prepareVisualUI(page); await navigate(page, "Builder");
-  // The line worker publishes the initial repertoire after navigation. That
-  // changes the board's position identity and intentionally cancels old input;
-  // start the keyboard drag only after the intended Builder scope is ready.
-  await expect(page.getByRole("combobox", { name: "Active repertoire" })).toHaveValue("visual-repertoire");
+test("Study shortcuts cancel a held piece and restore the board position", async ({ page }) => {
+  await prepareVisualUI(page); await navigate(page, "Train");
   const board = page.locator(".board-frame");
-  await expect(page.locator(".persistent-board-shell")).toHaveAttribute("data-board-owner", "builder");
   await expect(board).toHaveAttribute("data-input-enabled", "true");
   const root = new Chess().fen();
   await board.scrollIntoViewIfNeeded();
@@ -103,11 +98,6 @@ test("Builder shortcuts cancel a held piece and preserve notes, selection and sp
   await expect(board).toHaveAttribute("data-fen", decision.fen());
   await page.keyboard.press("ArrowUp"); await page.keyboard.press("r");
   await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(decision.fen()));
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  const note = page.getByRole("textbox", { name: "Position comment" });
-  await note.fill("Keep this draft"); await note.press("f"); await note.press("ArrowLeft");
-  await expect(board).toHaveAttribute("data-orientation", "white");
-  await expect(board).toHaveAttribute("data-fen", decision.fen());
   const splitter = page.getByRole("separator", { name: "Board size" });
   await splitter.focus(); await splitter.press("ArrowRight");
   await expect(board).toHaveAttribute("data-fen", decision.fen());
@@ -118,10 +108,10 @@ test("Settings letter preference takes effect immediately and persists while arr
   await page.getByRole("tab", { name: "Board", exact: true }).click();
   const preference = page.getByRole("checkbox", { name: /Letter keyboard shortcuts/ });
   await preference.uncheck();
-  await navigate(page, "Builder");
+  await navigate(page, "Train");
   const board = page.locator(".board-frame");
   await playMove(page, board, "e2", "e4");
-  const playedPosition = new Chess(); playedPosition.move("e4");
+  const playedPosition = new Chess(); playedPosition.move("e4"); playedPosition.move("e5");
   await expect(board).toHaveAttribute("data-fen", playedPosition.fen());
   await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(playedPosition.fen()));
   await page.keyboard.press("f"); await expect(board).toHaveAttribute("data-orientation", "white");
@@ -132,16 +122,12 @@ test("Settings letter preference takes effect immediately and persists while arr
   await page.keyboard.press("Escape"); await expect(help).toHaveCount(0);
   await page.reload(); await navigate(page, "Settings");
   await page.getByRole("tab", { name: "Board", exact: true }).click(); await expect(preference).not.toBeChecked();
-  await preference.check(); await navigate(page, "Builder");
+  await preference.check(); await navigate(page, "Train");
   await page.keyboard.press("f"); await expect(page.locator(".board-frame")).toHaveAttribute("data-orientation", "black");
 });
 
-test("Escape closes Builder search and header popups one at a time and restores their openers", async ({ page }) => {
-  await prepareVisualUI(page); await navigate(page, "Builder");
-  await page.getByRole("tab", { name: "Repertoire", exact: true }).click();
-  const search = page.getByRole("button", { name: /Position search/ });
-  await search.click(); await expect(page.getByRole("dialog", { name: "Position search" })).toBeVisible();
-  await page.keyboard.press("Escape"); await expect(search).toBeFocused();
+test("Escape closes header popups one at a time and restores their openers", async ({ page }) => {
+  await prepareVisualUI(page);
   const local = page.getByRole("button", { name: "Open local data menu" });
   const notifications = page.getByRole("button", { name: "Notifications" });
   await local.click(); await notifications.click();

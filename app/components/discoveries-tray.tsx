@@ -202,15 +202,11 @@ function recommendationMoves(fen: string, preview?: Recommendation): CandidateMo
 
 export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlocked = false,
   speculativePreparationPaused = false,
-  onOpenRepertoire, onOpenBuilder, onQueueChanged, boardTheme = "brown", pieceSet = "cburnett",
-  openRequest }: {
+  onQueueChanged, boardTheme = "brown", pieceSet = "cburnett" }: {
   safeToOpen: boolean; safeBreakCounter: number; interactionBlocked?: boolean;
   speculativePreparationPaused?: boolean;
-  onOpenRepertoire?: () => void;
-  onOpenBuilder?: (discovery: DiscoveryItem, selectedMove: string | null) => void;
   onQueueChanged: () => Promise<void>;
   boardTheme?: BoardTheme; pieceSet?: PieceSet;
-  openRequest?: { id: string; token: number };
 }) {
   const [open, setOpen] = useState(false);
   const [discoveries, setDiscoveries] = useState<DiscoveryItem[]>([]);
@@ -280,7 +276,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   useEffect(() => { previewFingerprintState.current = previewFingerprints; }, [previewFingerprints]);
   const staleRefreshInFlight = useRef<Promise<void> | null>(null);
   const lastSafeBreak = useRef(safeBreakCounter);
-  const lastOpenRequestToken = useRef(openRequest?.token);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -597,7 +592,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         (result.evidence_fingerprint !== item.evidence_fingerprint || !matchesPreview(item, result));
       const checkedResult: Recommendation = unusableReadyResult
         ? { state: "unavailable", opportunity_id: item.id, candidates: [],
-            reason: "Discovery position and recommendation disagree; refresh evidence or inspect it in Builder" }
+            reason: "Discovery position and recommendation disagree; refresh evidence" }
         : result;
       setValidatedPreviews((current) => {
         const remaining = { ...current }; delete remaining[item.id];
@@ -719,14 +714,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     schedulerRef.current?.update(identities, demand);
   }, [discoveries, feedLoaded, initialAdmissionFlushFinished, open, activeId, interactionBlocked,
     browserDemand, currentTime, completedAdmissions, previewIdentity, previewStatuses, speculativePreparationPaused]);
-
-  useEffect(() => {
-    if (!openRequest || openRequest.token === lastOpenRequestToken.current)
-      return;
-    lastOpenRequestToken.current = openRequest.token;
-    openViewer(openRequest.id);
-    void refresh(true);
-  }, [openRequest, openViewer, refresh]);
 
   useEffect(() => {
     const updatePending = () => {
@@ -1243,7 +1230,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                     {active.card_id && !trainingEligibility[eligibilityKey(active)]?.eligible && (
                       <p role="status">{trainingEligibility[eligibilityKey(active)]?.reason ??
                         eligibilityErrors[eligibilityKey(active)] ?? "Checking direct training eligibility."}
-                        {" "}Open in Builder to inspect this decision.
                         {(eligibilityErrors[eligibilityKey(active)] ||
                           trainingEligibility[eligibilityKey(active)]?.eligible === false) && (
                           <> <Button type="button" disabled={busyId === active.id}
@@ -1273,15 +1259,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                         Add and train
                       </Button>
                     )}
-                    <Button
-                      onClick={() => {
-                        closeViewer();
-                        if (onOpenBuilder) onOpenBuilder(active, selectedMove);
-                        else onOpenRepertoire?.();
-                      }}
-                    >
-                      Open in Builder
-                    </Button>
                   </div>
                   {active.admission_state === "preparing" && (
                     <p role="status">
@@ -1301,7 +1278,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                   {!active.card_id && selectedMove && !soundSelection && (
                     <p role="status">
                       This move needs engine validation before Add and train is
-                      available. You can investigate it in Builder.
+                      available.
                     </p>
                   )}
                   {soundSelection && (

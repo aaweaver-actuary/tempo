@@ -37,7 +37,7 @@ select,
 textarea {
   font-size: 14px;
 }
-button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
+button:not(.primary-button):not(.primary):not(.brand):not(
     .candidate-row
   ) {
   border-radius: 6px;
@@ -209,8 +209,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 }
 .unified-board-shell-panel
   :is(
-    .analysis-page,
-    .games-page,
     .tactics-page,
     .endgames-page,
     .library-page,
@@ -228,9 +226,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 }
 .unified-board-shell-panel
   :is(
-    .analysis-layout,
     .training-grid.training-grid-shared,
-    .game-review,
     .tactics-workspace,
     .endgame-workspace,
     .scheduled-endgame .endgame-workspace
@@ -245,11 +241,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 }
 .unified-board-shell-panel
   :is(
-    .analysis-sidebar,
-    .game-side-scroll,
-    .analysis-board-column,
-    .game-board,
-    .game-inspector,
     .study-panel,
     .board-column
   ) {
@@ -261,16 +252,9 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   overflow: visible;
   margin: 0;
 }
-.unified-board-shell-panel .board-column:empty,
-.unified-board-shell-panel .game-board:empty {
+.unified-board-shell-panel .board-column:empty {
   display: none;
 }
-.analysis-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.analysis-heading,
 .workspace-title,
 .page-heading,
 .training-header {
@@ -279,58 +263,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   margin: 0 0 16px;
   padding: 0;
   gap: 12px;
-}
-.analysis-switches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-}
-.analysis-switches select {
-  flex: 1;
-  min-width: 140px;
-  max-width: 100%;
-}
-.arrow-legend {
-  flex-wrap: wrap;
-  margin: 8px 0;
-}
-.analysis-moves {
-  display: flex;
-  flex-wrap: wrap;
-  padding: 12px;
-  gap: 8px;
-  max-height: 240px;
-  overflow: auto;
-}
-.branch-editor {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px;
-}
-.branch-editor > span {
-  flex: 1 1 200px;
-}
-.builder-tool-panels {
-  width: 100%;
-  columns: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 12px;
-}
-.analysis-panel,
-.game-inspector {
-  padding: 16px;
-  min-width: 0;
-}
-.comparison-panel {
-  order: -1;
-}
-.comparison-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .source-comparison-scroll,
 .comparison-table-wrap {
@@ -378,35 +310,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 }
 .ratings {
   margin: 12px 0 0;
-}
-.game-filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px;
-  padding: 0;
-}
-.game-filters input,
-.game-filters select {
-  width: 100%;
-  min-width: 0;
-}
-.game-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  width: 100%;
-}
-.game-row > span {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-.game-row small {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.game-moves {
-  max-height: 240px;
-  overflow: auto;
 }
 .task-tabs {
   display: flex;
@@ -931,12 +834,6 @@ footer {
     flex-wrap: wrap;
     gap: 8px;
   }
-  .builder-tool-panels {
-    display: block;
-  }
-  .builder-tool-panels > * {
-    margin-bottom: 12px;
-  }
   button,
   input,
   select,
@@ -985,18 +882,6 @@ footer {
     align-self: start;
   }
 }
-.unified-board-shell-panel .analysis-sidebar {
-  display: contents;
-}
-.unified-board-shell-panel .comparison-panel {
-  order: 0;
-}
-.unified-board-shell-panel .analysis-board-column {
-  order: 1;
-}
-.unified-board-shell-panel .builder-tool-panels {
-  order: 2;
-}
 :root {
   --muted: #60675d;
 }
@@ -1019,9 +904,6 @@ footer {
 }
 .comparison-covered {
   color: #526326;
-}
-.analysis-moves > button {
-  color: var(--muted);
 }
 .pill {
   align-self: flex-start;
