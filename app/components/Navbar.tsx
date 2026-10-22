@@ -14,7 +14,6 @@ export const WORKSPACES: { id: View; label: string }[] = [
   { id: "repertoire", label: "Repertoire" },
   { id: "builder", label: "Builder" },
   { id: "studies", label: "Studies" },
-  { id: "games", label: "Games" },
   { id: "settings", label: "Settings" },
 ];
 const workspaces = WORKSPACES.filter(item => canOpenWorkspace(item.id, independentStudy));

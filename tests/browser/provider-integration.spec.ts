@@ -1,45 +1,4 @@
 import { test, expect, api, nav, boardVisible } from "./product-fixtures";
-test("Docker Games shows actual empty records and actionable sync errors, never sample success", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await nav(page, "Games");
-  await expect(
-    page.getByText("No games imported", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/private Site|comparison preview|Sample comparisons/),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "↻ Sync games" }).click();
-  await expect(page.getByRole("alert")).toContainText(/username|account/i);
-});
-
-test("automatic game sync has a visible spinner and reports provider failure", async ({
-  page,
-  request,
-}) => {
-  const settings = await (await request.get(`${api}/settings`)).json();
-  await request.put(`${api}/settings`, {
-    data: { ...settings, lichess_username: "missing-user" },
-  });
-  await page.route("**/api/games/sync", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    await route.fulfill({
-      status: 404,
-      json: { detail: "Lichess username not found" },
-    });
-  });
-  await page.goto("/");
-  await nav(page, "Games");
-  await expect(
-    page.getByRole("button", { name: "Syncing games" }),
-  ).toBeDisabled();
-  await expect(page.locator(".sync-button i")).toBeVisible();
-  await expect(page.getByRole("main").getByRole("alert")).toContainText(
-    "Lichess username not found",
-  );
-});
-
 test("production Stockfish returns playable engine moves without clipping the board", async ({
   page,
 }) => {

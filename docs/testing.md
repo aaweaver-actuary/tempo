@@ -196,7 +196,7 @@ For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-re
 | Backend and Rust integration | `make integration` | Defense smoke, pytest, and Rust checks once each |
 | UI as a whole | `make ui` | PostgreSQL regular browser matrix plus disjoint pinned visual/performance specs |
 | Regular browser only | `make browser` | PostgreSQL regular Playwright matrix only; no recovery scenarios |
-| One browser spec | `make ui-file FILE=games-board-context.spec.ts` | Exact spec from `tests/browser` |
+| One browser spec | `make ui-file FILE=repertoire-statistics.spec.ts` | Exact spec from `tests/browser` |
 | View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
 | Visual and performance | `make visual` | Pinned visual and performance specs |
 | Performance only | `make perf` | Pinned performance specs; subset of `visual` |
@@ -225,7 +225,7 @@ The runner defaults to `--mode full`. This remains the mode used by `make full` 
 node database/tests/test-postgres-docker.mjs --list --mode browser
 node database/tests/test-postgres-docker.mjs --list --mode durability
 node database/tests/test-postgres-docker.mjs --list --mode lifecycle
-make ui-file FILE=games-board-context.spec.ts
+make ui-file FILE=repertoire-statistics.spec.ts
 make docker-durability
 ```
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RepertoireStatistics } from "../../app/components/repertoire-statistics";
 
@@ -20,24 +20,22 @@ const fixture = (url: string) => url.includes("/positions") ? {
 beforeEach(() => vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(fixture(url)))));
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
-it("repertoire statistics separates study accuracy and game adherence and opens supporting games", async () => {
-  const onShowGamesAtPosition = vi.fn();
+it("repertoire statistics separates study accuracy and game adherence", async () => {
   render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
-    onBack={vi.fn()} onShowGamesAtPosition={onShowGamesAtPosition} />);
+    onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText("80.0%")).toBeTruthy());
   expect(screen.getByText("50.0%")).toBeTruthy();
   expect(screen.getByText(/1 studied · 2 unseen/)).toBeTruthy();
   expect(screen.getByText(/within your daily new-card limit/)).toBeTruthy();
   expect(screen.getByText(/Ready for introduction/)).toBeTruthy();
   expect(screen.getByTestId("repertoire-board")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "View supporting games" }));
-  expect(onShowGamesAtPosition).toHaveBeenCalledWith("start w KQkq - 0 1", "rep");
+  expect(screen.queryByRole("button", { name: "View supporting games" })).toBeNull();
 });
 
 it("repertoire statistics shows an actionable failure instead of zero values", async () => {
   vi.mocked(fetch).mockRejectedValueOnce(new Error("SQLite unavailable"));
   render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
-    onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
+    onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
   expect(screen.getByText(/SQLite unavailable/)).toBeTruthy();
   expect(screen.queryByText("80.0%")).toBeNull();
@@ -48,7 +46,7 @@ it("repertoire statistics labels stale game comparisons while retaining publishe
     String(input).includes("/positions") ? fixture(String(input)) : { ...fixture(String(input)), game_state: "refreshing" },
   ));
   render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
-    onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
+    onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText(/Game comparisons refreshing/)).toBeTruthy());
   expect(screen.getByText(/1 studied · 2 unseen/)).toBeTruthy();
 });
@@ -58,7 +56,7 @@ it("repertoire statistics hides empty counts until the first graph is published"
     String(input).includes("/positions") ? fixture(String(input)) : { ...fixture(String(input)), graph_updated_at: null, graph_state: "refreshing" },
   ));
   render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
-    onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
+    onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText(/Preparing the first published repertoire graph/)).toBeTruthy());
   expect(screen.getByText("80.0%").closest("[hidden]")).not.toBeNull();
 });
@@ -68,7 +66,7 @@ it("repertoire statistics directs a failed comparison task to service status", a
     String(input).includes("/positions") ? fixture(String(input)) : { ...fixture(String(input)), game_state: "failed" },
   ));
   render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
-    onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
+    onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText(/Game comparisons failed/)).toBeTruthy());
   expect(screen.getByText(/Retry the failed task in Settings/)).toBeTruthy();
 });
@@ -82,7 +80,7 @@ it("opening progression statistics explain waiting practice and paused repairs w
     ] },
   ));
   render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
-    onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
+    onBack={vi.fn()} />);
   await waitFor(() => expect(screen.getByText(/Waiting for parent practice/)).toBeTruthy());
   expect(screen.getByText(/Paused for repair or validation/)).toBeTruthy();
   expect(screen.queryByText(/Earliest dates assume/)).toBeNull();

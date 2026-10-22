@@ -408,14 +408,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   max-height: 240px;
   overflow: auto;
 }
-.games-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 16px 0;
-}
-.games-metrics article {
-  padding: 12px;
-}
 .task-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -938,9 +930,6 @@ footer {
   .settings-row {
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .games-metrics {
-    grid-template-columns: 1fr;
   }
   .builder-tool-panels {
     display: block;

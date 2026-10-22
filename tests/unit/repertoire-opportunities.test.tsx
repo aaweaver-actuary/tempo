@@ -17,7 +17,6 @@ const startKey = startFen.split(" ").slice(0, 4).join(" ");
 it("issue 4 opportunities explain promotion, degraded sources, and explicit actions", async () => {
   const onResolveGap = vi.fn();
   const onTrain = vi.fn();
-  const onShowGamesAtPosition = vi.fn();
   const onBrowse = vi.fn();
   const opportunities = [
     {
@@ -55,7 +54,7 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
   vi.stubGlobal("fetch", fetcher);
 
   render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={onBrowse}
-    onResolveGap={onResolveGap} onShowGamesAtPosition={onShowGamesAtPosition} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
+    onResolveGap={onResolveGap} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
     onRenameLocal={vi.fn()} onQueueChanged={async () => {}} onTrain={onTrain} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Opportunities" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "Opportunities" }));
@@ -63,10 +62,9 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
   expect(screen.getByText(/Reached 11 times · correct 4 · missed 7/)).toBeTruthy();
   expect(screen.getByText(/Lichess cohort unavailable \(failed/)).toBeTruthy();
   expect(screen.getByText(/2 supporting games · largest following mistake 180 cp/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "View supporting games" })).toBeNull();
   fireEvent.click(screen.getByText("Engine and game evidence"));
   expect(screen.getByText(/Game game-1 · ply 12 · loss 180 cp · analysis 3/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "View supporting games" }));
-  expect(onShowGamesAtPosition).toHaveBeenCalledWith(startFen, "rep");
   fireEvent.click(screen.getAllByRole("button", { name: "Train this decision" })[0]);
   await waitFor(() => expect(onTrain).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Investigate branch" }));
@@ -100,7 +98,7 @@ it("Repertoire train submits the displayed revision and leaves newer evidence un
   });
   vi.stubGlobal("fetch", fetcher);
   render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()}
-    onResolveGap={vi.fn()} onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
+    onResolveGap={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
     onRenameLocal={vi.fn()} onQueueChanged={onQueueChanged} onTrain={onTrain} />);
   fireEvent.click(await screen.findByRole("button", { name: "Opportunities" }));
   const trainButton = await screen.findByRole("button", { name: "Train this decision" });
@@ -125,7 +123,7 @@ it("invalidated coverage shows actionable recheck guidance instead of nonexisten
     throw new Error(`Unexpected request: ${String(input)}`);
   }));
   render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()}
-    onResolveGap={vi.fn()} onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
+    onResolveGap={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
     onRenameLocal={vi.fn()} onQueueChanged={async () => {}} onTrain={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Check coverage" }));
   expect((await screen.findByRole("alert")).textContent).toBe(guidance);

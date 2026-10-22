@@ -259,7 +259,6 @@ export async function preloadView(view: View) {
   const paths: Partial<Record<View, string[]>> = {
     builder: ["repertoire/lines"],
     repertoire: ["repertoires"],
-    games: ["games/summary", "repertoire/lines"],
     endgames: ["endgames/templates"],
     settings: ["settings"],
     studies: ["studies"],

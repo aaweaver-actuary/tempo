@@ -7,7 +7,6 @@ export const boardWorkspaces = [
   "Tactics",
   "Endgames",
   "Builder",
-  "Games",
 ];
 export const viewports = [
   { width: 320, height: 568 },

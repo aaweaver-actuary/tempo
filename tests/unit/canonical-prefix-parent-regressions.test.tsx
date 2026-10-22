@@ -34,7 +34,7 @@ async function openParent(onQueueChanged: () => Promise<void>, reloadFails = fal
     return Response.json(emptyPrefix);
   }));
   render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()} onResolveGap={vi.fn()}
-    onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()} onRenameLocal={vi.fn()}
+    onRepair={vi.fn()} onDeleteLocal={vi.fn()} onRenameLocal={vi.fn()}
     onQueueChanged={onQueueChanged} onTrain={vi.fn()} />);
   await screen.findByText("Italian");
   fireEvent.click(screen.getByText("•••"));

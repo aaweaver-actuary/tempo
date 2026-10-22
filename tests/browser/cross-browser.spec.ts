@@ -71,19 +71,13 @@ test("critical navigation, board input, split and dialogs work across browser en
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(importButton).toBeFocused();
-  await navigate(page, "Games");
-  await page.getByRole("tab", { name: "Library", exact: true }).click();
-  await expect(
-    page.getByRole("combobox", { name: "Filter source" }),
-  ).toBeVisible();
-  await noPageOverflow(page);
 });
 
 
 test("tablet menu Escape restores the visible navigation trigger", async ({page}) => {
   await page.setViewportSize({width:768,height:1024}); await prepareVisualUI(page);
   const menu=page.locator(".tablet-navigation"); await menu.click();
-  await page.locator("#workspace-menu").getByRole("button",{name:"Games",exact:true}).focus();
+  await page.locator("#workspace-menu").getByRole("button",{name:"Settings",exact:true}).focus();
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
   await expect(page.locator("#workspace-menu")).toHaveCount(0);

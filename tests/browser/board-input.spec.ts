@@ -57,18 +57,6 @@ for (const deviceScaleFactor of [1, 2])
         "data-fen",
         fen!,
       );
-      await navigate(page, "Games");
-      const readonlyFen = await page
-        .locator(".board-frame")
-        .getAttribute("data-fen");
-      for (const square of ["e2", "e4"]) {
-        const point = await squareCenter(page, square);
-        await page.touchscreen.tap(point.x, point.y);
-      }
-      await expect(page.locator(".board-frame")).toHaveAttribute(
-        "data-fen",
-        readonlyFen!,
-      );
     } finally {
       await context.close();
     }

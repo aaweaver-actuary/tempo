@@ -34,7 +34,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
       performance.getEntriesByName("tempo:board-ready").at(-1)!.duration,
     ));
   }
-  const modes = ["Builder", "Games", "Endgames", "Tactics", "Train"] as const;
+  const modes = ["Builder", "Endgames", "Tactics", "Train"] as const;
   for (const mode of modes) await navigate(page, mode);
   const viewSwitchSamples: Record<string, number[]> = Object.fromEntries(
     modes.map((mode) => [mode, []]),

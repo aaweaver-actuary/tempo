@@ -32,9 +32,6 @@ for (const width of [390, 1280]) {
     await expect(page.getByText(/Ready for introduction/)).toBeVisible();
     await expect(page.getByText(/within your daily new-card limit/)).toBeVisible();
     await expect(page.locator(".repertoire-position-board .board-frame")).toHaveAttribute("data-fen", startFen);
-    const supportingRequest = page.waitForRequest((request) => request.url().includes("/api/games/summary") && request.url().includes("repertoire_id=visual-repertoire"));
-    await page.getByRole("button", { name: "View supporting games" }).click();
-    await supportingRequest;
     await navigate(page, "Repertoire");
     await expect(page.getByRole("heading", { name: "Prefix cards" })).toBeVisible();
     await page.getByRole("button", { name: "← Repertoires" }).click();

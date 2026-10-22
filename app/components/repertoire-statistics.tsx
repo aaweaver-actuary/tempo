@@ -109,14 +109,12 @@ export function RepertoireStatistics({
   theme,
   pieceSet,
   onBack,
-  onShowGamesAtPosition,
 }: {
   repertoireId: string;
   repertoireName: string;
   theme: BoardTheme;
   pieceSet: PieceSet;
   onBack: () => void;
-  onShowGamesAtPosition: (fen: string, repertoireId: string) => void;
 }) {
   const [window, setWindow] = useState<Window>("90d");
   const [sort, setSort] = useState<Sort>("attention");
@@ -415,16 +413,6 @@ export function RepertoireStatistics({
                         </li>
                       ))}
                     </ul>
-                    <Button
-                      onClick={() =>
-                        onShowGamesAtPosition(
-                          selectedPosition.fen,
-                          repertoireId,
-                        )
-                      }
-                    >
-                      View supporting games
-                    </Button>
                   </div>
                 )}
               </div>

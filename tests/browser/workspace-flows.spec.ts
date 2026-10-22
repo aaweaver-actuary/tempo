@@ -214,7 +214,7 @@ test("Builder exact transposition confirms a conflicting trained move then saves
   await boardVisible(page);
 });
 
-test("review position opens consistently in analysis builder and games", async ({
+test("review position opens consistently in analysis and builder", async ({
   page,
   request,
 }) => {
@@ -256,10 +256,6 @@ test("review position opens consistently in analysis builder and games", async (
     "Repertoire",
   );
   await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", reviewedFen!);
-
-  await nav(page, "Train");
-  await page.getByRole("button", { name: "Games here", exact: true }).click();
-  await expect(page.getByText(/Position filter · 0 encounters/)).toBeVisible();
 });
 
 test("Edit card opens Builder line-removal context and deletes the selected branch", async ({

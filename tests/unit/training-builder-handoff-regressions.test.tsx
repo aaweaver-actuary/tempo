@@ -61,22 +61,8 @@ it("training Analysis handoff uses the displayed historical position and retains
   expect(useTrainingStore.getState().step).toBe(8);
 });
 
-it("training Games here handoff filters the historical position without advancing the live attempt", async () => {
-  await openTraining();
-  act(() => useBoardShellStore.getState().board.keyboard?.previous?.());
-  await waitFor(() => expect(useBoardShellStore.getState().board.fen).toBe(positions[7]));
-  fireEvent.click(within(screen.getByLabelText("Open review position")).getByRole("button", { name: "Games here" }));
-  await waitFor(() => expect(useBoardShellStore.getState().board.owner).toBe("games"));
-  await waitFor(() => {
-    const summaryRequest = vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes("/games/summary?"));
-    expect(summaryRequest).toBeDefined();
-    expect(new URL(String(summaryRequest![0])).searchParams.get("fen")).toBe(positions[7].split(" ").slice(0, 4).join(" "));
-  });
-  expect(useTrainingStore.getState().step).toBe(8);
-});
-
 it("retired dashboard aliases fall back to Train and retired position actions are absent", async () => {
-  for (const alias of ["compare", "insights", "progress", "statistics"] as const)
+  for (const alias of ["compare", "games", "insights", "progress", "statistics"] as const)
     expect(prepareLegacyWorkspaceNavigation(alias)).toBe("train");
   expect(prepareLegacyWorkspaceNavigation("builder")).toBe("builder");
   await openTraining();
@@ -85,5 +71,5 @@ it("retired dashboard aliases fall back to Train and retired position actions ar
   expect(actions.queryByRole("button", { name: "Compare positions" })).toBeNull();
   expect(actions.getByRole("button", { name: "Analysis" })).toBeTruthy();
   expect(actions.getByRole("button", { name: "Builder" })).toBeTruthy();
-  expect(actions.getByRole("button", { name: "Games here" })).toBeTruthy();
+  expect(actions.queryByRole("button", { name: "Games here" })).toBeNull();
 });

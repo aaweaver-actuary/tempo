@@ -3,9 +3,9 @@ import type { Plugin } from 'vite';
 
 /** Feature entry implementations excluded from the Study source and emitted closure. */
 export const optionalStudyImplementations = {
-  games: ['app/views/games_view.tsx', 'app/components/workbench-game-sync.tsx',
+  games: ['app/components/workbench-game-sync.tsx',
     'app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
-  composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx', 'app/views/legacy-games-workspace.tsx'],
+  composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx'],
   // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
   workbench: ['app/components/workbench-launch.tsx'],
   discovery: ['app/lib/discovery-admission-outbox.ts', 'app/lib/discovery-preview-scheduler.ts',

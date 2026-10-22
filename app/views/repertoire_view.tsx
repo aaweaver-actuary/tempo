@@ -63,7 +63,6 @@ export default function RepertoireView({
   onPasteGap,
   onBrowse,
   onResolveGap,
-  onShowGamesAtPosition,
   onRepair,
   onDeleteLocal,
   onRenameLocal,
@@ -79,7 +78,6 @@ export default function RepertoireView({
   onPasteGap?: (repertoireId: string, gap: GapTarget) => void;
   onBrowse: (id: string) => void;
   onResolveGap: (repertoireId: string, gap: GapTarget) => void;
-  onShowGamesAtPosition: (fen: string, repertoireId?: string) => void;
   onRepair: (id: string) => void;
   onDeleteLocal: (id: string) => void;
   onRenameLocal: (id: string, name: string) => void;
@@ -384,8 +382,7 @@ export default function RepertoireView({
   if (selectedStatisticsRepertoire) {
     return <RepertoireStatistics repertoireId={selectedStatisticsRepertoire.id}
       repertoireName={selectedStatisticsRepertoire.title} theme={theme} pieceSet={pieceSet}
-      onBack={() => { sessionStorage.removeItem("tempo-statistics-repertoire"); setStatisticsRepertoireId(null); }}
-      onShowGamesAtPosition={onShowGamesAtPosition} />;
+      onBack={() => { sessionStorage.removeItem("tempo-statistics-repertoire"); setStatisticsRepertoireId(null); }} />;
   }
   return (
     <section className="library-page" id="repertoire">
@@ -701,13 +698,6 @@ export default function RepertoireView({
                         )}
                         {opportunity.kind === "post_gap_weakness" && (
                           <>
-                            <Button
-                              onClick={() =>
-                                onShowGamesAtPosition(opportunity.fen, item.id)
-                              }
-                            >
-                              View supporting games
-                            </Button>
                             {Array.isArray(evidence.findings) &&
                               evidence.findings.length > 0 && (
                                 <details>

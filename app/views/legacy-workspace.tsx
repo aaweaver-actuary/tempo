@@ -20,7 +20,6 @@ import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-comma
 import { Settings } from "../utils/settings";
 import { Chess, type Square } from "chess.js";
 import { View, BuilderSession, asFenString, asRepertoireId, asSanMove, asUciMove } from "../types";
-import LegacyGamesWorkspace from "./legacy-games-workspace";
 const ImportDialogBox = lazy(() => import("../ImportDialogBox").then(module => ({ default: module.ImportDialogBox })));
 const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(module => ({ default: module.AnalysisPasteDialog })));
 const BuilderView = lazy(() => import("./analysis_view"));
@@ -35,7 +34,7 @@ const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then
 import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View): View {
-  return view === "compare" || view === "insights" || view === "progress" || view === "statistics"
+  return view === "compare" || view === "games" || view === "insights" || view === "progress" || view === "statistics"
     ? "train"
     : view;
 }
@@ -113,8 +112,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     openRepairRepertoireId.current = undefined;
     setRepairRepertoireId(undefined);
   }, []);
-  const [gamesFenFilter, setGamesFenFilter] = useState("");
-  const [gamesRepertoireFilter, setGamesRepertoireFilter] = useState("");
   const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
     if (!usesLocalApi() || independentStudy) return;
     const integrityRequestSequence = ++nextIntegrityRequestSequence.current;
@@ -193,13 +190,7 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
       return prepareLegacyWorkspaceNavigation(view);
     },
   }), [checkPendingIntegrity, deferRepairDialog]);
-  function openReviewPosition(target: "analysis" | "builder" | "games", displayed: TrainingPositionContext = { fen: currentFenString, cursor: step }) {
-    if (target === "games") {
-      setGamesFenFilter(canonicalFenKey(displayed.fen));
-      setGamesRepertoireFilter("");
-      changeWorkspace("games");
-      return;
-    }
+  function openReviewPosition(target: "analysis" | "builder", displayed: TrainingPositionContext = { fen: currentFenString, cursor: step }) {
     let session: BuilderSession;
     try {
       session = trainingBuilderSession(card, displayed, target === "builder");
@@ -390,11 +381,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
               changeWorkspace("builder");
             }}
             onDeleteLocal={deleteLocalRepertoire}
-            onShowGamesAtPosition={(fen, repertoireId) => {
-              setGamesFenFilter(fen);
-              setGamesRepertoireFilter(repertoireId ?? "");
-              changeWorkspace("games");
-            }}
             onRenameLocal={renameLocalRepertoire}
             onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
             onTrain={() => changeWorkspace("train")}
@@ -415,12 +401,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
         )}
-        {currentView === "games" && <LegacyGamesWorkspace
-          view={currentView} theme={boardTheme} pieceSet={pieceSet}
-          positionFilter={gamesFenFilter} repertoireFilter={gamesRepertoireFilter}
-          onClearFilter={() => { setGamesFenFilter(""); setGamesRepertoireFilter(""); }}
-          onQueueUpdated={refreshQueueOnly} onNavigate={changeWorkspace}
-        />}
         {currentView === "settings" && (
           <SettingsView
             theme={boardTheme}

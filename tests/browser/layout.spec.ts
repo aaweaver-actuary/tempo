@@ -161,7 +161,7 @@ test("desktop workspace panels do not clip controls or content", async ({
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await prepareUI(page);
-  for (const workspace of ["Builder", "Games", "Endgames"]) {
+  for (const workspace of ["Builder", "Endgames"]) {
     await navigate(page, workspace);
     await noPageOverflow(page);
     for (const button of await page

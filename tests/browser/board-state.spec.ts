@@ -15,11 +15,6 @@ test("every directed workspace transition isolates annotations and board input",
         "data-board-owner",
         destination.toLowerCase(),
       );
-      if (destination === "Games")
-        await expect(page.locator(".board-frame")).toHaveAttribute(
-          "data-input-enabled",
-          "false",
-        );
       if (destination === "Builder")
         await expect(page.locator(".board-frame")).toHaveAttribute(
           "data-input-enabled",
@@ -27,7 +22,7 @@ test("every directed workspace transition isolates annotations and board input",
         );
     }
 });
-test("builder annotations never appear in games", async ({ page }) => {
+test("builder annotations never appear in Train", async ({ page }) => {
   await prepareVisualUI(page);
   await navigate(page, "Builder");
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
@@ -47,7 +42,7 @@ test("builder annotations never appear in games", async ({ page }) => {
   );
   await page.mouse.up({ button: "right" });
   await expect(board.locator("svg.cg-shapes circle")).toHaveCount(1);
-  await navigate(page, "Games");
+  await navigate(page, "Train");
   await expect(board.locator("svg.cg-shapes circle")).toHaveCount(0);
 });
 test("pointer resizing persists and clamps without horizontal overflow", async ({
@@ -71,30 +66,6 @@ test("pointer resizing persists and clamps without horizontal overflow", async (
   await expect(divider).toHaveAttribute("aria-valuenow", preference!);
   await page.getByRole("button", { name: "Reset board size" }).click();
   await expect(divider).toHaveAttribute("aria-valuenow", "46");
-});
-
-test("shared toolbar flip persists while stepping through a game", async ({
-  page,
-}) => {
-  await prepareVisualUI(page);
-  await navigate(page, "Games");
-  await expect(
-    page.getByRole("heading", { name: "Spanish opening", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Flip board", exact: true }).click();
-  await expect(page.locator(".board-frame")).toHaveAttribute(
-    "data-orientation",
-    "black",
-  );
-  await page
-    .locator(".shared-board-toolbar")
-    .getByRole("button", { name: /Forward/ })
-    .click();
-  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3/);
-  await expect(page.locator(".board-frame")).toHaveAttribute(
-    "data-orientation",
-    "black",
-  );
 });
 
 test('owner changes clear an unfinished square selection at the same position', async ({page}) => {

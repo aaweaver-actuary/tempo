@@ -17,7 +17,7 @@
         "pointer/keyboard/focus"
       ],
       "retained": "original identity remains in full-system lane",
-      "assertion_action_sha256": "eec6bd45e50deba6b1acada8d2c876a35df41416fc5172d9b0eed59d676e28f6",
+      "assertion_action_sha256": "02554d3677ca84d646add97b52283be5acf591faa9ec1aba72bb0bd79d0f2747",
       "assertions_preserved": [
         "expect(menu).toBeFocused()",
         "expect(page.locator(\"#workspace-menu\")).toHaveCount(0)"
@@ -25,7 +25,7 @@
       "native_actions_preserved": [
         "page.setViewportSize({ width: 768, height: 1024 })",
         "menu.click()",
-        "page.locator(\"#workspace-menu\").getByRole(\"button\", { name: \"Games\", exact: true }).focus()",
+        "page.locator(\"#workspace-menu\").getByRole(\"button\", { name: \"Settings\", exact: true }).focus()",
         "page.keyboard.press(\"Escape\")"
       ],
       "provider_consumer_contracts": [

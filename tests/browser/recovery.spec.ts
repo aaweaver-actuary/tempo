@@ -447,28 +447,6 @@ test("unaffected opening reviews remain mixed with tactics during repertoire rep
     page.getByText(/Unaffected openings and tactics remain available/),
   ).toBeVisible();
 });
-test("failed initial loads never display empty records or zero statistics", async ({
-  page,
-}) => {
-  await page.route("**/api/**", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { detail: "Local database unavailable. Check the data mount." },
-    }),
-  );
-  await prepareUI(page);
-  for (const workspace of ["Games"]) {
-    await navigate(page, workspace);
-    await expect(page.getByRole("alert").first()).toBeVisible();
-    await expect(page.locator(".games-metrics")).toHaveCount(0);
-    await expect(
-      page.getByText("No games imported", { exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Retry", exact: true }),
-    ).toBeVisible();
-  }
-});
 test("failed settings reads cannot overwrite authoritative settings with defaults", async ({
   page,
 }) => {

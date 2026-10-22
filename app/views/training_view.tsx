@@ -73,7 +73,7 @@ interface TrainingViewProps {
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
-  onOpenPosition?: (target: "analysis" | "builder" | "games", position?: TrainingPositionContext) => void;
+  onOpenPosition?: (target: "analysis" | "builder", position?: TrainingPositionContext) => void;
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
@@ -349,9 +349,6 @@ function StandardTrainingView({
         Analysis
       </Button>
       <Button onClick={() => onOpenPosition("builder", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Builder</Button>
-      <Button onClick={() => onOpenPosition("games", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>
-        Games here
-      </Button>
     </div>
   );
 

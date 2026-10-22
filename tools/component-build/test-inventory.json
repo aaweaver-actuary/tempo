@@ -119,7 +119,6 @@
       "tests/unit/settings-notification-regressions.test.tsx",
       "tests/unit/settings-save-pending-regressions.test.ts",
       "tests/unit/shared-board-shell-endgames-regressions.test.tsx",
-      "tests/unit/shared-board-shell-games-regressions.test.tsx",
       "tests/unit/shared-board-shell-mount-regressions.test.tsx",
       "tests/unit/shared-board-shell-tactics-regressions.test.tsx",
       "tests/unit/shared-board-shell-training-regressions.test.tsx",
