@@ -371,6 +371,37 @@ test("new unclassified specs fail planning and every test has nightly and releas
   assert(plan().collection.filter(item => item.critical).every(item => item.selected));
 });
 
+test("non-persistence backend ownership accepts only services and the two moved providers", () => {
+  const mapping = inventory.development.nonPersistenceBackend[0];
+  for (const path of [
+    "backend/app/services/game_sync.py",
+    "backend/app/games/providers/chesscom.py",
+    "backend/app/games/providers/lichess.py",
+  ]) {
+    const scopedInventory = {
+      ...inventory,
+      development: {
+        ...inventory.development,
+        nonPersistenceBackend: [{ ...mapping, paths: [path] }],
+      },
+    };
+    validateInventory([], scopedInventory);
+  }
+  for (const paths of [
+    ["backend/app/games/providers/unowned.py"],
+    ["backend/app/games/providers/chesscom.py", "backend/app/games/providers/chesscom.py"],
+  ]) {
+    const scopedInventory = {
+      ...inventory,
+      development: {
+        ...inventory.development,
+        nonPersistenceBackend: [{ ...mapping, paths }],
+      },
+    };
+    assert.throws(() => validateInventory([], scopedInventory), /Invalid non-persistence backend source ownership/);
+  }
+});
+
 test("leaf source selection includes complete families and rendering selects pinned checks", () => {
   const planned = plan({ paths: ["app/components/discoveries-tray.tsx"] });
   assert.equal(planned.scope, "targeted"); assert(planned.jobs.visual.required);

@@ -125,12 +125,16 @@ export function validateInventory(files, sourceInventory = inventory) {
   }
   const classified = Object.values(sourceInventory.families).flat();
   const backendPaths = new Set();
+  const movedNonPersistenceProviders = new Set([
+    "backend/app/games/providers/chesscom.py",
+    "backend/app/games/providers/lichess.py",
+  ]);
   for (const mapping of sourceInventory.development?.nonPersistenceBackend ?? []) {
     if (!mapping.paths?.length || !mapping.tests?.length || !mapping.families?.length
       || mapping.tests.some(file => !/^backend\/tests\/(?:.*\/)?test_[^/]+\.py$/.test(file))
       || mapping.families.some(family => family === "pinned" || !Object.hasOwn(sourceInventory.families, family))) throw new Error("Invalid non-persistence backend mapping");
     for (const path of mapping.paths) {
-      if (!/^backend\/app\/services\/[^/]+\.py$/.test(path) || backendPaths.has(path)) throw new Error("Invalid non-persistence backend source ownership");
+      if ((!/^backend\/app\/services\/[^/]+\.py$/.test(path) && !movedNonPersistenceProviders.has(path)) || backendPaths.has(path)) throw new Error("Invalid non-persistence backend source ownership");
       backendPaths.add(path);
     }
   }
