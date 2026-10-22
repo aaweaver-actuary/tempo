@@ -33,6 +33,8 @@ For legacy source checks use `PYTHONPATH=backend:database`; the existing Make/ru
 
 [Database tooling](tooling/README.md) contains the existing explicit migration/import/backup/restore/provisioning commands. [Database proof scripts](tests/README.md) contains the existing disposable PostgreSQL scenarios and benchmarks; owner-specific native tooling and tests are indexed in each owner's README. They retain their original authority and are not new acceptance gates. Application/contract suites stay with their feature owners; [the inventory](INVENTORY.md) distinguishes the closed original extraction checklist from additional placement and composition review.
 
+For a bounded metadata-only census of one explicitly selected PostgreSQL database, run `psql -X -v ON_ERROR_STOP=1 -f database/tooling/study_census.sql "$DATABASE_URL"` with an authorized read-only role. The report includes estimated row counts and cumulative scan counters; estimates can be unknown, and counters depend on their reset time, so neither establishes that a relation is unused or safe to delete. It reads catalog/statistics metadata only, rolls back its read-only transaction, and does not establish the live deployment's complete schema or migration state.
+
 The [disposable ownership fixture](ownership/README.md) remains the existing cross-owner test infrastructure, now in this same tree.
 
 ## Read the relationships
