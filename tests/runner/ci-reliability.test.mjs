@@ -605,7 +605,6 @@ test("shared subsystem sources select complete consumer families without unrelat
     ["backend/app/services/study_grading.py", ["studies", "training"]],
     ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
     ["app/lib/discovery-preview-scheduler.ts", ["discoveries", "training"]],
-    ["app/lib/comparison.ts", ["games"]],
   ];
   for (const [sourcePath, expectedFamilies] of examples) {
     const planned = plan({ paths: [sourcePath, "tests/REGRESSIONS.md"] });
@@ -639,10 +638,9 @@ test("cross-cutting browser infrastructure and uncertain inputs require the comp
 
 test("renamed and copied subsystem paths union both complete family selections", () => {
   for (const status of ["R100", "C100"]) {
-    const paths = changedPathsFromNameStatus(`${status}\0app/lib/comparison.ts\0app/domain/study-exercises.ts\0`);
-    assert.deepEqual(plan({ paths }).families, ["games", "studies", "training"]);
+    const paths = changedPathsFromNameStatus(`${status}\0app/lib/opening-evidence-review.ts\0app/domain/study-exercises.ts\0`);
+    assert.deepEqual(plan({ paths }).families, ["defense", "studies", "training"]);
   }
-  assert.deepEqual(plan({ paths: changedPathsFromNameStatus("D\0app/lib/comparison.ts\0") }).families, ["games"]);
 });
 
 test("complete verification and non-PR boundaries retain the full collected browser matrix", () => {

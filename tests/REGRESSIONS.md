@@ -4854,8 +4854,8 @@ Browser/inference owners: `tests/unit/study-interaction-priority.test.ts`,
 and `tests/runner/inference-priority.test.mjs`. Named cases prove held pointers
 and touch, elapsed-time quiet windows, overlapping operations and independent
 remote leases; termination of confirmed running computation, stale reply fencing,
-retained confirmed indexes after replacement cancellation, filtered comparison
-ownership, serial optional index execution, and real Stockfish/Maia preemption
+retained confirmed repertoire indexes after replacement cancellation, serial
+position index execution, and real Stockfish/Maia preemption
 followed by unchanged depth/full legal distributions. The Home regression
 `study_priority_non_opening_wrong_move_does_not_request_opening_membership_or_fabricate_evidence`
 keeps tactic grading independent of opening evidence. The notification regression

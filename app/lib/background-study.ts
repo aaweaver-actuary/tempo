@@ -37,8 +37,7 @@ export function runStudyTask<T>(
 ): Promise<T> {
   if (typeof Worker !== 'undefined' && isBulkStudyTask(task))
     return runBulkStudyTask<T>(task, signal, shouldPublishDiagnostics);
-  if (typeof Worker !== 'undefined' && ['initializePositionIndex', 'findPositionMatches', 'releasePositionIndex',
-      'initializeComparisonIndex', 'findComparisonMatches', 'releaseComparisonIndex'].includes(task.kind))
+  if (typeof Worker !== 'undefined' && ['initializePositionIndex', 'findPositionMatches', 'releasePositionIndex'].includes(task.kind))
     return runOwnedStudyIndex<T>(task as import('./study-computation').StudyPositionTask, signal, shouldPublishDiagnostics);
   const id = ++nextId;
   const activityId = `study:${id}`;

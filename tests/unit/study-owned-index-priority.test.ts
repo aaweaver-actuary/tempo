@@ -28,14 +28,6 @@ it('study_priority_cancelled_replacement_preserves_confirmed_index_and_ignores_s
   await expect(query).resolves.toEqual(['confirmed']);
   await runOwnedStudyIndex({kind:'releasePositionIndex',repertoireId:'rep',revision:1});
 });
-it('study_priority_filtered_comparison_query_uses_its_confirmed_comparison_owner',async()=>{
-  const {workers,runOwnedStudyIndex}=await fixture();
-  const initial=runOwnedStudyIndex({kind:'initializeComparisonIndex',revision:3,cards:[]});workers[0].reply(0);await initial;
-  const query=runOwnedStudyIndex({kind:'findComparisonMatches',revision:3,fen:'fixture',repertoireId:'filter'});
-  expect(workers).toHaveLength(1);workers[0].reply(1,['filtered']);await expect(query).resolves.toEqual(['filtered']);
-  await runOwnedStudyIndex({kind:'releaseComparisonIndex',revision:3});
-});
-
 it('study_priority_owned_index_computation_is_serial_and_idle_confirmed_workers_survive_interaction',async()=>{
   const {workers,runOwnedStudyIndex}=await fixture();
   const first=runOwnedStudyIndex({kind:'initializePositionIndex',repertoireId:'first',revision:1,lines:[]});

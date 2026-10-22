@@ -31,7 +31,6 @@
       "tests/unit/chess-sound-regressions.test.ts",
       "tests/unit/chessground-input-regressions.test.tsx",
       "tests/unit/comparison-polish-regressions.test.tsx",
-      "tests/unit/comparison-position-regressions.test.ts",
       "tests/unit/coverage-refresh-pending-regressions.test.ts",
       "tests/unit/debug-reporting-regressions.test.tsx",
       "tests/unit/defense-recognition-regressions.test.tsx",

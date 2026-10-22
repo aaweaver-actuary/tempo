@@ -4,7 +4,7 @@ import { parseData, reportDataDiagnostic } from './validated-data';
 import { optionalStudyWorkPaused, subscribeStudyPriority } from './study-priority';
 import { recordTempoDuration } from './performance';
 
-type Initializer = Extract<StudyPositionTask, { kind: 'initializePositionIndex' | 'initializeComparisonIndex' }>;
+type Initializer = Extract<StudyPositionTask, { kind: 'initializePositionIndex' }>;
 type Request = { id: number; task: StudyPositionTask; queuedAt: number; signal?: AbortSignal;
   current?: () => boolean; abort: () => void; resolve: (value: unknown) => void; reject: (error: Error) => void };
 type Lane = { latestRevision?: number; initializer?: Initializer; worker?: Worker; queued: Request[]; active?: Request;
@@ -13,7 +13,7 @@ const lanes = new Map<string, Lane>();
 let nextId = 0;
 let runningLane: Lane | undefined;
 const waitingLanes: Lane[] = [];
-const keyFor = (task: StudyPositionTask) => task.kind.includes('Comparison') ? 'comparison' : `repertoire:${'repertoireId' in task ? task.repertoireId : ''}`;
+const keyFor = (task: StudyPositionTask) => `repertoire:${task.repertoireId}`;
 const isInitializer = (task: StudyPositionTask): task is Initializer => task.kind.startsWith('initialize');
 
 function stop(lane: Lane) {
