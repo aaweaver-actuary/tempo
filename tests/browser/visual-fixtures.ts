@@ -123,35 +123,6 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
           },
         ],
       },
-      "/api/progress": {
-        states: { new: 4, learning: 3, mature: 1, locked: 0 },
-        activity: [
-          { date: "2026-09-16", count: 3 },
-          { date: "2026-09-17", count: 5 },
-          { date: "2026-09-18", count: 2 },
-        ],
-        reviewedToday: 2,
-        cleanCards: 1,
-        dueToday: 1,
-        totalCards: 8,
-      },
-      "/api/statistics/overview": {
-        window_days: 30,
-        games: 24,
-        analyzed_games: 21,
-        analysis_coverage: 0.875,
-        score: { value: 0.604, wins: 12, draws: 5, losses: 7, numerator: 14.5, denominator: 24, confidence_interval: [0.408, 0.8] },
-        decision_quality: { mean_loss_cp: 43.2, major_mistakes_per_game: 0.71, denominator: 21 },
-        tactical_performance: { value: 0.68, found: 17, opportunities: 25, conceded_per_100_decisions: 2.4, conceded: 11, player_decisions: 458, confidence_interval: [0.497, 0.863] },
-      },
-      "/api/statistics/breakdown": {
-        dimension: "color",
-        window_days: 30,
-        segments: [
-          { segment: "white", games: 13, score: 0.654, mean_loss_cp: 39.8, tactical_found: 10, tactical_opportunities: 14 },
-          { segment: "black", games: 11, score: 0.545, mean_loss_cp: 47.1, tactical_found: 7, tactical_opportunities: 11 },
-        ],
-      },
       "/api/games/summary": {
         total: 1,
         next_cursor: null,

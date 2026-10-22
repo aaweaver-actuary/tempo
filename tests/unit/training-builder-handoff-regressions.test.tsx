@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import Home from "../../app/views/legacy-home";
+import { prepareLegacyWorkspaceNavigation } from "../../app/views/legacy-workspace";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
@@ -74,18 +75,15 @@ it("training Games here handoff filters the historical position without advancin
   expect(useTrainingStore.getState().step).toBe(8);
 });
 
-it("training comparison handoff preserves the historical cursor full continuation and live attempt", async () => {
+it("retired dashboard aliases fall back to Train and retired position actions are absent", async () => {
+  for (const alias of ["compare", "insights", "progress", "statistics"] as const)
+    expect(prepareLegacyWorkspaceNavigation(alias)).toBe("train");
+  expect(prepareLegacyWorkspaceNavigation("builder")).toBe("builder");
   await openTraining();
   act(() => useTrainingStore.setState({ isAttemptFailed: true }));
-  const attemptBefore = useTrainingStore.getState().attempt;
-  act(() => useBoardShellStore.getState().board.keyboard?.previous?.());
-  await waitFor(() => expect(useBoardShellStore.getState().board.fen).toBe(positions[7]));
-  fireEvent.click(within(screen.getByLabelText("Open review position")).getByRole("button", { name: "Compare positions" }));
-  await waitFor(() => expect(sessionStorage.getItem("tempo-comparison-session")).not.toBeNull());
-  const source = JSON.parse(sessionStorage.getItem("tempo-comparison-session")!).boards[0];
-  expect(source).toMatchObject({ startingFen: positions[0], cursor: 7, orientation: "white", cardId: "saved-card" });
-  expect(source.history).toHaveLength(10);
-  expect(source.history[source.cursor - 1].fen).toBe(positions[7]);
-  expect(useTrainingStore.getState().step).toBe(8);
-  expect(useTrainingStore.getState().attempt).toEqual(attemptBefore);
+  const actions = within(screen.getByLabelText("Open review position"));
+  expect(actions.queryByRole("button", { name: "Compare positions" })).toBeNull();
+  expect(actions.getByRole("button", { name: "Analysis" })).toBeTruthy();
+  expect(actions.getByRole("button", { name: "Builder" })).toBeTruthy();
+  expect(actions.getByRole("button", { name: "Games here" })).toBeTruthy();
 });

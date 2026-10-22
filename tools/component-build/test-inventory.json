@@ -143,6 +143,7 @@
       "tests/unit/study-promotion-regressions.test.tsx",
       "tests/unit/study-regressions.test.tsx",
       "tests/unit/study-review-badge.test.tsx",
+      "tests/unit/study-single-card-contract.test.ts",
       "tests/unit/study-storage-boundary-regressions.test.tsx",
       "tests/unit/study-worker-coalescing-regressions.test.ts",
       "tests/unit/study-worker-regressions.test.ts",

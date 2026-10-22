@@ -27,3 +27,7 @@
 For every retired capability, the deletion PR must record its old purpose, primary entrypoints, relevant last-good commit/PR/issue, any exported user data, and newly unsupported routes/commands. This register is the history index. Do **not** copy retired code into an `archive/` directory searched by agents; use git history and immutable commit links. Historical possibilities are not active issues to implement.
 
 Reference architecture: [prior component roadmap #192](https://github.com/aaweaver-actuary/tempo/issues/192) and its historical 12-stage children remain useful sources of completed work, **not** a requirement to reassemble every optional component under this new direction.
+
+## Issue #361 partial frontend retirement
+
+The legacy comparison, Insights, Statistics and Progress dashboard UIs were removed from the workspace. Their implementation files were `app/views/comparison_view.tsx`, `app/views/insights_view.tsx`, `app/views/statistics_view.tsx` and `app/views/progress_view.tsx`; legacy aliases `compare`, `insights`, `progress` and `statistics` now open Train. The last-good source snapshot is main commit [`43e2035d05c1f08e59e4d1c8aab9f6897a1d1fd4`](https://github.com/aaweaver-actuary/tempo/commit/43e2035d05c1f08e59e4d1c8aab9f6897a1d1fd4). Comparison launch state was transient `sessionStorage` data; no durable Study progress, comparison model helpers, backend routes, APIs or stored data were removed.

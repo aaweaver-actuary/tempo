@@ -13,7 +13,6 @@ for (const width of [390, 1280])
       "Builder",
       "Games",
       "Repertoire",
-      "Progress",
       "Settings",
     ]) {
       await navigate(page, workspace);

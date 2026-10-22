@@ -583,7 +583,7 @@ test("shared subsystem sources select complete consumer families without unrelat
     const requiredSpecs = new Set(expectedFamilies.flatMap(family => inventory.families[family]));
     assert.deepEqual(selectedIds(planned), planned.collection.filter(item => item.critical || requiredSpecs.has(item.file)).map(item => item.id).sort(), sourcePath);
   }
-  for (const [sourcePath, expectedFamilies] of [["app/views/studies_view.tsx", ["studies", "training"]], ["app/views/comparison_view.tsx", ["games"]]]) {
+  for (const [sourcePath, expectedFamilies] of [["app/views/studies_view.tsx", ["studies", "training"]]]) {
     const planned = plan({ paths: [sourcePath] });
     assert.deepEqual(planned.families, expectedFamilies);
     assert(planned.jobs.visual.required, "Narrow browser families must retain pinned rendering checks");

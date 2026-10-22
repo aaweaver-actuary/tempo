@@ -67,7 +67,6 @@ test("application navigation retains one Chessground instance", async ({
   for (const workspace of [
     ...boardWorkspaces,
     "Settings",
-    "Progress",
     "Repertoire",
     "Builder",
   ]) {

@@ -73,7 +73,7 @@ interface TrainingViewProps {
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
-  onOpenPosition?: (target: "analysis" | "builder" | "games" | "compare", position?: TrainingPositionContext) => void;
+  onOpenPosition?: (target: "analysis" | "builder" | "games", position?: TrainingPositionContext) => void;
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
@@ -345,9 +345,6 @@ function StandardTrainingView({
   );
   const positionActions = independentStudy || !onOpenPosition ? null : (
     <div className="position-actions" aria-label="Open review position">
-      {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
-        <Button onClick={() => onOpenPosition("compare", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Compare positions</Button>
-      )}
       <Button onClick={() => onOpenPosition("analysis", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>
         Analysis
       </Button>

@@ -41,7 +41,7 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, title } o
     // the existing background graph/queue checks observe publication.
     await page.getByRole("button", { name: "Close import dialog" }).click();
   } else await page.getByRole("button", { name: "View imported repertoire" }).click();
-  await nav(page, "Insights"); await nav(page, "Repertoire");
+  await nav(page, "Train"); await nav(page, "Repertoire");
   await expect.poll(async () => (await request.get(`${api}/repertoires/${repertoireId}/prefix-diagnostics`, { headers: { "X-Tempo-Work-Class": "background" } })).status(), { timeout: 30_000 }).toBe(200);
   let settledQueueCards: unknown[] = [];
   await expect.poll(async () => {

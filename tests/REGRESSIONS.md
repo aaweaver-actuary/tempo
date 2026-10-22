@@ -5006,8 +5006,12 @@ retained incomplete inventory. They do not execute a real tool, build or Docker.
 
 - `tests/unit/study-composition-regressions.test.ts`: physical Study entry selection, direct optional workspace intent rejection, semantic optional implementation guards, and emitted module/chunk inventory.
 - `tests/unit/study-shell-composition-regressions.test.tsx`: Study trains with absent optional capabilities, omits unsupported authoring controls, and persists browser appearance preferences without workspace administration.
-- `tests/unit/training-builder-handoff-regressions.test.tsx`: explicit legacy composition retains full-route Builder, Analysis, Games-position and comparison handoffs without advancing the live attempt.
+- `tests/unit/training-builder-handoff-regressions.test.tsx`: explicit legacy composition retains full-route Builder, Analysis and Games-position handoffs without advancing the live attempt; retired comparison launch actions are absent and legacy dashboard aliases resolve to Train.
 - Existing `study-regressions`, `repertoire-alternative-home-regressions`, and `opening-evidence-home-lifecycle`, and `training-burial-caller-regressions` fixtures select the explicit legacy composition where they exercise repair, editor, repertoire or Workbench-launch behavior; their original behavioral assertions remain.
+
+## Issue #361 legacy dashboard retirement
+
+- `tests/unit/training-builder-handoff-regressions.test.tsx` and `tests/unit/ui-focus-regressions.test.tsx` require the `compare`, `insights`, `progress` and `statistics` legacy navigation aliases to land on Train, with no retired comparison launch or dashboard navigation actions. Study progress data and computation remain covered by their existing contracts and regressions.
 
 
 - Removed endgame calculation: `test_endgame_calculation_removed.py` is owned by Learning's local inventory. `shared-board-shell-endgames-regressions.test.tsx` retains saved-position/Bury and no-request notice behavior; `shared-board-shell-training-regressions.test.tsx` retains legal saved-line practice. `opponent-reply-diagnostics-regressions.test.tsx::real Home preserves saved endgame queue lines, plays them and submits the ordinary review` exercises the actual transport mapping → Home move handler → review caller; it must not be replaced with a mocked onMove assertion.
