@@ -27,7 +27,7 @@ const ServiceStatusPanel = lazy(() => import("../components/service-status-panel
 const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then(module => ({ default: module.DiscoveriesTray })));
 import { TreeBrowser } from "./tree_browser";
 
-export function prepareLegacyWorkspaceNavigation(view: View): View {
+export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
   return view === "analysis" || view === "builder" || view === "compare" || view === "games" || view === "insights" || view === "progress" || view === "statistics"
     ? "train"
     : view;
