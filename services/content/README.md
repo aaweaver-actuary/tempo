@@ -131,11 +131,14 @@ This writes raw `ImportManifest` JSON. Stdout reports `validated`, the manifest
 path and source SHA256, plus route/exercise counts. Validation does not import,
 activate or teach content, convert historical cards, or change an existing
 source's learner color. Configure the Content database and workspace as described
-below before planning. The manifest output has no source revision. Use the current
-Content `requested_revision` from prior state output as `N` (for an existing
-source, `tempo-content source show SOURCE_KEY` reports it); if no current revision
-is available, resolve it before planning rather than guessing or copying an
-example value:
+below before planning. The manifest output has no source revision. For an
+existing source, use `requested_revision` from
+`tempo-content source show SOURCE_KEY`. For a new source, that command returns
+`source_not_found`. Content's approval check defines an absent source revision as
+`0`, so use `N=0` only after that result; never use `0` for an existing source.
+The plan output's `id` and
+`digest` are the draft ID and approval hash; the approval output's `id` is the
+operation ID:
 
 ```text
 tempo-content import plan FILE --manifest PATH --expected-revision N
@@ -166,15 +169,15 @@ for its recovery contract.
 **Illustrative transcript only — synthetic, not executed acceptance:**
 
 ```text
-# Prior Content state output for this source: {"requested_revision":7}
+# Selected fields from prior Content source lookup: {"status":"error","code":"source_not_found"}
 $ tempo-content import manifest opening.pgn --workspace demo --source-key opening --title "Demo" --color white --output /tmp/opening.json
 {"status":"validated","manifest_path":"/tmp/opening.json","source_sha256":"<synthetic-sha256>","route_count":3,"exercise_count":1}
-$ tempo-content import plan opening.pgn --manifest /tmp/opening.json --expected-revision 7
-{"draft_id":"demo-draft","digest":"<synthetic-digest>","expected_revision":7}
+$ tempo-content import plan opening.pgn --manifest /tmp/opening.json --expected-revision 0
+# Selected plan output fields: {"id":"demo-draft","digest":"<synthetic-digest>","expected_revision":0,"status":"draft"}
 $ tempo-content draft show demo-draft
-{"id":"demo-draft","digest":"<synthetic-digest>","source":"<inspect actual draft>"}
+# Selected show output fields: {"id":"demo-draft","digest":"<synthetic-digest>","status":"draft"}
 $ tempo-content draft approve demo-draft --digest <synthetic-digest>
-{"operation_id":"demo-operation"}
+# Selected approval output fields: {"id":"demo-operation","draft_id":"demo-draft","state":"approved"}
 $ tempo-a-bridge --content-cli /opt/bin/tempo-content --learning-origin https://learning.example --operator-token-file /private/operator-token apply demo-operation --max-slices 64
 {"operation_id":"demo-operation","state":"pending_activation"}
 ```
