@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
-import { studyComposition, optionalStudyImplementations } from '../../scripts/study-composition';
+import { optionalStudyContractExceptions, optionalStudyImplementations, studyComposition } from '../../scripts/study-composition';
 import { canOpenWorkspace } from '../../app/lib/study-workspace-policy';
 import type { View } from '../../app/types';
 
@@ -27,18 +27,33 @@ it.each(Object.values(optionalStudyImplementations).flat())('Study build rejects
   expect(() => handler.call(context as never, {} as never, {} as never, false)).toThrow('Study imports optional workspace implementation');
 });
 
+it('Study composition rejects optional-domain modules unless they are named contract exceptions', () => {
+  const hook = studyComposition('/repo').generateBundle!;
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  const context = { getModuleIds: () => ['/repo/static/src/study-main.tsx', '/repo/app/lib/workbench-shadow.ts'][Symbol.iterator](),
+    emitFile: () => undefined };
+  expect(() => handler.call(context as never, {} as never, {} as never, false)).toThrow('Study imports unclassified optional-domain module');
+});
+
 it('Study composition emits an inspectable source/chunk inventory without private paths', () => {
   const hook = studyComposition('/repo').generateBundle!;
   const handler = typeof hook === 'function' ? hook : hook.handler;
   const assets: { fileName: string; source: string }[] = [];
-  const context = { getModuleIds: () => ['/repo/static/src/study-main.tsx', '/repo/app/views/training_view.tsx'][Symbol.iterator](),
+  const context = { getModuleIds: () => ['/repo/static/src/study-main.tsx', '/repo/app/views/training_view.tsx', '/repo/app/domain/games.ts'][Symbol.iterator](),
     emitFile: (asset: { fileName: string; source: string }) => { assets.push(asset); } };
-  handler.call(context as never, {} as never, { 'assets/study.js': { type: 'chunk', fileName: 'assets/study.js', modules: { '/repo/app/views/training_view.tsx': {} } } } as never, false);
+  handler.call(context as never, {} as never, { 'assets/study.js': { type: 'chunk', fileName: 'assets/study.js',
+    modules: { '/repo/app/views/training_view.tsx': {}, '/repo/app/domain/games.ts': {} } } } as never, false);
   expect(assets).toHaveLength(1);
   expect(assets[0].fileName).toBe('study-composition.json');
   const inventory = JSON.parse(assets[0].source);
-  expect(inventory.optionalGamesModules).toEqual([]);
-  expect(inventory.modules).toEqual(['app/views/training_view.tsx', 'static/src/study-main.tsx']);
-  expect(inventory.chunks[0]).toEqual({ file: 'assets/study.js', modules: ['app/views/training_view.tsx'] });
+  expect(inventory.optionalImplementationFamilies).toEqual(optionalStudyImplementations);
+  expect(inventory.optionalImplementations).toEqual(Object.values(optionalStudyImplementations).flat().sort());
+  expect(inventory.allowedOptionalNameContracts).toEqual({
+    'app/domain/games.ts': optionalStudyContractExceptions['app/domain/games.ts'],
+  });
+  expect(inventory.modules).toEqual(['app/domain/games.ts', 'app/views/training_view.tsx', 'static/src/study-main.tsx']);
+  expect(inventory.sharedDependencies).toEqual({ browserIntents: [], chess: [], board: [], workersAndWasm: [] });
+  expect(inventory.assets).toEqual(['assets/study.js']);
+  expect(inventory.chunks[0]).toEqual({ file: 'assets/study.js', modules: ['app/domain/games.ts', 'app/views/training_view.tsx'] });
   expect(assets[0].source).not.toContain('/repo/');
 });

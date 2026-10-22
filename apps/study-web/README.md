@@ -12,7 +12,8 @@ Study retains Learning settings and browser appearance preferences. Unsupported
 authoring actions are omitted when their capabilities are absent.
 
 The build rejects named optional implementation roots and emits
-`study-composition.json` for loaded application modules and emitted chunks.
+`study-composition.json` for loaded Study modules, emitted chunks/assets,
+shared dependency groups, and named optional-domain contract exceptions.
 The offline worker still requires every emitted JS/CSS asset; its inventory is
 not weakened to exclude optional chunks after they have been emitted.
 
