@@ -24,3 +24,11 @@ not weakened to exclude optional chunks after they have been emitted.
 records the branch implementation and evidence scope. Merged host/endgame repairs have separate
 [Learning ownership](../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main);
 deployment resource isolation remains unqualified by this frontend work.
+
+## Web image build
+
+From the repository root, build the Study-only static image with
+`docker build -f Dockerfile.study-web -t tempo-study-web:local .`. Set
+`--build-arg TEMPO_WORKBENCH_URL=https://workbench.example` when the Study shell
+should link to a Workbench origin; Learning's API origin is supplied by the
+browser connection and proxied by nginx at runtime.
