@@ -1,84 +1,127 @@
-# Execution plan: converge Study, retire everything else by default
+# Execution plan: small, explicit Study-first tasks
 
-**Status:** Planning and discovery; no deployment, mutation, deletion, or migration authorized by this document. Read [decision](./DECISION.md), [feature register](./FEATURES.md), [audit](./AUDIT.md), [Study boundary](./STUDY-BOUNDARY.md), and [database audit](./DATABASE-AUDIT.md) as required for a specific task. Do not load the full 881-module index on every agent run.
+Revised 2026-10-22. Programme: [#357](https://github.com/aaweaver-actuary/tempo/issues/357). This replaces the earlier broad phase assignments, not the preserved source audit. Issue bodies hold the exact writable files, commands and acceptance; this document is their index, not a second task specification.
 
-## 0. Publish the audit and pin the source [documentation task]
+**Assign one ready leaf, never a parent programme.** Read [SMALL-TASKS.md](./SMALL-TASKS.md) for the execution contract. This plan authorizes isolated task work only; it does not authorize merging, deploying, modifying live data, deleting tables or changing hosted CI settings.
 
-- Keep the exact `7d77ed1b25198dcd320e0265f777cc630f23775e` snapshot intact. Full historical module/table indexes are point-in-time navigation aids, not proof of usage.
-- Treat `main.py` as fully read, others as their individual recorded review depths; do not claim 881 complete semantic reviews.
-- Establish a new keep/retire matrix per product capability rather than rerunning the old 12-stage roadmap.
-- Outcome: decision, registry, source-pinned audit and executable child issues in GitHub.
+## 1. Reuse what is already built
 
-## 1. Fingerprint current Study (read-only)
+The reviewed main checkpoint is `0e59bb81e5f0baa06504230fab072bc8424ba1e0`, which merged #370. Its tree matches repaired frontend commit `ebe724c34a41533027cfc5b4040d4a3e0680c586`. #364 is complete for its declared frontend build/source-removal scope; do not repeat that extraction or infer that all public assets and the deployed application are qualified.
 
-- From the **actual** phone and desktop origins/launchers, record URL, frontend build, API base, running image/git SHA and entry point. Inspect the actual service composition, health and API routes, not just `main`.
-- Identify active PostgreSQL installations/migration versions and user data owners; collect read-only schema/row/size/dependency metadata; exclude credentials/secrets from public reports.
-- Observe one normal queue issue, one opening introduction per active repertoire, one review, replay/reload and phone reconnection. Where observing would mutate live learning state, use existing real activity/logs or an isolated faithful clone; **do not manufacture live reviews for an audit**.
-- Confirm differences between legacy prepared-batch offline and independent one-card offline behavior, and explicitly mark accepted losses.
-- **Exit:** exact serving graph, protected source/state/route list, minimal supported behavior matrix. No cutover assumption remains unstated.
+At this planning checkpoint, #371 has published documentation repairs at `4584bc4f` and awaits review. #372's description reports `e6704daf`, while the PR metadata and branch ref returned `a3ab4a10`. #365 therefore starts with published-source reconciliation, not another implementation. Recheck live PR metadata before assignment; these are dated observations, not permanent branch facts. No plan task owns or merges the active PRs on another agent's behalf.
 
-## 2. Freeze the MVP contract; verify independent Learning
+## 2. Fixed product and interface decisions
 
-**Target proposed:** **one responsive Study Web artifact + one Learning API + one Learning PostgreSQL**, with chess core/scheduling and accepted content artifacts. No Redis, Celery, legacy `main`, Games, Workbench, providers or engines needed for ordinary Study.
-- Same web client and endpoint on phones and desktops; no separate device policy or source tree.
-- Due reviews/new openings from every enabled repertoire; stable sequence and quotas.
-- Atomic answer history, schedule, queue, receipt and progression; real replay after lost response, reload after commit/before next card, stale card/revision, concurrent-device reentry.
-- Allowed simplification: small explicit offline cache (one pending card) or honest connected-only mode if separately accepted. Do not leave a phone-only offline engine with different review logic.
-- Prove build/import boundaries and test with optional services physically absent, not just flags disabled.
-- **Exit:** independent Study executable proves the agreed matrix against disposable representative data.
+- One responsive `TEMPO_TARGET=study` frontend and one Learning authority serve both device types. The existing split is legacy versus independent build, not necessarily phone versus desktop.
+- The opt-in disposable composition has three long-lived services: `study-web`, `learning`, `postgres`. One browser origin proxies API and health requests to `learning:8001`. Do not expose the database or inject a service credential through the web proxy.
+- Learning retains existing review, issuance, quota, scheduling, transaction and retry ownership. Its restricted reader/writer credentials and explicit owner migrations remain. No broker or optional analysis producer is a prerequisite.
+- The shared offline contract retains the currently issued card and its durable immutable answer for original-authority replay. No separate phone scheduler or full local offline queue is added.
+- Fresh authored PGN uses explicit workspace/source/color identity and the existing Content manifest/publication contract. Reuse the existing approval and operator delivery path, not a new transport/workflow framework. Content can stop after acceptance.
+- Existing history is not fresh import. Real card/decision/policy identity, reviews, FSRS, introductions, order, attempts and browser/server pending work require a separately reviewed migration map. Move text or equal FEN is not proof of historical identity.
+- Retire unsupported implementations before reorganizing their surviving neighbors. Keep saved facts and execution of retained exercises independently of their retired producers.
 
-## 3. Preserve one simple repertoire import path
+## 3. Task queue and dependency graph
 
-- Use existing Content parsing/publication/activation contracts where they are simpler than writing a new pipeline. Support at least the source format the user actually imports (PGN and deliberate active repertoire selection).
-- Validate legal moves, source revisions/identity, duplicate/transposition rules that affect issued cards, and owned publication/activation. No need to keep a full Builder/Workbench UX; one minimal upload screen or documented simple interface is sufficient.
-- Reimport should not reset established review history or resurrect deleted revisions. No Content runtime dependency on daily Study after accepted publication.
-- **Exit:** new and updated repertoire reaches Study; old accepted content survives Content stopped.
+All tasks below are linked issues with parent checklists. They are not asserted to be GitHub native sub-issue relationships. `Small` means the decisions and interfaces are supplied; it is not a guarantee that every model will implement them correctly. Infrastructure still needs a capable reviewer. `Expert` means do not delegate unresolved authority/data decisions to a cheap implementer.
 
-## 4. Rehearse exact minimal-state transfer and cross-device cutover
+### Cheap qualification and metrics — parent #363
 
-- Export latest real owned data/read receipts under appropriate authorization; preserve source/card identities, FSRS/history/due dates, introduced/unintroduced facts, queue state, accepted generations and pending operations.
-- Use isolated destination/database and reproducible mapping, with explicit unhandled fields. Semantic before/after checks plus phone/desktop smoke tests; design rollback before any live write.
-- Deliberately select the new shared URL/entry point, then seek separate cutover approval. **No automatic shutdown, data migration or redeployment in this planning issue.**
-- **Exit:** approved rollbackable cutover with verified current real data and agreed offline concessions; two devices genuinely hit one implementation.
+| Task | One result | Depends on | Suggested owner |
+| --- | --- | --- | --- |
+| [#373 T01](https://github.com/aaweaver-actuary/tempo/issues/373) | Pure two-profile fixture plan | Ready | Small |
+| [#374 T02](https://github.com/aaweaver-actuary/tempo/issues/374) | Essential-only inputs in existing native runner | #373 | Medium |
+| [#392 T20](https://github.com/aaweaver-actuary/tempo/issues/392) | Read-only classified Git line delta | Ready; reviewer supplies real classification before baseline use | Small |
 
-## 5. Delete obsolete code in complete dependency-closed slices
+Research found unconditional Game Evidence producer, Content and a_bridge setup in `database/tempo_learning_database/tooling/run_postgres.py`, even for selected core tests. The two fixed profiles remove that overhead for essential cases while preserving the old full default. They do not add a generic dependency solver or change Learning's installed shared contract packages.
 
-Only after phase 4's evidence (or for independently proven dormant slices while Study stays protected):
-1. Remove legacy app routes/coordinator/legacy worker registrations and branches no longer reached by the selected Study/Content deployment. Document exceptions in the dependency boundary.
-2. Remove retired Games ingestion, analysis, threat/defense, statistics, guided-review, discovery/coverage, model inference, optional frontend and related commands, triggers/caches and runtime wiring **as entire capabilities**.
-3. Prune dead adapters, unused compatibility exports, default Compose services, image build contexts, packages, scripts, and exclusive tests/docs. Keep tests for behavior that survives.
-4. Re-run narrow Study/Content acceptance with deleted source physically absent. The supported runtime must not have dormant imports of retired packages.
-5. Count net code removed (same 597-file / 69,686-line narrow denominator, plus broader 881 / 97,217 scope). File moves and formatting are not reduction.
-- **Exit:** smaller production source tree with independently demonstrated retained Study/Content behavior, not an `archive/` copy.
+### Client invariants — parent #366
 
-## 6. Reduce persistence only after code retirement
+| Task | One result | Depends on | Suggested owner |
+| --- | --- | --- | --- |
+| [#375 T03](https://github.com/aaweaver-actuary/tempo/issues/375) | One-issued-card policy/storage tests | Ready | Small |
+| [#376 T04](https://github.com/aaweaver-actuary/tempo/issues/376) | Original-authority recovery tests | Ready | Small |
 
-- Compare the 292 owner-qualified source table entries with actual installed schemas, reset-age-qualified usage counters, views/triggers/FKs, and supported imports/exports.
-- For one table family at a time, establish authoritative owner, all direct/indirect consumers, retained user history, migration/restore method and code owner removed. Zero scans and `_legacy` names alone are insufficient evidence.
-- Drop tables only in explicit data migrations with backup/rollback and separate approval. Database/table reductions are an additional outcome, **not** prerequisite to deleting unused code.
-- **Exit:** lean owned schema, consistent migrations, no stale runtime references.
+These own different test files. First locate existing equivalent assertions: a no-code qualification can complete a verification task. A failure becomes a minimal separately reviewed repair; it is not permission to redesign the browser protocol.
 
-## 7. Guard against regrowth
+### Opt-in composition — parent #367
 
-- One short README per surviving domain listing entry point, public operations, owned state, build/test command, and forbidden imports.
-- Avoid generic repository/transaction/orchestration frameworks. Prefer deleting features to multiplying wrappers.
-- Codex task kickoff specifies exact owned files and one narrow test command; do not send giant inventories to agents as default context.
-- Close/supersede retired optional issues only after the linked capability is truly removed; historical issue text stays searchable.
-- Measure time-to-understand for representative changes and the completed before/after line totals.
+| Task | One result | Depends on | Suggested owner |
+| --- | --- | --- | --- |
+| [#377 T05](https://github.com/aaweaver-actuary/tempo/issues/377) | New Study web image and same-origin proxy | Merged #370 | Medium |
+| [#378 T06](https://github.com/aaweaver-actuary/tempo/issues/378) | Explicit disposable database bootstrap | Existing owner APIs | Medium + reviewer |
+| [#379 T07](https://github.com/aaweaver-actuary/tempo/issues/379) | Three-service Compose configuration | #377, #378, accepted #365 | Small |
+| [#380 T08](https://github.com/aaweaver-actuary/tempo/issues/380) | One actual wiring/startup failure smoke | #379 | Medium |
 
-## Minimum acceptance matrix
+Use new opt-in files. The root Compose, default web image/proxy and registered `tempo` installation remain unchanged. The bootstrap reuses existing provision/migrate/grant APIs and refuses non-disposable/existing targets; it is not a production installer. No borrowed live volumes, secrets or implicit schema setup.
 
-| Check | Must hold |
-|---|---|
-| Phone and desktop same implementation | Same Study frontend artifact and Learning API; no device branch delegating to legacy |
-| Ordinary daily Study | Due reviews and new openings from each active repertoire |
-| Durable progress | One correct/wrong review has one logical effect, after retries |
-| Device and network recovery | Reload, lost response, reconnect, simultaneous devices do not duplicate/silently lose answers |
-| Content import | PGN arrives, new cards become eligible; reimport preserves unaffected history |
-| Optional services stopped | Study continues with Games, analysis, inference, browser Workbench and legacy workers absent |
-| Removal completeness | Surviving images/install paths/CI no longer import/build retired features |
-| Data safety | No live table drops until separately approved with restore route |
+### Retained integrated behavior — parent #368
 
-## Dependency/parallelism
+| Task | One result | Depends on | Suggested owner |
+| --- | --- | --- | --- |
+| [#381 T09](https://github.com/aaweaver-actuary/tempo/issues/381) | Ten explicit existing essential scenario selections | #374 | Small |
+| [#382 T10](https://github.com/aaweaver-actuary/tempo/issues/382) | One pinned native and composed-browser receipt | #365, #375, #376, #380, #381 | Medium |
 
-One owner traces actual deployment + database; one owner qualifies independent Study UI/API; one owner scopes minimal Content import. Work can proceed in parallel in isolated branches after sharing the agreed contract; only one owner modifies the final live cutover and data mapping. Do not initiate broad optional feature work during this reduction. Historical source: [#261](https://github.com/aaweaver-actuary/tempo/issues/261), [#266](https://github.com/aaweaver-actuary/tempo/issues/266), [#267](https://github.com/aaweaver-actuary/tempo/issues/267), [#268](https://github.com/aaweaver-actuary/tempo/issues/268); their prior optional assembly scope is not the new product target.
+The ten cases are normal, teaching, lost-response, before-commit, next-load, two-tabs, offline-shell, wrong-credential, origin-transition and quota. Preserve their assertions. Actual installed image, native harness and real Compose/browser evidence remain distinct; one is not relabeled as another. #382 owns the expensive combined run and returns minimal failures to their owners.
+
+### Minimal repertoire intake — parent #360
+
+| Task | One result | Depends on | Suggested owner |
+| --- | --- | --- | --- |
+| [#383 T11](https://github.com/aaweaver-actuary/tempo/issues/383) | Pure fresh-PGN manifest generation | Ready | Small |
+| [#384 T12](https://github.com/aaweaver-actuary/tempo/issues/384) | No-database manifest/preview CLI | #383 | Small |
+| [#385 T13](https://github.com/aaweaver-actuary/tempo/issues/385) | Exact existing approval/delivery commands | #384 | Small |
+| [#231](https://github.com/aaweaver-actuary/tempo/issues/231) | Existing unranked fallback/frozen-order contract proof | Ready | Small |
+| [#386 T14](https://github.com/aaweaver-actuary/tempo/issues/386) | Native import/retry/history-preservation proof | #384, #385, accepted #365; #231 contract | Medium |
+
+`bridge/application.py::map_import` already accepts validated PGN plus explicit assignments. #383 freezes the deterministic key formulas and limits in its issue. `tempo_a_bridge.cli.Operator.apply` already checkpoints and reconciles the original operation and Learning authority. Reuse that on-demand path; do not invoke its separate Games snapshot workflow. Its useful apply/execution-bundle code is a retained dependency even though the directory name contains `analysis-restoration`.
+
+### Data and source retirement gates — parents #267, #361, #362
+
+| Task | One result | Depends on | Suggested owner |
+| --- | --- | --- | --- |
+| [#387 T15](https://github.com/aaweaver-actuary/tempo/issues/387) | Metadata-only census query, not a live census | Ready | Small |
+| [#388 T16](https://github.com/aaweaver-actuary/tempo/issues/388) | Pure exact normalized-snapshot comparison | Ready | Small |
+| [#389 T17](https://github.com/aaweaver-actuary/tempo/issues/389) | Real-version field/identity map and golden fixtures | #358 actual observation | Expert + host |
+| [#390 T18](https://github.com/aaweaver-actuary/tempo/issues/390) | Exact reviewed deletion cohort manifest | Retained #382/#386 proof and release gates | Expert |
+| [#391 T19](https://github.com/aaweaver-actuary/tempo/issues/391) | Mechanical execution of approved `legacy-01` | #390 and applicable cutover gates | Small |
+
+These are intentionally asymmetric: preparation may be cheap; authority decisions are not delegated without evidence. A snapshot comparator cannot detect facts an unqualified exporter omitted. A zero SQL-reference or scan count cannot certify a table drop. An exact reviewed file list lets a cheaper implementer remove code without guessing dependencies.
+
+## 4. Work that must not be invented now
+
+[#358](https://github.com/aaweaver-actuary/tempo/issues/358) is blocked on actual host/device/database access. It does not block pure tests, local tooling or isolated infrastructure work. Do not repeatedly ask for unavailable diagnostics. Never use queue GETs as a passive live census: they can issue work.
+
+After #389 freezes the historical map, #267 releases four separate converter leaves: content/identity; reviews/schedules/introductions; server queue/attempt/receipt facts; browser pending envelopes. Each requires exact input/output versions, allowed files and golden tests before implementation. Do not ask an agent to discover aliases while writing a converter.
+
+After the launcher specification (#369/#371), actual target fingerprint and data rehearsal are accepted, #359 releases separate leaves for the pure v1-to-v2 registration/receipt plan, the existing-lock lifecycle transition on disposable targets, and the authorized operator cutover. Normal diagnostics stay read-only; backup does not migrate. After target activation or uncertain acceptance, retain the authoritative Learning database and repair forward rather than silently returning to legacy or restoring a stale snapshot.
+
+#362 releases a table-family migration only after actual metadata, consumers and retained-data disposition are established. Source removal and physical data removal are separate approvals. Retiring an unused installation and retaining history cold may be simpler than consolidating every table.
+
+## 5. Parallel ownership and economical verification
+
+Start #373, #375, #376 and #383 independently; #231/#387/#388/#392 are additional pure tasks. #377 and #378 may run with infrastructure-capable owners. Do not assign every task at once: each owner needs the named dependencies and an unclaimed writable set.
+
+Serial shared-file ownership: #372 owns current runtime readiness; #374 owns the native runner; #381 owns the integration runner; #384 then #385 own the Content CLI/README sequence. #379 waits for image/bootstrap contracts. Qualification owners do not patch another owner's production code during a failing run.
+
+Run leaf-local tests while iterating. Run native locking/replay/security checks at their actual owning boundary, and combined checks once for matching assembled executable inputs. Preserve a compact exact receipt; do not create a second evidence platform. Report no-code reuse, failures and unavailable infrastructure honestly. A code build, a merged PR, native fixture success and real deployment are different claims.
+
+## 6. Historical backlog disposition
+
+On 2026-10-22, all 52 initially open issues were reviewed. Fourteen retained issues were rewritten as current parents, gates or leaves; twenty new bounded tasks were created. Thirty-eight older issues were closed `not_planned` as superseded/deferred, not as implemented. Their original descriptions, comments, source links and PR evidence remain available. Closing an implementation request does not delete its code or waive a retained invariant.
+
+| Historical scope | Issues | Current home |
+| --- | --- | --- |
+| Optional analysis, inference, generation, scoring and refinements | #4, #40, #43, #156, #190, #218, #258, #259, #292, #303, #304, #305, #321 | #357 feature disposition; reuse only explicitly selected code |
+| Study/session/UI and optional-pause reconstruction | #13, #194, #198, #219, #230, #232, #249, #252, #254, #255, #256 | #359, #365, #366, #368; selected intake proof #386 |
+| Content approval/import reconstruction | #193, #257, #265 | #360 and historical identity #267 |
+| Broad toolchain/build/fixture/CI roadmap | #201, #202, #205, #251, #253, #263 | #363 and storage disposition #362 |
+| Installer and whole-system assembly | #74, #260, #261, #266 | #359, #369, #368, #267 |
+| Duplicate retirement tracker | #268 | #361 |
+
+The older #192/M01-M12 roadmap is historical guidance, not an instruction to finish optional services. Existing open PRs are not automatically merged or closed by this plan; their owners must reconcile them with selected scope. No branch or source deletion was performed by backlog cleanup.
+
+## 7. Measure actual reduction
+
+Keep the frozen audit baseline `7d77ed1b`: 597 narrow backend/database Python+SQL files, 69,686 physical lines, target approximately 34,843 net removed. The broader 881-file implementation/schema scope is 97,217 lines. Use an approved classification manifest; do not relabel directories to appear smaller. Moves count at both ends, and test/docs/generated inventories have separate totals. Formatting alone is not functional retirement.
+
+The 292 table entries are source-schema observations across owners, not an installed-table count. Audit review-depth labels remain intact. Update running decisions and feature disposition; never rewrite historical evidence to claim a larger review or completed deployment.

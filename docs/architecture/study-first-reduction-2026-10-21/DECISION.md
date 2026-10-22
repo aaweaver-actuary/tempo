@@ -1,37 +1,43 @@
-# Decision: Study-first reduction (2026-10-21)
+# Decision: Study-first reduction
 
-**Status:** Adopted product direction. This records scope and acceptance criteria; it is **not** approval to delete production data, merge code, or deploy a replacement.
-**Source audit:** [audit baseline](./AUDIT.md), pinned to [main `7d77ed1b25198dcd320e0265f777cc630f23775e`](https://github.com/aaweaver-actuary/tempo/commit/7d77ed1b25198dcd320e0265f777cc630f23775e).
+Adopted 2026-10-21; execution clarified 2026-10-22 after PR review. [Programme #357](https://github.com/aaweaver-actuary/tempo/issues/357) and [PLAN.md](./PLAN.md) govern the current task queue. This is not approval to merge implementation, deploy, destroy data or change live services.
 
-## Product to keep
+## Keep
 
-1. **One responsive Study web client**, same code, same API, same behavior on phone and computer. Do not keep two implementations simply to preserve slight UX differences.
-2. **One Learning execution authority** for due reviews, new moves across active repertoires, persisted progression, queue issuance, attempt/response replay and scheduling. The smaller independent Study Web + Learning API + Learning PostgreSQL stack is the **proposed target**, pending verification against the real deployment.
-3. **Minimal repertoire intake/maintenance**: PGN or equivalent deliberate import, legal move and identity validation, accepted publication/activation, active repertoire selection and new-card limits. Preserve existing owned content and learning history.
-4. **Essential operations only**: configuration, schema/version control, health, backup/export, bounded recovery and migration of existing learning data.
+1. One responsive independent Study web client for phone and desktop. The source-mode split is legacy versus independent, not inherently device-specific. Use the existing `TEMPO_TARGET=study` implementation; do not write a third frontend.
+2. One independent Learning API and Learning PostgreSQL authority for due/new cards, progression, review/history, quota, scheduling, issuance and immutable retry receipts. This is the selected engineering target. Its actual user-data migration and deployment remain unqualified until their separate gates pass.
+3. Minimal deliberate authored-PGN intake using existing Content validation, explicit approval and accepted Learning publication/activation. Preserve stable identities, active repertoire selection and new-card limits. An on-demand CLI is sufficient; no rich Builder or always-running Content service is required for ordinary Study.
+4. Essential configuration, health, explicit schema management, private backup/export, bounded recovery and a one-time faithful migration.
 
-Everything else is **retire by default**. Preserve its *idea* and links to source history; do not preserve a second service or dormant tables merely because the feature may someday return. Reimplement a wanted feature later as a bounded consumer of the simpler Study/Content contracts, not a resurrection of its old pipeline. See [feature register](./FEATURES.md).
+All other features retire by default. Preserve their idea and historical source pointers in [FEATURES.md](./FEATURES.md), not dormant implementations or duplicate runtime modes merely for potential reuse. Existing shared pure code/contracts and local retained Study facts are different from optional producer services.
 
-## Simplification principles
+## Fixed simplifications
 
-- Working Study is the **only product feature with mandatory behavior preservation**. A small, documented cross-device feature downgrade (for example prepared-batch offline versus one-card offline) is acceptable when necessary to eliminate a second implementation, but explicitly verify online Study, lost-response handling, saved progress and reconnect behavior.
-- Choose **fewer supported pathways**, not only smaller files; no runtime switch that doubles whole workflows, no broad catch-all coordinator, no provider/job abstractions without a selected caller.
-- One module owns one coherent responsibility and one reason to change; **not one function or SQL statement per file**.
-- Avoid introducing distributed services for business logic that can remain a local module. One database transaction must continue to own effects that need to commit together.
-- Decorators/context managers may remove truly repeated cross-cutting behavior; they must never hide commit/rollback/idempotency policy.
-- Essential Study must run with optional Games, Intelligence, Workbench, engine inference and background producers absent.
-- A working release stays untouched until a separate cutover plan is demonstrated and explicitly approved. A Git branch/issue or local test never establishes live deployment success.
+- Reuse independent Study's one-issued-card offline behavior: durable answer/original operation, honest pending status and reconnect reconciliation. Do not keep or recreate the legacy full offline-batch/local-repeat scheduler on another device.
+- Use one same-origin web/API route in the opt-in composition, with existing credential/workspace/origin controls. Keep PostgreSQL and API internal to that disposable stack; no live ingress change follows from the design.
+- Keep the current scheduling/eligibility/quota/transaction behavior while removing unused producers. Do not invent a new ranking model, global quota policy, ORM, event bus or transaction decorator in a packaging task.
+- Fresh PGN identities and manifest generation are explicit deterministic functions. Historical card mapping is separate and requires authoritative evidence; reimporting PGN as new cards is not migration.
+- Existing Content operator approval/apply/reconciliation is reused for minimal intake. Do not delete required code solely because its directory mentions analysis, games or remediation.
+
+## Design and execution principles
+
+Working Study and authentic learning data are the mandatory preservation boundary. Lost-response/reload/reconnect safety, one logical effect, pending-operation identity and permissions cannot be traded for fewer lines.
+
+Prefer fewer supported workflows and cohesive modules over splitting every existing script. One responsibility is not one SQL statement per file. Keep complete queries in their existing owner adapters and singular transaction/queue-writing authority. Cross-cutting helpers may remove real repetition but must not hide commit/rollback/retry semantics.
+
+Use small implementation leaves with fixed interfaces, explicit file ownership and cheap tests. Existing equivalent tests may satisfy a verification assignment without new source. Historical migration, privilege decisions and deletion approval receive expert review before a lower-capability model executes the mechanical work. No task is permission to perform unrequested live operations.
+
+A current working release stays unchanged until actual authority/data observation, faithful rehearsal, a crash-safe normal-launcher transition and a separately approved cutover. After new-target writes or uncertain acceptance, preserve and repair its authoritative state; do not silently restore a stale pre-traffic backup or restart legacy writers.
 
 ## Measurement
 
-Baseline is **597 backend/database Python+SQL files, 69,686 physical lines**, with a 50% net-removal target of **34,843 lines**. The broader six-root implementation/schema denominator is 881 files / 97,217 lines. Count code moved between directories in both before/after totals, not as deletion. Tests, generated inventories and documentation have separate denominators. Do not remove correctness tests for retained behavior just to lower test volume.
+Frozen audit `7d77ed1b`: 597 backend/database Python+SQL files / 69,686 physical lines; approximate net-removal target 34,843. Broader implementation/schema denominator: 881 files / 97,217 lines. Track both so moving code cannot count as removal. Tests, docs and generated inventories are separate. Retain correctness regressions for surviving behavior.
 
-## What is explicitly undecided
+## Still unknown and deliberately gated
 
-- Which runtime/build currently serves each phone and desktop session; source `main` is not deployed-state evidence.
-- Exact retained offline contract (smallest viable is one pending card, with clear reconnect and replay).
-- Historical repertoire importer/snapshot versions still needed, and exact data migration/export/rollback plan.
-- Which optional features, if any, merit inexpensive reuse after the core cut.
-- Actual installed PostgreSQL tables and their consumers. A source table count is not a live database census.
+- Actual phone/desktop origins, cached builds, running images, registered launcher and installed database versions (#358).
+- Exact historical identity/provenance mapping and pending browser/server work; private latest-state conversion and recovery (#267/#389).
+- Final published/accepted artifact composition and real cross-device behavior (#359/#368).
+- Live table consumers and safe physical data disposition (#362).
 
-**Immediate next step:** [execution plan](./PLAN.md) gate 1: read-only serving and data fingerprint, then choose the protected minimal workflow.
+These uncertainties do not block pure helpers, local contract tests or disposable composition work. They do block unsupported claims of safe live migration, blanket deletion and production readiness. Start with the ready leaves in [PLAN.md](./PLAN.md), not another unrestricted audit.
