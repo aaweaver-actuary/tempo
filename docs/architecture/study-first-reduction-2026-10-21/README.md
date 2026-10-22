@@ -8,6 +8,7 @@
 4. [AUDIT.md](./AUDIT.md) — complete source audit, including sequential 4,538-line `main.py` review and 187-function map.
 5. [STUDY-BOUNDARY.md](./STUDY-BOUNDARY.md), [BACKEND-DOMAINS.md](./BACKEND-DOMAINS.md), [DATABASE-AUDIT.md](./DATABASE-AUDIT.md) — deeper source evidence.
 6. [MODULE-INDEX.md](./MODULE-INDEX.md) — 881-file purpose and review-depth index; [TABLE-INDEX.md](./TABLE-INDEX.md) — 292 source-schema entries. **Only read the relevant rows during an agent task.**
+7. [LAUNCHER-CUTOVER.md](./LAUNCHER-CUTOVER.md) — bounded migration-safe specification for replacing the normal launcher path.
 
 Baseline commit [`7d77ed1b25198dcd320e0265f777cc630f23775e`](https://github.com/aaweaver-actuary/tempo/commit/7d77ed1b25198dcd320e0265f777cc630f23775e); narrow Python/SQL backend/database 597 files/69,686 lines, broader six-root source 881 files/97,217 lines. No semantic review claim beyond the recorded file depths; no live usage census or deployment qualification. The historical CSV/ZIP raw data artifacts are separately retained outside this documentation-only branch; these Markdown indexes are the GitHub-native navigation form.
 
