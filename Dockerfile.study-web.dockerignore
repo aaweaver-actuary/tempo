@@ -5,6 +5,7 @@
 !tsconfig.json
 !vite.static.config.ts
 !module-resolution.ts
+!nginx.study.conf
 
 !static/
 !static/index.html
