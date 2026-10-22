@@ -1,5 +1,11 @@
 # Tempo working rules
 
+## Current programme: Study-first small tasks
+
+The selected scope is [Study-first simplification #357](https://github.com/aaweaver-actuary/tempo/issues/357). Start with the assigned leaf issue and its exact read/write/test contract; [the task index](docs/architecture/study-first-reduction-2026-10-21/PLAN.md) and [small-task guide](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md) define the current execution sequence. Parent issues are coordination records, not whole-agent assignments. The older #192/M01-M12 roadmap is historical donor evidence, not a requirement to rebuild optional services.
+
+Read only the named source and relevant owner guidance after these safety rules. Do not preload the full module/table audit, every historical PR, or unrelated diagrams. Reuse completed implementations and existing named tests. A missing contract, unmerged prerequisite, conflicting file owner, or required edit outside the leaf's allowlist is a blocker to report, not permission to expand scope. Source/build tests and real deployment are different claims. No safety or transaction rule below is waived by a small task or cheaper model.
+
 ## Deliver a usable single-user MVP
 
 - Andy is currently Tempo's only user. Prioritize the common study and authoring workflows that serve the overwhelming majority of cases: aim for the 80% of value achievable with 20% of the work. Define a bounded acceptance scope; exhaustive edge-case closure and perfect software are not prerequisites for MVP delivery.
@@ -67,10 +73,12 @@
 
 ## Authoritative guidance
 
+- [Current Study-first task plan and scope](docs/architecture/study-first-reduction-2026-10-21/PLAN.md)
+- [Small-task execution contract](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md)
 - [Contribution and handoff workflow](CONTRIBUTING.md)
 - [Test selection, commands, and current runner behavior](docs/testing.md)
-- [Adopted component architecture and migration index](docs/architecture/component-reconstruction.md)
+- [Component architecture and historical migration index](docs/architecture/component-reconstruction.md)
 - [Maintained architecture drawings and review procedure](docs/architecture/diagrams/README.md)
-- [12-phase index and component manifest (#192)](https://github.com/aaweaver-actuary/tempo/issues/192)
+- [Historical 12-phase index and component manifest (#192)](https://github.com/aaweaver-actuary/tempo/issues/192) — superseded for product/task scope by #357
 
 Read `CONTRIBUTING.md` before behavior changes. The architecture guide distinguishes target boundaries from current implementation and migration work; do not infer that a planned package, service, database, release, or toolchain already exists.
