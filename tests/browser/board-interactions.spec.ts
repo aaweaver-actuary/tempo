@@ -91,10 +91,7 @@ test("checked king gets a persistent translucent red cue that clears when the po
     ),
   ).toBeLessThan(1);
 
-  await page
-    .locator(".shared-board-toolbar .board-tools")
-    .getByRole("button", { name: /Back/ })
-    .click();
+  await page.keyboard.press("ArrowLeft");
   expectedPosition.undo();
   await expect(board).toHaveAttribute("data-fen", expectedPosition.fen());
   await expect(checkedSquare).toHaveCount(0);
