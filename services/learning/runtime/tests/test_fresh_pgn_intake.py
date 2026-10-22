@@ -181,11 +181,12 @@ def test_fresh_white_black_pgn_variations_apply_and_study_with_frozen_ranks(case
         publication = completed["document"]["export"]["publication"]
         fresh_ids = {item["card_id"] for item in publication["definitions"]}
         assert len(fresh_ids) >= 1
-        assert inspect_rows(
+        fresh_card_colors = inspect_rows(
             case,
-            "SELECT count(*) FROM learning.cards WHERE id = ANY(%s) AND serving_active = 1",
+            "SELECT id,trained_color FROM learning.cards WHERE id = ANY(%s) AND serving_active = 1 ORDER BY id",
             (list(fresh_ids),),
-        )[0][0] == len(fresh_ids)
+        )
+        assert dict(fresh_card_colors) == {card_id: color for card_id in fresh_ids}
         assert inspect_rows(
             case,
             "SELECT count(*) FROM learning.frozen_opening_ranks WHERE run_id = %s",
@@ -200,6 +201,11 @@ def test_fresh_white_black_pgn_variations_apply_and_study_with_frozen_ranks(case
         # All Content/operator CLI processes have returned. Only Learning HTTP
         # remains in use while the existing frozen ranks and fresh card are served.
         cards = study_window(client, required_ids=fresh_ids)
+        assert all(
+            card["trained_color"] == color
+            for card in cards
+            if card["id"] in fresh_ids
+        )
         positions = {card["id"]: index for index, card in enumerate(cards)}
         admission_facts = {
             "card_rows": inspect_rows(
@@ -236,6 +242,7 @@ def test_fresh_white_black_pgn_variations_apply_and_study_with_frozen_ranks(case
             study_review(client, head)
         fresh_head = study_window(client)[0]
         assert fresh_head["id"] in fresh_ids
+        assert fresh_head["trained_color"] == color
         study_review(client, fresh_head)
 
         evidence(
