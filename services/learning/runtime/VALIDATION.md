@@ -514,6 +514,7 @@ All thirty distinct SQL strings/fragments match the captured source: 33 original
 ## Preserved PR #372 readiness qualification — 2026-10-22
 
 The results below were recorded for PR #372 at the tested executable commit. They are preserved prior results; no tests or runtime checks were run for this documentation update.
+Execution results are reported from the original task owner; this later source/receipt review did not independently rerun them.
 
 - Branch: `codex/issue-365-learning-runtime-qualification`
 - Base: `2c55dfab8004cba2fe3ab3b0497570f1609aaea9`
