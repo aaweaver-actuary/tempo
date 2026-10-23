@@ -1,5 +1,48 @@
 # Independent Learning runtime validation
 
+## Study contract bundle — 2026-10-23
+
+The prepared bundle at `8890773d` imported four published file snapshots:
+`run_study.py` and `test_study_essential_selection.py` from `2acca681`,
+`test_frozen_import_contract.py` from `7dd8914`, and
+`test_fresh_pgn_intake.py` from `27decf4`. It was integrated conflict-free with
+main `cb0ed59`. The fresh-PGN fixture's pre-existing frozen cards were changed
+from e4/d4 to Nf3/c4 because Content's white root PGN decision has the same
+stable card ID as the original d4 seed. A pure Content manifest/decision mapping
+check confirms zero overlap for both white and black imports after the repair;
+this is not native admission evidence. No production runtime source, schema,
+migration or lockfile was edited by this bundle.
+
+- `python3.12 -m unittest discover -s database/tests -p test_study_essential_selection.py -v`: **4 passed** after integration. The current owner runner accepts `fixture_profile="essential"`, and the ten selected node IDs exist in the current Study UI test parametrization. These are selector mock tests, not ten native Study scenario passes.
+- `UV_CACHE_DIR=/tmp/tempo-study-uv-cache uv sync --project services/learning/runtime --locked --no-editable --python python3.12`: succeeded with Python 3.12.14 in a task-local runtime environment; no lock changes or global install.
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 services/learning/runtime/.venv/bin/python -m pytest services/learning/runtime/tests/test_frozen_import_contract.py -q -p no:cacheprovider --tb=short`: **7 passed** after integration, one Starlette/AnyIO deprecation warning.
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 services/learning/runtime/.venv/bin/python -m pytest services/learning/runtime/tests/test_fresh_pgn_intake.py --collect-only -q -p no:cacheprovider --tb=short`: **5 collected** after integration. These database-backed cases were **not run**; no Docker or live database was used.
+
+Exact native invocation, to run only after Docker and a task-owned PostgreSQL
+fixture are available (repository root as working directory):
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 services/learning/runtime/.venv/bin/python - <<'PY'
+from pathlib import Path
+import sys
+
+root = Path.cwd().resolve()
+sys.path.insert(0, str(root / "database"))
+from tempo_learning_database.tooling.run_postgres import main
+
+main(
+    test_paths=[root / "services/learning/runtime/tests/test_fresh_pgn_intake.py"],
+    evidence_directory=Path("/tmp/tempo-study-issue386-native-evidence"),
+    fixture_profile="full",
+)
+PY
+```
+
+This full fixture installs Content/operator test tools but no Games producer is
+a Study serving dependency. The earlier Mac five-case result remains historical,
+not a cloud native pass. Production Study build/browser/PostgreSQL qualification,
+deployment and live data remain unverified.
+
 The original implementation and initial repair evidence are preserved below.
 **Current-main compatibility refresh** records the final producer/tooling update
 after main advanced during publication. Earlier 44-check, 74-check and pre-refresh

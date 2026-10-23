@@ -5,7 +5,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "database"))
 from tempo_learning_database.tooling.run_postgres import ROOT, main
 
 
-def run():
+def study_test_paths(profile: str) -> list[Path]:
+    study_tests = ROOT / "services/learning/runtime/integration/study_tests"
+    if profile == "full":
+        return [study_tests]
+    if profile == "essential":
+        test_file = study_tests / "test_study_ui.py"
+        return [
+            Path(f"{test_file}::test_production_study_learning_native[{scenario}]")
+            for scenario in (
+                "normal",
+                "teaching",
+                "lost-response",
+                "before-commit",
+                "next-load",
+                "two-tabs",
+                "offline-shell",
+                "wrong-credential",
+                "origin-transition",
+                "quota",
+            )
+        ]
+    raise ValueError(f"Unknown study profile: {profile!r}")
+
+
+def run(profile: str = "full"):
+    test_paths = study_test_paths(profile)
     if len(sys.argv) > 2:
         raise SystemExit("Pass at most one absolute task-owned evidence directory")
     evidence = Path(sys.argv[1]) if len(sys.argv) == 2 else ROOT / "test-results/learning-full-study"
@@ -30,14 +55,17 @@ def run():
             raise RuntimeError("Production Study build failed; see study-build.log")
         (evidence / "study-assets.json").write_text(json.dumps({str(path.relative_to(build)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(build.rglob("*")) if path.is_file()}, indent=2))
-        main([ROOT / "services/learning/runtime/integration/study_tests"],
+        runner_options = {"evidence_directory": evidence}
+        if profile == "essential":
+            runner_options["fixture_profile"] = "essential"
+        main(test_paths,
              {"TEMPO_LEARNING_STUDY_ASSETS": str(build)},
              [ROOT / "app", ROOT / "static", ROOT / "vite.static.config.ts",
               ROOT / "package.json", ROOT / "package-lock.json", ROOT / "module-resolution.ts",
               ROOT / "scripts/prove-study-learning.mjs", ROOT / "scripts/offline-shell-assets.ts",
               ROOT / "scripts/maia-cache-asset.ts", ROOT / "database/browser",
               ROOT / "database/browser-intents", ROOT / "database/tests/browser", ROOT / "public"],
-             evidence_directory=evidence)
+             **runner_options)
     finally:
         shutil.rmtree(build)
         (evidence / "study-build-cleanup.json").write_text(json.dumps({"removed": not build.exists()}))
