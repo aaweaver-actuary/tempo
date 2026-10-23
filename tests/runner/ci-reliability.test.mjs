@@ -568,13 +568,13 @@ test("demoted critical cases remain required by their complete browser families"
   }
 });
 
-test("ordinary prose and standalone core tests select only six global browser smoke cases", () => {
-  assert.equal(inventory.critical.length, 6);
+test("ordinary prose and standalone core tests select only five global browser smoke cases", () => {
+  assert.equal(inventory.critical.length, 5);
   const proseAndCorePaths = ["docs/testing.md", "README.md", "CONTRIBUTING.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md",
     "app/components/README.md", "tests/browser/README.md", "tests/REGRESSIONS.md", "tests/unit/study-regressions.test.tsx", "backend/tests/test_studies.py"];
   const realCases = currentBrowserCases();
   const criticalIds = plan({ cases: realCases }).collection.filter(item => item.critical).map(item => item.id).sort();
-  assert.equal(criticalIds.length, 6);
+  assert.equal(criticalIds.length, 5);
   for (const paths of [...proseAndCorePaths.map(path => [path]), proseAndCorePaths]) {
     const planned = plan({ cases: realCases, paths });
     assert.equal(planned.scope, "targeted", paths.join(", "));

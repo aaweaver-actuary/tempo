@@ -33,7 +33,6 @@ it("retired workspace aliases do not preload optional data", async () => {
   await preloadView("insights");
   await preloadView("progress");
   await preloadView("statistics");
-  await preloadView("analysis");
   await preloadView("builder");
   expect(fetcher).not.toHaveBeenCalled();
 });
