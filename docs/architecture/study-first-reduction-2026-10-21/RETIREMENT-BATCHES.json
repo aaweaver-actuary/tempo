@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "status": "PROPOSED_SOURCE_ONLY_NOT_APPROVED",
+  "source_commit": "b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8",
+  "scope": "Exact candidate packets for #390/#361. No deletion, database change, cutover, build, or approval is asserted. Recheck paths and callers against the aggregate source SHA before execution.",
+  "aggregate_edit_path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md: for each executed cohort record old purpose, entrypoints, last-good commit, unsupported routes/commands and retained data; update affected canonical architecture drawing under AGENTS.md review rules",
+  "release_gates": [
+    "#382 retained Study qualification",
+    "#386 authored PGN intake qualification",
+    "#359/#267/#369 normal-launcher and historical-state gates for affecting cohorts",
+    "#362 separate physical-table disposition"
+  ],
+  "batches": [
+    {
+      "id": "browser-engine-orphans-01",
+      "status": "candidate",
+      "capability": "Browser Stockfish/Maia analysis workers orphaned by #407; no persistent command owner",
+      "delete_paths": [
+        "app/lib/analysis-engines.ts",
+        "app/lib/engine-broker.ts",
+        "app/lib/maia-broker.ts",
+        "app/lib/maia-inference.ts",
+        "app/lib/maia.worker.ts",
+        "tests/unit/engine-priority-regressions.test.ts",
+        "tests/unit/maia-container-parity-regressions.test.ts"
+      ],
+      "edit_paths": [
+        {
+          "path": "tests/unit/maia-worker-regressions.test.ts",
+          "required_edit": "Remove only the browser-Maia-worker case; retain malformed worker-message schema assertions."
+        },
+        {
+          "path": "tests/unit/study-regressions.test.tsx",
+          "required_edit": "Remove the obsolete analysis-engines mock; retain all Study and saved exercise assertions."
+        },
+        {
+          "path": "tests/unit/training-builder-handoff-regressions.test.tsx",
+          "required_edit": "Remove the obsolete analysis-engines mock; retain retired-route fallback assertion."
+        },
+        {
+          "path": "scripts/study-composition.ts",
+          "required_edit": "Remove the four deleted engine module names from optionalStudyImplementations.engines; keep still-existing game command names and contract exceptions."
+        },
+        {
+          "path": "Dockerfile.study-web.dockerignore",
+          "required_edit": "Remove only ignore entries for deleted engine modules."
+        },
+        {
+          "path": "scripts/ci-fast-lane-inventory.json",
+          "required_edit": "Remove deleted engine source-path entries and retired test references; keep frozen Maia and Study selections."
+        },
+        {
+          "path": "tools/component-build/test-inventory.json",
+          "required_edit": "Remove the two deleted unit test entries; retain maia-worker-regressions for its surviving schema case."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "required_edit": "Retire browser engine and parity test ownership entries; retain frozen-rank and saved-exercise history."
+        },
+        {
+          "path": "workers/maia/REGRESSIONS.md",
+          "required_edit": "Remove browser parity/worker claims only; retain frozen-helper and container proofs."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "app/domain/schemas",
+          "reason": "Study worker message contracts are still exercised by the surviving maia-worker schema case and Study."
+        },
+        {
+          "path": "scripts/frozen-maia-inference.mjs",
+          "reason": "Frozen admitted rank/order qualification calls this executable."
+        },
+        {
+          "path": "scripts/maia-inference.mjs",
+          "reason": "Frozen ordering and container worker depend on it."
+        },
+        {
+          "path": "app/lib/all_moves_maia3.json",
+          "reason": "Frozen rank helper/model input, not a browser-only asset."
+        },
+        {
+          "path": "app/lib/all_moves_maia3_reversed.json",
+          "reason": "Frozen rank helper/model input."
+        },
+        {
+          "path": "app/lib/study.worker.ts",
+          "reason": "Retained Study worker."
+        }
+      ],
+      "preserved_test_names": [
+        "tests/unit/maia-worker-regressions.test.ts: controlled worker messages reject malformed FEN, null UCI and unexpected structural fields",
+        "tests/unit/frozen-maia-inference-regressions.test.ts: bounded Maia helper emits all legal moves",
+        "tests/unit/study-regressions.test.tsx",
+        "tests/unit/training-builder-handoff-regressions.test.tsx"
+      ],
+      "test_commands": [
+        "npm exec vitest -- run tests/unit/maia-worker-regressions.test.ts tests/unit/frozen-maia-inference-regressions.test.ts tests/unit/study-regressions.test.tsx tests/unit/training-builder-handoff-regressions.test.tsx",
+        "npm run build:study",
+        "! git grep -n -E 'analysis-engines|engine-broker|maia-broker|maia\\.worker' -- app static scripts Dockerfile.study-web.dockerignore"
+      ],
+      "dependency_receipts": [
+        "At source SHA, production imports of the five modules are internal to this set: engine-broker and maia-broker import analysis-engines; maia.worker imports maia-inference; analysis-engines constructs maia.worker by URL. No surviving app/static importer was found after #407.",
+        "scripts/study-composition.ts:12-14 classifies these as optional and the Study entry is static/src/study-main.tsx; test-only imports/mocks are not product need.",
+        "Frozen script callers are backend/tests/test_frozen_maia_plan.py and database/tooling/frozen-maia-order.py; their model files are excluded from this batch."
+      ],
+      "data_disposition": "No durable user state or database path in this browser computation set. Preserve persisted frozen ranks and model inputs. No table drop.",
+      "reviewer": null
+    },
+    {
+      "id": "game-evidence-account-providers-01",
+      "status": "candidate",
+      "capability": "Optional Lichess/Chess.com account-window import, separate from authored repertoire PGN intake and optional Game Evidence import-pgn",
+      "delete_paths": [
+        "services/game-evidence/src/tempo_game_evidence/providers.py",
+        "database/tempo_game_evidence_database/adapters/providers.py",
+        "services/game-evidence/tests/test_providers.py"
+      ],
+      "edit_paths": [
+        {
+          "path": "services/game-evidence/src/tempo_game_evidence/cli.py",
+          "required_edit": "Remove import-account, cancel-import and import-status parsers/branches and import_one from work loop; retain import-pgn, snapshot/compare, delivery and worker cancellation."
+        },
+        {
+          "path": "services/game-evidence/src/tempo_game_evidence/api.py",
+          "required_edit": "Remove only GET /v1/imports/{import_id}; retain game/comparison reads and health."
+        },
+        {
+          "path": "database/tempo_game_evidence_database/adapters/store.py",
+          "required_edit": "Remove import_status and its response-shaper import; retain import_pgn/_import, source history, report and delivery methods."
+        },
+        {
+          "path": "services/game-evidence/src/tempo_game_evidence/reporting.py",
+          "required_edit": "Remove import_status_response only; retain game page validation and comparison reporting."
+        },
+        {
+          "path": "services/game-evidence/tests/test_import_write_preparation.py",
+          "required_edit": "Remove provider-unavailable case; retain PGN metadata/write-order and shared interval-adaptation cases."
+        },
+        {
+          "path": "services/game-evidence/tests/test_reporting.py",
+          "required_edit": "Remove import-status response case; retain report construction tests."
+        },
+        {
+          "path": "database/tempo_game_evidence_database/tests/native/test_postgres.py",
+          "required_edit": "Remove named account-provider-only cases and the provider segment of restart/reconciliation mixed case; preserve CLI PGN-to-report, PGN rescope/restart, immutable delivery, receiver retry, migration/history and role cases. Update top-level provider imports and fixture cleanup only as needed; keep historical schema tables."
+        },
+        {
+          "path": "services/game-evidence/README.md",
+          "required_edit": "Remove account import/status/cancel/work instructions; document import-pgn as optional Games evidence, distinct from Content authored repertoire intake."
+        },
+        {
+          "path": "services/game-evidence/REGRESSIONS.md",
+          "required_edit": "Remove provider-window/lease/checkpoint ownership, retain PGN and delivery regressions."
+        },
+        {
+          "path": "database/tempo_game_evidence_database/adapters/README.md",
+          "required_edit": "Remove providers.py inventory row; retain history/migration notes."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "services/game-evidence/src/tempo_game_evidence/source.py",
+          "reason": "Optional import-pgn normalizes source and preserves source identity."
+        },
+        {
+          "path": "services/game-evidence/src/tempo_game_evidence/transport.py",
+          "reason": "delivery.py also imports request_bytes and RemoteFailure."
+        },
+        {
+          "path": "database/tempo_game_evidence_database/ddl/migrations/001.sql",
+          "reason": "Historical account rows/schema stay recoverable; no rewritten migration or DROP."
+        },
+        {
+          "path": "database/tempo_game_evidence_database/ddl/migrations/002.sql",
+          "reason": "Installed historical migration chain and cooldown facts remain."
+        },
+        {
+          "path": "tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py",
+          "reason": "Minimal Content operator apply/execution_bundle and legacy evidence route remain separately protected."
+        }
+      ],
+      "preserved_test_names": [
+        "database/tempo_game_evidence_database/tests/native/test_postgres.py::test_cli_pgn_to_report_and_unknown_source_are_inspectable",
+        "database/tempo_game_evidence_database/tests/native/test_postgres.py::test_snapshot_change_mid_rescope_and_import_converge_after_restart",
+        "database/tempo_game_evidence_database/tests/native/test_postgres.py::test_native_database_restart_preserves_pending_delivery",
+        "services/game-evidence/tests/test_import_write_preparation.py::test_import_metadata_clock_player_and_json_adaptation_keep_write_order"
+      ],
+      "test_commands": [
+        "python -m pytest services/game-evidence/tests/test_import_write_preparation.py services/game-evidence/tests/test_reporting.py -q",
+        "python -m pytest database/tempo_game_evidence_database/tests/native/test_postgres.py -k 'cli_pgn_to_report or snapshot_change_mid_rescope or native_database_restart_preserves_pending_delivery' -q",
+        "python -m compileall -q services/game-evidence/src/tempo_game_evidence database/tempo_game_evidence_database/adapters"
+      ],
+      "dependency_receipts": [
+        "Production .providers import is services/game-evidence/src/tempo_game_evidence/cli.py:13; its import-account/cancel/status branches and work loop are lines 46-52,110-116,144. Database providers.py is called only by that module; native tests import it separately.",
+        "API /v1/imports/{id} and EvidenceStore.import_status are surviving incoming account-status surfaces and must be removed together; reporting.import_status_response then has no other production caller.",
+        "transport.py is shared by delivery.py:12,70 and must survive. GE import-pgn at cli.py:38-43,105-109 is not authored repertoire PGN intake."
+      ],
+      "data_disposition": "Do not DROP import_cursors, import_pages or provider_leases, rewrite old migrations, or silently claim queued imports completed. Reviewer must decide how preexisting pending/blocked account imports are disclosed/exported before the command disappears; no live inspection in this task.",
+      "blockers": [
+        "Historical pending account-import state/cutover disposition and normal launcher/runtime registration are not qualified."
+      ],
+      "reviewer": null
+    },
+    {
+      "id": "external-analysis-pilot-01",
+      "status": "candidate",
+      "capability": "Optional external A-export to Intelligence C analysis/Stockfish pilot, not Content-to-Learning operator apply",
+      "delete_paths": [
+        "tools/analysis-restoration/c_pilot/README.md",
+        "tools/analysis-restoration/c_pilot/REGRESSIONS.md",
+        "tools/analysis-restoration/c_pilot/integration/actual_consumers.py",
+        "tools/analysis-restoration/c_pilot/integration/run_study_off.py",
+        "tools/analysis-restoration/c_pilot/integration/study/conftest.py",
+        "tools/analysis-restoration/c_pilot/integration/study/test_study_off.py",
+        "tools/analysis-restoration/c_pilot/integration/test_actual_consumers.py",
+        "tools/analysis-restoration/c_pilot/pyproject.toml",
+        "tools/analysis-restoration/c_pilot/qualify.py",
+        "tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/__init__.py",
+        "tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/__main__.py",
+        "tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/cli.py",
+        "tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/cohort.py",
+        "tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/inputs.py",
+        "tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/stockfish_client.py",
+        "tools/analysis-restoration/c_pilot/tests/test_cli.py",
+        "tools/analysis-restoration/c_pilot/tests/test_cohort.py",
+        "tools/analysis-restoration/c_pilot/tests/test_inputs.py",
+        "tools/analysis-restoration/c_pilot/tests/test_stockfish_client.py",
+        "database/tempo_intelligence_database/tests/integration/test_actual_analysis.py",
+        "database/tempo_intelligence_database/tests/integration/test_actual_a.py"
+      ],
+      "edit_paths": [
+        {
+          "path": "components.json",
+          "required_edit": "Remove only analysis-pilot component/build/test registration; retain Intelligence, Game Evidence and a_bridge registrations."
+        },
+        {
+          "path": "database/tempo_intelligence_database/tooling/run_postgres.py",
+          "required_edit": "Remove optional test_actual_analysis/test_actual_a selections; keep the default native Intelligence runner and other explicit selections."
+        },
+        {
+          "path": "database/tempo_intelligence_database/tests/README.md",
+          "required_edit": "Remove the two retired optional installed A/B/C lanes from inventory, preserve core Analysis test descriptions."
+        },
+        {
+          "path": "services/intelligence/INTERFACES.md",
+          "required_edit": "Replace c_pilot invocation with historical Git pointer; do not misstate Intelligence as retired."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py",
+          "reason": "Retained Content-to-Learning operator apply and execution bundle are independent of c_pilot."
+        },
+        {
+          "path": "services/intelligence/src/tempo_intelligence",
+          "reason": "Still directly serves separate Workbench and has its own runtime; this packet does not establish its absence."
+        },
+        {
+          "path": "apps/workbench-web/src/workbench.ts",
+          "reason": "Surviving independent Intelligence client/UI until its own pending-command/history disposition."
+        },
+        {
+          "path": "contracts/intelligence",
+          "reason": "Separate Workbench/Intelligence contract; no deletion through a test-only c_pilot observation."
+        }
+      ],
+      "preserved_test_names": [
+        "database/tempo_intelligence_database/tests/integration/test_analysis_postgres.py (core Analysis boundary)",
+        "services/learning/runtime/tests (Study authority, unchanged)",
+        "tools/analysis-restoration/a_bridge/tests/test_operator.py"
+      ],
+      "test_commands": [
+        "npm run check:components -- --list",
+        "python -m compileall -q services/intelligence/src/tempo_intelligence tools/analysis-restoration/a_bridge/src/tempo_a_bridge",
+        "! git grep -n 'tempo_analysis_pilot' -- . ':!docs/**'"
+      ],
+      "dependency_receipts": [
+        "c_pilot/src/tempo_analysis_pilot/cli.py:26,55 imports tempo_intelligence.Configuration/run_analysis_work; inputs.py and stockfish_client.py also call Intelligence contracts.",
+        "Only external imports of tempo_analysis_pilot found in database/tempo_intelligence_database/tests/integration/test_actual_analysis.py:15 and test_actual_a.py:16; the optional runner selects these at tooling/run_postgres.py:103,108.",
+        "components.json:1711-1770 registers a separate analysis-pilot artifact. Workbench and c_pilot are distinct callers, so removing this pilot alone never licenses Intelligence deletion."
+      ],
+      "data_disposition": "Pilot evidence is explicitly private external output, not a repo database. Preserve any historical export artifacts outside Git; do not alter installed Intelligence data or a_bridge conversion. Reviewer must confirm this is not needed by #267 historical conversion.",
+      "blockers": [
+        "#267 one-time historical-converter dependency review must release this optional pilot."
+      ],
+      "reviewer": null
+    },
+    {
+      "id": "legacy-statistics-tail-01",
+      "status": "candidate",
+      "capability": "Conditional orphan SQL projection after separate retired GET/statistics patch d2dff40e5a6bdf79bd76bb1df7a9a9a2dd0603c2 is integrated",
+      "delete_paths": [],
+      "edit_paths": [
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "required_edit": "Delete prepare_breakdown only after the separate patch removes backend/app/services/statistics.py::statistics_breakdown and three GET callers; retain all feature/daily snapshot SQL, DIMENSION_EXPRESSIONS and GAME_FEATURE_UPSERT_SQL until their own consumers retire."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "backend/app/services/statistics.py",
+          "reason": "Separate patch retains daily-statistics producers/refresh; this packet does not broaden it."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "reason": "Contains many still-used feature/daily operations; edit one function only."
+        }
+      ],
+      "preserved_test_names": [
+        "backend/tests/test_legacy_statistics_database_split.py (remaining daily/feature cases)",
+        "backend/tests/test_legacy_derived_publication_database_split.py"
+      ],
+      "test_commands": [
+        "python -m compileall -q database/tempo_legacy_database/adapters/statistics backend/app/services/statistics.py",
+        "! git grep -n 'prepare_breakdown' -- backend database"
+      ],
+      "dependency_receipts": [
+        "Current main still calls prepare_breakdown through backend/app/services/statistics.py:163-164 and main.py:4436-4440; do not execute this edit on b39dd3a9 alone.",
+        "Parent supplied separate local statistics patch d2dff40; after it is integrated, prepare_breakdown is reported to have no production caller, while other storage.py operations remain used."
+      ],
+      "data_disposition": "Read-only projection code only. Daily snapshot producers and historical rows remain; no schema/table change.",
+      "blockers": [
+        "Depends on integration and source verification of separate statistics patch; not a standalone main-based deletion."
+      ],
+      "reviewer": null
+    }
+  ],
+  "deferred_boundaries": [
+    "Do not dispatch legacy discovery/opportunity removal yet: backend/app/services/repertoire_opportunities.py and discovery_admission.py still enter backend/app/main.py, tasks.py and GameSyncCoordinator; database/tempo_legacy_database/adapters/queue_refresh/{application/admission.py,openings.py,capacity.py} use current_repertoire_opportunities to admit locked cards. A bounded queue rewrite, saved-card/receipt disposition and #267/#382/#359 proof are prerequisites. Keep historical schema and normal introduction.",
+    "Workbench is still a separate build/runtime and has pending mutations in apps/workbench-web/src/commands.ts plus database/browser/adapters/workbench/pending-command-storage.mts. Retire it only with a concrete pending-command recovery/export disposition; keep app/lib/workbench-navigation.ts because vite.static.config.ts still calls workbenchUrlForBuild. #407 did not remove this app.",
+    "Intelligence remains called by Workbench even if external-analysis-pilot-01 retires; no whole-service or database deletion is proposed.",
+    "Standalone Game Evidence account providers are narrower than service/database retirement. Content authored PGN operator apply/execution_bundle, Learning-local evidence contracts/remediation/attempts, saved exercises and historical migrations are protected.",
+    "A separate worker is already removing app/components/workbench-game-sync.tsx; this manifest does not include or duplicate that patch."
+  ]
+}
