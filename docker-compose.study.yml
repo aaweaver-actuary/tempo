@@ -1,0 +1,148 @@
+name: tempo-study-test-${TEMPO_STUDY_RUN_ID:?Set a 16-32 character lowercase hex invocation id}
+
+services:
+  postgres:
+    image: postgres:18.6-trixie
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    labels:
+      tempo.owner: "tempo-study-test-${TEMPO_STUDY_RUN_ID}"
+      tempo.disposable: "true"
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/study-postgres-password
+    secrets:
+      - source: study-postgres-password
+        target: study-postgres-password
+        mode: 0400
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  bootstrap:
+    profiles: [bootstrap]
+    image: tempo-study-learning:${TEMPO_STUDY_RUN_ID:?Set a 16-32 character lowercase hex invocation id}
+    build:
+      context: .
+      dockerfile: services/learning/runtime/Dockerfile
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        set -eu
+        /opt/learning/bin/python -I /source/database/tempo_learning_database/tooling/bootstrap_disposable.py \
+          --admin-url-file /run/secrets/study-admin-url \
+          --ownership-receipt-file "/run/study-ownership/${TEMPO_STUDY_RUN_ID}/ownership.json" \
+          --database "learning_study_test_${TEMPO_STUDY_RUN_ID}" \
+          --workspace "${TEMPO_STUDY_WORKSPACE:?Set a Study workspace identity}" \
+          --timezone "${TEMPO_STUDY_TIMEZONE:?Set an IANA Study timezone}" \
+          --output-directory "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap"
+        chmod 0700 "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap"
+        chmod 0600 \
+          "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/connection.json" \
+          "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/runtime.pgpass" \
+          "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/study.token" \
+          "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/operator.token"
+        chown -R 10001:10001 "/runtime/${TEMPO_STUDY_RUN_ID}/bootstrap"
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes:
+      - type: bind
+        source: ./database/tempo_learning_database
+        target: /source/database/tempo_learning_database
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TEMPO_STUDY_INVOCATION_DIRECTORY:?Set the private invocation directory ending in the run id}
+        target: /run/study-ownership/${TEMPO_STUDY_RUN_ID:?Set a 16-32 character lowercase hex invocation id}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: volume
+        source: runtime-secrets
+        target: /runtime
+    secrets:
+      - source: study-admin-url
+        target: study-admin-url
+        mode: 0400
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  learning:
+    image: tempo-study-learning:${TEMPO_STUDY_RUN_ID:?Set a 16-32 character lowercase hex invocation id}
+    build:
+      context: .
+      dockerfile: services/learning/runtime/Dockerfile
+    user: "10001:10001"
+    environment:
+      TEMPO_LEARNING_WORKSPACE: ${TEMPO_STUDY_WORKSPACE:?Set a Study workspace identity}
+      TEMPO_LEARNING_DATABASE_URL: "host=postgres port=5432 dbname=learning_study_test_${TEMPO_STUDY_RUN_ID} user=learning_study_test_${TEMPO_STUDY_RUN_ID}_writer"
+      TEMPO_LEARNING_READER_URL: "host=postgres port=5432 dbname=learning_study_test_${TEMPO_STUDY_RUN_ID} user=learning_study_test_${TEMPO_STUDY_RUN_ID}_reader"
+      TEMPO_LEARNING_TOKEN_FILE: /run/study-runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/study.token
+      TEMPO_LEARNING_OPERATOR_TOKEN_FILE: /run/study-runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/operator.token
+      TEMPO_LEARNING_ORIGINS: "http://127.0.0.1:${TEMPO_STUDY_PORT:?Choose an unoccupied loopback port}"
+      TEMPO_LEARNING_HOSTS: "127.0.0.1"
+      TEMPO_LEARNING_TIMEZONE: ${TEMPO_STUDY_TIMEZONE:?Set an IANA Study timezone}
+      TEMPO_LEARNING_MAINTENANCE: "1"
+      PGPASSFILE: /run/study-runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/runtime.pgpass
+    volumes:
+      - type: volume
+        source: runtime-secrets
+        target: /run/study-runtime
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - /opt/learning/bin/python
+        - -I
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=2).close()"
+      interval: 3s
+      timeout: 4s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  study-web:
+    image: tempo-study-web:${TEMPO_STUDY_RUN_ID:?Set a 16-32 character lowercase hex invocation id}
+    build:
+      context: .
+      dockerfile: Dockerfile.study-web
+    ports:
+      - "127.0.0.1:${TEMPO_STUDY_PORT:?Choose an unoccupied loopback port}:80"
+    depends_on:
+      learning:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    labels:
+      tempo.owner: "tempo-study-test-${TEMPO_STUDY_RUN_ID}"
+      tempo.disposable: "true"
+  runtime-secrets:
+
+networks:
+  default:
+    labels:
+      tempo.owner: "tempo-study-test-${TEMPO_STUDY_RUN_ID}"
+      tempo.disposable: "true"
+
+secrets:
+  study-admin-url:
+    file: ${TEMPO_STUDY_ADMIN_URL_FILE:?Set a private PostgreSQL admin URL file}
+  study-postgres-password:
+    file: ${TEMPO_STUDY_POSTGRES_PASSWORD_FILE:?Set a private PostgreSQL password file}
