@@ -58,6 +58,12 @@ alone receives the read-only admin URL, invocation receipt, and database owner
 source. The web service receives none of these files and never receives a
 privileged token.
 
+The runtime's `TEMPO_LEARNING_HOSTS` allowlist contains only the hostname
+`127.0.0.1`, without a port, because Starlette 0.47.3's
+`TrustedHostMiddleware` removes the port before comparing the request host to
+that list. Keep `TEMPO_LEARNING_ORIGINS` as the full browser origin, including
+the scheme and published port, because origin validation is port-specific.
+
 Bootstrap writes `connection.json`, `runtime.pgpass`, `study.token`, and
 `operator.token` under the runtime volume. The image's installed Python runs
 the mounted database-owner source tree at

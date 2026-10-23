@@ -164,7 +164,7 @@ it("renders only the isolated Study services with explicit inputs", () => {
       TEMPO_LEARNING_TOKEN_FILE: `/run/study-runtime/${invocationId}/bootstrap/study.token`,
       TEMPO_LEARNING_OPERATOR_TOKEN_FILE: `/run/study-runtime/${invocationId}/bootstrap/operator.token`,
       TEMPO_LEARNING_ORIGINS: "http://127.0.0.1:4187",
-      TEMPO_LEARNING_HOSTS: "127.0.0.1:4187",
+      TEMPO_LEARNING_HOSTS: "127.0.0.1",
       TEMPO_LEARNING_TIMEZONE: "America/New_York",
       TEMPO_LEARNING_MAINTENANCE: "1",
       PGPASSFILE: `/run/study-runtime/${invocationId}/bootstrap/runtime.pgpass`,

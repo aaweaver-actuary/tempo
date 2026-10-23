@@ -89,7 +89,7 @@ services:
       TEMPO_LEARNING_TOKEN_FILE: /run/study-runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/study.token
       TEMPO_LEARNING_OPERATOR_TOKEN_FILE: /run/study-runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/operator.token
       TEMPO_LEARNING_ORIGINS: "http://127.0.0.1:${TEMPO_STUDY_PORT:?Choose an unoccupied loopback port}"
-      TEMPO_LEARNING_HOSTS: "127.0.0.1:${TEMPO_STUDY_PORT:?Choose an unoccupied loopback port}"
+      TEMPO_LEARNING_HOSTS: "127.0.0.1"
       TEMPO_LEARNING_TIMEZONE: ${TEMPO_STUDY_TIMEZONE:?Set an IANA Study timezone}
       TEMPO_LEARNING_MAINTENANCE: "1"
       PGPASSFILE: /run/study-runtime/${TEMPO_STUDY_RUN_ID}/bootstrap/runtime.pgpass
