@@ -158,3 +158,19 @@ def test_issued_and_exposed_slots_never_move():
     )
 
     assert [row["id"] for row in ordered] == [1, 4, 3, 2]
+
+
+def test_finite_ranks_precede_unranked_cards_and_preserve_fallback_ties():
+    rows = [
+        _row(1, "unranked-first-position", position=1),
+        _row(2, "ranked-later", position=0),
+        _row(5, "unranked-tie-later-id", position=3),
+        _row(4, "ranked-first", position=100),
+        _row(3, "unranked-tie-earlier-id", position=3),
+    ]
+    annotated = _annotate(
+        rows,
+        ranks={"ranked-later": _rank(2), "ranked-first": _rank(1)},
+    )
+
+    assert [row["id"] for row in _order(annotated)] == [4, 2, 1, 3, 5]
