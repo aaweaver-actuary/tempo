@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qsl, urlsplit
 
@@ -260,6 +260,101 @@ class DisposableBootstrapTests(unittest.TestCase):
         self.assertEqual(self.migrate_calls, [])
         self.assertEqual(self.grant_calls, [])
         self.assertFalse(self.output.exists())
+
+    def test_real_ownership_loader_requires_private_receipt_and_identity_before_mutation(self):
+        invocation_directory = self.root / INVOCATION_ID
+        invocation_directory.mkdir(mode=0o700)
+        invocation_directory.chmod(0o700)
+        receipt_file = invocation_directory / "ownership.json"
+
+        database_source = Path(bootstrap_module.__file__).resolve().parents[2]
+        database_package = ModuleType("tempo_learning_database")
+        database_package.__path__ = [str(database_source / "tempo_learning_database")]
+        tooling_package = ModuleType("tempo_learning_database.tooling")
+        tooling_package.__path__ = [str(database_source / "tempo_learning_database" / "tooling")]
+        package_modules = {
+            "tempo_learning_database": database_package,
+            "tempo_learning_database.tooling": tooling_package,
+        }
+
+        def run_with_real_loader(output_directory):
+            with (
+                patch.object(
+                    bootstrap_module,
+                    "_load_driver",
+                    return_value=(self.psycopg, self.conninfo_to_dict, self.make_conninfo),
+                ),
+                patch.object(bootstrap_module, "_load_owner_apis", return_value=self.owner_apis),
+                patch.object(bootstrap_module, "_generate_secret", side_effect=SECRETS),
+                patch.dict(sys.modules, package_modules),
+            ):
+                bootstrap_module.bootstrap(
+                    admin_url_file=self.admin_file,
+                    ownership_receipt_file=receipt_file,
+                    database=DATABASE,
+                    workspace="workspace-a",
+                    timezone_name="America/New_York",
+                    output_directory=output_directory,
+                )
+
+        cases = (
+            ("missing", None, None, "ownership_receipt_unavailable"),
+            ("invalid", {"schema_version": 1}, None, "ownership_receipt_schema_invalid"),
+            ("identity_mismatch", OWNERSHIP_RECEIPT, ("999", "postgres", "postgres"), "database_identity_mismatch"),
+        )
+        for name, receipt_value, identity, expected_code in cases:
+            with self.subTest(case=name):
+                self.events.clear()
+                self.connect_calls.clear()
+                self.provision_calls.clear()
+                self.migrate_calls.clear()
+                self.grant_calls.clear()
+                self.identity = identity or (SYSTEM_IDENTIFIER, "postgres", "postgres")
+                if receipt_file.exists():
+                    receipt_file.unlink()
+                if receipt_value is not None:
+                    receipt_file.write_text(json.dumps(receipt_value), encoding="utf-8")
+                    receipt_file.chmod(0o600)
+                output_directory = self.root / ("real-loader-" + name)
+                with self.assertRaises(bootstrap_module.BootstrapError) as raised:
+                    run_with_real_loader(output_directory)
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertEqual(self.provision_calls, [])
+                self.assertEqual(self.migrate_calls, [])
+                self.assertEqual(self.grant_calls, [])
+                self.assertFalse(output_directory.exists())
+                if name in {"missing", "invalid"}:
+                    self.assertEqual(self.connect_calls, [])
+                    self.assertEqual(self.events, [])
+                else:
+                    self.assertEqual(self.events, ["connect", "cluster_identity"])
+
+        self.events.clear()
+        self.connect_calls.clear()
+        self.provision_calls.clear()
+        self.migrate_calls.clear()
+        self.grant_calls.clear()
+        self.identity = (SYSTEM_IDENTIFIER, "postgres", "postgres")
+        receipt_file.write_text(json.dumps(OWNERSHIP_RECEIPT), encoding="utf-8")
+        receipt_file.chmod(0o600)
+        output_directory = self.root / "real-loader-success"
+        run_with_real_loader(output_directory)
+        self.assertEqual(
+            self.events,
+            [
+                "connect",
+                "cluster_identity",
+                "database_preflight",
+                "role_preflight",
+                "provision",
+                "migrate",
+                "grant_runtime",
+            ],
+        )
+        self.assertEqual(len(self.provision_calls), 1)
+        self.assertEqual(len(self.migrate_calls), 1)
+        self.assertEqual(len(self.grant_calls), 1)
+        self.assertEqual({path.name for path in output_directory.iterdir()}, set(bootstrap_module._OUTPUT_FILES))
 
     def test_ownership_error_code_is_reported_without_connecting(self):
         class FakeOwnershipError(Exception):
