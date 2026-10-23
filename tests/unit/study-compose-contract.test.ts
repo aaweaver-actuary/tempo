@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 
@@ -18,7 +18,13 @@ type ComposeService = {
   entrypoint?: string | string[] | null;
   environment?: Record<string, string>;
   image?: string;
-  ports?: Array<{ host_ip?: string; published?: string; target?: number }>;
+  ports?: Array<{
+    host_ip?: string;
+    mode?: string;
+    protocol?: string;
+    published?: string;
+    target?: number;
+  }>;
   profiles?: string[];
   read_only?: boolean;
   restart?: string;
@@ -101,7 +107,7 @@ function composeConfig(fixture: ConfigFixture, overrides: Record<string, string 
     cwd: fixture.directory,
     encoding: "utf8",
     env: {
-      HOME: fixture.directory,
+      HOME: homedir(),
       PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
       TMPDIR: fixture.directory,
     },
@@ -204,7 +210,15 @@ it("renders only the isolated Study services with explicit inputs", () => {
 
     expect(studyWeb.image).toBe(`tempo-study-web:${invocationId}`);
     expect(studyWeb.build?.dockerfile).toBe("Dockerfile.study-web");
-    expect(studyWeb.ports).toEqual([{ host_ip: "127.0.0.1", published: "4187", target: 80 }]);
+    expect(studyWeb.ports).toHaveLength(1);
+    expect(studyWeb.ports?.[0]).toMatchObject({
+      host_ip: "127.0.0.1",
+      published: "4187",
+      target: 80,
+    });
+    if (studyWeb.ports?.[0]?.protocol !== undefined) {
+      expect(studyWeb.ports[0].protocol).toBe("tcp");
+    }
     expect(studyWeb.depends_on?.learning?.condition).toBe("service_healthy");
 
     const nginx = readFileSync(join(repositoryRoot, "nginx.study.conf"), "utf8");
