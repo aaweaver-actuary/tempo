@@ -8,14 +8,12 @@ from pathlib import Path
 import re
 import secrets
 import stat
-import subprocess
 import sys
 import tempfile
 from zoneinfo import ZoneInfo
 
 
-_DATABASE_NAME = re.compile(r"^learning_study_test_[0-9a-f]{12,32}$")
-_RUNNER_ID = re.compile(r"^tempo-learning-[0-9a-f]{16}$")
+_DATABASE_NAME = re.compile(r"^learning_study_test_[0-9a-f]{16,32}$")
 _OUTPUT_FILES = (
     "connection.json",
     "runtime.pgpass",
@@ -24,6 +22,20 @@ _OUTPUT_FILES = (
 )
 _LOCK_FILE = ".bootstrap.lock"
 _OWNER_STAGES = {"provision", "migrate", "grant_runtime"}
+_ADMIN_URL_FIELDS = {"host", "port", "dbname", "user", "password", "connect_timeout"}
+_ADMIN_URL_OVERRIDES = {
+    "service",
+    "servicefile",
+    "hostaddr",
+    "options",
+    "passfile",
+    "target_session_attrs",
+    "load_balance_hosts",
+}
+_IDENTITY_SQL = (
+    "SELECT system_identifier::text, current_database(), session_user "
+    "FROM pg_control_system()"
+)
 
 
 class BootstrapError(Exception):
@@ -43,10 +55,14 @@ def _load_driver():
     return psycopg, conninfo_to_dict, make_conninfo
 
 
-def _load_owner_apis():
+def _ensure_database_source():
     database_source = str(Path(__file__).resolve().parents[2])
     if database_source not in sys.path:
         sys.path.insert(0, database_source)
+
+
+def _load_owner_apis():
+    _ensure_database_source()
     from tempo_learning_database.ddl import migrate
 
     return migrate.provision, migrate.migrate, migrate.grant_runtime
@@ -72,90 +88,55 @@ def _read_admin_url(path):
     return value
 
 
-def _docker_json(arguments):
-    try:
-        result = subprocess.run(
-            ["docker", *arguments],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise BootstrapError("runner_ownership_unverified")
-        return json.loads(result.stdout)
-    except BootstrapError:
-        raise
-    except Exception:
-        raise BootstrapError("runner_ownership_unverified") from None
+def _load_ownership_receipt(path, *, database):
+    """Load the shared attestation only when bootstrap is invoked."""
+    _ensure_database_source()
+    from tempo_learning_database.tooling.disposable_ownership import (
+        load_ownership_receipt,
+    )
+
+    return load_ownership_receipt(path, database=database)
 
 
-def _inspect_owned_server(identity):
-    containers = _docker_json(["inspect", "--type=container", identity])
-    volumes = _docker_json(["volume", "inspect", identity + "-data"])
-    if not isinstance(containers, list) or len(containers) != 1:
-        raise BootstrapError("runner_ownership_unverified")
-    if not isinstance(volumes, list) or len(volumes) != 1:
-        raise BootstrapError("runner_ownership_unverified")
-    return containers[0], volumes[0]
-
-
-def _verify_runner_ownership(admin_url, conninfo_to_dict, environment=None):
-    """Bind runner-provided identity and admin URL to its labeled Docker resources."""
-    environment = os.environ if environment is None else environment
-    identity = environment.get("TEMPO_LEARNING_TEST_FIXTURE", "")
-    runner_admin = environment.get("TEMPO_LEARNING_TEST_ADMIN", "")
-    if not _RUNNER_ID.fullmatch(identity) or not runner_admin:
-        raise BootstrapError("runner_ownership_missing")
-    if runner_admin != admin_url:
-        raise BootstrapError("runner_admin_url_mismatch")
-
+def _canonical_admin_url(admin_url, receipt_host, receipt_port, conninfo_to_dict, make_conninfo):
     try:
         details = conninfo_to_dict(admin_url)
     except Exception:
         raise BootstrapError("admin_url_invalid") from None
+    if _ADMIN_URL_OVERRIDES.intersection(details):
+        raise BootstrapError("admin_url_override_forbidden")
+    if set(details) - _ADMIN_URL_FIELDS:
+        raise BootstrapError("admin_url_parameter_forbidden")
+
     host = details.get("host")
     port = details.get("port")
+    database = details.get("dbname")
+    user = details.get("user")
+    password = details.get("password")
+    timeout = details.get("connect_timeout", "2")
     if (
-        host != "127.0.0.1"
-        or not isinstance(port, str)
-        or not port.isdecimal()
-        or not 1 <= int(port) <= 65535
-        or details.get("dbname") != "postgres"
-        or details.get("user") != "postgres"
+        host != receipt_host
+        or port != str(receipt_port)
+        or database != "postgres"
+        or not user
+        or not password
+        or not isinstance(timeout, str)
+        or not timeout.isdecimal()
+        or not 1 <= int(timeout) <= 30
     ):
-        raise BootstrapError("runner_admin_url_invalid")
-
-    container, volume = _inspect_owned_server(identity)
-    container_labels = (container.get("Config") or {}).get("Labels") or {}
-    volume_labels = volume.get("Labels") or {}
-    if (
-        container.get("Name") != "/" + identity
-        or container_labels.get("tempo.owner") != identity
-        or container_labels.get("tempo.disposable") != "true"
-        or (container.get("State") or {}).get("Running") is not True
-        or volume.get("Name") != identity + "-data"
-        or volume_labels.get("tempo.owner") != identity
-        or volume_labels.get("tempo.disposable") != "true"
-    ):
-        raise BootstrapError("runner_ownership_unverified")
-
-    listeners = ((container.get("NetworkSettings") or {}).get("Ports") or {}).get(
-        "5432/tcp"
-    ) or []
-    if len(listeners) != 1 or listeners[0].get("HostIp") != host:
-        raise BootstrapError("runner_listener_unverified")
-    if listeners[0].get("HostPort") != port:
-        raise BootstrapError("runner_admin_port_mismatch")
-
-    mounts = container.get("Mounts") or []
-    if not any(
-        mount.get("Type") == "volume"
-        and mount.get("Name") == identity + "-data"
-        and mount.get("Destination") == "/var/lib/postgresql"
-        for mount in mounts
-    ):
-        raise BootstrapError("runner_volume_unverified")
-    return host, port
+        raise BootstrapError("admin_url_endpoint_invalid")
+    return (
+        make_conninfo(
+            host=receipt_host,
+            port=str(receipt_port),
+            dbname="postgres",
+            user=user,
+            password=password,
+            connect_timeout=timeout,
+            options="",
+        ),
+        user,
+    )
 
 
 def _validate_inputs(database, workspace, timezone_name):
@@ -237,9 +218,23 @@ def _claimed_output_directory(path):
                 pass
 
 
-def _assert_targets_absent(psycopg, admin_url, database, roles):
+def _assert_targets_absent(
+    psycopg,
+    admin_url,
+    database,
+    roles,
+    expected_system_identifier,
+    expected_session_user,
+):
     try:
-        with psycopg.connect(admin_url) as connection:
+        with psycopg.connect(admin_url, autocommit=True) as connection:
+            identity = connection.execute(_IDENTITY_SQL).fetchone()
+            if identity != (
+                expected_system_identifier,
+                "postgres",
+                expected_session_user,
+            ):
+                raise BootstrapError("database_identity_mismatch")
             database_exists = connection.execute(
                 "SELECT 1 FROM pg_database WHERE datname = %s", (database,)
             ).fetchone()
@@ -339,11 +334,11 @@ def _remove_owned_outputs(temporary_files, installed_files):
 def bootstrap(
     *,
     admin_url_file,
+    ownership_receipt_file,
     database,
     workspace,
     timezone_name,
     output_directory,
-    runner_environment=None,
 ):
     """Create a single disposable Learning database and its private client files."""
     roles = _validate_inputs(database, workspace, timezone_name)
@@ -352,12 +347,34 @@ def bootstrap(
         psycopg, conninfo_to_dict, make_conninfo = _load_driver()
     except Exception:
         raise BootstrapError("postgres_driver_unavailable") from None
-    host, port = _verify_runner_ownership(
-        admin_url, conninfo_to_dict, runner_environment
+    try:
+        receipt = _load_ownership_receipt(
+            ownership_receipt_file, database=database
+        )
+    except Exception as error:
+        code = getattr(error, "code", None)
+        if isinstance(code, str) and re.fullmatch(r"[a-z0-9_-]{1,64}", code):
+            raise BootstrapError("ownership_" + code) from None
+        raise BootstrapError("ownership_receipt_invalid") from None
+    try:
+        host = receipt["host"]
+        port = receipt["port"]
+        system_identifier = receipt["system_identifier"]
+    except (KeyError, TypeError):
+        raise BootstrapError("ownership_receipt_invalid") from None
+    canonical_admin_url, admin_user = _canonical_admin_url(
+        admin_url, host, port, conninfo_to_dict, make_conninfo
     )
 
     with _claimed_output_directory(output_directory) as output_claim:
-        _assert_targets_absent(psycopg, admin_url, database, roles)
+        _assert_targets_absent(
+            psycopg,
+            canonical_admin_url,
+            database,
+            roles,
+            system_identifier,
+            admin_user,
+        )
 
         writer_password = _generate_secret()
         reader_password = _generate_secret()
@@ -380,7 +397,7 @@ def bootstrap(
 
         try:
             provision(
-                admin_url,
+                canonical_admin_url,
                 database,
                 roles["owner"],
                 roles["writer"],
@@ -393,7 +410,7 @@ def bootstrap(
 
         try:
             owner_url = make_conninfo(
-                admin_url,
+                canonical_admin_url,
                 dbname=database,
                 options="-c role=" + roles["owner"],
             )
@@ -462,6 +479,7 @@ def bootstrap(
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--admin-url-file", required=True)
+    parser.add_argument("--ownership-receipt-file", required=True)
     parser.add_argument("--database", required=True)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--timezone", required=True)
@@ -474,6 +492,7 @@ def main(argv=None):
     try:
         bootstrap(
             admin_url_file=arguments.admin_url_file,
+            ownership_receipt_file=arguments.ownership_receipt_file,
             database=arguments.database,
             workspace=arguments.workspace,
             timezone_name=arguments.timezone,

@@ -1,6 +1,5 @@
 import io
 import json
-import os
 from pathlib import Path
 import stat
 import sys
@@ -9,7 +8,7 @@ import unittest
 from contextlib import redirect_stderr
 from types import SimpleNamespace
 from unittest.mock import patch
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 
 TOOLING_DIRECTORY = Path(__file__).resolve().parents[1] / "tempo_learning_database" / "tooling"
@@ -18,12 +17,24 @@ sys.path.insert(0, str(TOOLING_DIRECTORY))
 import bootstrap_disposable as bootstrap_module
 
 
-ADMIN_URL = "postgresql://postgres:admin-secret@127.0.0.1:55433/postgres"
-DATABASE = "learning_study_test_0123456789ab"
-RUNNER_ID = "tempo-learning-a1b2c3d4e5f60718"
-RUNNER_ENVIRONMENT = {
-    "TEMPO_LEARNING_TEST_FIXTURE": RUNNER_ID,
-    "TEMPO_LEARNING_TEST_ADMIN": ADMIN_URL,
+ADMIN_URL = "postgresql://postgres:admin-secret@postgres:5432/postgres?connect_timeout=2"
+INVOCATION_ID = "a1b2c3d4e5f60718"
+PROJECT = "tempo-study-test-" + INVOCATION_ID
+DATABASE = "learning_study_test_" + INVOCATION_ID
+SYSTEM_IDENTIFIER = "7310264387102334211"
+OWNERSHIP_RECEIPT = {
+    "schema_version": 1,
+    "invocation_id": INVOCATION_ID,
+    "project_name": PROJECT,
+    "database": DATABASE,
+    "container_id": "c" * 64,
+    "volume_name": PROJECT + "_postgres-data",
+    "network_id": "d" * 64,
+    "network_name": PROJECT + "_default",
+    "service": "postgres",
+    "host": "postgres",
+    "port": 5432,
+    "system_identifier": SYSTEM_IDENTIFIER,
 }
 WRITER_PASSWORD = "writer:secret\\with-backslash-" + "w" * 32
 READER_PASSWORD = "reader:secret\\with-backslash-" + "r" * 32
@@ -45,10 +56,12 @@ class FakeCursor:
 
 
 class FakeConnection:
-    def __init__(self, events, database_exists=None, existing_roles=()):
+    def __init__(self, events, identity, database_exists=None, existing_roles=()):
         self.events = events
+        self.identity = identity
         self.database_exists = database_exists
         self.existing_roles = existing_roles
+        self.first_sql = None
 
     def __enter__(self):
         return self
@@ -57,6 +70,16 @@ class FakeConnection:
         return False
 
     def execute(self, query, parameters=()):
+        if self.first_sql is None:
+            self.first_sql = query
+            self.events.append("cluster_identity")
+            if (
+                "pg_control_system()" not in query
+                or "current_database()" not in query
+                or "session_user" not in query
+            ):
+                raise AssertionError("The cluster identity query must be the first SQL action")
+            return FakeCursor(one=self.identity)
         if "pg_database" in query:
             self.events.append("database_preflight")
             return FakeCursor(one=self.database_exists)
@@ -73,19 +96,27 @@ class DisposableBootstrapTests(unittest.TestCase):
         self.admin_file = self.root / "admin.url"
         self.admin_file.write_text(ADMIN_URL, encoding="utf-8")
         self.admin_file.chmod(0o600)
+        self.receipt_file = self.root / "ownership.json"
+        self.receipt_file.write_text("mocked by the loader seam", encoding="utf-8")
+        self.receipt_file.chmod(0o600)
         self.output = self.root / "output"
         self.events = []
         self.database_exists = None
         self.existing_roles = ()
+        self.identity = (SYSTEM_IDENTIFIER, "postgres", "postgres")
+        self.receipt = OWNERSHIP_RECEIPT
         self.provision_calls = []
         self.migrate_calls = []
         self.grant_calls = []
+        self.receipt_calls = []
+        self.connect_calls = []
 
-        def connect(url):
+        def connect(url, **kwargs):
             self.events.append("connect")
-            self.connected_url = url
+            self.connect_calls.append((url, kwargs))
             return FakeConnection(
                 self.events,
+                identity=self.identity,
                 database_exists=self.database_exists,
                 existing_roles=self.existing_roles,
             )
@@ -94,13 +125,15 @@ class DisposableBootstrapTests(unittest.TestCase):
 
         def conninfo_to_dict(url):
             parts = urlsplit(url)
-            return {
+            fields = {
                 "host": parts.hostname,
                 "port": str(parts.port),
                 "dbname": parts.path.lstrip("/"),
                 "user": parts.username,
                 "password": parts.password,
             }
+            fields.update(dict(parse_qsl(parts.query, keep_blank_values=True)))
+            return fields
 
         def make_conninfo(conninfo=None, **fields):
             if conninfo is not None:
@@ -111,6 +144,13 @@ class DisposableBootstrapTests(unittest.TestCase):
 
         self.conninfo_to_dict = conninfo_to_dict
         self.make_conninfo = make_conninfo
+
+        def load_receipt(path, *, database):
+            self.events.append("ownership_receipt")
+            self.receipt_calls.append((Path(path), database))
+            return self.receipt
+
+        self.load_receipt = load_receipt
 
         def provision(*arguments):
             self.events.append("provision")
@@ -126,53 +166,12 @@ class DisposableBootstrapTests(unittest.TestCase):
 
         self.owner_apis = (provision, migrate, grant_runtime)
 
-        def inspect_owned_server(identity):
-            self.events.append("inspect_owned_server")
-            self.inspected_identity = identity
-            return self.container(), self.volume()
-
-        self.inspect_owned_server = inspect_owned_server
-
     def tearDown(self):
         self.temporary.cleanup()
 
-    @staticmethod
-    def container(labels=None, host_port="55433"):
-        labels = labels or {
-            "tempo.owner": RUNNER_ID,
-            "tempo.disposable": "true",
-        }
-        return {
-            "Name": "/" + RUNNER_ID,
-            "Config": {"Labels": labels},
-            "State": {"Running": True},
-            "NetworkSettings": {
-                "Ports": {
-                    "5432/tcp": [
-                        {"HostIp": "127.0.0.1", "HostPort": host_port}
-                    ]
-                }
-            },
-            "Mounts": [
-                {
-                    "Type": "volume",
-                    "Name": RUNNER_ID + "-data",
-                    "Destination": "/var/lib/postgresql",
-                }
-            ],
-        }
-
-    @staticmethod
-    def volume(labels=None):
-        labels = labels or {
-            "tempo.owner": RUNNER_ID,
-            "tempo.disposable": "true",
-        }
-        return {"Name": RUNNER_ID + "-data", "Labels": labels}
-
-    def patched_dependencies(self, secrets=SECRETS, owner_apis=None, inspector=None):
+    def patched_dependencies(self, secrets=SECRETS, owner_apis=None, loader=None):
         owner_apis = self.owner_apis if owner_apis is None else owner_apis
-        inspector = self.inspect_owned_server if inspector is None else inspector
+        loader = self.load_receipt if loader is None else loader
         return (
             patch.object(
                 bootstrap_module,
@@ -180,25 +179,23 @@ class DisposableBootstrapTests(unittest.TestCase):
                 return_value=(self.psycopg, self.conninfo_to_dict, self.make_conninfo),
             ),
             patch.object(bootstrap_module, "_load_owner_apis", return_value=owner_apis),
-            patch.object(bootstrap_module, "_inspect_owned_server", side_effect=inspector),
+            patch.object(bootstrap_module, "_load_ownership_receipt", side_effect=loader),
             patch.object(bootstrap_module, "_generate_secret", side_effect=secrets),
         )
 
-    def do_bootstrap(self, *, environment=None):
+    def do_bootstrap(self):
         patches = self.patched_dependencies()
         with patches[0], patches[1], patches[2], patches[3]:
             bootstrap_module.bootstrap(
                 admin_url_file=self.admin_file,
+                ownership_receipt_file=self.receipt_file,
                 database=DATABASE,
                 workspace="workspace-a",
                 timezone_name="America/New_York",
                 output_directory=self.output,
-                runner_environment=(
-                    RUNNER_ENVIRONMENT if environment is None else environment
-                ),
             )
 
-    def test_exact_cli_and_runner_resource_ownership_contract(self):
+    def test_exact_cli_receipt_loader_and_owner_order(self):
         options = {
             value
             for action in bootstrap_module._parser()._actions
@@ -210,6 +207,7 @@ class DisposableBootstrapTests(unittest.TestCase):
                 "-h",
                 "--help",
                 "--admin-url-file",
+                "--ownership-receipt-file",
                 "--database",
                 "--workspace",
                 "--timezone",
@@ -217,13 +215,13 @@ class DisposableBootstrapTests(unittest.TestCase):
             },
         )
         self.do_bootstrap()
-        self.assertEqual(self.inspected_identity, RUNNER_ID)
-        self.assertEqual(self.events[0], "inspect_owned_server")
+        self.assertEqual(self.receipt_calls, [(self.receipt_file, DATABASE)])
         self.assertEqual(
             self.events,
             [
-                "inspect_owned_server",
+                "ownership_receipt",
                 "connect",
+                "cluster_identity",
                 "database_preflight",
                 "role_preflight",
                 "provision",
@@ -231,46 +229,60 @@ class DisposableBootstrapTests(unittest.TestCase):
                 "grant_runtime",
             ],
         )
+        self.assertEqual(self.connect_calls[0][1], {"autocommit": True})
 
-    def test_name_prefix_alone_is_rejected_before_database_connection(self):
-        environment = {
-            "TEMPO_LEARNING_TEST_FIXTURE": "tempo-learning-",
-            "TEMPO_LEARNING_TEST_ADMIN": ADMIN_URL,
-        }
-        patches = self.patched_dependencies()
-        with patches[0], patches[1], patches[2] as inspect, patches[3]:
-            with self.assertRaises(bootstrap_module.BootstrapError) as raised:
-                bootstrap_module.bootstrap(
-                    admin_url_file=self.admin_file,
-                    database=DATABASE,
-                    workspace="workspace-a",
-                    timezone_name="America/New_York",
-                    output_directory=self.output,
-                    runner_environment=environment,
+    def test_cluster_identity_is_first_sql_and_mismatch_prevents_mutation(self):
+        for identity in (
+            ("999", "postgres", "postgres"),
+            (SYSTEM_IDENTIFIER, "wrong_database", "postgres"),
+            (SYSTEM_IDENTIFIER, "postgres", "wrong_user"),
+        ):
+            with self.subTest(identity=identity):
+                self.identity = identity
+                self.events.clear()
+                patches = self.patched_dependencies()
+                with patches[0], patches[1], patches[2], patches[3]:
+                    with self.assertRaises(bootstrap_module.BootstrapError) as raised:
+                        bootstrap_module.bootstrap(
+                            admin_url_file=self.admin_file,
+                            ownership_receipt_file=self.receipt_file,
+                            database=DATABASE,
+                            workspace="workspace-a",
+                            timezone_name="America/New_York",
+                            output_directory=self.output,
+                        )
+                self.assertEqual(raised.exception.code, "database_identity_mismatch")
+                self.assertEqual(
+                    self.events,
+                    ["ownership_receipt", "connect", "cluster_identity"],
                 )
-        self.assertEqual(raised.exception.code, "runner_ownership_missing")
-        self.assertEqual(self.events, [])
-        inspect.assert_not_called()
+        self.assertEqual(self.provision_calls, [])
+        self.assertEqual(self.migrate_calls, [])
+        self.assertEqual(self.grant_calls, [])
+        self.assertFalse(self.output.exists())
 
-    def test_runner_identity_must_match_container_and_volume_labels(self):
-        bad_container = self.container(
-            labels={"tempo.owner": "tempo-learning-other", "tempo.disposable": "true"}
-        )
-        patches = self.patched_dependencies(
-            inspector=lambda _identity: (bad_container, self.volume())
-        )
+    def test_ownership_error_code_is_reported_without_connecting(self):
+        class FakeOwnershipError(Exception):
+            code = "receipt_mode_invalid"
+
+        def rejected_receipt(path, *, database):
+            self.events.append("ownership_receipt")
+            raise FakeOwnershipError("untrusted secret details")
+
+        patches = self.patched_dependencies(loader=rejected_receipt)
         with patches[0], patches[1], patches[2], patches[3]:
             with self.assertRaises(bootstrap_module.BootstrapError) as raised:
                 bootstrap_module.bootstrap(
                     admin_url_file=self.admin_file,
+                    ownership_receipt_file=self.receipt_file,
                     database=DATABASE,
                     workspace="workspace-a",
                     timezone_name="America/New_York",
                     output_directory=self.output,
-                    runner_environment=RUNNER_ENVIRONMENT,
                 )
-        self.assertEqual(raised.exception.code, "runner_ownership_unverified")
-        self.assertNotIn("connect", self.events)
+        self.assertEqual(raised.exception.code, "ownership_receipt_mode_invalid")
+        self.assertEqual(self.events, ["ownership_receipt"])
+        self.assertFalse(self.output.exists())
 
     def test_owner_apis_run_once_in_order_and_emit_exact_private_schema(self):
         self.do_bootstrap()
@@ -279,7 +291,12 @@ class DisposableBootstrapTests(unittest.TestCase):
         self.assertEqual(len(self.grant_calls), 1)
 
         admin_url, database, owner, writer, reader, writer_password, reader_password = self.provision_calls[0]
-        self.assertEqual(admin_url, ADMIN_URL)
+        self.assertIn("host=postgres", admin_url)
+        self.assertIn("port=5432", admin_url)
+        self.assertIn("dbname=postgres", admin_url)
+        self.assertIn("user=postgres", admin_url)
+        self.assertIn("password=admin-secret", admin_url)
+        self.assertIn("options=", admin_url)
         self.assertEqual(database, DATABASE)
         self.assertEqual(owner, DATABASE + "_owner")
         self.assertEqual(writer, DATABASE + "_writer")
@@ -288,7 +305,6 @@ class DisposableBootstrapTests(unittest.TestCase):
         self.assertNotEqual(writer_password, reader_password)
 
         owner_url, workspace, timezone_name = self.migrate_calls[0]
-        self.assertIn("admin-secret", owner_url)
         self.assertIn("options=-c role=" + owner, owner_url)
         self.assertEqual((workspace, timezone_name), ("workspace-a", "America/New_York"))
         self.assertEqual(self.grant_calls, [(owner_url, writer, reader)])
@@ -337,8 +353,12 @@ class DisposableBootstrapTests(unittest.TestCase):
             },
         )
         for dsn, expected_role in ((manifest["writer_dsn"], writer), (manifest["reader_dsn"], reader)):
-            self.assertIn("host=127.0.0.1", dsn)
-            self.assertIn("port=55433", dsn)
+            self.assertEqual(
+                {item.split("=", 1)[0] for item in dsn.split()},
+                {"host", "port", "dbname", "user"},
+            )
+            self.assertIn("host=postgres", dsn)
+            self.assertIn("port=5432", dsn)
             self.assertIn("dbname=" + DATABASE, dsn)
             self.assertIn("user=" + expected_role, dsn)
             self.assertNotIn("password", dsn)
@@ -346,36 +366,57 @@ class DisposableBootstrapTests(unittest.TestCase):
             self.assertNotIn(owner, dsn)
 
         expected_passfile = (
-            f"127.0.0.1:55433:{DATABASE}:{writer}:writer\\:secret\\\\with-backslash-{'w' * 32}\n"
-            f"127.0.0.1:55433:{DATABASE}:{reader}:reader\\:secret\\\\with-backslash-{'r' * 32}\n"
+            f"postgres:5432:{DATABASE}:{writer}:writer\\:secret\\\\with-backslash-{'w' * 32}\n"
+            f"postgres:5432:{DATABASE}:{reader}:reader\\:secret\\\\with-backslash-{'r' * 32}\n"
         )
         self.assertEqual((self.output / "runtime.pgpass").read_text(), expected_passfile)
         self.assertEqual((self.output / "study.token").read_text(), STUDY_TOKEN + "\n")
         self.assertEqual((self.output / "operator.token").read_text(), OPERATOR_TOKEN + "\n")
         self.assertNotEqual(STUDY_TOKEN, OPERATOR_TOKEN)
         serialized_manifest = manifest_path.read_text(encoding="utf-8")
-        for secret in (ADMIN_URL, WRITER_PASSWORD, READER_PASSWORD, STUDY_TOKEN, OPERATOR_TOKEN):
+        for secret in (ADMIN_URL, WRITER_PASSWORD, READER_PASSWORD, STUDY_TOKEN, OPERATOR_TOKEN, SYSTEM_IDENTIFIER):
             self.assertNotIn(secret, serialized_manifest)
 
-    def test_existing_database_or_any_role_stops_before_owner_apis(self):
+    def test_admin_url_routing_overrides_are_rejected(self):
+        for key, value in (("service", "other"), ("hostaddr", "127.0.0.2"), ("options", "-c role=other"), ("passfile", "/tmp/other")):
+            with self.subTest(key=key):
+                admin_file = self.root / (key + ".url")
+                admin_file.write_text(ADMIN_URL + "&" + key + "=" + value, encoding="utf-8")
+                admin_file.chmod(0o600)
+                patches = self.patched_dependencies()
+                with patches[0], patches[1], patches[2], patches[3]:
+                    with self.assertRaises(bootstrap_module.BootstrapError) as raised:
+                        bootstrap_module.bootstrap(
+                            admin_url_file=admin_file,
+                            ownership_receipt_file=self.receipt_file,
+                            database=DATABASE,
+                            workspace="workspace-a",
+                            timezone_name="America/New_York",
+                            output_directory=self.output,
+                        )
+                self.assertEqual(raised.exception.code, "admin_url_override_forbidden")
+                self.assertNotIn("connect", self.events)
+                self.assertEqual(self.provision_calls, [])
+
+    def test_existing_database_or_any_role_stops_after_identity_check(self):
         self.database_exists = (1,)
         patches = self.patched_dependencies()
         with patches[0], patches[1], patches[2], patches[3]:
             with self.assertRaises(bootstrap_module.BootstrapError) as raised:
                 bootstrap_module.bootstrap(
                     admin_url_file=self.admin_file,
+                    ownership_receipt_file=self.receipt_file,
                     database=DATABASE,
                     workspace="workspace-a",
                     timezone_name="America/New_York",
                     output_directory=self.output,
-                    runner_environment=RUNNER_ENVIRONMENT,
                 )
         self.assertEqual(raised.exception.code, "target_already_exists")
+        self.assertEqual(self.events, ["ownership_receipt", "connect", "cluster_identity", "database_preflight", "role_preflight"])
         self.assertEqual(self.provision_calls, [])
-        self.assertEqual(self.migrate_calls, [])
-        self.assertEqual(self.grant_calls, [])
         self.assertFalse(self.output.exists())
 
+        self.events.clear()
         self.database_exists = None
         self.existing_roles = [(DATABASE + "_reader",)]
         patches = self.patched_dependencies()
@@ -383,27 +424,27 @@ class DisposableBootstrapTests(unittest.TestCase):
             with self.assertRaises(bootstrap_module.BootstrapError) as raised:
                 bootstrap_module.bootstrap(
                     admin_url_file=self.admin_file,
+                    ownership_receipt_file=self.receipt_file,
                     database=DATABASE,
                     workspace="workspace-a",
                     timezone_name="America/New_York",
                     output_directory=self.output,
-                    runner_environment=RUNNER_ENVIRONMENT,
                 )
         self.assertEqual(raised.exception.code, "target_already_exists")
         self.assertEqual(self.provision_calls, [])
         self.assertFalse(self.output.exists())
 
-    def test_invalid_name_and_nonempty_output_are_rejected_before_connection(self):
+    def test_invalid_name_and_nonempty_output_are_rejected_before_connect(self):
         patches = self.patched_dependencies()
         with patches[0], patches[1], patches[2], patches[3]:
             with self.assertRaises(bootstrap_module.BootstrapError) as raised:
                 bootstrap_module.bootstrap(
                     admin_url_file=self.admin_file,
+                    ownership_receipt_file=self.receipt_file,
                     database="learning_study_test_",
                     workspace="workspace-a",
                     timezone_name="America/New_York",
                     output_directory=self.output,
-                    runner_environment=RUNNER_ENVIRONMENT,
                 )
         self.assertEqual(raised.exception.code, "database_name_invalid")
         self.assertEqual(self.events, [])
@@ -416,16 +457,15 @@ class DisposableBootstrapTests(unittest.TestCase):
             with self.assertRaises(bootstrap_module.BootstrapError) as raised:
                 bootstrap_module.bootstrap(
                     admin_url_file=self.admin_file,
+                    ownership_receipt_file=self.receipt_file,
                     database=DATABASE,
                     workspace="workspace-a",
                     timezone_name="America/New_York",
                     output_directory=self.output,
-                    runner_environment=RUNNER_ENVIRONMENT,
                 )
         self.assertEqual(raised.exception.code, "output_directory_not_empty")
+        self.assertEqual(self.events, ["ownership_receipt"])
         self.assertNotIn("connect", self.events)
-        self.assertEqual(self.events, ["inspect_owned_server"])
-        self.assertEqual(self.provision_calls, [])
         self.assertEqual((self.output / "keep.txt").read_text(), "existing")
 
     def test_partial_migration_failure_redacts_driver_message_and_stops(self):
@@ -439,12 +479,11 @@ class DisposableBootstrapTests(unittest.TestCase):
         owner_apis = (self.owner_apis[0], fail_migrate, self.owner_apis[2])
         patches = self.patched_dependencies(owner_apis=owner_apis)
         stderr = io.StringIO()
-        with patches[0], patches[1], patches[2], patches[3], patch.dict(
-            os.environ, RUNNER_ENVIRONMENT, clear=True
-        ), redirect_stderr(stderr):
+        with patches[0], patches[1], patches[2], patches[3], redirect_stderr(stderr):
             result = bootstrap_module.main(
                 [
                     "--admin-url-file", str(self.admin_file),
+                    "--ownership-receipt-file", str(self.receipt_file),
                     "--database", DATABASE,
                     "--workspace", "workspace-a",
                     "--timezone", "America/New_York",
@@ -462,18 +501,18 @@ class DisposableBootstrapTests(unittest.TestCase):
             self.assertIn(identity, message)
         self.assertFalse(self.output.exists())
 
-    def test_admin_url_file_must_be_private_and_a_regular_file(self):
+    def test_admin_url_file_must_be_private(self):
         self.admin_file.chmod(0o640)
         patches = self.patched_dependencies()
         with patches[0], patches[1], patches[2], patches[3]:
             with self.assertRaises(bootstrap_module.BootstrapError) as raised:
                 bootstrap_module.bootstrap(
                     admin_url_file=self.admin_file,
+                    ownership_receipt_file=self.receipt_file,
                     database=DATABASE,
                     workspace="workspace-a",
                     timezone_name="America/New_York",
                     output_directory=self.output,
-                    runner_environment=RUNNER_ENVIRONMENT,
                 )
         self.assertEqual(raised.exception.code, "admin_url_file_permissions")
         self.assertEqual(self.events, [])
