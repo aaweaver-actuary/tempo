@@ -567,16 +567,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }, [currentView, branchIndexRetry, studyOnlyMode]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      if (
-        (!independentStudy && params.has("code")) ||
-        !independentStudy && ["analysis", "builder"].includes(
-          sessionStorage.getItem("tempo-return-view") ?? "",
-        )
-      ) {
-        changeWorkspace("builder");
-        sessionStorage.removeItem("tempo-return-view");
-      }
       if (usesLocalApi()) {
         setPracticeCards([]);
         setDailyQueue([]);
@@ -684,7 +674,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
-    changeWorkspace,
     initializeCardState,
     refreshDatabaseQueue,
     setActiveCardIndex,
@@ -1473,7 +1462,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     "train",
     "tactics",
     "endgames",
-    "builder",
     "studies",
     "games",
   ].includes(currentView);
@@ -1633,7 +1621,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
               }}
               onOpeningAssistance={observeAssistance}
               onMove={tryMove}
-              onOpenPosition={slots.onOpenPosition}
               useSharedBoard
             />
           </>
@@ -1677,7 +1664,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     changeBoardTheme={changeBoardTheme} changePieceSet={changePieceSet} changeSound={changeSound}
     studyOnlyMode={studyOnlyMode} safeBreakCounter={safeBreakCounter}
     incrementSafeBreak={() => setSafeBreakCounter(count => count + 1)}
-    card={card} currentFenString={currentFenString} step={step} attemptPhase={attempt.phase}
+    attemptPhase={attempt.phase}
     reviewed={reviewed} cardsLeft={cardsLeft} totalCards={practiceCards.length}
     refreshDatabaseQueue={refreshDatabaseQueue} refreshQueueOnly={refreshQueueOnly}
     invalidateBranchEvidence={invalidateBranchEvidence}

@@ -30,7 +30,6 @@
     "test:integration": "node scripts/test-all.mjs integration",
     "test:full": "node scripts/test-all.mjs full",
     "test:perf": "node scripts/test-visual.mjs --performance-only",
-    "bench:positions": "node scripts/benchmark-study-position.mjs",
     "bench:pgn": "node scripts/benchmark-pgn.mjs",
     "bench:graph": "node scripts/benchmark-graph.mjs",
     "bench:motifs": "node scripts/benchmark-motifs.mjs",

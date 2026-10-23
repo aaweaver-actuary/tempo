@@ -4,8 +4,6 @@ import {
   api,
   pgn,
   nav,
-  boardVisible,
-  move,
 } from "./product-fixtures";
 
 test("training Bury hides the card for today across reload and reports a failed bury", async ({ page, request }) => {
@@ -159,110 +157,16 @@ test("sample deletion uses repertoire identity and does not delete its same-file
   await page.getByRole("radio", { name: "Delete learned cards" }).check();
   await page.getByRole("button", { name: "Delete repertoire", exact: true }).click();
   await expect(page.locator(".repertoire-card")).toHaveCount(1);
-  await nav(page, "Builder");
+  await nav(page, "Train");
   await nav(page, "Repertoire");
   await page.reload();
   await nav(page, "Repertoire");
   await expect(page.locator(".repertoire-card")).toHaveCount(1);
 });
 
-test("Builder exact transposition confirms a conflicting trained move then saves the route", async ({
-  page,
-  request,
-}) => {
-  const settings = await (await request.get(`${api}/settings`)).json();
-  await request.put(`${api}/settings`, {
-    data: { ...settings, new_cards_per_day: 10 },
-  });
-  await request.post(`${api}/imports/pgn`, {
-    multipart: {
-      file: {
-        name: "transposition.pgn",
-        mimeType: "application/x-chess-pgn",
-        buffer: Buffer.from('[Event "Blitz"]\n\n1. d4 d5 2. Nf3 Nf6 *'),
-      },
-      initial_depth: "2",
-    },
-  });
-  await page.goto("/");
-  await nav(page, "Builder");
-  await move(page, "g1", "f3");
-  await move(page, "d7", "d5");
-  await move(page, "d2", "d4");
-  await expect(
-    page.getByRole("button", { name: "Add as branch" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Add as branch" }).click();
-  await page.getByRole("tab", { name: "Repertoire", exact: true }).click();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Save branch" }).click();
-  await expect
-    .poll(
-      async () =>
-        (await (await request.get(`${api}/repertoire/lines`)).json()).lines
-          .length,
-    )
-    .toBe(2);
-  await expect(page.getByRole("button", { name: "Add as branch" })).toHaveCount(
-    0,
-  );
-  await page.reload();
-  await nav(page, "Builder");
-  await expect(page.getByRole("button", { name: "Add as branch" })).toHaveCount(
-    0,
-  );
-  await boardVisible(page);
-});
 
-test("review position opens consistently in analysis builder and games", async ({
-  page,
-  request,
-}) => {
-  const settings = await (await request.get(`${api}/settings`)).json();
-  await request.put(`${api}/settings`, {
-    data: { ...settings, new_cards_per_day: 10 },
-  });
-  await request.post(`${api}/imports/pgn`, {
-    multipart: {
-      file: {
-        name: "handoff.pgn",
-        mimeType: "application/x-chess-pgn",
-        buffer: Buffer.from(pgn),
-      },
-      initial_depth: "2",
-    },
-  });
-  await expect
-    .poll(async () => (await (await request.get(`${api}/queue/today`)).json()).count,
-      { timeout: 30_000 })
-    .toBeGreaterThan(0);
-  await page.goto("/");
-  const reviewedFen = await page.locator(".board-frame").getAttribute("data-fen");
-  await nav(page, "Builder");
-  await page.getByRole("tab", { name: "Compare", exact: true }).click();
-  await expect(page.locator(".analysis-page")).toHaveAttribute(
-    "data-active-task",
-    "Compare",
-  );
-  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", reviewedFen!);
 
-  await nav(page, "Train");
-  await page
-    .getByLabel("Open review position")
-    .getByRole("button", { name: "Builder", exact: true })
-    .click();
-  await expect(page.locator(".analysis-page")).toHaveAttribute(
-    "data-active-task",
-    "Repertoire",
-  );
-  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", reviewedFen!);
-
-  await nav(page, "Train");
-  await page.getByRole("button", { name: "Games here", exact: true }).click();
-  await expect(page.getByText(/Position filter · 0 encounters/)).toBeVisible();
-});
-
-test("Edit card opens Builder line-removal context and deletes the selected branch", async ({
+test("Repertoire PGN import eventually publishes a queue card", async ({
   page,
   request,
 }) => {
@@ -286,16 +190,9 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
   ]);
   const importedRepertoireId = (await importResponse.json()).repertoire_id as string;
   expect(importedRepertoireId).toEqual(expect.any(String));
-  let pendingIssuanceProbe = true;
   await expect.poll(async () => {
-    // The real service can report pending issuance without a cards array.
-    // Include that observed boundary before proving the real imported queue.
-    const queueResponse = pendingIssuanceProbe ? {
-      ok: () => false, status: () => 503,
-      text: async () => "Queue changed or attempt issuance is pending. Retry loading the queue.",
-      json: async () => ({ detail: "Queue changed or attempt issuance is pending. Retry loading the queue." }),
-    } : await request.get(`${api}/queue/today`);
-    pendingIssuanceProbe = false;
+    // A pending issuance response has no cards yet; poll the actual queue response until it settles.
+    const queueResponse = await request.get(`${api}/queue/today`);
     if (!queueResponse.ok()) return `HTTP ${queueResponse.status()}: ${await queueResponse.text()}`;
     const queue = await queueResponse.json();
     return (queue.cards as { repertoire_id: string }[]).some((card) => card.repertoire_id === importedRepertoireId);
@@ -303,50 +200,17 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
   const viewImportedRepertoire = page.getByRole("button", { name: "View imported repertoire" });
   if (await viewImportedRepertoire.isVisible()) await viewImportedRepertoire.click();
   else await page.getByRole("button", { name: "Close import dialog" }).click();
-  await nav(page, "Train");
-  await expect(
-    page.getByRole("button", { name: /Edit card/i }).first(),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: /Edit card/i })
-    .first()
-    .click();
-  await page
-    .getByRole("button", { name: "Open Builder to remove line" })
-    .click();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Primary navigation" })
-      .getByRole("button", { name: "Builder", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
-  await move(page, "d2", "d4");
-  await move(page, "g8", "f6");
-  await page.getByRole("tab", { name: "Repertoire", exact: true }).click();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Delete line from here" }).click();
-  await expect(page.getByText(/Deleted \d+ line/)).toBeVisible();
-  await expect
-    .poll(async () => {
-      const lines = (
-        await (await request.get(`${api}/repertoire/lines`)).json()
-      ).lines;
-      return lines.some(
-        (line: { moves: string[] }) =>
-          line.moves?.[0] === "d2d4" && line.moves?.[1] === "g8f6",
-      );
-    })
-    .toBe(false);
 });
 
-test("training Builder restores the viewed mid-line position and durably saves Bg4 on the original route", async ({ page, request }) => {
+test("Black-side Study prompt follows the imported route without recording a review", async ({ page, request }) => {
   const { Chess } = await import("chess.js");
-  const { expectedPieces, renderedPieces, playMove } = await import("./keyboard-fixtures");
+  const { playMove } = await import("./keyboard-fixtures");
   const originalSan = ["e4", "c5", "Nf3", "d5", "exd5", "Qxd5", "g3", "Nc6", "Bg2", "e5"];
   const position = new Chess();
   const positions = [position.fen()];
   const originalUci = originalSan.map(san => { const move = position.move(san); positions.push(position.fen()); return `${move.from}${move.to}`; });
   const imported = await request.post(`${api}/imports/pgn`, { multipart: {
-    file: { name: "training-builder-context.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from('[Event "Training Builder context"]\n\n1. e4 c5 2. Nf3 d5 3. exd5 Qxd5 4. g3 Nc6 5. Bg2 e5 *') },
+    file: { name: "training-study-context.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from('[Event "Training Study context"]\n\n1. e4 c5 2. Nf3 d5 3. exd5 Qxd5 4. g3 Nc6 5. Bg2 e5 *') },
     trained_color: "black", initial_depth: "5",
   } });
   expect(imported.ok()).toBeTruthy();
@@ -370,77 +234,6 @@ test("training Builder restores the viewed mid-line position and durably saves B
   page.on("request", request => { if (request.method() === "POST" && /\/reviews?(?:\?|$)/.test(request.url())) reviewWrites.push(request.url()); });
   await page.keyboard.press("ArrowLeft");
   await expect(board).toHaveAttribute("data-fen", positions[8]);
-  await page.getByLabel("Open review position").getByRole("button", { name: "Builder", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save branch", exact: true })).toBeDisabled();
-  await expect.poll(() => page.evaluate(() => {
-    const session = JSON.parse(localStorage.getItem("tempo-builder-session")!);
-    return { cursor: session.cursor, length: session.history.length, root: session.startingFen, pending: Boolean(session.trainingRouteToResolve) };
-  })).toEqual({ cursor: 8, length: 10, root: positions[0], pending: false });
-  await expect(board).toHaveAttribute("data-fen", positions[8]);
-  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(positions[8]));
-  await expect(page.locator(".repertoire-panel")).toContainText("Bg2");
-  await expect(page.getByText("No saved response at this position.")).toHaveCount(0);
-  await page.getByRole("button", { name: /Forward/ }).click();
-  await expect(board).toHaveAttribute("data-fen", positions[9]);
-  await page.getByRole("button", { name: /Back/ }).click();
-  await page.getByRole("button", { name: /Back/ }).click();
-  await expect(board).toHaveAttribute("data-fen", positions[7]);
-  await playMove(page, board, "c8", "g4");
-  const alternativePosition = new Chess(positions[7]); alternativePosition.move("Bg4");
-  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(alternativePosition.fen()));
-  const savedRequest = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith("/api/repertoire/branches"));
-  await page.getByRole("button", { name: "Save branch", exact: true }).click();
-  expect((await savedRequest).postDataJSON()).toMatchObject({ repertoire_id: repertoireId, starting_fen: positions[0], moves: [...originalUci.slice(0, 7), "c8g4"] });
-  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
-  await expect.poll(async () => {
-    const lines = (await (await request.get(`${api}/repertoire/lines`)).json()).lines.filter((line: { repertoire_id: string }) => line.repertoire_id === repertoireId);
-    return lines.map((line: { moves: string[]; start_fen: string }) => ({ moves: line.moves, root: line.start_fen }));
-  }).toEqual(expect.arrayContaining([{ moves: originalUci, root: positions[0] }, { moves: [...originalUci.slice(0, 7), "c8g4"], root: positions[0] }]));
-  await nav(page, "Train");
-  await expect(board).toHaveAttribute("data-fen", positions[9]);
   expect(reviewWrites).toEqual([]);
   expect(await page.evaluate(() => localStorage.getItem("tempo-pending-training-reviews-v1"))).toBe(reviewsBefore);
-  await nav(page, "Builder");
-  await page.reload();
-  await nav(page, "Builder");
-  await expect(board).toHaveAttribute("data-fen", alternativePosition.fen());
-  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(alternativePosition.fen()));
 });
-
-for (const width of [390, 1470]) {
-  test(`partial training Builder route chooser keeps the board fixed at ${width}`, async ({ page, request }) => {
-    const { Chess } = await import("chess.js");
-    const { expectedPieces, renderedPieces } = await import("./keyboard-fixtures");
-    await page.setViewportSize({ width, height: 900 });
-    const imported = await request.post(`${api}/imports/pgn`, { multipart: {
-      file: { name: "transposed-training.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from('[Event "Knight first"]\n\n1. Nf3 Nf6 2. g3 g6 3. Bg2 Bg7 *\n\n[Event "Pawn first"]\n\n1. g3 g6 2. Nf3 Nf6 3. Bg2 Bg7 *') }, trained_color: "black", initial_depth: "2",
-    } });
-    expect(imported.ok()).toBeTruthy();
-    const repertoireId = (await imported.json()).repertoire_id as string;
-    const position = new Chess();
-    for (const san of ["Nf3", "Nf6", "g3", "g6"]) position.move(san);
-    const startingFen = position.fen();
-    const history = ["Bg2", "Bg7"].map(san => { const move = position.move(san); return { san: move.san, uci: `${move.from}${move.to}`, fen: position.fen() }; });
-    await page.addInitScript(session => {
-      localStorage.setItem("tempo-builder-session", JSON.stringify(session));
-      localStorage.setItem("tempo-stockfish-on", "false");
-      localStorage.setItem("tempo-maia-on", "false");
-      sessionStorage.setItem("tempo-builder-tools", "Repertoire");
-    }, { version: 1, activeRepertoireId: repertoireId, activeRepertoireByColor: { black: repertoireId }, orientation: "black", startingFen, history, cursor: 0, branchStart: 0,
-      trainingRouteToResolve: { repertoireId, cardId: "partial-training-card", cardRevision: 1 } });
-    await page.goto("/"); await nav(page, "Builder");
-    const board = page.locator(".board-frame").first();
-    await expect(page.getByText(/Several earlier move orders/)).toBeVisible();
-    await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startingFen));
-    await expect(page.getByRole("button", { name: "Save branch", exact: true })).toBeDisabled();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: `test-results/training-builder/route-choice-${width}.png`, fullPage: true });
-    await page.getByRole("button", { name: /g3 · g6 · Nf3 · Nf6/ }).click();
-    await expect.poll(() => page.evaluate(() => {
-      const session = JSON.parse(localStorage.getItem("tempo-builder-session")!);
-      return { cursor: session.cursor, pending: Boolean(session.trainingRouteToResolve), prefix: session.history.slice(0, 4).map((move: { san: string }) => move.san) };
-    })).toEqual({ cursor: 4, pending: false, prefix: ["g3", "g6", "Nf3", "Nf6"] });
-    await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startingFen));
-    await expect(page.getByText(/Several earlier move orders/)).toHaveCount(0);
-  });
-}

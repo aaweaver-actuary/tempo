@@ -11,10 +11,3 @@ export function lichessAnalysisUrl(
   for (const move of moves) chess.move(move);
   return `https://lichess.org/analysis/standard/${encodeURIComponent(chess.fen())}`;
 }
-export function randomUrlSafe(bytes = 48) {
-  const data = crypto.getRandomValues(new Uint8Array(bytes));
-  return btoa(String.fromCharCode(...data))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-}

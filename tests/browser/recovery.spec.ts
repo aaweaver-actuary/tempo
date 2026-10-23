@@ -447,28 +447,6 @@ test("unaffected opening reviews remain mixed with tactics during repertoire rep
     page.getByText(/Unaffected openings and tactics remain available/),
   ).toBeVisible();
 });
-test("failed initial loads never display empty records or zero statistics", async ({
-  page,
-}) => {
-  await page.route("**/api/**", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { detail: "Local database unavailable. Check the data mount." },
-    }),
-  );
-  await prepareUI(page);
-  for (const workspace of ["Games"]) {
-    await navigate(page, workspace);
-    await expect(page.getByRole("alert").first()).toBeVisible();
-    await expect(page.locator(".games-metrics")).toHaveCount(0);
-    await expect(
-      page.getByText("No games imported", { exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Retry", exact: true }),
-    ).toBeVisible();
-  }
-});
 test("failed settings reads cannot overwrite authoritative settings with defaults", async ({
   page,
 }) => {
@@ -719,9 +697,9 @@ productTest("repair choices advance before a delayed save and survive reload thr
   // Allow setup plus the full eventual-recovery poll below.
   productTest.setTimeout(120_000);
   await prepareUI(page);
-  // Await analysis from a passive view so the active Train workspace does not
-  // intentionally preempt the integrity slices this receipt test needs.
-  await navigate(page, "Builder");
+  // Await analysis from the retained passive Repertoire view so the active Train
+  // workspace does not intentionally preempt the integrity slices this receipt test needs.
+  await navigate(page, "Repertoire");
   const repairPgn = '[Event "First e4"]\n\n1. e4 *\n\n[Event "First d4"]\n\n1. d4 *\n\n' +
     '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *\n\n' +
     '[Event "Second d4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. d4 *';

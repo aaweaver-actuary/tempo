@@ -11,9 +11,8 @@ import { enqueueTrainingFailure, pendingTrainingFailureContexts } from "../../ap
 import * as offlineTraining from "../../app/lib/offline-training";
 
 vi.mock("../../app/lib/background-study", async () => {
-  const { createStudyPositionStore } = await import("../../app/lib/study-position-store");
-  const compute = createStudyPositionStore();
-  return { runStudyTask: vi.fn(async task => compute(task)) };
+  const { computeStudyTask } = await import("../../app/lib/study-computation");
+  return { runStudyTask: vi.fn(async task => computeStudyTask(task)) };
 });
 const queue = ["a", "b", "c"].map((id, index) => ({ id, queue_entry_id: 501 + index, revision: 1,
   start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves: ["e2e4", "e7e5", "g1f3"],
