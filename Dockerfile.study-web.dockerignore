@@ -22,9 +22,6 @@ app/views/legacy-home.tsx
 app/views/legacy-workspace.tsx
 app/components/workbench-launch.tsx
 app/lib/discovery-admission-outbox.ts
-app/lib/discovery-preview-scheduler.ts
-app/lib/opportunity-command.ts
-app/lib/opportunity-refresh-command.ts
 app/lib/analysis-engines.ts
 app/lib/engine-broker.ts
 app/lib/maia-broker.ts
@@ -42,7 +39,7 @@ app/views/settings_view.tsx
 app/components/service-status-panel.tsx
 app/components/integrity-repair-status.tsx
 app/components/repertoire-integrity-dialog.tsx
-app/components/discoveries-tray.tsx
+app/components/pending-discovery-saves.tsx
 
 !database/
 !database/browser/

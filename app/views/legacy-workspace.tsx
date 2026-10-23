@@ -24,7 +24,7 @@ const StudiesView = lazy(() => import("./studies_view"));
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
 const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
 const ServiceStatusPanel = lazy(() => import("../components/service-status-panel").then(module => ({ default: module.ServiceStatusPanel })));
-const DiscoveriesTray = lazy(() => import("../components/discoveries-tray").then(module => ({ default: module.DiscoveriesTray })));
+const PendingDiscoverySaves = lazy(() => import("../components/pending-discovery-saves").then(module => ({ default: module.PendingDiscoverySaves })));
 import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
@@ -33,11 +33,11 @@ export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View 
     : view;
 }
 
-/** Full workspace owner: authoring, discoveries, repair, and their handoffs. */
+/** Full workspace owner for authoring and integrity repair. */
 export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
   const { currentView, changeWorkspace, boardTheme, pieceSet, soundOn, changeBoardTheme,
-    changePieceSet, changeSound, studyOnlyMode, safeBreakCounter, incrementSafeBreak,
-    attemptPhase, reviewed, cardsLeft, totalCards,
+    changePieceSet, changeSound, studyOnlyMode, incrementSafeBreak,
+    reviewed, cardsLeft, totalCards,
     refreshDatabaseQueue, refreshQueueOnly, invalidateBranchEvidence,
     refreshQueueAfterRepertoireChange, refreshDatabaseQueueAfterRepertoireChange,
     addImportedRepertoire, renameLocalRepertoire, deleteLocalRepertoire,
@@ -180,22 +180,10 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
           {<WorkbenchLaunch />}
           {<SavedLocallyButton setShowImport={setShowImport} />}
           {<ServiceStatusPanel studyOnlyMode={studyOnlyMode} />}
-          {<DiscoveriesTray
-            safeToOpen={
-              !(["train", "tactics", "endgames"] as View[]).includes(
-                currentView,
-              )
-            }
+          {<PendingDiscoverySaves
             interactionBlocked={Boolean(
               editorCard || showImport || pasteContext || repairRepertoireId,
             )}
-            speculativePreparationPaused={
-              (currentView === "train" && !["feedbackPause", "complete"].includes(attemptPhase)) ||
-              (["tactics", "endgames"] as View[]).includes(currentView)
-            }
-            safeBreakCounter={safeBreakCounter}
-            boardTheme={boardTheme}
-            pieceSet={pieceSet}
             onQueueChanged={() => refreshDatabaseQueue()}
           />}
 </>,
@@ -216,17 +204,10 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
             refreshRevision={pasteRevision}
             onImport={() => setShowImport(true)}
             onPaste={() => setPasteContext({})}
-            onPasteGap={(_repertoireId, gap) =>
-              setPasteContext({
-                startingFen: gap.fen,
-                sourceGapId: gap.gap_id,
-              })
-            }
             onRepair={openRepairDialog}
             onDeleteLocal={deleteLocalRepertoire}
             onRenameLocal={renameLocalRepertoire}
             onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
-            onTrain={() => changeWorkspace("train")}
           />
         )}
         {currentView === "studies" && (

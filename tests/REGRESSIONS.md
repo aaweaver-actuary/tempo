@@ -5182,3 +5182,16 @@ The root `database/tempo_content_database/tests/unit` suite owns cursor-token in
 ## Relocated legacy native proof discovery and controlled import paths
 
 `backend/tests/test_legacy_backend_native_plan.py::test_native_fixture_accepts_exact_controlled_database_import_path_and_rejects_outside_paths` owns five pure allow/reject cases for the existing read-only `/source/database` fixture mount. Arbitrary roots,private descendants and neighboring prefixes remain rejected. Guarded source collection covers all25 relocated bridge/Discovery/queue nodes,including the acceptance application's moved-class import; collection opens no native connection or process.
+
+
+## Repertoire and discovery deletion batch — current coverage
+
+The Issue #33 preview receipts above are historical records. The retired Discoveries tray, preview scheduler, discovery viewer, repertoire statistics panel, opportunity/coverage refresh helpers and the preview-specific browser queue-contention identity are no longer active tests or selection registrations.
+
+The separate `tests/browser/training-queue-contention.spec.ts::daily study opens on the workspace date while background analysis remains queued` identity remains registered in the training family. It still uses the disposable PostgreSQL fixture, asserts the queued background activity exceeds 1,000 before and after fixture publication, and serves the real due card while work remains queued.
+
+Persisted-save UI coverage now belongs to `tests/unit/pending-discovery-saves-regressions.test.tsx`: `renders only persisted saves and makes no admission, feed, or proposal request`; `retries a failed save by opportunity ID and blocks a retry while busy`; `resolves the save notice and refreshes the queue only on confirmed queue events`; `shows storage-read errors without dropping records, then clears only that read error`; `keeps a flush error visible after an unrelated successful storage update`, `keeps a retry error visible after an unrelated successful storage update`, and `keeps a queue refresh error visible after an unrelated successful storage update`; and `cleans up on unmount and remounts one listener and timer set with saved records`.
+
+Durable admission replay, accepted/failed receipt transitions, idempotency and recovery remain covered by the unchanged `tests/unit/discovery-admission-outbox-regressions.test.ts` suite, including `legacy rejected discovery saves recover with a bounded key after reload`, `accepted discovery reload preserves its operation and confirms its original intent`, `failed discovery operation receipt requires a new key on explicit retry`, and `timed out discovery save remains unconfirmed and replays the same choice after reload`.
+
+Remaining gap: the pending-save UI has component-level coverage but no browser test of its workspace wiring. Its storage and queue transitions are covered at the outbox boundary; a browser-level appearance/Retry case can be added if that surface needs end-to-end qualification.

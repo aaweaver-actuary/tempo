@@ -403,9 +403,9 @@ test("non-persistence backend ownership accepts only services and the two moved 
 });
 
 test("leaf source selection includes complete families and rendering selects pinned checks", () => {
-  const planned = plan({ paths: ["app/components/discoveries-tray.tsx"] });
+  const planned = plan({ paths: ["app/components/pending-discovery-saves.tsx"] });
   assert.equal(planned.scope, "targeted"); assert(planned.jobs.visual.required);
-  assert(planned.collection.filter(item => inventory.families.discoveries.includes(item.file)).every(item => item.selected));
+  assert(planned.collection.filter(item => inventory.families.training.includes(item.file)).every(item => item.selected));
   assert.equal(plan({ paths: ["app/domain/opening-segmentation.ts"] }).jobs.visual.applicable, false);
 });
 
@@ -489,7 +489,7 @@ test("CI and local runners preserve rejection of exclusive skipped and unfinishe
 });
 
 test("collected browser filenames cannot bypass inventory through extensions or nested paths", () => {
-  for (const file of ["new-case.test.ts", "new-case.spec.tsx", "nested/discovery-viewer.spec.ts"]) {
+  for (const file of ["new-case.test.ts", "new-case.spec.tsx", "nested/new-feature.spec.ts"]) {
     assert.throws(() => plan({ cases: [...cases, { id: file, file, title: "unclassified", fullTitle: file, project: "chromium" }] }), /Unclassified/);
   }
 });
@@ -604,7 +604,6 @@ test("shared subsystem sources select complete consumer families without unrelat
     ["app/domain/study-exercises.ts", ["studies", "training"]],
     ["backend/app/services/study_grading.py", ["studies", "training"]],
     ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
-    ["app/lib/discovery-preview-scheduler.ts", ["discoveries", "training"]],
   ];
   for (const [sourcePath, expectedFamilies] of examples) {
     const planned = plan({ paths: [sourcePath, "tests/REGRESSIONS.md"] });

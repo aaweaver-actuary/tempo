@@ -121,19 +121,6 @@ for (const viewport of [
   }
 }
 
-for (const width of [390, 1280]) {
-  test(`Repertoire statistics ${width}`, async ({ page }) => {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 720 });
-    await prepareVisualUI(page);
-    await navigate(page, "Repertoire");
-    await page.getByRole("button", { name: "Statistics", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Prefix cards" })).toBeVisible();
-    await expect(page.locator(".repertoire-position-board .board-frame")).toBeVisible();
-    await expect(page).toHaveScreenshot(`repertoire-statistics-${width}.png`, {
-      animations: "disabled", fullPage: true,
-    });
-  });
-}
 test("laptop header navigation and actions remain separate", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await prepareVisualUI(page);
