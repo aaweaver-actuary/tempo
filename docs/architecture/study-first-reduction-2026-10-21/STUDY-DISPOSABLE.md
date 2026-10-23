@@ -74,15 +74,17 @@ read-only. No Docker socket or Docker CLI is mounted into bootstrap.
 
 Set shell variables to the private paths represented above. Keep the
 environment file explicit on every Compose call and use the same explicit
-project name and Compose file each time. These commands are the documented
-workflow; they were not executed as part of this preparation.
+project name and Compose file each time. Build from the committed Dockerfiles
+and lockfiles, then wait for the one-shot bootstrap before starting the runtime
+services.
 
 ```sh
+set -e
 PROJECT="tempo-study-test-$TEMPO_STUDY_RUN_ID"
 COMPOSE_FILE="$PWD/docker-compose.study.yml"
 
 docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" config --format json
-docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d postgres
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --wait --no-build --pull never postgres
 
 python3 database/tempo_learning_database/tooling/disposable_ownership.py \
   --compose-file "$COMPOSE_FILE" \
@@ -91,18 +93,23 @@ python3 database/tempo_learning_database/tooling/disposable_ownership.py \
   --invocation-id "$TEMPO_STUDY_RUN_ID" \
   --database "learning_study_test_$TEMPO_STUDY_RUN_ID"
 
-docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up bootstrap
-docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d learning study-web
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" build bootstrap study-web
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --no-build --pull never bootstrap
+BOOTSTRAP_ID="$(docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" ps -aq bootstrap)"
+test -n "$BOOTSTRAP_ID"
+test "$(docker wait "$BOOTSTRAP_ID")" = 0
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --wait --no-deps --no-build --pull never learning
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --wait --no-deps --no-build --pull never study-web
 ```
 
 The bootstrap service uses the published flags `--admin-url-file`,
 `--ownership-receipt-file`, `--database`, `--workspace`, `--timezone`, and
 `--output-directory`. It depends on PostgreSQL health and Learning depends on
 successful bootstrap completion. The bootstrap profile is opt-in and the
-completed service has `restart: "no"`; the invocation leaves its successful
-one-shot container in the project so the completion dependency remains
-satisfied. Do not start Learning or the web service until that profile exits
-successfully.
+completed service has `restart: "no"`. The explicit `docker wait` gates
+Learning on its successful exit. A later `docker compose up learning` starts
+an exited bootstrap dependency again; `--no-deps` prevents that replay, which
+the nonempty output guard rejects. Learning reaches health before web starts.
 
 To remove only this disposable project after preserving anything needed from
 it, pass the same environment file, Compose file, and `-p "$PROJECT"` to
@@ -115,12 +122,11 @@ The focused unit contract is
 `tests/unit/study-compose-contract.test.ts`. It asks Docker Compose to render
 the model as JSON with a temporary explicit environment file, checks the
 service/port/isolation/image/authority contract, and verifies that missing
-required inputs fail. The test itself was not run for this preparation; only
-Compose config rendering was authorized.
+required inputs fail. The test renders configuration without starting
+containers.
 
-One integration point remains for the next acceptance task: run the published
-producer and bootstrap against the actual Compose-created PostgreSQL container,
-volume, network, and Learning image, then verify that the receipt is accepted,
-bootstrap exits successfully, UID `10001` can read the private runtime files,
-and Learning becomes ready. The checkpoint's 21 bootstrap/receipt tests are
-mocked evidence; this preparation does not claim native or live acceptance.
+Native acceptance must run the producer and bootstrap against the actual
+Compose-created PostgreSQL container, volume, network, and Learning image,
+then verify that the receipt is accepted, bootstrap exits successfully, UID
+`10001` can read the private runtime files, and Learning becomes ready. The
+mocked tests and configuration rendering do not establish that proof.

@@ -261,3 +261,14 @@ it("rejects missing required Study configuration instead of discovering ambient 
     }
   }
 });
+
+it("documents a staged bootstrap that cannot replay during Learning startup", () => {
+  const guide = readFileSync(
+    join(repositoryRoot, "docs/architecture/study-first-reduction-2026-10-21/STUDY-DISPOSABLE.md"),
+    "utf8",
+  );
+  expect(guide).toContain('```sh\nset -e\nPROJECT=');
+  expect(guide).toContain('test "$(docker wait "$BOOTSTRAP_ID")" = 0');
+  expect(guide).toContain("up -d --wait --no-deps --no-build --pull never learning");
+  expect(guide).toContain("up -d --wait --no-deps --no-build --pull never study-web");
+});
