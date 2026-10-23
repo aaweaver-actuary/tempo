@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
-import math
 import hashlib
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -13,7 +12,7 @@ import chess
 from tempo_legacy_database.connections import background_read_connection, connection
 from .activity_gate import activity_gate
 from tempo_legacy_database.adapters.statistics import storage
-from tempo_legacy_database.adapters.statistics.storage import DIMENSION_EXPRESSIONS, GAME_FEATURE_UPSERT_SQL
+from tempo_legacy_database.adapters.statistics.storage import GAME_FEATURE_UPSERT_SQL
 
 
 FEATURE_VERSION = 1
@@ -114,66 +113,6 @@ def refresh_game_features(
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
         storage.write_feature_values(database, feature_values)
-
-
-def _confidence_interval(successes: float, denominator: int) -> list[float] | None:
-    if denominator == 0:
-        return None
-    proportion = successes / denominator
-    radius = 1.96 * math.sqrt(max(0, proportion * (1 - proportion) / denominator))
-    return [max(0, proportion - radius), min(1, proportion + radius)]
-
-
-def statistics_overview(window_days: int) -> dict:
-    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=window_days - 1)).isoformat()
-    with connection() as database:
-        rows = storage.overview_rows(database, cutoff)
-    total_games = len(rows)
-    game_scores = [_player_score(row["result"], row["color"]) for row in rows]
-    wins = sum(score == 1 for score in game_scores)
-    draws = sum(score == 0.5 for score in game_scores)
-    losses = sum(score == 0 for score in game_scores)
-    analyzed = [row for row in rows if row["mean_loss_cp"] is not None]
-    opportunities = sum(int(row["tactical_opportunities"] or 0) for row in analyzed)
-    found = sum(int(row["tactical_found"] or 0) for row in analyzed)
-    decisions = sum(int(row["player_decisions"] or 0) for row in analyzed)
-    conceded = sum(int(row["tactical_conceded"] or 0) for row in analyzed)
-    scored_games = wins + draws + losses
-    score_points = wins + 0.5 * draws
-    return {
-        "window_days": window_days, "games": total_games, "analyzed_games": len(analyzed),
-        "analysis_coverage": len(analyzed) / total_games if total_games else 0,
-        "score": {"value": score_points / scored_games if scored_games else None,
-                  "wins": wins, "draws": draws, "losses": losses,
-                  "numerator": score_points, "denominator": scored_games,
-                  "confidence_interval": _confidence_interval(score_points, scored_games)},
-        "decision_quality": {
-            "mean_loss_cp": sum(row["mean_loss_cp"] for row in analyzed) / len(analyzed) if analyzed else None,
-            "major_mistakes_per_game": sum(int(row["major_mistakes"] or 0) for row in analyzed) / len(analyzed) if analyzed else None,
-            "denominator": len(analyzed)},
-        "tactical_performance": {
-            "value": found / opportunities if opportunities else None,
-            "found": found, "opportunities": opportunities,
-            "conceded_per_100_decisions": conceded * 100 / decisions if decisions else None,
-            "conceded": conceded, "player_decisions": decisions,
-            "confidence_interval": _confidence_interval(found, opportunities)},
-    }
-
-
-def statistics_breakdown(dimension: str, window_days: int) -> dict:
-    read_rows = storage.prepare_breakdown(dimension)
-    if read_rows is None:
-        raise ValueError("Unknown statistics dimension")
-    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=window_days - 1)).isoformat()
-    with connection() as database:
-        rows = read_rows(database, cutoff)
-    return {"dimension": dimension, "window_days": window_days, "segments": [
-        {"segment": str(row["segment"]), "games": row["games"],
-         "score": row["score_points"] / row["games"] if row["games"] else None,
-         "mean_loss_cp": row["mean_loss_cp"], "tactical_found": row["tactical_found"] or 0,
-         "tactical_opportunities": row["tactical_opportunities"] or 0}
-        for row in rows
-    ]}
 
 
 def refresh_daily_snapshot(local_day: str, *, background: bool = False) -> dict:

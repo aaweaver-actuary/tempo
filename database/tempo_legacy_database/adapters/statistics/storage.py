@@ -3,16 +3,6 @@ from tempo_legacy_database.adapters.controls.claim_sql import claimable, control
 from tempo_legacy_database.adapters.games.derivation.features import GAME_FEATURE_UPSERT_SQL, write_feature_values
 
 
-DIMENSION_EXPRESSIONS = {
-    "color": "g.color", "speed": "g.speed", "provider": "g.provider",
-    "weekday": "f.local_weekday", "hour": "f.local_hour",
-    "opening": "COALESCE(g.opening_name,'Unknown')",
-    "repertoire": "COALESCE(r.name,'No repertoire')",
-    "opponent_rating": "CASE WHEN g.opponent_rating IS NULL THEN 'Unknown' WHEN g.opponent_rating<1200 THEN '<1200' WHEN g.opponent_rating<1600 THEN '1200–1599' WHEN g.opponent_rating<2000 THEN '1600–1999' ELSE '2000+' END",
-    "relative_rating": "CASE WHEN g.opponent_rating IS NULL OR g.player_rating IS NULL THEN 'Unknown' WHEN g.opponent_rating-g.player_rating<=-100 THEN '100+ lower' WHEN g.opponent_rating-g.player_rating>=100 THEN '100+ higher' ELSE 'Within 99' END",
-}
-
-
 def game_row(database, game_id: str):
     return database.execute("SELECT * FROM imported_games WHERE id=?", (game_id,)).fetchone()
 
@@ -153,28 +143,3 @@ def mark_daily_failed(database, error: str, now: str, local_day: str):
                 "UPDATE daily_statistics_jobs SET status='failed',last_error=?,updated_at=? WHERE local_day=?",
                 (error, now, local_day),
             )
-
-
-def prepare_breakdown(dimension: str):
-    """Capture the whitelisted projection before the caller samples its clock."""
-    expression = DIMENSION_EXPRESSIONS.get(dimension)
-    if not expression:
-        return None
-
-    def read_rows(database, cutoff: str):
-        classification_filter = (" AND EXISTS(SELECT 1 FROM current_repertoire_comparisons comparison WHERE comparison.game_id=g.id)"
-                                 if dimension == "repertoire" else "")
-        return database.execute(
-                f"""SELECT {expression} AS segment,COUNT(*) AS games,
-                       SUM(f.outcome_score) AS score_points,AVG(f.mean_loss_cp) AS mean_loss_cp,
-                       SUM(f.tactical_found) AS tactical_found,
-                       SUM(f.tactical_opportunities) AS tactical_opportunities
-                  FROM imported_games g JOIN game_feature_rows f ON f.game_id=g.id
-                  LEFT JOIN current_game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
-                  LEFT JOIN repertoires r ON r.id=match.repertoire_id
-                 WHERE g.adaptive_excluded=0 AND f.local_day>=? {classification_filter}
-                 GROUP BY segment ORDER BY games DESC,segment""",
-                (cutoff,),
-            ).fetchall()
-
-    return read_rows

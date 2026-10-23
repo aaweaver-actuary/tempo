@@ -58,11 +58,6 @@ vi.mock("../../app/lib/move-sound", () => ({
   prepareMoveSounds: vi.fn(),
   cancelMoveSounds: vi.fn(),
 }));
-vi.mock("../../app/lib/analysis-engines", () => ({
-  analyzeWithStockfish: vi.fn(async () => []),
-  analyzeWithMaia: vi.fn(async () => []),
-}));
-
 const tacticsCatalog = {
   version: 1,
   groups: [{ id: "basic", name: "Basic motifs" }],
@@ -1187,6 +1182,7 @@ async function renderIntegrityOrderingHome(initialRepertoires = [integrityOrderi
     if (url.endsWith("/api/cards/integrity-ordering-card") && init?.method === "PUT")
       return Promise.resolve(Response.json({ card_id: "integrity-ordering-card", replaced: false, history_mode: "preserve", revision: 2 }));
     if (url.endsWith("/api/repertoire/lines")) return Promise.resolve(Response.json({ lines: [] }));
+    if (url.endsWith("/api/studies")) return Promise.resolve(Response.json({ studies: [] }));
     return Promise.resolve(Response.json({ providers: [], states: [], lines: [], moves: [] }));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -1488,24 +1484,15 @@ describe("integrity request intent ordering regressions", () => {
     });
   }
 
-  for (const navigationPath of ["primary navigation", "Browse tree"] as const) {
-    it(`workspace navigation cancels pending preferred repair intent (${navigationPath})`, async () => {
+  for (const destination of ["Studies", "Repertoire"] as const) {
+    it(`workspace navigation cancels pending preferred repair intent (${destination})`, async () => {
       const home = await renderIntegrityOrderingHome();
-      if (navigationPath === "Browse tree") {
-        fireEvent.click(screen.getByRole("button", { name: "Repertoire" }));
-        await waitFor(() => expect(home.integrityReads).toHaveLength(1));
-        await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 2)]);
-        await screen.findByRole("button", { name: "Browse tree" });
-      }
       const before = captureIntegrityOrderingStudy(home);
       await requestIntegrityOrderingRefresh("generic", "rep");
-      const preferredRead = navigationPath === "Browse tree" ? 1 : 0;
-      fireEvent.click(navigationPath === "Browse tree"
-        ? screen.getByRole("button", { name: "Browse tree" })
-        : screen.getAllByRole("button", { name: "Builder" })[0]);
-      await screen.findByRole("heading", { name: "Builder", level: 1 });
-      await home.resolveIntegrity(preferredRead, [integrityOrderingRepertoire("rep", 1)]);
-      expect(screen.getByRole("heading", { name: "Builder", level: 1 })).not.toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: destination }));
+      await screen.findByRole("heading", { name: destination, level: 1 });
+      await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 1)]);
+      expect(screen.getByRole("heading", { name: destination, level: 1 })).not.toBeNull();
       expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
       expect(home.integrityEvidenceReads).toEqual([]);
       const training = useTrainingStore.getState();

@@ -489,9 +489,11 @@ new publication. GET operations do not enqueue or compute analysis/provider work
 
 Manifest contains immutable normalized references and A's original manifest/digest.
 Pages carry at most 64 games; HTTP/CLI byte limits still apply. Finalization requires
-all declared pages and exact selected game identities. The external pilot verifies
-A's original hashes and exported position histories before normalization. Pure C
-fixtures remain labeled synthetic; they are not A acceptance or real games.
+all declared pages and exact selected game identities. The historical external
+pilot verified A's original hashes and exported position histories before
+normalization. Its last maintained source is pinned at [commit
+`b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8`](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot).
+Pure C fixtures remain labeled synthetic; they are not A acceptance or real games.
 
 `tempo-intelligence analysis accept-input --manifest FILE --pages-directory DIR`,
 `run --file FILE`, `inputs`, `runs`, `status RUN`, `report RUN`, `remaining RUN`,
@@ -499,9 +501,11 @@ fixtures remain labeled synthetic; they are not A acceptance or real games.
 Commands take `--file` containing command_id/action/expected_revision; continue's
 budget defaults to 250. Dismiss/reopen/export take RUN FINDING --generation N.
 Receipts recover through `analysis receipt ID`. C's own work publishes source
-findings and truthfully records absent engine configuration. Actual execution is
-`tempo-analysis-pilot work RUN --profile FILE --max-jobs N` using B's installed
-public client and C's public owning composition. Credentials stay in private files.
+findings and truthfully records absent engine configuration. The external manual
+dispatcher was retired from maintained source; the historical implementation is
+pinned at the commit above. This retires only that optional pilot, not Intelligence,
+its public owning composition, or Workbench's separate caller. Credentials stay in
+private files.
 
 Input finalization, command receipts, execution attempts and result acceptance are
 durable. Engine requests bind full root/history, restrictions, constraints/profile,
@@ -566,7 +570,8 @@ dispatch and against typed provenance plus original jobs before acceptance.
 Permanent `incompatible_engine_profile` retains the root, releases capacity, does
 not consume ordinary retries, and is excluded from retry/resume. Create an explicit
 RunRequest with the same run/input IDs, `revision:N+1`, `expected_revision:N` and
-choose the new qualified profile in the external pilot. Searches recompute in the
+choose the new qualified profile in an external dispatcher; the retired pilot's
+pinned source above is historical reference only. Searches recompute in the
 new revision; original results/generations remain inspectable. Completed unequal
 depths remain insufficient quality; mate stays typed. Pending/incompatible
 comparisons cannot produce executable response drafts. Work receipts include the

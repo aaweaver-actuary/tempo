@@ -1141,31 +1141,10 @@
     "state": "staged"
   },
   {
-    "method": "GET",
-    "path": "/api/statistics/overview",
-    "handler": "chess_statistics_overview",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/statistics/breakdown",
-    "handler": "chess_statistics_breakdown",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
     "method": "POST",
     "path": "/api/statistics/daily/{local_day}/refresh",
     "handler": "refresh_chess_statistics_day",
     "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/statistics/insights",
-    "handler": "chess_statistics_insights",
-    "treatment": "reader",
     "state": "staged"
   },
   {

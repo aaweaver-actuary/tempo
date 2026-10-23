@@ -71,16 +71,16 @@ flowchart TB
   GE -->|"EvidenceDelivery HTTP"| Learning
   WB["Workbench<br/>Analysis / selected games"] -->|"reads / explicit commands"| Intel["Intelligence<br/>Inputs / reports / jobs"]
   Intel -->|"R/W"| IDB[("Intelligence PostgreSQL")]
-  GE -.->|"explicit export via C pilot"| Intel
 ```
 
 The bridge is an explicit operator tool, not an automatically invoked Learning
 dependency. Content's explicit record CLI also makes its own authenticated
 Learning receipt read before recording a result; see the
 [publication sequence](../../../services/content/README.md#content-publication-and-serving-activation-main).
-Likewise the pilot supplies the Stockfish client; merely serving an
-accepted report does not start that worker. Intelligence also implements Explorer
-source work and Maia job/result APIs, omitted here to bound the graph: its
+The former external A-export pilot is retired from maintained source; its
+[last source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot)
+is historical reference, not an active edge in this view. Intelligence also
+implements Explorer source work and Maia job/result APIs, omitted here to bound the graph: its
 [provider worker](../../../services/intelligence/src/tempo_intelligence/worker.py)
 owns HTTP source calls, [Maia validation](../../../services/intelligence/src/tempo_intelligence/maia.py)
 binds registered jobs/results, and the [independent Maia worker](../../../workers/maia/README.md)
@@ -94,7 +94,7 @@ establish a deployed worker connection.
 | Content/bridge and activation | [Content `Store`](../../../database/tempo_content_database/adapters/store.py), [bridge domain](../../../services/content/src/tempo_content/bridge/__init__.py), [operator](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py), [Learning publication bridge](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py). See [activation flow](../../../services/content/README.md#content-publication-and-serving-activation-main). |
 | Game Evidence output and delivery | [`Store`](../../../database/tempo_game_evidence_database/adapters/store.py), [`deliver_one`](../../../services/game-evidence/src/tempo_game_evidence/delivery.py), [analysis export](../../../services/game-evidence/src/tempo_game_evidence/analysis_export.py), [Learning receiver](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py). |
 | Workbench / Intelligence | [`IntelligenceClient`](../../../apps/workbench-web/src/client.ts), [`PendingCommands`](../../../apps/workbench-web/src/commands.ts), [HTTP composition](../../../services/intelligence/src/tempo_intelligence/api.py), [Analysis routes](../../../services/intelligence/src/tempo_intelligence/analysis/api.py), [`AnalysisStore`](../../../database/tempo_intelligence_database/adapters/analysis_store.py). |
-| Engine dispatch | [pilot CLI](../../../tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/cli.py), [public-client adapter](../../../tools/analysis-restoration/c_pilot/src/tempo_analysis_pilot/stockfish_client.py), [bounded dispatcher](../../../services/intelligence/src/tempo_intelligence/analysis/worker.py), [worker API](../../../workers/stockfish/index.mjs), [job/result contracts](../../../contracts/analysis-jobs/README.md). |
+| Engine dispatch | [bounded Intelligence dispatcher](../../../services/intelligence/src/tempo_intelligence/analysis/worker.py), [worker API](../../../workers/stockfish/index.mjs), [job/result contracts](../../../contracts/analysis-jobs/README.md). The external A-export pilot is retired; see its [historical source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot). |
 | Shared libraries | [scheduling](../../../packages/scheduling/README.md), [chess identity](../../../packages/chess-core/README.md), [browser intents](../../../database/browser-intents/README.md), [Study session](../../../packages/study-session/README.md), [board renderer](../../../packages/board-ui/README.md), [contract index](../../../contracts/README.md). Package existence is not proof of every consumer's adoption. |
 
 ## Views and maintenance owners
