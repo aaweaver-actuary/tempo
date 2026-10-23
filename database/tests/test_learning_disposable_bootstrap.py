@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import stat
 import sys
@@ -230,6 +231,81 @@ class DisposableBootstrapTests(unittest.TestCase):
             ],
         )
         self.assertEqual(self.connect_calls[0][1], {"autocommit": True})
+
+    def test_libpq_environment_overrides_stop_before_credentials_driver_or_mutation(self):
+        cleared_overrides = {
+            name: "" for name in bootstrap_module._LIBPQ_ENVIRONMENT_OVERRIDES
+        }
+        for name in bootstrap_module._LIBPQ_ENVIRONMENT_OVERRIDES:
+            with self.subTest(environment=name):
+                self.events.clear()
+                self.connect_calls.clear()
+                self.provision_calls.clear()
+                with patch.dict(os.environ, cleared_overrides), patch.dict(
+                    os.environ, {name: "untrusted-routing-value"}
+                ):
+                    with (
+                        patch.object(bootstrap_module, "_read_admin_url") as read_admin_url,
+                        patch.object(bootstrap_module, "_load_driver") as load_driver,
+                        patch.object(bootstrap_module, "_load_owner_apis") as load_owner_apis,
+                    ):
+                        with self.assertRaises(bootstrap_module.BootstrapError) as raised:
+                            bootstrap_module.bootstrap(
+                                admin_url_file=self.admin_file,
+                                ownership_receipt_file=self.receipt_file,
+                                database=DATABASE,
+                                workspace="workspace-a",
+                                timezone_name="America/New_York",
+                                output_directory=self.output,
+                            )
+                self.assertEqual(
+                    raised.exception.code,
+                    "libpq_environment_override_forbidden",
+                )
+                self.assertNotIn("untrusted-routing-value", str(raised.exception))
+                read_admin_url.assert_not_called()
+                load_driver.assert_not_called()
+                load_owner_apis.assert_not_called()
+                self.assertEqual(self.events, [])
+                self.assertEqual(self.connect_calls, [])
+                self.assertEqual(self.provision_calls, [])
+                self.assertFalse(self.output.exists())
+
+    def test_libpq_environment_override_cli_error_redacts_value(self):
+        cleared_overrides = {
+            name: "" for name in bootstrap_module._LIBPQ_ENVIRONMENT_OVERRIDES
+        }
+        stderr = io.StringIO()
+        with (
+            patch.dict(os.environ, cleared_overrides),
+            patch.dict(os.environ, {"PGHOSTADDR": "attacker-address-secret"}),
+            patch.object(bootstrap_module, "_read_admin_url") as read_admin_url,
+            patch.object(bootstrap_module, "_load_driver") as load_driver,
+            patch.object(bootstrap_module, "_load_owner_apis") as load_owner_apis,
+            redirect_stderr(stderr),
+        ):
+            result = bootstrap_module.main(
+                [
+                    "--admin-url-file", str(self.admin_file),
+                    "--ownership-receipt-file", str(self.receipt_file),
+                    "--database", DATABASE,
+                    "--workspace", "workspace-a",
+                    "--timezone", "America/New_York",
+                    "--output-directory", str(self.output),
+                ]
+            )
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            stderr.getvalue(),
+            "Bootstrap refused or failed: libpq_environment_override_forbidden\n",
+        )
+        self.assertNotIn("attacker-address-secret", stderr.getvalue())
+        read_admin_url.assert_not_called()
+        load_driver.assert_not_called()
+        load_owner_apis.assert_not_called()
+        self.assertEqual(self.connect_calls, [])
+        self.assertEqual(self.provision_calls, [])
+        self.assertFalse(self.output.exists())
 
     def test_cluster_identity_is_first_sql_and_mismatch_prevents_mutation(self):
         for identity in (

@@ -32,6 +32,21 @@ _ADMIN_URL_OVERRIDES = {
     "target_session_attrs",
     "load_balance_hosts",
 }
+_LIBPQ_ENVIRONMENT_OVERRIDES = (
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGDATABASE",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGPASSFILE",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGSYSCONFDIR",
+    "PGOPTIONS",
+    "PGTARGETSESSIONATTRS",
+    "PGLOADBALANCEHOSTS",
+)
 _IDENTITY_SQL = (
     "SELECT system_identifier::text, current_database(), session_user "
     "FROM pg_control_system()"
@@ -46,6 +61,11 @@ class BootstrapError(Exception):
         self.code = code
         self.stage = stage
         self.targets = targets
+
+
+def _reject_libpq_environment_overrides():
+    if any(os.environ.get(name) for name in _LIBPQ_ENVIRONMENT_OVERRIDES):
+        raise BootstrapError("libpq_environment_override_forbidden")
 
 
 def _load_driver():
@@ -341,6 +361,7 @@ def bootstrap(
     output_directory,
 ):
     """Create a single disposable Learning database and its private client files."""
+    _reject_libpq_environment_overrides()
     roles = _validate_inputs(database, workspace, timezone_name)
     admin_url = _read_admin_url(admin_url_file)
     try:
