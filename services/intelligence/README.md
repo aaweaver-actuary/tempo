@@ -382,9 +382,12 @@ The new analysis-v1 report path accepts explicit immutable game/repertoire input
 and owns durable bounded engine intent, result acceptance, findings and dismissal.
 See INTERFACES.md and `docs/analysis-restoration/c-findings.md`. Existing provider
 source APIs remain independent. C has no Content/Game Evidence/Stockfish runtime
-installation dependency for serving an already accepted report. The external
-`tools/analysis-restoration/c_pilot` tool consumes A's serialized export and B's
-public installed client; it never imports their service implementations.
+installation dependency for serving an already accepted report.
+The former external manual pilot consumed A's serialized export and B's public
+installed client without importing their service implementations. That pilot has
+since been retired from maintained source; its [last source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot)
+is historical reference only. This does not retire Intelligence or its public
+composition.
 
 PR295 corrections retain component-local schema 1 and existing migrations. See
 INTERFACES.md for global ranking, nullable unscoped engine lineage, digest-bound

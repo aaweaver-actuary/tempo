@@ -1,8 +1,13 @@
 # Real-game feedback rehearsal
 
-This uses the existing A operator, Game Evidence, external C pilot and Workbench.
-Private captures, game manifests, PGNs, credentials and results stay outside Git.
-It is a disposable rehearsal, not live migration or recurring synchronization.
+This records a historical rehearsal using the A operator, Game Evidence, an
+external C pilot and Workbench. The pilot has since been retired from maintained
+source; its last source snapshot is pinned at [commit
+`b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8`](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot).
+Treat this document as historical rehearsal context, not a current runnable
+recipe. Private captures, game manifests, PGNs, credentials and results stay
+outside Git. It is a disposable rehearsal, not live migration or recurring
+synchronization.
 
 ## Authority and identity
 
@@ -75,9 +80,10 @@ receipts. Run bounded comparisons, inspect all selected reports, then create the
 immutable export with every exact `--game-id`. Verify offline and replay without
 changing bytes. Do not silently replace this with an account-wide selection.
 
-Run the [existing pilot](../../tools/analysis-restoration/c_pilot/README.md) with
-the export, exact IDs, installed Intelligence command, stable run ID and bounded
-budget. Every producer page is verified before projection to actual encounters.
+Historically, the pilot consumed the export, exact IDs, installed Intelligence
+command, stable run ID and bounded budget. Its pinned source snapshot above is the
+reference for that retired step. Every producer page was verified before
+projection to actual encounters.
 Contradictory route scopes remain unknown. Optional Stockfish must use its pinned
 qualified client/worker and hard cgroup. Deferred work and insufficient depth
 remain explicit; a source-backed partial report is not complete C3 acceptance.

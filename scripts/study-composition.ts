@@ -3,14 +3,12 @@ import type { Plugin } from 'vite';
 
 /** Feature entry implementations excluded from the Study source and emitted closure. */
 export const optionalStudyImplementations = {
-  games: ['app/components/workbench-game-sync.tsx',
-    'app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
+  games: ['app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
   composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx'],
   // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
   workbench: ['app/components/workbench-launch.tsx'],
   discovery: ['app/lib/discovery-admission-outbox.ts'],
-  engines: ['app/lib/analysis-engines.ts', 'app/lib/engine-broker.ts', 'app/lib/maia-broker.ts',
-    'app/lib/maia-inference.ts', 'app/lib/game-finding-command.ts',
+  engines: ['app/lib/game-finding-command.ts',
     'app/lib/game-threat-refresh-command.ts', 'app/lib/game-exclusion-command.ts'],
   authoring: ['app/views/repertoire_view.tsx',
     'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',

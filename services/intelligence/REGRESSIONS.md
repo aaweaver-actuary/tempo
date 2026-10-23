@@ -398,15 +398,25 @@ Owned by `tests/test_worker.py`; these cover executor join and cancellation of a
 - `test_engine_opportunity_without_repertoire_color_mapping`
 - `test_first_report_cannot_publish_over_a_sibling_run_dismissal`
 
-`C_native_workbench` belongs to the independent Workbench suite. `C_optional_off_study` and `C_actual_AB_consumers` belong to the explicit external pilot integration lane, with actual artifacts required; fixture-only suites do not claim those milestones.
+`C_native_workbench` belongs to the independent Workbench suite. Historically,
+`C_optional_off_study` and `C_actual_AB_consumers` belonged to the explicit
+external pilot integration lane, with actual artifacts required; fixture-only
+suites did not claim those milestones. That optional pilot lane has since been
+retired from maintained source; its [last source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot)
+is historical evidence, not a current test owner.
 
-Explicit actual lanes: `database/tempo_intelligence_database/tests/integration/test_actual_analysis.py` owns fresh installed B
-same-root depth/mate acceptance. `database/tempo_intelligence_database/tests/integration/test_actual_a.py` owns actual A export
-acceptance into a separate restricted C workspace and bounded B dispatch. They are
-selected only with explicit artifact/profile paths; missing selected inputs fail.
-The external pilot owns the exact named `test_C_actual_AB_consumers` and
-`test_C_optional_off_study` cases. All 28 requested C identities have owning suites;
-actual acceptance and synthetic compatibility remain separate executions.
+Historical actual lane sources were
+[`test_actual_analysis.py`](https://github.com/aaweaver-actuary/tempo/blob/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/database/tempo_intelligence_database/tests/integration/test_actual_analysis.py)
+for fresh installed B same-root depth/mate acceptance and
+[`test_actual_a.py`](https://github.com/aaweaver-actuary/tempo/blob/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/database/tempo_intelligence_database/tests/integration/test_actual_a.py)
+for actual A export acceptance into a separate restricted C workspace and bounded
+B dispatch. They were selected only with explicit artifact/profile paths; missing
+selected inputs failed. The external pilot owned the exact named
+`test_C_actual_AB_consumers` and `test_C_optional_off_study` cases. At the time of
+this inventory, all 28 requested C identities had owning suites; actual acceptance
+and synthetic compatibility were separate executions. These pilot sources and
+their qualification lane are now retired; the names and results above are dated
+historical evidence, not current qualification or ownership.
 
 ## PR295 repairs
 

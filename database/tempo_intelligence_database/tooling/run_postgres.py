@@ -98,14 +98,6 @@ def main():
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", TEMPO_C_BROWSER_FIXTURE_FILE=str(destination/"workbench-producer.json"))
         junit=destination/"native.xml"
         command=[sys.executable,"-I","-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(NATIVE/"test_analysis_postgres.py"),str(NATIVE/"test_postgres.py"),str(NATIVE/"test_provider_postgres.py"),str(NATIVE/"test_server_postgres.py"),str(NATIVE/"test_games_readonly_postgres.py"),"-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
-        if os.environ.get("TEMPO_C_STOCKFISH_PROFILE"):
-            environment["TEMPO_C_STOCKFISH_PROFILE"]=str(Path(os.environ["TEMPO_C_STOCKFISH_PROFILE"]).resolve())
-            command.insert(command.index("-q"),str(NATIVE/"test_actual_analysis.py"))
-        if os.environ.get("TEMPO_C_A_EXPORT") or os.environ.get("TEMPO_C_GAME_IDS_FILE"):
-            for name in ('TEMPO_C_A_EXPORT','TEMPO_C_GAME_IDS_FILE','TEMPO_C_STOCKFISH_PROFILE'):
-                if not os.environ.get(name):raise RuntimeError('explicit_actual_a_inputs_required')
-                environment[name]=str(Path(os.environ[name]).resolve())
-            command.insert(command.index('-q'),str(NATIVE/'test_actual_a.py'))
         selection=os.environ.get("TEMPO_C_NATIVE_SELECTION")
         if selection=="analysis":
             command=[argument for argument in command if not argument.endswith(("/test_postgres.py","/test_provider_postgres.py","/test_server_postgres.py"))]

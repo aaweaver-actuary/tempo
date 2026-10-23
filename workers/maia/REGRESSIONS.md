@@ -10,7 +10,7 @@ Regular commands: `node test.mjs pure`, `node test.mjs protocol`, `node test.mjs
 - `qualify.mjs container`: offline actual contract exchanges, CPU-observed in-flight termination, capacity release, complete restart/replay, failures and clean shutdown under real limits.
 - `tests/contracts/`: independent installed Python schemas/reference-consumer qualification and adversarial accepted-effect fencing. `consume_observed.py` validates actual exchanges.
 
-Legacy compatibility remains in root `tests/unit/maia-container-parity-regressions.test.ts`, `tests/unit/frozen-maia-inference-regressions.test.ts`, and `tests/unit/maia-coverage-client-regressions.test.ts`; existing root inventory registration remains authoritative until those consumers retire.
+Legacy frozen-rank and service compatibility remain in root `tests/unit/frozen-maia-inference-regressions.test.ts` and `tests/unit/maia-coverage-client-regressions.test.ts`; the app-side browser/container parity consumer is retired. Existing root inventory registration remains authoritative for the retained consumers.
 
 ## PR #290 lifecycle repair
 

@@ -817,9 +817,6 @@ def test_canonical_global_game_scope_hides_other_primary_and_null_comparisons(pr
     with database.connection() as connection:
         connection.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('scope-game','lichess','TempoPlayer','2026-10-02T12:00:00+00:00','rapid',1,'white','1-0',?,?)", (chess.STARTING_FEN, json.dumps(moves)))
     compare_all_games()
-    from app.services.statistics import refresh_game_features, statistics_breakdown
-    refresh_game_features("scope-game")
-    assert statistics_breakdown("repertoire", 3650)["segments"]
     from app.services.game_findings import _upsert_finding
     with database.connection() as connection:
         _upsert_finding(connection, game_id="scope-game", analysis_version=1, ply=0, kind="first big mistake", confidence=1, evidence={})
@@ -836,8 +833,6 @@ def test_canonical_global_game_scope_hides_other_primary_and_null_comparisons(pr
             assert connection.execute("SELECT 1 FROM current_repertoire_comparisons WHERE game_id='scope-game'").fetchone()
         return
     assert repertoire_statistics("italian", "all")["games"]["matched"] == 0
-    assert statistics_breakdown("repertoire", 3650)["segments"] == []
-    assert statistics_breakdown("color", 3650)["segments"][0]["games"] == 1
     with database.read_connection() as connection:
         assert game_scope_generation(connection) > generation
         for table in ("game_repertoire_matches", "repertoire_comparisons", "repertoire_decision_events"):

@@ -87,7 +87,7 @@ Explicit failures retain their distinct reason codes:
 
 An unchanged invalid, unsupported or terminal request is nonretryable. Transient execution/capacity failures explicitly mark retryability; callers should inspect statuses rather than infer completion from missing output. Malformed or unaddressable transport input terminates the stream with a diagnostic failure.
 
-Legacy `scripts/maia-inference.mjs` stays a thin same-rating adapter to the owned model/core. Browser computation shares the pure orientation/normalization core. Frozen-helper and browser/container parity regressions preserve compatibility. Retirement belongs to legacy coverage/frozen/browser consumers when they adopt this versioned interface; automatic foreground work remains disabled.
+Legacy `scripts/maia-inference.mjs` stays a thin same-rating adapter to the owned model/core. App-side browser computation and its browser/container parity regression were retired after PR #407; the frozen-helper and independent container qualifications still cover the retained model, script and worker behavior. This does not restore browser inference or automatic foreground work, which remains disabled.
 
 ## Handoff to Intelligence #109
 

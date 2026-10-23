@@ -23,37 +23,6 @@ def _game(db, game_id: str, result: str, color: str = "white", played_at: str | 
     )
 
 
-def test_statistics_score_rate_and_engine_metrics_use_exact_denominators(tmp_path, monkeypatch):
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    with TestClient(app) as client:
-        with database.connection() as db:
-            _game(db, "win", "1-0")
-            _game(db, "draw", "1/2-1/2")
-            _game(db, "loss-unanalyzed", "0-1")
-            for game_id, loss_cp in (("win", 20), ("draw", 80)):
-                db.execute(
-                    """INSERT INTO game_move_analysis(
-                           game_id,ply,eval_before_cp,eval_after_cp,loss_cp,depth,
-                           principal_variation_json,mover_color,is_player_move,actual_move_uci
-                       ) VALUES(?,0,0,?, ?,14,'[]','white',1,'e2e4')""",
-                    (game_id, -loss_cp, loss_cp),
-                )
-        refresh_game_features("win")
-        refresh_game_features("draw")
-        response = client.get("/api/statistics/overview?window_days=30")
-        assert response.status_code == 200
-        result = response.json()
-        assert result["score"] == {
-            "value": 0.5, "wins": 1, "draws": 1, "losses": 1,
-            "numerator": 1.5, "denominator": 3,
-            "confidence_interval": result["score"]["confidence_interval"],
-        }
-        assert result["decision_quality"]["denominator"] == 2
-        assert result["decision_quality"]["mean_loss_cp"] == 50
-        assert result["games"] == 3
-        assert result["analyzed_games"] == 2
-
-
 def test_statistics_local_day_and_hour_respect_timezone_and_dst(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app):

@@ -43,7 +43,6 @@ from tempo_legacy_database.adapters.http_composition import (
     defense_controls as defense_controls_storage,
     game_findings as game_findings_storage,
     game_reads as game_reads_storage,
-    statistics as http_statistics_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
@@ -116,7 +115,7 @@ from .services.threat_training import (
     enqueue_defense_admission, execute_defense_rubric_audit_slice,
 )
 from .services.tactical_opportunities import tactical_statistics
-from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
+from .services.statistics import enqueue_daily_snapshot
 from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
@@ -4425,23 +4424,6 @@ def game_detail(game_id: str):
     return public_game_record(row)
 
 
-@app.get("/api/statistics/overview")
-def chess_statistics_overview(window_days: int = 30):
-    if window_days not in {7, 30, 90, 36500}:
-        raise HTTPException(422, "Statistics window must be 7, 30, 90, or lifetime")
-    return statistics_overview(window_days)
-
-
-@app.get("/api/statistics/breakdown")
-def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
-    if window_days not in {7, 30, 90, 36500}:
-        raise HTTPException(422, "Statistics window must be 7, 30, 90, or lifetime")
-    try:
-        return statistics_breakdown(dimension, window_days)
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
-
-
 @app.post("/api/statistics/daily/{local_day}/refresh")
 def refresh_chess_statistics_day(
     local_day: str,
@@ -4461,15 +4443,6 @@ def refresh_chess_statistics_day(
         return {"local_day": local_day, "status": "queued"}
     except ValueError as error:
         raise HTTPException(422, "Invalid local day") from error
-
-
-@app.get("/api/statistics/insights")
-def chess_statistics_insights(status: str = "pending"):
-    if status not in {"pending", "accepted", "ignored"}:
-        raise HTTPException(422, "Unknown insight status")
-    with connection() as database:
-        rows = http_statistics_storage.daily_insights(database, status)
-    return {"insights": [{**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows]}
 
 
 @app.post("/api/games/{game_id:path}/guided-review")

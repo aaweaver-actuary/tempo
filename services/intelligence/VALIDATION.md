@@ -1180,14 +1180,25 @@ artifact proofs, audit and exact manifest remain under
 
 ## Native database harness whole-file relocation — October 21, 2026
 
+Historical relocation record: these checks describe source and lanes as they
+existed on October 21, before the external pilot retirement. The optional actual
+A/B test sources and pilot selection have since been removed; their pre-retirement
+snapshots remain pinned in the links below. Counts and results in this section are
+dated evidence for that prior source, not current qualification.
+
 The nine files identified by the closure scan, plus the additional direct-SQL
-`test_actual_analysis.py`, moved whole into the single root database owner tree.
+[`test_actual_analysis.py`](https://github.com/aaweaver-actuary/tempo/blob/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/database/tempo_intelligence_database/tests/integration/test_actual_analysis.py),
+moved whole into the single root database owner tree.
 The runner is now `database/tempo_intelligence_database/tooling/run_postgres.py`;
 nine test/fixture/support files are in that owner's `tests/integration/` package.
-The two actual A/B files combine cross-component durable acceptance with SQL state
-assertions. They remain intact optional native qualification, not pure application
-tests or a permanent scattered-database exception. Application pure/fake/contract
-tests and `integration/qualify_artifacts.py` remain application-owned.
+The two historical actual A/B files combined cross-component durable acceptance
+with SQL state assertions. Their pre-retirement sources are
+[`test_actual_analysis.py`](https://github.com/aaweaver-actuary/tempo/blob/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/database/tempo_intelligence_database/tests/integration/test_actual_analysis.py)
+and
+[`test_actual_a.py`](https://github.com/aaweaver-actuary/tempo/blob/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/database/tempo_intelligence_database/tests/integration/test_actual_a.py).
+They were optional native qualification, not pure application tests or a permanent
+scattered-database exception. Application pure/fake/contract tests and
+`integration/qualify_artifacts.py` remain application-owned.
 
 Only service/fixture/test discovery, build/source-input metadata and current
 references changed. The hook ships native tests/tooling in the sdist and excludes
