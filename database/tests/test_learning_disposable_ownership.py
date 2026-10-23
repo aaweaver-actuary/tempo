@@ -319,6 +319,8 @@ class DisposableOwnershipTests(unittest.TestCase):
             [
                 "docker",
                 "compose",
+                "--profile",
+                "bootstrap",
                 "--env-file",
                 str(self.env_file),
                 "--project-name",

@@ -312,6 +312,8 @@ def _inspect_and_attest(*, compose_file, env_file, identity, timeout):
     compose_ps = [
         "docker",
         "compose",
+        "--profile",
+        "bootstrap",
         "--env-file",
         str(env_file),
         "--project-name",
