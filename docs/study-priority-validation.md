@@ -1,5 +1,9 @@
 # Study priority v1 — validation receipt, 2026-10-16
 
+This receipt preserves the pre-retirement validation run. The Builder position-index
+cases listed here were retired with the optional Builder worker path on 2026-10-22;
+the recorded results are historical and do not claim current suite coverage.
+
 Candidate: `study-priority-v1.0.0-rc.1`, based on `0edf566ad48f51846a43d3341809379ff0469ada`.
 Implementation reviews are an explicit stack: `codex/study-priority-core` →
 `codex/study-priority-browser` → `codex/study-priority`. The browser consumes the

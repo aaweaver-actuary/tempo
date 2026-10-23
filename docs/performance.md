@@ -1,5 +1,8 @@
 # Performance measurement
 
+This is a historical measurement record. Builder and Games UI/worker scenarios below
+describe earlier implementations and are not current browser coverage or benchmarks.
+
 ## Audit summary and decision
 
 The starting local unit run took 151.72 seconds with 54 jsdom environments and one failing study test. The measured full gate at `57cdc99` took 23.63 seconds for 261 frontend units, 49.05 seconds for 403 backend tests, 166.30 seconds for Docker browser and durability checks, and 45.70 seconds for pinned visual/performance checks. These runs used different checkout states and host load, so the figures describe the feedback loop rather than a controlled before/after speedup. `make fast` runs frontend units alone; `make full` retains every required family once.

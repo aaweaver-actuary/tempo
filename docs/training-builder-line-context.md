@@ -1,4 +1,9 @@
-# Training position handoff to Builder
+# Historical: Training position handoff to Builder
+
+This record documents the retired Builder workflow before the 2026-10-22 UI and
+route-recovery removal. Its validation commands and test names are historical, not
+current suite coverage. Study grading, queue behavior, and shared worker safeguards
+remain covered by retained tests.
 
 Training's position actions carry the displayed FEN and its view cursor. This is
 separate from the authoritative attempt step: browsing backward must not advance,

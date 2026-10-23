@@ -1,4 +1,4 @@
-import type { AnalysisLine, CanonicalLine } from "../types";
+import type { AnalysisLine } from "../types";
 import { packagedPuzzleSchema } from "../domain/schemas";
 import { validRecords } from "./validated-data";
 import {
@@ -9,7 +9,6 @@ import { mapPackagedPuzzleToPracticeCard } from "../domain/adapters/practice-car
 import { queueCardsFromPayload } from "../domain/adapters/practice-card-adapters";
 import { canonicalizeLine } from "../utils/canonical-line";
 import { buildRepertoireAlternativeSnapshot } from "./repertoire-alternative-index";
-import { resolveTrainingRoute } from "./training-builder-route";
 import {
   indexRepertoirePositions,
   prepareChessPositionDistance,
@@ -17,7 +16,6 @@ import {
 } from "./position-similarity";
 
 export type PureStudyTask =
-  | { kind: "resolveTrainingRoute"; repertoireId: string; startingFen: string; moves: string[]; lines: CanonicalLine[] }
   | { kind: "workspace"; url: string; payload: unknown }
   | { kind: "transportLines"; payload: unknown }
   | { kind: "queue"; payload: unknown }
@@ -33,18 +31,11 @@ export type PureStudyTask =
       limit?: number;
     };
 
-export type StudyPositionTask =
-  | { kind: "initializePositionIndex"; repertoireId: string; revision: number; lines: CanonicalLine[] }
-  | { kind: "findPositionMatches"; repertoireId: string; revision: number; fen: string; limit?: number }
-  | { kind: "releasePositionIndex"; repertoireId: string; revision: number };
-
-export type StudyTask = PureStudyTask | StudyPositionTask;
+export type StudyTask = PureStudyTask;
 
 // Runs in the study worker in browsers, never during a React render.
 export function computeStudyTask(task: PureStudyTask) {
   switch (task.kind) {
-    case "resolveTrainingRoute":
-      return resolveTrainingRoute(task.lines, task.repertoireId, task.startingFen, task.moves);
     case "workspace":
       return validateWorkspacePayload(task.url, task.payload);
     case "transportLines":

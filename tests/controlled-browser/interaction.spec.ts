@@ -6,7 +6,7 @@ test.use({ serviceWorkers: "block" });
 test("tablet menu Escape restores the visible navigation trigger", async ({page}) => {
   await page.setViewportSize({width:768,height:1024}); await prepareControlledUI(page);
   const menu=page.locator(".tablet-navigation"); await menu.click();
-  await page.locator("#workspace-menu").getByRole("button",{name:"Games",exact:true}).focus();
+  await page.locator("#workspace-menu").getByRole("button",{name:"Settings",exact:true}).focus();
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
   await expect(page.locator("#workspace-menu")).toHaveCount(0);

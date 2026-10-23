@@ -3,29 +3,27 @@ import type { Plugin } from 'vite';
 
 /** Feature entry implementations excluded from the Study source and emitted closure. */
 export const optionalStudyImplementations = {
-  games: ['app/views/games_view.tsx', 'app/components/workbench-game-sync.tsx',
+  games: ['app/components/workbench-game-sync.tsx',
     'app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
-  composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx', 'app/views/legacy-games-workspace.tsx'],
+  composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx'],
   // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
   workbench: ['app/components/workbench-launch.tsx'],
-  discovery: ['app/lib/discovery-admission-outbox.ts', 'app/lib/discovery-preview-scheduler.ts',
-    'app/lib/opportunity-command.ts', 'app/lib/opportunity-refresh-command.ts'],
+  discovery: ['app/lib/discovery-admission-outbox.ts'],
   engines: ['app/lib/analysis-engines.ts', 'app/lib/engine-broker.ts', 'app/lib/maia-broker.ts',
-    'app/lib/maia-inference.ts', 'app/lib/game-scan.ts', 'app/lib/game-finding-command.ts',
+    'app/lib/maia-inference.ts', 'app/lib/game-finding-command.ts',
     'app/lib/game-threat-refresh-command.ts', 'app/lib/game-exclusion-command.ts'],
-  authoring: ['app/views/analysis_view.tsx', 'app/views/repertoire_view.tsx',
+  authoring: ['app/views/repertoire_view.tsx',
     'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',
     'app/ImportDialogBox.tsx', 'app/AnalysisPasteDialog.tsx'],
   workspaceAdministration: ['app/views/settings_view.tsx', 'app/components/service-status-panel.tsx',
     'app/components/integrity-repair-status.tsx', 'app/components/repertoire-integrity-dialog.tsx',
-    'app/components/discoveries-tray.tsx'],
+    'app/components/pending-discovery-saves.tsx'],
 } as const;
 export const optionalStudyContractExceptions = {
   'app/domain/analysis.ts': 'Shared study exercise grading and annotation schemas.',
   'app/domain/games.ts': 'Shared game metadata types used by retained Study views.',
   'app/lib/saved-endgame-practice.ts': 'Retained Study endgame line validation for playable saved cards.',
   'app/lib/tactics-progress.ts': 'Retained Study tactics progress projection for accepted packs.',
-  'app/lib/training-builder-route.ts': 'Retained route-validation helper used by the Study training flow.',
   'app/views/endgames_view.tsx': 'Retained Study endgames experience.',
 } as const;
 const optionalModules = new Set<string>(Object.values(optionalStudyImplementations).flat());

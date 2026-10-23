@@ -33,9 +33,9 @@ async function openParent(onQueueChanged: () => Promise<void>, reloadFails = fal
       suggestion: emptyPrefix, conflicts: [], conflict_count: 0, next_cursor: null });
     return Response.json(emptyPrefix);
   }));
-  render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()} onResolveGap={vi.fn()}
-    onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()} onRenameLocal={vi.fn()}
-    onQueueChanged={onQueueChanged} onTrain={vi.fn()} />);
+  render(<RepertoireView imported={[]} onImport={vi.fn()}
+    onRepair={vi.fn()} onDeleteLocal={vi.fn()} onRenameLocal={vi.fn()}
+    onQueueChanged={onQueueChanged} />);
   await screen.findByText("Italian");
   fireEvent.click(screen.getByText("•••"));
   fireEvent.click(screen.getByRole("menuitem", { name: "Canonical prefix…" }));

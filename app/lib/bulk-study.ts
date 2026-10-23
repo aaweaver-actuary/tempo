@@ -19,7 +19,7 @@ let timeout: ReturnType<typeof setTimeout> | undefined;
 
 export function isBulkStudyTask(task: StudyTask) {
   return ['repertoirePreparation', 'repertoireAlternatives', 'transportLines', 'lines', 'index',
-    'matches', 'similarity', 'resolveTrainingRoute'].includes(task.kind) ||
+    'matches', 'similarity'].includes(task.kind) ||
     (task.kind === 'workspace' && new URL(task.url, 'http://tempo.local').pathname === '/api/repertoire/lines');
 }
 

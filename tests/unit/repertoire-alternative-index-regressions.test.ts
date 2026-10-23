@@ -7,7 +7,6 @@ import { computeStudyTask } from "../../app/lib/study-computation";
 import type { IndexedPosition } from "../../app/lib/position-similarity";
 import { buildRepertoireAlternativeSnapshot, lookupRepertoireAlternative } from "../../app/lib/repertoire-alternative-index";
 import { studyRequestSchema } from "../../app/domain/schemas";
-import { createStudyPositionStore } from "../../app/lib/study-position-store";
 
 const repertoireId = "white" as RepertoireId;
 const startFen = new Chess().fen();
@@ -102,7 +101,7 @@ it("issue36_existing_study_preparation_returns_one_cloneable_generation_snapshot
   const lines = [line("first", ["e2e4"]), line("second", ["d2d4"])];
   const task = { kind: "repertoireAlternatives" as const, generation: 36, lines };
   const parsed = studyRequestSchema.parse({ id: 1, task });
-  const result = createStudyPositionStore()(parsed.task) as ReturnType<typeof buildRepertoireAlternativeSnapshot>;
+  const result = computeStudyTask(parsed.task) as ReturnType<typeof buildRepertoireAlternativeSnapshot>;
   expect(result.positions).toEqual(preparedPositions(lines));
   const transferred = structuredClone(result);
   expect(lookupRepertoireAlternative(transferred, 36, repertoireId, startFen, "d2d4")).toBe(true);

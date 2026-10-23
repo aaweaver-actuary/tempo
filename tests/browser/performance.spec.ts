@@ -1,9 +1,8 @@
 import { test, expect } from "./observability";
-import { Chess } from "chess.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { navigate } from "./ui-fixtures";
-import { prepareVisualUI, type VisualRepertoireLine } from "./visual-fixtures";
+import { prepareVisualUI } from "./visual-fixtures";
 
 const performanceOutputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
 function writePerformanceReport(fileName: string, reportBody: string) {
@@ -19,14 +18,14 @@ function summarize(samples: number[]) {
   };
 }
 
-test("warm workspace and Builder move responsiveness", async ({ page }, testInfo) => {
+test("warm workspace and Study move responsiveness", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await prepareVisualUI(page, false);
   const boardReadySamples: number[] = [];
   for (let reload = 0; reload < 5; reload++) {
     if (reload > 0) await page.reload();
-    await navigate(page, "Builder");
+    await navigate(page, "Train");
     await expect.poll(() => page.evaluate(() =>
       performance.getEntriesByName("tempo:board-ready").at(-1)?.duration ?? null,
     )).not.toBeNull();
@@ -34,7 +33,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
       performance.getEntriesByName("tempo:board-ready").at(-1)!.duration,
     ));
   }
-  const modes = ["Builder", "Games", "Endgames", "Tactics", "Train"] as const;
+  const modes = ["Endgames", "Tactics", "Train"] as const;
   for (const mode of modes) await navigate(page, mode);
   const viewSwitchSamples: Record<string, number[]> = Object.fromEntries(
     modes.map((mode) => [mode, []]),
@@ -50,7 +49,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
       ));
     }
   }
-  await navigate(page, "Builder");
+  await navigate(page, "Train");
   const separator = page.getByRole("separator", { name: "Board size" });
   await separator.focus();
   await page.evaluate(() => new Promise<void>((resolve) =>
@@ -236,171 +235,6 @@ test("warm training cards advance to the next visible paint", async ({ page }, t
   });
   expect(samples).toHaveLength(5);
   expect(report.summary.p95).toBeLessThanOrEqual(500);
-});
-
-test("Builder similarity worker messages keep the position index in the worker", async ({ page }, testInfo) => {
-  const startingFen = new Chess().fen();
-  const openingPairs = new Chess().moves({ verbose: true }).flatMap((firstMove) => {
-    const board = new Chess();
-    board.move(firstMove);
-    return board.moves({ verbose: true }).map((reply) => [
-      `${firstMove.from}${firstMove.to}${firstMove.promotion ?? ""}`,
-      `${reply.from}${reply.to}${reply.promotion ?? ""}`,
-    ]);
-  });
-  const repertoireLines: VisualRepertoireLine[] = Array.from({ length: 250 }, (_, index) => ({
-    id: `performance-line-${index}`,
-    repertoire_id: "visual-repertoire",
-    repertoire_name: "Spanish opening",
-    name: `Opening pair ${index}`,
-    trained_color: "white",
-    start_fen: startingFen,
-    moves: openingPairs[index % openingPairs.length],
-  }));
-  await page.addInitScript(() => {
-    type ObservedMessage = {
-      kind: string; bytes: number; hasPositions: boolean; startedAt: number; fen?: string;
-      queueMs?: number; computeMs?: number; roundtripMs?: number; paintMs?: number;
-    };
-    const observed: ObservedMessage[] = [];
-    Object.assign(window, { tempoStudyMessages: observed });
-    const originalPostMessage = Worker.prototype.postMessage;
-    const observedWorkers = new WeakMap<Worker, Map<number, ObservedMessage>>();
-    Object.defineProperty(Worker.prototype, "postMessage", {
-      configurable: true,
-      value: function(this: Worker, message: unknown, ...options: unknown[]) {
-        const task = typeof message === "object" && message !== null
-          ? Reflect.get(message, "task") : undefined;
-        if (task && typeof task === "object") {
-          const kind = Reflect.get(task, "kind");
-          if (kind === "initializePositionIndex" || kind === "findPositionMatches") {
-            let pending = observedWorkers.get(this);
-            if (!pending) {
-              pending = new Map();
-              observedWorkers.set(this, pending);
-              this.addEventListener("message", (event: MessageEvent) => {
-                const reply = event.data as { id?: number; state?: string; computeMs?: number };
-                const request = reply.id === undefined ? undefined : pending?.get(reply.id);
-                if (!request) return;
-                if (reply.state === "running") {
-                  request.queueMs = performance.now() - request.startedAt;
-                  return;
-                }
-                request.computeMs = reply.computeMs;
-                request.roundtripMs = performance.now() - request.startedAt;
-                if (request.kind === "findPositionMatches") {
-                  const waitForPaint = () => {
-                    if (document.querySelector(".similarity-panel")?.getAttribute("data-result-fen") === request.fen) {
-                      requestAnimationFrame(() => {
-                        request.paintMs = performance.now() - request.startedAt;
-                      });
-                    } else if (performance.now() - request.startedAt < 5_000) {
-                      requestAnimationFrame(waitForPaint);
-                    }
-                  };
-                  requestAnimationFrame(waitForPaint);
-                }
-                pending?.delete(reply.id!);
-              });
-            }
-            const request = {
-              kind,
-              bytes: JSON.stringify(message).length,
-              hasPositions: Reflect.has(task, "positions"),
-              startedAt: performance.now(),
-              fen: kind === "findPositionMatches" ? Reflect.get(task, "fen") : undefined,
-            };
-            observed.push(request);
-            const requestId = typeof message === "object" && message !== null
-              ? Reflect.get(message, "id") : undefined;
-            if (typeof requestId === "number") pending.set(requestId, request);
-          }
-        }
-        return Reflect.apply(originalPostMessage, this, [message, ...options]);
-      },
-    });
-  });
-  await prepareVisualUI(page, false, undefined, repertoireLines);
-  await navigate(page, "Builder");
-  await expect.poll(async () => page.evaluate(() =>
-    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; roundtripMs?: number }>).filter(
-      (message) => message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
-    ).length,
-  )).toBeGreaterThan(0);
-  const completedQueries = () => page.evaluate(() =>
-    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; roundtripMs?: number }>).filter(
-      (message) => message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
-    ).length,
-  );
-  const paintedQueries = () => page.evaluate(() =>
-    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; paintMs?: number }>).filter(
-      (message) => message.kind === "findPositionMatches" && message.paintMs !== undefined,
-    ).length,
-  );
-  await expect.poll(paintedQueries).toBeGreaterThan(0);
-  const boardFrame = page.locator(".board-frame");
-  for (let repetition = 0; repetition < 3; repetition++) {
-    const previousQueryCount = await completedQueries();
-    const boardBounds = (await page.locator(".cg-wrap").boundingBox())!;
-    for (const rank of [6, 4]) {
-      await page.mouse.click(
-        boardBounds.x + (4.5 * boardBounds.width) / 8,
-        boardBounds.y + ((rank + 0.5) * boardBounds.height) / 8,
-      );
-    }
-    await expect(boardFrame).toHaveAttribute("data-fen", /4P3/);
-    await expect.poll(completedQueries).toBeGreaterThan(previousQueryCount);
-    await expect.poll(paintedQueries).toBeGreaterThan(previousQueryCount);
-    const afterMoveQueryCount = await completedQueries();
-    await page.locator(".shared-board-toolbar .board-tools")
-      .getByRole("button", { name: /Back/ }).click();
-    await expect(boardFrame).not.toHaveAttribute("data-fen", /4P3/);
-    await expect.poll(completedQueries).toBeGreaterThan(afterMoveQueryCount);
-    await expect.poll(paintedQueries).toBeGreaterThan(afterMoveQueryCount);
-  }
-  const messages = await page.evaluate(() => Reflect.get(window, "tempoStudyMessages") as Array<{
-    kind: string; bytes: number; hasPositions: boolean;
-    queueMs?: number; computeMs?: number; roundtripMs?: number; paintMs?: number;
-  }>);
-  const querySamples = messages.filter((message) =>
-    message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
-  ).map(({ bytes, queueMs, computeMs, roundtripMs, paintMs }) => ({
-    bytes, queueMs: queueMs ?? null, computeMs: computeMs ?? null,
-    roundtripMs: roundtripMs!, paintMs: paintMs ?? null,
-  }));
-  const indexSamples = messages.filter((message) =>
-    message.kind === "initializePositionIndex" && message.roundtripMs !== undefined,
-  ).map(({ bytes, queueMs, computeMs, roundtripMs }) => ({
-    bytes, queueMs: queueMs ?? null, computeMs: computeMs ?? null,
-    roundtripMs: roundtripMs!,
-  }));
-  const report = {
-    schemaVersion: 1,
-    timestamp: new Date().toISOString(),
-    commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
-    fixture: { name: "legal-two-ply-opening-pairs-v1", lines: repertoireLines.length,
-      plies: repertoireLines.length * 2, warmPositionChanges: 6 },
-    indexSamples,
-    querySamples,
-    roundtripSummary: summarize(querySamples.map((sample) => sample.roundtripMs)),
-    paintSummary: summarize(querySamples.map((sample) => sample.paintMs).filter(
-      (duration): duration is number => duration !== null,
-    )),
-  };
-  const reportBody = JSON.stringify(report, null, 2);
-  writePerformanceReport("builder-similarity-chromium.json", reportBody);
-  await testInfo.attach("builder-similarity-performance", {
-    body: reportBody,
-    contentType: "application/json",
-  });
-  expect(messages.some((message) => message.kind === "initializePositionIndex")).toBe(true);
-  expect(indexSamples.length).toBeGreaterThan(0);
-  for (const message of messages.filter((item) => item.kind === "findPositionMatches")) {
-    expect(message.hasPositions).toBe(false);
-    expect(message.bytes).toBeLessThan(512);
-  }
-  expect(querySamples.length).toBeGreaterThanOrEqual(7);
-  expect(querySamples.every((sample) => sample.paintMs !== null)).toBe(true);
 });
 
 // #31: continuous held dragging is distinct from existing post-move metrics.

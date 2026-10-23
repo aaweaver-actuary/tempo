@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import RepertoireView from "../../app/views/repertoire_view";
 
@@ -11,124 +11,18 @@ vi.mock("../../app/lib/workspace-data", () => ({
   invalidateWorkspaceData: vi.fn(),
 }));
 
-const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const startKey = startFen.split(" ").slice(0, 4).join(" ");
+it("retired opportunity drilldown leaves retained repertoire import and paste actions", async () => {
+  const onImport = vi.fn();
+  const onPaste = vi.fn();
+  render(<RepertoireView imported={[]} onImport={onImport} onPaste={onPaste}
+    onRepair={vi.fn()} onDeleteLocal={vi.fn()} onRenameLocal={vi.fn()}
+    onQueueChanged={async () => {}} />);
 
-it("issue 4 opportunities explain promotion, degraded sources, and explicit actions", async () => {
-  const onResolveGap = vi.fn();
-  const onTrain = vi.fn();
-  const onShowGamesAtPosition = vi.fn();
-  const onBrowse = vi.fn();
-  const opportunities = [
-    {
-      id: "weak", repertoire_id: "rep", kind: "weak_known_decision", status: "active",
-      fen_key: startKey, fen: startFen, card_id: "target", opponent_move_uci: null,
-      trained_color: "white", score: 0.8, created_at: "2026-09-23T00:00:00Z",
-      updated_at: "2026-09-23T00:00:00Z",
-      evidence: { encounter_count: 11, success_count: 4, miss_count: 7, route_success_count: 11 },
-    },
-    {
-      id: "gap", repertoire_id: "rep", kind: "missing_response", status: "active",
-      fen_key: startKey, fen: startFen, card_id: null, opponent_move_uci: "e2e4",
-      trained_color: "black", score: 0.2, created_at: "2026-09-23T00:00:00Z",
-      updated_at: "2026-09-23T00:00:00Z",
-      evidence: { maia_probability: 0.08, maia_status: "complete", explorer_probability: null,
-        explorer_status: "failed", explorer_games: 0, personal_count: 5,
-        coverage_node_id: "node" },
-    },
-    {
-      id: "post-gap", repertoire_id: "rep", kind: "post_gap_weakness", status: "active",
-      fen_key: startKey, fen: startFen, card_id: "existing", opponent_move_uci: "d2d4",
-      trained_color: "black", score: 0.1, created_at: "2026-09-23T00:00:00Z",
-      updated_at: "2026-09-23T00:00:00Z",
-      evidence: { supporting_games: 2, max_loss_cp: 180, findings: [{ finding_id: "finding-1", game_id: "game-1", mistake_ply: 12, mistake_loss_cp: 180, analysis_version: 3 }] },
-    },
-  ].map((item) => ({ ...item, seen_at: null, snoozed_until: null,
-    admission_state: null, admitted_card_id: null, unread: true,
-    evidence_fingerprint: "fingerprint",
-    source_games: [], routes: [] }));
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/opportunities")) return Response.json({ opportunities });
-    if (String(input).endsWith("/train")) return Response.json({ card_id: "target", queued: true, idempotent: false });
-    return Response.json({ dismissed: true });
-  });
-  vi.stubGlobal("fetch", fetcher);
-
-  render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={onBrowse}
-    onResolveGap={onResolveGap} onShowGamesAtPosition={onShowGamesAtPosition} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
-    onRenameLocal={vi.fn()} onQueueChanged={async () => {}} onTrain={onTrain} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Opportunities" })).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "Opportunities" }));
-  await waitFor(() => expect(screen.getByText("Weak known decision")).toBeTruthy());
-  expect(screen.getByText(/Reached 11 times · correct 4 · missed 7/)).toBeTruthy();
-  expect(screen.getByText(/Lichess cohort unavailable \(failed/)).toBeTruthy();
-  expect(screen.getByText(/2 supporting games · largest following mistake 180 cp/)).toBeTruthy();
-  fireEvent.click(screen.getByText("Engine and game evidence"));
-  expect(screen.getByText(/Game game-1 · ply 12 · loss 180 cp · analysis 3/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "View supporting games" }));
-  expect(onShowGamesAtPosition).toHaveBeenCalledWith(startFen, "rep");
-  fireEvent.click(screen.getAllByRole("button", { name: "Train this decision" })[0]);
-  await waitFor(() => expect(onTrain).toHaveBeenCalledOnce());
-  fireEvent.click(screen.getByRole("button", { name: "Investigate branch" }));
-  expect(onResolveGap).toHaveBeenCalledWith("rep", expect.objectContaining({ move_uci: "e2e4", gap_id: "node:e2e4" }));
-});
-
-
-it("Repertoire train submits the displayed revision and leaves newer evidence unhandled on conflict", async () => {
-  const onTrain = vi.fn();
-  const onQueueChanged = vi.fn();
-  const displayedOpportunity = {
-    id: "stale-opportunity", repertoire_id: "rep", kind: "weak_known_decision", status: "active",
-    fen_key: startKey, fen: startFen, card_id: "target", opponent_move_uci: null,
-    trained_color: "white", score: 1, created_at: "2026-09-23", updated_at: "2026-09-23",
-    evidence: { supporting_games: 5 }, evidence_fingerprint: "shown-A", seen_at: null,
-    snoozed_until: null, admission_state: null, admitted_card_id: null, unread: true,
-    source_games: [], routes: [],
-  };
-  let currentFingerprint = "shown-A";
-  let newerEvidenceHandled = false;
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).endsWith("/opportunities")) return Response.json({ opportunities: [displayedOpportunity] });
-    if (String(input).endsWith("/train")) {
-      const body = init?.body ? JSON.parse(String(init.body)) : {};
-      if (body.evidence_fingerprint && body.evidence_fingerprint !== currentFingerprint)
-        return Response.json({ detail: "Discovery evidence changed; refresh before training" }, { status: 409 });
-      newerEvidenceHandled = true;
-      return Response.json({ card_id: "target", queued: true, idempotent: false });
-    }
-    throw new Error(`Unexpected request: ${String(input)}`);
-  });
-  vi.stubGlobal("fetch", fetcher);
-  render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()}
-    onResolveGap={vi.fn()} onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
-    onRenameLocal={vi.fn()} onQueueChanged={onQueueChanged} onTrain={onTrain} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Opportunities" }));
-  const trainButton = await screen.findByRole("button", { name: "Train this decision" });
-  currentFingerprint = "newer-B";
-  fireEvent.click(trainButton);
-  await waitFor(() => expect(fetcher.mock.calls.find(([input]) => String(input).endsWith("/train"))?.[1]?.body)
-    .toBe(JSON.stringify({ evidence_fingerprint: "shown-A" })));
-  await screen.findByText(/Discovery evidence changed/);
-  expect(newerEvidenceHandled).toBe(false);
-  expect(onTrain).not.toHaveBeenCalled();
-  expect(onQueueChanged).not.toHaveBeenCalled();
-});
-
-
-it("invalidated coverage shows actionable recheck guidance instead of nonexistent queued work", async () => {
-  const guidance = "Repertoire sources changed. Recheck Canonical prefix… and refresh coverage.";
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/coverage/gaps")) return Response.json({ gaps: [] });
-    if (String(input).endsWith("/coverage")) return Response.json({ run_id: null, status: "failed",
-      required_branches: 0, covered_branches: 0, probability_coverage: null,
-      is_complete: false, unknown_nodes: 0, last_error: guidance });
-    throw new Error(`Unexpected request: ${String(input)}`);
-  }));
-  render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()}
-    onResolveGap={vi.fn()} onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
-    onRenameLocal={vi.fn()} onQueueChanged={async () => {}} onTrain={vi.fn()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Check coverage" }));
-  expect((await screen.findByRole("alert")).textContent).toBe(guidance);
-  expect(screen.getByText("failed")).toBeTruthy();
-  expect(screen.queryByText("Refreshing analysis for the current opening…")).toBeNull();
+  expect(await screen.findByRole("heading", { name: "Repertoire" })).toBeTruthy();
+  expect(screen.getByText("Main")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Opportunities" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Import PGN/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Paste analysis" }));
+  expect(onImport).toHaveBeenCalledOnce();
+  expect(onPaste).toHaveBeenCalledOnce();
 });
