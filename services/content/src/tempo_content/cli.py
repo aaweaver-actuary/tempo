@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from tempo_content_publication_contracts.v1 import serialize_contract
@@ -19,6 +20,13 @@ def parser():
     schema = subcommands.add_parser('schema')
     schema.add_argument('--model',choices=('import-manifest','response-proposal'),required=True)
     importing = subcommands.add_parser('import').add_subparsers(dest='operation',required=True)
+    manifest = importing.add_parser('manifest')
+    manifest.add_argument('file',type=Path)
+    manifest.add_argument('--workspace',required=True)
+    manifest.add_argument('--source-key',required=True)
+    manifest.add_argument('--title',required=True)
+    manifest.add_argument('--color',choices=('white','black'),required=True)
+    manifest.add_argument('--output',type=Path,required=True)
     plan = importing.add_parser('plan')
     plan.add_argument('file',type=Path)
     plan.add_argument('--manifest',type=Path,required=True)
@@ -87,9 +95,37 @@ def parser():
     return command
 
 
+def _manifest_preview(arguments):
+    from .bridge import map_import
+    from .import_manifest import make_manifest
+
+    if not arguments.output.parent.is_dir():
+        raise ContentError('invalid_output_directory','Manifest output directory must already exist')
+    with arguments.file.open('rb') as source_file:
+        raw = source_file.read(16 * 1024 * 1024 + 1)
+    if len(raw)>16*1024*1024:
+        raise ContentError('source_byte_bound','Import exceeds 16 MiB')
+    manifest = make_manifest(raw,workspace_id=arguments.workspace,source_key=arguments.source_key,
+                             title=arguments.title,learner_color=arguments.color)
+    source,manifest = map_import(raw,manifest.model_dump(mode='json'))
+    with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=arguments.output.parent,
+                                     prefix='.tempo-content-manifest-',suffix='.tmp') as temporary:
+        temporary.write(manifest.model_dump_json(indent=2)+'\n')
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        # A hard link publishes the complete file atomically and refuses any existing path.
+        os.link(temporary.name,arguments.output)
+    return {'status':'validated','manifest_path':str(arguments.output),
+            'source_sha256':manifest.provenance.source_sha256,
+            'route_count':len(source.routes),'exercise_count':len(source.exercises)}
+
+
 def main(argv=None):
     arguments = parser().parse_args(argv)
     try:
+        if arguments.command=='import' and arguments.operation=='manifest':
+            print(json.dumps(_manifest_preview(arguments),sort_keys=True))
+            return 0
         if arguments.command in ('schema','proposal'):
             from .bridge import ImportManifest,ResponseProposal
             result = (ImportManifest if arguments.model=='import-manifest' else ResponseProposal).model_json_schema() if arguments.command=='schema' else ResponseProposal.model_validate_json(arguments.file.read_bytes()).model_dump(mode='json')

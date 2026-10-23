@@ -602,10 +602,6 @@ export const analysisLineSchema = z.strictObject({
   moves: z.array(z.union([uciMoveSchema, sanMoveSchema])),
   validation: lineValidationSchema.optional(),
 });
-const canonicalLineSchema = analysisLineSchema.extend({
-  moves: z.array(uciMoveSchema),
-  validation: lineValidationSchema,
-});
 export const indexedPositionSchema = z.strictObject({
   lineId: identifierSchema,
   repertoireId: identifierSchema,
@@ -615,25 +611,8 @@ export const indexedPositionSchema = z.strictObject({
   nextUci: uciMoveSchema.optional(),
   distance: integer.optional(),
 });
-export const comparisonCardSchema = z.strictObject({
-  id: identifierSchema,
-  start_fen: z.string(),
-  moves: z.array(z.string()),
-  state: z.string(),
-  kind: z.string(),
-  trained_color: z.string().nullable(),
-  repertoires: z.array(z.strictObject({ id: identifierSchema, name: z.string() })),
-});
-export const comparisonCardsSchema = z.strictObject({ cards: z.array(comparisonCardSchema) });
 export const studyTaskSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal('repertoirePreparation'), generation: z.number().int().nonnegative(), payload: z.unknown() }),
-  z.strictObject({
-    kind: z.literal("resolveTrainingRoute"),
-    repertoireId: identifierSchema,
-    startingFen: fenStringSchema,
-    moves: z.array(uciMoveSchema),
-    lines: z.array(canonicalLineSchema),
-  }),
   z.strictObject({
     kind: z.literal("workspace"),
     url: z.string(),
@@ -664,39 +643,6 @@ export const studyTaskSchema = z.discriminatedUnion("kind", [
     fen: fenStringSchema,
     positions: z.array(indexedPositionSchema),
     limit: z.number().int().positive().optional(),
-  }),
-  z.strictObject({
-    kind: z.literal("initializePositionIndex"),
-    repertoireId: identifierSchema,
-    revision: z.number().int().positive(),
-    lines: z.array(canonicalLineSchema),
-  }),
-  z.strictObject({
-    kind: z.literal("findPositionMatches"),
-    repertoireId: identifierSchema,
-    revision: z.number().int().positive(),
-    fen: fenStringSchema,
-    limit: z.number().int().positive().optional(),
-  }),
-  z.strictObject({
-    kind: z.literal("releasePositionIndex"),
-    repertoireId: identifierSchema,
-    revision: z.number().int().positive(),
-  }),
-  z.strictObject({
-    kind: z.literal("initializeComparisonIndex"),
-    revision: z.number().int().positive(),
-    cards: z.array(comparisonCardSchema),
-  }),
-  z.strictObject({
-    kind: z.literal("findComparisonMatches"),
-    revision: z.number().int().positive(),
-    fen: fenStringSchema,
-    repertoireId: identifierSchema.optional(),
-  }),
-  z.strictObject({
-    kind: z.literal("releaseComparisonIndex"),
-    revision: z.number().int().positive(),
   }),
 ]);
 export const studyRequestSchema = z.strictObject({

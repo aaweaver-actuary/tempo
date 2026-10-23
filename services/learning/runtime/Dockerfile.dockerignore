@@ -11,6 +11,7 @@
 !services/learning/runtime/fixtures/**
 !services/learning/application/
 !services/learning/application/pyproject.toml
+!services/learning/application/hatch_build.py
 !services/learning/application/src/
 !services/learning/application/src/**
 !services/learning/remediation/

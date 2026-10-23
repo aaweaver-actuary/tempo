@@ -117,6 +117,71 @@ third-party requirements. No checkout, test tooling, development dependency,
 or other Tempo service is required by the installed runtime. The artifact
 qualification below proves that installation on Python 3.12 and 3.14.
 
+## Import and deliver a fresh authored PGN
+
+The manifest preview is database-free. Give a new authored source an explicit
+workspace, source key, title and learner color. The output directory must exist
+and the manifest path must be unused:
+
+```text
+tempo-content import manifest FILE --workspace ID --source-key ID --title TEXT --color white|black --output PATH
+```
+
+This writes raw `ImportManifest` JSON. Stdout reports `validated`, the manifest
+path and source SHA256, plus route/exercise counts. Validation does not import,
+activate or teach content, convert historical cards, or change an existing
+source's learner color. Configure the Content database and workspace as described
+below before planning. The manifest output has no source revision. For an
+existing source, use `requested_revision` from
+`tempo-content source show SOURCE_KEY`. For a new source, that command returns
+`source_not_found`. Content's approval check defines an absent source revision as
+`0`, so use `N=0` only after that result; never use `0` for an existing source.
+The plan output's `id` and
+`digest` are the draft ID and approval hash; the approval output's `id` is the
+operation ID:
+
+```text
+tempo-content import plan FILE --manifest PATH --expected-revision N
+tempo-content draft show DRAFT_ID
+tempo-content draft approve DRAFT_ID --digest HASH
+tempo-a-bridge --content-cli PATH --learning-origin ORIGIN --operator-token-file FILE apply OPERATION_ID --max-slices 64
+```
+
+Inspect the actual draft and use the exact draft ID and digest shown by prior
+output for the explicit approval. Use the operation ID returned by approval for
+`apply`. Keep the operator token in a private file; reuse the same approved
+operation ID and original Learning origin for pending work or an uncertain
+response. `pending_validation` means bounded Content validation remains;
+`pending_activation` means Learning has not yet returned a terminal receipt.
+`complete` is Learning's verified durable receipt (the local Content operation
+may display `completed`). `failed` is a recorded terminal failure; inspect the
+operation before planning a corrected draft. Transport uncertainty alone is not
+failure. A retry never needs another approval or operation ID.
+
+This uses the existing bridge only: no automatic approval, Games snapshot,
+Workbench, direct Learning SQL, or new delivery mechanism. Preserve
+[`tempo_a_bridge.cli.Operator` and `execution_bundle`](../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py)
+and its [`tempo-a-bridge` entry point](../../tools/analysis-restoration/a_bridge/pyproject.toml)
+if cleaning up `analysis-restoration`; together they contain the retained import
+operator and Learning execution-bundle mapping. See the [operator workflow](../../docs/analysis-restoration/a-bridge.md)
+for its recovery contract.
+
+**Illustrative transcript only — synthetic, not executed acceptance:**
+
+```text
+# Selected fields from prior Content source lookup: {"status":"error","code":"source_not_found"}
+$ tempo-content import manifest opening.pgn --workspace demo --source-key opening --title "Demo" --color white --output /tmp/opening.json
+{"status":"validated","manifest_path":"/tmp/opening.json","source_sha256":"<synthetic-sha256>","route_count":3,"exercise_count":1}
+$ tempo-content import plan opening.pgn --manifest /tmp/opening.json --expected-revision 0
+# Selected plan output fields: {"id":"demo-draft","digest":"<synthetic-digest>","expected_revision":0,"status":"draft"}
+$ tempo-content draft show demo-draft
+# Selected show output fields: {"id":"demo-draft","digest":"<synthetic-digest>","status":"draft"}
+$ tempo-content draft approve demo-draft --digest <synthetic-digest>
+# Selected approval output fields: {"id":"demo-operation","draft_id":"demo-draft","state":"approved"}
+$ tempo-a-bridge --content-cli /opt/bin/tempo-content --learning-origin https://learning.example --operator-token-file /private/operator-token apply demo-operation --max-slices 64
+{"operation_id":"demo-operation","state":"pending_activation"}
+```
+
 ## Database and operation
 
 An operator provisions a separate logical Content database, a Content owner

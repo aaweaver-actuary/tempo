@@ -1,7 +1,7 @@
 # Workspace views
 
-Views compose the user-facing workspaces: Train, Builder, Repertoire, Games,
-Progress, Statistics, Tactics, Endgames, Settings, and related dialogs.
+Views compose the user-facing workspaces: Train, Repertoire, Tactics, Endgames,
+Studies, Settings, and related dialogs.
 
 Several views are currently large because they combine rendering, transport,
 validation, and workflow orchestration. That is a staged extraction target, not

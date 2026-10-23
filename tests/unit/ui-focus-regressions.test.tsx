@@ -9,22 +9,22 @@ function TabsProbe({ onChange }: { onChange?: (name: string) => void }) {
 }
 
 describe("UI focus regressions", () => {
-  it("primary navigation exposes one Insights destination", () => {
+  it("primary navigation omits retired views", () => {
     render(<Navbar view="train" setView={() => undefined} />);
     expect(WORKSPACES.map((workspace) => workspace.label)).toEqual([
       "Train",
       "Tactics",
       "Endgames",
       "Repertoire",
-      "Builder",
       "Studies",
-      "Games",
-      "Insights",
       "Settings",
     ]);
-    expect(screen.getAllByRole("button", { name: "Insights" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Games" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Builder" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Insights" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Progress" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Statistics" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Compare positions" })).toBeNull();
   });
 
   it("context tabs preserve workspace state across resize and navigation", () => {

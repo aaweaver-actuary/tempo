@@ -447,28 +447,6 @@ test("unaffected opening reviews remain mixed with tactics during repertoire rep
     page.getByText(/Unaffected openings and tactics remain available/),
   ).toBeVisible();
 });
-test("failed initial loads never display empty records or zero statistics", async ({
-  page,
-}) => {
-  await page.route("**/api/**", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { detail: "Local database unavailable. Check the data mount." },
-    }),
-  );
-  await prepareUI(page);
-  for (const workspace of ["Games", "Progress"]) {
-    await navigate(page, workspace);
-    await expect(page.getByRole("alert").first()).toBeVisible();
-    await expect(page.locator(".games-metrics,.metric-grid")).toHaveCount(0);
-    await expect(
-      page.getByText("No games imported", { exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Retry", exact: true }),
-    ).toBeVisible();
-  }
-});
 test("failed settings reads cannot overwrite authoritative settings with defaults", async ({
   page,
 }) => {
@@ -486,40 +464,7 @@ test("failed settings reads cannot overwrite authoritative settings with default
   ).toBeVisible();
 });
 
-test("malformed progress is unavailable and retry recovers real measurements", async ({
-  page,
-}) => {
-  let broken = true;
-  await page.route("**/api/progress", (route) =>
-    route.fulfill({
-      json: broken
-        ? { unexpected: true }
-        : {
-            states: { new: 2 },
-            activity: [],
-            reviewedToday: 3,
-            cleanCards: 2,
-            dueToday: 1,
-            totalCards: 9,
-          },
-    }),
-  );
-  await prepareUI(page);
-  await navigate(page, "Progress");
-  await expect(page.getByRole("alert").first()).toBeVisible();
-  await expect(page.locator(".metric-grid")).toHaveCount(0);
-  broken = false;
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(page.locator(".metric-grid")).toContainText("9");
-});
-
 test("frontend errors show a redacted copyable debug bundle", async ({ page }) => {
-  await page.route("**/api/progress", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { detail: "Database unavailable" },
-    }),
-  );
   await prepareUI(page);
   await page.evaluate(() => {
     Object.defineProperty(window, "__tempoCopiedDebug", {
@@ -536,8 +481,10 @@ test("frontend errors show a redacted copyable debug bundle", async ({ page }) =
       },
     });
   });
-  await navigate(page, "Progress");
-  await expect(page.getByRole("alert").first()).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new ErrorEvent("error", {
+    message: "Frontend diagnostic failure",
+    error: new Error("Frontend diagnostic failure"),
+  })));
   await page.getByRole("button", { name: "Notifications" }).click();
   await expect(page.getByRole("button", { name: "Copy debug info" })).toBeVisible();
   await page.getByRole("button", { name: "Copy debug info" }).click();
@@ -546,8 +493,8 @@ test("frontend errors show a redacted copyable debug bundle", async ({ page }) =
     () => JSON.parse((window as unknown as { __tempoCopiedDebug: string }).__tempoCopiedDebug),
   );
   expect(copied.schemaVersion).toBe(1);
-  expect(copied.error.message).toContain("/api/progress");
-  expect(copied.workspace.activeView).toBe("insights");
+  expect(copied.error.message).toContain("Frontend diagnostic failure");
+  expect(copied.workspace.activeView).toBe("train");
   expect(copied.omitted).toContain("PGN and repertoire lines");
 });
 
@@ -750,9 +697,9 @@ productTest("repair choices advance before a delayed save and survive reload thr
   // Allow setup plus the full eventual-recovery poll below.
   productTest.setTimeout(120_000);
   await prepareUI(page);
-  // Await analysis from a passive view so the active Train workspace does not
-  // intentionally preempt the integrity slices this receipt test needs.
-  await navigate(page, "Builder");
+  // Await analysis from the retained passive Repertoire view so the active Train
+  // workspace does not intentionally preempt the integrity slices this receipt test needs.
+  await navigate(page, "Repertoire");
   const repairPgn = '[Event "First e4"]\n\n1. e4 *\n\n[Event "First d4"]\n\n1. d4 *\n\n' +
     '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *\n\n' +
     '[Event "Second d4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. d4 *';

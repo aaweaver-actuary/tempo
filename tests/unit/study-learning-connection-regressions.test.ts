@@ -252,7 +252,33 @@ it.each(["http://new.test", "http://b.test"])("pr291 R2 active A cannot switch t
 });
 it("pr291 R2 workspace changes remain authority changes", async () => {
   const { client, fetcher } = await connected(); await retainAuthority(client.studyConnection()!.origin, "a");
-  await expect(client.connectStudy("http://learning.test:8001", "workspace-b", credential)).rejects.toMatchObject({ kind: "authority" }); expect(fetcher).toHaveBeenCalledTimes(1);
+  const retainedBefore = await client.retainedStudyData();
+  await expect(client.connectStudy("http://learning.test:8001", "workspace-b", credential)).rejects.toMatchObject({ kind: "authority" });
+  expect(fetcher).toHaveBeenCalledTimes(1); expect(await client.retainedStudyData()).toEqual(retainedBefore);
+});
+it.each([
+  { label: "authority registry", storage: localStorage, key: "tempo-learning-authorities-v1" },
+  { label: "session connection", storage: sessionStorage, key: "tempo-learning-connection-v1" },
+])("pr376 failed $label write blocks the new Learning connection", async ({ storage, key }) => {
+  const { client, fetcher } = await connected(); const previous = client.studyConnection();
+  await retainAuthority(previous!.origin, "storage-original");
+  const intents = await openIntentStore({ workspace: `${previous!.origin}:study:workspace-a` });
+  await intents.update("review:storage-original", current => ({ ...current, state: "committed" })); intents.close();
+  const previousSession = sessionStorage.getItem("tempo-learning-connection-v1");
+  const retainedBefore = await client.retainedStudyData();
+  const originalSetItem = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, name: string, value: string) {
+    if (this === storage && name === key) throw new DOMException("Storage write denied", "QuotaExceededError");
+    return originalSetItem.call(this, name, value);
+  });
+
+  await expect(client.connectStudy("http://candidate.test", "workspace-a", credential))
+    .rejects.toMatchObject({ kind: "storage", cachedPracticeAvailable: false });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(client.studyConnection()).toEqual(previous);
+  expect(sessionStorage.getItem("tempo-learning-connection-v1")).toBe(previousSession);
+  expect((await client.retainedStudyData()).databases["tempo-study-intents"])
+    .toEqual(retainedBefore.databases["tempo-study-intents"]);
 });
 it.each([false, true])("pr291 R2 original resumption permits registered B work arriving during bootstrap (A pending=%s)", async pendingA => {
   const { client, fetcher } = await connected(); await client.connectStudy("http://b.test", "workspace-a", credential); await client.connectStudy("http://learning.test:8001", "workspace-a", credential);

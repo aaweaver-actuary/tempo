@@ -16,7 +16,7 @@ Current normal launch path (`tempo` → `scripts/tempo-cli.mjs`) is still couple
 | `Dockerfile.web` | Uses `npm run build:local`. | Default web build still targets legacy entry path, not guaranteed Study closure. |
 | `nginx.conf` | Proxies `/api/` to `api:8000`. | Incompatible with Learning runtime endpoint (`8001` contract from #365). |
 
-Therefore, **no PR may delete legacy implementation while default launcher still routes through this path**.
+Therefore, the launcher-dependent legacy backend/worker sources cannot be deleted while the default launcher still routes through this path.
 
 ## 2) Target of the one-time normal-launcher upgrade
 
@@ -92,6 +92,7 @@ Do **not** recursively launch another `tempo start` while the outer lifecycle ow
 | Failure after fencing but before import completes | No user writer. Legacy stays fenced; target still non-authoritative. | Re-acquire lock, confirm fence + pending-browser recoverability, then resume/restart import from fenced snapshot state. | **Conditional yes** only if no target-only accepted effects are proven and registration/receipt can be restored consistently. |
 | Successful import before registration publication | Target may be read for quarantine checks only; no mutating traffic. Legacy remains fenced. | Create/verify post-import backup, re-run release gates, then attempt durable registration+receipt publication. | **Conditional yes** with the same proof requirements as above. |
 | Crash between registration and receipt publication | Neither writer is reopened automatically. | Detect registration/receipt mismatch and block startup until repaired to a single authoritative pair. | **No automatic rollback**; rollback requires explicit proof of zero accepted target-only effects. |
+| Crash after both registration and receipt publications but before `activation-started` | Neither writer reopens automatically; legacy remains fenced and target remains quarantined. | Re-acquire the lock; verify the matching registration/receipt pair and quarantine state, then prove zero target-only accepted effects before either resuming activation or explicitly restoring legacy authority. | **No automatic rollback**; explicit restoration requires proof of zero target-only accepted effects. |
 | Activation begun with uncertain write acceptance | Treat Learning target as the only candidate authority; legacy remains fenced. | Prohibit automatic fallback; repair/restart the authoritative Learning target with compatible artifacts and evidence. | **No**, unless explicit evidence later proves no accepted target-only effects. |
 | Confirmed post-activation writes | Learning target only. Legacy remains preserved and non-writing. | Continue forward recovery on Learning authority; any restore happens to a separate destination pending promotion proof. | **No** (lossy rollback is out of scope for this spec). |
 
@@ -110,7 +111,7 @@ Maintain both restore-verified checkpoints: pre-cutover legacy backup and post-i
 
 ## 6) Normal-start compatibility gate (hard merge gate)
 
-No legacy-source deletion PR may merge unless all are true:
+No PR may delete launcher-dependent backend or worker legacy sources unless all are true. Genuinely independent optional frontend deletions—including [#406](https://github.com/aaweaver-actuary/tempo/pull/406) and [#407](https://github.com/aaweaver-actuary/tempo/pull/407)—are outside this gate when they preserve accepted Study behavior and remove no artifact or interface required by the launcher cutover.
 
 1. Normal command set (`tempo install/start/restart/status/doctor/backup`) follows §3.1 responsibilities and targets Study-only composition by default.
 2. Default build/proxy path no longer depends on legacy `build:local` + `api:8000` contract.
@@ -133,11 +134,11 @@ No legacy-source deletion PR may merge unless all are true:
 
 | Check | Owner | Status |
 | --- | --- | --- |
-| Actual live launcher/build/image/db fingerprint and both-device authority state. | #358 | **UNKNOWN / BLOCKED (no host access)** |
-| Latest genuine-history migration + pending-intent reconciliation rehearsal. | #267 | **UNKNOWN / BLOCKED (live-equivalent rehearsal pending)** |
-| Final Study-only Compose/ingress interface and cleanup contract. | #367 | **UNKNOWN / PENDING final published interface** |
-| Final Study artifact identity and closure proof. | #364 | **UNKNOWN / PENDING final artifact digest** |
-| Final Learning runtime image/startup contract proof. | #365 | **UNKNOWN / PENDING final image digest** |
+| Actual live launcher/build/image/db fingerprint and both-device authority state. | #358 | **BLOCKED / PENDING** (actual host/device fingerprint remains unavailable). |
+| Latest genuine-history migration + pending-intent reconciliation rehearsal. | #267 | **PENDING** (latest real-history transfer and pending-intent reconciliation remain unaccepted). |
+| Final Study-only Compose/ingress interface and cleanup contract. | #367 | **PENDING** (final Compose/ingress integration and cleanup contract remain outstanding; #378–#380 are not complete). |
+| Final Study artifact identity and closure proof. | #364 | **MERGED** (bounded source artifact/closure qualification; no live cutover or host deployment proof). |
+| Final Learning runtime image/startup contract proof. | #365 | **MERGED** (bounded runtime artifact/startup qualification; no live cutover or host deployment proof). |
 
 ---
 

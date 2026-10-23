@@ -1,7 +1,6 @@
 import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
-import type { TrainingPositionContext } from "../lib/training-builder-route";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardHeading, BoardTools } from "../components/board/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -73,7 +72,6 @@ interface TrainingViewProps {
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
-  onOpenPosition?: (target: "analysis" | "builder" | "games" | "compare", position?: TrainingPositionContext) => void;
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
@@ -104,7 +102,6 @@ function StandardTrainingView({
   onRejectPrefixSplit = async () => { throw new Error("Prefix splitting is unavailable. Reload training."); },
   onMove,
   onOpeningAssistance,
-  onOpenPosition,
   onBury = async () => undefined,
   burialPending = false,
   useSharedBoard = false,
@@ -343,21 +340,6 @@ function StandardTrainingView({
       )}
     </div>
   );
-  const positionActions = independentStudy || !onOpenPosition ? null : (
-    <div className="position-actions" aria-label="Open review position">
-      {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
-        <Button onClick={() => onOpenPosition("compare", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Compare positions</Button>
-      )}
-      <Button onClick={() => onOpenPosition("analysis", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>
-        Analysis
-      </Button>
-      <Button onClick={() => onOpenPosition("builder", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Builder</Button>
-      <Button onClick={() => onOpenPosition("games", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>
-        Games here
-      </Button>
-    </div>
-  );
-
   return (
     <>
       {!phoneOpening && repairNotice}
@@ -536,10 +518,9 @@ function StandardTrainingView({
                 {studyMetadata}
                 <p className="study-source">{card.subtitle}</p>
                 {moveTrail}
-                {positionActions}
                 <p className="study-date">Today · {dateLabel}</p>
               </div>
-            </details> : positionActions}
+            </details> : null}
           </aside>
         </section>
       )}

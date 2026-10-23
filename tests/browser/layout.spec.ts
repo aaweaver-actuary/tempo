@@ -67,9 +67,7 @@ test("application navigation retains one Chessground instance", async ({
   for (const workspace of [
     ...boardWorkspaces,
     "Settings",
-    "Progress",
     "Repertoire",
-    "Builder",
   ]) {
     await navigate(page, workspace);
     await expect(
@@ -127,7 +125,7 @@ test("hover feedback covers controls outside the chessboard without changing the
   await expect(disabledFlip).toBeDisabled();
   await disabledFlip.hover();
   await expect(disabledFlip).toHaveCSS("background-image", "none");
-  await navigate(page, "Builder");
+  await navigate(page, "Tactics");
   await hoverImage('.board-tools button[aria-label="Flip board"]');
   await board.hover();
   await expect(board).toHaveCSS("background-image", boardBackground);
@@ -162,7 +160,7 @@ test("desktop workspace panels do not clip controls or content", async ({
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await prepareUI(page);
-  for (const workspace of ["Builder", "Games", "Endgames"]) {
+  for (const workspace of ["Endgames"]) {
     await navigate(page, workspace);
     await noPageOverflow(page);
     for (const button of await page
@@ -181,7 +179,7 @@ test("shared split supports keyboard reset and persistence without changing work
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await prepareUI(page);
-  await navigate(page, "Builder");
+  await navigate(page, "Train");
   const separator = page.getByRole("separator", { name: "Board size" });
   await separator.focus();
   await page.keyboard.press("ArrowRight");

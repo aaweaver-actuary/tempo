@@ -106,7 +106,12 @@ def map_import(raw, manifest):
     manifest = ImportManifest.model_validate(manifest)
     if hashlib.sha256(raw).hexdigest() != manifest.provenance.source_sha256:
         raise ContentError("source_digest_mismatch", "Input bytes differ from declared provenance")
-    if raw.lstrip().startswith(b"{"):
+    try:
+        json.loads(raw)
+        structured_json = True
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        structured_json = False
+    if structured_json:
         source = SourceSnapshot.model_validate_json(raw)
     else:
         assignments = {item.fingerprint: item for item in manifest.route_assignments}

@@ -227,7 +227,7 @@ export function reportDiscoveryAdmissionErrors(admissions: PendingDiscoveryAdmis
     if (!admission.error) continue;
     const key = `discovery-save:${admission.opportunityId}`;
     const severity = admission.state === "failed" ? "error" as const : "info" as const;
-    const message = admission.state === "failed" ? "This discovery could not be added. Open Discoveries to review and retry."
+    const message = admission.state === "failed" ? "This discovery could not be added. Review saved discovery requests to retry."
       : "This discovery is waiting for confirmation. Tempo will retry.";
     if (notifications().some(record => record.key === key && !record.resolvedAt && record.severity === severity &&
       record.details?.error === admission.error)) continue;

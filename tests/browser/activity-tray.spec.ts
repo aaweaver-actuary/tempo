@@ -105,7 +105,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await page.getByRole("button", { name: "Prioritize" }).click();
     await expect.poll(() => controlled).toBe(true);
     await page.getByRole("button", { name: "Close" }).click();
-    await navigate(page, "Progress");
+    await navigate(page, "Train");
     await expect(trigger).toBeVisible();
     await noPageOverflow(page);
   });

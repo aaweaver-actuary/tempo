@@ -19,7 +19,7 @@ test("high-DPI board geometry stays aligned through narrow resize and orientatio
     localStorage.setItem("tempo-maia-on", "false");
   });
   await page.goto("/");
-  await nav(page, "Builder");
+  await nav(page, "Tactics");
   for (const viewport of [
     { width: 1280, height: 800 },
     { width: 390, height: 844 },
@@ -48,14 +48,14 @@ test("shared board shell keeps board region fixed left on desktop and top on mob
     localStorage.setItem("tempo-maia-on", "false");
   });
   await page.goto("/");
-  for (const view of ["Train", "Builder", "Games", "Tactics", "Endgames"]) {
+  for (const view of ["Train", "Tactics", "Endgames"]) {
     await nav(page, view);
     await page.evaluate(() => window.scrollTo(0, 0));
     await boardVisible(page, { requireControlsInViewport: false });
     await assertSharedBoardShellLayout(page, false);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const view of ["Train", "Builder", "Games", "Tactics", "Endgames"]) {
+  for (const view of ["Train", "Tactics", "Endgames"]) {
     await nav(page, view);
     await page.evaluate(() => window.scrollTo(0, 0));
     await boardVisible(page, { requireControlsInViewport: false });

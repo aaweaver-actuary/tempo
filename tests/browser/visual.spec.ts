@@ -83,10 +83,6 @@ for (const viewport of [
     "Tactics",
     "Endgames",
     "Repertoire",
-    "Builder",
-    "Games",
-    "Progress",
-    "Statistics",
     "Settings",
   ]) {
     test(`${workspace} ${viewport.width}`, async ({ page }) => {
@@ -117,17 +113,6 @@ for (const viewport of [
       }
       if (workspace === "Tactics")
         await expect(page.getByText(/Puzzle \d+ of/)).toBeVisible();
-      if (workspace === "Builder")
-        await expect(
-          page.getByRole("combobox", { name: "Active repertoire" }),
-        ).toHaveValue("visual-repertoire");
-      if (workspace === "Games") {
-        await expect(page.locator(".games-page")).toBeVisible({ timeout: 15000 });
-      }
-      if (workspace === "Games")
-        await expect(
-          page.getByRole("heading", { name: "Spanish opening", exact: true }),
-        ).toBeVisible();
       await expect(page).toHaveScreenshot(
         `${workspace.toLowerCase()}-${viewport.width}.png`,
         { animations: "disabled", fullPage: true },
@@ -135,34 +120,6 @@ for (const viewport of [
     });
   }
 }
-
-for (const width of [390, 1280]) {
-  test(`Repertoire statistics ${width}`, async ({ page }) => {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 720 });
-    await prepareVisualUI(page);
-    await navigate(page, "Repertoire");
-    await page.getByRole("button", { name: "Statistics", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Prefix cards" })).toBeVisible();
-    await expect(page.locator(".repertoire-position-board .board-frame")).toBeVisible();
-    await expect(page).toHaveScreenshot(`repertoire-statistics-${width}.png`, {
-      animations: "disabled", fullPage: true,
-    });
-  });
-}
-test("service-unavailable", async ({ page }) => {
-  await prepareVisualUI(page);
-  await page.route("**/api/progress", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { detail: "Local database unavailable. Check the data mount." },
-    }),
-  );
-  await navigate(page, "Progress");
-  await expect(page.locator(".ui-notice.error")).toContainText(
-    "Review history unavailable: Could not load /api/progress (HTTP 503)",
-  );
-  await expect(page).toHaveScreenshot("service-unavailable.png");
-});
 
 test("laptop header navigation and actions remain separate", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });

@@ -124,8 +124,10 @@ in [maia-worker-cache.js](maia-worker-cache.js). The fixed
 as `maia-worker-cache.js` beside the public worker and serves that URL in Vite
 development; `importScripts('./maia-worker-cache.js')` keeps root/Pages resolution
 relative to the existing worker URL. Build output is a distribution artifact,
-not another maintained source implementation. Static, controlled and Vinext
-configurations include this one fixed asset. No generic asset framework is added.
+not another maintained source implementation. Controlled and Vinext builds retain
+the fixed asset; the `TEMPO_TARGET=study` static build omits it because that
+target does not import the classic Maia worker path. No generic asset framework
+is added.
 
 ```mermaid
 erDiagram

@@ -29,7 +29,7 @@ for (const deviceScaleFactor of [1, 2])
     try {
       const page = await context.newPage();
       await prepareVisualUI(page);
-      await navigate(page, "Builder");
+      await navigate(page, "Train");
       await expect(page.locator(".board-frame")).toHaveAttribute(
         "data-input-enabled",
         "true",
@@ -57,53 +57,7 @@ for (const deviceScaleFactor of [1, 2])
         "data-fen",
         fen!,
       );
-      await navigate(page, "Games");
-      const readonlyFen = await page
-        .locator(".board-frame")
-        .getAttribute("data-fen");
-      for (const square of ["e2", "e4"]) {
-        const point = await squareCenter(page, square);
-        await page.touchscreen.tap(point.x, point.y);
-      }
-      await expect(page.locator(".board-frame")).toHaveAttribute(
-        "data-fen",
-        readonlyFen!,
-      );
     } finally {
       await context.close();
     }
   });
-test("drag input and promotion retain the established queen-promotion behavior", async ({
-  page,
-}) => {
-  await page.addInitScript(() =>
-    localStorage.setItem(
-      "tempo-builder-session",
-      JSON.stringify({
-        version: 1,
-        activeRepertoireByColor: {},
-        orientation: "white",
-        startingFen: "7k/P7/8/8/8/8/8/7K w - - 0 1",
-        history: [],
-        cursor: 0,
-        branchStart: null,
-      }),
-    ),
-  );
-  await prepareVisualUI(page);
-  await navigate(page, "Builder");
-  await expect(page.locator(".board-frame")).toHaveAttribute(
-    "data-fen",
-    /^7k\/P7/,
-  );
-  const from = await squareCenter(page, "a7"),
-    to = await squareCenter(page, "a8");
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await page.mouse.move(to.x, to.y, { steps: 8 });
-  await page.mouse.up();
-  await expect(page.locator(".board-frame")).toHaveAttribute(
-    "data-fen",
-    /^Q6k/,
-  );
-});

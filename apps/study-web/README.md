@@ -12,7 +12,10 @@ Study retains Learning settings and browser appearance preferences. Unsupported
 authoring actions are omitted when their capabilities are absent.
 
 The build rejects named optional implementation roots and emits
-`study-composition.json` for loaded application modules and emitted chunks.
+`study-composition.json` for loaded Study modules, emitted chunks/assets,
+shared dependency groups, and named optional-domain contract exceptions.
+Its `assets` field is the bundler emission inventory, not an exhaustive list of
+every file copied from `public/`.
 The offline worker still requires every emitted JS/CSS asset; its inventory is
 not weakened to exclude optional chunks after they have been emitted.
 
@@ -21,3 +24,11 @@ not weakened to exclude optional chunks after they have been emitted.
 records the branch implementation and evidence scope. Merged host/endgame repairs have separate
 [Learning ownership](../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main);
 deployment resource isolation remains unqualified by this frontend work.
+
+## Web image build
+
+From the repository root, build the Study-only static image with
+`docker build -f Dockerfile.study-web -t tempo-study-web:local .`. Set
+`--build-arg TEMPO_WORKBENCH_URL=https://workbench.example` when the Study shell
+should link to a Workbench origin; Learning's API origin is supplied by the
+browser connection and proxied by nginx at runtime.

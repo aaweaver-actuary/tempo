@@ -1,5 +1,8 @@
 # Contextual keyboard shortcuts: validation record
 
+This is a historical validation record. Any Builder or Games commands and case
+names below refer to the pre-retirement interface and are not current coverage.
+
 ## PR #64 review fixes: selected scope
 
 Continue on the existing isolated PR branch after integrating main `0d71492`.

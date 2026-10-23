@@ -1,7 +1,5 @@
-import type { StudyTask } from "./study-computation";
+import { computeStudyTask, type StudyTask } from "./study-computation";
 import { isBulkStudyTask, runBulkStudyTask } from './bulk-study';
-import { runOwnedStudyIndex } from './owned-study-index';
-import { createStudyPositionStore } from "./study-position-store";
 import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
 import { updateBrowserActivity } from "./browser-activity";
@@ -9,7 +7,6 @@ import { reportDebugError } from "./debug-reporting";
 import { recordTempoDuration } from "./performance";
 import { validateWorkspacePayload } from "../domain/adapters/workspace-adapters";
 
-const runStudyTaskLocally = createStudyPositionStore();
 let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<
@@ -37,9 +34,6 @@ export function runStudyTask<T>(
 ): Promise<T> {
   if (typeof Worker !== 'undefined' && isBulkStudyTask(task))
     return runBulkStudyTask<T>(task, signal, shouldPublishDiagnostics);
-  if (typeof Worker !== 'undefined' && ['initializePositionIndex', 'findPositionMatches', 'releasePositionIndex',
-      'initializeComparisonIndex', 'findComparisonMatches', 'releaseComparisonIndex'].includes(task.kind))
-    return runOwnedStudyIndex<T>(task as import('./study-computation').StudyPositionTask, signal, shouldPublishDiagnostics);
   const id = ++nextId;
   const activityId = `study:${id}`;
   const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind === "repertoireAlternatives" ? "repertoire lines" : task.kind}`;
@@ -61,7 +55,7 @@ export function runStudyTask<T>(
         try {
           resolve((task.kind === "workspace"
             ? validateWorkspacePayload(task.url, task.payload, shouldPublishDiagnostics)
-            : runStudyTaskLocally(task)) as T);
+            : computeStudyTask(task)) as T);
           updateBrowserActivity(activityId, title, "complete", "Finished");
         } catch (error) {
           updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
@@ -156,89 +150,4 @@ export function runStudyTask<T>(
       failStudyRequests(error);
     }
   });
-}
-
-type MatchTask = Extract<StudyTask, { kind: "findPositionMatches" }>;
-type CoalescedRequest = {
-  task: MatchTask;
-  enqueuedAt: number;
-  signal?: AbortSignal;
-  onAbort: () => void;
-  settled: boolean;
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-};
-type MatchSlot = { active?: CoalescedRequest; queued?: CoalescedRequest };
-const matchSlots = new Map<string, MatchSlot>();
-
-// Coalesce each repertoire's requests; the owned worker also terminates active
-// optional computation when its request is cancelled or study takes priority.
-export function runCoalescedStudyMatch<T>(task: MatchTask, signal?: AbortSignal): Promise<T> {
-  if (signal?.aborted) return Promise.reject(new DOMException("Cancelled", "AbortError"));
-  const key = task.repertoireId;
-  const slot = matchSlots.get(key) ?? {};
-  matchSlots.set(key, slot);
-  return new Promise<T>((resolve, reject) => {
-    const request: CoalescedRequest = {
-      task,
-      enqueuedAt: performance.now(),
-      signal,
-      settled: false,
-      resolve: (value) => resolve(value as T),
-      reject,
-      onAbort: () => {
-        if (slot.queued === request) slot.queued = undefined;
-        settleError(request, new DOMException("Cancelled", "AbortError"));
-        if (!slot.active && !slot.queued) matchSlots.delete(key);
-      },
-    };
-    signal?.addEventListener("abort", request.onAbort, { once: true });
-    if (slot.active) {
-      if (slot.queued) {
-        const superseded = slot.queued;
-        slot.queued = undefined;
-        settleError(superseded, new DOMException("Superseded", "AbortError"));
-      }
-      slot.queued = request;
-    } else {
-      startMatch(request, slot, key);
-    }
-  });
-}
-
-function settleError(request: CoalescedRequest, error: Error) {
-  if (request.settled) return;
-  request.settled = true;
-  request.signal?.removeEventListener("abort", request.onAbort);
-  request.reject(error);
-}
-
-function advanceMatchSlot(slot: MatchSlot, key: string) {
-  slot.active = undefined;
-  const next = slot.queued;
-  slot.queued = undefined;
-  if (next) startMatch(next, slot, key);
-  else matchSlots.delete(key);
-}
-
-function startMatch(request: CoalescedRequest, slot: MatchSlot, key: string) {
-  slot.active = request;
-  recordTempoDuration("study-match-coalesced-wait", performance.now() - request.enqueuedAt);
-  let work: Promise<unknown>;
-  try {
-    work = runStudyTask(request.task, request.signal);
-  } catch (error) {
-    settleError(request, error instanceof Error ? error : new Error(String(error)));
-    advanceMatchSlot(slot, key);
-    return;
-  }
-  void work.then(
-    (value) => {
-      if (request.settled) return;
-      request.settled = true;
-      request.signal?.removeEventListener("abort", request.onAbort);
-      request.resolve(value);
-    },
-    (error) => settleError(request, error instanceof Error ? error : new Error(String(error))),
-  ).finally(() => advanceMatchSlot(slot, key));
 }

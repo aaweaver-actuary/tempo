@@ -12,63 +12,29 @@ import { API_URL } from "../const";
 import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
 import { deleteRepertoireCommand, pendingRepertoireDeletion, type LearnedCardsPolicy } from "../lib/repertoire-delete-command";
 import { RepertoireDeleteDialog } from "../components/repertoire-delete-dialog";
-import { applyOpportunityCommand } from "../lib/opportunity-command";
-import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
-import { requestCoverageRefresh } from "../lib/coverage-refresh-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
-import { readJsonResponse } from "../lib/validated-data";
-import {
-  repertoireCoverageGapsSchema,
-  repertoireCoverageSummarySchema,
-  repertoireOpportunitiesSchema,
-} from "../domain/schemas";
-import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
 import { PrefixDiagnostics } from "../components/prefix-diagnostics";
 import { PrefixComparisonDialog } from "../components/prefix-comparison-dialog";
 import { OpeningSegmentation } from "../components/opening-segmentation";
-import { RepertoireStatistics } from "../components/repertoire-statistics";
 import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
 import { canonicalPrefixSchema, type CanonicalPrefix } from "../domain/canonical-prefix";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 
 import { Notice } from "../components/task-tabs";
 
-type CoverageSummary = z.infer<typeof repertoireCoverageSummarySchema>;
-type CoverageGap = z.infer<typeof repertoireCoverageGapsSchema>["gaps"][number];
-type RepertoireOpportunity = z.infer<
-  typeof repertoireOpportunitiesSchema
->["opportunities"][number];
-type GapTarget = Pick<
-  CoverageGap,
-  "gap_id" | "fen" | "move_uci" | "trained_color"
->;
-type IntroductionPriorityStatus = {
-  state: "fallback" | "partial" | "ready";
-  personal_games: number;
-  explorer: string;
-  maia: string;
-  updated_at: string | null;
-  error: string | null;
-};
-
 export default function RepertoireView({
   imported,
   refreshRevision = 0,
   onImport,
   onPaste,
-  onPasteGap,
-  onBrowse,
-  onResolveGap,
-  onShowGamesAtPosition,
   onRepair,
   onDeleteLocal,
   onRenameLocal,
   onQueueChanged,
-  onTrain,
   theme = "brown",
   pieceSet = "cburnett",
 }: {
@@ -76,15 +42,10 @@ export default function RepertoireView({
   refreshRevision?: number;
   onImport: () => void;
   onPaste?: () => void;
-  onPasteGap?: (repertoireId: string, gap: GapTarget) => void;
-  onBrowse: (id: string) => void;
-  onResolveGap: (repertoireId: string, gap: GapTarget) => void;
-  onShowGamesAtPosition: (fen: string, repertoireId?: string) => void;
   onRepair: (id: string) => void;
   onDeleteLocal: (id: string) => void;
   onRenameLocal: (id: string, name: string) => void;
   onQueueChanged: () => Promise<void>;
-  onTrain: () => void;
   theme?: BoardTheme;
   pieceSet?: PieceSet;
 }) {
@@ -100,24 +61,7 @@ export default function RepertoireView({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [pendingDeletePolicy, setPendingDeletePolicy] = useState<LearnedCardsPolicy>();
-  const [coverageByRepertoire, setCoverageByRepertoire] = useState<
-    Record<string, CoverageSummary>
-  >({});
-  const [gapsByRepertoire, setGapsByRepertoire] = useState<
-    Record<string, CoverageGap[]>
-  >({});
-  const [opportunitiesByRepertoire, setOpportunitiesByRepertoire] = useState<
-    Record<string, RepertoireOpportunity[]>
-  >({});
-  const [openOpportunities, setOpenOpportunities] = useState<string | null>(
-    null,
-  );
-  const [scoutingRepertoire, setScoutingRepertoire] = useState<string | null>(
-    null,
-  );
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [statisticsRepertoireId, setStatisticsRepertoireId] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : sessionStorage.getItem("tempo-statistics-repertoire"));
 
   const loadBackend = useCallback(async () => {
     if (!usesLocalApi()) return true;
@@ -142,24 +86,17 @@ export default function RepertoireView({
           integrity_status?: "unchecked" | "clean" | "needs_repair";
           integrity_issue_count?: number;
           trained_color?: PieceColor;
-          introduction_priority?: IntroductionPriorityStatus;
           canonical_prefix?: CanonicalPrefix;
         }[];
       };
       setBackendItems(
         body.repertoires.map((item) => {
-          const priority = item.introduction_priority;
-          const priorityDetail = priority
-            ? priority.error
-              ? " · new-line priority fallback — refresh coverage to retry"
-              : ` · new-line priority ${priority.state === "ready" ? "ready" : priority.state === "partial" ? "using available evidence" : "using structural fallback"}`
-            : "";
           return {
             id: asRepertoireId(item.id),
             side: item.trained_color === "black" ? "black" : "white",
             title: item.name,
             sourceName: item.source_name,
-            detail: item.id === "__retained_cards__" ? `${item.card_count} kept cards · original schedules and history` : `${item.line_count} unique ${item.line_count === 1 ? "line" : "lines"} · ${item.card_count} cards · ${item.graph_updated_at ? `${item.active_prefix_count ?? 0} active prefixes` : "active prefixes awaiting graph"}${priorityDetail}`,
+            detail: item.id === "__retained_cards__" ? `${item.card_count} kept cards · original schedules and history` : `${item.line_count} unique ${item.line_count === 1 ? "line" : "lines"} · ${item.card_count} cards · ${item.graph_updated_at ? `${item.active_prefix_count ?? 0} active prefixes` : "active prefixes awaiting graph"}`,
             progress: 0,
             due: item.due_count,
             blockedDueCount: item.blocked_due_count ?? 0,
@@ -293,84 +230,6 @@ export default function RepertoireView({
     link.click();
     URL.revokeObjectURL(url);
   }
-  const loadCoverage = useCallback(async (repertoireId: string) => {
-    const [summaryResponse, gapsResponse] = await Promise.all([
-      fetch(`${API_URL}/api/repertoires/${repertoireId}/coverage`),
-      fetch(`${API_URL}/api/repertoires/${repertoireId}/coverage/gaps`),
-    ]);
-    const summary = await readJsonResponse(
-      summaryResponse,
-      repertoireCoverageSummarySchema,
-      "repertoire coverage",
-    );
-    const gaps = await readJsonResponse(
-      gapsResponse,
-      repertoireCoverageGapsSchema,
-      "repertoire coverage gaps",
-    );
-    setCoverageByRepertoire((current) => ({
-      ...current,
-      [repertoireId]: summary,
-    }));
-    setGapsByRepertoire((current) => ({
-      ...current,
-      [repertoireId]: gaps.gaps,
-    }));
-  }, []);
-  useEffect(() => {
-    if (!refreshRevision) return;
-    const timer = window.setTimeout(() => {
-      for (const repertoireId of Object.keys(coverageByRepertoire)) {
-        void loadCoverage(repertoireId).catch((failure) =>
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : "Coverage unavailable.",
-          ),
-        );
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-    // The revision is the event; rereading the existing coverage panels is intentional.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshRevision, loadCoverage]);
-  async function refreshCoverage(repertoireId: string) {
-    await requestCoverageRefresh(repertoireId);
-    await loadCoverage(repertoireId);
-  }
-  async function loadOpportunities(repertoireId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities`,
-    );
-    const result = await readJsonResponse(
-      response,
-      repertoireOpportunitiesSchema,
-      "repertoire opportunities",
-    );
-    setOpportunitiesByRepertoire((current) => ({
-      ...current,
-      [repertoireId]: result.opportunities,
-    }));
-    setScoutingRepertoire(null);
-    setOpenOpportunities(repertoireId);
-  }
-  async function dismissOpportunity(
-    repertoireId: string,
-    opportunityId: string,
-  ) {
-    await applyOpportunityCommand(repertoireId, opportunityId, "dismiss");
-    await loadOpportunities(repertoireId);
-  }
-  async function trainOpportunity(repertoireId: string, opportunityId: string, evidenceFingerprint: string) {
-    await applyOpportunityCommand(repertoireId, opportunityId, "train", evidenceFingerprint);
-    await onQueueChanged();
-    await loadOpportunities(repertoireId);
-    onTrain();
-  }
-  async function refreshOpportunities(repertoireId: string) {
-    await requestOpportunityRefresh(repertoireId);
-    setScoutingRepertoire(repertoireId);
-  }
   const diagnosticsRepertoire = backendItems.find(item => item.id === diagnosticsRepertoireId);
   if (diagnosticsRepertoire) return <PrefixDiagnostics key={diagnosticsRepertoire.id} repertoireId={diagnosticsRepertoire.id}
     onBack={() => setDiagnosticsRepertoireId(null)} />;
@@ -380,13 +239,6 @@ export default function RepertoireView({
     <h2>{segmentationRepertoire.title}</h2>
     <OpeningSegmentation repertoireId={segmentationRepertoire.id} theme={theme} pieceSet={pieceSet} initiallyOpened />
   </div>;
-  const selectedStatisticsRepertoire = backendItems.find((item) => item.id === statisticsRepertoireId);
-  if (selectedStatisticsRepertoire) {
-    return <RepertoireStatistics repertoireId={selectedStatisticsRepertoire.id}
-      repertoireName={selectedStatisticsRepertoire.title} theme={theme} pieceSet={pieceSet}
-      onBack={() => { sessionStorage.removeItem("tempo-statistics-repertoire"); setStatisticsRepertoireId(null); }}
-      onShowGamesAtPosition={onShowGamesAtPosition} />;
-  }
   return (
     <section className="library-page" id="repertoire">
       {deleteTarget && <RepertoireDeleteDialog key={deleteTarget.id} name={deleteTarget.title}
@@ -399,7 +251,7 @@ export default function RepertoireView({
       {backendItems.filter(item => item.id === prefixRepertoireId).map(item => <CanonicalPrefixDialog key={item.id}
         repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
         onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
-          invalidateWorkspaceData(); setCoverageByRepertoire({}); setGapsByRepertoire({}); setOpportunitiesByRepertoire({});
+          invalidateWorkspaceData();
           if (!await loadBackend()) throw new Error("Saved prefix metadata could not be reloaded.");
           // The queue callback reports training failures independently of confirmed prefix metadata.
           void onQueueChanged().catch(() => undefined);
@@ -517,322 +369,6 @@ export default function RepertoireView({
               )}
               <small className="source-name">{item.sourceName}</small>
 
-              {item.backend && coverageByRepertoire[item.id] && (
-                <div className="coverage-summary">
-                  <div>
-                    <span>Required replies</span>
-                    <strong>
-                      {coverageByRepertoire[item.id].covered_branches} /{" "}
-                      {coverageByRepertoire[item.id].required_branches}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Probability coverage</span>
-                    <strong>
-                      {coverageByRepertoire[item.id].probability_coverage ===
-                      null
-                        ? "—"
-                        : `${Math.round(coverageByRepertoire[item.id].probability_coverage! * 1000) / 10}%`}
-                    </strong>
-                  </div>
-                  <small>
-                    {coverageByRepertoire[item.id].status === "queued" && (item.canonicalPrefix?.revision ?? 0) > 0
-                      ? "Refreshing analysis for the current opening…"
-                      : coverageByRepertoire[item.id].status}
-                    {coverageByRepertoire[item.id].unknown_nodes
-                      ? ` · ${coverageByRepertoire[item.id].unknown_nodes} positions awaiting data`
-                      : ""}
-                  </small>
-                  {coverageByRepertoire[item.id].last_error && <p role="alert">{coverageByRepertoire[item.id].last_error}</p>}
-                  {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => (
-                    <span key={gap.gap_id}>
-                      <Button onClick={() => onResolveGap(item.id, gap)}>
-                        Fill {gap.move_uci} gap ·{" "}
-                        {gap.probability === null
-                          ? "unknown"
-                          : `${Math.round(gap.probability * 1000) / 10}%`}
-                      </Button>
-                      {onPasteGap && (
-                        <Button onClick={() => onPasteGap(item.id, gap)}>
-                          Paste line for gap
-                        </Button>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {item.backend && openOpportunities === item.id && (
-                <div
-                  className="opportunities-panel"
-                  aria-label="Repertoire opportunities"
-                >
-                  <strong>Opportunities</strong>
-                  <Button
-                    onClick={() =>
-                      void refreshOpportunities(item.id).catch((failure) =>
-                        setError(
-                          failure instanceof Error
-                            ? failure.message
-                            : "Could not queue scouting.",
-                        ),
-                      )
-                    }
-                  >
-                    Refresh scouting
-                  </Button>
-                  {scoutingRepertoire === item.id && (
-                    <small>
-                      Scouting queued in Background activity. Reopen
-                      Opportunities to see new results.
-                    </small>
-                  )}
-                  {opportunitiesByRepertoire[item.id]?.length === 0 && (
-                    <p>
-                      No current opportunities. Refresh scouting to check
-                      existing evidence.
-                    </p>
-                  )}
-                  {opportunitiesByRepertoire[item.id]?.map((opportunity) => {
-                    const evidence = opportunity.evidence;
-                    const cohort =
-                      evidence.cohort && typeof evidence.cohort === "object"
-                        ? (evidence.cohort as Record<string, unknown>)
-                        : {};
-                    const count = (key: string) =>
-                      typeof evidence[key] === "number"
-                        ? String(evidence[key])
-                        : "—";
-                    const percentage = (key: string) =>
-                      typeof evidence[key] === "number"
-                        ? `${Math.round(Number(evidence[key]) * 1000) / 10}%`
-                        : "unavailable";
-                    return (
-                      <div key={opportunity.id} className="opportunity-item">
-                        <strong>
-                          {opportunity.evidence.analysis_based
-                            ? "Recurring weak decision"
-                            : opportunity.kind === "weak_known_decision"
-                              ? "Weak known decision"
-                              : opportunity.kind === "missing_response"
-                                ? `Missing response: ${opportunity.opponent_move_uci}`
-                                : `Post-gap weakness: ${opportunity.opponent_move_uci}`}
-                        </strong>
-                        <small>Position: {opportunity.fen_key}</small>
-                        {opportunity.evidence.analysis_based ? (
-                          <p>
-                            Past {count("window_days")} days:{" "}
-                            {count("encounter_count")} encounters,{" "}
-                            {count("miss_count")} engine-confirmed mistakes in{" "}
-                            {count("analyzed_count")} analyzed decisions.
-                            Immediate loss {count("immediate_average_loss_cp")}{" "}
-                            cp; observed change through your third later turn{" "}
-                            {count("later_average_change_cp")} cp across{" "}
-                            {count("later_sample_count")} complete games.
-                          </p>
-                        ) : opportunity.kind === "weak_known_decision" ? (
-                          <p>
-                            Reached {count("encounter_count")} times · correct{" "}
-                            {count("success_count")} · missed{" "}
-                            {count("miss_count")} · successful route{" "}
-                            {count("route_success_count")} times. Priority
-                            introduction within your daily limit.
-                          </p>
-                        ) : opportunity.kind === "missing_response" ? (
-                          <p>
-                            Maia {String(cohort.maia_elo ?? "cohort")}{" "}
-                            {percentage("maia_probability")} (
-                            {String(evidence.maia_status ?? "unknown")}) ·
-                            Lichess {String(cohort.explorer_rating ?? "cohort")}{" "}
-                            {percentage("explorer_probability")} (
-                            {String(evidence.explorer_status ?? "unknown")},{" "}
-                            {count("explorer_games")} games) · your games{" "}
-                            {count("personal_count")}. Coverage missing.
-                          </p>
-                        ) : (
-                          <p>
-                            {count("supporting_games")} supporting games ·
-                            largest following mistake {count("max_loss_cp")} cp
-                            {opportunity.card_id
-                              ? " · matching existing card"
-                              : ""}
-                            .
-                          </p>
-                        )}
-                        {opportunity.card_id ? (
-                          <Button
-                            disabled={opportunity.admission_state === "queued"}
-                            onClick={() =>
-                              void trainOpportunity(
-                                item.id,
-                                opportunity.id,
-                                opportunity.evidence_fingerprint,
-                              ).catch((failure) =>
-                                setError(
-                                  failure instanceof Error
-                                    ? failure.message
-                                    : "Could not queue decision.",
-                                ),
-                              )
-                            }
-                          >
-                            {opportunity.admission_state === "queued"
-                              ? "In training queue"
-                              : "Train this decision"}
-                          </Button>
-                        ) : (
-                          opportunity.opponent_move_uci && (
-                            <Button
-                              onClick={() =>
-                                onResolveGap(item.id, {
-                                  gap_id:
-                                    typeof evidence.coverage_node_id ===
-                                    "string"
-                                      ? `${evidence.coverage_node_id}:${opportunity.opponent_move_uci}`
-                                      : "",
-                                  fen: opportunity.fen,
-                                  move_uci: opportunity.opponent_move_uci!,
-                                  trained_color: opportunity.trained_color,
-                                })
-                              }
-                            >
-                              Investigate branch
-                            </Button>
-                          )
-                        )}
-                        {opportunity.kind === "post_gap_weakness" && (
-                          <>
-                            <Button
-                              onClick={() =>
-                                onShowGamesAtPosition(opportunity.fen, item.id)
-                              }
-                            >
-                              View supporting games
-                            </Button>
-                            {Array.isArray(evidence.findings) &&
-                              evidence.findings.length > 0 && (
-                                <details>
-                                  <summary>Engine and game evidence</summary>
-                                  <ul>
-                                    {evidence.findings
-                                      .slice(0, 5)
-                                      .map((finding, index) => {
-                                        const support =
-                                          finding && typeof finding === "object"
-                                            ? (finding as Record<
-                                                string,
-                                                unknown
-                                              >)
-                                            : {};
-                                        return (
-                                          <li
-                                            key={String(
-                                              support.finding_id ?? index,
-                                            )}
-                                          >
-                                            Game{" "}
-                                            {String(
-                                              support.game_id ?? "unknown",
-                                            )}{" "}
-                                            · ply{" "}
-                                            {String(
-                                              support.mistake_ply ?? "unknown",
-                                            )}{" "}
-                                            · loss{" "}
-                                            {String(
-                                              support.mistake_loss_cp ??
-                                                "unknown",
-                                            )}{" "}
-                                            cp · analysis{" "}
-                                            {String(
-                                              support.analysis_version ??
-                                                "unknown",
-                                            )}
-                                          </li>
-                                        );
-                                      })}
-                                  </ul>
-                                </details>
-                              )}
-                          </>
-                        )}
-                        <Button
-                          onClick={() =>
-                            void dismissOpportunity(
-                              item.id,
-                              opportunity.id,
-                            ).catch((failure) =>
-                              setError(
-                                failure instanceof Error
-                                  ? failure.message
-                                  : "Could not dismiss opportunity.",
-                              ),
-                            )
-                          }
-                        >
-                          Dismiss
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div className="repertoire-actions">
-                <Button
-                  disabled={item.id === "__retained_cards__"}
-                  className="browse-button"
-                  onClick={() => onBrowse(item.id)}
-                >
-                  Browse tree
-                </Button>
-                {item.backend && item.id !== "__retained_cards__" && (
-                  <Button onClick={() => {
-                    sessionStorage.setItem("tempo-statistics-repertoire", item.id);
-                    setStatisticsRepertoireId(item.id);
-                  }}>Statistics</Button>
-                )}
-                {item.backend && item.id !== "__retained_cards__" && (
-                  <Button
-                    onClick={() =>
-                      void (
-                        coverageByRepertoire[item.id]
-                          ? refreshCoverage(item.id)
-                          : loadCoverage(item.id)
-                      ).catch((failure) => {
-                        reportDebugError(failure, {
-                          kind: "api",
-                          source: "repertoire-coverage",
-                          operation: "load repertoire coverage",
-                          endpoint: `${API_URL}/api/repertoires/${item.id}/coverage`,
-                        });
-                        setError(
-                          failure instanceof Error
-                            ? failure.message
-                            : "Coverage unavailable",
-                        );
-                      })
-                    }
-                  >
-                    {coverageByRepertoire[item.id]
-                      ? "Refresh coverage"
-                      : "Check coverage"}
-                  </Button>
-                )}
-                {item.backend && item.id !== "__retained_cards__" && (
-                  <Button
-                    onClick={() =>
-                      void loadOpportunities(item.id).catch((failure) =>
-                        setError(
-                          failure instanceof Error
-                            ? failure.message
-                            : "Opportunities unavailable.",
-                        ),
-                      )
-                    }
-                  >
-                    Opportunities
-                  </Button>
-                )}
-              </div>
             </Surface>
           ))}
         <Button
