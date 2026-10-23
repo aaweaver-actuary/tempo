@@ -24,6 +24,7 @@ type ComposeService = {
   restart?: string;
   secrets?: Array<string | { source?: string; target?: string }>;
   user?: string;
+  labels?: Record<string, string>;
   volumes?: Array<{
     read_only?: boolean;
     source?: string;
@@ -35,7 +36,8 @@ type ComposeService = {
 type ComposeModel = {
   name: string;
   services: Record<string, ComposeService>;
-  volumes: Record<string, { external?: boolean; name?: string }>;
+  volumes: Record<string, { external?: boolean; labels?: Record<string, string>; name?: string }>;
+  networks: Record<string, { external?: boolean; labels?: Record<string, string>; name?: string }>;
 };
 
 type ConfigFixture = {
@@ -89,6 +91,7 @@ function composeConfig(fixture: ConfigFixture, overrides: Record<string, string 
 
   return spawnSync("docker", [
     "compose",
+    "--profile", "bootstrap",
     "--env-file", envFile,
     "--project-directory", repositoryRoot,
     "-f", composeFile,
@@ -116,13 +119,29 @@ it("renders only the isolated Study services with explicit inputs", () => {
     expect(Object.keys(model.services).sort()).toEqual(["bootstrap", "learning", "postgres", "study-web"]);
     expect(Object.values(model.services).every((service) => service.container_name === undefined)).toBe(true);
     expect(Object.values(model.volumes).every((volume) => volume.external !== true)).toBe(true);
+    expect(Object.keys(model.networks)).toEqual(["default"]);
+    expect(Object.values(model.networks).every((network) => network.external !== true)).toBe(true);
     expect(model.volumes["postgres-data"]?.name).toBe(`${projectName}_postgres-data`);
     expect(model.volumes["runtime-secrets"]?.name).toBe(`${projectName}_runtime-secrets`);
+    expect(model.networks.default?.name).toBe(`${projectName}_default`);
+    expect(model.networks.default?.external).not.toBe(true);
+    expect(model.networks.default?.labels).toMatchObject({
+      "tempo.owner": projectName,
+      "tempo.disposable": "true",
+    });
 
     const { bootstrap, learning, postgres, "study-web": studyWeb } = model.services;
     expect(postgres.image).toBe("postgres:18.6-trixie");
     expect(postgres.command).toEqual(["postgres", "-c", "max_locks_per_transaction=512"]);
+    expect(postgres.labels).toMatchObject({ "tempo.owner": projectName, "tempo.disposable": "true" });
     expect(postgres.ports ?? []).toEqual([]);
+    for (const service of [bootstrap, learning, studyWeb]) {
+      expect(service.labels ?? {}).toEqual({});
+    }
+    expect(model.volumes["postgres-data"]?.labels).toMatchObject({
+      "tempo.owner": projectName,
+      "tempo.disposable": "true",
+    });
     expect(postgres.secrets?.map((secret) => typeof secret === "string" ? secret : secret.source))
       .toEqual(["study-postgres-password"]);
 

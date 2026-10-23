@@ -5,7 +5,9 @@ and an invocation-owned PostgreSQL cluster. It does not change the normal Tempo
 launcher. The only published container port is the Study web port on loopback.
 Learning and PostgreSQL remain on the Compose network. PostgreSQL has its own
 project-scoped data volume; the generated runtime files use a second private
-project-scoped volume.
+project-scoped volume. The PostgreSQL service, its data volume, and the
+project-scoped default network carry `tempo.owner=tempo-study-test-<id>` and
+`tempo.disposable=true`; Compose's own resource labels remain intact.
 
 The project name and database identity share one fresh 16–32 character
 lowercase hexadecimal invocation ID:
@@ -79,17 +81,18 @@ workflow; they were not executed as part of this preparation.
 PROJECT="tempo-study-test-$TEMPO_STUDY_RUN_ID"
 COMPOSE_FILE="$PWD/docker-compose.study.yml"
 
-docker compose --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" config --format json
-docker compose --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d postgres
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" config --format json
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d postgres
 
 python3 database/tempo_learning_database/tooling/disposable_ownership.py \
   --compose-file "$COMPOSE_FILE" \
+  --env-file "$STUDY_ENV_FILE" \
   --invocation-directory "$TEMPO_STUDY_INVOCATION_DIRECTORY" \
   --invocation-id "$TEMPO_STUDY_RUN_ID" \
   --database "learning_study_test_$TEMPO_STUDY_RUN_ID"
 
-docker compose --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" --profile bootstrap up bootstrap
-docker compose --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" --profile bootstrap up -d learning study-web
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up bootstrap
+docker compose --profile bootstrap --env-file "$STUDY_ENV_FILE" -f "$COMPOSE_FILE" -p "$PROJECT" up -d learning study-web
 ```
 
 The bootstrap service uses the published flags `--admin-url-file`,
@@ -112,8 +115,8 @@ The focused unit contract is
 `tests/unit/study-compose-contract.test.ts`. It asks Docker Compose to render
 the model as JSON with a temporary explicit environment file, checks the
 service/port/isolation/image/authority contract, and verifies that missing
-required inputs fail. The test itself was not run for this preparation because
-Docker execution was explicitly out of scope.
+required inputs fail. The test itself was not run for this preparation; only
+Compose config rendering was authorized.
 
 One integration point remains for the next acceptance task: run the published
 producer and bootstrap against the actual Compose-created PostgreSQL container,

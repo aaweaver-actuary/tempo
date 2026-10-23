@@ -247,6 +247,27 @@ def _timeout_value(timeout):
     return timeout
 
 
+def _private_env_file(path):
+    try:
+        raw = os.fspath(path)
+        if not isinstance(raw, str) or not raw or "\x00" in raw:
+            _fail("env_file_invalid")
+        candidate = Path(raw)
+        if not candidate.is_absolute() or ".." in candidate.parts:
+            _fail("env_file_invalid")
+        info = candidate.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            _fail("env_file_invalid")
+        mode = stat.S_IMODE(info.st_mode)
+        if mode & 0o077 or not mode & 0o400:
+            _fail("env_file_permissions")
+        return candidate
+    except OwnershipError:
+        raise
+    except Exception:
+        _fail("env_file_invalid")
+
+
 def _prepare_invocation_directory(path, invocation_id):
     candidate = _absolute_path(path)
     if candidate.name != invocation_id:
@@ -276,7 +297,7 @@ def _prepare_invocation_directory(path, invocation_id):
         _fail("invocation_directory_invalid")
 
 
-def _inspect_and_attest(*, compose_file, identity, timeout):
+def _inspect_and_attest(*, compose_file, env_file, identity, timeout):
     compose_path = _absolute_path(compose_file)
     try:
         compose_info = compose_path.lstat()
@@ -291,6 +312,8 @@ def _inspect_and_attest(*, compose_file, identity, timeout):
     compose_ps = [
         "docker",
         "compose",
+        "--env-file",
+        str(env_file),
         "--project-name",
         project,
         "--file",
@@ -475,17 +498,19 @@ def _write_receipt(path, receipt):
 
 
 def produce_ownership_receipt(
-    *, compose_file, invocation_directory, invocation_id, database, timeout=10
+    *, compose_file, env_file, invocation_directory, invocation_id, database, timeout=10
 ):
     """Attest one running Compose PostgreSQL service and create its private receipt."""
     timeout = _timeout_value(timeout)
     identity = _validate_identity(invocation_id, database)
+    env_file = _private_env_file(env_file)
     directory = _prepare_invocation_directory(invocation_directory, invocation_id)
     path = directory / _RECEIPT_NAME
     if os.path.lexists(path):
         _fail("receipt_would_overwrite")
     receipt = _inspect_and_attest(
         compose_file=compose_file,
+        env_file=env_file,
         identity=identity,
         timeout=timeout,
     )
@@ -496,6 +521,7 @@ def produce_ownership_receipt(
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compose-file", required=True)
+    parser.add_argument("--env-file", required=True)
     parser.add_argument("--invocation-directory", required=True)
     parser.add_argument("--invocation-id", required=True)
     parser.add_argument("--database", required=True)
@@ -508,6 +534,7 @@ def main(argv=None):
     try:
         produce_ownership_receipt(
             compose_file=arguments.compose_file,
+            env_file=arguments.env_file,
             invocation_directory=arguments.invocation_directory,
             invocation_id=arguments.invocation_id,
             database=arguments.database,

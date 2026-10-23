@@ -1,11 +1,13 @@
 """Pure local tests for disposable Learning ownership receipts."""
 
 import json
+import io
 from pathlib import Path
 import stat
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -114,6 +116,13 @@ class DisposableOwnershipTests(unittest.TestCase):
         self.receipt_path = self.invocation_directory / "ownership.json"
         self.compose_file = self.root / "compose.yml"
         self.compose_file.write_text("services: {}\n", encoding="utf-8")
+        self.env_file = self.root / "study.env"
+        self.env_file.write_text(
+            "COMPOSE_PROJECT_NAME=ambient-project\n"
+            "TEMPO_STUDY_PRIVATE_SENTINEL=do-not-print-this\n",
+            encoding="utf-8",
+        )
+        self.env_file.chmod(0o600)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -131,6 +140,7 @@ class DisposableOwnershipTests(unittest.TestCase):
         with patch.object(ownership.subprocess, "run", side_effect=responses) as run:
             result = ownership.produce_ownership_receipt(
                 compose_file=self.compose_file,
+                env_file=self.env_file,
                 invocation_directory=self.invocation_directory,
                 invocation_id=INVOCATION_ID,
                 database=DATABASE,
@@ -141,6 +151,55 @@ class DisposableOwnershipTests(unittest.TestCase):
         self.write_receipt()
         loaded = ownership.load_ownership_receipt(self.receipt_path, database=DATABASE)
         self.assertEqual(loaded, receipt())
+
+    def test_cli_requires_and_forwards_explicit_private_env_file(self):
+        base_arguments = [
+            "--compose-file",
+            str(self.compose_file),
+            "--invocation-directory",
+            str(self.invocation_directory),
+            "--invocation-id",
+            INVOCATION_ID,
+            "--database",
+            DATABASE,
+        ]
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            ownership._parser().parse_args(base_arguments)
+
+        output = io.StringIO()
+        with patch.object(
+            ownership, "produce_ownership_receipt", return_value=receipt()
+        ) as produce, redirect_stdout(output):
+            result = ownership.main(
+                base_arguments + ["--env-file", str(self.env_file)]
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(produce.call_args.kwargs["env_file"], str(self.env_file))
+        self.assertEqual(output.getvalue(), str(self.receipt_path) + "\n")
+        self.assertNotIn("do-not-print-this", output.getvalue())
+
+    def test_producer_rejects_non_private_or_symlink_env_file(self):
+        self.env_file.chmod(0o644)
+        with patch.object(ownership.subprocess, "run") as run:
+            with self.assertRaises(ownership.OwnershipError) as raised:
+                self.produce()
+        self.assertEqual(raised.exception.code, "env_file_permissions")
+        run.assert_not_called()
+
+        self.env_file.chmod(0o600)
+        symlink = self.root / "linked.env"
+        symlink.symlink_to(self.env_file)
+        with patch.object(ownership.subprocess, "run") as run:
+            with self.assertRaises(ownership.OwnershipError) as raised:
+                ownership.produce_ownership_receipt(
+                    compose_file=self.compose_file,
+                    env_file=symlink,
+                    invocation_directory=self.invocation_directory,
+                    invocation_id=INVOCATION_ID,
+                    database=DATABASE,
+                )
+        self.assertEqual(raised.exception.code, "env_file_invalid")
+        run.assert_not_called()
 
     def test_receipt_schema_requires_exact_keys_and_unique_json_keys(self):
         missing = receipt()
@@ -254,6 +313,28 @@ class DisposableOwnershipTests(unittest.TestCase):
         self.assertEqual(run.call_count, 5)
         self.assertTrue(all(call.kwargs["timeout"] == 10 for call in run.call_args_list))
         self.assertTrue(all(call.kwargs["capture_output"] for call in run.call_args_list))
+        compose_command = run.call_args_list[0].args[0]
+        self.assertEqual(
+            compose_command,
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                str(self.env_file),
+                "--project-name",
+                PROJECT,
+                "--file",
+                str(self.compose_file),
+                "ps",
+                "--status",
+                "running",
+                "--quiet",
+                "postgres",
+            ],
+        )
+        self.assertNotIn("COMPOSE_PROJECT_NAME=ambient-project", compose_command)
+        self.assertNotIn("do-not-print-this", str(run.call_args_list))
+        self.assertNotIn("env", run.call_args.kwargs)
         self.assertEqual(
             run.call_args_list[-1].args[0][:4],
             ["docker", "exec", CONTAINER_ID, "sh"],
@@ -294,6 +375,7 @@ class DisposableOwnershipTests(unittest.TestCase):
                 with self.assertRaises(ownership.OwnershipError) as raised:
                     ownership.produce_ownership_receipt(
                         compose_file=self.compose_file,
+                        env_file=self.env_file,
                         invocation_directory=self.invocation_directory,
                         invocation_id=INVOCATION_ID,
                         database=DATABASE,
@@ -310,6 +392,7 @@ class DisposableOwnershipTests(unittest.TestCase):
             with self.assertRaises(ownership.OwnershipError) as raised:
                 ownership.produce_ownership_receipt(
                     compose_file=self.compose_file,
+                    env_file=self.env_file,
                     invocation_directory=self.invocation_directory,
                     invocation_id=INVOCATION_ID,
                     database=DATABASE,
@@ -326,6 +409,7 @@ class DisposableOwnershipTests(unittest.TestCase):
             with self.assertRaises(ownership.OwnershipError) as raised:
                 ownership.produce_ownership_receipt(
                     compose_file=self.compose_file,
+                    env_file=self.env_file,
                     invocation_directory=self.invocation_directory,
                     invocation_id=INVOCATION_ID,
                     database=DATABASE,
@@ -343,6 +427,7 @@ class DisposableOwnershipTests(unittest.TestCase):
                 with self.assertRaises(ownership.OwnershipError) as raised:
                     ownership.produce_ownership_receipt(
                         compose_file=self.compose_file,
+                        env_file=self.env_file,
                         invocation_directory=self.invocation_directory,
                         invocation_id=INVOCATION_ID,
                         database=DATABASE,
@@ -359,6 +444,7 @@ class DisposableOwnershipTests(unittest.TestCase):
             with self.assertRaises(ownership.OwnershipError) as raised:
                 ownership.produce_ownership_receipt(
                     compose_file=self.compose_file,
+                    env_file=self.env_file,
                     invocation_directory=self.invocation_directory,
                     invocation_id=INVOCATION_ID,
                     database=DATABASE,
@@ -369,6 +455,7 @@ class DisposableOwnershipTests(unittest.TestCase):
         with self.assertRaises(ownership.OwnershipError) as raised:
             ownership.produce_ownership_receipt(
                 compose_file=self.compose_file,
+                env_file=self.env_file,
                 invocation_directory=self.invocation_directory,
                 invocation_id=INVOCATION_ID,
                 database="learning_study_test_ffffffffffffffff",
@@ -381,6 +468,7 @@ class DisposableOwnershipTests(unittest.TestCase):
             with self.assertRaises(ownership.OwnershipError) as raised:
                 ownership.produce_ownership_receipt(
                     compose_file=self.compose_file,
+                    env_file=self.env_file,
                     invocation_directory=self.invocation_directory,
                     invocation_id=INVOCATION_ID,
                     database=DATABASE,
