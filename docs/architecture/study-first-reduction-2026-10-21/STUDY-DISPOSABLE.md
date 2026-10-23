@@ -214,3 +214,10 @@ running container image IDs against pinned images, unchanged relevant inputs,
 and task-owned private paths. A mismatch stops the probe rather than inviting
 an inferred repair. No outstanding native probe was executed for this receipt, and #378, #379,
 and #380 remain open.
+
+A subsequent cloud attempt on the assembled preparation tree `be91b363` ran
+`npm exec vitest -- run tests/unit/study-compose-contract.test.ts` using the
+existing lockfile-matching dependencies: **1 passed, 2 failed**. Both rendering
+cases could not start Docker (`spawnSync` status `null`, error `ENOENT`), so this
+is an environment-blocked Compose proof, not a passing rerun or a demonstrated
+application regression. No Docker installation or service action was attempted.
