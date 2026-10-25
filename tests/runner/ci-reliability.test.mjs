@@ -153,7 +153,7 @@ test("reviewed ordinary and sensitive service classifications survive ordinary c
     "tests/unit/study-regressions.test.tsx"];
   for (const [servicePath, lifecycleRequired] of [
     ["backend/app/services/study_grading.py", false],
-    ["backend/app/services/opening_segmentation.py", false],
+    ["backend/app/chess/opening_segments.py", false],
     ["backend/app/services/repertoire_statistics.py", false],
     ["database/tempo_legacy_database/adapters/database_executor.py", true],
     ["backend/app/services/background_runtime.py", true],
