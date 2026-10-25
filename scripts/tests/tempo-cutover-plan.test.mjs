@@ -120,7 +120,6 @@ for (const [name, mutate, expected] of [
   ["target port authority drift", value => { value.proposed.registration.webUrl = "http://127.0.0.1:3001"; }, "registration_identity_mismatch"],
   ["different Docker daemon", value => { value.proposed.registration.daemonId = "other-fixture-daemon"; }, "daemon_change_unqualified"],
   ["disposable target promotion", value => { value.proposed.registration.disposable = false; }, "disposable_authority_mismatch"],
-  ["unqualified PostgreSQL major upgrade", value => { value.proposed.registration.postgresMajor = 19; }, "postgres_major_change_unqualified"],
   ["mutable PostgreSQL image", value => { value.proposed.registration.postgresImage = "postgres:18"; }, "postgres_image_unpinned"],
   ["checkout-owned secret configuration", value => { value.proposed.registration.envFile = "/fixture/release/learning.env"; }, "private_configuration_in_checkout"],
   ["literal secret material", value => { value.proposed.registration.token = "fixture-secret-never-publish"; }, "secret_material_forbidden"],
@@ -195,6 +194,34 @@ test("PostgreSQL identity is matched to its own service rather than any artifact
   both(supplied, identity => change(identity.images));
   change(supplied.proposed.receipt.images);
   assert.deepEqual(codes(planLauncherFreshStart(supplied)), ["postgres_image_mismatch"]);
+});
+
+test("an independent clean target can explicitly select a different PostgreSQL major without upgrading the legacy cluster", () => {
+  const supplied = input();
+  const image = "sha256:" + "9".repeat(64);
+  supplied.proposed.registration.postgresMajor = 19;
+  supplied.proposed.registration.postgresImage = image;
+  both(supplied, identity => { identity.images.postgres = image; });
+  supplied.proposed.receipt.images.postgres = image;
+  const result = planLauncherFreshStart(supplied);
+  assert.equal(result.status, "planned");
+  assert.equal(result.plan.registration.postgresMajor, 19);
+  assert.equal(result.plan.original.registration.postgresMajor, 18);
+  assert.equal(supplied.current.registration.postgresMajor, 18);
+  // This is structural selection only. Actual new-target/image compatibility
+  // remains the public fresh-init provider's obligation, not an inferred pass.
+  assert.deepEqual(codes(readFreshInitializationVerification(result.plan.freshInitialization)), ["fresh-initialization-contract-pending"]);
+});
+
+test("the independent fresh target still requires an explicit valid PostgreSQL major", () => {
+  for (const value of [null, 0, -1, "19"]) {
+    const supplied = input();
+    supplied.proposed.registration.postgresMajor = value;
+    assert(codes(planLauncherFreshStart(supplied)).includes("target_identity_missing"));
+  }
+  const supplied = input();
+  delete supplied.proposed.registration.postgresMajor;
+  assert(codes(planLauncherFreshStart(supplied)).includes("target_identity_missing"));
 });
 
 test("legacy source and backup volumes cannot be rebound even with matching candidate records", () => {

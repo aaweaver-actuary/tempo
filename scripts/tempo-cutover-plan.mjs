@@ -135,8 +135,6 @@ export function planLauncherFreshStart(input = {}) {
       block("preserved_volume_rebinding", "The new target must not rebind preserved legacy data or backup volumes.");
     if (Boolean(original.disposable) !== Boolean(registration.disposable))
       block("disposable_authority_mismatch", "A disposable installation cannot be rebound as a real authority or the reverse.");
-    if (original.postgresMajor !== registration.postgresMajor)
-      block("postgres_major_change_unqualified", "A PostgreSQL major upgrade needs its separately qualified procedure.");
     if (inside(registration.envFile, registration.root))
       block("private_configuration_in_checkout", "Reference private file-backed Learning configuration outside the checkout.");
   }

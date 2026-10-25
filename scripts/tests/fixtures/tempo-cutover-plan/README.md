@@ -55,6 +55,11 @@ PostgreSQL registration matches its own artifact, and the selected Study web
 port matches the browser authority through its existing port-80 listener.
 These public service names do not adopt disposable Compose settings or volumes
 for a real installation. Actual target values are mandatory inputs.
+The independent clean target may explicitly select a different PostgreSQL major
+from the legacy cluster: serialized graph import is not a physical cluster
+upgrade. A valid new major and its own pinned PostgreSQL image are still required;
+actual image/major compatibility and graph initialization remain fresh-init
+provider checks, not claims made by the structural planner.
 
 The common candidate `.cutover` identity retains pinned revision/images,
 database/workspace, Compose/volumes, ingress and schema. It now requires
