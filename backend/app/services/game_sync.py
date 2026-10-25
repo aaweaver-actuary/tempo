@@ -107,8 +107,6 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
             if changed:
                 storage.update_imported_game(database, existing["id"], values)
                 storage.ensure_analysis_job(database, existing["id"], datetime.now(timezone.utc).isoformat())
-                sync_storage.invalidate_day_snapshot(database, record.played_at[:10])
-                sync_storage.invalidate_day_insights(database, record.played_at[:10])
                 return "updated", existing["id"]
             storage.ensure_analysis_job(database, existing["id"], datetime.now(timezone.utc).isoformat())
             return "duplicate", existing["id"]
@@ -118,8 +116,6 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
         storage.insert_analysis_job(
             database, f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat(),
         )
-        sync_storage.invalidate_day_snapshot(database, record.played_at[:10])
-        sync_storage.invalidate_day_insights(database, record.played_at[:10])
         return "inserted", f"{record.provider}:{record.provider_game_id}"
 
 

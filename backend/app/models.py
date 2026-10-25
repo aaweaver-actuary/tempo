@@ -73,7 +73,6 @@ from .contracts.transport.defense import (
     DefenseRecognitionRequest,
 )
 from .contracts.transport.discovery import (
-    DiscoveryTrainingRequest,
     DiscoveryAcceptanceRequest,
 )
 from .contracts.transport.game_findings import (
@@ -105,9 +104,6 @@ from .contracts.transport.games import (
 )
 from .contracts.transport.authored_import import (
     ImportResult,
-)
-from .contracts.transport.guided_review import (
-    GuidedReviewAttemptRequest,
 )
 
 __all__ = [
@@ -151,7 +147,6 @@ __all__ = [
     'ThreatAnalysisFailureRequest',
     'DefenseAttemptRequest',
     'DefenseRecognitionRequest',
-    'DiscoveryTrainingRequest',
     'DiscoveryAcceptanceRequest',
     'GameFindingDecisionRequest',
     'GameExclusionRequest',
@@ -172,7 +167,6 @@ __all__ = [
     'GamesSummaryResponse',
     'GameSummaryRecord',
     'ImportResult',
-    'GuidedReviewAttemptRequest',
     'GameProvider',
     'ProviderSyncState',
     'GameSyncJobState',

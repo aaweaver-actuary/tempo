@@ -136,12 +136,24 @@ test("unclassified backend service modules require deployment lifecycle with ord
   }
 });
 
+test("retired Endgames service path requires deployment lifecycle if reintroduced", () => {
+  const retiredPath = "backend/app/services/endgames.py";
+  assert.equal(existsSync(retiredPath), false, "The retired Endgames service must remain absent");
+  for (const paths of [[retiredPath], [retiredPath, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+    "tests/unit/study-regressions.test.tsx"]]) {
+    const planned = plan({ paths });
+    assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
+    assert.equal(planned.jobs.lifecycle.required, true, paths.join(", "));
+    assert.match(planned.jobs.lifecycle.reason, /unclassified infrastructure/);
+  }
+});
+
 test("reviewed ordinary and sensitive service classifications survive ordinary companions", () => {
   const ordinaryCompanions = ["tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
     "tests/unit/study-regressions.test.tsx"];
   for (const [servicePath, lifecycleRequired] of [
     ["backend/app/services/study_grading.py", false],
-    ["backend/app/services/opening_segmentation.py", false],
+    ["backend/app/chess/opening_segments.py", false],
     ["backend/app/services/repertoire_statistics.py", false],
     ["database/tempo_legacy_database/adapters/database_executor.py", true],
     ["backend/app/services/background_runtime.py", true],
@@ -158,7 +170,7 @@ test("reviewed ordinary and sensitive service classifications survive ordinary c
 
 test("reviewed backend domain changes with ordinary regressions omit deployment lifecycle", () => {
   for (const path of ["backend/app/services/study_grading.py", "backend/app/study_commands.py",
-    "backend/app/opening_segmentation_api.py", "backend/app/study_contracts.py", "backend/app/models.py"]) {
+    "backend/app/opening_segmentation_api.py", "backend/app/contracts/studies.py", "backend/app/models.py"]) {
     for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
       "tests/unit/study-regressions.test.tsx", "tests/browser/studies.spec.ts"]]) {
       const planned = plan({ paths });
@@ -286,7 +298,7 @@ test("full and split PostgreSQL verification preserve every existing proof", () 
   assert(full.includes("deployment_lifecycle"));
   assert(lifecycle.includes("deployment_lifecycle"));
   assert(!durability.includes("deployment_lifecycle"));
-  for (const stage of ["schema_migrations", "priority_recovery", "background_diagnostics"]) assert(durability.includes(stage));
+  for (const stage of ["schema_migrations", "background_diagnostics"]) assert(durability.includes(stage));
   const split = new Set([...durability, ...lifecycle, ...postgresTestStages({ mode: "browser" })]);
   assert.deepEqual([...split].sort(), full.filter(stage => stage !== "study_isolation").sort());
 });

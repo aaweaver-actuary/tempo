@@ -20,12 +20,12 @@ defines no classes and is not a new shared domain implementation.
 | Games engine evidence contracts | [`game_analysis.py`](game_analysis.py) | `GameAnalysisCandidate`, `GameAnalysisEvaluation`, `GameAnalysisRequest`, `GameAnalysisFailureRequest`, `GameAnalysisPositionClaimRequest`, `GameAnalysisLeaseRequest` |
 | Shared engine attempt diagnostic contract | [`engine.py`](engine.py) | `EngineAttemptDiagnostics` |
 | Defense analysis/practice contracts | [`defense.py`](defense.py) | `ThreatAnalysisSubmission`, `ThreatAnalysisFailureRequest`, `DefenseAttemptRequest`, `DefenseRecognitionRequest` |
-| Authored discovery contracts | [`discovery.py`](discovery.py) | `DiscoveryTrainingRequest`, `DiscoveryAcceptanceRequest` |
+| Authored discovery contracts | [`discovery.py`](discovery.py) | `DiscoveryAcceptanceRequest` (optional direct-training DTO retired) |
 | Games finding/adaptation contracts | [`game_findings.py`](game_findings.py) | `GameFindingDecisionRequest`, `GameExclusionRequest`, `GameFindingCardRequest`, `GameFindingCurationRequest` |
 | Games provider/sync contracts | [`game_sync.py`](game_sync.py) | `AccountSettings`, `GameSyncRequest`, `ProviderSyncResult`, `ProviderSyncStatus`, `CompletedProviderSyncResult`, `CompletedGameSyncResult`, `GameSyncJob`, `GameSyncEnqueueResponse`, `ActiveGameFilters`, `GameSyncStatusResponse` |
 | Games read contracts | [`games.py`](games.py) | `GameTimelineEvent`, `GamePublicRecord`, `GamesSummaryResponse`, `GameSummaryRecord` |
 | Authored PGN import response contract | [`authored_import.py`](authored_import.py) | `ImportResult` |
-| Games guided review contract | [`guided_review.py`](guided_review.py) | `GuidedReviewAttemptRequest` |
+| Retired Games guided review contract | [Last server source](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/backend/app/contracts/transport/guided_review.py) | Unsupported server routes and DTO removed; ordinary Study contracts remain. |
 
 The three existing provider/sync literal aliases (`GameProvider`,
 `ProviderSyncState`, `GameSyncJobState`) live in `game_sync.py`. The same class

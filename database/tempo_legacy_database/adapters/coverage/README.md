@@ -1,12 +1,12 @@
 # Legacy coverage generation storage
 
-**Current source; live schema and deployment unverified.** These are the existing coverage seeding, Explorer publication, compatibility coverage/Maia and Explorer session storage operations. No schema, SQL, model, backfill, feature or permission is changed.
+**Current source; live schema and deployment unverified.** These are the existing coverage seeding, Explorer publication, compatibility coverage/Maia and Explorer session storage operations. No schema, SQL, model, backfill or permission is changed. The application callback cessation described below changes only the neighboring adaptive-priority effect.
 
 | Module | Database responsibility | Application owner |
 | --- | --- | --- |
 | [seeding.py](seeding.py) | Existing source MD5 projection, coverage advisory lock, repertoire/active run/settings reads, run admission/failure, bounded source/position reads, position insert/merge and generation activation. Native and compatibility run-lock/failure operations retain their original SQL dialects. | [postgres_coverage_seed.py](../../../../backend/app/services/postgres_coverage_seed.py) keeps prefix/source fingerprint composition, cohort/settings policy, UUID/time, route discovery/merge, minimum ply/reply selection, canonical/current-scope validation, empty/changed/pending-route handling, activation and task cursors/admission/completion. |
-| [explorer.py](explorer.py) | Existing task lease read, next/locked current-attempt node queries, failure writes, Explorer cache/candidate upserts, completion/progress/count projection and activity update. The two dynamic queries reuse the original [root-owned current-attempt predicate](../repertoire_scope/freshness.py). | [postgres_coverage_explorer.py](../../../../backend/app/services/postgres_coverage_explorer.py) keeps lease/scope/status decisions, cache-versus-fetch selection, provider admission/error handling, reply counts/probabilities, JSON/time, recalculation, priority/opportunity callbacks and durable task checkpoints. |
-| [repertoire.py](repertoire.py) | Compatibility cohort/source/run/cache reads, coverage admission, Explorer/Maia claim and publication, candidate updates, lease expiry and summary/gap projections; fixed complete dynamic claims reuse the original root predicates. | [repertoire_coverage.py](../../../../backend/app/services/repertoire_coverage.py) keeps chess/discovery/cohort/probability/required-reply policy, clock/UUID/JSON, scope/lease decisions, HTTP/cache choice, foreground waits, transaction composition and opportunity/priority/progress callbacks. |
+| [explorer.py](explorer.py) | Existing task lease read, next/locked current-attempt node queries, failure writes, Explorer cache/candidate upserts, completion/progress/count projection and activity update. The two dynamic queries reuse the original [root-owned current-attempt predicate](../repertoire_scope/freshness.py). | [postgres_coverage_explorer.py](../../../../backend/app/services/postgres_coverage_explorer.py) keeps lease/scope/status decisions, cache-versus-fetch selection, provider admission/error handling, reply counts/probabilities, JSON/time, recalculation, opportunity callbacks and durable task checkpoints. Its immediate adaptive-priority request is retired. |
+| [repertoire.py](repertoire.py) | Compatibility cohort/source/run/cache reads, coverage admission, Explorer/Maia claim and publication, candidate updates, lease expiry and summary/gap projections; fixed complete dynamic claims reuse the original root predicates. | [repertoire_coverage.py](../../../../backend/app/services/repertoire_coverage.py) keeps chess/discovery/cohort/probability/required-reply policy, clock/UUID/JSON, scope/lease decisions, HTTP/cache choice, foreground waits, transaction composition and opportunity/progress callbacks. Its two immediate adaptive-priority requests are retired. |
 | [session.py](session.py) | Existing configuration probe and Redis Explorer session key with 24-hour set, get and delete operations. | The same application keeps environment-versus-session selection, rejected-token state, in-memory fallback/lock, decoding and missing-token policy; its existing `redis_client` seam is preserved. |
 
 ```mermaid
@@ -15,7 +15,7 @@ flowchart LR
   seedApp --> routes[Existing chess, prefix, route and cohort decisions]
   explorerApp[Existing Explorer slice application] -->|same read and publication scopes| explorerDB[Fixed current-attempt and publication operations]
   explorerApp --> provider[Existing cache and provider fetch boundary]
-  explorerApp --> callbacks[Existing recalculation, priority, opportunity and task owners]
+  explorerApp --> callbacks[Existing recalculation, opportunity and task owners]
   seedDB --> coverage[Coverage runs and nodes]
   explorerDB --> coverage
   explorerDB --> cache[Explorer cache, candidates and activity progress]
@@ -45,9 +45,14 @@ The [canonical coverage dictionary and rendered ER diagram](../../schema/discove
 
 Task generation/lease comparisons, settings JSON scope revisions, prefix preview references, newest-current-attempt filtering and cache identity are existing logical freshness relationships. They do not imply new constraints. The complete dynamic query construction lives here and reuses the same already-centralized predicate; application code still decides whether a selected run/node is current and what to do when it is stale.
 
-Existing authored-source/cohort, cache/provider, coverage, activity, priority/opportunity and task coupling is preserved. No new cross-owner table access or Study-to-Games dependency is introduced. This extraction does not create a clean domain/Learning authority boundary or prove optional-feature resource/shutdown isolation. Compatibility candidate/Maia/source operations are included here. Native controls, HTTP composition and remaining independently coordinated implementations retain their existing owners; this directory is not a claim of complete legacy domain separation.
+Existing authored-source/cohort, cache/provider, coverage, activity, opportunity and task coupling is preserved. The [bounded callback cessation](../../../../backend/app/services/README.md#immediate-adaptive-priority-callback-cessation) removes only neighboring adaptive-priority requests; no query, schema, graph/source epoch, lock or transaction owner changes. No new cross-owner table access or Study-to-Games dependency is introduced. This extraction does not create a clean domain/Learning authority boundary or prove optional-feature resource/shutdown isolation. Compatibility candidate/Maia/source operations are included here. Native controls, HTTP composition and remaining independently coordinated implementations retain their existing owners; this directory is not a claim of complete legacy domain separation.
 
 ## Focused evidence
+
+The extraction receipts below describe their original source checkpoints. The
+later [callback cessation](../../../../backend/app/services/README.md#immediate-adaptive-priority-callback-cessation)
+has its own named absence/primary-effect regressions; it does not relabel those
+earlier callback-preservation receipts as checks of the changed source.
 
 **11 existing selected fake-based cases pass**, covering superseded active seed admission, foreground yielding/replay fences, source change before activation, verified Explorer admission, close-before-network, stale/replaced leases, missing-token failure, unverified canonical routes and scoped/unscoped fingerprint behavior. One existing Starlette/AnyIO deprecation warning is reported. No provider or native database request was made; test assertions/fixtures are unchanged.
 

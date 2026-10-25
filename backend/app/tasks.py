@@ -38,7 +38,6 @@ from . import settings_commands  # noqa: F401 - registers foreground settings co
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
 from . import game_evidence_commands  # noqa: F401 - registers worker-only legacy evidence intake
-from . import guided_review_commands  # noqa: F401 - registers foreground guided review changes
 from . import finding_commands  # noqa: F401 - registers foreground finding decisions
 from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
@@ -49,9 +48,7 @@ from . import analysis_paste_commands  # noqa: F401 - registers foreground analy
 from .services import prefix_transition_application  # registers the foreground apply command
 from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
 from . import card_commands  # noqa: F401 - registers foreground card revisions
-from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
-from . import statistics_commands  # noqa: F401 - registers foreground statistics refresh
 from . import defensive_admin_commands  # noqa: F401 - registers defensive admin tasks
 from . import threat_analysis_commands  # noqa: F401 - registers defensive engine callbacks
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
@@ -72,7 +69,6 @@ from .services.durable_tasks import claim_task, complete_task, defer_task_for_co
 
 from .services.durable_tasks import defer_task_for_foreground
 from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refresh_after_foreground_denial
-from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import (
@@ -91,13 +87,10 @@ from .services.postgres_game_misses import execute_game_miss_slice
 from .services.postgres_game_events import execute_game_event_slice
 from .services.postgres_game_features import execute_game_feature_slice
 from .services.postgres_game_priorities import execute_game_priority_handoff_slice
-from .services.postgres_priority import execute_repertoire_priority_slice
-from .services.postgres_daily_statistics import execute_postgres_daily_statistics_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.postgres_opening_segmentation import execute_segmentation_slice
-from .services.repertoire_opportunities import execute_opportunity_slice
 from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
 )
@@ -130,7 +123,6 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_threat_scan",
     "defensive_threat_backfill",
     "defensive_threat_validate",
-    "priority_retention",
     "next_opponent_profile",
     "game_sync_record",
     "game_derivation_positions",
@@ -140,14 +132,11 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "game_derivation_events",
     "game_derivation_features",
     "game_derivation_priorities",
-    "repertoire_priority",
-    "daily_statistics",
     "game_sync_window",
     "opening_graph_rebuild",
     prefix_transition_application.TASK_KIND,
     "integrity_scan",
     "opening_segmentation",
-    "repertoire_opportunity",
     "discovery_recommendation",
     "discovery_admission",
     "coverage_seed",
@@ -377,7 +366,6 @@ def _execute_claimed_background_slice(
         "defensive_threat_scan": execute_threat_scan_slice,
         "defensive_threat_backfill": execute_threat_backfill_slice,
         "defensive_threat_validate": execute_threat_validation,
-        "priority_retention": execute_priority_retention_slice,
         "next_opponent_profile": execute_profile_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_derivation_positions": execute_game_position_index_slice,
@@ -387,14 +375,11 @@ def _execute_claimed_background_slice(
         "game_derivation_events": execute_game_event_slice,
         "game_derivation_features": execute_game_feature_slice,
         "game_derivation_priorities": execute_game_priority_handoff_slice,
-        "repertoire_priority": execute_repertoire_priority_slice,
-        "daily_statistics": execute_postgres_daily_statistics_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         prefix_transition_application.TASK_KIND: prefix_transition_application.execute_application_slice,
         "integrity_scan": execute_postgres_integrity_slice,
         "opening_segmentation": execute_segmentation_slice,
-        "repertoire_opportunity": execute_opportunity_slice,
         "discovery_recommendation": execute_recommendation_request_slice,
         "discovery_admission": execute_admission_intent_slice,
         "coverage_seed": execute_coverage_seed_slice,
@@ -425,8 +410,6 @@ def _execute_claimed_background_slice(
                 "game_derivation_misses",
                 "game_derivation_events",
                 "game_derivation_features", "game_derivation_priorities",
-                "repertoire_priority",
-                "daily_statistics",
                 "opening_graph_rebuild",
                 prefix_transition_application.TASK_KIND,
                 "integrity_scan",
@@ -451,7 +434,7 @@ def _execute_claimed_background_slice(
         except TransactionTimeout as error:
             if claimed_task['kind'] == 'daily_queue':
                 more_work = defer_task_for_transaction_timeout(claimed_task, error)
-            elif claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention", prefix_transition_application.TASK_KIND}:
+            elif claimed_task["kind"] in {"opening_graph_rebuild", prefix_transition_application.TASK_KIND}:
                 retry_result = fail_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error,
                 )

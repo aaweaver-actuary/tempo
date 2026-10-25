@@ -225,8 +225,6 @@ def claim_task(
             return None
         if scheduling_turn is not None:
             persist_scheduling_turn(database, scheduling_turn)
-        if row['kind'] in {'repertoire_priority', 'repertoire_opportunity'}:
-            storage.clear_pending_refresh(database, (row['kind'], row['deduplication_key']))
         _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
         claimed = dict(storage.read_task(database, (row["id"],)))
         claimed["payload"] = json.loads(claimed.pop("payload_json"))
@@ -240,20 +238,9 @@ def claim_task(
 
 def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str | None = None) -> bool:
     def operation(database: sqlite3.Connection) -> bool:
-        refresh_repertoire_id = None
-        if kind == 'repertoire_opportunity':
-            refresh_row = storage.task_by_id(database, (task_id,))
-            if refresh_row:
-                refresh_repertoire_id = refresh_row['deduplication_key']
-                from .postgres_priority import _priority_source_version
-                _priority_source_version(database, refresh_repertoire_id,
-                                         lock=storage.supports_native_execution(database))
         now = _iso()
         changed = storage.complete_task(database, (now, now, task_id, generation, lease_token))
         if changed:
-            if refresh_repertoire_id is not None:
-                from .refresh_requests import record_publication
-                record_publication(database, kind, refresh_repertoire_id)
             clear_queue_refresh_error_in_transaction(database, task_id, kind=kind)
             _record_event(database, task_id, generation, "published", "published", kind=kind)
         else:

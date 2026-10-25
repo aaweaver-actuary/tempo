@@ -2,8 +2,6 @@
 from pydantic import BaseModel, Field
 
 
-class DiscoveryTrainingRequest(BaseModel):
-    evidence_fingerprint: str = Field(min_length=1)
 
 
 class DiscoveryAcceptanceRequest(BaseModel):

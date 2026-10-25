@@ -1,6 +1,6 @@
 """Legacy review policy, lock selection and deferred effects borrow fixed storage."""
 from contextlib import contextmanager
-from datetime import date,datetime,timezone
+from datetime import date,datetime,timedelta,timezone
 from types import SimpleNamespace
 import json
 
@@ -110,3 +110,124 @@ def test_receipt_write_precedes_late_current_revision_and_remediation_settlement
     command=SimpleNamespace(attempt_id='attempt',card_id='card',outcome='correct',guided=False,recorded_at=None,queue_entry_id=4)
     review.LearningReviewAdapter(None,None).save_receipt(command,SimpleNamespace(reviewed_at=NOW),dict(queue_entry_id=4,review_id=7))
     assert events==['receipt','revision',('settle',2)]
+
+
+@pytest.fixture(params=['sqlite', 'borrowed_transaction'])
+def opening_review_without_priority_producer(tmp_path, monkeypatch, request):
+    from tempo_legacy_database import connections as database
+    from app.services import game_sync_coordinator
+
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'opening-review.db')
+    database.initialize()
+    monkeypatch.setattr(game_sync_coordinator.coordinator, 'wake', lambda: None)
+
+    from importlib.util import find_spec
+    assert find_spec('app.services.introduction_priorities') is None
+    with database.connection() as connection:
+        connection.execute(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('review','Review','synthetic',?)",
+            (DAY.isoformat(),),
+        )
+        connection.execute(
+            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,
+                                 state,due_date,introduced_at,content_type)
+               VALUES('opening','review','prefix',?,'["e2e4"]','white',
+                      'learning',?,?,'opening')""",
+            ('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+             DAY.isoformat(), (DAY - timedelta(days=3)).isoformat()),
+        )
+        entry = connection.execute(
+            "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'opening',0)",
+            (DAY.isoformat(),),
+        ).lastrowid
+        connection.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='opening'")
+        connection.execute(
+            """INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,attempts,
+                                                     next_attempt_at,last_error,updated_at)
+               VALUES('review',7,'failed',5,?,'retained failure',?)""",
+            (NOW.isoformat(), NOW.isoformat()),
+        )
+        connection.execute(
+            """INSERT INTO repertoire_card_introduction_priorities(
+                   repertoire_id,card_id,scoring_version,priority_score,updated_at)
+               VALUES('review','opening',2,0.8,?)""", (NOW.isoformat(),),
+        )
+        connection.execute(
+            """INSERT INTO background_activity(source,work_id,paused,updated_at)
+               VALUES('priority','review',1,?)""", (NOW.isoformat(),),
+        )
+        retained_priority = priority_state(connection)
+        if request.param == 'borrowed_transaction':
+            # Reuse the owning command suite's SQLite facade for caller-owned
+            # PostgreSQL semantics; this does not qualify native locks.
+            from test_prepared_review_continuation import CommandConnection
+            monkeypatch.setattr(review.storage, 'configured', lambda: True)
+            yield CommandConnection(connection), entry, retained_priority
+        else:
+            yield connection, entry, retained_priority
+
+
+def priority_state(connection):
+    return {
+        table: [tuple(row) for row in connection.execute(f'SELECT * FROM {table} ORDER BY 1')]
+        for table in ('repertoire_priority_jobs', 'repertoire_card_introduction_priorities',
+                      'background_activity', 'analysis_refresh_requests')
+    }
+
+
+def apply_opening_review(connection, entry, attempt_id, *, recorded_at=None):
+    request = review.ReviewRequest(
+        outcome='correct', queue_entry_id=entry, expected_revision=1,
+        attempt_id=attempt_id, recorded_at=recorded_at,
+    )
+    return review.apply_legacy_review(
+        'opening', request, database=connection, observed_at=NOW, local_day=DAY,
+        policy_provider=lambda: SimpleNamespace(timezone='UTC', light_first_interval_days=3),
+    )
+
+
+@pytest.mark.parametrize('late_delivery', [False, True])
+def test_opening_review_and_original_receipt_replay_preserve_study_without_priority_producer(
+    opening_review_without_priority_producer, late_delivery,
+):
+    connection, entry, retained_priority = opening_review_without_priority_producer
+    recorded_at = (NOW - timedelta(days=2)).isoformat() if late_delivery else None
+    accepted = apply_opening_review(connection, entry, 'original-review', recorded_at=recorded_at)
+    assert accepted['persisted'] is True and accepted['idempotent'] is False
+    stored = connection.execute(
+        "SELECT id,source_kind,source_ref,reviewed_at FROM reviews WHERE card_id='opening'",
+    ).fetchone()
+    assert stored['id'] == accepted['review_id']
+    assert (stored['source_kind'], stored['source_ref']) == ('study', 'attempt:original-review')
+    expected_review_time = datetime.fromisoformat(recorded_at) if recorded_at else NOW
+    assert datetime.fromisoformat(stored['reviewed_at']) == expected_review_time
+    assert connection.execute('SELECT status FROM daily_queue WHERE id=?', (entry,)).fetchone()[0] == 'complete'
+    assert connection.execute("SELECT fsrs_card_json FROM cards WHERE id='opening'").fetchone()[0]
+    assert [row[0] for row in connection.execute('SELECT kind FROM background_tasks')] == ['daily_queue']
+    before_replay = tuple(connection.execute('SELECT * FROM background_tasks').fetchone())
+    assert apply_opening_review(connection, entry, 'original-review', recorded_at=recorded_at) == accepted
+    assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 1
+    assert connection.execute('SELECT COUNT(*) FROM review_attempt_receipts').fetchone()[0] == 1
+    assert tuple(connection.execute('SELECT * FROM background_tasks').fetchone()) == before_replay
+    assert priority_state(connection) == retained_priority
+
+
+def test_late_opening_reconciliation_preserves_both_reviews_and_original_receipt_without_priority_producer(
+    opening_review_without_priority_producer,
+):
+    connection, entry, retained_priority = opening_review_without_priority_producer
+    desktop = apply_opening_review(connection, entry, 'desktop-review', recorded_at=NOW.isoformat())
+    recorded_at = (NOW - timedelta(days=2)).isoformat()
+    reconciled = apply_opening_review(connection, entry, 'late-original-review', recorded_at=recorded_at)
+    assert reconciled['persisted'] is True and reconciled['reconciliation'] == 'chronological'
+    assert reconciled['review_id'] != desktop['review_id']
+    assert connection.execute('SELECT COUNT(*) FROM reviews WHERE invalidated_at IS NULL').fetchone()[0] == 2
+    assert connection.execute('SELECT COUNT(*) FROM review_schedule_snapshots').fetchone()[0] == 2
+    assert connection.execute('SELECT status FROM daily_queue WHERE id=?', (entry,)).fetchone()[0] == 'complete'
+    before_replay = tuple(connection.execute('SELECT * FROM background_tasks').fetchone())
+    assert apply_opening_review(connection, entry, 'late-original-review', recorded_at=recorded_at) == reconciled
+    assert apply_opening_review(connection, entry, 'desktop-review', recorded_at=NOW.isoformat()) == desktop
+    assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 2
+    assert connection.execute('SELECT COUNT(*) FROM review_attempt_receipts').fetchone()[0] == 2
+    assert tuple(connection.execute('SELECT * FROM background_tasks').fetchone()) == before_replay
+    assert priority_state(connection) == retained_priority

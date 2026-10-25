@@ -53,18 +53,14 @@ def save_prefix(database, payload: dict) -> dict:
     storage.save_prefix_values(database, json.dumps(moves), revision, request.preview_id, repertoire_id)
     if moves != current["moves"]:
         enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
-    from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-    enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     if not storage.postgres_is_configured():
         storage.fail_active_local_coverage(database, repertoire_id)
     if storage.postgres_is_configured():
         from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
-        from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
         storage.advance_priority_source_epoch(database, repertoire_id)
         request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
         storage.delete_priority_publication(database, repertoire_id)
         storage.delete_introduction_priorities(database, repertoire_id)
-        enqueue_priority_refresh_in_transaction(database, repertoire_id)
     return prefix_projection(moves, revision)
 
 

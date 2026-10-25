@@ -70,7 +70,7 @@ def snapshot() -> BackgroundDiagnostics:
                         estimated_age_count=int(row['estimated'] or 0) if queue=='engine_game' else 0))
             rows = reads.metric_rows(window_start,now,COUNT_NAMES,DURATION_NAMES)
             result.update(queues=queue_rows,counters=[dict(kind=row['kind'],counts={name:(int(row[name]) if name in COUNT_NAMES else float(row[name])) for name in COUNT_NAMES + DURATION_NAMES},
-                                                        useful_completion_unit={'engine_game':'accepted_position','engine_defense':'accepted_position','repertoire_priority':'published_priority_generation','game_analysis_publish':'published_game_analysis'}.get(row['kind']))
+                                                        useful_completion_unit={'engine_game':'accepted_position','engine_defense':'accepted_position','game_analysis_publish':'published_game_analysis'}.get(row['kind']))
                                                     for row in rows if row['kind'] in KINDS])
     except (TimeoutError, PoolTimeout, psycopg.errors.QueryCanceled):
         result.update(available=False,unavailable_reason='query_deadline')

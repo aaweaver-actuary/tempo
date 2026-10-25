@@ -290,15 +290,6 @@ export const repertoiresResponseSchema = z.strictObject({
       integrity_issue_count: integer.optional(),
       integrity_first_issue_id: z.string().nullable().optional(),
       trained_color: colorSchema.nullable().optional(),
-      introduction_priority: z.strictObject({
-        state: z.enum(["fallback", "partial", "ready"]),
-        // Recency decay makes this an effective (weighted) game count.
-        personal_games: z.number().finite().nonnegative(),
-        explorer: z.string(),
-        maia: z.string(),
-        updated_at: z.string().nullable(),
-        error: z.string().nullable(),
-      }).optional().catch(undefined),
       graph_generation: integer.optional(),
       graph_updated_at: isoDateSchema.nullable().optional(),
       graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),

@@ -202,12 +202,8 @@ class LearningReviewAdapter:
                 coordinator.wake()
 
     def refresh_priority(self, repertoire_id, *, transactional_only=False):
-        from .introduction_priorities import enqueue_priority_refresh_in_transaction, enqueue_priority_refresh
-        if storage.configured():
-            enqueue_priority_refresh_in_transaction(self.database, repertoire_id)
-        elif not transactional_only:
-            # Ordinary SQLite follow-ups run after its owned connection exits.
-            self.deferred_effects.append(lambda: enqueue_priority_refresh(repertoire_id))
+        # Retired legacy advisory effect, including late original-review replay.
+        return None
 
     def refresh_maturity(self, context):
         from .durable_tasks import enqueue_task_in_transaction

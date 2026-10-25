@@ -302,9 +302,6 @@ def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:
         if next_repertoire_id is None:
             return complete_task_slice_in_transaction(database, task)
         exists = storage.current_repertoire_match(database, game_id, next_repertoire_id)
-        if exists is not None:
-            from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-            enqueue_opportunity_refresh_in_transaction(database, next_repertoire_id)
         return advance_task_slice_in_transaction(
             database, task, next_phase="repertoires",
             next_payload={**payload, "cursor": next_repertoire_id},

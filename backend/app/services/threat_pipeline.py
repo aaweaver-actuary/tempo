@@ -207,9 +207,6 @@ def execute_threat_backfill_slice(task: dict) -> bool:
                     {"game_id": item["id"], "analysis_version": item["analysis_version"], "cursor": 0},
                     priority=145,
                 )
-            else:
-                from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-                enqueue_opportunity_refresh_in_transaction(database, item['id'])
         next_phase = phase if item is not None else "repertoires"
         next_cursor = item["id"] if item is not None else ""
         if postgres_store.configured():

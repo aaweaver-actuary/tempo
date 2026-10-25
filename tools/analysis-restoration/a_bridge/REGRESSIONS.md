@@ -26,6 +26,12 @@ acceptance, queue issuance or review is performed by this translator.
 and origin validation, and serialized Content-to-Learning identity/alternative
 mapping. The normal component suite rejects zero selection.
 
+`test_execution_mapping_preserves_optional_repertoire_title_without_changing_old_routes`
+in that same owning suite preserves the existing public export's display title
+in the V2 payload, exact old route output when absent, and full input nonmutation.
+Learning's model/native title cases own validation and atomic name persistence;
+the operator does not write a repertoire store or depend on a domain service.
+
 `services/learning/runtime/tests/test_authoritative_bridge.py` owns the actual
 installed command across three restricted PostgreSQL databases, real HTTP
 activation/response loss/restart, authenticated evidence delivery, late evidence,
@@ -108,3 +114,29 @@ the authored alternative without creating a card. Source-identity controls keep
 ordinary reviews/scheduling, timestamps, names and harmless JSON recapture out
 of authority keys, while revision/executable/color/availability/introduction
 changes still fence stale authority. Raw capture provenance remains separate.
+
+## Graph-only fresh authored source
+
+Regular `tests/test_legacy.py` owns the explicit `--graph-only` CLI and
+`translate(..., graph_only=True)` path. Named `test_graph_only_*` cases preserve
+full white/black authored routes, selected repertoire names/colors/memberships,
+full-catalog policy boundaries and fresh segment definitions without historical
+aliases, card revision/availability or shared-history eligibility. Source metadata
+not representable in `SourceSnapshot` v1 receives an explicit raw recovery-copy
+disposition; empty/mixed-color scopes cannot invent a serving policy.
+
+Canonical card-as-source coverage uses explicit accepted graph/line associations,
+matching original executable/color and supported ordered paths; missing or
+unrepresented source scope fails before creating output. Explicit owner-link zero
+suppresses canonical fallback. The public CLI cases keep repeat documents
+immutable and reject changed output under the same destination. These are
+synthetic file-only proofs; raw graph completeness/recovery-copy verification and
+fresh Content/Learning initialization retain their separate owners.
+
+`test_graph_only_preserves_published_depth_split_segment_and_does_not_regenerate_unserved_decisions`
+preserves captured prefix/interior execution and omits unserved route decisions.
+`test_graph_only_tombstone_excludes_saved_node_without_recreating_it_from_the_full_route`
+retains raw route context while excluding deleted graph-card identities. Changed
+published generation, learner ranges, decision keys, overlapping coverage and
+source-availability disagreement fail before output; no depth/graph rebuild or
+schedule reset substitutes for source facts.
