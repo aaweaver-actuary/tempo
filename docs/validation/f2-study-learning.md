@@ -329,113 +329,109 @@ Native offline evidence is Chromium/macOS only. There is no cross-device offline
 release qualification, live data conversion, production deployment, hosted CI pass,
 whole-product gate or merge claim.
 
-## #382 native essential acceptance preparation — 2026-10-25
+## #382 native essential acceptance — 2026-10-25
 
-**Harness fix and assembled acceptance are separate:** the UUID import repair
-has a passing named regression and independent review. The ten native acceptance
-scenarios remain **10 collected, 0 executed**; #382 is not accepted.
-Final assembled execution awaits the parent-provided #380 composition receipt.
-The reported #380 Learning-outage request timed out at 10 seconds with nginx 499;
-explicit failure/no-fallback and same-artifact recovery remain unobserved. That
-owner continues its diagnosis. This native section adds no Compose/browser proof,
-role/outage/teardown repetition, or #382 completion claim.
+**Native section qualified: 10 collected, 10 executed, 10 passed, 0 failed,
+0 skipped.** Collection/execution identities, all **30** setup/call/teardown
+phases and ten JUnit cases agree. Pytest/JUnit time is **67.86 s**; the locked
+parent command took **70.95 s**, including install/collection/cleanup. One existing
+Starlette/AnyIO deprecation warning remains. This is the native static-server /
+Learning-forwarder assembly, separate from the browser owner's actual Compose
+same-ingress normal/lost-response proof. **#382 is not complete** on this receipt
+alone; physical-phone, live-data and deployment qualification remain unverified.
 
-Pinned base is merged PR410/main `311a712581deb95bf9035b2a3b934c03335a1cd5`.
-Prepared executable commit is `594c561d797b1c41a77ab86d5fc87f02854062b9`, tree
-`12263734cda741dfc94fc67fa09abac5aa32ec66`, on
-`codex/382-native-acceptance` in `/tmp/tempo-382-native-20261025`.
-Current main `782bf5374b87f223a023568305056415d5b63cea` was integrated in clean
-merge `ea4d5193b26ec00e4027bae911315fb6eec027fa` while #380 remains pending.
-`integrated-source-correspondence.json` verifies that the harness, named regression,
-selector, runtime/database, imported fixtures and dependency/lock inputs are
-byte-identical to their checked inputs at `594c561d`; the existing 1 regression
-pass, 4 selector passes and ten-case collection remain applicable. No unit or
-native execution was repeated for this source correspondence/documentation work.
-Independent current-main review found no actionable issue and considers the tiny
-UUID repair and named regression ready for scoped merge independently of #382
-execution. No merge has been performed; assembled acceptance remains pending.
-
-The current default `scripts/prove-study-learning.mjs` is explicitly pinned to
+Tested source is `ee41f207f49a1d370bc6c00c7b39e03fdb321578`, tree
+`d01e376dadfe56fa4e574800ad4b5c44c9463285`, including main
+`782bf5374b87f223a023568305056415d5b63cea`. Later receipt edits change only this
+native section. The default `scripts/prove-study-learning.mjs` was unchanged:
 Git blob `d12f405b81289b09aa89f1ad5fdd63b792b73e17`, SHA256
 `1bb15cd682cded8009f7026e0000755138c26bcd5eca211e9f1378681ef5200b`.
-It is unchanged across prepared `594c561d`, current main and the integration.
-The browser owner's future opt-in composed-ingress change will be assessed when
-final; it does not block integration or scoped review of this harness fix. The
-native owner has not modified that shared script.
+The browser owner's future opt-in change requires separate correspondence review;
+this native owner did not modify that shared script.
 
-#419 retired ten unused Games client/adapter files and modified four recorded
-preparation inputs (two documentation files, Docker ignore rules and the Study
-composition manifest). The original 744 assets and their manifest remain intact
-for later exact comparison. They are not relabeled as a build of current main;
-final assembled acceptance still needs corresponding production-build evidence.
-The only executable repair imports `uuid` in the owning native UI harness.
-The new regular owning-suite regression
-`tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`
-executes its actual setup twice through distinct UUIDv4 fixture-key creation,
-before servers or database work. Original source produced **1 failed** with
-`NameError: name 'uuid' is not defined`; the repaired source produced **1 passed,
-0 skipped**, 0.04 seconds, on Python 3.12.12 / pytest 9.1.1. Independent read-only
-review found no actionable issue. No assertion, skip, timeout or browser protocol
-was changed.
+The only executable repair adds the missing `uuid` import to the native harness.
+Its named regular regression,
+`tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`,
+executes actual fixture-key setup twice without starting servers. Retained proof
+at `594c561d797b1c41a77ab86d5fc87f02854062b9`: **1 failed before** with
+`NameError: name 'uuid' is not defined`, **1 passed after**, 0 skipped; selector
+suite **4 passed**. Independent current-main source review found no actionable
+issue. Exact native executable/dependency/fixture correspondence justified reusing
+those focused results after main integration; no unit suite was rerun for receipt
+edits. No assertion, skip, selection, timeout or browser protocol was weakened.
 
-Evidence is retained outside the checkout at
-`/tmp/tempo-382-native-evidence-20261025`. Exact preparation commands and receipts:
+The parent accepted #380's recorded-artifact evidence at PR420 head
+`20be190eec5ed28ce149344767e8f9edb4f648ab`. Its exact handoff and all eight recorded
+configuration/source/lock hashes are pinned in `accepted-380-correspondence.json`.
+That acceptance includes explicit outage 504s at 60.09–60.13 s under nginx's existing
+connection timeout, static availability and same-artifact/schema recovery. Those
+role/outage/recovery/teardown checks were not repeated here. This receipt does not
+claim PR420 merged or reuse its earlier Study images as the newer build.
 
-- `uv sync --project services/learning/runtime --locked --no-editable --python /Users/andy/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/bin/python3 --no-python-downloads --offline` installed cached dependencies into the task venv. Isolated installed-package discovery verifies **54 runtime / 36 database Python files** byte-match the checkout; `prepared-native.json` records every matching file. No fresh dependency/Python download or host install occurred.
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 services/learning/runtime/.venv/bin/python -m pytest -c services/learning/runtime/pyproject.toml -o addopts= -p no:cacheprovider services/learning/runtime/tests/test_study_ui_harness.py -v --tb=short`: **1 passed**. `python3 -m unittest discover -s database/tests -p test_study_essential_selection.py -v`: **4 passed**.
-- `docker build --pull=false --target build -f Dockerfile.study-web --label tempo.owner=tempo-382-native-20261025 --label tempo.disposable=true -t tempo-382-native-build:20261025 .`: passed using cached production build layers. Official `node:22-slim` identity is `sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d`, Node **22.23.4**. Resulting build-stage image is `sha256:607058f84741b5f22814a55ca591aa7668b19323bf4973a8fdf22bdc82285da2`; this is a build image, not an executed Study web service.
-- `services/learning/runtime/.venv/bin/python /tmp/tempo-382-native-evidence-20261025/prepare-native.py`: **10 collected, 0 executed**, with no collection errors/deselections. It imports the merged `study_test_paths('essential')` selector and records the complete qualification child command in `prepared-native.json`. Node IDs are `integration/study_tests/test_study_ui.py::test_production_study_learning_native[SCENARIO]`, where `SCENARIO` is exactly `normal`, `teaching`, `lost-response`, `before-commit`, `next-load`, `two-tabs`, `offline-shell`, `wrong-credential`, `origin-transition`, `quota`.
-
-The production assets were extracted from that image: **744 files**;
-`study-assets.json` SHA256 is
-`b54282ff61ff360cca3f93e32226343db0a5666d36f7e15eba33b3a668ae0999`.
-`prepared-source-inputs.json` records 1,425 inputs, SHA256
-`1710c87b596d8cce3a0e84304b19ac03ce27ead048d11ffb240715a1c4aad143`.
-The cached PostgreSQL 18.6 image is
-`sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`;
-no PostgreSQL container/volume has been created in this preparation.
-Existing host Node **26.12.0**, locked Playwright **1.63.0**, chess.js **1.4.0**
-and cached macOS Chromium 1243 (**153.0.8010.12**) are identified for the pending
-native proof; `browser-toolchain.json` records the executable SHA256.
-Only four JavaScript proof dependencies were extracted into the temporary
-checkout; no host browser or software installation was performed.
-
-`365-source-correspondence.json` verifies no changes from the #365 tested
-`e6704daf08e39c19a3731fa6c3510f15f874374b` to the runtime/database executable,
-dependency, lock and fixture inputs of its ordinary-introduction and frozen-rank
-cases. Their prior results remain original-owner-reported historical evidence
-in [Learning VALIDATION.md](../../services/learning/runtime/VALIDATION.md#preserved-pr-372-readiness-qualification--2026-10-22),
-not fresh execution or current-image qualification. The original raw receipt is
-no longer at its documented temporary path. No broader Learning suite was rerun.
-
-After final source/build correspondence is accepted, `run-native.py` will use
-the same merged selector and owned
-PostgreSQL runner with `fixture_profile='essential'`, its exact extra-source
-closure, and these already-built production assets. It requires the parent's
-accepted #380 receipt, checks the pinned source/assets, then re-collects, executes
-and reconciles all ten identities, all 30 setup/call/teardown phases and JUnit.
-The parent must assess the receipt's contents and source correspondence; the
-prepared path-existence guard does not itself establish #380 acceptance. Its
-original source-manifest guard now intentionally rejects the integrated tree
-until final build/input correspondence is resolved; do not bypass that guard.
-Pending invocation, from the disposable checkout, is:
+Evidence root (`taskEvidence` below):
+`/tmp/tempo-382-native-evidence-20261025`. The existing selector and owning
+PostgreSQL runner were invoked directly with `fixture_profile='essential'`, its
+unchanged extra-source closure and freshly built production assets:
 
 ```sh
-TEMPO_382_COMPOSITION_RECEIPT=/absolute/accepted/380-receipt.json \
-  python3 /tmp/tempo-382-native-evidence-20261025/locked-run.py \
-  services/learning/runtime/.venv/bin/python \
-  /tmp/tempo-382-native-evidence-20261025/run-native.py
+python3 "$taskEvidence/locked-run.py" docker build --pull=false --target build \
+  -f Dockerfile.study-web --label tempo.owner=tempo-382-native-assembled-20261025 \
+  --label tempo.disposable=true -t tempo-382-native-build:assembled-20261025 .
+python3 "$taskEvidence/locked-run.py" services/learning/runtime/.venv/bin/python \
+  "$taskEvidence/assembled/run-native.py"
+python3 "$taskEvidence/locked-run.py" services/learning/runtime/.venv/bin/python \
+  "$taskEvidence/assembled/run-core-support.py"
 ```
 
-Install/build work opened the existing advisory lock in append mode, held it
-exclusively through child completion, and preserved it. The asset-export/version
-containers and task-owned build image tag were removed; no task container remains
-(`preparation-cleanup.json`). Shared images/build cache were preserved.
-Assets, venv, minimal proof dependencies and isolated
-checkout remain task-owned pending the never-executed native acceptance; no
-Learning/Study server is running. First failing reproduction, passing regression,
-collection, source/install/asset manifests and independent review are retained.
-`npm run check:conflicts` and `git diff --check` pass. Native execution/JUnit,
-its PostgreSQL cleanup receipt, assembled browser acceptance and physical-phone/
-live-data qualification remain **UNVERIFIED**. No live resource, history, host
-setting, secret, deployment or CI was touched.
+Exact native IDs are
+`integration/study_tests/test_study_ui.py::test_production_study_learning_native[SCENARIO]`
+for exactly `normal`, `teaching`, `lost-response`, `before-commit`, `next-load`,
+`two-tabs`, `offline-shell`, `wrong-credential`, `origin-transition`, `quota`.
+Every retained browser proof reports complete with zero unexpected requests.
+Real forwarded traffic and the owning PostgreSQL assertions retain original
+commands/attempts and exactly one durable review in successful scenarios; denied
+credential, origin transition and quota cases retain zero reviews. Optional
+services are absent: the fixture receipt lists only `learning`.
+
+The separate focused current native support check collected/executed/passed **2**
+cases, **0 failed/skipped**, all six phases/JUnit cases, in **0.85 s**:
+`tests/test_runtime.py::test_runtime_ready_authorized_and_ordinary_introduction` and
+`tests/test_publications.py::test_frozen_ranks_control_introductions_without_score_producers`.
+This removes reliance on unavailable raw/toolchain correspondence for the older
+#365 receipt; these two are not additional UI scenarios or a broad Learning run.
+
+Toolchain: Python **3.12.12**, pytest **9.1.1**, existing host Node **26.12.0**,
+locked Playwright **1.63.0** / chess.js **1.4.0**, actual macOS Chromium
+**153.0.8010.12** (revision 1243; executable hash in `browser-toolchain.json`).
+Installed Learning/database sources byte-match **54 / 36 Python files**. Locked
+cached dependencies were used offline; no host software/browser/Python install.
+Each fresh PostgreSQL fixture was capped at **1 CPU / 512 MiB**.
+
+| Identity / retained artifact | Exact value |
+| --- | --- |
+| Official Node 22.23.4 build image | `sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d` |
+| Current Study build-stage image | `sha256:1601bec32eb19fa4ed393e9d066ae10d70d097d65bc6a94cb6793c745c4e34bf` |
+| PostgreSQL 18.6 image | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+| `assembled/study-assets.json`, 744 files | SHA256 `0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e` |
+| `assembled/source-inputs.json`, 1,415 files | SHA256 `11698e261efe63cc2b9ec37811d7eee5e77b7785d54a4b778c9bd6875445e223` |
+| Ten-case `native.json` | SHA256 `bd79a14e14fb042efd0eff438b785dc1ae41d90aa95dde01acc4d08e026e98dd` |
+| Ten-case `native.xml` | SHA256 `a1a4c3210e4171746cde980b96dd19ebc0f72c07d12962ad2134fda33dab139e` |
+
+The rebuild was necessary because #419 changed the consumed Study composition
+manifest. All 744 old/new asset paths match; **only `study-composition.json`
+changed**. Both builds and exact comparisons are preserved. The current native
+report records 184 source / 1,223 dependency inputs; complete child commands,
+node IDs, collection/execution hashes and both native receipts are summarized in
+`assembled/bounded-native-receipt.json`. Detailed ten-case evidence is
+`assembled/native-essential/run-7247047f0a2bb4d2`; supporting evidence is
+`assembled/core-support/run-528110449ec384d6`.
+
+Both native fixtures confirm container, volume and temporary-data removal;
+independent exact-name readback agrees. The task export container/build tag are
+removed, shared base images/cache preserved, and the existing advisory lock was
+opened without truncation, held through each full child/cleanup and never unlinked.
+Old/new assets, sanitized proofs/service logs, reproducer, manifests and reviews
+remain outside the disposable checkout. Final pushed-ref/checkout preservation is
+recorded in external `handoff.json`; no live Study/database/history, host setting,
+secret, deployment, CI configuration or merge was touched. Browser Compose proof
+and any later shared-script correspondence remain separately owned gates.
