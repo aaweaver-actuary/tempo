@@ -31,6 +31,8 @@ Only bootstrap also needs --admin-url-file, a new --output-directory and explici
 --protected-checkout-root. Admin/private output paths inside that checkout or
 the executing source tree are refused.
 check-quarantine is a read-only private-file/configuration guard, not admission.
+It requires both the exact selected intent and resource-observation SHA256 values;
+a stale observation for the same names/intent cannot be silently substituted.
 
 Intent v1 kind is tempo-learning-persistent-target-intent, with exactly:
 transition_id, source_revision(full Git SHA), target_identity(explicit opaque

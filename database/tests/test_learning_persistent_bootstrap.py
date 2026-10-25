@@ -178,6 +178,15 @@ class PersistentEffectTests(unittest.TestCase):
         self.assertNotIn("synthetic-admin-secret", json.dumps(receipt))
         self.assertNotIn("graphClosureVerified", json.dumps(receipt))
 
+    def test_returned_receipt_cannot_mutate_future_private_output_contract(self):
+        original = dict(bootstrap._OUTPUTS)
+        receipt = self.execute()
+        receipt["private_outputs"]["passfile"] = "synthetic-redirect"
+        self.assertEqual(bootstrap._OUTPUTS, original)
+        self.execute("second-new-target-output")
+        self.assertTrue((self.root / "second-new-target-output" / "runtime.pgpass").exists())
+        self.assertFalse((self.root / "second-new-target-output" / "synthetic-redirect").exists())
+
     def test_physical_identity_or_existing_target_failure_stops_before_credentials_or_create(self):
         self.owner.fail = "inspect"
         with patch.object(bootstrap.secrets, "token_urlsafe") as generate:
@@ -235,7 +244,7 @@ class PersistentEffectTests(unittest.TestCase):
         receipt = self.execute()
         directory = self.root / "new-runtime"
         with self.assertRaises(bootstrap.PersistentBootstrapError):
-            bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent))
+            bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent), bootstrap._digest(self.resources))
         # A synthetic file fixture models the observed protocol; it is not real acceptance.
         receipt["evidence_scope"] = "observed"
         (directory / "persistent-target.json").write_text(json.dumps(receipt))
@@ -244,7 +253,7 @@ class PersistentEffectTests(unittest.TestCase):
         (directory / "provisioning-state.json").write_text(json.dumps(state))
         with patch.dict(os.environ, {"TEMPO_LEARNING_MAINTENANCE": "1"}):
             with self.assertRaises(bootstrap.PersistentBootstrapError) as caught:
-                bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent))
+                bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent), bootstrap._digest(self.resources))
         self.assertEqual(caught.exception.code, "maintenance_must_be_disabled")
 
     def test_credentials_cannot_be_written_inside_source_checkout(self):
@@ -272,7 +281,7 @@ class PersistentEffectTests(unittest.TestCase):
             "TEMPO_LEARNING_TIMEZONE": self.intent["timezone"],
         }):
             with self.assertRaises(bootstrap.PersistentBootstrapError) as caught:
-                bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent))
+                bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent), bootstrap._digest(self.resources))
         self.assertEqual(caught.exception.code, "private_output_identity_mismatch")
 
     def test_libpq_override_refuses_before_driver_or_effects(self):

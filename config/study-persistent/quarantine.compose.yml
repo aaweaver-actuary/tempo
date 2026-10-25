@@ -79,7 +79,8 @@ services:
         set -eu
         /opt/learning/bin/python -I /source/database/tempo_learning_database/tooling/bootstrap_persistent.py check-quarantine \
           --receipt-file /run/persistent/bootstrap/persistent-target.json \
-          --intent-sha256 "${TEMPO_PERSISTENT_INTENT_SHA256:?Set the validated intent digest}"
+          --intent-sha256 "${TEMPO_PERSISTENT_INTENT_SHA256:?Set the validated intent digest}" \
+          --resource-sha256 "${TEMPO_PERSISTENT_RESOURCE_SHA256:?Set the validated resource observation digest}"
         exec /opt/learning/bin/tempo-learning serve --host 0.0.0.0 --port 8001
     environment:
       TEMPO_LEARNING_WORKSPACE: ${TEMPO_PERSISTENT_WORKSPACE:?Set the exact new workspace}

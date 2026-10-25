@@ -335,7 +335,7 @@ def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory,
                 "workspace_id": intent["workspace_id"], "timezone": intent["timezone"],
                 "ingress_origin": intent["ingress_origin"], "system_identifier": resources["system_identifier"],
                 "endpoint": {"host": intent["host"], "port": intent["port"]},
-                "schema": schema, "private_outputs": _OUTPUTS,
+                "schema": schema, "private_outputs": dict(_OUTPUTS),
                 "private_output_sha256": {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in _OUTPUTS.values()},
                 "effects": {"database_created": True, "schema_initialized": True, "runtime_grants_created": True,
                     "services_started": False, "maintenance_activated": False,
@@ -357,7 +357,7 @@ def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory,
                 raise
             raise PersistentBootstrapError("persistent_bootstrap_stopped", phase) from None
 
-def check_quarantine_receipt(receipt_file, expected_intent_sha256):
+def check_quarantine_receipt(receipt_file, expected_intent_sha256, expected_resource_sha256):
     """Read-only startup guard; does not certify actual graph/runtime fencing."""
     receipt_path = Path(receipt_file)
     receipt = _private_json(receipt_path)
@@ -365,7 +365,8 @@ def check_quarantine_receipt(receipt_file, expected_intent_sha256):
              and receipt.get("evidence_scope") == "observed"
              and receipt.get("status") == "initialized-quarantine-required"
              and _sha(expected_intent_sha256) and receipt.get("intent_sha256") == expected_intent_sha256
-             and _sha(receipt.get("resource_observation_sha256")), "persistent_receipt_mismatch")
+             and _sha(expected_resource_sha256)
+             and receipt.get("resource_observation_sha256") == expected_resource_sha256, "persistent_receipt_mismatch")
     state = _private_json(receipt_path.parent / "provisioning-state.json")
     _require(state.get("phase") == "complete-quarantine-required"
              and state.get("intent_sha256") == expected_intent_sha256
@@ -444,10 +445,11 @@ def main(argv=None):
     check = commands.add_parser("check-quarantine")
     check.add_argument("--receipt-file", required=True)
     check.add_argument("--intent-sha256", required=True)
+    check.add_argument("--resource-sha256", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "check-quarantine":
-            check_quarantine_receipt(args.receipt_file, args.intent_sha256)
+            check_quarantine_receipt(args.receipt_file, args.intent_sha256, args.resource_sha256)
         elif args.command == "plan":
             result = plan_persistent_target(_private_json(args.intent_file), _private_json(args.resources_file))
             print(json.dumps(result, sort_keys=True))
