@@ -864,6 +864,504 @@
         "decision": "independent source isolation accepted; builds and release/cutover unqualified",
         "rationale": "Independent reviewer /root/review_frontend found no unresolved P1/P2 in the exact 23-path diff, verified 20 protected file hashes and exact 15 deletions, and confirmed only five retired CI source rules and exclusive suite references changed. Review accepts this bounded #361 source-isolation packet; it does not approve legacy-01, deployment, actual-data or launcher/cutover."
       }
+    },
+    {
+      "id": "legacy-guided-game-review-01",
+      "status": "candidate",
+      "source_commit": "782bf5374b87f223a023568305056415d5b63cea",
+      "purpose": "Prepare one next #390 legacy-01 option: retire correction-first, top-five Games review sessions and their active legacy HTTP/local/Celery execution. This is not daily Study guided scheduling. No code, tests, runtime, data or schema is changed by this documentation packet.",
+      "delete_paths": [
+        "backend/app/guided_review_commands.py",
+        "backend/app/services/guided_review.py",
+        "backend/app/contracts/transport/guided_review.py",
+        "database/tempo_legacy_database/adapters/games/guided_review/storage.py",
+        "database/tempo_legacy_database/adapters/games/guided_review/__init__.py",
+        "database/tempo_legacy_database/adapters/games/guided_review/README.md",
+        "backend/tests/test_guided_review.py",
+        "backend/tests/test_postgres_guided_review.py"
+      ],
+      "edit_paths": [
+        {
+          "path": "backend/app/main.py",
+          "required_edit": "Remove only GuidedReviewAttemptRequest and the three guided service imports; start_guided_game_review, guided_game_review and attempt_guided_game_review with their decorators; guided_review_start_command/guided_review_attempt_command predicates and their write-guard tuple entries; and guided_review_reconciliation_read plus its query_only_request exclusion. Keep queue_issuance_read, all other write-guard predicates, migration_snapshot, generic operations/status/retry and every Study/import/saved-exercise route. No placeholder handlers or catch-all success responses."
+        },
+        {
+          "path": "backend/app/models.py",
+          "required_edit": "Remove only the GuidedReviewAttemptRequest import/re-export and __all__ entry; preserve all Study/exercise models and unrelated guided scheduling fields."
+        },
+        {
+          "path": "backend/app/tasks.py",
+          "required_edit": "Remove only the guided_review_commands side-effect import at line 41. Preserve generic foreground execution, recover_operations, all other registrations and original operation identity; do not discard unknown saved operations to make retirement succeed."
+        },
+        {
+          "path": "database/tooling/audit_postgres_reads.py",
+          "required_edit": "Remove only representative_values session_id lookup of guided_review_sessions when the three retired route rows are removed; no remaining route uses this parameter. Retain the reader-role audit and all other representative values."
+        },
+        {
+          "path": "database/tests/check_postgres_canonical_freshness.py",
+          "required_edit": "Retire only prove_guided_review_boundary (CF-9, lines 336-386 including its private command helper/cleanup) and its one call at line 1183. Keep every other proof, fixture, assertion, cleanup and main registration; record CF-9 as retired with the unsupported capability, not a pass or replacement proof for ordinary Study."
+        },
+        {
+          "path": "docs/postgres-route-contract.json",
+          "required_edit": "Remove exactly POST /api/games/{game_id:path}/guided-review (start_guided_game_review), GET /api/guided-reviews/{session_id} (guided_game_review), POST /api/guided-reviews/{session_id}/attempt (attempt_guided_game_review). Preserve all other route/treatment rows and the route correspondence regression."
+        },
+        {
+          "path": "backend/organization-inventory.json",
+          "required_edit": "Mark only the two original guided command/service module records retired with empty current_paths and this source pointer; remove the guided DTO from current/new Python path sets, including the original models split record. Reconcile affected current counts without rewriting original baseline counts, other owners or historical evidence."
+        },
+        {
+          "path": "scripts/ci-fast-lane-inventory.json",
+          "required_edit": "Remove only the guided service/command paths and test_guided_review.py selections from the two mixed STUDY rules (lines 196 and 202); keep review/card/continuation/issuance/durability selections and every other rule. Do not delete mixed rules or lower Study coverage."
+        },
+        {
+          "path": "scripts/ci-verification-inventory.json",
+          "required_edit": "Remove only the three guided backend implementation path registrations. Preserve contract, shared source inventories and all unrelated backend selections."
+        },
+        {
+          "path": "backend/app/contracts/transport/README.md",
+          "required_edit": "Replace only the Games guided review DTO inventory row with the immutable last-good pointer and unsupported-route disposition; preserve Study and other transport ownership."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/README.md",
+          "required_edit": "Replace only the guided storage link/flow paragraph with its last-good pointer and the retained schema/export history pointer. Its removed adapter README owns the only capability-specific drawing; do not remove the schema ER diagrams or other Games storage flows."
+        },
+        {
+          "path": "database/INVENTORY.md",
+          "required_edit": "Change only the two guided-review completed-extraction links to historical source-retirement entries with this last-good SHA. Keep the original extraction evidence and all other checklist entries."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "required_edit": "Retire only the Games guided correction rows, three PostgreSQL guided command tests and stale-finding correction section, with this last-good pointer and CF-9 disposition. Preserve daily Study guided-failure/review/attempt invariants, including test_guided_review_after_stale_failure_marking_is_saved_once; similar names do not make those Games tests."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Update only the existing Guided game review, chess statistics, motif insights, dashboards row for this server capability and last-good source. Do not repeat PR419 browser deletion or change other capability dispositions."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Update only legacy-guided-game-review-01 evidence/counts if separately authorized execution changes it. Candidate preparation does not change status to approved or claim deletion; preserve all existing batches/top metadata."
+        }
+      ],
+      "production_scope": {
+        "delete_paths": [
+          "backend/app/guided_review_commands.py",
+          "backend/app/services/guided_review.py",
+          "backend/app/contracts/transport/guided_review.py",
+          "database/tempo_legacy_database/adapters/games/guided_review/storage.py",
+          "database/tempo_legacy_database/adapters/games/guided_review/__init__.py"
+        ],
+        "delete_path_count": 5,
+        "deleted_physical_lines": 399,
+        "edit_paths": [
+          "backend/app/main.py",
+          "backend/app/models.py",
+          "backend/app/tasks.py",
+          "database/tooling/audit_postgres_reads.py"
+        ],
+        "edit_path_count": 4,
+        "total_production_paths": 9,
+        "limit_paths": 25,
+        "limit_lines": 3000,
+        "counting": "399 exact full-file production deletion lines plus 65 existing physical lines in the named surgical edit regions = 464 source lines of bounded production work. Edit regions include rewritten lines, so this is not a promised net reduction. Shared main/models/tasks/audit files allow only these semantic edits; no size exception or whole-file deletion is requested. Freeze the actual #392 classified net delta at execution.",
+        "exclusive_test_paths": [
+          "backend/tests/test_guided_review.py",
+          "backend/tests/test_postgres_guided_review.py"
+        ],
+        "exclusive_test_lines": 258,
+        "exclusive_test_functions": 10,
+        "deleted_documentation_paths": [
+          "database/tempo_legacy_database/adapters/games/guided_review/README.md"
+        ],
+        "deleted_documentation_lines": 24,
+        "shared_test_edit_paths": [
+          "database/tests/check_postgres_canonical_freshness.py"
+        ],
+        "total_delete_paths": 8,
+        "total_edit_paths": 15,
+        "total_candidate_paths": 23,
+        "current_packet_written_paths": [
+          "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md"
+        ],
+        "current_packet_runtime_delta": 0,
+        "edit_source_regions": [
+          {
+            "path": "backend/app/main.py",
+            "source_lines": [
+              [
+                75,
+                75
+              ],
+              [
+                121,
+                121
+              ],
+              [
+                585,
+                588
+              ],
+              [
+                589,
+                592
+              ],
+              [
+                706,
+                706
+              ],
+              [
+                742,
+                745
+              ],
+              [
+                749,
+                749
+              ],
+              [
+                4448,
+                4460
+              ],
+              [
+                4463,
+                4468
+              ],
+              [
+                4471,
+                4494
+              ]
+            ]
+          },
+          {
+            "path": "backend/app/models.py",
+            "source_lines": [
+              [
+                109,
+                111
+              ],
+              [
+                175,
+                175
+              ]
+            ]
+          },
+          {
+            "path": "backend/app/tasks.py",
+            "source_lines": [
+              [
+                41,
+                41
+              ]
+            ]
+          },
+          {
+            "path": "database/tooling/audit_postgres_reads.py",
+            "source_lines": [
+              [
+                61,
+                61
+              ]
+            ]
+          }
+        ],
+        "edit_source_physical_lines": 65,
+        "delete_and_edit_source_physical_lines": 464
+      },
+      "incoming_consumers": [
+        {
+          "source": "backend/app/main.py:75,121,4448-4494",
+          "route": "POST /api/games/{game_id:path}/guided-review -> start_guided_game_review -> dispatch games.guided_review.start when PostgreSQL is configured; otherwise create_or_resume_session. GET /api/guided-reviews/{session_id} -> guided_game_review -> read_session (reconciliation writes). POST /api/guided-reviews/{session_id}/attempt -> attempt_guided_game_review -> dispatch games.guided_review.attempt or local submit_attempt.",
+          "disposition": "Active entrypoints, not orphans. Explicitly unsupported only after acceptance; exact removals in main edit."
+        },
+        {
+          "source": "backend/app/main.py:585-592,706,742-749; backend/app/models.py:109-111,175",
+          "route": "Write-guard predicates admit both commands; GET is excluded from query-only scope because reconciliation may write. DTO imports directly and via compatibility models/__all__.",
+          "disposition": "Remove only these predicates/exclusion/import/re-export with routes; preserve daily queue issuance and all other middleware."
+        },
+        {
+          "source": "backend/app/tasks.py:41,179-224,300-318; backend/app/guided_review_commands.py:81-82; backend/app/command_dispatch.py:19-55; backend/app/celery_app.py:31-50",
+          "route": "tasks import side-effect registers two string handlers; HTTP publishes operation ID/name/payload to generic foreground task; periodic recovery republishes saved names/payloads. No capability-specific Celery task, beat entry, background slice or plugin entry point was found.",
+          "disposition": "Remove only guided import/registrations. Generic recovery is an incoming dynamic consumer; actual pending/broker/receipt disposition is a blocking dependency."
+        },
+        {
+          "source": "backend/app/command_gateway.py:180-216",
+          "route": "_execute_command checks _handlers before looking up complete receipts. Saved original names can be retried even after the source browser caller disappears.",
+          "disposition": "Preserve gateway byte-for-byte. Even completed receipt retention alone does not establish safe command replay after handler removal."
+        },
+        {
+          "source": "backend/app/main.py:247-282; backend/app/command_gateway.py:113-122,276-320",
+          "route": "GET /api/operations/{operation_id} -> operation_status -> read_operation retains durable results; POST /api/operations/{operation_id}/retry -> retry_blocked_operation -> load_blocked_operation -> generic Celery task with original saved command_name, payload and retry_cycle.",
+          "disposition": "Keep both generic endpoints unchanged. Retry is another dynamic incoming execution route for saved Games commands, even with all three Games routes gone; original-authority disposition must cover it."
+        },
+        {
+          "source": "backend/app/services/guided_review.py:11-13,35-168; backend/app/guided_review_commands.py:13-18; database/tempo_legacy_database/adapters/games/guided_review/storage.py:1-138",
+          "route": "Only guided service/commands import the private storage module. Service reads/ranks/reconciles/reveals/grades findings; command borrows native transaction and locks game/session. Adapter reads imported_games/current_game_findings and reads/writes only guided session/attempt tables.",
+          "disposition": "Delete exclusive policy/storage with capability; retain shared connection/Postgres wrapper, finding publication/view, game data, receipt owner, chess dependency and all other consumers."
+        },
+        {
+          "source": "backend/tests/test_guided_review.py; backend/tests/test_postgres_guided_review.py; database/tests/check_postgres_canonical_freshness.py:336-386,1183",
+          "route": "Seven local route/session tests, three fake-native dispatch/locking tests and the shared CF-9 real-PostgreSQL command/session proof call this capability.",
+          "disposition": "Retire two exclusive suites and only the one shared proof/call, preserving all other canonical freshness proofs. They do not become passing removal receipts."
+        },
+        {
+          "source": "scripts/ci-fast-lane-inventory.json:196,202; scripts/ci-verification-inventory.json:53,87,129; backend/organization-inventory.json; docs/postgres-route-contract.json:1150-1170",
+          "route": "Mixed Study selection rules, current backend source sets, organization current_paths/new paths and three executable route contract rows reference deleted paths/handlers. test_postgres_route_contract compares every API route and probes middleware.",
+          "disposition": "Exact edits above retain shared selections/route correspondence. Historical SQL-site inventory/module index and old validation notes remain explicitly dated evidence."
+        },
+        {
+          "source": "backend/Dockerfile:16-17; backend/pyproject.toml; scripts/tempo-runtime.mjs:237-250",
+          "route": "Legacy image broadly copies both implementation trees; runtime lifecycle selects/builds configured services. Package metadata has no guided-specific CLI/export/plugin, but normal rebuild still includes this active legacy API.",
+          "disposition": "No image or launcher change here; actual registered target/start/restart/update source-absence acceptance remains blocked."
+        },
+        {
+          "source": "backend/app/main.py:1804-1844; database/tempo_legacy_database/adapters/http_composition/snapshots.py:60-61; database/tooling/migrate_sqlite_to_postgres.py; database/tooling/generate_postgres_schema.py:24; database/browser/tempo-db.ts:119-120",
+          "route": "Migration snapshot explicitly exports both guided tables; generic sorted-table converter and browser snapshot mapping retain them. Initial DDL/SQLite construction/FKs/index and schema chart also retain their stored facts. Tracked SQL/view/migration search found no view or migration importing the five Python implementations.",
+          "disposition": "Retain all schema/export/converter/mapping consumers. Export source presence is not actual completeness or recoverability evidence; current portable snapshot is not sufficient to cover generic operation receipts."
+        },
+        {
+          "source": "app/, static/, apps/, public/, scripts/, services/, packages/, tools/, contracts/, database/ tracked-source searches at source_commit",
+          "route": "No retained browser/service production import or concrete URL call to these three routes was found outside the named legacy assembly/tooling; PR407 removed Games UI and merged PR419 removed guided-review browser command/storage/suite. Source symbol, route-string, command-name and table-name searches were cross-checked against imports, route decorators, registrations and adapter queries.",
+          "disposition": "Do not repeat PR419 paths. This is bounded static evidence, not external/deployed-client absence; persisted opaque command envelopes remain unknown."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "backend/app/command_gateway.py",
+          "reason": "Generic command/receipt authority, including unknown-command-before-receipt ordering at lines 184-216; must not be weakened or bypassed.",
+          "sha256": "bbbf97ed281eac329c28a60df6c01374db30651ba4093ec397ae0840ff0173aa"
+        },
+        {
+          "path": "backend/app/command_dispatch.py",
+          "reason": "Original operation ID, payload digest and durable response/pending contract; removing HTTP callers does not settle existing commands.",
+          "sha256": "c4fccd8d511548f3c2c59d8ce3f864fe1dd290e5f26cba42adb21e4f2de61afa"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/commands/receipts/storage.py",
+          "reason": "All operation receipts, recovery filtering/fencing and borrowed transaction authority remain; no receipt deletion or reinterpretation.",
+          "sha256": "8161f58b91c2419a6aebcea56bed0ec9b24d0d252280383c930b7bdb56bcfcd5"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+          "reason": "portable_table_rows explicitly retains guided_review_sessions and guided_review_attempts at lines 60-61. Existing snapshot is a retained consumer, not a complete historical converter or pending-receipt export.",
+          "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb"
+        },
+        {
+          "path": "database/tempo_legacy_database/connections.py",
+          "reason": "Retain SQLite schema construction and guided tables/index plus all shared connections, review/attempt and compatibility behavior.",
+          "sha256": "4b3733dc312679f3ed38491fe5ba4f4954087bb18a8598222cca2e1b9c80a554"
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+          "reason": "Retain both guided tables, game/session/finding FKs and idx_guided_review_game. Code retirement never approves DROP or migration edits.",
+          "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4"
+        },
+        {
+          "path": "database/tempo_legacy_database/schema/study-queue-review-1/README.md",
+          "reason": "Stored table/field/FK descriptions and ER chart stay accurate because no physical schema retires.",
+          "sha256": "ef52ce460717ab9d956c0bec95a30767fdb5ed4b6ff79c783b057e6c57cf2717"
+        },
+        {
+          "path": "database/tooling/migrate_sqlite_to_postgres.py",
+          "reason": "Existing generic stopped-snapshot table copy/verify remains a one-time converter dependency. It imports sorted_tables, not guided implementation; it is not the approved #389 history converter.",
+          "sha256": "965b72364b8b7985d67e705c0e89e21f5d7d071a45d19a01d1fce8f85899389f"
+        },
+        {
+          "path": "database/tooling/generate_postgres_schema.py",
+          "reason": "sorted_tables discovers schema/foreign-key order independently of guided handlers; retain source-schema generation needed by existing converter.",
+          "sha256": "35c8586909480aa7f7dfbe3abbfd46f401be69633bf601482cf14cc29b184216"
+        },
+        {
+          "path": "database/browser/tempo-db.ts",
+          "reason": "Retain both legacy guided table-to-syncMetadata mappings at lines 119-120; no browser stored-data cleanup.",
+          "sha256": "ea201063987c9ac38aae0da847bd0a07e44bfc7e90c97dc1ed3c930eb4550fd3"
+        },
+        {
+          "path": "database/browser/adapters/games-analysis/README.md",
+          "reason": "PR419 leaves optional guided pending keys cold. No claim that old original-authority browser operations were drained, migrated or erased.",
+          "sha256": "96f07666d10ca61147aed05eb4fa3256d68b8d67ec41a0397890b337b21981fb"
+        },
+        {
+          "path": "database/tests/study-priority-native-overlap.py",
+          "reason": "Retain guided_review_attempts in the no-mutation table snapshot and all foreground/background noninterference proof.",
+          "sha256": "60b27fa65b6547ce3238999804cc331d0f8c41d60303cf5d770e67e57446242d"
+        },
+        {
+          "path": "backend/tests/test_regressions.py",
+          "reason": "Daily Study test_guided_review_after_stale_failure_marking_is_saved_once and other review/queue behavior are unrelated to Games guided review.",
+          "sha256": "198f6b1885696669e88a8bb080f0ba27f01bee2e0d9bedb12ccfbb551ddfa754"
+        },
+        {
+          "path": "backend/tests/test_postgres_route_contract.py",
+          "reason": "Preserve all three route/write-guard correspondence tests; later removal must reconcile real routes and the exact route contract.",
+          "sha256": "0fd8faac291a94f9299edd4eb92640e946682a128c142d8362dc166451aadb8b"
+        },
+        {
+          "path": "backend/tests/test_queue_attempt_recovery.py",
+          "reason": "Preserve original-answer/receipt reconciliation and guided failure replay for normal Study.",
+          "sha256": "f00cba436f4ad146184eaef201c2ecf97b43bde8e2b61c0c48f4a7fe2a24930b"
+        },
+        {
+          "path": "backend/tests/test_study_contract_identity.py",
+          "reason": "Saved exercise execution/contract and checked-in stalemate corpus invariants survive producer retirement.",
+          "sha256": "cdabe6bebb7e9c00b63981f5ce2f576ea955d253be16911a1c3c491090b08b6c"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/frozen_order.py",
+          "reason": "Saved frozen ranking/normal introduction remains; no rank regeneration or admission policy changes.",
+          "sha256": "cfb01350dcf09a59bc68e42b9d9c19522d233ae6fc6ff3502c7c8b33454fdd2e"
+        },
+        {
+          "path": "services/learning/runtime/src/tempo_learning_runtime/study_attempt_commands.py",
+          "reason": "Learning-local saved exercise execution and durable attempts remain; no Games-handler dependency.",
+          "sha256": "3c3257ef47a395f995aa3536df9e090c718dccdf175ef8f5e29e85ab2dbd61b4"
+        },
+        {
+          "path": "services/learning/runtime/src/tempo_learning_runtime/frozen_opening_order.py",
+          "reason": "Independent Learning frozen ordering/introduction remains.",
+          "sha256": "4918ed419dde5995d202c09e504d7a048690c2ee9867c176aa03343ceff2e127"
+        },
+        {
+          "path": "services/learning/remediation/src/tempo_learning_remediation/application.py",
+          "reason": "Learning-local remediation is protected even where its evidence names Games.",
+          "sha256": "20b9355e43e3f1a004b8a6a5bee8ddcf55116060cb327f1494a7ef80ce608943"
+        },
+        {
+          "path": "contracts/game-evidence/pyproject.toml",
+          "reason": "Declared Game Evidence contract package and Learning consumers remain; this candidate is not contract retirement.",
+          "sha256": "e99b2f3449cf27f6fde4465338102efe6c800aadbddae7b8f578de481cbad0a6"
+        },
+        {
+          "path": "tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py",
+          "reason": "Keep execution_bundle and Operator.apply, accepted Content-to-Learning delivery/retry ownership.",
+          "sha256": "13833f1b7fbab74ba9b0f99e8001a659785cd76c5ce842e64e36fcdad524f4c2"
+        },
+        {
+          "path": "app/lib/workbench-navigation.ts",
+          "reason": "Keep the retained Workbench URL build helper; optional directory names do not establish disuse.",
+          "sha256": "f188013708257accd42ffd4eb73c8601380d943a5d67aee3c96d271a6b50f99e"
+        },
+        {
+          "path": "backend/Dockerfile",
+          "reason": "Broad COPY backend/app and database/tempo_legacy_database still assembles legacy source; no build registration can be inferred absent. Launcher/update acceptance is a blocker, not an authorized Dockerfile edit.",
+          "sha256": "f5920c997bc07fd0c797865ecaf664739ef7f74010783e7fc4265dcc9a463663"
+        },
+        {
+          "path": "scripts/tempo-runtime.mjs",
+          "reason": "Current normal lifecycle build/update path remains unchanged; source review does not certify the actual registered target.",
+          "sha256": "c3091fd9a3afab8c8f5de3871ec359a4c56255f697f7d65ecf2b5eab63b8562d"
+        },
+        {
+          "path": "docs/postgres-cutover-inventory.json",
+          "reason": "Retain dated historical audit/recovery evidence. It already lists the PR419-deleted browser client; no executable consumer found. It is not the current route contract or a live census, and is not regenerated here.",
+          "sha256": "b5ca03e9dafab71208c3d0f51cf2cbadb177f49e12f1e45276ca4caf2bf2b670"
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/MODULE-INDEX.md",
+          "reason": "Dated source audit is historical evidence, not a current serving registration; retain it.",
+          "sha256": "907df27c2b2067882b2135e79a6854ae3e2fd2c3923de1770819b307cf6f4995"
+        },
+        {
+          "path": "database/VALIDATION.md",
+          "reason": "Preserve original guided storage extraction/10-case historical evidence; do not relabel it as removal validation.",
+          "sha256": "cd1d8c84df40898b5885d12156af06e634463c64b4d9d266e9ea7464cb11a56d"
+        },
+        {
+          "path": "tools/component-build/test-inventory.json",
+          "reason": "Its pre-existing PR419-deleted browser-suite names do not import the five backend files. No unrelated cleanup or reduction credit in this cohort.",
+          "sha256": "4797b3c0b0e65d241c5cd09c1f9bfceb9f80686a3e939eda86aad8a33405e9b1"
+        }
+      ],
+      "protected_regions": [
+        {
+          "path": "backend/app/main.py",
+          "symbol": "migration_snapshot",
+          "source_lines": [
+            1804,
+            1843
+          ],
+          "sha256": "7d80ec80bba7f0f5cefe424c477eeb294ad500a3c6457d307a9a21a7aa01e567",
+          "reason": "Keep this complete function/decorator region unchanged while editing the separate guided route/middleware regions."
+        },
+        {
+          "path": "backend/app/main.py",
+          "symbol": "operation_status",
+          "source_lines": [
+            247,
+            255
+          ],
+          "sha256": "8d56ab95a8a299ea6143c543cdd9fe19fbcc87709155468d9cbd1d4888f10b14",
+          "reason": "Keep complete generic operation status/retry route and original-identity recovery unchanged; retirement cannot erase or short-circuit saved obligations."
+        },
+        {
+          "path": "backend/app/main.py",
+          "symbol": "retry_blocked_operation",
+          "source_lines": [
+            258,
+            282
+          ],
+          "sha256": "e4285a3a0030423866d056d99bb382110141d8dc182fd4dd93b975096c98dbb2",
+          "reason": "Keep complete generic operation status/retry route and original-identity recovery unchanged; retirement cannot erase or short-circuit saved obligations."
+        }
+      ],
+      "preserved_test_names": [
+        "backend/tests/test_postgres_route_contract.py",
+        "backend/tests/test_command_receipt_storage_boundary.py",
+        "backend/tests/test_study_portable_storage_boundary.py",
+        "backend/tests/test_queue_attempt_recovery.py",
+        "backend/tests/test_regressions.py::test_guided_review_after_stale_failure_marking_is_saved_once",
+        "backend/tests/test_frozen_opening_order.py",
+        "backend/tests/test_study_contract_identity.py",
+        "database/tests/check_postgres_canonical_freshness.py (all functions/calls except prove_guided_review_boundary/CF-9)",
+        "database/tests/study-priority-native-overlap.py",
+        "services/learning/runtime/tests/test_fresh_pgn_intake.py"
+      ],
+      "test_commands": [
+        "npm run check:conflicts",
+        "git diff --check"
+      ],
+      "future_execution_checks": {
+        "status": "NOT RUN / NOT AUTHORIZED by candidate preparation",
+        "focused_source_removed_command": "TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database python -m pytest backend/tests/test_postgres_route_contract.py backend/tests/test_command_receipt_storage_boundary.py backend/tests/test_study_portable_storage_boundary.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_regressions.py::test_guided_review_after_stale_failure_marking_is_saved_once backend/tests/test_frozen_opening_order.py backend/tests/test_study_contract_identity.py -q --rootdir=.",
+        "required_before_approval": "Owner must pin the allowed interpreter/dependencies/fixtures and exact installed/native source-absence commands and selections under #390; no application import is executed in this task. Physically remove only approved paths in a disposable tree before configuration loading, demonstrate retained artifact/API/worker startup, selected routes absent, other route/middleware/command recovery/exports intact and retained Study/import evidence corresponds. Freeze exact native canonical freshness selection after retiring CF-9, without waiving other functions. No generic make full, test deletion to hide a retained failure, live runner or invented native pass.",
+        "receipt_reuse": "Reuse #382/#386 and other receipts only when relevant executable/dependency/fixture/toolchain inputs match; do not repeat unit/native/build suites solely for documentation overlap."
+      },
+      "dependency_receipts": [
+        "Prepared from current main 782bf5374b87f223a023568305056415d5b63cea (PR419 merge), not the old manifest top-level cb0ed591 baseline. All seven existing batches/top-level fields are preserved; per-batch source_commit owns this new candidate.",
+        "Source-only graph inspected using tracked symbol/import, exact route-string, registered command-name, table-name and build/config searches plus Python AST/source reading. Active legacy consumers and dynamic recovery routes are listed, not silently declared absent.",
+        "#386 is closed and current main retains its five-case synthetic native PGN receipt at services/learning/runtime/VALIDATION.md (tested d9ce864b97b81196fb7bad5ddef8e61f2394ee5e). Reuse still requires executable-input correspondence; it does not establish actual-history migration. #382 remains open; PR420/421 preparation is not accepted composed Study proof.",
+        "#369 is closed for its merged documentation specification only (d08f46c25e7221df6110b9431ab5d14f366fe217); #359 target/launcher implementation and #267/#389 actual-history gates remain open. No implementation is started under this candidate.",
+        "Documentation/source correspondence checks passed: npm run check:conflicts; git diff --check; read-only Python JSON/AST/hash/path/selector/command/link checks. Only this manifest and the existing FEATURES row change. All existing cohorts/top metadata remain unchanged; every proposed delete path still exists. No unit/runtime/native/browser suite or build ran, no dependency was installed, and actual data/secrets/live services/host settings were not accessed. Sanitized validation script/report are retained outside the checkout at /tmp/tempo-390-validate-candidate.py and /tmp/tempo-390-candidate-validation.json."
+      ],
+      "acceptance_dependencies": [
+        {
+          "gate": "#390 expert review",
+          "state": "PENDING",
+          "required_evidence": "Review exact source SHA, path/edit allowlist, incoming routes, protected hashes/regions, historical capability retirement and preserved tests. Explicitly accept loss of Games session execution/resumption/GET after retirement; status stays candidate until authorized expert approval, not implementation discretion."
+        },
+        {
+          "gate": "Original-authority guided operations (#358/#267/#389)",
+          "state": "BLOCKED ON ACTUAL EVIDENCE",
+          "required_evidence": "Authorized owner must establish actual installed versions/authority and disposition of games.guided_review.start/attempt operation receipts (all states), broker/in-flight/redelivery work, active/completed sessions/attempts and cold PR419 browser v1/v2 pending envelopes. Freeze admissions and demonstrate original operation replay/settlement or explicit cold retention with recoverable facts and no pending obligation abandoned. Opaque DB/broker/browser payloads cannot be disproved by source search. If this needs a retained compatibility handler or new migration/runtime edit, reject/re-scope this manifest before execution; no placeholder or success fabrication."
+        },
+        {
+          "gate": "Retained Study/import (#382/#386)",
+          "state": "#382 PENDING; #386 RECORDED / CORRESPONDENCE REQUIRED",
+          "required_evidence": "Accepted same-input essential native/composed-browser Study evidence and retained fresh-PGN/frozen-order/retry/history fixture receipt, with saved exercise/attempt, ordinary introduction and local remediation boundaries unchanged. #386 synthetic success is not actual-data transfer or #382 completion."
+        },
+        {
+          "gate": "Normal launcher/cutover (#359/#267; accepted #369 specification)",
+          "state": "BLOCKED ON ACTUAL AUTHORITY",
+          "required_evidence": "Actual registered target and normal start/restart/update must choose retained artifacts and never rebuild/import removed legacy handlers. Existing running image or opt-in Compose/source absence is insufficient. Retained historical facts and pending original-authority work need separately authorized latest-state preservation/rehearsal and one-writer acceptance. No #359 launcher or #389 converter implementation until their prerequisites are released."
+        },
+        {
+          "gate": "Exact source-absence acceptance / #391 handoff",
+          "state": "PENDING SEPARATE EXECUTION AUTHORIZATION",
+          "required_evidence": "Freeze exact source-removed test/build/native commands, nonzero selections, protected-source correspondence and #392 classified net delta. Demonstrate affected artifacts run with paths absent before config loading, preserve all non-CF9 canonical proofs and actual retained export/table data. No approved legacy-01 or table-drop authority follows from this draft. All actual checks/data observations remain unperformed here."
+        }
+      ],
+      "data_disposition": "Retain all guided_review_sessions/guided_review_attempts rows, current/base finding and imported-game facts, receipt/payload identities and browser pending values unchanged. Retire execution only after the above owner gates; saved facts must remain recoverable with explicit disposition of active work. Preserve migration_snapshot table exports, browser mapping, SQLite construction, PostgreSQL DDL/FKs/index, existing converters and schema diagrams. No DROP, migration, live read/export/write, data settlement/erasure or completed-history claim. Daily Study cards.guided_review and review guided flags, saved exercise execution, frozen ranks/introduction, Learning-local contracts/remediation/attempts, Workbench URL helper and Content Operator.apply/execution_bundle are protected. Other Games/statistics/defense producers and deferred #412 are outside this cohort.",
+      "reviewer": {
+        "decision": "independent candidate correspondence review complete; remains candidate, no deletion approval",
+        "rationale": "Read-only reviewer /root/review_guided_candidate found no unresolved P1/P2. Independently verified 7 prior batches/top fields preserved, the one existing FEATURES row, 8 delete plus 15 edit paths without prior-cohort overlap, 399 deletion plus 65 edit-source lines (464 bounded source lines, not net reduction), 10 exclusive tests/258 lines, 29 protected file hashes and 3 complete decorated route-region hashes. Active routes, side-effect/dynamic receipt recovery, shared CF-9, inventories, broad build and retained SQL/export/schema consumers match source. No runtime suite, source-removed artifact, actual-data, launcher, migration or cutover acceptance is granted."
+      }
     }
   ]
 }
