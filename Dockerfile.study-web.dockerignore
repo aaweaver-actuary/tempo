@@ -60,7 +60,6 @@ app/components/pending-discovery-saves.tsx
 !scripts/
 !scripts/study-composition.ts
 !scripts/offline-shell-assets.ts
-!scripts/maia-cache-asset.ts
 
 !public/
 !public/**
@@ -70,7 +69,6 @@ public/engines/
 public/engines/**
 public/maia3/
 public/maia3/**
-public/maia-worker.js
 public/stockfish-worker.js
 public/ort/
 public/ort/**

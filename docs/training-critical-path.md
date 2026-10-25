@@ -430,8 +430,7 @@ entry's final state was not recorded; both newer ordering and deletion must be
 preserved. The other 275 browser cases and all other execution layers passed.
 
 ```sh
-make python-file 'FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-term]'
-make python-file FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children
+# Historical archive-cancellation cases retired with the offline CLI (2026-10-25).
 make python-file FILE=backend/tests/test_stalemate_swindles.py
 make python-file FILE=backend/tests/test_training_transition_fixture.py
 make ui-file FILE=training-critical-path.spec.ts

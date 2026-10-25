@@ -1,9 +1,0 @@
-{
-  "ServerVersion": "29.8.1",
-  "Architecture": "aarch64",
-  "CgroupVersion": "2",
-  "NCPU": 8,
-  "MemTotal": 8319770624,
-  "KernelVersion": "7.0.14-linuxkit",
-  "OperatingSystem": "Docker Desktop"
-}

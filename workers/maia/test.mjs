@@ -4,8 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 const group = process.argv[2] ?? 'pure';
 const patterns = {
-  pure: /(?:core|model|resources|artifact)\.test\.mjs$/,
-  protocol: /(?:protocol|worker|wire)\.test\.mjs$/,
+  pure: /(?:core|model|artifact)\.test\.mjs$/,
   model: /^real-model\.test\.mjs$/,
 };
 try {
