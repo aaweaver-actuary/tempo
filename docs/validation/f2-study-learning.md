@@ -342,6 +342,12 @@ Pinned base is merged PR410/main `311a712581deb95bf9035b2a3b934c03335a1cd5`.
 Prepared executable commit is `594c561d797b1c41a77ab86d5fc87f02854062b9`, tree
 `12263734cda741dfc94fc67fa09abac5aa32ec66`, on
 `codex/382-native-acceptance` in `/tmp/tempo-382-native-20261025`.
+Main later advanced to `782bf5374b87f223a023568305056415d5b63cea` through #419,
+changing retained Study build inputs; `later-main-correspondence.json` lists them.
+This preparation remains pinned to the earlier tree. Before final execution,
+reconcile current main and the browser owner's pending opt-in composed-ingress
+change to `scripts/prove-study-learning.mjs`; its default native behavior must be
+preserved. The native owner has not modified that shared script.
 The only executable repair imports `uuid` in the owning native UI harness.
 The new regular owning-suite regression
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`
@@ -387,6 +393,8 @@ PostgreSQL runner with `fixture_profile='essential'`, its exact extra-source
 closure, and these already-built production assets. It requires the parent's
 accepted #380 receipt, checks the pinned source/assets, then re-collects, executes
 and reconciles all ten identities, all 30 setup/call/teardown phases and JUnit.
+The parent must assess the receipt's contents and source correspondence; the
+prepared path-existence guard does not itself establish #380 acceptance.
 Pending invocation, from the disposable checkout, is:
 
 ```sh
