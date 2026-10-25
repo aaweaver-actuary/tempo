@@ -1,9 +1,10 @@
 // Graph-preserving fresh-start preparation. There is deliberately no CLI or live
 // service/database adapter: the existing launcher must supply authorized ports.
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync,
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync,
   renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { acquireTargetLock, atomicJson } from "./tempo-deployment.mjs";
 
@@ -21,6 +22,8 @@ const candidate = plan => ({ registration: Buffer.from(`${JSON.stringify(plan.re
   receipt: Buffer.from(`${JSON.stringify(plan.receipt, null, 2)}\n`) });
 const sameBytes = (left, right) => left === null || right === null ? left === right : Buffer.from(left).equals(Buffer.from(right));
 const matchingPair = (left, right) => sameBytes(left.registration, right.registration) && sameBytes(left.receipt, right.receipt);
+const installedEffects = new WeakSet();
+const text = value => typeof value === "string" && value.trim().length > 0;
 
 // Public readiness protocol: object keys sorted recursively, arrays ordered,
 // JSON scalars only. Each lock acquisition supplies a fresh gateContext nonce.
@@ -65,11 +68,11 @@ function atomicBytes(path, bytes) {
  * withLock uses its existing stateDirectory/maintenance.lock, never a second lock.
  * The journal is private recovery evidence and must not be published to GitHub.
  */
-export function createCutoverState({ stateDirectory, registrationPath, receiptPath, lockIdentity }) {
+export function createCutoverState({ stateDirectory, registrationPath, receiptPath, lockIdentity, admissionPath }) {
   const journalPath = join(stateDirectory, "cutover-transition.json");
   if (new Set([registrationPath, receiptPath, journalPath, join(stateDirectory, "maintenance.lock")].map(path => resolve(path))).size !== 4)
     blocked("cutover_state_paths_overlap", "Original lock, transition journal, registration and receipt need distinct explicit paths.");
-  return {
+  const state = {
     lockIdentity,
     async withLock(callback) {
       const release = acquireTargetLock(stateDirectory);
@@ -89,7 +92,66 @@ export function createCutoverState({ stateDirectory, registrationPath, receiptPa
       }
       return { durable: true, evidenceId: fingerprint([encoded(readFileSync(registrationPath)), encoded(readFileSync(receiptPath))]) };
     },
+    readCompletedAdmission: plan => {
+      const journal = state.readJournal();
+      assertJournal(journal, plan);
+      if (journal.executionScope !== "installed" || journal.phase !== "complete")
+        blocked("installed_admission_pending", "Only a completed installed transition can publish admission; fixture or interrupted state is not authority.");
+      if (!matchingPair(state.readPublication(), finalPair(journal)))
+        blocked("fresh_start_publication_mismatch", "Completed authority no longer matches both publication records.");
+      const packet = { plan: copy(selected(plan, journal)), evidence: copy(journal.admissionEvidence), facts: copy(journal.evidence) };
+      verifyInstalledAdmissionPacket(packet);
+      return packet;
+    },
+    assertAdmissionDestination: plan => {
+      if (!text(admissionPath) || !isAbsolute(admissionPath))
+        blocked("installed_admission_destination_pending", "Supply the explicit private completed-admission destination before installed effects.");
+      const destination = resolve(admissionPath), parent = dirname(destination);
+      let parentStat;
+      try { parentStat = lstatSync(parent); }
+      catch { blocked("installed_admission_destination_invalid", "The explicit private admission parent directory must already exist."); }
+      if (!parentStat.isDirectory() || parentStat.isSymbolicLink() || parentStat.mode & 0o077
+        || (typeof process.getuid === "function" && parentStat.uid !== process.getuid()))
+        blocked("installed_admission_destination_invalid", "Completed admission requires an owned private directory without symlink rebinding.");
+      const canonical = path => existsSync(path) ? realpathSync(path) : resolve(path);
+      const resolvedDestination = join(realpathSync(parent), relative(parent, destination));
+      for (const path of [registrationPath, receiptPath, journalPath, join(stateDirectory, "maintenance.lock")]) {
+        let protectedParent;
+        try { protectedParent = realpathSync(dirname(resolve(path))); }
+        catch { blocked("installed_admission_destination_invalid", "Explicit publication and state parent directories must exist before installed effects."); }
+        if (join(protectedParent, relative(dirname(resolve(path)), resolve(path))) === resolvedDestination)
+          blocked("installed_admission_destination_invalid", "Completed admission must not replace registration, receipt, private journal or maintenance lock.");
+      }
+      for (const root of [plan.original.registration?.root, plan.registration?.root, fileURLToPath(new URL("../", import.meta.url))]) {
+        if (!text(root)) blocked("installed_admission_destination_invalid", "Explicit source and target checkout roots are required.");
+        const difference = relative(canonical(root), resolvedDestination);
+        if (difference !== ".." && !difference.startsWith(`..${sep}`) && !isAbsolute(difference))
+          blocked("installed_admission_destination_invalid", "Completed admission must remain outside every source/target checkout.");
+      }
+      let stat;
+      try { stat = lstatSync(destination); }
+      catch (error) { if (error.code !== "ENOENT") blocked("installed_admission_destination_invalid", "Admission destination could not be inspected safely."); }
+      if (stat) {
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o077 || stat.nlink !== 1
+          || (typeof process.getuid === "function" && stat.uid !== process.getuid()) || stat.size > 1024 * 1024)
+          blocked("installed_admission_destination_invalid", "Existing admission output must be a bounded owned private file, never a link.");
+        let prior;
+        try { prior = JSON.parse(readFileSync(destination, "utf8")); verifyInstalledAdmissionPacket(prior); }
+        catch { blocked("installed_admission_destination_mismatch", "Preserve the existing admission output; it is not this verified installed authority."); }
+        if (["transitionId", "revision", "sourceIdentity", "targetIdentity", "lockIdentity"].some(key => prior.plan[key] !== plan[key]))
+          blocked("installed_admission_destination_mismatch", "Never replace a different installed authority's admission packet.");
+        assertFinalized(plan, prior.plan);
+      }
+    },
+    writeCompletedAdmission: plan => {
+      state.assertAdmissionDestination(plan);
+      const packet = state.readCompletedAdmission(plan);
+      if (existsSync(admissionPath) && isDeepStrictEqual(JSON.parse(readFileSync(admissionPath, "utf8")), packet)) return packet;
+      atomicJson(admissionPath, packet);
+      return packet;
+    },
   };
+  return state;
 }
 
 const stages = [
@@ -107,6 +169,137 @@ const order = phase => phases.indexOf(phase);
 const selected = (plan, journal) => journal.finalized ? { ...plan, ...journal.finalized } : plan;
 const identity = plan => plan.registration.cutover;
 const isSchemaIdentity = value => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value);
+
+/** Installed operations remain explicit owner capabilities, never discovered or
+ * loaded from configuration. The wrapper validates positive observed results
+ * and bindings; setting executionScope on an arbitrary object cannot opt in.
+ * assessReadiness is the public installed readiness evaluator composed with the
+ * independent graph/fresh-init verifiers. No operation is supplied by default.
+ */
+export function createInstalledFreshStartEffects({ operations, readReleaseEvidence, assessReadiness } = {}) {
+  const required = [...stages.map(([, , action]) => action), "finalizeFreshStartPublication", "admitTarget", "verifyAdmission"];
+  if (!operations || required.some(name => typeof operations[name] !== "function")
+    || typeof readReleaseEvidence !== "function" || typeof assessReadiness !== "function")
+    blocked("installed_effect_contract_pending", "Connect all explicit installed owner operations and independent evidence/readiness capabilities before execution.");
+  const handlers = Object.freeze(Object.fromEntries([...required, "observeResumption", "recoverInterrupted", "recoverTarget"]
+    .map(name => [name, operations[name]])));
+  const effects = { executionScope: "installed" };
+  effects.assertReleaseGates = async (plan, checkpoint, facts, gateContext) => {
+    const evidence = await readReleaseEvidence({ plan: copy(plan), checkpoint, facts: copy(facts), gateContext });
+    const result = await assessReadiness({ plan: copy(plan), checkpoint, facts: copy(facts), gateContext, evidence: copy(evidence) });
+    if (result?.scope !== "observed" || evidence?.scope !== "observed")
+      blocked("installed_readiness_unverified", "Installed execution needs independent observed public verifiers; a fixture gate cannot be promoted.");
+    return { ...copy(result), evidence: copy(evidence) };
+  };
+  for (const [, , action] of stages) effects[action] = async args => {
+    const binding = cutoverReleaseBinding(args.plan, args.operationKey, args.gateContext);
+    const fact = await handlers[action]({ ...copy(args), binding: copy(binding) });
+    assertObservedEffect(fact, binding);
+    return copy(fact);
+  };
+  effects.finalizeFreshStartPublication = args => handlers.finalizeFreshStartPublication(copy(args));
+  effects.admitTarget = async args => {
+    const binding = cutoverReleaseBinding(args.plan, args.operationKey, args.gateContext);
+    const result = await handlers.admitTarget({ ...copy(args), binding: copy(binding) });
+    assertObservedEffect(result, binding);
+    return copy(result);
+  };
+  const admission = action => async args => {
+    if (typeof handlers[action] !== "function")
+      blocked("installed_recovery_contract_pending", "The explicit installed recovery/readback owner is missing; preserve current authority.");
+    const operationBinding = cutoverReleaseBinding(args.plan, args.operationKey, args.gateContext);
+    const fact = await handlers[action]({ ...copy(args), binding: copy(args.admissionBinding), operationBinding: copy(operationBinding) });
+    assertObservedEffect(fact, args.admissionBinding);
+    if (fact.phase !== "complete" || !isDeepStrictEqual(fact.operationBinding, operationBinding))
+      blocked("installed_admission_unverified", "Installed admission needs completed independent readback bound to this exact operation and publication.");
+    return copy(fact);
+  };
+  effects.verifyAdmission = admission("verifyAdmission");
+  effects.recoverTarget = admission("recoverTarget");
+  effects.observeResumption = async args => {
+    if (typeof handlers.observeResumption !== "function") return null;
+    const binding = cutoverReleaseBinding(args.plan, "before-resume", args.gateContext);
+    const fact = await handlers.observeResumption({ ...copy(args), binding: copy(binding) });
+    assertObservedEffect(fact, binding);
+    return copy(fact);
+  };
+  effects.recoverInterrupted = async args => {
+    if (typeof handlers.recoverInterrupted !== "function") return null;
+    const binding = cutoverReleaseBinding(args.plan, args.operationKey, args.gateContext);
+    const result = await handlers.recoverInterrupted({ ...copy(args), binding: copy(binding) });
+    if (result?.status === "completed") assertObservedEffect(result.evidence, binding);
+    else if (result?.status === "not-started") assertObservedEffect(result, binding);
+    return copy(result);
+  };
+  installedEffects.add(effects);
+  return Object.freeze(effects);
+}
+
+function assertObservedEffect(fact, binding) {
+  if (fact?.scope !== "observed" || fact.verified !== true || !text(fact.evidenceId)
+    || !binding || !isDeepStrictEqual(fact.binding, binding))
+    blocked("installed_effect_unverified", "An installed owner must independently observe the exact bound effect; labels and fixture facts are insufficient.");
+}
+
+/** Pure public projection validation, not an independent data/import verifier.
+ * Actual owner proofs were required at every producer checkpoint. Consumers
+ * still reobserve current fence, daemon, physical target and runtime lineage.
+ */
+export function verifyInstalledAdmissionPacket({ plan, evidence, facts } = {}) {
+  assertPlan(plan);
+  assertInstalledTarget(plan);
+  if (plan.registration.version !== 2 || plan.receipt.version !== 2 || !/^[a-f0-9]{40}$/.test(plan.revision))
+    blocked("installed_admission_unverified", "Installed publication must pin the exact v2 records and full source revision.");
+  assertFinalized(plan, { registration: plan.registration, receipt: plan.receipt,
+    graphVerification: plan.graphVerification, freshInitialization: plan.freshInitialization });
+  const binding = cutoverReleaseBinding(plan, "before-admission", evidence?.binding?.gateContext);
+  if (!text(evidence?.binding?.gateContext) || evidence?.scope !== "observed" || !text(evidence.evidenceId)
+    || !isDeepStrictEqual(evidence.binding, binding))
+    blocked("installed_admission_unverified", "Completed admission needs the final public plan and observed before-admission evidence binding.");
+  const target = identity(plan);
+  for (const [started, , , name] of stages) {
+    checkFact(name, facts?.[name], plan);
+    const stageBinding = facts[name].binding;
+    if (facts[name].scope !== "observed" || stageBinding?.version !== 1 || !text(stageBinding.gateContext)
+      || stageBinding.checkpoint !== `${plan.transitionId}:${started}` || !/^[a-f0-9]{64}$/.test(stageBinding.planSha256 ?? "")
+      || !text(facts[name].evidenceId))
+      blocked("installed_admission_unverified", "Every installed preparation and fence fact must retain observed owner provenance.");
+    if (name === "authorityFence" && !isDeepStrictEqual(stageBinding,
+      cutoverReleaseBinding(plan, `${plan.transitionId}:${started}`, stageBinding.gateContext)))
+      blocked("installed_admission_unverified", "The original-authority fence must bind the exact finalized public plan.");
+  }
+  if (facts.graphImported.graphReceipt !== target.graphReceipt || facts.freshInitialization.freshInitReceipt !== target.freshInitReceipt
+    || !text(target.graphReceipt) || !text(target.freshInitReceipt))
+    blocked("installed_admission_unverified", "Completed graph and fresh-init facts must match the exact finalized public receipt references.");
+  const publication = facts.publication;
+  if (publication?.scope !== "observed" || publication.registrationMatches !== true || publication.receiptMatches !== true
+    || publication.durable !== true || !text(publication.evidenceId))
+    blocked("installed_admission_unverified", "Both matching publication records need producer-owned durable confirmation.");
+  const confirmation = evidence.cutoverConfirmation, admission = evidence.targetAdmission, isolation = evidence.authorityIsolation;
+  if (confirmation?.confirmed !== true || !text(confirmation.evidenceId)
+    || confirmation.freshStartChoice !== "graph-preserving-fresh-start" || confirmation.targetIdentity !== plan.targetIdentity
+    || confirmation.workspace !== target.workspace || confirmation.ingressOrigin !== target.ingress.origin
+    || confirmation.graphSourceReference !== target.graphSourceReference
+    || admission?.confirmed !== true || !text(admission.evidenceId) || admission.targetIdentity !== plan.targetIdentity
+    || admission.workspace !== target.workspace || admission.ingressOrigin !== target.ingress.origin
+    || !text(isolation?.evidenceId) || isolation.targetIdentity !== plan.targetIdentity || isolation.workspace !== target.workspace
+    || isolation.ingressOrigin !== target.ingress.origin || isolation.oldAuthorityDisposition !== "isolated" || isolation.oldReplayDisabled !== true)
+    blocked("installed_admission_unverified", "Retain the exact separately authorized cutover/admission and current new-authority isolation proof.");
+  assertObservedEffect(facts.admission, binding);
+  const operation = facts.admission.operationBinding;
+  if (facts.admission.phase !== "complete" || !text(operation?.gateContext)
+    || ![`${plan.transitionId}:verify-admission`, `${plan.transitionId}:forward-recovery`].includes(operation.checkpoint)
+    || !isDeepStrictEqual(operation, cutoverReleaseBinding(plan, operation.checkpoint, operation.gateContext)))
+    blocked("installed_admission_unverified", "Confirmation is not completion; independent installed admission readback is required.");
+  return Object.freeze({ scope: "observed", verified: true, phase: "complete", evidenceId: facts.admission.evidenceId,
+    binding: copy(binding), sourceIdentity: plan.sourceIdentity, lockIdentity: plan.lockIdentity,
+    targetIdentity: plan.targetIdentity, transitionId: plan.transitionId });
+}
+
+function assertInstalledTarget(plan) {
+  if (Boolean(plan.original.registration?.disposable) || Boolean(plan.registration?.disposable))
+    blocked("installed_target_required", "A disposable rehearsal cannot be promoted into installed admission.");
+}
 
 function assertPlan(plan) {
   if (plan?.version !== 1 || !plan.transitionId || !plan.revision || !plan.sourceIdentity || !plan.targetIdentity
@@ -196,6 +389,15 @@ function assertJournal(journal, plan) {
       blocked("fresh_start_publication_corrupt", "Finalized publication bytes do not match the selected records.");
   }
   if (journal.phase === "complete") checkFact("admission", journal.evidence.admission, plan);
+  if (journal.executionScope === "installed") {
+    for (const [started, done, , name] of stages) if (order(journal.phase) >= order(done)) {
+      const fact = journal.evidence[name], effectPlan = name === "authorityFence" ? selected(plan, journal) : plan;
+      if (!text(fact?.binding?.gateContext)) blocked("installed_effect_unverified", "Installed stage provenance is missing.");
+      assertObservedEffect(fact, cutoverReleaseBinding(effectPlan, `${plan.transitionId}:${started}`, fact.binding.gateContext));
+    }
+    if (journal.phase === "complete") verifyInstalledAdmissionPacket({ plan: selected(plan, journal),
+      evidence: journal.admissionEvidence, facts: journal.evidence });
+  }
 }
 
 async function gate(effects, plan, journal, checkpoint, gateContext) {
@@ -204,6 +406,12 @@ async function gate(effects, plan, journal, checkpoint, gateContext) {
   if (result?.status !== "ready" || !result.evidenceId
     || !isDeepStrictEqual(result.binding, cutoverReleaseBinding(current, checkpoint, gateContext)))
     blocked("fresh_start_gate_blocked", `Fresh-start approval/evidence is missing at ${checkpoint}.`);
+  if (installedEffects.has(effects)) {
+    if (result.scope !== "observed" || result.evidence?.scope !== "observed"
+      || !isDeepStrictEqual(result.evidence.binding, result.binding))
+      blocked("installed_readiness_unverified", "Installed checkpoints must retain the exact independently verified public evidence.");
+    if (checkpoint === "before-admission") journal.admissionEvidence = copy(result.evidence);
+  }
 }
 
 /** Fresh graph only. No historical reviews/schedules, background work, browser
@@ -214,8 +422,15 @@ async function gate(effects, plan, journal, checkpoint, gateContext) {
  */
 export async function executeFreshStartTransition(plan, { state, effects, recovery } = {}) {
   assertPlan(plan); plan = copy(plan);
-  if (effects?.executionScope !== "synthetic-fixture")
+  const installed = installedEffects.has(effects);
+  if (effects?.executionScope !== "synthetic-fixture" && !installed)
     blocked("graph-contract-pending", "Only disposable synthetic effects are wired; actual graph/cutover execution is unavailable.");
+  if (installed) assertInstalledTarget(plan);
+  if (installed) {
+    if (typeof state?.assertAdmissionDestination !== "function" || typeof state.writeCompletedAdmission !== "function")
+      blocked("installed_admission_destination_pending", "Connect the owning private completed-admission publisher before installed effects.");
+    state.assertAdmissionDestination(plan);
+  }
   if (typeof effects.verifyGraphSource !== "function")
     blocked("graph-contract-pending", "The graph source/closure public contract is not connected.");
   if (typeof effects.initializeFreshLearning !== "function")
@@ -226,7 +441,7 @@ export async function executeFreshStartTransition(plan, { state, effects, recove
     const gateContext = randomUUID(); let journal = await state.readJournal(); const resumed = Boolean(journal);
     if (!journal) {
       journal = { version: 1, mode: "graph-preserving-fresh-start", transitionId: plan.transitionId,
-        planFingerprint: fingerprint(plan), phase: "intent-recorded", evidence: {} };
+        planFingerprint: fingerprint(plan), phase: "intent-recorded", evidence: {}, ...(installed ? { executionScope: "installed" } : {}) };
       await gate(effects, plan, journal, "before-preparation", gateContext);
       const original = await state.readPublication();
       for (const name of ["registration", "receipt"]) {
@@ -240,6 +455,8 @@ export async function executeFreshStartTransition(plan, { state, effects, recove
       await state.saveJournal(copy(journal));
     }
     assertJournal(journal, plan);
+    if (installed !== (journal.executionScope === "installed"))
+      blocked("installed_scope_mismatch", "A fixture journal cannot be promoted to installed execution or the reverse.");
     const persist = async phase => { journal.phase = phase; await state.saveJournal(copy(journal)); };
     const confirmPublication = async () => {
       if (!matchingPair(await state.readPublication(), finalPair(journal)))
@@ -247,10 +464,12 @@ export async function executeFreshStartTransition(plan, { state, effects, recove
       const durable = await state.confirmPublicationDurability();
       if (durable?.durable !== true || !durable.evidenceId || !matchingPair(await state.readPublication(), finalPair(journal)))
         blocked("fresh_start_publication_not_durable", "The matching fresh-start publication is not durably confirmed.");
-      journal.evidence.publication = { evidenceId: durable.evidenceId, registrationMatches: true, receiptMatches: true, durable: true };
+      journal.evidence.publication = { evidenceId: durable.evidenceId, registrationMatches: true, receiptMatches: true, durable: true,
+        ...(installed ? { scope: "observed" } : {}) };
     };
     if (journal.phase === "complete") {
       if (!matchingPair(await state.readPublication(), finalPair(journal))) blocked("fresh_start_publication_mismatch", "Completed publication changed.");
+      if (installed) await state.writeCompletedAdmission(plan);
       return copy(journal);
     }
     if (journal.phase === "activation-started" && recovery !== "forward")
@@ -267,8 +486,11 @@ export async function executeFreshStartTransition(plan, { state, effects, recove
       await confirmPublication();
       if (journal.phase === "activation-started") {
         await gate(effects, plan, journal, "before-forward-recovery", gateContext);
-        const fact = await effects.recoverTarget({ plan: copy(selected(plan, journal)), facts: copy(journal.evidence), operationKey: `${plan.transitionId}:forward-recovery` });
-        checkFact("admission", fact, plan); journal.evidence.admission = copy(fact); await persist("complete"); return copy(journal);
+        const fact = await effects.recoverTarget({ plan: copy(selected(plan, journal)), facts: copy(journal.evidence), operationKey: `${plan.transitionId}:forward-recovery`,
+          ...(installed ? { gateContext, admissionBinding: copy(journal.admissionEvidence?.binding) } : {}) });
+        checkFact("admission", fact, plan); journal.evidence.admission = copy(fact); await persist("complete");
+        if (installed) await state.writeCompletedAdmission(plan);
+        return copy(journal);
       }
       await persist("published");
     } else {
@@ -286,7 +508,8 @@ export async function executeFreshStartTransition(plan, { state, effects, recove
           }
           await gate(effects, plan, journal, "before-authority-switch", gateContext);
         }
-        const args = { plan: copy(selected(plan, journal)), facts: copy(journal.evidence), operationKey: `${plan.transitionId}:${started}` };
+        const args = { plan: copy(selected(plan, journal)), facts: copy(journal.evidence), operationKey: `${plan.transitionId}:${started}`,
+          ...(installed ? { gateContext } : {}) };
         let fact;
         if (journal.phase === started) {
           const result = await effects.recoverInterrupted?.({ ...args, phase: started });
@@ -302,9 +525,12 @@ export async function executeFreshStartTransition(plan, { state, effects, recove
     }
     await gate(effects, plan, journal, "before-admission", gateContext);
     await persist("activation-started");
-    await effects.admitTarget({ plan: copy(selected(plan, journal)), facts: copy(journal.evidence), operationKey: `${plan.transitionId}:admission` });
-    const admission = await effects.verifyAdmission({ plan: copy(selected(plan, journal)), facts: copy(journal.evidence) });
+    await effects.admitTarget({ plan: copy(selected(plan, journal)), facts: copy(journal.evidence), operationKey: `${plan.transitionId}:admission`,
+      ...(installed ? { gateContext } : {}) });
+    const admission = await effects.verifyAdmission({ plan: copy(selected(plan, journal)), facts: copy(journal.evidence),
+      ...(installed ? { gateContext, operationKey: `${plan.transitionId}:verify-admission`, admissionBinding: copy(journal.admissionEvidence?.binding) } : {}) });
     checkFact("admission", admission, plan); journal.evidence.admission = copy(admission); await persist("complete");
+    if (installed) await state.writeCompletedAdmission(plan);
     return copy(journal);
   });
 }
