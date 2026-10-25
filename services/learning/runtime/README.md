@@ -267,7 +267,7 @@ FEN strings are retained unchanged, and immutable bundle/route digests still bin
 those raw strings, including clocks.
 
 One opening repertoire has one active publication owner. V1 retains its
-128-definition limit. The Content bridge v2 accepts at most 8,192 definitions in
+128-definition limit. The Content bridge v2 accepts at most 10,000 definitions in
 one complete 12 MiB bundle; independently active chunks cannot replace it. A
 replacement generation is not an append operation: omitted definitions stop serving.
 
