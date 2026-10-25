@@ -50,6 +50,12 @@ is retained and reported; it is not replaced with a guessed graph. Structural
 copy validation is not chess legality, target activation or executor identity
 authentication. Original graph-only bridge and target owners retain those checks.
 
+Dangling `superseded_by` pointers remain preserved and counted as unresolved
+logical lineage, separately from missing unlock, graph-definition, parent or
+split dependencies. This does not approve serving the card: old queue eligibility
+can depend on that marker. A bounded new-definition exception belongs to the
+source owner's explicit policy and executable/path qualification.
+
 ## Recovery and existing import ports
 
 `create_recovery_manifest()` describes exact bytes for `capture`,

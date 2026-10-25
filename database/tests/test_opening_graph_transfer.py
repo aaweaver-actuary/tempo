@@ -188,9 +188,24 @@ class FixedGraphCaptureTests(unittest.TestCase):
         facts = self.validate(capture)
         self.assertTrue(facts["capture_validated"])
         self.assertIn("published_graph_unavailable", [item["code"] for item in facts["usability_blockers"]])
+        for field in ("card_id", "parent_card_id"):
+            capture = full_capture()
+            capture["tables"]["opening_graph_steps"][0][field] = "missing-required-graph-definition"
+            self.assertIn("published_definition_missing", [item["code"] for item in self.validate(capture)["usability_blockers"]])
+
+    def test_dangling_generated_supersession_is_retained_lineage_not_missing_graph_definition(self):
         capture = full_capture()
-        capture["tables"]["opening_graph_steps"][0]["parent_card_id"] = "missing-logical-parent"
-        self.assertIn("published_definition_missing", [item["code"] for item in self.validate(capture)["usability_blockers"]])
+        card = capture["tables"]["cards"][0]
+        card.update(canonical_route_source=0, revision=1, archived=0,
+                    pending_validation=0, superseded_by="synthetic-absent-lineage-target")
+        original = copy.deepcopy(capture)
+        facts = self.validate(capture)
+        self.assertTrue(facts["capture_validated"])
+        self.assertEqual(facts["unresolved_supersession_lineage"], 1)
+        self.assertEqual(facts["usability_blockers"], [])
+        self.assertEqual(facts["selected_publications"][0]["graph_definitions"], 1)
+        self.assertEqual(capture, original)
+        self.assertNotIn("synthetic-absent-lineage-target", {row["id"] for row in capture["tables"]["cards"]})
 
     def test_depth_override_zero_and_absent_card_tombstones_survive_as_source_facts(self):
         capture = full_capture()

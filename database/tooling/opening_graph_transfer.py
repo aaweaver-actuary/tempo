@@ -106,6 +106,10 @@ def validate_graph_capture(
     Its observed snapshot token applies only this optional SQL adapter; a native
     dump's successful single-snapshot invocation needs no new JSON token receipt.
     Extra original columns stay intact; no learning/history facts are migrated.
+    Missing logical supersession targets are counted separately from enforced
+    unlock/graph/split dependencies. Their original pointer is retained. Old
+    serving eligibility may depend on that marker; this copy verifier grants no
+    fresh-definition exception or serving approval.
     """
     if type(closure) is not bytes or hashlib.sha256(closure).hexdigest() != CLOSURE_SHA256:
         raise GraphTransferError("graph_capture_closure_changed")
@@ -239,6 +243,10 @@ def validate_graph_capture(
             "selected_repertoire_ids": sorted(selected), "selected_publications": publications,
             "usability_blockers": blockers, "depth_overrides": len(indexed["repertoire_line_training_depths"]),
             "split_overrides": len(indexed["prefix_splits"]), "tombstones": len(indexed["deleted_cards"]),
+            "unresolved_supersession_lineage": sum(
+                row["superseded_by"] is not None and row["superseded_by"] not in cards
+                for row in indexed["cards"].values()
+            ),
             "closure_sha256": CLOSURE_SHA256}
 
 
