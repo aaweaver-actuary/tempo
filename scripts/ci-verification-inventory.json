@@ -223,6 +223,7 @@
       "tests/runner/ci-reliability.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/merge-conflict-guard.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/postgres-test-speedups.test.mjs": ["tests/unit/postgres-test-speedups-regressions.test.ts"],
+      "tests/runner/tempo-study-configuration.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
       "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
     },
     "postgresFixturePaths": ["database/tests/check_postgres_opening_evidence.py"],
