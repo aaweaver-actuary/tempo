@@ -8,7 +8,7 @@ CLI. Importing it performs no operation. Existing
 
 ## Public boundaries
 
-`convert_history_snapshot(workspace_id=..., sources=..., converters=...,
+`convert_history_snapshot(golden=..., sources=..., converters=...,
 approvals=...)` receives the four callables from the outer composition root.
 Each callable implements `convert(source, *, approval)` and returns only its
 owned groups. No converter imports another converter or this composition root.
@@ -25,6 +25,12 @@ subprocess or transport implementation is added here.
 The caller supplies an `approvals` callable per leaf. Each `approval(source)`
 must return exactly `True` for its whole exact packet and bind it to its leaf
 and #389 checkpoint. Synthetic tests use an explicit synthetic approval callable; this cannot release a real converter.
+The outer root must independently approve the exact normalized `golden` against
+the checkpoint. Its workspace is the sole source of output workspace identity;
+the checker never infers or relabels it from a fingerprint. The assembled result
+must equal that full golden. This validates supplied semantics and cannot
+authenticate the golden by itself.
+
 Shared groups concatenate records and the existing comparator rejects duplicate
 keys. No key collision is overwritten, aliased, or resolved by this checker.
 Missing leaves fail combined qualification before any leaf runs. Individual

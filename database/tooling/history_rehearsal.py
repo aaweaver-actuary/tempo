@@ -102,7 +102,7 @@ def _same_json(left: object, right: object) -> bool:
         return False
 
 
-def convert_history_snapshot(*, workspace_id: str, sources: Mapping[str, object],
+def convert_history_snapshot(*, golden: object, sources: Mapping[str, object],
                              converters: Mapping[str, Callable],
                              approvals: Mapping[str, Callable[[object], bool]]) -> dict[str, object]:
     """Compose the four exclusive leaf outputs without importing a leaf.
@@ -110,12 +110,16 @@ def convert_history_snapshot(*, workspace_id: str, sources: Mapping[str, object]
     The caller's per-leaf trusted approval closures bind each whole packet to its
     exact #389 checkpoint. Browser JavaScript may be bridged by the caller's
     callable; this module never selects a process, browser, service or database.
+    The root must independently approve the exact normalized golden. Workspace
+    comes only from that golden, never from an inferred/relabeled fingerprint.
     Shared groups concatenate records; duplicate keys are rejected by #388,
     never silently overwritten or merged. Every packet is approved before any
-    converter runs, and a converter may not mutate its supplied packet.
+    converter runs, and a converter may not mutate its supplied packet. The full
+    assembled result must equal the golden; this function does not authenticate
+    the golden or issue actual-data acceptance.
     """
-    if type(workspace_id) is not str or not workspace_id:
-        raise RehearsalError("workspace_required")
+    _validate_snapshot(golden)
+    golden = _json_copy(golden)
     if any(set(collection) != set(LEAF_GROUPS) for collection in (sources, converters, approvals)):
         raise RehearsalError("all_four_converter_leaves_required")
     packets = {leaf: _json_copy(source) for leaf, source in sources.items()}
@@ -123,7 +127,7 @@ def convert_history_snapshot(*, workspace_id: str, sources: Mapping[str, object]
         if approvals[leaf](deepcopy(source)) is not True:
             raise RehearsalError("approved_whole_source_required")
     snapshot = {
-        "schema_version": 1, "workspace_id": workspace_id, "unresolved": [],
+        "schema_version": 1, "workspace_id": golden["workspace_id"], "unresolved": [],
         "entities": {group: [] for group in (
             "cards", "reviews", "schedules", "introductions", "accepted_definitions",
             "queue_attempts", "operation_receipts", "browser_intents",
@@ -142,6 +146,8 @@ def convert_history_snapshot(*, workspace_id: str, sources: Mapping[str, object]
                 raise RehearsalError("converter_records_must_be_lists")
             snapshot["entities"][group].extend(_json_copy(converted[group]))
     _validate_snapshot(snapshot)
+    if compare_snapshots(golden, snapshot)["equal"] is not True:
+        raise RehearsalError("converted_golden_mismatch")
     return snapshot
 
 

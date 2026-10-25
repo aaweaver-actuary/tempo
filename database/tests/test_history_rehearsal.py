@@ -209,6 +209,15 @@ class HistoryRehearsalTests(unittest.TestCase):
 class ConverterCompositionTests(unittest.TestCase):
     def setUp(self):
         self.sources = {leaf: {"synthetic": leaf} for leaf in rehearsal.LEAF_GROUPS}
+        self.golden = {
+            "schema_version": 1, "workspace_id": "synthetic-workspace", "unresolved": [],
+            "entities": {group: [] for group in existing_synthetic_fixture()["entities"]},
+        }
+        for leaf, groups in rehearsal.LEAF_GROUPS.items():
+            for group in groups:
+                self.golden["entities"][group].append(
+                    {"key": leaf + ":" + group, "data": {"preserve": True}}
+                )
         self.calls = []
         self.converters = {}
         for leaf, groups in rehearsal.LEAF_GROUPS.items():
@@ -220,7 +229,7 @@ class ConverterCompositionTests(unittest.TestCase):
             self.converters[leaf] = converter
 
     def convert(self, **overrides):
-        arguments = dict(workspace_id="synthetic-workspace", sources=self.sources,
+        arguments = dict(golden=self.golden, sources=self.sources,
                          converters=self.converters,
                          approvals={leaf: lambda source: True for leaf in rehearsal.LEAF_GROUPS})
         arguments.update(overrides)
@@ -289,6 +298,15 @@ class ConverterCompositionTests(unittest.TestCase):
                 with self.assertRaisesRegex(rehearsal.RehearsalError, "payload_must_be_finite_json"):
                     self.convert()
         self.assertEqual(self.calls, [])
+
+    def test_workspace_comes_only_from_supplied_golden_without_relabelling(self):
+        self.golden["workspace_id"] = "synthetic-approved-golden-workspace"
+        self.assertEqual(self.convert()["workspace_id"], self.golden["workspace_id"])
+
+    def test_valid_but_changed_result_cannot_bypass_supplied_golden(self):
+        self.golden["entities"]["cards"][0]["data"]["preserve"] = False
+        with self.assertRaisesRegex(rehearsal.RehearsalError, "converted_golden_mismatch"):
+            self.convert()
 
 
 if __name__ == "__main__":
