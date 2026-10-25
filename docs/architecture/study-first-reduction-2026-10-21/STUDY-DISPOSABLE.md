@@ -137,6 +137,100 @@ then verify that the receipt is accepted, bootstrap exits successfully, UID
 `10001` can read the private runtime files, and Learning becomes ready. The
 mocked tests and configuration rendering do not establish that proof.
 
+## Bounded qualification receipt for #378–#380 (2026-10-23)
+
+PR #410's later five-case synthetic fresh-PGN qualification passed on
+`d9ce864b97b81196fb7bad5ddef8e61f2394ee5e`, integrated with main
+`f9449a2a9b32e8a86f7ad2030a28231a1d8e1d26`; see the dated
+[Learning validation receipt](../../../services/learning/runtime/VALIDATION.md#focused-fresh-pgn-native-qualification--2026-10-25).
+That separate owned PostgreSQL runner removed its own fixture. It did not
+requalify the older Compose images/projects or establish any of the open
+#378–#380 assertions below. The following receipt remains historical; a
+separate owner is collecting the remaining #378/#380 evidence.
+
+**Partial, not an accepted #380 gate.** This section records the original Mac
+executor's [#380 report](https://github.com/aaweaver-actuary/tempo/issues/380#issuecomment-6368830975)
+and recorded task outcome. This documentation edit did not access the Mac, its
+private resource manifest, or its containers, and did not rerun native tests.
+PR #408 merged at `cb0ed5910e6bd05894919fd8d49f5dc7bc236975` from head
+`f5f7210ee017d27324ed420fba002eb754fd8520`. The fresh disposable run
+used `7d3a1b0378d604c1542baa7d830ec995d442264f`, invocation ID
+`e9810721d5014b26b07a6d641d5fc181`, and loopback web port `49686`.
+This is synthetic wiring evidence, not a live Study, historical migration,
+normal launcher, phone deployment, or daily-behaviour result.
+
+The original executor reports PostgreSQL → ownership receipt → bootstrap once
+→ Learning → web on the fresh invocation. The receipt matched the owned
+container, volume, network, and PostgreSQL cluster identity; bootstrap exited
+0; UID 10001 read the four private runtime files. Three long-lived services
+were healthy. DB and Learning had no host ports; web bound only to loopback.
+Web readiness returned 200. Six read-only credential, workspace, Origin, and
+Host probes returned the expected `401, 401, 403, 403, 200, 400`.
+Restarting Learning restored health and readiness with bootstrap timestamps
+unchanged. The original full request/response transcript and private resource
+manifest are not present in this cloud worktree; these are owner-reported
+results, not independently reproduced results. The earlier Learning and web
+image IDs were reported only in abbreviated form, so this receipt does not
+invent full digests for them.
+
+On `f5f7210`, the executor reports 25 focused Python tests passed and direct
+Compose isolation rendering passed, including rejection of all seven missing
+required inputs. The rebuilt integrated web image was
+`sha256:06337b94282f6eeee102fdbee8226e53b7b717de37877ad4e0da1eaace3fa663`.
+It served the shell, JS, CSS and manifest; readiness was 200, unauthenticated
+API was 401, and authenticated API was 200 with exact configured CORS.
+Learning remained healthy and bootstrap was not replayed. The final
+`npm run test:unit -- tests/unit/study-compose-contract.test.ts` **did not run**:
+task-local `npm ci --offline` was denied under the retained no-install
+restriction. Earlier Vitest evidence is historical, not a final-head pass.
+
+The `f5f7210` image result is historical for the later merged `cb0ed591`
+tree: that merge also includes #409 retirement changes and is not byte-identical.
+Do not call the retained image a build of `cb0ed591` or of a future assembled
+qualification branch. Pin that branch's exact source SHA and image IDs and
+rebuild changed image inputs before claiming its acceptance. Reuse unchanged
+Learning/PostgreSQL evidence only after recording exact source/image/resource
+correspondence; otherwise requalify the changed boundary.
+
+**Open acceptance evidence, not completed checks:**
+
+- #378: On the owned disposable database, prove the restricted writer cannot
+  create DDL or change the workspace binding, and the reader cannot write.
+  Record the exact database, roles, applied migration identity and expected
+  permission errors. HTTP credential rejection is not database-role proof.
+- #379: Run the named final-source Vitest Compose contract only if its local
+  dependencies are already permitted and available; otherwise retain the
+  explicit blocked status. Direct Compose rendering is not a Vitest pass.
+- #380: Capture exact status and body for `/health/live`, `/health/ready`,
+  `sw.js` (including JavaScript MIME, not SPA HTML), and valid workspace
+  bootstrap through the web origin. Preserve the credential/workspace/Origin/
+  Host denial matrix for the final web image. Stop only the owned Learning
+  service, show explicit API failure rather than HTML 200 or legacy fallback,
+  then restart the same artifacts and show readiness without bootstrap replay.
+  Record exact image IDs, three long-lived services, absence of optional
+  containers and host-published DB/API ports, schema identity, and ownership
+  labels. A served `sw.js` alone does not prove browser registration.
+- Teardown remains unproved. Both disposable projects were deliberately
+  retained. After preserving sanitized evidence, verify every selected
+  container, volume, network, and private input against that project's original
+  ownership manifest before project-scoped teardown, then verify resource
+  absence. Missing inputs or uncertain ownership block teardown; never replace
+  credentials, replay bootstrap, prune globally, or touch live Tempo.
+
+Before *any* remaining native action, the Mac owner must verify the exact
+project and manifest, clean isolated checkout at the pinned source SHA,
+running container image IDs against pinned images, unchanged relevant inputs,
+and task-owned private paths. A mismatch stops the probe rather than inviting
+an inferred repair. No outstanding native probe was executed for this receipt, and #378, #379,
+and #380 remain open.
+
+A subsequent cloud attempt on the assembled preparation tree `be91b363` ran
+`npm exec vitest -- run tests/unit/study-compose-contract.test.ts` using the
+existing lockfile-matching dependencies: **1 passed, 2 failed**. Both rendering
+cases could not start Docker (`spawnSync` status `null`, error `ENOENT`), so this
+is an environment-blocked Compose proof, not a passing rerun or a demonstrated
+application regression. No Docker installation or service action was attempted.
+
 ## Restricted-role, web and teardown evidence — 2026-10-25
 
 **Partial qualification: #378's subsequent native proof passed; #380 remains
