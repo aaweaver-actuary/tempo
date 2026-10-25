@@ -72,6 +72,8 @@ flowchart LR
   queue --> graph["Saved graph, card, membership and line facts"]
   builder["Opening graph build/publication owner"] --> graph
   segmentation["Segmentation projection"] --> source["Existing repertoire presence read"]
+  local["Local game derivation: six primary stages"] --> features["Persisted game features"]
+  features --> terminal["Existing completion write and Finished 6/6"]
 ```
 
 The retained serving boundary is the existing
@@ -92,8 +94,14 @@ cross-workflow coupling is still disclosed above; no new ownership or runtime
 service dependency is introduced. Source retirement does not delete stored rows,
 reset history, remove a graph recovery copy, or perform cutover.
 
+Local game derivation completes after its six primary stages; its retired refresh
+phase is removed from execution and progress accounting. Native game derivation's
+existing seven-stage, bounded repertoire handoff protocol remains unchanged.
+
 [Named retirement checks](../../../tests/REGRESSIONS.md#opportunity-producer-retirement)
 cover physical module absence, normal missing-route/unknown-command rejection,
 ordinary queue operation and saved-row eligibility. Five actual admission/cache
 cases remain; three Maia/coverage cases move to their regular coverage suite.
 Only tests/assertions exclusive to the removed producer/API are retired.
+The owning Game Sync regression also runs all six real local stages and checks
+persisted features, terminal state and progress without the optional producer.

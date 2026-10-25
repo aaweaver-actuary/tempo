@@ -16,6 +16,42 @@ import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
 
 
+def test_local_game_derivation_finishes_after_features_without_optional_refresh(tmp_path, monkeypatch):
+    """Run the real local stages through their existing terminal write."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "derivation-retirement.sqlite")
+    database.initialize()
+    now = datetime.now(timezone.utc).isoformat()
+    game_id = "retained-local-derivation"
+    with database.connection() as store:
+        store.execute(
+            """INSERT INTO imported_games(
+                id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (game_id, "lichess", "fixture", now, "rapid", 1, "white", "1-0",
+             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+             json.dumps(["e2e4", "e7e5"])),
+        )
+    game_sync_coordinator.enqueue_game_derivation(game_id)
+    assert not hasattr(game_sync_coordinator, "_enqueue_game_repertoire_refreshes")
+
+    game_sync_coordinator._execute_derivation(game_id)
+
+    with database.read_connection() as store:
+        job = store.execute("SELECT * FROM game_derivation_jobs WHERE game_id=?", (game_id,)).fetchone()
+        assert job["status"] == "complete", job["last_error"]
+        assert job["completed_phases"] == 6
+        assert job["phase"] is None and job["last_error"] is None
+        assert store.execute("SELECT COUNT(*) FROM game_position_occurrences WHERE game_id=?", (game_id,)).fetchone()[0] == 3
+        feature = store.execute("SELECT * FROM game_feature_rows WHERE game_id=?", (game_id,)).fetchone()
+        assert feature is not None and feature["outcome_score"] == 1
+        progress = store.execute(
+            "SELECT phase,completed_units,total_units FROM background_activity WHERE source='derivation' AND work_id=?",
+            (game_id,),
+        ).fetchone()
+        assert tuple(progress) == ("Finished", 6, 6)
+        assert store.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == 0
+
+
 def test_game_sync_public_projection_preserves_coordinator_import_contract():
     from app.games.ingestion.serialization import serialize_job
 

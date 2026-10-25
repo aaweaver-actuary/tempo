@@ -5188,6 +5188,13 @@ The regular backend suite owns `backend/tests/test_opportunity_retirement.py`:
 - `test_ordinary_study_introduces_a_saved_graph_card_without_opportunity_generation`: normal introduction consumes the saved graph without optional opportunity work.
 - `test_saved_weak_decision_still_uses_the_ordinary_queue_owner_without_a_producer`: persisted non-analysis weak-decision eligibility, quota, graph parentage and review-free admission remain with the ordinary queue owner.
 
+`backend/tests/test_game_sync.py::test_local_game_derivation_finishes_after_features_without_optional_refresh`
+runs the six real local derivation stages against task-owned SQLite, with the
+removed helper absent. It verifies indexed positions, persisted features,
+`complete` state, six completed phases and `Finished` progress at 6/6. Before the
+phase removal, it reproduced the leftover helper call and failed job after feature
+publication. The native seven-stage handoff protocol is unchanged.
+
 Retained coverage ownership moves from the old mixed opportunity suite to
 `backend/tests/test_repertoire_coverage.py`:
 
