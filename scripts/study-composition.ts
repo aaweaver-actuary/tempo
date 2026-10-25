@@ -8,8 +8,6 @@ export const optionalStudyImplementations = {
   // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
   workbench: ['app/components/workbench-launch.tsx'],
   discovery: ['app/lib/discovery-admission-outbox.ts'],
-  engines: ['app/lib/game-finding-command.ts',
-    'app/lib/game-threat-refresh-command.ts', 'app/lib/game-exclusion-command.ts'],
   authoring: ['app/views/repertoire_view.tsx',
     'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',
     'app/ImportDialogBox.tsx', 'app/AnalysisPasteDialog.tsx'],
