@@ -31,7 +31,8 @@ flowchart TD
   Helpers -->|success or caught error| Recover["Restore originally running services; stop newly started dependencies"]
   Prepare -->|caught error| Recover
   Stop -->|caught error| Recover
-  Recover --> Ready["If web was running: readiness requires the original running set"]
+  Recover -->|restoration commands succeed| Ready["If web was running: readiness requires the original running set"]
+  Recover -->|caught restoration error| Report
   Ready --> Report["Report verified backup or failure; recovery remains best effort"]
 ```
 
