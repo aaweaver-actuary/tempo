@@ -1,3 +1,23 @@
+## Immediate adaptive-priority callback cessation
+
+`backend/tests/test_priority_callback_retirement.py` owns
+`test_prefix_save_preserves_source_and_coverage_without_optional_priority`,
+`test_native_explorer_publication_preserves_progress_and_cursor_without_optional_priority`
+and `test_local_game_handoff_preserves_opportunities_without_optional_priority`.
+The six-file source slice retains prefix/epoch invalidation and graph dispatch,
+coverage candidates/progress/cursors and game/opportunity completion while the
+removed optional enqueue functions fail if invoked.
+
+Existing owning cases retain their primary assertions and add the same absence
+boundary: `test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets`,
+`test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire`,
+`test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete`
+and `test_repertoire_opportunities.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure`.
+The SQLite Explorer case also rejects a swallowed optional-callback error that
+would otherwise mark already-published coverage failed. Native SQL/locking,
+installed/deployed behavior and full producer shutdown are not established by
+these SQLite/fake checks. See the [source ownership view](../backend/app/services/README.md#immediate-adaptive-priority-callback-cessation).
+
 ## Legacy review without adaptive recomputation
 
 `backend/tests/test_legacy_review_storage_separation.py` owns

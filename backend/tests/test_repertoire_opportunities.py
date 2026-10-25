@@ -1666,7 +1666,10 @@ def test_issue8_maia_claim_and_partial_submit_survive_explorer_failure(tmp_path,
     database.initialize()
     database_writer.start()
     request.addfinalizer(database_writer.stop)
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", lambda *args, **kwargs: None)
+    def unavailable_priority(*_args, **_kwargs):
+        raise AssertionError("Maia publication must not require optional adaptive priority")
+
+    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", unavailable_priority)
     with database.connection() as db:
         _seed_decision_route(db)
         node_id, _ = _seed_source_transition_coverage(db, run_status="failed",
@@ -1679,6 +1682,8 @@ def test_issue8_maia_claim_and_partial_submit_survive_explorer_failure(tmp_path,
     assert job and job["node_id"] == node_id
     repertoire_coverage.submit_maia_coverage(node_id, job["lease_id"], [{"move_uci": "c7c5", "probability": 0.3}])
     with database.connection() as db:
+        assert db.execute("SELECT maia_status FROM repertoire_coverage_nodes WHERE id=?", (node_id,)).fetchone()[0] == "complete"
+        assert db.execute("SELECT COUNT(*) FROM repertoire_priority_jobs").fetchone()[0] == 0
         assert db.execute("SELECT maia_status FROM repertoire_coverage_nodes WHERE id='remaining-node'").fetchone()[0] == "queued"
         assert db.execute("SELECT state FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == "queued"
         refresh_node_opportunities(db, "rep", node_id)

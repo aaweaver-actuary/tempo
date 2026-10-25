@@ -28,7 +28,6 @@ from .repertoire_coverage import claim_coverage_node, execute_coverage_node
 from .introduction_priorities import (
     calculate_priority_records,
     claim_priority_refresh,
-    enqueue_priority_refreshes_for_game,
     execute_priority_refresh,
     load_priority_calculation_input,
     publish_priority_records,
@@ -143,7 +142,6 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
 
 
 def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
-    enqueue_priority_refreshes_for_game(game_id, background=True)
     with connection(background=True) as database:
         repertoire_ids = storage.matching_repertoire_ids(database, game_id)
     for repertoire_id in repertoire_ids:
