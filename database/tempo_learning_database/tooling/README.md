@@ -15,3 +15,81 @@ Choose an absolute, task-owned evidence directory. Each run records its profile,
 [restore_rehearsal.py](restore_rehearsal.py) retains the existing explicitly configured disposable rehearsal restore and copied-review identity repair. Docker ownership/disposable labels, endpoint, workspace, empty-target and unchanged-history guards are unchanged. Its SQL and behavior are byte-identical; relocation grants no permission to run a restore or alter a database.
 
 These tools are included in source distributions only. Runtime wheels exclude `tooling/` and `tests/`; offline before/after package comparison verifies the runtime payload. Native and restore behavior was not executed for this relocation. [Source schema documentation](../README.md) describes the stored tables; live deployment remains unverified.
+
+
+## Persistent target bootstrap
+
+[bootstrap_persistent.py](bootstrap_persistent.py) is a distinct opt-in owner
+operation for separately named persistent targets. It does not bypass the
+disposable provision guard or accept/promote disposable ownership receipts.
+The [persistent composition](../../../config/study-persistent/README.md)
+contains no web service or host ports and keeps automatic maintenance disabled.
+
+Public pure planning is plan_persistent_target(intent, resources). CLI commands
+plan and bootstrap consume private --intent-file and --resources-file.
+Only bootstrap also needs --admin-url-file, a new --output-directory and explicit
+--protected-checkout-root. Admin/private output paths inside that checkout or
+the executing source tree are refused.
+check-quarantine is a read-only private-file/configuration guard, not admission.
+
+Intent v1 kind is tempo-learning-persistent-target-intent, with exactly:
+transition_id, source_revision(full Git SHA), target_identity(explicit opaque
+launcher identity), project, database, workspace_id, timezone, ingress_origin,
+context, daemon_id, host, port, data_volume, runtime_secrets_volume, network_name,
+source_volume_names and images(postgres,learning,study-web immutable IDs/digests),
+plus kind/schema_version. Source and both new volumes must be disjoint.
+
+Resource v1 kind is tempo-learning-persistent-resources, with the exact intent
+binding fields context/daemon_id/project/target_identity/host/port/data_volume/
+runtime_secrets_volume/network_name; intent_sha256; evidence_scope(observed or
+synthetic-fixture); evidence_id; timezone-qualified observed_at; container_id and
+network_id; system_identifier; postgres_image matching the pinned image; labels
+tempo.owner=project, tempo.target-kind=persistent, tempo.disposable=false; and
+new_data_volume/new_runtime_secrets_volume=true, plus kind/schema_version.
+An independent resource owner supplies these facts; this module does not start
+Docker or infer real identity from a proposed name. Synthetic evidence can run
+only with explicitly injected fake dependencies and remains labelled synthetic.
+
+Receipt v1 kind is tempo-learning-persistent-bootstrap, status
+initialized-quarantine-required. It binds intent/resource digests, evidence_scope,
+transition/target/database/project/roles/workspace/timezone/origin/system identity,
+declared source/image pins, observed_postgres_image, endpoint, private output
+filenames and exact byte hashes (private_output_sha256), and
+producer-owned effects. schema contains expected_migrations, applied_migrations,
+public schema_identity digest and informational migration_count. The owning
+[DDL API](../ddl/migrate.py) verifies actual applied checksums equal the selected
+source map. Its public schema_identity(map) uses canonical UTF-8 JSON with sorted
+keys, compact separators, ensure_ascii=False and allow_nan=False, then SHA256.
+Neither migration count nor receipt schema_version is a database schema version.
+
+Receipt does not attest graph acceptance, actual maintenance/traffic fences,
+operator availability or old-authority rejection. Existing launcher maps only
+explicitly accepted public producer facts; runtime/graph/admission proof remains
+independent. evidenceId is an explicit immutable receipt reference, not guessed
+from its target ID. A graph importer cannot obtain create/drop or admission
+authority by importing this module.
+
+```mermaid
+sequenceDiagram
+    participant C as Explicit composition / operator
+    participant B as Persistent bootstrap
+    participant D as Learning-owned DDL adapter
+    C->>B: Intent + independent resource observation
+    B->>D: Pin physical server/session; require absent DB/roles
+    B->>B: Durably retain private credentials and phase
+    B->>D: Recheck identity/absence under lock; create template0 DB
+    B->>D: Verify owner and empty target
+    B->>D: Ordered schema/workspace + runtime grants
+    B->>D: Read back schema, roles and empty content
+    B-->>C: Distinct quarantine-required receipt
+    Note over B,C: No service, graph import, registration or admission
+```
+
+The existing disposable bootstrap/public API and guard are retained.
+No Learning schema or table relationship changes are introduced. New native
+creation and container behavior remain unverified until actual focused checks
+run. Authored fake regressions live in
+[the owning suite](../../tests/test_learning_persistent_bootstrap.py); run
+python -m unittest discover -s database/tests -p 'test_learning_persistent_bootstrap.py'.
+The shared DDL extraction additionally requires the existing
+test_learning_disposable_bootstrap.py suite and focused native role/schema proof.

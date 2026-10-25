@@ -213,13 +213,28 @@ def _canonical_admin(value, intent, parse, make):
 def _escape(value):
     return str(value).replace("\\", "\\\\").replace(":", "\\:")
 
-def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory, _dependencies=None):
+
+def _outside_checkout(path, protected_checkout_root):
+    root = Path(protected_checkout_root)
+    _require(root.is_absolute(), "protected_checkout_root_required")
+    candidate = Path(path).resolve()
+    for protected in (root.resolve(), Path(__file__).resolve().parents[3]):
+        try:
+            candidate.relative_to(protected)
+        except ValueError:
+            continue
+        raise PersistentBootstrapError("private_path_inside_checkout")
+
+
+def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory, protected_checkout_root, _dependencies=None):
     """Execute only new persistent DB/schema/grants; leave all serving disabled.
 
     Production defaults load the owning PostgreSQL APIs. Unit fakes must use
     synthetic-fixture evidence plus explicitly injected dependencies, and every
     receipt retains that scope. No caller can turn this receipt into admission.
     """
+    _outside_checkout(admin_url_file, protected_checkout_root)
+    _outside_checkout(output_directory, protected_checkout_root)
     plan = plan_persistent_target(intent, resources)
     intent, resources, roles = plan["intent"], plan["resources"], plan["roles"]
     _require(resources["evidence_scope"] == "observed" or _dependencies is not None,
@@ -248,7 +263,10 @@ def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory,
         def save():
             _atomic_private(directory / "provisioning-state.json",
                             (json.dumps(state, indent=2) + "\n").encode())
-        save()
+        try:
+            save()
+        except Exception:
+            raise PersistentBootstrapError("state_durability_failed", phase) from None
         try:
             owner.inspect_persistent_target(admin_url, *names,
                 system_identifier=resources["system_identifier"], session_user=admin_user)
@@ -316,7 +334,9 @@ def bootstrap_persistent(*, intent, resources, admin_url_file, output_directory,
                 "project": intent["project"], "database": intent["database"], "roles": roles,
                 "workspace_id": intent["workspace_id"], "timezone": intent["timezone"],
                 "ingress_origin": intent["ingress_origin"], "system_identifier": resources["system_identifier"],
+                "endpoint": {"host": intent["host"], "port": intent["port"]},
                 "schema": schema, "private_outputs": _OUTPUTS,
+                "private_output_sha256": {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in _OUTPUTS.values()},
                 "effects": {"database_created": True, "schema_initialized": True, "runtime_grants_created": True,
                     "services_started": False, "maintenance_activated": False,
                     "public_traffic_activated": False, "registration_published": False}}
@@ -341,14 +361,16 @@ def check_quarantine_receipt(receipt_file, expected_intent_sha256):
     """Read-only startup guard; does not certify actual graph/runtime fencing."""
     receipt_path = Path(receipt_file)
     receipt = _private_json(receipt_path)
-    _require(receipt.get("kind") == RECEIPT_KIND and receipt.get("schema_version") == 1
+    _require(receipt.get("kind") == RECEIPT_KIND and type(receipt.get("schema_version")) is int and receipt["schema_version"] == 1
              and receipt.get("evidence_scope") == "observed"
              and receipt.get("status") == "initialized-quarantine-required"
-             and receipt.get("intent_sha256") == expected_intent_sha256, "persistent_receipt_mismatch")
+             and _sha(expected_intent_sha256) and receipt.get("intent_sha256") == expected_intent_sha256
+             and _sha(receipt.get("resource_observation_sha256")), "persistent_receipt_mismatch")
     state = _private_json(receipt_path.parent / "provisioning-state.json")
     _require(state.get("phase") == "complete-quarantine-required"
              and state.get("intent_sha256") == expected_intent_sha256
-             and state.get("resource_observation_sha256") == receipt.get("resource_observation_sha256"),
+             and state.get("resource_observation_sha256") == receipt.get("resource_observation_sha256")
+             and state.get("evidence_scope") == receipt.get("evidence_scope"),
              "persistent_completion_unconfirmed")
     effects = receipt.get("effects", {})
     _require(effects.get("services_started") is False and effects.get("maintenance_activated") is False
@@ -359,7 +381,34 @@ def check_quarantine_receipt(receipt_file, expected_intent_sha256):
              and os.environ.get("TEMPO_LEARNING_ORIGINS") == receipt["ingress_origin"]
              and os.environ.get("TEMPO_LEARNING_TIMEZONE") == receipt["timezone"], "runtime_authority_mismatch")
     directory = receipt_path.parent
+    _outside_checkout(directory, Path(__file__).resolve().parents[3])
+    hashes = receipt.get("private_output_sha256", {})
+    _require(type(hashes) is dict and set(hashes) == set(_OUTPUTS.values())
+             and all(_sha(value) for value in hashes.values()), "private_output_identity_missing")
+    for name in _OUTPUTS.values():
+        path = directory / name
+        _private_file(path)
+        _require(path.stat().st_uid == os.getuid()
+                 and hashlib.sha256(path.read_bytes()).hexdigest() == hashes[name],
+                 "private_output_identity_mismatch")
+    schema = receipt.get("schema", {})
+    try:
+        _driver, _parse, _make, owner = _load_dependencies()
+        expected = owner.expected_migrations()
+        _require(schema.get("expected_migrations") == expected
+                 and schema.get("applied_migrations") == expected
+                 and schema.get("identity") == owner.schema_identity(expected),
+                 "schema_identity_mismatch")
+    except PersistentBootstrapError:
+        raise
+    except Exception:
+        raise PersistentBootstrapError("schema_identity_unavailable") from None
     connection = _private_json(directory / _OUTPUTS["connection"])
+    _require(connection.get("database") == receipt["database"]
+             and connection.get("workspace_id") == receipt["workspace_id"]
+             and connection.get("timezone") == receipt["timezone"]
+             and all(connection.get(name + "_role") == receipt["roles"][name]
+                     for name in ("owner", "writer", "reader")), "connection_identity_mismatch")
     _require(os.environ.get("TEMPO_LEARNING_DATABASE_URL") == connection["writer_dsn"]
              and os.environ.get("TEMPO_LEARNING_READER_URL") == connection["reader_dsn"], "runtime_database_mismatch")
     paths = {"PGPASSFILE": _OUTPUTS["passfile"], "TEMPO_LEARNING_TOKEN_FILE": _OUTPUTS["study_token"],
@@ -391,6 +440,7 @@ def main(argv=None):
         if name == "bootstrap":
             command.add_argument("--admin-url-file", required=True)
             command.add_argument("--output-directory", required=True)
+            command.add_argument("--protected-checkout-root", required=True)
     check = commands.add_parser("check-quarantine")
     check.add_argument("--receipt-file", required=True)
     check.add_argument("--intent-sha256", required=True)
@@ -403,7 +453,8 @@ def main(argv=None):
             print(json.dumps(result, sort_keys=True))
         else:
             bootstrap_persistent(intent=_private_json(args.intent_file), resources=_private_json(args.resources_file),
-                admin_url_file=args.admin_url_file, output_directory=args.output_directory)
+                admin_url_file=args.admin_url_file, output_directory=args.output_directory,
+                protected_checkout_root=args.protected_checkout_root)
             print("Persistent target initialized; graph import and runtime/admission verification remain required.")
         return 0
     except Exception as error:

@@ -1,0 +1,131 @@
+# Persistent provisioning/quarantine only. Deliberately no web service or host port.
+name: ${TEMPO_PERSISTENT_PROJECT:?Set the exact owned persistent project}
+
+services:
+  postgres:
+    profiles: [persistent-provision]
+    image: ${TEMPO_PERSISTENT_POSTGRES_IMAGE:?Set the pinned PostgreSQL image}
+    command: ["postgres", "-c", "max_locks_per_transaction=512"]
+    labels:
+      tempo.owner: ${TEMPO_PERSISTENT_PROJECT}
+      tempo.target-kind: persistent
+      tempo.disposable: "false"
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/persistent-postgres-password
+    secrets:
+      - source: persistent-postgres-password
+        target: persistent-postgres-password
+        mode: 0400
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks: [persistent]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: "no"
+
+  bootstrap:
+    profiles: [persistent-provision]
+    image: ${TEMPO_PERSISTENT_LEARNING_IMAGE:?Set the pinned Learning image}
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        set -eu
+        /opt/learning/bin/python -I /source/database/tempo_learning_database/tooling/bootstrap_persistent.py bootstrap \
+          --intent-file /run/persistent-control/intent.json \
+          --resources-file /run/persistent-control/resources.json \
+          --admin-url-file /run/secrets/persistent-admin-url \
+          --output-directory /runtime/bootstrap \
+          --protected-checkout-root /source
+        chown -R 10001:10001 /runtime/bootstrap
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes:
+      - type: bind
+        source: ${TEMPO_PERSISTENT_DATABASE_SOURCE:?Set the selected source database package directory}
+        target: /source/database/tempo_learning_database
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TEMPO_PERSISTENT_CONTROL_DIRECTORY:?Set the private intent and observation directory}
+        target: /run/persistent-control
+        read_only: true
+        bind:
+          create_host_path: false
+      - runtime-secrets:/runtime
+    secrets:
+      - source: persistent-admin-url
+        target: persistent-admin-url
+        mode: 0400
+    networks: [persistent]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  learning:
+    profiles: [persistent-quarantine]
+    image: ${TEMPO_PERSISTENT_LEARNING_IMAGE:?Set the pinned Learning image}
+    user: "10001:10001"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        set -eu
+        /opt/learning/bin/python -I /source/database/tempo_learning_database/tooling/bootstrap_persistent.py check-quarantine \
+          --receipt-file /run/persistent/bootstrap/persistent-target.json \
+          --intent-sha256 "${TEMPO_PERSISTENT_INTENT_SHA256:?Set the validated intent digest}"
+        exec /opt/learning/bin/tempo-learning serve --host 0.0.0.0 --port 8001
+    environment:
+      TEMPO_LEARNING_WORKSPACE: ${TEMPO_PERSISTENT_WORKSPACE:?Set the exact new workspace}
+      TEMPO_LEARNING_DATABASE_URL: ${TEMPO_PERSISTENT_WRITER_DSN:?Copy exact writer_dsn from private connection.json}
+      TEMPO_LEARNING_READER_URL: ${TEMPO_PERSISTENT_READER_DSN:?Copy exact reader_dsn from private connection.json}
+      TEMPO_LEARNING_TOKEN_FILE: /run/persistent/bootstrap/study.token
+      TEMPO_LEARNING_OPERATOR_TOKEN_FILE: /run/persistent/bootstrap/operator.token
+      TEMPO_LEARNING_ORIGINS: ${TEMPO_PERSISTENT_INGRESS_ORIGIN:?Set the pinned browser origin}
+      TEMPO_LEARNING_HOSTS: "127.0.0.1,learning"
+      TEMPO_LEARNING_TIMEZONE: ${TEMPO_PERSISTENT_TIMEZONE:?Set the selected effective timezone}
+      TEMPO_LEARNING_MAINTENANCE: "0"
+      PGPASSFILE: /run/persistent/bootstrap/runtime.pgpass
+    volumes:
+      - type: bind
+        source: ${TEMPO_PERSISTENT_DATABASE_SOURCE:?Set the selected source database package directory}
+        target: /source/database/tempo_learning_database
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: volume
+        source: runtime-secrets
+        target: /run/persistent
+        read_only: true
+    networks: [persistent]
+    healthcheck:
+      test: ["CMD", "/opt/learning/bin/python", "-I", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=2).close()"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+    restart: "no"
+
+volumes:
+  postgres-data:
+    external: true
+    name: ${TEMPO_PERSISTENT_DATA_VOLUME:?Set the independently owned NEW data volume}
+  runtime-secrets:
+    external: true
+    name: ${TEMPO_PERSISTENT_SECRETS_VOLUME:?Set the independently owned NEW runtime volume}
+
+networks:
+  persistent:
+    external: true
+    name: ${TEMPO_PERSISTENT_NETWORK:?Set the independently owned target network}
+
+secrets:
+  persistent-admin-url:
+    file: ${TEMPO_PERSISTENT_ADMIN_URL_FILE:?Set the private admin URL file}
+  persistent-postgres-password:
+    file: ${TEMPO_PERSISTENT_POSTGRES_PASSWORD_FILE:?Set the private new-cluster password file}
