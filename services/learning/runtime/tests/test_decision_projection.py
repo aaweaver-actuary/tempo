@@ -83,3 +83,51 @@ def test_counter_compatibility_retains_current_legal_en_passant_requirement():
     assert PublicationBundleV2.model_validate(value).routes[0].starting_fen.endswith('17 29')
     value['routes'][0]['starting_fen']='4k3/8/8/3pP3/8/8/8/4K3 w - - 17 29'
     with pytest.raises(ValueError):PublicationBundleV2.model_validate(value)
+
+
+def test_optional_repertoire_title_absent_preserves_prior_route_bytes():
+    import json
+    from tempo_learning_runtime.publication_bridge import Route
+    raw=projected_bundle()['routes'][0]
+    current=Route.model_validate(raw).model_dump(mode='json')
+    expected={**raw,'bindings':[{**binding,'reentry':False} for binding in raw['bindings']]}
+    assert current==expected
+    assert json.dumps(current,sort_keys=True,separators=(',',':'))==json.dumps(expected,sort_keys=True,separators=(',',':'))
+    from tempo_learning_runtime.publication_bridge import digest
+    # Independently computed from origin/main 1a0fd5c5's complete normalized
+    # projected_bundle before introducing the optional repertoire title field.
+    assert digest(PublicationBundleV2.model_validate(projected_bundle()).model_dump(mode='json'))==(
+        '6f2db1f32eeb4c9fe3f6fa4f5058f5871786fc31de5cbff1b7004444dcef2d93')
+
+
+@pytest.mark.parametrize('title',['', '   ', 'x'*2001, 7])
+def test_explicit_repertoire_title_requires_bounded_nonblank_text(title):
+    value=projected_bundle()
+    value['routes'][0]['repertoire_title']=title
+    with pytest.raises(ValueError):PublicationBundleV2.model_validate(value)
+
+
+def test_repertoire_titles_are_consistent_while_absent_routes_keep_legacy_meaning():
+    from copy import deepcopy
+    value=projected_bundle()
+    value['routes'][0]['repertoire_title']="Répertoire: King's Indian"
+    other=deepcopy(value['routes'][0]);other['route_id']='second-route'
+    value['routes'].append(other)
+    assert PublicationBundleV2.model_validate(value).routes[0].repertoire_title=="Répertoire: King's Indian"
+    other.pop('repertoire_title')
+    assert PublicationBundleV2.model_validate(value).routes[1].repertoire_title is None
+    other['repertoire_title']='Conflicting title'
+    with pytest.raises(ValueError,match='Conflicting titles'):PublicationBundleV2.model_validate(value)
+
+
+def test_titled_unbound_foreign_route_cannot_escape_membership_ownership_locks():
+    from copy import deepcopy
+    value=projected_bundle()
+    foreign=deepcopy(value['routes'][0])
+    foreign.update(repertoire_id='foreign',route_id='foreign-route',bindings=[])
+    value['routes'].append(foreign)
+    # Preserve existing untitled extra-route behavior; it carries no name write.
+    assert PublicationBundleV2.model_validate(value).routes[1].repertoire_title is None
+    foreign['repertoire_title']='Unauthorized foreign rename'
+    with pytest.raises(ValueError,match='accepted opening membership'):
+        PublicationBundleV2.model_validate(value)

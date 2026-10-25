@@ -1,0 +1,262 @@
+{
+  "plan": {
+    "version": 1,
+    "transitionId": "synthetic-fresh-start",
+    "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sourceIdentity": "synthetic-source-target",
+    "targetIdentity": "synthetic-independent-target",
+    "lockIdentity": "synthetic-source-target",
+    "freshStartChoice": "graph-preserving-fresh-start",
+    "registration": {
+      "version": 2,
+      "cutover": {
+        "transitionId": "synthetic-fresh-start",
+        "mode": "graph-preserving-fresh-start",
+        "phase": "quarantined",
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "images": {
+          "study-web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "learning": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "database": {
+          "name": "synthetic-fresh-learning",
+          "volume": "synthetic-fresh-volume"
+        },
+        "workspace": "synthetic-new-workspace",
+        "composeFiles": [
+          "/synthetic/study-compose.yml"
+        ],
+        "volumes": {
+          "data": {
+            "name": "synthetic-fresh-volume",
+            "external": true
+          }
+        },
+        "ingress": {
+          "origin": "https://synthetic-new.invalid",
+          "hosts": [
+            "synthetic-new.invalid"
+          ]
+        },
+        "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "graphSourceReference": "synthetic-source-bundle",
+        "graphReceipt": "synthetic-graph-import",
+        "freshInitReceipt": "synthetic-fresh-init"
+      }
+    },
+    "receipt": {
+      "version": 2,
+      "cutover": {
+        "transitionId": "synthetic-fresh-start",
+        "mode": "graph-preserving-fresh-start",
+        "phase": "quarantined",
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "images": {
+          "study-web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "learning": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "database": {
+          "name": "synthetic-fresh-learning",
+          "volume": "synthetic-fresh-volume"
+        },
+        "workspace": "synthetic-new-workspace",
+        "composeFiles": [
+          "/synthetic/study-compose.yml"
+        ],
+        "volumes": {
+          "data": {
+            "name": "synthetic-fresh-volume",
+            "external": true
+          }
+        },
+        "ingress": {
+          "origin": "https://synthetic-new.invalid",
+          "hosts": [
+            "synthetic-new.invalid"
+          ]
+        },
+        "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "graphSourceReference": "synthetic-source-bundle",
+        "graphReceipt": "synthetic-graph-import",
+        "freshInitReceipt": "synthetic-fresh-init"
+      },
+      "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "original": {
+      "registration": {
+        "version": 1,
+        "project": "synthetic-current"
+      },
+      "receipt": null
+    },
+    "graphSource": {
+      "schema_version": 1,
+      "workspace_id": "synthetic-content",
+      "source_key": "synthetic-opening",
+      "title": "Synthetic authored opening",
+      "repertoires": [
+        {
+          "key": "synthetic-repertoire",
+          "title": "Synthetic repertoire name",
+          "learner_color": "white"
+        }
+      ],
+      "policies": [
+        {
+          "key": "synthetic-policy",
+          "repertoire_key": "synthetic-repertoire"
+        }
+      ],
+      "routes": [
+        {
+          "key": "synthetic-route",
+          "starting_fen": "synthetic-fen-not-actual-observation",
+          "moves": [
+            "e2e4"
+          ]
+        }
+      ],
+      "memberships": [
+        {
+          "repertoire_key": "synthetic-repertoire",
+          "policy_key": "synthetic-policy",
+          "route_key": "synthetic-route"
+        }
+      ],
+      "exercises": [],
+      "bindings": []
+    },
+    "graphVerification": {
+      "fixtureOnly": true,
+      "sourceRef": "synthetic-source-bundle",
+      "receiptRef": "synthetic-graph-import"
+    },
+    "freshInitialization": {
+      "contract_version": 1,
+      "workspace_id": "synthetic-new-workspace",
+      "activation_id": "synthetic-bridge-operation:activate",
+      "publication_id": "synthetic-publication",
+      "publication_generation": 1,
+      "activation_revision": 1,
+      "status": "activated",
+      "reason": null
+    }
+  },
+  "checkpoint": "before-preparation",
+  "gateContext": "synthetic-original-lock-invocation",
+  "evidence": {
+    "scope": "synthetic-fixture",
+    "evidenceId": "synthetic-readiness",
+    "binding": {
+      "version": 1,
+      "checkpoint": "before-preparation",
+      "gateContext": "synthetic-original-lock-invocation",
+      "planSha256": "f888b2ecae6b88ab13ab7ba22b0a4b41aac9743731f7deb432ba101d924b7dd6"
+    },
+    "authorityIsolation": {
+      "evidenceId": "synthetic-isolation",
+      "targetIdentity": "synthetic-independent-target",
+      "workspace": "synthetic-new-workspace",
+      "ingressOrigin": "https://synthetic-new.invalid",
+      "oldAuthorityDisposition": "isolated",
+      "oldReplayDisabled": true
+    },
+    "cutoverConfirmation": {
+      "evidenceId": "synthetic-confirmation",
+      "confirmed": true,
+      "freshStartChoice": "graph-preserving-fresh-start",
+      "targetIdentity": "synthetic-independent-target",
+      "workspace": "synthetic-new-workspace",
+      "ingressOrigin": "https://synthetic-new.invalid",
+      "graphSourceReference": "synthetic-source-bundle"
+    },
+    "targetAdmission": {
+      "evidenceId": "synthetic-admission",
+      "confirmed": true,
+      "targetIdentity": "synthetic-independent-target",
+      "workspace": "synthetic-new-workspace",
+      "ingressOrigin": "https://synthetic-new.invalid"
+    },
+    "forwardRecovery": {
+      "evidenceId": "synthetic-forward",
+      "preservesCurrentTarget": true,
+      "restoresOlderSnapshot": false
+    }
+  },
+  "facts": {
+    "graphSource": {
+      "evidenceId": "synthetic-closure",
+      "closureVerified": true,
+      "graphSourceReference": "synthetic-source-bundle"
+    },
+    "graphRecoveryCopy": {
+      "evidenceId": "synthetic-new-graph-copy",
+      "graphSourceReference": "synthetic-source-bundle",
+      "restoreVerified": true,
+      "immutable": true,
+      "fullSourcePreserved": true
+    },
+    "targetProvisioning": {
+      "evidenceId": "synthetic-clean-target",
+      "targetIdentity": "synthetic-independent-target",
+      "workspace": "synthetic-new-workspace",
+      "clean": true,
+      "independent": true,
+      "ingressOrigin": "https://synthetic-new.invalid",
+      "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "graphImported": {
+      "evidenceId": "synthetic-import",
+      "graphSourceReference": "synthetic-source-bundle",
+      "graphReceipt": {
+        "fixtureOnly": true,
+        "id": "synthetic-graph-import"
+      },
+      "targetIdentity": "synthetic-independent-target"
+    },
+    "freshInitialization": {
+      "evidenceId": "synthetic-init",
+      "targetIdentity": "synthetic-independent-target",
+      "workspace": "synthetic-new-workspace",
+      "freshInitReceipt": {
+        "contract_version": 1,
+        "workspace_id": "synthetic-new-workspace",
+        "activation_id": "synthetic-bridge-operation:activate",
+        "publication_id": "synthetic-publication",
+        "publication_generation": 1,
+        "activation_revision": 1,
+        "status": "activated",
+        "reason": null
+      },
+      "ingressOrigin": "https://synthetic-new.invalid"
+    },
+    "quarantine": {
+      "evidenceId": "synthetic-quarantine",
+      "targetIdentity": "synthetic-independent-target",
+      "workspace": "synthetic-new-workspace",
+      "readOnly": true,
+      "maintenanceDisabled": true,
+      "mutatingTrafficDisabled": true,
+      "graphClosureVerified": true,
+      "ingressOrigin": "https://synthetic-new.invalid",
+      "graphSourceReference": "synthetic-source-bundle",
+      "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "publication": {
+      "evidenceId": "synthetic-durable-pair",
+      "registrationMatches": true,
+      "receiptMatches": true,
+      "durable": true
+    },
+    "resumption": {
+      "evidenceId": "synthetic-reobserved-state",
+      "verified": true,
+      "gateContext": "synthetic-original-lock-invocation",
+      "targetQuarantined": true,
+      "originalWriterStateConfirmed": true,
+      "originalFenced": true
+    }
+  }
+}
