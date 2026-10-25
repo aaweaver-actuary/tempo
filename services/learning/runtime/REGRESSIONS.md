@@ -1,5 +1,14 @@
 # Learning runtime regression ownership
 
+`test_complete_9612_definition_publication_fits_public_ceiling_without_truncation`
+and `test_complete_10001_definition_publication_rejected_without_truncation` in
+`test_content_bridge.py` align the existing V2 facts limit to the public
+Publication definition ceiling of 10,000. The complete constructed within-limit
+input retains every definition/fact; oversized input fails. The existing
+`test_C3_publication_bundle_capacity_is_bounded_after_default_expansion` retains
+the independent 12 MiB expanded-payload bound. These pure model checks do not
+claim target activation throughput or real graph acceptance.
+
 ## Balanced daily presentation
 
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`

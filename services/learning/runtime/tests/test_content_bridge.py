@@ -627,7 +627,8 @@ def test_C3_publication_bundle_capacity_is_bounded_after_default_expansion(monke
     from tempo_learning_runtime import publication_bridge as module
     payload=content_bundle()
     expanded=module.PublicationBundleV2.model_validate(payload)
-    assert module.MAX_DEFINITIONS == 8192
+    assert module.MAX_DEFINITIONS == 10000
+    assert module.PublicationBundleV2.model_json_schema()['properties']['legacy_aliases']['maxProperties'] == 8192
     assert module.MAX_BUNDLE_BYTES == 12 * 1024 * 1024
     size=len(expanded.model_dump_json().encode())
     monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size)
@@ -635,3 +636,30 @@ def test_C3_publication_bundle_capacity_is_bounded_after_default_expansion(monke
     monkeypatch.setattr(module,'MAX_BUNDLE_BYTES',size-1)
     with pytest.raises(ValueError,match='bundle exceeds'):
         module.PublicationBundleV2.model_validate(payload)
+
+
+def complete_definition_capacity_bundle(count):
+    payload=content_bundle()
+    definition=payload['publication']['definitions'][0]
+    fact=payload['facts'][0];route=payload['routes'][0]
+    identifiers=[f'card-{index}' for index in range(count)]
+    payload['publication']['definitions']=[{**definition,'card_id':identifier,'decision_id':f'decision-{index}'} for index,identifier in enumerate(identifiers)]
+    payload['facts']=[{**fact,'card_id':identifier,'route_order':index} for index,identifier in enumerate(identifiers)]
+    payload['routes']=[{**route,'route_id':f'route-{index}','bindings':[{'ply':0,'card_id':identifier,'reentry':False}]} for index,identifier in enumerate(identifiers)]
+    return payload
+
+
+def test_complete_9612_definition_publication_fits_public_ceiling_without_truncation():
+    from tempo_learning_runtime.publication_bridge import PublicationBundleV2,MAX_DEFINITIONS,MAX_BUNDLE_BYTES
+    payload=complete_definition_capacity_bundle(9612)
+    accepted=PublicationBundleV2.model_validate(payload)
+    assert MAX_DEFINITIONS==10000 and MAX_BUNDLE_BYTES==12*1024*1024
+    assert len(accepted.publication.definitions)==len(accepted.facts)==9612
+    assert len(accepted.model_dump_json().encode())<=MAX_BUNDLE_BYTES
+
+
+def test_complete_10001_definition_publication_rejected_without_truncation():
+    from tempo_learning_runtime.publication_bridge import PublicationBundleV2
+    payload=complete_definition_capacity_bundle(10001)
+    with pytest.raises(ValueError):PublicationBundleV2.model_validate(payload)
+    assert len(payload['publication']['definitions'])==len(payload['facts'])==10001
