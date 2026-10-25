@@ -1,0 +1,497 @@
+{
+  "contract_version": 1,
+  "kind": "opening_graph_source_closure",
+  "evidence_kind": "source_only_field_manifest",
+  "source_commit": "86d11afe8579ac56b2a39d8d63984180c7f3c194",
+  "reported_installed_commit_not_reobserved": "86d11afe8579ac56b2a39d8d63984180c7f3c194",
+  "scope": "Preserve opening graph, authoritative repertoire/source definitions and a new verified graph recovery copy; fresh learning state. Historical migration acceptance is superseded.",
+  "raw_capture_contract": {
+    "source_schema": "public",
+    "top_level_exact": [
+      "tables"
+    ],
+    "tables_exact": [
+      "repertoires",
+      "repertoire_lines",
+      "repertoire_cards",
+      "cards",
+      "opening_graph_publications",
+      "opening_graph_steps",
+      "repertoire_line_training_depths",
+      "prefix_splits",
+      "settings",
+      "deleted_cards",
+      "canonical_prefix_previews",
+      "canonical_prefix_results",
+      "canonical_prefix_positions",
+      "opening_graph_legacy_mappings"
+    ],
+    "capture_policy": "Complete rows and all columns of exactly these14 required tables. No filters, no broad whole-schema census. Additional captured non-graph columns are incidental PRIVATE recovery facts, never fresh-learning migration requirements.",
+    "downstream_projection": "Composition adapter supplies existing {tables,graphs}; graphs comes from captured opening_graph_steps whose (repertoire_id,generation) exactly matches selected opening_graph_publications. No raw graph duplication required.",
+    "selected_repertoire_ids": "Explicit confirmed source IDs in external capture receipt, used for fresh serving projection; raw copy itself has no row filters.",
+    "empty_tables": "Explicit empty arrays require capture evidence. Missing is not empty.",
+    "source_copy_fidelity": "Preserve every selected-table column exactly. Raw TEXT JSON/timestamps/FEN are not normalized; source schema metadata/column types are private capture evidence for these tables only."
+  },
+  "required_capture_tables": {
+    "repertoires": {
+      "primary_key": [
+        "id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Repertoire identity, display/source metadata, accepted opening scope and source revision.",
+      "required_graph_fields": [
+        "id",
+        "name",
+        "source_name",
+        "created_at",
+        "is_main",
+        "new_cards_per_day",
+        "canonical_prefix_moves_json",
+        "canonical_prefix_revision",
+        "canonical_prefix_preview_id",
+        "scope_source_revision"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.repertoires ORDER BY id"
+    },
+    "repertoire_lines": {
+      "primary_key": [
+        "id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Ordered authored routes and complete policy comparison catalogue; FEN alone is not route identity.",
+      "required_graph_fields": [
+        "id",
+        "repertoire_id",
+        "name",
+        "trained_color",
+        "start_fen",
+        "moves_json",
+        "created_at"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.repertoire_lines ORDER BY id"
+    },
+    "repertoire_cards": {
+      "primary_key": [
+        "repertoire_id",
+        "card_id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Preserve shared membership and explicit source provenance separately from the physical card owner.",
+      "required_graph_fields": [
+        "repertoire_id",
+        "card_id",
+        "canonical_route_source"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.repertoire_cards ORDER BY repertoire_id,card_id"
+    },
+    "cards": {
+      "primary_key": [
+        "id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Structural executable/source identity only. Scheduling, reviews and learning exposure are deliberately excluded under fresh-start scope.",
+      "required_graph_fields": [
+        "id",
+        "repertoire_id",
+        "kind",
+        "start_fen",
+        "moves_json",
+        "unlock_after_card_id",
+        "content_type",
+        "archived",
+        "superseded_by",
+        "source_ref",
+        "source_fen",
+        "revision",
+        "trained_color",
+        "pending_validation",
+        "canonical_route_source",
+        "study_exercise_id"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.cards ORDER BY id"
+    },
+    "opening_graph_publications": {
+      "primary_key": [
+        "repertoire_id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Pointer to materialized published generation; state must be checked separately from copy integrity.",
+      "required_graph_fields": [
+        "repertoire_id",
+        "generation",
+        "state",
+        "last_error",
+        "published_at"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.opening_graph_publications ORDER BY repertoire_id"
+    },
+    "opening_graph_steps": {
+      "primary_key": [
+        "repertoire_id",
+        "generation",
+        "line_id",
+        "decision_index"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Accepted materialized route occurrences, physical-card references and complete segment/prefix coverage.",
+      "required_graph_fields": [
+        "repertoire_id",
+        "generation",
+        "line_id",
+        "decision_index",
+        "card_id",
+        "parent_card_id",
+        "decision_fen_key",
+        "starting_fen",
+        "moves_json",
+        "trained_color",
+        "segment_kind",
+        "first_decision_index",
+        "last_decision_index",
+        "decision_fen_keys_json"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.opening_graph_steps ORDER BY repertoire_id,generation,line_id,decision_index"
+    },
+    "repertoire_line_training_depths": {
+      "primary_key": [
+        "line_id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Existing build_graph uses a truthy override or settings.initial_depth; preserve original zero/null/absence distinctions.",
+      "required_graph_fields": [
+        "line_id",
+        "learner_decision_count"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.repertoire_line_training_depths ORDER BY line_id"
+    },
+    "prefix_splits": {
+      "primary_key": [
+        "source_card_id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Accepted segmentation overrides, recursively applied by original source_card_id; no review/history transfer.",
+      "required_graph_fields": [
+        "source_card_id",
+        "source_revision",
+        "shortened_card_id",
+        "continuation_card_id",
+        "created_at"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.prefix_splits ORDER BY source_card_id"
+    },
+    "settings": {
+      "primary_key": [
+        "id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Only default learner-decision segmentation depth, not old scheduling/preferences.",
+      "required_graph_fields": [
+        "id",
+        "initial_depth"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.settings ORDER BY id"
+    },
+    "deleted_cards": {
+      "primary_key": [
+        "card_id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Do not regenerate a deliberately removed graph node. Preserve TEXT deleted_at raw in recovery copy; target exclusion uses identity, not a guessed timestamp conversion.",
+      "required_graph_fields": [
+        "card_id",
+        "deleted_at"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.deleted_cards ORDER BY card_id"
+    },
+    "canonical_prefix_previews": {
+      "primary_key": [
+        "id"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Active accepted scope certificate header. Unreferenced previews/background proposal work are rebuildable and excluded.",
+      "required_graph_fields": [
+        "id",
+        "repertoire_id",
+        "moves_json",
+        "expected_revision",
+        "source_revision",
+        "state",
+        "suggestion_json",
+        "last_error",
+        "created_at"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.canonical_prefix_previews ORDER BY id"
+    },
+    "canonical_prefix_results": {
+      "primary_key": [
+        "preview_id",
+        "item_id"
+      ],
+      "purpose": "Conservative complete canonical route certificate/diagnostic source capture; old proposal work is incidental private data, not new target work.",
+      "required_graph_fields": [
+        "preview_id",
+        "item_id",
+        "name",
+        "status",
+        "reason",
+        "disagreement_ply",
+        "origin_json",
+        "scope_start_ply"
+      ],
+      "capture_all_columns": true,
+      "selection": "ALL ROWS, no filter",
+      "sql": "SELECT * FROM public.canonical_prefix_results ORDER BY preview_id,item_id"
+    },
+    "canonical_prefix_positions": {
+      "primary_key": [
+        "preview_id",
+        "fen_key",
+        "in_scope"
+      ],
+      "selection": "ALL ROWS, no filter",
+      "purpose": "Verified route origins for non-starting-position authored lines. line_origin accepts only position.source_revision equal to current repertoire.scope_source_revision.",
+      "required_graph_fields": [
+        "preview_id",
+        "fen_key",
+        "in_scope",
+        "fen",
+        "route_json",
+        "ply",
+        "source_revision"
+      ],
+      "capture_all_columns": true,
+      "sql": "SELECT * FROM public.canonical_prefix_positions ORDER BY preview_id,fen_key,in_scope"
+    },
+    "opening_graph_legacy_mappings": {
+      "primary_key": [
+        "repertoire_id",
+        "generation",
+        "legacy_card_id",
+        "decision_card_id"
+      ],
+      "purpose": "Conservative graph source linkage preservation only; never fresh-target historical alias authority.",
+      "required_graph_fields": [
+        "repertoire_id",
+        "generation",
+        "legacy_card_id",
+        "decision_card_id"
+      ],
+      "capture_all_columns": true,
+      "selection": "ALL ROWS, no filter",
+      "sql": "SELECT * FROM public.opening_graph_legacy_mappings ORDER BY repertoire_id,generation,legacy_card_id,decision_card_id"
+    }
+  },
+  "relationships": [
+    {
+      "from": "repertoire_lines.repertoire_id",
+      "to": "repertoires.id",
+      "constraint": "enforced FK"
+    },
+    {
+      "from": "opening_graph_publications.repertoire_id",
+      "to": "repertoires.id",
+      "constraint": "enforced FK"
+    },
+    {
+      "from": "graphs.(repertoire_id,generation)",
+      "to": "opening_graph_publications.(repertoire_id,generation)",
+      "constraint": "logical generation equality, not composite FK"
+    },
+    {
+      "from": "graphs.line_id",
+      "to": "repertoire_lines.id",
+      "constraint": "enforced FK; also require matching repertoire_id"
+    },
+    {
+      "from": "graphs.card_id,parent_card_id",
+      "to": "cards.id",
+      "constraint": "logical graph references, not enforced card FK"
+    },
+    {
+      "from": "repertoire_cards.(repertoire_id,card_id)",
+      "to": "repertoires.id,cards.id",
+      "constraint": "enforced FKs; retain all shared pairs"
+    },
+    {
+      "from": "cards.repertoire_id,unlock_after_card_id",
+      "to": "repertoires.id,cards.id",
+      "constraint": "enforced FKs; superseded_by is only a logical card reference"
+    },
+    {
+      "from": "prefix_splits.source_card_id,shortened_card_id,continuation_card_id",
+      "to": "cards.id",
+      "constraint": "enforced FKs; recursive override identity must survive"
+    },
+    {
+      "from": "repertoire_line_training_depths.line_id",
+      "to": "repertoire_lines.id",
+      "constraint": "enforced FK"
+    },
+    {
+      "from": "repertoires.canonical_prefix_preview_id",
+      "to": "canonical_prefix_previews.id",
+      "constraint": "logical active certificate reference; no FK"
+    },
+    {
+      "from": "canonical_prefix_positions.preview_id",
+      "to": "canonical_prefix_previews.id",
+      "constraint": "enforced FK; source_revision is an additional serving fence"
+    },
+    {
+      "from": "cards.study_exercise_id",
+      "to": "study_exercises.id",
+      "constraint": "enforced FK; graph-opening projection expects NULL, otherwise separate nonopening dependency is reported, not invented."
+    }
+  ],
+  "hash_contract": {
+    "raw_capture_sha256": "SHA-256 of exact raw14table recovery-file bytes; closure.json and external capture receipt are separately bound. Recovery bytes may use the executor existing lossless capture encoding; serialized table input to the transfer validator is {tables:<all14 full row arrays>}. This establishes recovery integrity, not new target acceptance.",
+    "existing_source_digest": "authority_source_digest(tables), exact existing authority_source_projection in pinned public contracts/game-evidence legacy.py. It intentionally excludes learning schedules/reviews and several source metadata fields; raw file SHA remains required.",
+    "existing_graph_digest": "authority_graph_digest(graphs): fingerprint of canonically sorted complete 14-field graph projections, preserving TEXT moves_json/decision_fen_keys_json.",
+    "existing_catalogue_digest": "Reuse route-catalogue digest expression from pinned legacy_game_authority.current_token: fingerprint of routes sorted by id, each {repertoire_id,route_id:id,policy_id:repertoire_id,learner_color:trained_color,starting_fen:start_fen,moves:json.loads(moves_json)}. No old game catalogue generation or authority token is required for fresh graph recovery.",
+    "canonical_json": "Existing fingerprint uses json.dumps(sort_keys=True,separators=(comma,colon),ensure_ascii=False,allow_nan=False), UTF-8 SHA-256. Do not substitute parsed-source hashes for exact-byte file hashes.",
+    "physical_card_id": "Existing tempo_chess_core.card_id: SHA-256(first four supplied FEN fields + newline + space-joined stripped moves). Preserve observed IDs; hash equality does not authorize aliases or pick among transposed routes.",
+    "downstream_source_snapshot": "Reuse public SourceSnapshot v1 and existing authored_import/content_bridge_export contracts. Preserve exact source.json bytes and import/export digests; do not duplicate their application models."
+  },
+  "derivable_or_excluded": {
+    "materialized_graph": "Keep selected accepted publication as recovery evidence even though source routes/depth/splits can rebuild graph structure. New target generations need not impersonate legacy generations.",
+    "nonselected_graph_generations": "All are conservatively captured privately in full opening_graph_steps, but only the publication pointer is projected as accepted. Old/staged generations are not reimported as active target work.",
+    "old_background_and_learning": "No separate reviews, queues, attempts, receipts, browser stores, teaching, frozen ranks or background task tables. Incidental old scheduling/learning fields in full cards/settings rows remain PRIVATE raw bytes only, not fresh initialization requirements.",
+    "graph_legacy_mappings": "Captured privately as an inexpensive full source table; not needed for fresh learning and never used as alias authority.",
+    "prefix_proposals": "Full preview/results/positions tables are conservatively captured privately. Only accepted repertoire prefix references and valid origins are behaviorally relevant; old proposal workflows are not restarted.",
+    "integrity_completion": "No old integrity state, block/issue rows, scan/task completion or background certificate is transplanted. New graph-only bridge does not use historical aliases; target owner performs fresh graph/route validation before serving.",
+    "learning_target_projection": "Learning route/card projection is not a full repertoire-source archive: it omits names/source moves/depth/splits. Independent raw source recovery bundle is required."
+  },
+  "capture_confirmation_required": [
+    "Use existing authorized immutable image/source evidence pinned to86d11afe; no full migration census, both browser identities or historical backup gate.",
+    "One authorized REPEATABLE READ READ ONLY snapshot for the14 listed full tables. No row filter. Record same snapshot ID, selected-table column/PK/type shape, source pin and publication/source/prefix tokens in external private receipt.",
+    "Confirm explicit fresh-serving repertoire IDs from copied repertoire rows; raw copy includes full repertoire/line catalogue. Do not infer user IDs or colors.",
+    "First graph usability checks: publication pointer joins exact generation/owner lines; graph card/parent IDs exist; original shared memberships exist; settings.id1 initial_depth exists; split card IDs exist; deletion exclusions and canonical positions.source_revision are retained.",
+    "Check graph-relevant source/FK closure. Incidental non-opening cards may reference study_exercises absent from this capsule; preserve those raw rows privately without adding other-domain tables or reimporting them as opening graphs.",
+    "New graph-only recovery copy location plus exact-byte checksums and independent readback/restore validation. No previous full-history backup is a prerequisite.",
+    "If source/materialized graph disagree or selected columns are incompatible, retain source bytes and report the exact graph/rebuild issue. Do not fabricate missing identities, use max staged generation or replay old background work."
+  ],
+  "fresh_target_confirmation_required": [
+    "Explicit target service/DB identity, workspace, source key and publication-generation/digest binding; do not relabel legacy authority IDs.",
+    "Use public graph-only SourceSnapshot/export path with no historical aliases; explicit caller-supplied new due date and normal new-learning initialization.",
+    "Preserve every selected authored ordered route, policy color/membership, raw starting FEN and all branch move sequences; exact route coverage validation, not counts alone.",
+    "Canonical prefix/verified origins, named route metadata, initial_depth, split overrides, source-only cards and tombstones must remain recoverable in raw bundle. State target behavioral support or missing capability explicitly.",
+    "Validate new target staging/activation/operation receipt and readback with target owner. Legacy ready publication/copy checksum is not a new target integrity or activation certificate.",
+    "This source-only manifest executes no capture/import/reset/deletion/cutover. Sole authorized capture executor performs any live read; no irreversible deletion is required."
+  ],
+  "next_executable_slice": "Sole live executor captures the14 literal full tables in one read-only consistent snapshot immediately. Transfer owner validates supplied table arrays and receipt, checks graph-relevant FK/publication closure and exact-byte readback, and projects selected existing public source/export inputs. Fresh initialization owner validates new staging/activation/readback without historical transfer.",
+  "source_references": {
+    "legacy_base_ddl": {
+      "path": "backend/migrations/001_initial.sql",
+      "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4",
+      "git_blob": "e725772a5c9cab190bd171b0d964dc0ee3e046c8"
+    },
+    "line_depth_column": {
+      "path": "backend/migrations/029_repertoire_daily_limits.sql",
+      "sha256": "9eaf990e7c9024f17adde3f6108041f95c17a9d9a068e39eb3c3e26d05ff0f75",
+      "git_blob": "55aaa83152db5b056330aa7c2182bfbc4a128d1b"
+    },
+    "canonical_scope_ddl": {
+      "path": "backend/migrations/033_canonical_prefix.sql",
+      "sha256": "5691e6d59c0b96246caf78990a28962b4efed333424c200382b527bb373607e0",
+      "git_blob": "4c89e702eafd9dbaccc3d96239b8e0b623bb9614"
+    },
+    "current_route_ddl": {
+      "path": "backend/migrations/034_current_canonical_routes.sql",
+      "sha256": "45fa3b7333e9ed23aeaed176d1b4a6bcc3929778fb0593edea2be3ef94e04793",
+      "git_blob": "008ebf811722a66ae027af6f9308e2ca13b1d320"
+    },
+    "source_provenance_ddl": {
+      "path": "backend/migrations/035_canonical_publication_freshness.sql",
+      "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+      "git_blob": "9f756e7e6fdd0a8f7ac0e6995ce8f8ee1b83b322"
+    },
+    "deletion_ddl": {
+      "path": "backend/migrations/037_card_deletion.sql",
+      "sha256": "6d0c5e2ea1210e0d672c48bad02db1b74c751667f0e596f7b40f57686ede068d",
+      "git_blob": "e4db40a197eec35a86dad25582c00fe258473965"
+    },
+    "graph_reader": {
+      "path": "backend/app/services/opening_graph.py",
+      "sha256": "6bdbaef7271c11f2c3466c837025c8020779c861631d518b888d5437d3622896",
+      "git_blob": "8d5f04619d7cdc21169cfde18c01d321c3326919"
+    },
+    "postgres_graph_reader": {
+      "path": "backend/app/services/postgres_opening_graph.py",
+      "sha256": "e662be7c2b315a96f3d76ae6b567afb8168484a95a2495809b7f8bafd4967e70",
+      "git_blob": "79af6381262b2435159c80708caf148cb5ae5805"
+    },
+    "canonical_scope_reader": {
+      "path": "backend/app/services/canonical_prefix.py",
+      "sha256": "a6153d177c3a52f09f9600800dfa6892c81ca376f43923d0e38e05e9caefc0aa",
+      "git_blob": "14781a23327df2d9b90ffc8dde0546d83951e455"
+    },
+    "canonical_scope_source_reader": {
+      "path": "backend/app/services/canonical_prefix_preview.py",
+      "sha256": "d684959b47481e26bf7f355d84d2c56ae1dce45cbea7a5210b34bd445268957e",
+      "git_blob": "246e497c6cae136aa86e8329dd4ba2010d248127"
+    },
+    "identity_algorithm": {
+      "path": "packages/chess-core/src/tempo_chess_core/_identity.py",
+      "sha256": "a868b76c8e4e49202f71a38f0d424d3ed10c6183fcb30f0e2c3c707689a1437a",
+      "git_blob": "6a1115470c80578d986b919d54718c30ed3497a3"
+    },
+    "authority_hashes": {
+      "path": "contracts/game-evidence/src/tempo_game_evidence_contracts/legacy.py",
+      "sha256": "6e1a4e8e5d08cc9a5814e28ccd23e15f2657fe10199534dd1d63ef09ca35d2de",
+      "git_blob": "d6fdc92b8000a2dd812a0f0fcf0333cda7c9ec49"
+    },
+    "catalogue_hash_binding": {
+      "path": "backend/app/services/legacy_game_authority.py",
+      "sha256": "a977f40080fbe952b3b787cfac678127ca8565aa65e017392479629cb84cb683",
+      "git_blob": "8fd63272a6b1f8550ee1d64759df3459b623dda9"
+    },
+    "backend_runtime_dependencies": {
+      "path": "backend/requirements.txt",
+      "sha256": "7b87451dadc81a5383d8fd4d4897f9f55b7fc2d897646f0ef9f46f1dfc6eaabb",
+      "git_blob": "b084316e57efbd4e59ce639aac7cfa6f5418074e"
+    }
+  },
+  "canonical_source_card_coverage": {
+    "effective_source_predicate": "For selected repertoire R: cards.content_type=opening and archived=0 and (exists repertoire_cards(R,card_id,canonical_route_source=1) OR (cards.repertoire_id=R and cards.canonical_route_source=1 and no explicit repertoire_cards(R,card_id) row)). Explicit owner link with canonical_route_source=0 suppresses fallback.",
+    "accepted_occurrences": "Report original card IDs and exact observed accepted graphs occurrences (repertoire_id,generation,line_id,decision_index) referencing each ID. Missing occurrence is an uncovered card-only source, not an alias candidate.",
+    "supported_route_proof": "Existing graph occurrence is evidence only: exact same-repertoire line must exist; original graph executable/color must equal physical source card; supported ordered-route validation must cover the precise executable. Matching FEN/move text alone never establishes the association.",
+    "fresh_completeness": "Do not apply historical revision=1/alias/schedule gates. If a canonical card-only source cannot be expressed by the supported fresh graph route contract, report its exact source ID privately and retain it in recovery copy; require explicit supported source projection before claiming full fresh source coverage."
+  },
+  "downstream_graph_projection": {
+    "primary_key": [
+      "repertoire_id",
+      "generation",
+      "line_id",
+      "decision_index"
+    ],
+    "required_fields": [
+      "repertoire_id",
+      "generation",
+      "line_id",
+      "decision_index",
+      "card_id",
+      "parent_card_id",
+      "decision_fen_key",
+      "starting_fen",
+      "moves_json",
+      "trained_color",
+      "segment_kind",
+      "first_decision_index",
+      "last_decision_index",
+      "decision_fen_keys_json"
+    ],
+    "selector": "Use selected captured publication.generation exactly, never max(staged generation); preserve failed/missing state honestly.",
+    "shape": "Existing public translator graphs array; graph-only fresh adapter may consume routes without historical aliases."
+  }
+}

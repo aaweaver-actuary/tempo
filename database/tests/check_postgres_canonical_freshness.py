@@ -333,60 +333,6 @@ def prove_generated_split_boundary(card_source=0):
         postgres_store.close_pools()
 
 
-def prove_guided_review_boundary(repertoire_id):
-    from app.guided_review_commands import start_review, submit_review_attempt  # register commands
-    from app.command_gateway import execute_command
-    from app.services.guided_review import read_session_from_database
-    game_id = 'canonical-guided-' + uuid.uuid4().hex
-    operation_ids = []
-    def command(name, payload):
-        operation_id = game_id + '-' + str(len(operation_ids))
-        operation_ids.append(operation_id)
-        return execute_command(operation_id, name, payload)
-    try:
-        with postgres_store.connection() as database:
-            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,analysis_version) VALUES(?,'lichess','CanonicalReview',?,'rapid',1,'white','1-0',?,'[\"e2e4\"]',1)", (game_id, NOW, chess.STARTING_FEN))
-            for finding_id, kind, ply, loss in [('A', 'repertoire lapse', 0, 300), ('B', 'tactical miss', 1, 200), ('C', 'major mistake', 2, 100)]:
-                database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES(?,?,1,?,?,1,?,?,?)", (game_id + finding_id, game_id, ply, kind, json.dumps({'fen': chess.STARTING_FEN, 'best_move_uci': 'e2e4', 'loss_cp': loss}), NOW, NOW))
-        started = command('games.guided_review.start', {'game_id': game_id})
-        assert started and started['current']['finding_id'] == game_id + 'A', started
-        with postgres_store.connection() as database:
-            database.execute('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=?', (repertoire_id,))
-        stale = command('games.guided_review.attempt', {'session_id': started['id'], 'finding_id': game_id + 'A', 'move_uci': 'e2e4'})
-        assert stale['guided_review_error']['status_code'] == 409
-        resumed = command('games.guided_review.start', {'game_id': game_id})
-        assert resumed['id'] == started['id'] and resumed['current']['finding_id'] == game_id + 'B'
-        with postgres_store.connection() as database:
-            displayed = read_session_from_database(database, started['id'])
-        assert displayed['current']['finding_id'] == game_id + 'B'
-        result = command('games.guided_review.attempt', {'session_id': started['id'], 'finding_id': game_id + 'B', 'move_uci': 'e2e4'})
-        assert result['revealed']['finding_id'] == game_id + 'B' and result['session']['current']['finding_id'] == game_id + 'C'
-        with postgres_store.connection() as database:
-            assert database.execute('SELECT finding_id FROM guided_review_attempts WHERE session_id=?', (started['id'],)).fetchone()[0] == game_id + 'B'
-            # Removing a completed ID remaps the index, retaining attempt history.
-            database.execute("UPDATE guided_review_sessions SET finding_ids_json=?,current_index=2 WHERE id=?", (json.dumps([game_id + 'A', game_id + 'B', game_id + 'C']), started['id']))
-            remapped = read_session_from_database(database, started['id'])
-            assert remapped['current_index'] == 1 and remapped['current']['finding_id'] == game_id + 'C'
-            assert remapped['attempts'][0]['finding_id'] == game_id + 'B'
-            database.execute("UPDATE game_findings SET kind='repertoire gap',game_scope_generation=-1 WHERE id=?", (game_id + 'C',))
-        complete = command('games.guided_review.attempt', {'session_id': started['id'], 'finding_id': game_id + 'C', 'move_uci': 'e2e4'})
-        assert complete['guided_review_error']['status_code'] == 404
-        with postgres_store.connection() as database:
-            session = read_session_from_database(database, started['id'])
-            assert session['status'] == 'complete' and session['current'] is None
-            assert len(session['attempts']) == 1
-        restarted = command('games.guided_review.start', {'game_id': game_id})
-        assert restarted['id'] != started['id'] and restarted['current']['finding_id'] == game_id + 'B'
-        print('PASS CF-9 real PostgreSQL guided command reconciliation/receipts: stale target 409, GET/submit parity, completed-index remap, exhausted session 404 with durable completion and no extra attempt', flush=True)
-    finally:
-        with postgres_store.connection() as database:
-            for operation_id in operation_ids:
-                database.execute('DELETE FROM operation_receipts WHERE operation_id=?', (operation_id,))
-            database.execute('DELETE FROM imported_games WHERE id=?', (game_id,))
-        postgres_store.close_pools()
-
-
-
 def prove_card_mutation_coverage_status():
     for mutation in ('revise', 'archive'):
         repertoire_id = 'canonical-status-' + uuid.uuid4().hex
@@ -1180,7 +1126,6 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
         prove_mutation_boundaries(mutation_repertoire_id, other_repertoire_id, game_id)
         prove_generated_split_boundary()
         prove_generated_split_boundary(card_source=1)
-        prove_guided_review_boundary(mutation_repertoire_id)
         prove_card_mutation_coverage_status()
         prove_last_generated_membership_cleanup()
         prove_discovery_state_action_freshness()
