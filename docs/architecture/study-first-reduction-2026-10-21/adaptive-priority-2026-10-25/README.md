@@ -125,7 +125,7 @@ opportunity implementation or shared completion/refresh files.
 | `postgres_game_priorities.py:37`; coordinator `:146` | Game derivation hands off priority work. Preserve its own phase/lease/completion obligations when deciding to stop this optional effect. Opportunity handoff is owned by the other packet. |
 | Coordinator imports/legacy claim and `:454–464`; `tasks.py:94,390` | Calculation/publication remain reachable worker behavior. Native slices own task settlement; removing just the mapping produces an unsupported-handler error. |
 | Core enqueue `:687–716`; publication `:759–900`; native worker `:178–193` | New priority work schedules retention; successful publication records refresh acceptance and enqueues opportunity refresh. The other packet owns the opportunity side; do not edit it independently. |
-| Activity adapter, durable scheduling/metrics, diagnostics and frontend background-kind schema | Work identifiers remain visible/controlable; do not erase labels while pending work still needs truthful status. These references are not proof every handler is running. |
+| `database/tempo_legacy_database/adapters/controls/activity/storage.py`; `backend/app/services/durable_scheduling.py`, `background_metric_kinds.py`, `background_diagnostics.py`; `app/domain/schemas/background-diagnostics.ts` | Work identifiers remain visible/controlable; do not erase labels while pending work still needs truthful status. These references are not proof every handler is running. Full paths/hashes, plus the response schema `app/domain/schemas/index.ts`, are pinned in SOURCE-MAP. |
 
 The map's import in `main.py` does not imply a dedicated priority-refresh route:
 the two enqueue names are imported there without a direct invocation; saved
@@ -140,7 +140,10 @@ consumers stay; neither source absence nor tool-only use permits a table drop.
 These are **source-traced examples**, not user data, fixtures executed in this PR,
 or observations of storage. Candidates are otherwise eligible, due, unintroduced
 openings with valid membership/content, no gameplay reason and equal move length
-unless stated. `A`, `B`, `C` and generations below are invented symbols.
+unless stated. Ordinary-selection examples share one repertoire, start with no
+consumed allowance, inactive frozen preference and empty completion/frontier facts
+unless the row specifies otherwise. `A`, `B`, `C` and generations below are invented
+symbols.
 
 | Synthetic facts | Required current result and source |
 | --- | --- |

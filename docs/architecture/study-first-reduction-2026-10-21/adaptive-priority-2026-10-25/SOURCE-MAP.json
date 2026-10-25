@@ -573,6 +573,31 @@
       "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
       "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
       "physical_lines": 40
+    },
+    {
+      "path": "backend/app/services/durable_scheduling.py",
+      "sha256": "6838a9a87666954a3379326815906174d41b98f5e7bc50b8eb6a4c98ea423321",
+      "physical_lines": 77
+    },
+    {
+      "path": "backend/app/services/background_metric_kinds.py",
+      "sha256": "05239413c7ef9ff77d9d443d3b9c6623a400b1c44fd027f6d573410611170e56",
+      "physical_lines": 12
+    },
+    {
+      "path": "backend/app/services/background_diagnostics.py",
+      "sha256": "2f62e6203ec94e86f8f533273b45eca852ab5c6c3453edf3dc25626b7cdc1cb7",
+      "physical_lines": 81
+    },
+    {
+      "path": "app/domain/schemas/background-diagnostics.ts",
+      "sha256": "f6659cfa6b86b2671503e994681c1a964694204fb1947976e68741dd5ea955ba",
+      "physical_lines": 69
+    },
+    {
+      "path": "app/domain/schemas/index.ts",
+      "sha256": "bee9a6b4bc4a94261a22a2a1ee5f1c67ebd6a776e1e1233f7581913459886a55",
+      "physical_lines": 1032
     }
   ],
   "remaining_gate": "Approved exact no-new-recomputation and issued-work disposition, with saved-reader and epoch/version/publication/job compatibility preserved; then owning checks and existing actual-authority/cutover gates. No observation of empty storage or absent pending work.",
