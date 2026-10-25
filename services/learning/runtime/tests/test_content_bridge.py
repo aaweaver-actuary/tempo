@@ -191,7 +191,8 @@ def test_fresh_opening_activation_preserves_repertoire_title_and_receipt_replay(
     assert case.query('SELECT count(*) FROM learning.repertoires')[0][0]==0
     request=request_for(payload)
     acknowledgement=activate_v2(case,payload,request=request)
-    assert case.query('SELECT id,name FROM learning.repertoires')==[('repertoire-a',"Répertoire: King's Indian")]
+    assert [tuple(row) for row in case.query('SELECT id,name FROM learning.repertoires')]==[
+        ('repertoire-a',"Répertoire: King's Indian")]
     operator={'Authorization':'Bearer '+case.configuration.operator_token}
     status=case.client.get('/internal/publications/publication-a/status?generation=1',headers=operator).json()
     from tempo_learning_runtime.publication_bridge import digest
@@ -221,7 +222,7 @@ def test_title_absent_activation_preserves_existing_repertoire_metadata(case):
     case.query("INSERT INTO learning.repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)",
                ('repertoire-a','Existing title','Existing source','2020-01-01T00:00:00Z'))
     activate_v2(case,content_bundle())
-    assert case.query('SELECT name,source_name,created_at FROM learning.repertoires')==[
+    assert [tuple(row) for row in case.query('SELECT name,source_name,created_at FROM learning.repertoires')]==[
         ('Existing title','Existing source','2020-01-01T00:00:00Z')]
 
 
@@ -255,7 +256,7 @@ def test_repertoire_title_update_rolls_back_with_activation_failure(case,monkeyp
         headers={'Authorization':'Bearer '+case.configuration.operator_token})
     assert response.status_code==409
     assert case.query('SELECT name FROM learning.repertoires')[0][0]=='Original title'
-    assert case.query('SELECT generation,activation_revision FROM learning.serving_publications')==[(1,1)]
+    assert [tuple(row) for row in case.query('SELECT generation,activation_revision FROM learning.serving_publications')]==[(1,1)]
     assert case.query('SELECT count(*) FROM learning.activation_receipts')[0][0]==1
 
 
@@ -266,7 +267,7 @@ def test_repertoire_title_storage_cannot_update_outside_declared_memberships(cas
     with case.database.scope(),case.database.transaction() as database:
         publication_bridge.insert_repertoires(database,'2030-01-01T00:00:00Z',['owned'],
             {'owned':'Owned title','foreign':'Unauthorized replacement'})
-    assert case.query('SELECT id,name FROM learning.repertoires ORDER BY id')==[
+    assert [tuple(row) for row in case.query('SELECT id,name FROM learning.repertoires ORDER BY id')]==[
         ('foreign','Foreign title'),('owned','Owned title')]
 
 
