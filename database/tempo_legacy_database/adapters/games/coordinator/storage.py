@@ -245,5 +245,3 @@ def requeue_interrupted_integrity_state(database):
         """UPDATE repertoire_integrity_state SET scan_status='queued'
                WHERE scan_status IN ('running','retrying')"""
     )
-
-

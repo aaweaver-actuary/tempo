@@ -189,5 +189,3 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
     assert postgres_game_priorities.execute_game_priority_handoff_slice(task)
     assert updates[0][1:] == ("game-one", 7)
     assert completed == [True]
-
-
