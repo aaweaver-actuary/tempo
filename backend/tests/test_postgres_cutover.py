@@ -5798,8 +5798,6 @@ def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch, unsc
 def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nodes, monkeypatch):
     from app import coverage_maia_commands
     from tempo_legacy_database.adapters import postgres_store
-    from app.services import refresh_requests
-    monkeypatch.setattr(refresh_requests, 'request_refresh', lambda *_args, **_kwargs: 5)
 
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
     def unavailable_priority(*_args, **_kwargs):

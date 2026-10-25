@@ -204,7 +204,6 @@
     {"paths": ["backend/app/services/opening_capacity_admission.py"], "tier": "STUDY", "frontend": [], "backend": ["backend/tests/test_opening_capacity_admission.py", "backend/tests/test_new_cards_per_repertoire.py"]},
     {"paths": ["backend/app/study/openings/capacity_frontier.py"], "tier": "STUDY", "frontend": [], "backend": ["backend/tests/test_opening_capacity_frontier.py"]},
     {"paths": ["database/tempo_legacy_database/adapters/opening_progression.py"], "tier": "STUDY", "frontend": [], "backend": ["backend/tests/test_opening_progression.py", "backend/tests/test_daily_queue_sparse_unlock.py"]},
-    {"paths": ["backend/app/services/introduction_priorities.py"], "tier": "STUDY", "frontend": [], "backend": ["backend/tests/test_introduction_priorities.py", "backend/tests/test_daily_queue_randomization.py"]},
     {"paths": ["backend/app/services/study_attempts.py", "backend/app/study_attempt_commands.py"], "tier": "STUDY", "frontend": [], "backend": ["backend/tests/test_study_durability.py", "backend/tests/test_queue_attempt_recovery.py"]}
   ],
   "studyBrowser": [

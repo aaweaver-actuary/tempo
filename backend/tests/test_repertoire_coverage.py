@@ -108,12 +108,8 @@ def test_opponent_reply_without_a_trained_response_remains_a_coverage_gap():
 def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete(
     tmp_path, monkeypatch
 ):
-    from app.services import introduction_priorities
-
-    def unavailable_priority(*_args, **_kwargs):
-        raise AssertionError("Explorer publication must not require optional adaptive priority")
-
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", unavailable_priority)
+    from importlib.util import find_spec
+    assert find_spec("app.services.introduction_priorities") is None
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as database_connection:
@@ -338,15 +334,13 @@ def _seed_source_transition_coverage(db, *, run_id="transition-run", created_at=
 
 
 def test_issue8_maia_claim_and_partial_submit_survive_explorer_failure(tmp_path, monkeypatch, request):
-    from app.services import repertoire_coverage, introduction_priorities
+    from app.services import repertoire_coverage
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     database_writer.start()
     request.addfinalizer(database_writer.stop)
-    def unavailable_priority(*_args, **_kwargs):
-        raise AssertionError("Maia publication must not require optional adaptive priority")
-
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", unavailable_priority)
+    from importlib.util import find_spec
+    assert find_spec("app.services.introduction_priorities") is None
     with database.connection() as db:
         _seed_decision_route(db)
         node_id, _ = _seed_source_transition_coverage(db, run_status="failed",
@@ -387,12 +381,11 @@ def test_issue8_partial_maia_failure_checkpoints_coverage_without_optional_refre
 
 
 def test_issue8_independent_claim_skips_superseded_failed_attempt(tmp_path, monkeypatch, request):
-    from app.services import repertoire_coverage, introduction_priorities
+    from app.services import repertoire_coverage
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     database_writer.start()
     request.addfinalizer(database_writer.stop)
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", lambda *args, **kwargs: None)
     with database.connection() as db:
         _seed_decision_route(db)
         old_node, _ = _seed_source_transition_coverage(db, run_id="old-run", run_status="failed",
