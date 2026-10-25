@@ -8,6 +8,8 @@ import { createCutoverState, cutoverReleaseBinding, executeFreshStartTransition 
 
 // Synthetic semantic capabilities only; no installed graph/schema mapping,
 // public contract acceptance, real source observation or cutover permission.
+const fixtureSchemaIdentity = "sha256:" + "a".repeat(64);
+const otherFixtureSchemaIdentity = "sha256:" + "b".repeat(64);
 function fixture(context) {
   const directory = mkdtempSync(join(tmpdir(), "tempo-fresh-graph-fixture-"));
   context.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -17,13 +19,13 @@ function fixture(context) {
   const graph = { mode: "graph-preserving-fresh-start", transitionId: "fixture-fresh", phase: "quarantined",
     revision: "fixture-revision", images: { "study-web": "fixture-web", learning: "fixture-learning", postgres: "fixture-postgres" },
     workspace: "fixture-new-workspace", ingress: { origin: "https://fresh.fixture.invalid", hosts: ["fresh.fixture.invalid"] },
-    database: { name: "fixture-clean", volume: "fixture-new-volume" }, schema: 1,
+    database: { name: "fixture-clean", volume: "fixture-new-volume" }, schema: fixtureSchemaIdentity,
     composeFiles: ["fixture-study-compose.yml"], volumes: { data: { name: "fixture-new-volume", external: true } },
     graphSourceReference: "fixture-complete-authored-graph", graphReceipt: null, freshInitReceipt: null };
   const plan = { version: 1, transitionId: graph.transitionId, revision: graph.revision,
     sourceIdentity: "fixture-source", targetIdentity: "fixture-clean-target", lockIdentity: "fixture-source", freshStartChoice: "graph-preserving-fresh-start",
     registration: { version: 2, project: "fixture-new", cutover: structuredClone(graph) },
-    receipt: { version: 2, revision: graph.revision, cutover: structuredClone(graph) },
+    receipt: { version: 2, revision: graph.revision, schema: graph.schema, cutover: structuredClone(graph) },
     original: { registration: JSON.parse(originalBytes.registration), receipt: JSON.parse(originalBytes.receipt) },
     graphSource: { fixtureOnly: true, reference: graph.graphSourceReference }, graphVerification: null, freshInitialization: null };
   const state = createCutoverState({ stateDirectory: directory, registrationPath, receiptPath, lockIdentity: plan.lockIdentity });
@@ -111,11 +113,11 @@ for (const [port, field, value, blocker] of [
   ["createVerifiedGraphCopy", "fullSourcePreserved", false, "fresh_start_evidence_missing"],
   ["provisionCleanTarget", "clean", false, "fresh_start_evidence_missing"],
   ["provisionCleanTarget", "independent", false, "fresh_start_evidence_missing"],
-  ["provisionCleanTarget", "schema", 2, "fresh_start_schema_mismatch"],
+  ["provisionCleanTarget", "schema", otherFixtureSchemaIdentity, "fresh_start_schema_mismatch"],
   ["importGraph", "graphSourceReference", "wrong-graph", "fresh_start_graph_mismatch"],
   ["initializeFreshLearning", "ingressOrigin", "https://old.fixture.invalid", "fresh_start_authority_mismatch"],
   ["verifyGraphTarget", "mutatingTrafficDisabled", false, "fresh_start_evidence_missing"],
-  ["verifyGraphTarget", "schema", 2, "fresh_start_schema_mismatch"],
+  ["verifyGraphTarget", "schema", otherFixtureSchemaIdentity, "fresh_start_schema_mismatch"],
 ]) test(`${port} cannot advance with invalid ${field}`, async context => {
   const f = fixture(context), prior = f.effects[port]; f.effects[port] = async args => ({ ...await prior(args), [field]: value });
   await code(execute(f), blocker); assert.equal(f.infra.originalWriter, true); assert.equal(f.infra.targetWriter, false);
@@ -218,4 +220,61 @@ test("finalization cannot replace an already pinned public graph receipt", async
   const f = fixture(context);
   f.plan.registration.cutover.graphReceipt = "previously-pinned-graph"; f.plan.receipt.cutover.graphReceipt = "previously-pinned-graph";
   await code(execute(f), "fresh_start_identity_changed"); assert.equal(f.infra.originalWriter, true);
+});
+
+test("v2 numeric and malformed schema identities block before lifecycle effects or journal writes", async context => {
+  for (const schema of [1, 7, "7", null, "a".repeat(64), "sha256:" + "A".repeat(64),
+    "sha256:" + "a".repeat(63), "sha256:" + "a".repeat(65), { identity: fixtureSchemaIdentity }]) {
+    const f = fixture(context);
+    f.plan.registration.cutover.schema = schema; f.plan.receipt.cutover.schema = schema; f.plan.receipt.schema = schema;
+    await code(execute(f), "fresh_start_schema_mismatch");
+    assert.equal(f.state.readJournal(), null); assert.deepEqual(f.events, []);
+    assert.deepEqual(f.state.readPublication(), f.originalBytes);
+  }
+});
+
+test("all selected v2 schema copies must match before graph import", async context => {
+  for (const alter of [
+    plan => { plan.receipt.schema = otherFixtureSchemaIdentity; },
+    plan => { plan.receipt.cutover.schema = otherFixtureSchemaIdentity; },
+  ]) {
+    const f = fixture(context); alter(f.plan);
+    await code(execute(f), "fresh_start_schema_mismatch");
+    assert.equal(f.state.readJournal(), null); assert.ok(!f.events.includes("public-graph-import"));
+  }
+});
+
+test("migration count cannot replace schema identity at provisioning or quarantine", async context => {
+  for (const port of ["provisionCleanTarget", "verifyGraphTarget"]) {
+    const f = fixture(context), prior = f.effects[port];
+    f.effects[port] = async args => ({ ...await prior(args), schema: 7, migration_count: 7 });
+    await code(execute(f), "fresh_start_schema_mismatch");
+    if (port === "provisionCleanTarget") assert.ok(!f.events.includes("public-graph-import"));
+    assert.equal(f.infra.originalWriter, true); assert.equal(f.infra.targetWriter, false);
+  }
+});
+
+test("original v1 numeric schema remains unchanged beside a v2 public schema digest", async context => {
+  const f = fixture(context), original = { ...f.plan.original.receipt, schema: 7 };
+  const raw = Buffer.from(JSON.stringify(original) + "\n");
+  f.state.writeReceipt(raw); f.plan.original.receipt = original;
+  const result = await execute(f);
+  assert.equal(result.phase, "complete");
+  assert.deepEqual(Buffer.from(result.original.receipt, "base64"), raw);
+  assert.equal(JSON.parse(Buffer.from(result.original.receipt, "base64").toString()).schema, 7);
+  assert.equal(f.plan.original.receipt.schema, 7);
+  assert.equal(JSON.parse(readFileSync(f.receiptPath)).schema, fixtureSchemaIdentity);
+});
+
+test("finalization cannot change the pinned public schema identity before authority switch", async context => {
+  const f = fixture(context), finalize = f.effects.finalizeFreshStartPublication;
+  f.effects.finalizeFreshStartPublication = async args => {
+    const result = await finalize(args);
+    result.registration.cutover.schema = otherFixtureSchemaIdentity;
+    result.receipt.cutover.schema = otherFixtureSchemaIdentity; result.receipt.schema = otherFixtureSchemaIdentity;
+    return result;
+  };
+  await code(execute(f), "fresh_start_identity_changed");
+  assert.equal(f.infra.originalWriter, true); assert.equal(f.infra.targetWriter, false);
+  assert.deepEqual(f.state.readPublication(), f.originalBytes);
 });
