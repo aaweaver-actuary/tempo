@@ -152,7 +152,7 @@ async function runStagedStudyBuild(stageRoot: string) {
   return { outputDirectory, leakedFirstPartyIds: [...new Set(leakedFirstPartyIds)].sort() };
 }
 
-it("Study static build enables composition guard and omits optional Maia cache asset", async () => {
+it("Study static build enables composition guard and both targets omit retired Maia cache plugin", async () => {
   const { loadConfigFromFile } = await import("vite");
   try {
     vi.stubEnv("TEMPO_TARGET", "study");
@@ -164,7 +164,7 @@ it("Study static build enables composition guard and omits optional Maia cache a
     vi.stubEnv("TEMPO_TARGET", "local");
     const loadedLocal = await loadConfigFromFile({ command: "build", mode: "production" }, "vite.static.config.ts", process.cwd(), "silent", undefined, "runner");
     const localPlugins = await pluginNames(loadedLocal?.config.plugins);
-    expect(localPlugins).toContain("tempo-maia-cache-asset");
+    expect(localPlugins).not.toContain("tempo-maia-cache-asset");
   } finally { vi.unstubAllEnvs(); }
 });
 

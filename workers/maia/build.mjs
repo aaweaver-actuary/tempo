@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 export const componentRoot = import.meta.dirname;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-export const runtimeFiles = ['index.mjs','core.mjs','model.mjs','errors.mjs','worker.mjs','child.mjs','cli.mjs','wire.mjs','resources.mjs','model-descriptor.json','README.md'];
+export const runtimeFiles = ['index.mjs','core.mjs','model.mjs','errors.mjs','model-descriptor.json','README.md'];
 
 export async function stageExternalInputs(destination, { repositoryRoot = resolve(componentRoot, '../..') } = {}) {
   await mkdir(destination, { recursive: true });

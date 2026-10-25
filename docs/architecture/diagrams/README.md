@@ -83,8 +83,9 @@ is historical reference, not an active edge in this view. Intelligence also
 implements Explorer source work and Maia job/result APIs, omitted here to bound the graph: its
 [provider worker](../../../services/intelligence/src/tempo_intelligence/worker.py)
 owns HTTP source calls, [Maia validation](../../../services/intelligence/src/tempo_intelligence/maia.py)
-binds registered jobs/results, and the [independent Maia worker](../../../workers/maia/README.md)
-owns model execution. These APIs do not grant Learning admission authority or
+binds registered jobs/results, and the [Maia inference core](../../../workers/maia/README.md#retained-inference-boundary)
+owns model computation. Its unused standalone supervisor/CLI is retired; the root
+coverage scripts and Dockerfile.maia retain their separate execution path. These APIs do not grant Learning admission authority or
 establish a deployed worker connection.
 
 | Edge / boundary | Concrete source and interface |
@@ -94,7 +95,7 @@ establish a deployed worker connection.
 | Content/bridge and activation | [Content `Store`](../../../database/tempo_content_database/adapters/store.py), [bridge domain](../../../services/content/src/tempo_content/bridge/__init__.py), [operator](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py), [Learning publication bridge](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py). See [activation flow](../../../services/content/README.md#content-publication-and-serving-activation-main). |
 | Game Evidence output and delivery | [`Store`](../../../database/tempo_game_evidence_database/adapters/store.py), [`deliver_one`](../../../services/game-evidence/src/tempo_game_evidence/delivery.py), [analysis export](../../../services/game-evidence/src/tempo_game_evidence/analysis_export.py), [Learning receiver](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py). |
 | Workbench / Intelligence | [`IntelligenceClient`](../../../apps/workbench-web/src/client.ts), [`PendingCommands`](../../../apps/workbench-web/src/commands.ts), [HTTP composition](../../../services/intelligence/src/tempo_intelligence/api.py), [Analysis routes](../../../services/intelligence/src/tempo_intelligence/analysis/api.py), [`AnalysisStore`](../../../database/tempo_intelligence_database/adapters/analysis_store.py). |
-| Engine dispatch | [bounded Intelligence dispatcher](../../../services/intelligence/src/tempo_intelligence/analysis/worker.py), [worker API](../../../workers/stockfish/index.mjs), [job/result contracts](../../../contracts/analysis-jobs/README.md). The external A-export pilot is retired; see its [historical source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot). |
+| Engine dispatch | [bounded Intelligence dispatcher](../../../services/intelligence/src/tempo_intelligence/analysis/worker.py), injected client interface (no concrete worker dependency), [job/result contracts](../../../contracts/analysis-jobs/README.md). The standalone Stockfish worker/client is retired; see its [pre-removal snapshot](https://github.com/aaweaver-actuary/tempo/tree/cb0ed5910e6bd05894919fd8d49f5dc7bc236975/workers/stockfish). Maia and native/browser engine paths remain. The external A-export pilot is retired; see its [historical source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot). |
 | Shared libraries | [scheduling](../../../packages/scheduling/README.md), [chess identity](../../../packages/chess-core/README.md), [browser intents](../../../database/browser-intents/README.md), [Study session](../../../packages/study-session/README.md), [board renderer](../../../packages/board-ui/README.md), [contract index](../../../contracts/README.md). Package existence is not proof of every consumer's adoption. |
 
 ## Views and maintenance owners

@@ -38,52 +38,11 @@ Recheck the published checksum before reproducing a canonical run. The manifest 
 
 Defaults require a draw header, a valid terminal stalemate, at least two plies, at least two defender legal moves, both ratings at least 1000, and a defender material deficit of at least 5 points at the root. Values are pawn 1, knight/bishop 3, rook 5, queen 9, king 0. Material deficit is a practical filter, not proof of an objectively lost position. BOT titles, Bullet, nonstandard variants, and explicit non-normal termination are excluded. Blitz, Rapid, and Classical are accepted. Headers are filtered before chess replay; noncandidates do not create game trees.
 
-## Reproduce the canonical corpus
+## Retired offline generator command
 
-From an isolated checkout, install only the documented Python dependencies (`uv sync` in `backend/`, then `uv pip install --python .venv/bin/python -r requirements.txt`). The verified streaming mode additionally needs command-line `curl` and `zstd`; it does not add a Python Zstandard dependency. Keep raw dumps and intermediate files outside tracked source. This mode works without enough disk space to retain the archive:
+The repository no longer includes the offline mining/build CLI, so the former reproduction and sample commands are not runnable from the current tree. The exact retired implementation is preserved at the immutable source revision [`cb0ed5910e6bd05894919fd8d49f5dc7bc236975`](https://github.com/aaweaver-actuary/tempo/blob/cb0ed5910e6bd05894919fd8d49f5dc7bc236975/scripts/stalemate_swindles.py). This pointer is historical source, not a supported command or a promise that the corpus can be regenerated with current checkout contents.
 
-```bash
-nice -n 10 backend/.venv/bin/python scripts/stalemate_swindles.py mine \
-  --source-url https://database.lichess.org/standard/lichess_db_standard_rated_2026-09.pgn.zst \
-  --source-sha256 1de8eb64fed443f4be310c779e8d60a13bcfc6e3b104bcb39a018eb056edec89 \
-  --source-month 2026-09 \
-  --output test-results/stalemate-swindles/2026-09.candidates.jsonl \
-&& backend/.venv/bin/python scripts/stalemate_swindles.py build \
-  --candidates test-results/stalemate-swindles/2026-09.candidates.jsonl \
-  --corpus-id lichess-standard-2026-09-v1 \
-  --title "Stalemate Swindles" \
-  --max-puzzles 300 --max-per-motif 40 \
-  --output public/data/studies/stalemate-swindles-2026-09-v1.tempo-study.json \
-  --manifest public/data/studies/stalemate-swindles-2026-09-v1.manifest.json
-```
-
-The miner owns one bounded archive pump and its download/decompression subprocesses. It verifies their exit statuses and the entire compressed-byte checksum before publishing complete output. It does not contact the Tempo application, an engine, or any database. Run only one corpus scan at a time; use the low-priority command to protect foreground study.
-
-Reconcile `games_scanned` with the official monthly count before checking in the canonical artifact. `terminal_stalemates` counts stalemates among header-eligible parsed draws; BOT/speed/rating/termination-rejected draws are not replayed. It is not a count of every stalemate in every game in the archive. `draw_games_prefiltered` counts observed draw headers before header-quality rejection; `draw_games_parsed` counts successfully replayed eligible draw records. Exclusion counters describe the first rejecting filter. Malformed records increment `parse_errors` unless `--strict` requests immediate failure.
-
-The build consumes exactly one mined JSONL path following `--candidates`, with its adjacent `PATH.metadata.json`. It checks the candidate-file hash and recomputes candidate chess facts. Repeated paths and byte-identical copies remain rejected. Version 1 receipts record source identity/checksum, month, filters, limits, completion, mining counters, and the candidate-file checksum, but contain no verifiable source-record ranges or partition identities. Different candidate-file hashes or disjoint candidate identities cannot establish disjoint scans: overlapping records may produce no candidate. Consequently, multiple receipts are rejected before publication, even when their source, month, and filters agree or their candidates appear disjoint. Mine one input and build from that output; do not concatenate separate candidate outputs or add their receipts' counters.
-
-Mining counters are copied unchanged from the accepted receipt. `games_scanned` counts observed records; parsed-draw, terminal-stalemate, exclusion, error, and `eligible_candidates` counters describe mining observations before deduplication. `unique_candidates`, `selected_puzzles`, and shortfalls are computed separately from validated candidate identities and deterministic selection. The complete September corpus uses one receipt and is unchanged by this restriction.
-
-Bundle and manifest files are staged before publication, with the manifest written last. Consumers must check its bundle hash; absent/mismatched metadata never certifies complete work. Failed commands preserve previous final files and remove task-owned temporary partial files. Hard process termination can leave explicitly `.partial` diagnostic files, which are not build inputs.
-
-## Samples and plain PGN
-
-These supported inputs do not by themselves verify the original compressed archive:
-
-```bash
-zstdcat lichess_db_standard_rated_2026-09.pgn.zst \
-  | backend/.venv/bin/python scripts/stalemate_swindles.py mine \
-      --source-month 2026-09 --output test-results/stalemate-swindles/plain.candidates.jsonl
-
-backend/.venv/bin/python scripts/stalemate_swindles.py mine \
-  --input sample.pgn --source-month 2026-09 \
-  --output test-results/stalemate-swindles/sample.candidates.jsonl
-```
-
-`--max-games N` and `--stop-after-candidates N` always mark sampling output incomplete, even if the input also reaches EOF. Use a distinct sample corpus ID such as `lichess-standard-2026-09-smoke-v1` and paths under `test-results/` when building a sample. Canonical `lichess-standard-YYYY-MM-vN` IDs require complete verified archive input. Plain-stdin EOF cannot prove that an upstream download or decompressor succeeded.
-
-Other mining controls: `--min-material-deficit`, `--min-rating`, comma-separated `--speeds` (including optional Bullet), `--include-bots`, `--progress-every` (default one million), and `--strict`. Progress goes to stderr; candidates are written incrementally to the output file. No partial-stream resume is implemented: restart the verified stream after a failure; an HTTP range is insufficient to restore decompression, framing, and full-source hashing safely.
+The checked-in bundle and manifest remain the source artifacts. The manifest records the published archive identity and checksum, completed scan counters, selection details, and bundle checksum; validate those immutable artifacts rather than treating a partial sample or a reconstructed scan as the September corpus.
 
 ## Determinism and selection
 

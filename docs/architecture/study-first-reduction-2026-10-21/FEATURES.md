@@ -13,7 +13,7 @@
 | Historical SQLite serving / dual runtime branches | **RETIRE CANDIDATE** | Check deployed consumers and one-time converters separately; `backend/app/main.py`, `database/tempo_legacy_database/connections.py` |
 | Legacy HTTP/Celery main/task coordinator | **RETIRE CANDIDATE** | Only after Study is independently served; `backend/app/main.py`, `backend/app/tasks.py`, `backend/app/services/game_sync_coordinator.py` |
 | Games account sync, game analysis, stockfish engine worker | **RECORD THEN RETIRE** | Preserve ingested data if requested, no active ingestion/derivation requirement; `backend/app/games/`, `services/game-evidence/`, `services/intelligence/` |
-| Lichess Explorer, Maia, probability estimation and adaptive ranking | **RECORD THEN RETIRE** | Consuming already-persisted frozen ordering is distinct from future ranking production; `backend/app/services/repertoire_coverage.py`, `introduction_priorities.py` |
+| Lichess Explorer, Maia, probability estimation and adaptive ranking | **RECORD THEN RETIRE** (bounded source candidates below) | Consuming already-persisted frozen ordering is distinct from future ranking production; `backend/app/services/repertoire_coverage.py`, `introduction_priorities.py` |
 | Discovery suggestions, coverage opportunities and automatic admissions | **RECORD THEN RETIRE** | Existing introduced cards remain in Study; `repertoire_opportunities.py`, `discovery_admission.py` |
 | Defense/threat generation, endgame generation, tactical finding producers | **RECORD THEN RETIRE** | Preserve any already admitted Study exercises and genuine review history; `backend/app/services/threat_*.py`, old endgame routes |
 | Guided game review, chess statistics, motif insights, dashboards | **RECORD THEN RETIRE** | Old endpoints and data can be described/reimplemented later; `backend/app/main.py` Games/statistics/guided sections |
@@ -51,3 +51,52 @@ The external `tools/analysis-restoration/c_pilot` operator and its optional Inte
 The legacy read routes `GET /api/statistics/overview`, `/api/statistics/breakdown`, and `/api/statistics/insights` and their exclusive overview/breakdown implementations are retired after their UI consumers were removed. Their prior handlers remain in [main.py at b39dd3a9](https://github.com/aaweaver-actuary/tempo/blob/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/backend/app/main.py). Unknown external clients may lose these optional reports. Daily refresh commands, feature generation, worker receipts, stored statistics, schema, and Study behavior are not retired by this batch. No user data was exported or changed. The unused Workbench sync wrapper is also removed; its hook and pending-command recovery remain.
 
 This batch is source preparation with static checks, not live cutover or an approved `legacy-01` backend cohort. Focused executable tests/builds remain unverified in the cloud environment. The source deletion does not close the broader Study/history/launcher gates.
+
+## Bounded offline-source candidates (2026-10-25)
+
+[RETIREMENT-BATCHES.json](RETIREMENT-BATCHES.json) records exact paths against
+[`cb0ed591`](https://github.com/aaweaver-actuary/tempo/commit/cb0ed5910e6bd05894919fd8d49f5dc7bc236975).
+All five cohorts remain **candidate**, not an approved `legacy-01` or permission
+to merge, deploy, remove tables, or close #390/#391. Retained Study/import,
+launcher/update and migration gates (#382/#386/#359/#267/#369) remain separate.
+
+- `ranking-evaluation-01`: remove the standalone offline replay/evaluation package
+  and its exclusive fixtures/qualification. The `tempo-evaluate-opening-rankings` CLI is
+  unsupported; packaged evidence math, live ranking, frozen ranks and introduction
+  remain. Historical purpose and implementation are recoverable at the source SHA.
+- `classic-maia-assets-01`: remove the orphaned classic browser worker, its model
+  cache adapter and asset plugin, including their build registrations. The public
+  `maia-worker.js` and `maia-worker-cache.js` URLs stop shipping. Existing
+  `MaiaModels` cache records, model assets, Maia3, inference scripts and the
+  independent worker package remain; no user data is exported or deleted.
+- `stalemate-offline-cli-01`: retire only the offline archive/mining CLI and its
+  exclusive command/process tests. Saved corpora, Study execution/import/grading,
+  review-history proofs and the shared backend miner remain. Historical commands
+  are unsupported, not replaced by a new producer.
+
+Architecture: the classic model-cache source view is updated in
+`database/browser/README.md`. The other two offline entrypoints have no edge in
+the maintained architecture drawings; no serving interface, Study dependency,
+transaction, data ownership or live process lifecycle changes. These source-only
+checks do not establish deployed-client absence or native PostgreSQL qualification.
+## Standalone Stockfish worker retirement (stockfish-worker-01)
+
+This bounded candidate removes the 79 tracked files under `workers/stockfish` and only the `stockfish` component registration. The standalone runtime/API (`index.mjs`, `worker.mjs`, `cli.mjs`) and passive Python client (`python/src/tempo_stockfish_client`) executed caller-supplied analysis jobs, cancellation and session fencing without owning Study state. Their build, operator, fixture and qualification files retire with them. The package API, CLI and component test/build selection are no longer supported. Last-good source and regression evidence: [main snapshot cb0ed591](https://github.com/aaweaver-actuary/tempo/tree/cb0ed5910e6bd05894919fd8d49f5dc7bc236975/workers/stockfish).
+
+No outside production import of the concrete worker/client remains. Intelligence's injected-client dispatcher and its negative forbidden-package qualification assertion remain, as do `contracts/analysis-jobs`, Maia, native engine processes/clients, `Dockerfile.engine`, Compose/runtime configuration, browser engines and retained licenses. No user data was accessed, exported or removed; Study, Learning, PGN import, saved analysis/history and database sources are unchanged. This source-only candidate does not approve `legacy-01`, establish live cutover, or close the broader #390/history gates.
+
+
+## Standalone Maia supervisor retirement candidate
+
+At base `cb0ed5910e6bd05894919fd8d49f5dc7bc236975`, no production consumer
+outside `workers/maia` imports `MaiaWorker` or invokes its standalone CLI. This
+candidate removes the supervisor, child, CLI, wire/resource helpers and their
+exclusive tests/container tooling. It retains core/model/errors/descriptor,
+immutable assets, low-level package exports and the root `Dockerfile.maia` /
+`scripts/maia-inference.mjs` coverage path unchanged. Shared schema acceptance,
+model/provenance, real inference and legacy frozen-helper coverage remain.
+
+The removed runtime API is not replaced with a new framework. Its lifecycle and
+resource guarantees are retired rather than attributed to the computation API.
+This source-only candidate does not establish deployment absence or complete
+legacy-01/#391; real-data/cutover and merge gates remain separate.
