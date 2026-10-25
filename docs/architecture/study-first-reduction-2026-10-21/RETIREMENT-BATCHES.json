@@ -611,6 +611,77 @@
         "Root TypeScript checking produced identical 124 diagnostics on head and base. The unchanged registered Python installed-contract consumer was not executed; these receipts do not claim every registered/full-system suite passed.",
         "Read-only GitHub state at 2026-10-25 12:19 UTC: main unprotected, no effective branch rules/rulesets or PR required checks; repository-wide Actions disabled despite active workflow definitions. Sourcery skipped and supplied no approval. No setting changed."
       ]
+    },
+    {
+      "id": "repertoire-statistics-visual-fixtures-01",
+      "status": "candidate",
+      "source_commit": "bdb7f6379b1e3e8bcbc5e598cc8f022ac6d71d02",
+      "delete_paths": [
+        "tests/browser/visual-baselines/repertoire-statistics-1280.png",
+        "tests/browser/visual-baselines/repertoire-statistics-390.png"
+      ],
+      "edit_paths": [
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Record this fixture-only cohort without changing previous cohort evidence."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Record obsolete statistics screenshot disposition and recovery source."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "tests/browser/visual.spec.ts",
+          "reason": "All retained visual assertions remain byte-identical, including both prefix-comparison viewport cases.",
+          "sha256": "8486ad1a927bac3f4fb3c386aad48d8f8085320a74cb6cd0a6c4cf908a352039"
+        },
+        {
+          "path": "tests/browser/prefix-comparison.spec.ts",
+          "reason": "Retain browser import, queue immutability and comparison assertions.",
+          "sha256": "17724782a0a8cccd9e202f120a6599e107d3c526f4f7a52dc2779df2d78c4b58"
+        },
+        {
+          "path": "tests/fixtures/prefix-comparison/structural.json",
+          "reason": "Current visual and unit comparison consumer fixture remains unchanged.",
+          "sha256": "ed808e6d111f1d494e833d9f53ca14ba5f06e8db2ef63ee3434a2b5ce469451f"
+        },
+        {
+          "path": "tests/unit/prefix-comparison-regressions.test.tsx",
+          "reason": "Retained comparison behavior assertions.",
+          "sha256": "d58f10aa5778b96a855ce05bd476a163c3a515f194caf2f25200683848ec7cac"
+        }
+      ],
+      "preserved_test_names": [
+        "Prefix comparison 390",
+        "Prefix comparison 1280",
+        "issue78_phone_and_desktop_comparison_remain_usable 390",
+        "issue78_phone_and_desktop_comparison_remain_usable 1280"
+      ],
+      "test_commands": [
+        "node scripts/check-merge-conflicts.mjs",
+        "git diff --check"
+      ],
+      "dependency_receipts": [
+        "Commit 4a5a722593fe2d45cff2d01572e3eaa86dcca48b, integrated by PR #407, removed the only repertoire-statistics screenshot loop while leaving these two PNG files.",
+        "Current tracked source/config has no repertoire-statistics screenshot-name consumer. playwright.visual.config.ts selects baselines by explicit screenshot argument, not PNG directory discovery. Historical documentation remains unchanged.",
+        "These test-only PNGs have no outbound dependencies or serving/data role. No runtime source, test assertion, dependency, build registration, user data or schema is removed.",
+        "Local source checks passed: node scripts/check-merge-conflicts.mjs; git diff --check; exact four-path allowlist, two-path absence, fixture byte total and all declared protected SHA-256 checks. Host Node v26.12.0; no runtime suites or builds required for unreferenced PNG deletion.",
+        "PR #416 mechanically rebased onto bdb7f6379b1e3e8bcbc5e598cc8f022ac6d71d02: preserved the merged tactics/shadow feature appendix and all prior manifest cohorts; original two PNGs and protected screenshot/reference inputs remain identical. Only append-only FEATURES.md conflict resolution was needed."
+      ],
+      "reduction": {
+        "narrow_production_lines": 0,
+        "broader_production_lines": 0,
+        "textual_test_lines": 0,
+        "fixture_bytes": 378527
+      },
+      "data_disposition": "Two synthetic screenshot baselines only; no user or persisted application data. Recovery is available in the source_commit tree.",
+      "reviewer": {
+        "decision": "independent source review accepted for this fixture-only cohort",
+        "reviewer": "backend_optional independent audit agent",
+        "scope": "Only the exact two PNG deletions and their disposition records; no legacy-01, migration, table, launcher or deployment approval.",
+        "evidence": "Independent review at base 1e7ffb049b9c5489cd0fa4c145d81ba1771813cb confirmed retired screenshot history, explicit filename resolution, no directory-discovery consumer, protected source/config/prefix PNG equality and prior manifest preservation. No actionable P1/P2 finding; no runtime tests or builds run."
+      }
     }
   ]
 }

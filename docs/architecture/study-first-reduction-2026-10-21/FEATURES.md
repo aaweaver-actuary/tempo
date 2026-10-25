@@ -132,3 +132,16 @@ canonical drawing is removed with its owning directory; its parent inventory
 points to the retained history. Other maintained architecture views are unchanged.
 Source checks and native case collection do not establish deployed-client absence,
 native PostgreSQL/Redis recovery or merge qualification.
+
+
+## Retired Repertoire statistics screenshot fixtures
+
+The `repertoire-statistics-visual-fixtures-01` cohort removes only the unused
+390px and 1280px PNG baselines under `tests/browser/visual-baselines/`.
+[PR #407's source commit](https://github.com/aaweaver-actuary/tempo/commit/4a5a722593fe2d45cff2d01572e3eaa86dcca48b)
+removed their screenshot cases. Both PNGs remain recoverable in
+[the pre-cleanup source](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb/tests/browser/visual-baselines).
+Current Study/import and prefix-comparison assertions and fixtures stay unchanged.
+This saves 378,527 fixture bytes and credits zero runtime or textual test lines.
+No routes, commands, user data or schema change. Architecture impact: none; only
+unreferenced test images are removed, with no runtime or ownership boundary change.
