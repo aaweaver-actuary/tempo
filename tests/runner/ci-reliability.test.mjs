@@ -170,7 +170,7 @@ test("reviewed ordinary and sensitive service classifications survive ordinary c
 
 test("reviewed backend domain changes with ordinary regressions omit deployment lifecycle", () => {
   for (const path of ["backend/app/services/study_grading.py", "backend/app/study_commands.py",
-    "backend/app/opening_segmentation_api.py", "backend/app/study_contracts.py", "backend/app/models.py"]) {
+    "backend/app/opening_segmentation_api.py", "backend/app/contracts/studies.py", "backend/app/models.py"]) {
     for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
       "tests/unit/study-regressions.test.tsx", "tests/browser/studies.spec.ts"]]) {
       const planned = plan({ paths });
