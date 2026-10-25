@@ -2,6 +2,12 @@
 
 ## Balanced daily presentation
 
+`tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`
+executes the production Study harness setup through fixture-key creation twice,
+before any server or database starts, and requires distinct UUIDv4 keys. It
+guards the harness's missing `uuid` import; actual UI and durable review effects
+remain owned by `integration/study_tests/test_study_ui.py`.
+
 `test_queue_ordering.py` owns pure policy-v3 proportions across skewed, empty,
 single and multiple categories; identical membership under different seeds;
 stable replay; frozen opening relative rank across category slots; protected

@@ -4,7 +4,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
-import hmac, json, os, subprocess, time
+import hmac, json, os, subprocess, time, uuid
 import pytest
 from test_restart import server
 from test_runtime import activate, bundle
