@@ -1,0 +1,580 @@
+{
+  "schema_version": 1,
+  "status": "source-only transition candidate; no deletion approved or implemented",
+  "source_commit": "782bf5374b87f223a023568305056415d5b63cea",
+  "source_tree": "8896b0bcdbe360d1ff609030234b22a0cd803b4f",
+  "input_map": {
+    "path": "/Users/andy/Documents/Codex/2026-10-25/task-14/evidence/narrow-next-2026-10-25/NARROW-NEXT.md",
+    "sha256": "b2f7d09ab6e62675379c5e2e4bd206b6547034f9893cef5e30d5809af35ce800"
+  },
+  "core_physical_lines": 1407,
+  "core_paths": [
+    {
+      "path": "backend/app/services/introduction_priorities.py",
+      "sha256": "5a7c18d20ebb2d31566bc86735de4192bce7ddb0d4971bf0f287824847e05435",
+      "physical_lines": 933,
+      "definitions": [
+        {
+          "name": "IntendedLine",
+          "start_line": 40,
+          "end_line": 48
+        },
+        {
+          "name": "CardRoute",
+          "start_line": 52,
+          "end_line": 57
+        },
+        {
+          "name": "PriorityCalculationInput",
+          "start_line": 61,
+          "end_line": 70
+        },
+        {
+          "name": "PriorityRecord",
+          "start_line": 74,
+          "end_line": 82
+        },
+        {
+          "name": "_now",
+          "start_line": 85,
+          "end_line": 87
+        },
+        {
+          "name": "_board_fen_key",
+          "start_line": 90,
+          "end_line": 91
+        },
+        {
+          "name": "_route_signature",
+          "start_line": 94,
+          "end_line": 111
+        },
+        {
+          "name": "_maximal_intended_lines",
+          "start_line": 114,
+          "end_line": 152
+        },
+        {
+          "name": "_line_card_route",
+          "start_line": 155,
+          "end_line": 200
+        },
+        {
+          "name": "_repertoire_reply_moves",
+          "start_line": 203,
+          "end_line": 213
+        },
+        {
+          "name": "_coverage_evidence",
+          "start_line": 216,
+          "end_line": 232
+        },
+        {
+          "name": "_personal_evidence",
+          "start_line": 235,
+          "end_line": 241
+        },
+        {
+          "name": "_personal_evidence_from_rows",
+          "start_line": 244,
+          "end_line": 265
+        },
+        {
+          "name": "_real_game_miss_evidence",
+          "start_line": 268,
+          "end_line": 284
+        },
+        {
+          "name": "_move_probability",
+          "start_line": 287,
+          "end_line": 352
+        },
+        {
+          "name": "_line_probabilities",
+          "start_line": 355,
+          "end_line": 401
+        },
+        {
+          "name": "_card_routes",
+          "start_line": 404,
+          "end_line": 469
+        },
+        {
+          "name": "calculate_priority_records",
+          "start_line": 472,
+          "end_line": 546
+        },
+        {
+          "name": "_load_priority_calculation_input",
+          "start_line": 549,
+          "end_line": 592
+        },
+        {
+          "name": "_read_personal_evidence_rows",
+          "start_line": 595,
+          "end_line": 611
+        },
+        {
+          "name": "_replace_priority_records",
+          "start_line": 614,
+          "end_line": 635
+        },
+        {
+          "name": "rebuild_introduction_priorities",
+          "start_line": 638,
+          "end_line": 673
+        },
+        {
+          "name": "enqueue_priority_refresh",
+          "start_line": 676,
+          "end_line": 684
+        },
+        {
+          "name": "enqueue_priority_refresh_in_transaction",
+          "start_line": 687,
+          "end_line": 716
+        },
+        {
+          "name": "enqueue_priority_refreshes_for_game",
+          "start_line": 719,
+          "end_line": 733
+        },
+        {
+          "name": "claim_priority_refresh",
+          "start_line": 736,
+          "end_line": 756
+        },
+        {
+          "name": "execute_priority_refresh",
+          "start_line": 759,
+          "end_line": 837
+        },
+        {
+          "name": "load_priority_calculation_input",
+          "start_line": 840,
+          "end_line": 843
+        },
+        {
+          "name": "publish_priority_records",
+          "start_line": 846,
+          "end_line": 899
+        },
+        {
+          "name": "priority_status",
+          "start_line": 902,
+          "end_line": 933
+        }
+      ]
+    },
+    {
+      "path": "backend/app/services/postgres_priority.py",
+      "sha256": "4e6820145db66699a996354020e5b000ba1723ff4925cae4b63fc18cd6c20c22",
+      "physical_lines": 193,
+      "definitions": [
+        {
+          "name": "_batch_size",
+          "start_line": 22,
+          "end_line": 23
+        },
+        {
+          "name": "_has_current_priority_lease",
+          "start_line": 26,
+          "end_line": 39
+        },
+        {
+          "name": "_priority_source_version",
+          "start_line": 42,
+          "end_line": 43
+        },
+        {
+          "name": "_load_preparation_manifest",
+          "start_line": 46,
+          "end_line": 47
+        },
+        {
+          "name": "_prepare_priority_generation",
+          "start_line": 50,
+          "end_line": 117
+        },
+        {
+          "name": "execute_repertoire_priority_slice",
+          "start_line": 120,
+          "end_line": 193
+        }
+      ]
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py",
+      "sha256": "8859788cd5f4c472db12081dbce9eef2c019809d3cf2ff3e1216defc9fcee8bf",
+      "physical_lines": 1,
+      "definitions": []
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py",
+      "sha256": "83e632f56a111fa58c82ecafc9421a57bf96ded02d69dcabf58e7aaad5b89812",
+      "physical_lines": 102,
+      "definitions": [
+        {
+          "name": "coverage_run",
+          "start_line": 6,
+          "end_line": 12
+        },
+        {
+          "name": "coverage_nodes",
+          "start_line": 15,
+          "end_line": 18
+        },
+        {
+          "name": "coverage_candidates",
+          "start_line": 21,
+          "end_line": 26
+        },
+        {
+          "name": "personal_evidence_rows",
+          "start_line": 29,
+          "end_line": 38
+        },
+        {
+          "name": "repertoire_lines",
+          "start_line": 41,
+          "end_line": 45
+        },
+        {
+          "name": "active_opening_cards",
+          "start_line": 48,
+          "end_line": 54
+        },
+        {
+          "name": "priority_settings",
+          "start_line": 57,
+          "end_line": 60
+        },
+        {
+          "name": "personal_evidence_page",
+          "start_line": 63,
+          "end_line": 78
+        },
+        {
+          "name": "compatibility_opening_cards",
+          "start_line": 81,
+          "end_line": 86
+        },
+        {
+          "name": "repertoire_ids_for_color",
+          "start_line": 89,
+          "end_line": 93
+        },
+        {
+          "name": "coverage_error",
+          "start_line": 96,
+          "end_line": 102
+        }
+      ]
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py",
+      "sha256": "077cc7eab0cdb0484fcdaf5151af12b61c57a2c134f348d8ed7f5ae26751a5c3",
+      "physical_lines": 105,
+      "definitions": [
+        {
+          "name": "known_generation",
+          "start_line": 5,
+          "end_line": 10
+        },
+        {
+          "name": "enqueue_generation",
+          "start_line": 13,
+          "end_line": 23
+        },
+        {
+          "name": "generation",
+          "start_line": 26,
+          "end_line": 30
+        },
+        {
+          "name": "begin_claim",
+          "start_line": 33,
+          "end_line": 34
+        },
+        {
+          "name": "claim_candidate",
+          "start_line": 37,
+          "end_line": 44
+        },
+        {
+          "name": "mark_running",
+          "start_line": 47,
+          "end_line": 53
+        },
+        {
+          "name": "clear_pending_request",
+          "start_line": 56,
+          "end_line": 58
+        },
+        {
+          "name": "current_job",
+          "start_line": 61,
+          "end_line": 65
+        },
+        {
+          "name": "complete_legacy_job",
+          "start_line": 68,
+          "end_line": 74
+        },
+        {
+          "name": "attempt_state",
+          "start_line": 77,
+          "end_line": 81
+        },
+        {
+          "name": "retry_or_fail",
+          "start_line": 84,
+          "end_line": 97
+        },
+        {
+          "name": "complete_generation_job",
+          "start_line": 100,
+          "end_line": 105
+        }
+      ]
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/introduction_priorities/publications.py",
+      "sha256": "1dc8718cc479689b946ed0b35d3ff7fa46ab978521082700579b80123b415a6f",
+      "physical_lines": 73,
+      "definitions": [
+        {
+          "name": "delete_legacy_rows",
+          "start_line": 4,
+          "end_line": 8
+        },
+        {
+          "name": "insert_legacy_rows",
+          "start_line": 11,
+          "end_line": 19
+        },
+        {
+          "name": "publish_legacy_generation",
+          "start_line": 22,
+          "end_line": 28
+        },
+        {
+          "name": "delete_staged_generation",
+          "start_line": 31,
+          "end_line": 35
+        },
+        {
+          "name": "insert_generation_rows",
+          "start_line": 38,
+          "end_line": 46
+        },
+        {
+          "name": "publish_generation",
+          "start_line": 49,
+          "end_line": 55
+        },
+        {
+          "name": "published_evidence",
+          "start_line": 58,
+          "end_line": 65
+        },
+        {
+          "name": "legacy_evidence",
+          "start_line": 68,
+          "end_line": 73
+        }
+      ]
+    }
+  ],
+  "implemented_delete_paths": [],
+  "implemented_production_edit_paths": [],
+  "retained_source_receipts": [
+    {
+      "path": "backend/app/services/refresh_requests.py",
+      "sha256": "9ddbdba6fb33034c6e24669d3bff030ca1b2d73c30199236d22e2df7617aa3f4",
+      "physical_lines": 63
+    },
+    {
+      "path": "backend/app/services/durable_tasks.py",
+      "sha256": "ab270699a8795d3db6bb1d2c14c962f7539712b3135fcb667133217021d6ecaf",
+      "physical_lines": 575
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/priority_lifecycle/preparation.py",
+      "sha256": "8d0180c43da220a20916f3c2a2c157feb7d2d48f05b11813c7ba2d536d6d0130",
+      "physical_lines": 138
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/priority_lifecycle/retention.py",
+      "sha256": "86e11ada77697677075cda8e8555dc154e5efc76bba6e6bb3a2b5423a5ebdbd9",
+      "physical_lines": 117
+    },
+    {
+      "path": "backend/app/services/priority_retention.py",
+      "sha256": "a2945290ee6156612d9f617ffa5fb1358e291211afea4cbceede29f1640ae5a2",
+      "physical_lines": 67
+    },
+    {
+      "path": "backend/app/study/openings/capacity_frontier.py",
+      "sha256": "48245e8f889b03536db8e76e586b2877e120164cf1e79a5190bdc5829ff15691",
+      "physical_lines": 270
+    },
+    {
+      "path": "backend/app/study/frozen_order/policy.py",
+      "sha256": "95fa59bfe5fc43410d24fb84ad3dbddea25e8a656dbddcf080532093631770d9",
+      "physical_lines": 55
+    },
+    {
+      "path": "backend/app/services/queue_admission.py",
+      "sha256": "497b2e180033e4417af40b6b8124048ae0c2b51241bb44fb3dc1173137c4609a",
+      "physical_lines": 272
+    },
+    {
+      "path": "backend/app/services/queue_admission_adapter.py",
+      "sha256": "54d0e1690473066507eab3b2f21cf41ea440d99d6a5d7ae9f1aab421e1a2b44f",
+      "physical_lines": 133
+    },
+    {
+      "path": "backend/app/services/queue_application.py",
+      "sha256": "370515db61d20eca3373f876e42fdacf7ddd6f96f2c12215619a2c1dc1931cb9",
+      "physical_lines": 276
+    },
+    {
+      "path": "backend/app/services/postgres_queue_refresh.py",
+      "sha256": "1fdba0c2b7dbad27ba5a850e73ec37e06b7c6f522a43a9705165031941ba976f",
+      "physical_lines": 827
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+      "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
+      "physical_lines": 175
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+      "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
+      "physical_lines": 154
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/queue_refresh/reads.py",
+      "sha256": "2d058d0c7c0f56493385f81113b75a3c5575f13b9b6803314b42cd27d243def3",
+      "physical_lines": 243
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+      "sha256": "7fc494bf6d93b8316ddf5cb3111c5ef73fd317f7b80528f1783bfb80592e1473",
+      "physical_lines": 60
+    },
+    {
+      "path": "backend/app/main.py",
+      "sha256": "9de307a346628b429daed2718211844d2db79607afc8b9644914ec91b491cef1",
+      "physical_lines": 4511
+    },
+    {
+      "path": "backend/app/tasks.py",
+      "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7",
+      "physical_lines": 493
+    },
+    {
+      "path": "backend/app/services/game_sync_coordinator.py",
+      "sha256": "db1a97077d94da4a14d98f05536afa4c09715f54e14a2faa0c3c6d33c8c6bbec",
+      "physical_lines": 524
+    },
+    {
+      "path": "backend/app/canonical_prefix_api.py",
+      "sha256": "a36a71e687a0d9e7299ea07de02564ee72b2bee2f4eb5f93c1ea76ae2458fa1c",
+      "physical_lines": 124
+    },
+    {
+      "path": "backend/app/coverage_maia_commands.py",
+      "sha256": "d38c1de908c06b295b47969dc24b3d7f5228567fe9390a0fbcde0187e361e64e",
+      "physical_lines": 109
+    },
+    {
+      "path": "backend/app/services/repertoire_coverage.py",
+      "sha256": "a05fffc8762ad19e4c618f7de4df0667e21bc8a3615828d19b252386e3694bdd",
+      "physical_lines": 708
+    },
+    {
+      "path": "backend/app/services/postgres_coverage_explorer.py",
+      "sha256": "04791f50588b7caa1c6ee16de18d2aa7fda418160de13aca4491408293697ea9",
+      "physical_lines": 140
+    },
+    {
+      "path": "backend/app/services/postgres_game_priorities.py",
+      "sha256": "295555d13146eb1ce9189266b3df9f55d017c56fc8c287b0d01aec2cbd9720c3",
+      "physical_lines": 44
+    },
+    {
+      "path": "backend/app/services/learning_review_adapter.py",
+      "sha256": "00f5148e7c29950ac4b6031610141b5cacbfb76e12896d7f727dba1fb1e852ca",
+      "physical_lines": 300
+    },
+    {
+      "path": "services/learning/application/src/tempo_learning_review/application.py",
+      "sha256": "14f5f50c93619f31c90fb50a9e94cd47e49dd6a19ac120877159e6b948a4d57e",
+      "physical_lines": 203
+    },
+    {
+      "path": "services/learning/runtime/src/tempo_learning_runtime/review_adapter.py",
+      "sha256": "5b3ec6d0a9c53ed92d3fb20bcd43a9b02283db47f069c550cdba5d20878aff44",
+      "physical_lines": 448
+    },
+    {
+      "path": "database/tempo_learning_database/adapters/review_adapter.py",
+      "sha256": "fea81ed0edb46094c8c7ef7bea7712c5e9c6c38f1d24eaecad4dc20d640b910b",
+      "physical_lines": 242
+    },
+    {
+      "path": "services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/policy.py",
+      "sha256": "a2c1b11ad41fea53a465594bca6879dfb521a64232fe749f921d7527ccfe6747",
+      "physical_lines": 78
+    },
+    {
+      "path": "database/tempo_learning_database/adapters/queue_application.py",
+      "sha256": "d875bad80a9495f786997bf4f8f83c072128afa8452c1acf388d204998c281d0",
+      "physical_lines": 173
+    },
+    {
+      "path": "database/tempo_learning_database/adapters/admission.py",
+      "sha256": "91c7f6557c4a08de947b595e088a974a9c47845d90e3f044339ea4bf592aadff",
+      "physical_lines": 171
+    },
+    {
+      "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+      "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+      "physical_lines": 170
+    },
+    {
+      "path": "database/tempo_legacy_database/ddl/canonical_scope_schema.py",
+      "sha256": "b3b0229d33fe3e7ad3b6c9efa918d9c40f878852d39c838eef09a6aea5ec9a6f",
+      "physical_lines": 76
+    },
+    {
+      "path": "database/tooling/frozen-maia-order.py",
+      "sha256": "1967f2375250a2f6a5ab4a8c252bdfe4ee70ba8a0ff0fddca8d59a63a11dab05",
+      "physical_lines": 623
+    },
+    {
+      "path": "database/tooling/reclaim_priority_storage.py",
+      "sha256": "466766615b833e4f43d49c75c4bda33201822027d3d0da123a9fe69eef4cd5f4",
+      "physical_lines": 267
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+      "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2",
+      "physical_lines": 229
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/games/coordinator/storage.py",
+      "sha256": "9ff46be2e83e39bcf9f0ff04db2d8405826ee7bb4837d100426717e1e0d70792",
+      "physical_lines": 256
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+      "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
+      "physical_lines": 40
+    }
+  ],
+  "remaining_gate": "Approved exact no-new-recomputation and issued-work disposition, with saved-reader and epoch/version/publication/job compatibility preserved; then owning checks and existing actual-authority/cutover gates. No observation of empty storage or absent pending work.",
+  "validation_scope": "Documentation/source correspondence only; no runtime suites, database connections, deployment or live observation."
+}
