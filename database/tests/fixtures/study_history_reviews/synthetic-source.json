@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "label": "SYNTHETIC ONLY - no approved installed mapping"
+  },
+  "tables": {
+    "cards": [
+      {
+        "key": "synthetic:cards:0",
+        "row": {
+          "id": "synthetic-card",
+          "repertoire_id": "synthetic-repertoire",
+          "kind": "prefix",
+          "start_fen": "synthetic retained FEN",
+          "moves_json": "[ \"e2e4\", \"e7e5\" ]",
+          "state": "learning",
+          "due_date": "2030-01-09",
+          "interval_days": 7,
+          "ease": 2.5,
+          "repetitions": 4,
+          "lapses": 1,
+          "unlock_after_card_id": null,
+          "fsrs_card_json": "{ \"stability\": 7.25, \"difficulty\": 4 }",
+          "first_correct_at": "2030-01-02",
+          "reinforcement_pending": 1,
+          "stability": 7.25,
+          "guided_review": 0,
+          "maximum_interval": 365,
+          "content_type": "opening",
+          "scheduling_mode": "light",
+          "hard_correct_streak": 2,
+          "recent_attempts_json": "[true, false, true]",
+          "archived": 0,
+          "superseded_by": null,
+          "source_ref": null,
+          "source_fen": null,
+          "revision": 3,
+          "introduced_at": "2030-01-02",
+          "trained_color": "white",
+          "pending_validation": 0,
+          "prefix_split_rejected_after_review_id": -1,
+          "study_exercise_id": null,
+          "canonical_route_source": 1
+        }
+      }
+    ],
+    "reviews": [
+      {
+        "key": "synthetic:reviews:0",
+        "row": {
+          "id": 101,
+          "card_id": "synthetic-card",
+          "rating": "correct",
+          "reviewed_at": "2030-01-02T10:00:00+05:30",
+          "previous_interval": 0,
+          "next_interval": 7,
+          "internal_rating": "good",
+          "guided": 0,
+          "source_kind": "study",
+          "source_ref": "synthetic-old-attempt",
+          "invalidated_at": "2030-01-03T10:00:00+05:30",
+          "invalidation_reason": "synthetic retained invalidation"
+        }
+      }
+    ],
+    "opening_evidence_observations": [
+      {
+        "key": "synthetic:opening_evidence_observations:0",
+        "row": {
+          "attempt_id": "synthetic-attempt",
+          "decision_index": 1,
+          "decision_id": "synthetic-decision",
+          "observed_at": "2030-01-02T10:00:00+05:30",
+          "failure_at": null,
+          "observation_json": "{ \"assisted\": false }"
+        }
+      }
+    ],
+    "opening_evidence_summaries": [
+      {
+        "key": "synthetic:opening_evidence_summaries:0",
+        "row": {
+          "decision_id": "synthetic-decision",
+          "first_responses": 4,
+          "clean_successes": 3,
+          "incorrect_responses": 1,
+          "assisted_responses": 1,
+          "manual_failures": 0,
+          "corrections": 1,
+          "distinct_clean_days": 2
+        }
+      }
+    ],
+    "opening_evidence_clean_days": [
+      {
+        "key": "synthetic:opening_evidence_clean_days:0",
+        "row": {
+          "decision_id": "synthetic-decision",
+          "study_day": "2030-01-02"
+        }
+      }
+    ],
+    "remediation_settlements": [
+      {
+        "key": "synthetic:remediation_settlements:0",
+        "row": {
+          "workspace_id": "synthetic-workspace",
+          "review_id": "101",
+          "attempt_id": "synthetic-remediation-attempt",
+          "card_id": "synthetic-card",
+          "reviewed_at": "2030-01-02T10:00:00+05:30",
+          "invalidated": true,
+          "invalidation_reason": "synthetic retained invalidation"
+        }
+      }
+    ],
+    "opening_card_schedule_seeds": [
+      {
+        "key": "synthetic:opening_card_schedule_seeds:0",
+        "row": {
+          "card_id": "synthetic-card",
+          "source_card_id": "synthetic-card",
+          "baseline_successful_days": 2,
+          "baseline_recent_clean": 1,
+          "verification_due": "2030-01-09",
+          "created_at": "2030-01-01T10:00:00+05:30"
+        }
+      }
+    ],
+    "review_schedule_snapshots": [
+      {
+        "key": "synthetic:review_schedule_snapshots:0",
+        "row": {
+          "review_id": 101,
+          "state_json": "{ \"due_date\": \"2030-01-09\", \"unrecognized_retained\": [1] }"
+        }
+      }
+    ],
+    "study_sibling_burials": [
+      {
+        "key": "synthetic:study_sibling_burials:0",
+        "row": {
+          "exercise_id": "synthetic-exercise",
+          "study_day": "2030-01-02",
+          "reason": "sibling"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "synthetic:settings:0",
+        "row": {
+          "id": 1,
+          "initial_depth": 6,
+          "timezone": "Asia/Kolkata",
+          "new_cards_per_day": 8,
+          "lichess_username": "synthetic-only",
+          "chesscom_username": "",
+          "auto_sync_minutes": 3,
+          "engine_line_window_cp": 30,
+          "major_mistake_cp": 100,
+          "light_first_interval_days": 7,
+          "draw_hold_user_moves": 20,
+          "tactics_new_per_day": 4,
+          "coverage_reply_denominator": 100,
+          "coverage_cumulative_target": 95,
+          "coverage_horizon_fullmoves": 15,
+          "coverage_path_floor": 0.0005,
+          "coverage_maia_elo": 1500,
+          "defense_new_cards_per_day": 5,
+          "discovery_window_days": 90,
+          "include_defensive_cards_in_daily_stack": 1,
+          "study_new_per_day": 2,
+          "defensive_analysis_enabled": 0,
+          "study_only_mode": 1
+        }
+      }
+    ],
+    "tactic_progress": [
+      {
+        "key": "synthetic:tactic_progress:0",
+        "row": {
+          "puzzle_id": "synthetic-puzzle",
+          "deck_id": "synthetic-deck",
+          "card_id": null,
+          "clean_pass_at": "2030-01-02T09:00:00+05:30",
+          "admitted_at": null,
+          "admission_mode": "light"
+        }
+      }
+    ],
+    "tactic_introductions": [
+      {
+        "key": "synthetic:tactic_introductions:0",
+        "row": {
+          "puzzle_id": "synthetic-puzzle",
+          "pack_id": "synthetic-pack",
+          "introduction_date": "2030-01-02"
+        }
+      }
+    ],
+    "tactic_pack_activation": [
+      {
+        "key": "synthetic:tactic_pack_activation:0",
+        "row": {
+          "pack_id": "synthetic-pack",
+          "active": 1
+        }
+      }
+    ],
+    "tactic_rotation": [
+      {
+        "key": "synthetic:tactic_rotation:0",
+        "row": {
+          "id": 1,
+          "last_pack_id": "synthetic-pack"
+        }
+      }
+    ],
+    "frozen_opening_runs": [
+      {
+        "key": "synthetic:frozen_opening_runs:0",
+        "row": {
+          "run_id": "synthetic-run",
+          "plan_checksum": "synthetic-plan-checksum",
+          "plan_json": "{ \"retained\": true }",
+          "previous_run_id": null,
+          "created_at": "2030-01-02T08:00:00+05:30",
+          "reader_version": "synthetic-reader-1",
+          "invalidated": 0
+        }
+      }
+    ],
+    "frozen_opening_ranks": [
+      {
+        "key": "synthetic:frozen_opening_ranks:0",
+        "row": {
+          "run_id": "synthetic-run",
+          "card_id": "synthetic-card",
+          "ordinal": 3,
+          "fingerprint": "synthetic-fingerprint",
+          "memberships_json": "[ \"synthetic-repertoire\", \"synthetic-shared\" ]",
+          "definition_json": "{ \"revision\": 3, \"executable\": \"retained\" }"
+        }
+      }
+    ],
+    "frozen_opening_pending": [],
+    "frozen_opening_queue_changes": [
+      {
+        "key": "synthetic:frozen_opening_queue_changes:0",
+        "row": {
+          "run_id": "synthetic-run",
+          "queue_id": 202,
+          "queue_date": "2030-01-02",
+          "card_id": "synthetic-card",
+          "before_position": 9,
+          "after_position": 3,
+          "definition_json": "{ \"original\": true }"
+        }
+      }
+    ],
+    "frozen_opening_activation": [
+      {
+        "key": "synthetic:frozen_opening_activation:0",
+        "row": {
+          "id": 1,
+          "run_id": "synthetic-run",
+          "epoch": 2
+        }
+      }
+    ]
+  },
+  "unresolved": []
+}
