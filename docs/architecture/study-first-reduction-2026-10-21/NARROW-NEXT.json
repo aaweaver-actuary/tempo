@@ -1,0 +1,306 @@
+{
+  "source_commit": "782bf5374b87f223a023568305056415d5b63cea",
+  "status": "preparation; only two unused read helpers implemented in this branch",
+  "not_approved": [
+    "full statistics pipeline",
+    "opportunity feed producer",
+    "adaptive priorities",
+    "admission/acceptance boundary",
+    "PR423 guided-review scope"
+  ],
+  "cohorts": [
+    {
+      "id": "opportunity-feed",
+      "status": "gated",
+      "whole_file_footprint": 1617,
+      "paths": [
+        {
+          "path": "backend/app/services/repertoire_opportunities.py",
+          "physical_lines": 991,
+          "sha256": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
+          "physical_lines": 1,
+          "sha256": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+          "physical_lines": 625,
+          "sha256": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d"
+        }
+      ]
+    },
+    {
+      "id": "adaptive-priority",
+      "status": "gated",
+      "whole_file_footprint": 1407,
+      "paths": [
+        {
+          "path": "backend/app/services/introduction_priorities.py",
+          "physical_lines": 933,
+          "sha256": "5a7c18d20ebb2d31566bc86735de4192bce7ddb0d4971bf0f287824847e05435"
+        },
+        {
+          "path": "backend/app/services/postgres_priority.py",
+          "physical_lines": 193,
+          "sha256": "4e6820145db66699a996354020e5b000ba1723ff4925cae4b63fc18cd6c20c22"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py",
+          "physical_lines": 1,
+          "sha256": "8859788cd5f4c472db12081dbce9eef2c019809d3cf2ff3e1216defc9fcee8bf"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py",
+          "physical_lines": 102,
+          "sha256": "83e632f56a111fa58c82ecafc9421a57bf96ded02d69dcabf58e7aaad5b89812"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py",
+          "physical_lines": 105,
+          "sha256": "077cc7eab0cdb0484fcdaf5151af12b61c57a2c134f348d8ed7f5ae26751a5c3"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/introduction_priorities/publications.py",
+          "physical_lines": 73,
+          "sha256": "1dc8718cc479689b946ed0b35d3ff7fa46ab978521082700579b80123b415a6f"
+        }
+      ]
+    },
+    {
+      "id": "daily-statistics",
+      "status": "gated",
+      "whole_file_footprint": 166,
+      "paths": [
+        {
+          "path": "backend/app/services/postgres_daily_statistics.py",
+          "physical_lines": 69,
+          "sha256": "c85affbafa0c43b5421e1b78ec2a00856a49d5b223b2a1a62d43eff7b21dfe8a"
+        },
+        {
+          "path": "backend/app/statistics_commands.py",
+          "physical_lines": 32,
+          "sha256": "a3ec16008ad7b196e03dbe5f5c8c626e6e31bf8d5a685e860ac5bf8dec95ccc1"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/derived_publications/daily_statistics.py",
+          "physical_lines": 55,
+          "sha256": "8b1025067981c07687d70fb55b25a1e3f301e833dd5615d215b0b2bd6edcb2e1"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/commands/statistics.py",
+          "physical_lines": 10,
+          "sha256": "f02afaf33c0e100e4d89778d4ce07e00a2e0f6981c0d9ad38583092a4339a6fc"
+        }
+      ],
+      "mixed_file_function_spans": [
+        {
+          "path": "backend/app/services/statistics.py",
+          "function": "refresh_daily_snapshot",
+          "start_line": 118,
+          "end_line": 164,
+          "physical_span_lines": 47
+        },
+        {
+          "path": "backend/app/services/statistics.py",
+          "function": "enqueue_daily_snapshot",
+          "start_line": 167,
+          "end_line": 173,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "backend/app/services/statistics.py",
+          "function": "claim_daily_snapshot",
+          "start_line": 176,
+          "end_line": 184,
+          "physical_span_lines": 9
+        },
+        {
+          "path": "backend/app/services/statistics.py",
+          "function": "execute_daily_snapshot",
+          "start_line": 187,
+          "end_line": 198,
+          "physical_span_lines": 12
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "provider_rows",
+          "start_line": 44,
+          "end_line": 47,
+          "physical_span_lines": 4
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "provider_watermark",
+          "start_line": 50,
+          "end_line": 54,
+          "physical_span_lines": 5
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "eligible_daily_games",
+          "start_line": 57,
+          "end_line": 63,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "store_waiting_snapshot",
+          "start_line": 66,
+          "end_line": 72,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "daily_feature_rows",
+          "start_line": 75,
+          "end_line": 78,
+          "physical_span_lines": 4
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "store_complete_snapshot",
+          "start_line": 81,
+          "end_line": 87,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "insert_outcome_insight",
+          "start_line": 90,
+          "end_line": 96,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "insert_tactical_insight",
+          "start_line": 99,
+          "end_line": 105,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "enqueue_daily_job",
+          "start_line": 108,
+          "end_line": 114,
+          "physical_span_lines": 7
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "begin_daily_claim",
+          "start_line": 117,
+          "end_line": 118,
+          "physical_span_lines": 2
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "pending_daily_job",
+          "start_line": 121,
+          "end_line": 124,
+          "physical_span_lines": 4
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "mark_daily_running",
+          "start_line": 127,
+          "end_line": 131,
+          "physical_span_lines": 5
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "mark_daily_complete",
+          "start_line": 134,
+          "end_line": 138,
+          "physical_span_lines": 5
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "function": "mark_daily_failed",
+          "start_line": 141,
+          "end_line": 145,
+          "physical_span_lines": 5
+        }
+      ],
+      "mixed_function_footprint": 151,
+      "whole_plus_function_footprint": 317
+    }
+  ],
+  "implemented_residual": {
+    "deleted_path": "database/tempo_legacy_database/adapters/http_composition/statistics.py",
+    "deleted_file_lines": 8,
+    "edited_path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+    "removed_function": "overview_rows",
+    "original_function_range": [
+      34,
+      41
+    ],
+    "function_span_lines": 8,
+    "removed_with_separators": 10,
+    "net_narrow_lines": -18,
+    "protected_active_sources": [
+      {
+        "path": "backend/app/services/statistics.py",
+        "sha256": "338d9f49b08a2974b448fbd1c8fa219086b0979309fa773086cc7a01be3fc84e"
+      },
+      {
+        "path": "backend/app/main.py",
+        "sha256": "9de307a346628b429daed2718211844d2db79607afc8b9644914ec91b491cef1"
+      },
+      {
+        "path": "backend/app/tasks.py",
+        "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7"
+      },
+      {
+        "path": "backend/app/services/game_sync_coordinator.py",
+        "sha256": "db1a97077d94da4a14d98f05536afa4c09715f54e14a2faa0c3c6d33c8c6bbec"
+      },
+      {
+        "path": "backend/app/statistics_commands.py",
+        "sha256": "a3ec16008ad7b196e03dbe5f5c8c626e6e31bf8d5a685e860ac5bf8dec95ccc1"
+      },
+      {
+        "path": "backend/app/services/postgres_daily_statistics.py",
+        "sha256": "c85affbafa0c43b5421e1b78ec2a00856a49d5b223b2a1a62d43eff7b21dfe8a"
+      },
+      {
+        "path": "database/tempo_legacy_database/adapters/games/derivation/features.py",
+        "sha256": "a64d3e7115ad21710f48d5b1baa82675ae33a2cf482f9c13bfec3b0decdf89d3"
+      },
+      {
+        "path": "database/tempo_legacy_database/connections.py",
+        "sha256": "4b3733dc312679f3ed38491fe5ba4f4954087bb18a8598222cca2e1b9c80a554"
+      }
+    ]
+  },
+  "protected_acceptance_and_feature_sources": {
+    "backend/app/opportunity_commands.py": 103,
+    "backend/app/discovery_commands.py": 64,
+    "backend/app/authoring/discovery/__init__.py": 1,
+    "backend/app/authoring/discovery/acceptance.py": 76,
+    "backend/app/authoring/discovery/contracts.py": 99,
+    "backend/app/services/discovery_acceptance_store.py": 75,
+    "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py": 61,
+    "database/tempo_legacy_database/adapters/discovery_acceptance_store.py": 50,
+    "database/tempo_legacy_database/adapters/http_composition/discovery.py": 43,
+    "backend/app/services/postgres_game_features.py": 39,
+    "database/tempo_legacy_database/adapters/games/derivation/features.py": 35
+  },
+  "protected_admission_core": [
+    {
+      "path": "backend/app/services/discovery_admission.py",
+      "physical_lines": 648,
+      "sha256": "cd02d5729e5ce32f46f7373115045cc38e5ca660ca7a5bfd5dbdcff851185bde"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_admission/storage.py",
+      "physical_lines": 307,
+      "sha256": "be7519cb29d3049ab1c08c8bcc938d82953988e64b54baa86369209bc8651956"
+    },
+    {
+      "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_admission/__init__.py",
+      "physical_lines": 1,
+      "sha256": "28760ce62f9c1eef6190ce9d0dcd602e1a69cde4d6051467286774951e531cac"
+    }
+  ]
+}

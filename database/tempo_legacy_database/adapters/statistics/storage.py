@@ -31,16 +31,6 @@ def configured_timezone(database):
     return database.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
 
 
-def overview_rows(database, cutoff: str):
-    return database.execute(
-            """SELECT g.*,f.* FROM imported_games g
-                 LEFT JOIN game_feature_rows f ON f.game_id=g.id
-                WHERE g.adaptive_excluded=0 AND substr(g.played_at,1,10)>=?
-                ORDER BY g.played_at""",
-            (cutoff,),
-        ).fetchall()
-
-
 def provider_rows(database):
     return database.execute(
             "SELECT provider FROM game_accounts WHERE trim(username)!=''"
