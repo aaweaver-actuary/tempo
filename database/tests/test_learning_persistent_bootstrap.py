@@ -71,6 +71,8 @@ class FakeOwner:
         self.action("verify", *args, **kwargs)
         return {"expected_migrations": self.applied, "applied_migrations": self.applied,
                 "identity": self.schema_identity(self.applied), "migration_count": len(self.applied)}
+    def expected_migrations(self):
+        return dict(self.applied)
     schema_identity = staticmethod(fake_schema_identity)
 
 
@@ -283,6 +285,47 @@ class PersistentEffectTests(unittest.TestCase):
             with self.assertRaises(bootstrap.PersistentBootstrapError) as caught:
                 bootstrap.check_quarantine_receipt(directory / "persistent-target.json", bootstrap._digest(self.intent), bootstrap._digest(self.resources))
         self.assertEqual(caught.exception.code, "private_output_identity_mismatch")
+
+    def test_complete_quarantine_protocol_guard_accepts_only_exact_bound_private_configuration(self):
+        # This is an observed-PROTOCOL fixture backed by injected semantic fakes;
+        # it neither observes nor qualifies a real target.
+        receipt = self.execute()
+        directory = self.root / "new-runtime"
+        receipt["evidence_scope"] = "observed"
+        (directory / "persistent-target.json").write_text(json.dumps(receipt))
+        state = json.loads((directory / "provisioning-state.json").read_text())
+        state["evidence_scope"] = "observed"
+        (directory / "provisioning-state.json").write_text(json.dumps(state))
+        connection = json.loads((directory / "connection.json").read_text())
+        runtime = {
+            "TEMPO_LEARNING_MAINTENANCE": "0",
+            "TEMPO_LEARNING_WORKSPACE": self.intent["workspace_id"],
+            "TEMPO_LEARNING_ORIGINS": self.intent["ingress_origin"],
+            "TEMPO_LEARNING_TIMEZONE": self.intent["timezone"],
+            "TEMPO_LEARNING_DATABASE_URL": connection["writer_dsn"],
+            "TEMPO_LEARNING_READER_URL": connection["reader_dsn"],
+            "PGPASSFILE": str(directory / "runtime.pgpass"),
+            "TEMPO_LEARNING_TOKEN_FILE": str(directory / "study.token"),
+            "TEMPO_LEARNING_OPERATOR_TOKEN_FILE": str(directory / "operator.token"),
+        }
+        self.owner.events.clear()
+        dependencies = (None, parse_admin, make_conninfo, self.owner)
+        def guard(resource=None):
+            return bootstrap.check_quarantine_receipt(directory / "persistent-target.json",
+                bootstrap._digest(self.intent), resource or bootstrap._digest(self.resources))
+        with patch.dict(os.environ, runtime), patch.object(bootstrap, "_load_dependencies", return_value=dependencies):
+            self.assertEqual(guard(), receipt)
+            self.assertEqual(self.owner.events, [], "guard must not execute database or service effects")
+            with self.assertRaises(bootstrap.PersistentBootstrapError):
+                guard("0" * 64)
+            with patch.dict(os.environ, {"TEMPO_LEARNING_DATABASE_URL": "another-explicit-database"}):
+                with self.assertRaises(bootstrap.PersistentBootstrapError) as caught:
+                    guard()
+                self.assertEqual(caught.exception.code, "runtime_database_mismatch")
+            self.owner.applied = {"different-source-schema": "b" * 64}
+            with self.assertRaises(bootstrap.PersistentBootstrapError) as caught:
+                guard()
+            self.assertEqual(caught.exception.code, "schema_identity_mismatch")
 
     def test_libpq_override_refuses_before_driver_or_effects(self):
         with patch.dict(os.environ, {"PGHOSTADDR": "synthetic-untrusted-routing"}):
