@@ -16,7 +16,6 @@ from .services.postgres_coverage_candidates import recalculate_coverage_node
 from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .services.canonical_prefix import read_prefix
 from .services.canonical_scope_freshness import coverage_run_is_current
-from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
 
 def _now() -> str:
@@ -97,7 +96,6 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
     recalculate_coverage_node(database, row["id"], settings, int(row["explorer_games"]))
     storage.mark_complete(database, _now(), row["id"])
     storage.record_progress(database, row["run_id"], row["run_id"], _now(), row["run_id"])
-    enqueue_priority_refresh_in_transaction(database, row["repertoire_id"])
     enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
     return {"status": "complete"}
 

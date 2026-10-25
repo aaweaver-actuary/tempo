@@ -6117,6 +6117,19 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
     monkeypatch.setattr(refresh_requests, 'request_refresh', lambda *_args, **_kwargs: 5)
 
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    def unavailable_priority(*_args, **_kwargs):
+        raise AssertionError("Coverage completion must not require optional adaptive priority")
+
+    monkeypatch.setattr(coverage_maia_commands, "enqueue_priority_refresh_in_transaction",
+                        unavailable_priority, raising=False)
+    opportunity_calls = []
+    original_opportunity = coverage_maia_commands.enqueue_opportunity_refresh_in_transaction
+
+    def retained_opportunity(database, repertoire_id):
+        opportunity_calls.append(repertoire_id)
+        return original_opportunity(database, repertoire_id)
+
+    monkeypatch.setattr(coverage_maia_commands, "enqueue_opportunity_refresh_in_transaction", retained_opportunity)
 
     statements = []
     node = {"id": "node", "run_id": "run", "maia_status": "leased",
@@ -6164,11 +6177,9 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
                for statement, _ in statements)
     assert json.loads(next(parameters[0] for statement, parameters in statements
                            if statement.startswith("UPDATE repertoire_coverage_candidates")))[0]["source_state"] == "blended"
-    assert any(statement.startswith("INSERT INTO repertoire_priority_jobs")
-               and parameters[0] == "rep" for statement, parameters in statements)
-    assert sum(statement.startswith("WITH queued AS") for statement, _ in statements) == (
-        3
-    )
+    assert opportunity_calls == ["rep"]
+    assert not any("repertoire_priority" in statement for statement, _ in statements)
+    assert sum(statement.startswith("WITH queued AS") for statement, _ in statements) == 1
 
 
 def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch, unscoped_canonical_prefix):
