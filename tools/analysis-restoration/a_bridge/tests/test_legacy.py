@@ -470,3 +470,24 @@ def test_graph_only_source_availability_disagreement_is_not_a_schedule_reset(fie
     tables['cards'][0][field]=value
     with pytest.raises(ValueError,match='graph_card_availability_disagrees'):
         graph_only(tables,steps)
+
+
+@pytest.mark.parametrize('color',['white','black'])
+def test_graph_only_null_physical_color_uses_recorded_same_route_graph_color_without_rewriting_raw_source(color):
+    tables,steps=canonical_graph_capture()
+    if color=='black':
+        moves=['e2e4','e7e5','g1f3','b8c6']
+        tables['repertoire_lines'][0].update(trained_color='black',moves_json=json.dumps(moves))
+        tables['cards'][0].update(trained_color='black',moves_json=json.dumps(moves))
+        steps=published_graphs(tables);steps[0]['card_id']='physical'
+    tables['cards'][0]['trained_color']=None
+    before=deepcopy(tables)
+    raw,manifest,_=graph_only(tables,steps)
+    source=json.loads(raw)
+    assert source['repertoires'][0]['learner_color']==color
+    assert all(chess.Board(exercise['starting_fen']).turn==(color=='white') for exercise in source['exercises'])
+    assert manifest['legacy_aliases']=={} and tables==before
+    assert tables['cards'][0]['trained_color'] is None
+    tables['cards'][0]['trained_color']='black' if color=='white' else 'white'
+    with pytest.raises(ValueError,match='graph_card_definition_disagrees'):
+        graph_only(tables,steps)

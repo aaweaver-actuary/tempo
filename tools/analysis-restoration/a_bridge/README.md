@@ -47,8 +47,14 @@ Graph-only mode emits:
   `source_graph_bindings`, and `excluded_graph_occurrences` for tombstoned nodes.
 
 Old card revision and unrelated historical-card eligibility do not gate this
-fresh source. Captured graph steps remain authoritative source facts: if their
-present card body disagrees on executable/color or is archived, pending validation
+fresh source. Captured graph steps remain authoritative source facts: a NULL
+physical card color may use the recorded explicit graph color only when its exact
+same-repertoire authored line agrees. This matches the pinned legacy serving
+reader's `COALESCE(c.trained_color,step.trained_color)` behavior
+(`86d11afe`, `backend/app/services/postgres_queue_refresh.py`, route occurrence and
+bounded occurrence readers); raw NULL remains untouched. A non-NULL physical
+color disagreement fails. If the present card body disagrees on executable or is
+archived, pending validation
 or superseded, the command refuses to newly accept that disagreement. It does not
 reset schedules to hide unavailable source capability. Captured `deleted_cards`
 identities are excluded and reported; their decisions are never recreated from

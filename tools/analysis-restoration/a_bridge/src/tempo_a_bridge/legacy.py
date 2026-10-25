@@ -102,7 +102,7 @@ def _graph_only_scope(tables, graphs, selected):
                     or card.get('content_type','opening') != 'opening'):
                 raise ValueError('graph_only_graph_card_availability_disagrees')
             if (step['starting_fen'] != card['start_fen'] or moves != json.loads(card['moves_json'])
-                    or step['trained_color'] != card['trained_color']):
+                    or (card['trained_color'] is not None and step['trained_color'] != card['trained_color'])):
                 raise ValueError('graph_only_graph_card_definition_disagrees')
         board = chess.Board(line['start_fen'])
         if not board.is_valid():
