@@ -713,3 +713,65 @@ def test_generated_availability_reset_cannot_hide_executable_or_position_conflic
     if fault=='color': card['trained_color']='black'
     with pytest.raises(ValueError,match='graph_card_definition_disagrees'):
         graph_only(tables,steps)
+
+
+def recorded_archived_continuation_capture():
+    tables=captured();template=tables['repertoire_lines'][0]
+    original_moves=['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6','e1g1'];short=original_moves[:7];tail=original_moves[7:]
+    alternatives=[short+['h7h6','d2d3'],short+['d7d6','e1g1']]
+    tables['repertoire_lines']=[{**template,'id':name,'moves_json':json.dumps(sequence)} for name,sequence in
+        [('arch-1',original_moves),('arch-2',original_moves),('arch-3',original_moves),('alt-1',alternatives[0]),('alt-2',alternatives[1])]]
+    board=chess.Board()
+    for move in short: board.push_uci(move)
+    boundary=board.fen(en_passant='fen')
+    c={**tables['cards'][0],'content_type':'opening','kind':'prefix','canonical_route_source':1,'superseded_by':None,'repertoire_id':'italian'}
+    tables['cards']=[{**c,'id':'original','moves_json':json.dumps(original_moves),'archived':1,'revision':7},
+        {**c,'id':'shortened','moves_json':json.dumps(short),'canonical_route_source':0},
+        {**c,'id':'old-continuation','start_fen':boundary,'moves_json':json.dumps(tail),'pending_validation':1},
+        *[{**c,'id':'alternative-'+str(index+1),'start_fen':boundary,'moves_json':json.dumps(sequence[7:]),'canonical_route_source':0} for index,sequence in enumerate(alternatives)]]
+    tables['repertoire_cards']=[{'repertoire_id':'italian','card_id':row['id'],'canonical_route_source':row['canonical_route_source']} for row in tables['cards']]
+    tables['prefix_splits']=[{'source_card_id':'original','source_revision':7,'shortened_card_id':'shortened',
+        'continuation_card_id':'old-continuation','created_at':'2030-01-01'}]
+    tables['opening_graph_publications']=[{'repertoire_id':'italian','generation':1,'state':'ready'}]
+    steps=[]
+    for row in published_graphs(tables):
+        if row['line_id'].startswith('arch'):
+            steps.append({**row,'card_id':'original'})
+        else:
+            keys=json.loads(row['decision_fen_keys_json']);number=int(row['line_id'][-1])
+            steps.append({**row,'card_id':'shortened','moves_json':json.dumps(short),'last_decision_index':3,
+                'decision_fen_keys_json':json.dumps(keys[:4]),'decision_fen_key':keys[3]})
+            steps.append({**row,'card_id':'alternative-'+str(number),'parent_card_id':'shortened','decision_index':1,
+                'starting_fen':boundary,'moves_json':json.dumps(alternatives[number-1][7:]),'segment_kind':'decision',
+                'first_decision_index':4,'last_decision_index':4,'decision_fen_keys_json':json.dumps(keys[4:]),'decision_fen_key':keys[4]})
+    return tables,steps
+
+
+def test_recorded_split_continuation_is_retained_nonserving_without_alias_or_duplicate_teaching():
+    tables,steps=recorded_archived_continuation_capture();before=deepcopy(tables)
+    raw,manifest,report=graph_only(tables,steps);source=json.loads(raw)
+    assert len(source['routes'])==5 and len(source['exercises'])==3 and len(source['bindings'])==10
+    assert report['authored_archive_excluded_occurrence_count']==3 and report['authored_archive_excluded_binding_count']==15
+    disposition=report['canonical_source_dispositions'][0]
+    assert disposition['source_card_id']=='old-continuation'
+    assert len(disposition['raw_archived_source_occurrences'])==3
+    assert disposition['serving_exercise_created'] is False and disposition['serving_binding_created'] is False
+    assert disposition['raw_source_flags']['pending_validation']==1
+    assert manifest['legacy_aliases']=={} and tables==before
+
+
+@pytest.mark.parametrize('fault',['missing-split','stale-revision','wrong-partition','unarchived-original','unrelated-same-fen','ambiguous-split'])
+def test_recorded_continuation_coverage_never_infers_identity_from_content_or_unrelated_children(fault):
+    tables,steps=recorded_archived_continuation_capture()
+    if fault=='missing-split': tables['prefix_splits']=[]
+    if fault=='stale-revision': tables['prefix_splits'][0]['source_revision']=6
+    if fault=='wrong-partition': next(row for row in tables['cards'] if row['id']=='old-continuation')['moves_json']='["h7h6","d2d3"]'
+    if fault=='unarchived-original': next(row for row in tables['cards'] if row['id']=='original')['archived']=0
+    if fault=='unrelated-same-fen':
+        original=next(row for row in tables['cards'] if row['id']=='original')
+        tables['cards'].append({**original,'id':'unrelated'})
+        for row in steps:
+            if row['card_id']=='original': row['card_id']='unrelated'
+    if fault=='ambiguous-split': tables['prefix_splits'].append(dict(tables['prefix_splits'][0]))
+    with pytest.raises(ValueError,match='canonical_source_occurrence_required'):
+        graph_only(tables,steps)

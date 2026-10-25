@@ -57,6 +57,63 @@ def _fresh_lineage_fact(document):
     return fact
 
 
+def _recorded_archived_split_continuation(card, owner, tables, cards, lines, publications, selected_steps, exclusions):
+    """Recognize retained authoring data, never alias or create an exercise."""
+    candidates=[row for row in tables.get('prefix_splits',[]) if row.get('continuation_card_id')==card['id']]
+    if len(candidates)!=1:
+        return None
+    split=candidates[0]
+    try:
+        original=cards[split['source_card_id']];shortened=cards[split['shortened_card_id']]
+        if (original.get('canonical_route_source')!=1 or original.get('archived')!=1
+                or original['revision']!=split['source_revision']):
+            return None
+        original_moves=json.loads(original['moves_json']);short_moves=json.loads(shortened['moves_json']);tail=json.loads(card['moves_json'])
+        if len(tail)!=2 or original_moves!=short_moves+tail:
+            return None
+        recorded_graph_starting_fen(original['start_fen'],shortened['start_fen'])
+        boundary=chess.Board(original['start_fen'])
+        for move in short_moves:
+            boundary.push_uci(move)
+        recorded_graph_starting_fen(boundary.fen(en_passant='fen'),card['start_fen'])
+        raw=[row for row in selected_steps if row['repertoire_id']==owner and row['card_id']==original['id']]
+        if not raw:
+            return None
+        publication=publications.get(owner)
+        archived={(row['repertoire_id'],row['generation'],row['line_id'],row['decision_index']):row for row in exclusions
+            if row['reason']=='explicit_authored_archive' and row['card_id']==original['id']}
+        represented=[]
+        for step in raw:
+            color=step['trained_color'];line=lines[step['line_id']]
+            if (publication is None or publication['state']!='ready' or publication['generation']!=step['generation']
+                    or line['repertoire_id']!=owner or line['trained_color']!=color
+                    or any(row.get('trained_color') not in (None,color) for row in (original,shortened,card))
+                    or boundary.turn==(color=='white') or json.loads(step['moves_json'])!=original_moves):
+                return None
+            recorded_graph_starting_fen(original['start_fen'],step['starting_fen'])
+            tail_board=boundary.copy();tail_board.push_uci(tail[0])
+            if tail_board.turn!=(color=='white'):
+                return None
+            tail_board.push_uci(tail[1])
+            key=(owner,step['generation'],step['line_id'],step['decision_index'])
+            exclusion=archived.get(key)
+            if exclusion is None:
+                return None
+            plies=exclusion['excluded_learner_plies']
+            if not plies or json.loads(line['moves_json'])[plies[-1]-1:plies[-1]+1]!=tail:
+                return None
+            represented.append({field:step[field] for field in ('repertoire_id','generation','line_id','decision_index','card_id')}
+                | {'represented_suffix_learner_plies':[plies[-1]]})
+        return {'kind':'recorded_split_continuation_preserved_nonserving','source_card_id':card['id'],
+            'source_record_sha256':fingerprint(card),'raw_source_flags':{field:card.get(field) for field in
+                ('canonical_route_source','archived','pending_validation','superseded_by')},
+            'split_record':dict(split),'raw_archived_source_card_id':original['id'],
+            'raw_archived_source_revision':original['revision'],'raw_archived_source_occurrences':represented,
+            'serving_exercise_created':False,'serving_binding_created':False}
+    except (KeyError,ValueError,TypeError,IndexError):
+        return None
+
+
 def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
     """Project explicit published segments; never regenerate outside their scope."""
     for table in ('repertoires', 'repertoire_lines'):
@@ -263,6 +320,7 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
     # composite membership key and explicit zero; no truthy fallback/aliasing.
     memberships_by_card = {key:tuple(rows.items()) for key,rows in memberships_by_card.items()}
     occurrence_scopes = frozenset((row['repertoire_id'],row['card_id']) for row in occurrences)
+    canonical_dispositions=[]
     for card in cards.values():
         if card.get('content_type') != 'opening' or card.get('archived') != 0 or card['id'] in deleted:
             continue
@@ -271,13 +329,19 @@ def _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage=None):
         owner = card.get('repertoire_id')
         if owner in selected and (owner,card['id']) not in links and card.get('canonical_route_source') == 1:
             owners.add(owner)
-        if any((owner,card['id']) not in occurrence_scopes for owner in owners):
-            raise ValueError('graph_only_canonical_source_occurrence_required')
+        for owner in sorted(owners):
+            if (owner,card['id']) in occurrence_scopes:
+                continue
+            disposition=_recorded_archived_split_continuation(card,owner,tables,cards,
+                {row['id']:row for row in tables['repertoire_lines']},publications,selected_steps,excluded)
+            if disposition is None:
+                raise ValueError('graph_only_canonical_source_occurrence_required')
+            canonical_dispositions.append(disposition)
     if not exercises:
         raise ValueError('graph_only_no_serving_graph_decision')
     if reviewed_lineage and reviewed_lineage['source_card_id'] not in fresh_exceptions:
         raise ValueError('graph_only_lineage_fact_unused')
-    return selected_lines, retained, exercises, bindings, occurrences, excluded, list(fresh_exceptions.values()), list(generated_resets.values())
+    return selected_lines, retained, exercises, bindings, occurrences, excluded, list(fresh_exceptions.values()), list(generated_resets.values()), canonical_dispositions
 
 
 def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve_physical_execution=False, graph_only=False, fresh_dangling_lineage=None):
@@ -302,9 +366,9 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
     if len(selected) != len(repertoire_ids) or set(repertoires) != selected:
         raise ValueError('explicit_unique_existing_repertoires_required')
     lines = {row['id']:row for row in tables['repertoire_lines'] if row['repertoire_id'] in selected}
-    non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions, generated_resets = [], {}, [], [], [], [], []
+    non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions, generated_resets, canonical_dispositions = [], {}, [], [], [], [], [], []
     if graph_only:
-        lines, non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions, generated_resets = _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage)
+        lines, non_serving, graph_exercises, graph_bindings, graph_occurrences, excluded_graph, fresh_exceptions, generated_resets, canonical_dispositions = _graph_only_scope(tables, graphs, selected, fresh_dangling_lineage)
     cards = {} if graph_only else {row['id']:row for row in tables['cards']}
     links = set() if graph_only else {(row['repertoire_id'],row['card_id']) for row in tables['repertoire_cards']}
     diagnostics, routes, memberships, bindings, exercises, aliases = [], [], [], [], {}, {}
@@ -487,6 +551,8 @@ def translate(tables, graphs, *, workspace, repertoire_ids, source_key, preserve
             authored_archive_excluded_occurrence_count=sum(row['reason']=='explicit_authored_archive' for row in excluded_graph),
             authored_archive_excluded_binding_count=len({(row['repertoire_id'],row['line_id'],ply) for row in excluded_graph
                 if row['reason']=='explicit_authored_archive' for ply in row['excluded_learner_plies']}))
+        if canonical_dispositions:
+            report['canonical_source_dispositions']=sorted(canonical_dispositions,key=canonical)
         if generated_resets:
             manifest['provenance']['description']+=' Legacy generated availability remains raw evidence and is not adopted by these new graph definitions.'
         if fresh_exceptions:
