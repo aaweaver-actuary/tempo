@@ -7,13 +7,12 @@ from fastapi.testclient import TestClient
 from tempo_legacy_database import connections as database
 from app.main import app
 from app.services.game_findings import refresh_game_findings
-from app.services import introduction_priorities
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
-def test_stockfish_timeout_preserves_personal_priority_evidence_and_remains_retryable(
+def test_stockfish_timeout_preserves_game_positions_and_remains_retryable(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -54,18 +53,17 @@ def test_stockfish_timeout_preserves_personal_priority_evidence_and_remains_retr
             game = db.execute(
                 "SELECT analysis_state FROM imported_games WHERE id='lichess:timeout'"
             ).fetchone()
-            personal = introduction_priorities._personal_evidence(
-                db,
-                {opponent_position_key},
-                "white",
-            )
+            personal_positions = db.execute(
+                "SELECT game_id,fen_key,move_uci FROM game_position_occurrences WHERE game_id=?",
+                ("lichess:timeout",),
+            ).fetchall()
             assert db.execute(
                 "SELECT COUNT(*) FROM game_findings WHERE game_id='lichess:timeout'"
             ).fetchone()[0] == 0
         assert job["status"] == "failed"
         assert job["last_error"] == "Stockfish took too long"
         assert game["analysis_state"] == "failed"
-        assert personal[opponent_position_key]["e7e5"] > 0
+        assert [tuple(row) for row in personal_positions] == [("lichess:timeout", opponent_position_key, "e7e5")]
         retried = client.post("/api/games/analysis/lichess:timeout/retry")
         assert retried.status_code == 200
         assert retried.json()["status"] == "queued"
