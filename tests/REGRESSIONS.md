@@ -2077,6 +2077,24 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 `tests/unit/tempo-cli-regressions.test.ts` runs the named Node cases in
 `tests/runner/tempo-cli.test.mjs` through the regular suite:
 
+- `actual CLI backup rejects an active pruning daemon before any lifecycle or database work`
+  refuses before dependency/application/backup effects and preserves the prior
+  machine state, journal and deployment receipt. It failed before the guard:
+  the baseline reached the synthetic `pg_dump` failure instead of refusing.
+- `actual CLI backup restores the prior selected services and leaves the stopped pruning daemon untouched`
+  and its `paused` variant preserve the original selected service set and fake
+  container identities, leave the daemon untouched, and retain the four explicit
+  one-shot dump/create/restore/drop helper calls. Readiness does not demand
+  originally inactive services.
+- `actual CLI backup restores the prior running service state after backup-fail and retains the failed backup phase`
+  and its `backup-interrupted` variant prove restoration on a dump error and on
+  termination of the fake child, with no pruning-daemon start or stop. The latter
+  is not coordinator-signal or real-container cancellation evidence.
+- `actual CLI backup restores the prior service failure report when restoration cannot complete`
+  records recovery failure without claiming readiness or starting the daemon.
+  These names use the existing regular `backup rejects` and `backup restores the prior`
+  groups in `tests/unit/tempo-cli-regressions.test.ts`.
+
 - Redis restart fails during persisted loading despite a healthy container:
   `CLI Redis readiness waits for saved legacy healthcheck loading before schema migration or application startup`
   reproduces the user's zero-exit LOADING failure and requires actual PONG before
@@ -2129,7 +2147,7 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 - `CLI migration guard rejects wrong database identity and incompatible continuation schemas` fails closed for another target or an older candidate, and independently blocks startup, guard resolution, and deployment publication while unresolved.
 - The six `CLI PostgreSQL image major:` cases cover a standard compatible tag, registry-qualified incompatible tag, digest-pinned incompatible image, compatible tag with incompatible contents, compatible recorded fallback ID, and incompatible recorded fallback ID. Each inspects the actual immutable image without study mounts; mismatches occur before application shutdown or database startup.
 - The regular disposable Docker CLI boundary commits the populated schema-16 upgrade, injects a real review mutation before verification, rejects a no-pending retry against original H0, repairs the fixture, then verifies/resolves H0 before readiness and publication. Migration-025 normalization and dependency correction remain covered.
-- `actual CLI backup restores the prior running service state and retains the failed backup phase` protects service restoration and truthful diagnostics after an explicit backup failure.
+- `actual CLI backup restores the prior running service state after backup-fail and retains the failed backup phase` protects service restoration and truthful diagnostics after an explicit backup failure.
 - `actual CLI backup restores stopped state when database validation fails before the backup` restores initially stopped PostgreSQL and Redis even when an earlier role check rejects the operation.
 - `actual CLI blocked update rejects an incomplete recorded image set before changing services` rejects damaged fallback receipts before database startup or application shutdown.
 - `actual CLI detects checkout edits during image preparation before touching the running application` rechecks source after builds and preserves work edited during preparation.

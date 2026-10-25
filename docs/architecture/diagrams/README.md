@@ -48,6 +48,11 @@ Study revision `86d11afe` is outside this inspection and was not touched.
 
 ## Implemented component increments
 
+The [proposed one-shot backup pruning boundary](../../../scripts/README.md#one-shot-backup-pruning-boundary)
+maps the existing CLI's fail-closed daemon gate and original-set readiness,
+including the unresolved rehearsal and recovery prerequisites. Deployment is
+unverified.
+
 The [proposed local pgAdmin companion](../../../config/pgadmin/README.md#ownership-and-startup)
 has its own bounded operational view. It is not activated or a Study dependency.
 

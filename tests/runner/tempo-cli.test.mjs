@@ -848,8 +848,9 @@ test("actual CLI failed builds preserve running services and failure diagnostics
   assert(!readFileSync(join(backupFixture.stateDirectory, "operation.json"), "utf8").includes("canary-private-password"));
 });
 
-test("actual CLI backup restores the prior running service state and retains the failed backup phase", t => {
-  const fixture = commandFixture(t, "backup-fail");
+for (const mode of ["backup-fail", "backup-interrupted"]) test(`actual CLI backup restores the prior running service state after ${mode} and retains the failed backup phase`, t => {
+  const fixture = commandFixture(t, mode);
+  editFixtureJson(fixture, "machine.json", machine => { machine.running = machine.running.filter(name => name !== "postgres-backup"); });
   const before = JSON.parse(readFileSync(join(fixture.directory, "machine.json"), "utf8"));
   const result = fixture.command("backup");
   assert.notEqual(result.status, 0);
@@ -858,6 +859,64 @@ test("actual CLI backup restores the prior running service state and retains the
   const operation = JSON.parse(readFileSync(join(fixture.stateDirectory, "operation.json"), "utf8"));
   assert.equal(operation.phase, "failed"); assert.equal(operation.failed_phase, "verifying_backup");
   assert(!(result.stdout + result.stderr + JSON.stringify(operation)).includes("canary-private-password"));
+  assert(!fixture.calls().some(call => (call.args.includes("up") || call.args.includes("stop")) && call.args.includes("postgres-backup")));
+  if (mode === "backup-interrupted") assert.match(result.stderr, /interrupted/);
+});
+
+test("actual CLI backup rejects an active pruning daemon before any lifecycle or database work", t => {
+  const fixture = commandFixture(t, "backup-fail");
+  writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify({ id: "earlier-evidence", phase: "backup_verified" }));
+  const before = readFileSync(join(fixture.directory, "machine.json"), "utf8");
+  const journalBefore = readFileSync(join(fixture.stateDirectory, "operation.json"), "utf8");
+  const receiptBefore = readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8");
+  const result = fixture.command("backup");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /postgres-backup.*prun/i);
+  assert.match(result.stderr, /before changing services/i);
+  assert.equal(readFileSync(join(fixture.directory, "machine.json"), "utf8"), before);
+  assert.equal(readFileSync(join(fixture.stateDirectory, "operation.json"), "utf8"), journalBefore);
+  assert.equal(readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8"), receiptBefore);
+  assert(!fixture.calls().some(call => ["up", "stop", "run", "build", "pull"].some(verb => call.args.includes(verb))));
+});
+
+for (const daemonState of ["stopped", "paused"]) test(`actual CLI backup restores the prior selected services and leaves the ${daemonState} pruning daemon untouched`, t => {
+  const fixture = commandFixture(t, "compatible");
+  editFixtureJson(fixture, "machine.json", machine => {
+    machine.running = ["postgres", "redis", "api", "foreground-worker", "web"];
+    machine.paused = daemonState === "paused" ? ["postgres-backup"] : [];
+  });
+  const before = readFixtureJson(fixture, "machine.json");
+  const result = fixture.command("backup");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const after = readFixtureJson(fixture, "machine.json");
+  assert.deepEqual(after.running.sort(), before.running.sort());
+  assert.deepEqual(after.paused, before.paused);
+  assert.deepEqual(after.containers, before.containers, "restoration retains immutable container/image identities");
+  const operation = readFixtureJson(fixture, "operation.json", true);
+  assert.equal(operation.phase, "backup_verified");
+  assert(operation.backup.verified && operation.backup.restore_removed);
+  const calls = fixture.calls();
+  assert(!calls.some(call => (call.args.includes("up") || call.args.includes("stop")) && call.args.includes("postgres-backup")));
+  const helpers = calls.filter(call => call.args.includes("run") && call.args.includes("postgres-backup"));
+  assert.equal(helpers.length, 4, "existing dump/create/restore/drop interfaces remain in use");
+  assert(helpers.every(call => call.args.includes("--entrypoint") && call.args.includes("-ec") && !call.args.some(arg => /find .*delete|while :/.test(arg))));
+});
+
+test("actual CLI backup restores the prior service failure report when restoration cannot complete", t => {
+  const fixture = commandFixture(t, "backup-fail");
+  editFixtureJson(fixture, "machine.json", machine => {
+    machine.running = machine.running.filter(name => name !== "postgres-backup");
+    machine.failBackupRestoration = true;
+  });
+  const result = fixture.command("backup");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Backup and service restoration failed/);
+  const operation = readFixtureJson(fixture, "operation.json", true);
+  assert.equal(operation.phase, "failed");
+  assert.equal(operation.failed_phase, "verifying_backup");
+  assert.match(operation.failure, /service restoration failed/);
+  assert(!readFixtureJson(fixture, "machine.json").running.includes("web"), "failed recovery is not reported as readiness");
+  assert(!fixture.calls().some(call => call.args.includes("up") && call.args.includes("postgres-backup")));
 });
 
 test("actual CLI blocked update rejects an incomplete recorded image set before changing services", t => {
@@ -1155,6 +1214,7 @@ test("actual CLI backup rejects mismatched dependencies without starting any rec
   const fixture = commandFixture(t, "ci-fail");
   const machinePath = join(fixture.directory, "machine.json");
   const machine = JSON.parse(readFileSync(machinePath, "utf8"));
+  machine.running = machine.running.filter(name => name !== "postgres-backup");
   machine.containers.find(container => container.Id === "container-redis").Image = "sha256:uncommitted-candidate";
   writeFileSync(machinePath, JSON.stringify(machine));
   const result = fixture.command("backup");
