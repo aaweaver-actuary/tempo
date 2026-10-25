@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "source_commit": "cb0ed5910e6bd05894919fd8d49f5dc7bc236975",
-  "scope": "Source-only retirement of five independently bounded exact-path cohorts, accepted by independent source review under the #361 conclusive-isolation route and recorded affected-boundary qualification. This does not approve legacy-01 execution, deployment, table drops, actual-data migration, launcher/cutover or #390/#391 completion. Source qualification and programme/deployment acceptance are separate claims; confirmed baseline failures and unexecuted checks remain explicit.",
+  "scope": "Historical integrated source retirement covers five independently bounded exact-path cohorts accepted under #361 conclusive isolation; other earlier entries are bounded candidate/evidence records and are not approved merely by inclusion. Current graph-preserving fresh-start preparation appends adaptive-priority-callbacks-fresh-start-01, an exact six-file callback-only branch slice with zero file/data/schema deletion. Guided legacy server deletion remains a separate unexecuted candidate. Current fresh_start_authority supersedes prior full-history/old-work drain gates; source preparation, integration, live reset and deployment are separate decisions.",
   "remaining_gates": [
-    "Source merge: owner acceptance of this metadata reconciliation and explicit merge authorization; no merge or deployment has occurred. Exact runtime/source evidence remains tied to 8c0b3b5a22fd357607497ac4e50ad9804884c12c, tree ac4811566806528210cf8ba8e53d4d9c5fee0e0c; this reconciliation changes metadata only.",
-    "Deferred programme/execution: legacy-01 authorization and #390/#391 completion remain open; source retirement acceptance does not satisfy them.",
-    "Deferred programme/execution: #382/#386 retained Study/import native qualification and actual-data/history preservation acceptance remain open for their execution scope; persistence inputs are unchanged by these removals.",
-    "Deferred programme/deployment: #359/#267/#369 launcher, cutover and actual-data migration gates remain open. No live deployment, table drop or migration is authorized.",
-    "Deferred deployment: native PostgreSQL/real-browser/host acceptance and deployed-client/cache absence are not established. Classic optional Maia URLs are unsupported after source retirement; unknown external consumers and deployed caches are not claimed absent."
+    "Graph/repertoire preservation: freeze exact owned graph/definition/source-reference closure and review each physical target before any live reset/deletion; no blanket shared table removal.",
+    "Source integration: independent review of exact callback diff, preserved graph/repertoire/current Study/opportunity effects, owning regressions and source correspondence. Feature branch preparation is authorized now; no merge/deploy authorized.",
+    "Normal launcher: source removals must not break current start/restart/update. No launcher-dependent backend/root runtime/Compose deletion before separately accepted replacement. This is a current-source gate, not an old-history transfer/drain gate.",
+    "Current artifact/source-absence qualification remains per affected executable inputs. Historical #382/#386 receipts remain evidence; changed Study artifact inputs require bounded reconciliation, not a new full historical-state migration.",
+    "Live action remains unexecuted: exact graph-separated disposable targets and verified graph recovery-copy handling precede final confirmation for an irreversible reset/cutover. Old backups/background state are not indefinite preservation gates."
   ],
   "batches": [
     {
@@ -869,7 +869,7 @@
       "id": "legacy-guided-game-review-01",
       "status": "candidate",
       "source_commit": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
-      "purpose": "Prepare one next #390 legacy-01 option: retire correction-first, top-five Games review sessions and their active legacy HTTP/local/Celery execution. This is not daily Study guided scheduling. No code, tests, runtime, data or schema is changed by this documentation packet.",
+      "purpose": "Existing #423 exact Games guided-review server candidate under graph-preserving fresh start. Its 8 future deletes/15 edits remain unchanged and unexecuted. Old guided sessions/attempts/receipts/browser pending work may be disposable after exact graph separation; old-work drain and full history transfer are no longer approval prerequisites. Current graph/repertoire/Study interfaces and normal launcher must remain usable.",
       "delete_paths": [
         "backend/app/guided_review_commands.py",
         "backend/app/services/guided_review.py",
@@ -1079,17 +1079,17 @@
         {
           "source": "backend/app/tasks.py:41,179-224,300-318; backend/app/guided_review_commands.py:81-82; backend/app/command_dispatch.py:19-55; backend/app/celery_app.py:31-50",
           "route": "tasks import side-effect registers two string handlers; HTTP publishes operation ID/name/payload to generic foreground task; periodic recovery republishes saved names/payloads. No capability-specific Celery task, beat entry, background slice or plugin entry point was found.",
-          "disposition": "Remove only guided import/registrations. Generic recovery is an incoming dynamic consumer; actual pending/broker/receipt disposition is a blocking dependency."
+          "disposition": "Dynamic old command recovery remains an identified consumer, not a fresh-start drain requirement. Generic foreground/recovery/Study registrations stay; do not discard shared runtime code as though all uses were optional. Exact guided removal remains candidate pending graph/current-source/launcher proof."
         },
         {
           "source": "backend/app/command_gateway.py:180-216",
           "route": "_execute_command checks _handlers before looking up complete receipts. Saved original names can be retried even after the source browser caller disappears.",
-          "disposition": "Preserve gateway byte-for-byte. Even completed receipt retention alone does not establish safe command replay after handler removal."
+          "disposition": "Preserve current shared gateway and current Study public receipt semantics. Unknown-command-before-receipt ordering is documented; loss of superseded old Games command replay is accepted for the graph-separated fresh-start data class, not a remaining drain/migration gate."
         },
         {
           "source": "backend/app/main.py:247-282; backend/app/command_gateway.py:113-122,276-320",
           "route": "GET /api/operations/{operation_id} -> operation_status -> read_operation retains durable results; POST /api/operations/{operation_id}/retry -> retry_blocked_operation -> load_blocked_operation -> generic Celery task with original saved command_name, payload and retry_cycle.",
-          "disposition": "Keep both generic endpoints unchanged. Retry is another dynamic incoming execution route for saved Games commands, even with all three Games routes gone; original-authority disposition must cover it."
+          "disposition": "Keep generic status/retry interfaces for current Study and surviving source operations. Old guided command obligations do not require transfer or settlement under the superseding fresh-start policy; no live row change is performed."
         },
         {
           "source": "backend/app/services/guided_review.py:11-13,35-168; backend/app/guided_review_commands.py:13-18; database/tempo_legacy_database/adapters/games/guided_review/storage.py:1-138",
@@ -1109,17 +1109,17 @@
         {
           "source": "backend/Dockerfile:16-17; backend/pyproject.toml; scripts/tempo-runtime.mjs:237-250",
           "route": "Legacy image broadly copies both implementation trees; runtime lifecycle selects/builds configured services. Package metadata has no guided-specific CLI/export/plugin, but normal rebuild still includes this active legacy API.",
-          "disposition": "No image or launcher change here; actual registered target/start/restart/update source-absence acceptance remains blocked."
+          "disposition": "Preserve current normal launcher/build source until retained-artifact selection is implemented and accepted. No backend/Dockerfile/root Compose/lifecycle deletion in this packet; no old-history drain requirement."
         },
         {
           "source": "backend/app/main.py:1804-1844; database/tempo_legacy_database/adapters/http_composition/snapshots.py:60-61; database/tooling/migrate_sqlite_to_postgres.py; database/tooling/generate_postgres_schema.py:24; database/browser/tempo-db.ts:119-120",
           "route": "Migration snapshot explicitly exports both guided tables; generic sorted-table converter and browser snapshot mapping retain them. Initial DDL/SQLite construction/FKs/index and schema chart also retain their stored facts. Tracked SQL/view/migration search found no view or migration importing the five Python implementations.",
-          "disposition": "Retain all schema/export/converter/mapping consumers. Export source presence is not actual completeness or recoverability evidence; current portable snapshot is not sufficient to cover generic operation receipts."
+          "disposition": "Existing schema/export/converter consumers remain authored source and may be used for graph recovery where the graph owner identifies a concrete dependency. Old guided-only rows may be disposable after exact graph separation; source manifest approval never approves a live table drop or data operation."
         },
         {
           "source": "app/, static/, apps/, public/, scripts/, services/, packages/, tools/, contracts/, database/ tracked-source searches at source_commit",
           "route": "No retained browser/service production import or concrete URL call to these three routes was found outside the named legacy assembly/tooling; PR407 removed Games UI and merged PR419 removed guided-review browser command/storage/suite. Source symbol, route-string, command-name and table-name searches were cross-checked against imports, route decorators, registrations and adapter queries.",
-          "disposition": "Do not repeat PR419 paths. This is bounded static evidence, not external/deployed-client absence; persisted opaque command envelopes remain unknown."
+          "disposition": "Do not repeat PR419 paths or equate static absence with deployed client absence. Old opaque browser/background envelopes need no drain or transfer in the fresh-start plan; current Study/plugin boundary compatibility remains protected."
         }
       ],
       "keep_paths": [
@@ -1320,45 +1320,41 @@
       "future_execution_checks": {
         "status": "NOT RUN / NOT AUTHORIZED by candidate preparation",
         "focused_source_removed_command": "TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database python -m pytest backend/tests/test_postgres_route_contract.py backend/tests/test_command_receipt_storage_boundary.py backend/tests/test_study_portable_storage_boundary.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_regressions.py::test_guided_review_after_stale_failure_marking_is_saved_once backend/tests/test_frozen_opening_order.py backend/tests/test_study_contract_identity.py -q --rootdir=.",
-        "required_before_approval": "Owner must pin the allowed interpreter/dependencies/fixtures and exact installed/native source-absence commands and selections under #390; no application import is executed in this task. Physically remove only approved paths in a disposable tree before configuration loading, demonstrate retained artifact/API/worker startup, selected routes absent, other route/middleware/command recovery/exports intact and retained Study/import evidence corresponds. Freeze exact native canonical freshness selection after retiring CF-9, without waiving other functions. No generic make full, test deletion to hide a retained failure, live runner or invented native pass.",
+        "required_before_approval": "Pin interpreter/dependencies/fixtures and exact installed/native source-absence commands for these guided server deletions. In a disposable tree only, demonstrate retained artifact/API/worker startup and current graph/repertoire/Study contracts with candidate paths absent before config loading. Preserve non-CF9 proof ownership and shared current schema/interface behavior. Old saved sessions/receipts/browser work need no drain or history transfer under fresh-start; no live runner or invented current-artifact pass.",
         "receipt_reuse": "Reuse #382/#386 and other receipts only when relevant executable/dependency/fixture/toolchain inputs match; do not repeat unit/native/build suites solely for documentation overlap."
       },
       "dependency_receipts": [
         "Current-source reconciliation at main 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf; original candidate #423 inspected 782bf5374b87f223a023568305056415d5b63cea, reviewed head fb63771d475d608fc65f998d53a2d879f5c71d36, merged b8d27c26a1ccde449b7b02a3405544fb77e28318. All seven prior cohorts/top-level fields and the original candidate identity/path allowlist are preserved. The five production deletion files, four production edit files/65-line regions and three protected decorated regions are byte-identical to the original source. The only protected full-file drift is tools/component-build/test-inventory.json: reviewed #425 removal of five retired browser entries and #421 addition of the owning Study proof runner; its current hash is repinned without new runtime execution.",
         "Source-only graph inspected using tracked symbol/import, exact route-string, registered command-name, table-name and build/config searches plus Python AST/source reading. Active legacy consumers and dynamic recovery routes are listed, not silently declared absent.",
         "#382 and #386 are now closed for their bounded synthetic qualification. Merged #421/#422 receipts in docs/validation/f2-study-learning.md record 10 native + 2 supporting passes separately from 2 actual composed-ingress browser passes on assembly a534aeb0e2f96c8adecaaffc855fdd62abc1898e. The retained 1,415-input source manifest comparison below finds 1,412 unchanged, two later changed app sources and one changed documentation file. Runtime/database/proof/config/package inputs are unchanged; current Study artifact equivalence is NOT established because position-similarity.ts is in the old emitted module inventory. Do not rerun acceptance for documentation conflict or label the older artifact current. #386 receipt in services/learning/runtime/VALIDATION.md records 5/5 native fresh-PGN/replay/preservation cases at d9ce864b97b81196fb7bad5ddef8e61f2394ee5e; runtime source, test_fresh_pgn_intake.py, runtime dependency/lock metadata, Learning database and Content operator inputs are unchanged to this source SHA. These are retained published receipts plus source comparison, not rerun qualification, actual-history mapping or candidate-source-absence proof.",
-        "#369 is closed for its merged documentation specification only (d08f46c25e7221df6110b9431ab5d14f366fe217); #359 target/launcher implementation and #267/#389 actual-history gates remain open. No implementation is started under this candidate.",
+        "#369 is closed for merged source/lifecycle specification only (d08f46c25e7221df6110b9431ab5d14f366fe217). Current normal launcher/root runtime/Compose/backend dependencies stay functional until an accepted replacement. Fresh-start supersedes required #267/#389 old-history migration, but exact graph/repertoire dependency separation and final confirmation for any irreversible reset remain.",
         "Documentation/source correspondence checks passed: npm run check:conflicts; git diff --check; read-only Python JSON/AST/hash/path/selector/command/link checks. Only this manifest and the existing FEATURES row change. All existing cohorts/top metadata remain unchanged; every proposed delete path still exists. No unit/runtime/native/browser suite or build ran, no dependency was installed, and actual data/secrets/live services/host settings were not accessed. Sanitized validation script/report are retained outside the checkout at /tmp/tempo-390-validate-candidate.py and /tmp/tempo-390-candidate-validation.json.",
-        "Merged #431 at 970312806539249de7247a09655a35e667aa7e90 retired only backend/app/services/learning_review_adapter.py::LearningReviewAdapter.refresh_priority; the other six #427 withdrawal hunks remain unapplied. Its independent Learning advisory hook, saved priority readers, original receipt/recovery interfaces and all four opportunity callbacks remain. That one approved source effect does not approve this guided cohort or the other priority/opportunity/statistics withdrawals."
+        "Merged #431 at 970312806539249de7247a09655a35e667aa7e90 retired only backend/app/services/learning_review_adapter.py::LearningReviewAdapter.refresh_priority; the other six #427 withdrawal hunks remain unapplied. Its independent Learning advisory hook, saved priority readers, original receipt/recovery interfaces and all four opportunity callbacks remain. That one approved source effect does not approve this guided cohort or the other priority/opportunity/statistics withdrawals.",
+        "Superseding 2026-10-25 user scope: fresh start with usable opening graph and necessary repertoire definitions. Prior original-authority/history/receipt/background/browser drain acceptance in #423/#427\u2013429 and this earlier packet is historical, not a current blocker. Preserve prior authored source/evidence in Git; no live deletion/reset/cutover authorized. Graph owner /root/retained_artifact_correspondence and #391 source owner /root/retirement_391 are separately assigned."
       ],
       "acceptance_dependencies": [
         {
-          "gate": "#390 expert review",
-          "state": "PENDING",
-          "required_evidence": "Review exact source SHA, path/edit allowlist, incoming routes, protected hashes/regions, historical capability retirement and preserved tests. Explicitly accept loss of Games session execution/resumption/GET after retirement; status stays candidate until authorized expert approval, not implementation discretion."
+          "gate": "Graph/repertoire/current Study separation",
+          "state": "SOURCE CLOSURE FROZEN; LIVE TARGET/COPY UNVERIFIED",
+          "required_evidence": "Reuse the 21 exact source keep paths and graph dependency contract in adaptive-priority-callbacks-fresh-start-01. The guided delete/edit list remains unexecuted; any future removal must preserve this closure and current Study/runtime interfaces. Actual installed target and verified protected graph-copy handling remain operator evidence before an irreversible action, not old-work/history drain."
         },
         {
-          "gate": "Original-authority guided operations (#358/#267/#389)",
-          "state": "BLOCKED ON ACTUAL EVIDENCE",
-          "required_evidence": "Authorized owner must establish actual installed versions/authority and disposition of games.guided_review.start/attempt operation receipts (all states), broker/in-flight/redelivery work, active/completed sessions/attempts and cold PR419 browser v1/v2 pending envelopes. Freeze admissions and demonstrate original operation replay/settlement or explicit cold retention with recoverable facts and no pending obligation abandoned. Opaque DB/broker/browser payloads cannot be disproved by source search. If this needs a retained compatibility handler or new migration/runtime edit, reject/re-scope this manifest before execution; no placeholder or success fabrication."
+          "gate": "Current normal launcher source",
+          "state": "RETAIN FUNCTIONAL",
+          "required_evidence": "Existing default start/restart/update still selects legacy services; do not delete its source/runtime/Compose/backend dependencies. Guided handler retirement requires exact functioning artifact/source proof or accepted replacement, independently of historical-state reset."
         },
         {
-          "gate": "Retained Study/import (#382/#386)",
-          "state": "#382/#386 BOUNDED RECEIPTS RECORDED; CURRENT ARTIFACT CORRESPONDENCE OUTSTANDING",
-          "required_evidence": "Reuse the separately published #421/#422 and #410 receipts only on matching executable, fixture, dependency and artifact inputs. The source-manifest comparison below identifies two later app changes; position-similarity.ts was included in the qualified Study module inventory, so current artifact equivalence still needs exact affected-input reconciliation by its owner. No runtime suite was rerun for this documentation reconciliation. Before deletion, candidate-source-absence acceptance must still demonstrate saved exercise/attempt, ordinary introduction/local remediation and import behavior with removed paths. These synthetic/native/browser receipts do not supply actual-history transfer or launcher acceptance."
+          "gate": "Current artifact and source-absence acceptance",
+          "state": "CANDIDATE; EXECUTION PROOF NOT RUN",
+          "required_evidence": "For any later guided server deletion, demonstrate current selected Study/graph/repertoire artifacts and interfaces with the exact candidate paths absent. Historical #382/#386 receipts remain prior evidence; reconstructing full historical artifact equivalence is superseded and does not gate the six callback-only source preparation. No runtime suite is rerun for documentation policy changes."
         },
         {
-          "gate": "Normal launcher/cutover (#359/#267; accepted #369 specification)",
-          "state": "BLOCKED ON ACTUAL AUTHORITY",
-          "required_evidence": "Actual registered target and normal start/restart/update must choose retained artifacts and never rebuild/import removed legacy handlers. Existing running image or opt-in Compose/source absence is insufficient. Retained historical facts and pending original-authority work need separately authorized latest-state preservation/rehearsal and one-writer acceptance. No #359 launcher or #389 converter implementation until their prerequisites are released."
-        },
-        {
-          "gate": "Exact source-absence acceptance / #391 handoff",
-          "state": "PENDING SEPARATE EXECUTION AUTHORIZATION",
-          "required_evidence": "No literal batch legacy-01 exists and no cohort is approved for #391. An expert must first explicitly select/release the exact candidate under that execution identity, freeze current-source correspondence and approve exact delete/edit paths plus interpreter/dependencies/fixtures, installed/native source-absence commands, selections and #392 classified net delta. Demonstrate affected artifacts run with paths absent before config loading, preserve all non-CF9 proofs and recoverable history/receipts. #391 may prepare a read-only preflight/negative fixture outside this repository, but must not apply edits/remove files or turn candidate evidence into approval. Source drift or missing map/launcher/policy acceptance returns to #390; no inferred alias, synthetic actual-state pass or table-drop authority."
+          "gate": "Physical reset/deletion",
+          "state": "NOT AUTHORIZED / NOT EXECUTED",
+          "required_evidence": "Identify exact graph-independent old data/file/backup targets, protect graph/repertoire source and any new verified graph recovery copy, then present the specific irreversible action for final confirmation. No live reads/captures/resets/DROP/cutover in this source manifest."
         }
       ],
-      "data_disposition": "Retain all guided_review_sessions/guided_review_attempts rows, current/base finding and imported-game facts, receipt/payload identities and browser pending values unchanged. Retire execution only after the above owner gates; saved facts must remain recoverable with explicit disposition of active work. Preserve migration_snapshot table exports, browser mapping, SQLite construction, PostgreSQL DDL/FKs/index, existing converters and schema diagrams. No DROP, migration, live read/export/write, data settlement/erasure or completed-history claim. Daily Study cards.guided_review and review guided flags, saved exercise execution, frozen ranks/introduction, Learning-local contracts/remediation/attempts, Workbench URL helper and Content Operator.apply/execution_bundle are protected. Other Games/statistics/defense producers and deferred #412 are outside this cohort.",
+      "data_disposition": "Fresh start permits old guided sessions/attempts, reviews/schedules, background jobs, server receipts, browser old envelopes and obsolete backup state to be discarded once exact graph/repertoire separation is established. No drain/old-history migration is required. Preserve usable graph + necessary repertoire/line/card/membership/prefix/exclusion/reference sources; preserve current Study semantic APIs, shared queue/transaction/runtime/schema ownership and normal launcher source. No table/file/row is removed or reset by this manifest; graph/repertoire source and a new verified graph recovery copy must not be deleted. Current implementation snapshots/converter code remain authored work; unused legacy-only source can get its own bounded future retirement.",
       "reviewer": {
         "decision": "independent candidate correspondence review complete; remains candidate, no deletion approval",
         "rationale": "Read-only reviewer /root/review_guided_candidate found no unresolved P1/P2. Independently verified 7 prior batches/top fields preserved, the one existing FEATURES row, 8 delete plus 15 edit paths without prior-cohort overlap, 399 deletion plus 65 edit-source lines (464 bounded source lines, not net reduction), 10 exclusive tests/258 lines, 29 protected file hashes and 3 complete decorated route-region hashes. Active routes, side-effect/dynamic receipt recovery, shared CF-9, inventories, broad build and retained SQL/export/schema consumers match source. No runtime suite, source-removed artifact, actual-data, launcher, migration or cutover acceptance is granted.",
@@ -1367,21 +1363,22 @@
           "reviewer": "/root",
           "reviewed_manifest_sha256": "420f6fee062ffc1d4329962f9fdf41131d94ca08c1395e86ac3fa8e2f81b5498",
           "decision": "Accepted current-source correspondence with no remaining finding: seven prior cohorts/top metadata, unchanged 8/15 allowlist, 23 baseline hashes, 29 protected hashes, three decorated regions, three peer artifact hashes, exact #431 class and current artifact UNVERIFIED disposition independently verified. This receipt-only addition does not repeat executable checks or approve retirement/source absence."
-        }
+        },
+        "fresh_start_review": "Prior /root independent source-correspondence receipt remains historical. Fresh-start policy, exact graph/repertoire separation and the new six-file source implementation slice require current root review; no source deletion or live reset approval is inferred."
       },
       "initial_inspected_source_commit": "782bf5374b87f223a023568305056415d5b63cea",
       "execution_handoff": {
-        "required_issue391_batch_id": "legacy-01",
+        "prior_issue391_batch_id": "legacy-01",
         "available_candidate_id": "legacy-guided-game-review-01",
-        "state": "BLOCKED: identity selection, approval, actual authority and source-absence acceptance absent",
+        "state": "GUIDED SERVER DELETION REMAINS CANDIDATE; fresh-start callback source slice below is separately released for implementation preparation",
         "delete_edit_allowlist_unchanged": true,
         "production_removed": false,
-        "preparation_only": "Read-only source/hash/selector checks and negative fixtures may be prepared without executing listed commands, applying patches or removing paths. This field does not select, alias or approve the candidate for #391.",
+        "fresh_start_scope": "Literal legacy-01 and old-history/background/receipt/browser drain were the prior retirement route. They do not block the new six-file optional-priority callback preparation; that slice uses its own exact id/path/hashes and graph/current Study review. No inference of approval for these eight guided deletions.",
         "release_requires": [
-          "Explicit #390 expert selection of exact legacy-01 with approved status; no auto-renaming of this candidate.",
-          "Original-authority guided session/attempt/command/broker/browser obligations and recoverable saved-fact disposition under #358/#267/#389.",
-          "Normal start/restart/update retained-artifact selection and one-writer/history prerequisites under #359/#267 and the accepted #369 specification.",
-          "Exact reviewed installed/native source-absence and retained Study/import proof on the approved executable inputs."
+          "Exact graph/repertoire/current Study separation of proposed source effects.",
+          "Functioning current normal launcher/artifact or separately accepted replacement before deleting its required source.",
+          "Owning current-source regressions and exact source-absence proof for any later deletion.",
+          "Separate exact irreversible live-action confirmation after graph-separated targets are known."
         ]
       },
       "current_source_path_hashes": [
@@ -1509,8 +1506,8 @@
           "artifact_sha256": "74ac0e47b402d0b17f9319af5061e0f444aae0c702b0b322eb4f62171f751a17",
           "candidate_identity": "adaptive-priority-stop-new-01",
           "reuse_sections": "issued_work_disposition; detail STOP-NEW-RECOMPUTATION.md; candidate_patch WITHDRAWAL.patch.txt",
-          "boundary": "Original D1/D2/D3 decisions remain; exclude the single already-merged #431 hunk when rebasing. Retain saved-score readers, accepted recovery and four opportunity callbacks.",
-          "state": "Existing draft source-only packet; unchanged, not absorbed or approved by this reconciliation."
+          "boundary": "Prior D1/D2/D3 old-work preservation decisions are superseded; exclude the single already-merged #431 hunk when rebasing. Retain saved-score readers, accepted recovery and four opportunity callbacks.",
+          "state": "Existing source-only packet reused for exact consumers/interfaces/edits; old-work drain/history policy superseded by fresh_start_authority. Not approval for other withdrawal hunks or live execution."
         },
         {
           "pr": 428,
@@ -1520,7 +1517,7 @@
           "candidate_identity": "daily-statistics packet (not an approved manifest cohort)",
           "reuse_sections": "retirement_acceptance; incoming_runtime_and_retained_history_references; sibling README eight synthetic transition examples",
           "boundary": "Preserve statistics history/readback and receipt/job/task/control owners. Completed refresh can still wait on sync/analysis; game-sync invalidation and feature/phase6/priority handoff require the existing owner decisions.",
-          "state": "Existing draft source-only packet; unchanged, not absorbed or approved by this reconciliation."
+          "state": "Existing source-only packet reused for exact consumers/interfaces/edits; old-work drain/history policy superseded by fresh_start_authority. Not approval for other withdrawal hunks or live execution."
         },
         {
           "pr": 429,
@@ -1529,8 +1526,8 @@
           "artifact_sha256": "9af35bae0a486f95e115b1ab007e9f788aee441b45c582503c8ceeb3bdb10c82",
           "candidate_identity": "opportunity-feed-refresh-01",
           "reuse_sections": "incoming_enqueuers; retained_public_interfaces; transition_truth_table (23 rows)",
-          "boundary": "Retain opportunity handler registration before receipt replay, saved eligibility/admission/browser recovery and accepted-work settlement. Four priority callbacks and possible replacement generations prevent a finite-drain claim.",
-          "state": "Existing draft source-only packet; unchanged, not absorbed or approved by this reconciliation."
+          "boundary": "Preserve current opportunity and Study interfaces/source semantics; old opportunity/receipt/browser history need not migrate. Four priority/opportunity callbacks and possible replacement generations still mean this source patch does not establish complete producer shutdown. No old-tail drain is required.",
+          "state": "Existing source-only packet reused for exact consumers/interfaces/edits; old-work drain/history policy superseded by fresh_start_authority. Not approval for other withdrawal hunks or live execution."
         }
       ],
       "current_source_path_hashes_bind": "Baseline fingerprints of every delete/edit target at source_commit, not hashes of this revised documentation packet. The two writable documentation hashes intentionally identify their pre-reconciliation Git blobs at source_commit. A later #391 release must bind the separately reviewed manifest artifact hash and executable source SHA, not compare edited documentation bytes to their own baseline hash.",
@@ -1559,8 +1556,404 @@
             "in_qualified_study_module_inventory": false
           }
         ],
-        "current_artifact_equivalence": "UNVERIFIED; changed position-similarity.ts was a qualified Study module. Source comparison and #434 unused-helper removal do not create a new build/browser acceptance receipt. No runtime tests or build repeated here."
+        "current_artifact_equivalence": "UNVERIFIED; changed position-similarity.ts was a qualified Study module. Source comparison and #434 unused-helper removal do not create a new build/browser acceptance receipt. No runtime tests or build repeated here.",
+        "fresh_start_disposition": "Historical source comparison retained as authored evidence; full prior artifact historical-equivalence is superseded and does not block graph-preserving callback preparation. Current affected-source regression/artifact checks still apply when executable inputs change."
+      }
+    },
+    {
+      "id": "adaptive-priority-callbacks-fresh-start-01",
+      "status": "candidate",
+      "source_commit": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
+      "purpose": "Implement the six remaining #427 optional priority callback withdrawals after merged #431. Graph-preserving source-only branch preparation is authorized now under fresh-start policy; independent graph/current Study review and owning checks precede integration. This does not remove all priority calculation/recovery or perform a live reset.",
+      "implementation_owner": "/root/retirement_391",
+      "delete_paths": [],
+      "edit_paths": [
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "sha256": "a36a71e687a0d9e7299ea07de02564ee72b2bee2f4eb5f93c1ea76ae2458fa1c",
+          "proposed_sha256": "4c0f064664208bbcbcac479beb799a19aed8f880dc840edfbc47db13035e5e7e",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in save_prefix; retain source-epoch advance, canonical invalidation, coverage/opportunity effects, original command and transaction."
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "sha256": "d38c1de908c06b295b47969dc24b3d7f5228567fe9390a0fbcde0187e361e64e",
+          "proposed_sha256": "87d9a4a4873560012084b1ceae514e11074f7fc8320ea26c94832c36b7195eac",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in submit_maia_node; keep lease/scope checks, coverage completion, original receipt and opportunity callback."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "sha256": "04791f50588b7caa1c6ee16de18d2aa7fda418160de13aca4491408293697ea9",
+          "proposed_sha256": "c2684b9cdad04cfcf1966a7a7908e73c185654702213070406a488b41c1ed22f",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in _publish_node; keep source/task/node fences, source publication, cursor and opportunity callback."
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "sha256": "295555d13146eb1ce9189266b3df9f55d017c56fc8c287b0d01aec2cbd9720c3",
+          "proposed_sha256": "785b3ee52a20cad3843de76a25d007f8784af10b15a7966034051d451e46e003",
+          "required_edit": "Remove only the introduction-priority import and enqueue call in execute_game_priority_handoff_slice; retain the opportunity call, per-repertoire cursor, phase/lease fences and final derivation completion."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "sha256": "db1a97077d94da4a14d98f05536afa4c09715f54e14a2faa0c3c6d33c8c6bbec",
+          "proposed_sha256": "dd506eeabb1c669b18741996b87d4c18ea883465601313f4a4e6aab387210f4f",
+          "required_edit": "Remove only enqueue_priority_refreshes_for_game import and its _enqueue_game_repertoire_refreshes call; retain claim/load/compute/publish and restart paths for existing priority jobs, and all game/opportunity effects."
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "sha256": "a05fffc8762ad19e4c618f7de4df0667e21bc8a3615828d19b252386e3694bdd",
+          "proposed_sha256": "9f6c9e20cf6208070ec447621ff69a7cd01437629bf38348b728fe4e63af44cf",
+          "required_edit": "Remove only priority imports/calls after execute_coverage_node and submit_maia_coverage, plus the resulting empty if repertoire_id branch; keep coverage completion/progress/error and opportunity effects."
+        }
+      ],
+      "production_scope": {
+        "edited_paths": 6,
+        "removed_lines": 17,
+        "added_lines": 0,
+        "removed_callback_calls": 7,
+        "deleted_files": 0,
+        "already_merged_excluded": "backend/app/services/learning_review_adapter.py::LearningReviewAdapter.refresh_priority (#431) persists unchanged."
+      },
+      "candidate_patch": {
+        "existing_pr": 427,
+        "reviewed_head": "575f65fdf9bdc82dc8d58a9321d19797e8710da6",
+        "original_path": "docs/architecture/study-first-reduction-2026-10-21/adaptive-priority-2026-10-25/WITHDRAWAL.patch.txt",
+        "original_sha256": "e0fb71cf6fc8f17d3414771048e654e511bce09355eef6cc82d5ea2cfbbbdde8",
+        "bounded_rule": "Use exact original patch except its final learning_review_adapter.py block, already merged by #431. No other source changes.",
+        "bounded_patch_sha256": "8031e0c7070828b55bc04c782090cebb16b0fa63c399c36f6b2ee5be5c1bec04",
+        "preparation_check": "git apply --check --cached /tmp/tempo-390-fresh-start-20261025/priority-six.patch passed on source_commit; no patch applied by #390."
+      },
+      "keep_paths": [
+        {
+          "path": "backend/app/contracts/opening_graph.py",
+          "sha256": "e86f943e3c6f9415df31a868d414be3e1a38d6f81ecf95a613ac630f738ea61c",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "backend/app/chess/cards.py",
+          "sha256": "90dac196ea8991303b03c525aa8c7c8ec81694af66f4f96844d82f54e77de3b3",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "backend/app/card_deletion.py",
+          "sha256": "2d722c0f9811e901609715a6df1b6b595536e904686f8409ee91f5173a0b3ad8",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "backend/app/services/opening_graph.py",
+          "sha256": "55770df52302b1588ec3faa3e5910c6766d4969144ccce5020f63edea96885e2",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "backend/app/services/postgres_opening_graph.py",
+          "sha256": "ff3b6f2bf172bdd72b8f87018f64e99169eebb4d3daaea3a7c79fe65f04a1093",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "backend/app/services/canonical_prefix.py",
+          "sha256": "518ecedbe745ddf737b62a4b9fff9167c6febbe13e2c133a9893f6fa5ecc5740",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "backend/app/services/canonical_prefix_preview.py",
+          "sha256": "14470b1e6ad5136d1da42fa9fd5e4ed58e43ec40a79a76f64170afc92f8893f2",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/opening_graph/worker.py",
+          "sha256": "f2ed8a1e4463b61e3492920833cbd2ae5e8f102252011db307c6949f4e18afe4",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/opening_graph/compatibility.py",
+          "sha256": "66fc1acbce0e2e0af91d5a70da845cf8b6c91f1f12ce89cac893626438286bbf",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/scope.py",
+          "sha256": "ecc4651bf7e5f8e4130d90bf5fc4548fdef7df5d0cd986d14b6f81d92fc44dc2",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/preview.py",
+          "sha256": "55326486b997af5c829718600dbc3ee0b110713132d8ffccc0809661b36f2938",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/card_deletion/storage.py",
+          "sha256": "16d3da891d78debbe4cf55d029fb0b8d0a0332f7a3e3c43e26a59e3b7fbdf9db",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+          "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+          "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/021_priority_preparations.sql",
+          "sha256": "6b98247e09ba7bb23d6aff38afea49b02765fd7c13d61c77d5e984bea3f3c7e6",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/033_canonical_prefix.sql",
+          "sha256": "5691e6d59c0b96246caf78990a28962b4efed333424c200382b527bb373607e0",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/034_current_canonical_routes.sql",
+          "sha256": "45fa3b7333e9ed23aeaed176d1b4a6bcc3929778fb0593edea2be3ef94e04793",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/037_card_deletion.sql",
+          "sha256": "6d0c5e2ea1210e0d672c48bad02db1b74c751667f0e596f7b40f57686ede068d",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/038_prefix_transition_application.sql",
+          "sha256": "76f00efcd3eb86fd968abca69052c0086061eac856bd20ebdd0c3c2d229b9f87",
+          "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
+        }
+      ],
+      "preserved_test_names": [
+        "backend/tests/test_priority_callback_retirement.py::test_prefix_save_preserves_source_and_coverage_without_optional_priority",
+        "backend/tests/test_priority_callback_retirement.py::test_native_explorer_publication_preserves_progress_and_cursor_without_optional_priority",
+        "backend/tests/test_priority_callback_retirement.py::test_local_game_handoff_preserves_opportunities_without_optional_priority",
+        "backend/tests/test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire",
+        "backend/tests/test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete",
+        "backend/tests/test_repertoire_opportunities.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_graph_materialization_preserves_authoritative_source_revision",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_graph_cleanup_preserves_independently_authored_cards",
+        "backend/tests/test_frozen_opening_order.py::test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains"
+      ],
+      "test_commands": [
+        "TEMPO_DATABASE_READ_URL= TEMPO_DATABASE_WRITE_URL= PYTHONPATH=backend:database python -m pytest backend/tests/test_priority_callback_retirement.py::test_prefix_save_preserves_source_and_coverage_without_optional_priority backend/tests/test_priority_callback_retirement.py::test_native_explorer_publication_preserves_progress_and_cursor_without_optional_priority backend/tests/test_priority_callback_retirement.py::test_local_game_handoff_preserves_opportunities_without_optional_priority backend/tests/test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets backend/tests/test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire backend/tests/test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete backend/tests/test_repertoire_opportunities.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure -q --rootdir=.",
+        "npm run check:conflicts",
+        "git diff --check"
+      ],
+      "dependency_receipts": [
+        "All six baseline files byte-match #427 original/proposed hashes; no current-source drift at 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf. Six production files include seven enqueue callsites because repertoire_coverage.py contains two.",
+        "Graph owner preliminary source check finds no direct graph storage deletion in literal patch. Keep graph source dispatch/publication, authored definitions, prefix revision/source-epoch invalidation, coverage lease/source validation+publication+cursor+completion, game feature/derivation phases and all retained opportunity callbacks.",
+        "Graph owner /root/retained_artifact_correspondence completed bounded source-only closure at source_commit, receipt SHA256dc73aa3ff613196a8c36a27e1c13a7910bbb0307fe728e1dabde46eccffee33a. All 21 exact graph/repertoire/source-certification/DDL/export keep hashes match and are disjoint from the six edited files; graph_collision=false for literal patch. Shared epoch/task/practice schema structure stays even where old rows are disposable. Current migration_snapshot omits five graph-related tables and is not a verified graph recovery copy. No runtime suites/live observation/action were performed by graph review."
+      ],
+      "acceptance_dependencies": [
+        {
+          "gate": "Source implementation preparation",
+          "state": "RELEASED NOW",
+          "required_evidence": "Root assigned #391 owner for this exact six-file callback-only source slice; authored code stays isolated on its branch. No old background/history/receipt/browser drain or live observation required."
+        },
+        {
+          "gate": "Source integration",
+          "state": "PENDING CURRENT GRAPH/REPERTOIRE/STUDY REVIEW AND FOCUSED CHECKS",
+          "required_evidence": "Freeze exact graph/definition retention hashes, primary/opportunity preservation assertions and affected selectors. Source owner must preserve current launcher/runtime/schema/transaction/command registrations and avoid private cross-domain imports. No full producer-cessation claim."
+        },
+        {
+          "gate": "Live deletion/reset",
+          "state": "NOT RELEASED",
+          "required_evidence": "No live action exists in this callback-only slice. Any later irreversible reset must name exact graph-separated disposable targets and protect graph/repertoire source/recovery copy before final confirmation."
+        }
+      ],
+      "data_disposition": "Zero data/schema changes. Old priority/source/background obligations do not require drain or migration under fresh-start; current in-process semantic contracts and graph/repertoire sources remain intact. Existing internal priority recovery and all opportunity callbacks remain; this is not complete producer shutdown.",
+      "reviewer": {
+        "decision": "Fresh-start source-preparation contract awaiting root graph/current-source review; no merge or live-action approval.",
+        "rationale": "Exact seven optional priority requests removed across six files (17-/0+); preserve canonical prefix source/epoch invalidation, coverage publication/progress/cursor/lease fences, game derivation per-repertoire cursor/final completion and every opportunity callback. No new imports/interfaces/owners or dependency direction changes; graph/repertoire/Study primary effects and current launcher/root schema remain intact. Graph owner source-only closure has 21 disjoint hashed keep paths plus pure GraphInput/build_graph boundary requiring no old history. No installed-state/verified-copy certificate or live reset/DROP permission follows. Source implementation owns the seven focused affected selectors; unchanged graph regressions remain proof owners, not automatic suite reruns.",
+        "current_fresh_start_review": {
+          "reviewer": "/root",
+          "reviewed_manifest_sha256": "3676b6580fb5ef29d63874741d909afd0cadf45a2f2a6ae18557c428a4d0ac71",
+          "decision": "Accepted exact fresh-start authority, six proposed source hashes, final graph contract dc73aa3ff613196a8c36a27e1c13a7910bbb0307fe728e1dabde46eccffee33a and all 21 keeps. Root reviewed 18 passing source-check logs; architecture owner independently reviewed exact source e46c41bba8906a751979fd47b147088cdf9a734a with no P1/P2. This approves source preparation contract/correspondence only, not merge, live reset/deletion or installed graph-copy completeness."
+        }
+      },
+      "source_protection_contract": "No edits to opening graph/repertoire/prefix/coverage/game storage SQL or DDL; no card/link/graph writes removed. Remove only named priority imports/enqueues; current shared scheduling, saved readers, Study interfaces and all opportunity callbacks stay. Old rows may later be disposable but shared tables are not blanket DROP targets. Concrete graph-owner finding: DDL035 repertoires trigger advance_repertoire_game_scope updates repertoire_game_scope and priority_source_epoch; line/card/link triggers advance source_revision. Keep these structures and canonical-prefix preview/results/positions certification dependencies. Rows labelled old work do not make their shared tables disposable.",
+      "supporting_edit_paths": [
+        {
+          "path": "backend/tests/test_priority_callback_retirement.py",
+          "required_edit": "Add exactly the three named callback-retirement regressions; deny optional priority access while checking primary prefix/source/coverage, native explorer cursor/completion and local game/opportunity effects."
+        },
+        {
+          "path": "backend/tests/test_postgres_cutover.py",
+          "required_edit": "Update only named Maia-submit regression: no optional priority enqueue, unchanged candidate aggregation/completion and opportunity work; retain all other assertions."
+        },
+        {
+          "path": "backend/tests/test_postgres_game_completion.py",
+          "required_edit": "Update only named priority-handoff regression: optional priority unavailable, opportunity call/cursor/phase/final completion retained."
+        },
+        {
+          "path": "backend/tests/test_repertoire_coverage.py",
+          "required_edit": "Strengthen only named SQLite coverage-refresh case to deny priority while retaining real gap/coverage/opportunity behavior."
+        },
+        {
+          "path": "backend/tests/test_repertoire_opportunities.py",
+          "required_edit": "Strengthen only named Maia partial-submit/explorer-failure case to deny priority while retaining candidate/opportunity behavior."
+        },
+        {
+          "path": "backend/app/services/README.md",
+          "required_edit": "Add one bounded canonical diagram describing exact six-source callback withdrawal and retained source/graph/Study/opportunity boundaries."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/coverage/README.md",
+          "required_edit": "Update only affected priority/opportunity callback claims/drawing; no schema/storage ownership change."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "required_edit": "Register exactly three new regular regression selectors and strengthened retained selectors; do not retire unrelated proofs."
+        }
+      ],
+      "test_selection_policy": "Source owner runs the seven affected selectors/new regressions with task-owned SQLite/fakes and empty live DB URLs. Source-unchanged graph/frozen regression selectors remain named owners, not mandatory reruns without new executable changes. Hold advisory /tmp/tempo-mac-validation-20261025.lock opened append/nontruncating for heavy runs; never unlink. No native/live/full-system pass is implied.",
+      "graph_dependency_contract": {
+        "owner": "/root/retained_artifact_correspondence",
+        "source_commit": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
+        "source_only_receipt_sha256": "dc73aa3ff613196a8c36a27e1c13a7910bbb0307fe728e1dabde46eccffee33a",
+        "protected_definition_tables": [
+          "repertoires",
+          "repertoire_lines",
+          "repertoire_line_training_depths",
+          "cards",
+          "repertoire_cards",
+          "opening_graph_steps",
+          "opening_graph_publications",
+          "prefix_splits",
+          "canonical_prefix_previews",
+          "canonical_prefix_results",
+          "canonical_prefix_positions",
+          "deleted_cards",
+          "settings",
+          "repertoire_integrity_issues",
+          "repertoire_integrity_card_blocks",
+          "repertoire_integrity_state"
+        ],
+        "structural_dependencies_not_old_row_preservation": [
+          {
+            "tables": [
+              "priority_source_epoch",
+              "priority_repertoire_source_epochs",
+              "repertoire_game_scope"
+            ],
+            "reason": "DDL021 source-line/link/card/settings/review triggers and DDL035 repertoires canonical_game_scope trigger update these epoch relations. DROP breaks necessary repertoire/source writes unless separately reviewed triggers/functions change."
+          },
+          {
+            "tables": [
+              "background_tasks",
+              "background_task_events"
+            ],
+            "reason": "Current graph rebuild uses kind=opening_graph_rebuild generation/lease/task API. Old tasks/events may be discarded without drain; retain schema/owner for fresh graph work."
+          },
+          {
+            "tables": [
+              "reviews",
+              "daily_queue",
+              "queue_attempt_origins",
+              "opening_card_schedule_seeds"
+            ],
+            "reason": "Current graph worker/compatibility reads these relations for classification/cleanup/seed checks. Old rows are not preservation gates. Empty/default fresh state must still satisfy current code; no blanket DROP."
+          },
+          {
+            "tables": [
+              "opening_graph_legacy_mappings"
+            ],
+            "reason": "Old schedule translation mapping is not an input to pure build_graph; existing compatible publisher writes it and FKs reference cards. Rows may be omitted by a reviewed fresh reconstruction; not blanket table DROP."
+          },
+          {
+            "tables": [
+              "prefix_transition_applications",
+              "prefix_transition_card_fences",
+              "prefix_transition_repertoire_fences",
+              "operation_receipts"
+            ],
+            "reason": "Old transition/receipt work need not drain. Explicit reset must remove old fences/application references before parent receipt rows because migration038 uses NO ACTION FKs; source and selected publication must remain coherent."
+          },
+          {
+            "tables": [
+              "frozen_opening_activation",
+              "frozen_opening_ranks",
+              "opening_segmentation_state"
+            ],
+            "reason": "Legacy graph recovery/Study readers use these structures. Old rank/progress rows are not historical-migration requirements; bootstrap/rebuild/source behavior needs explicit fresh defaults."
+          }
+        ],
+        "specific_fk_and_trigger_collisions": [
+          "Deleting repertoires or repertoire_lines cascades graph/source/membership rows; these are not reset roots.",
+          "Deleting referenced cards cascades prefix_splits/repertoire_cards; preserve graph definition and split ids first.",
+          "DDL035 canonical_card_promote and canonical_line/link/card_source triggers own canonical provenance/source revision.",
+          "DDL035 canonical_game_scope on repertoires writes repertoire_game_scope and priority_source_epoch; DDL021 source triggers write priority_repertoire_source_epochs.",
+          "prefix_transition fences -> applications -> operation_receipts have NO ACTION dependencies; old row disposal is ordered, not a drain requirement."
+        ],
+        "portable_snapshot_gap": {
+          "reader": "database/tempo_legacy_database/adapters/http_composition/snapshots.py::portable_table_rows",
+          "omitted": [
+            "repertoire_line_training_depths",
+            "opening_graph_steps",
+            "opening_graph_publications",
+            "opening_graph_legacy_mappings",
+            "deleted_cards"
+          ],
+          "conclusion": "Existing migration_snapshot alone is not a complete graph recovery copy. Raw/explicit graph copy must be verified by designated operator; no live copy was inspected here."
+        },
+        "six_callback_graph_collision": false,
+        "actual_installed_state": "UNKNOWN; source-derived closure does not claim actual graph-copy completeness or live-target mapping. Designated operator must verify a protected new graph recovery copy; no old-history/receipt/background drain required.",
+        "pure_graph_rebuild_boundary": {
+          "public_input": "backend/app/services/opening_graph.py::GraphInput(repertoire_id,lines,default_depth,prefix_overrides)",
+          "public_function": "build_graph(GraphInput) -> tuple[GraphStep,...]",
+          "required_line_fields": [
+            "id",
+            "start_fen",
+            "moves_json",
+            "trained_color",
+            "learner_decision_count or settings.initial_depth"
+          ],
+          "required_override_fields": [
+            "source_card_id",
+            "shortened_card_id",
+            "shortened_start_fen",
+            "shortened_moves_json",
+            "continuation_card_id",
+            "continuation_start_fen",
+            "continuation_moves_json"
+          ],
+          "old_history_required": false,
+          "distinction": "GraphRebuildInput legacy review/schedule seed transfer is separate from pure build_graph and is not a fresh-start preservation gate. Canonical source cards/memberships and scope certificates remain additional retained source inputs."
+        },
+        "existing_regression_selectors_not_executed": [
+          "backend/tests/test_opening_graph.py::test_configured_black_route_materializes_as_one_cumulative_prefix",
+          "backend/tests/test_opening_graph.py::test_manual_prefix_split_survives_graph_rebuild",
+          "backend/tests/test_postgres_opening_graph.py::test_postgres_graph_publication_rejects_missing_links_and_checks_generation",
+          "backend/tests/test_postgres_opening_graph.py::test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships",
+          "backend/tests/test_postgres_opening_graph.py::test_postgres_graph_enqueue_advances_past_imported_generation_without_task_row",
+          "backend/tests/test_card_deletion.py::test_deleted_graph_prerequisites_preserve_source_and_usable_descendants"
+        ]
+      },
+      "implementation_preparation_receipt": {
+        "owner": "/root/retirement_391",
+        "branch": "codex/retire-immediate-priority-callbacks-20261025",
+        "local_tested_commit": "e46c41bba8906a751979fd47b147088cdf9a734a",
+        "local_tested_tree": "c2b33697e1dac17ec5c0be48fc436db49021a3fb",
+        "publication_state": "Local source-owner commit awaiting independent root review/publication at the time of this receipt; no merge/deployment.",
+        "source_correspondence_sha256": "71169973d129b3fceee06045290a9ef876554aac1a579b5a310d1949f33ca2b8",
+        "reported_results": "8 affected + 10 retained cases = 18 passed, 0 skipped using task-owned SQLite/fakes. Prior source failed 7 direct cases plus the legacy swallowed-error assertion. Exact six proposed source hashes and 17-/0+ match; all four opportunity callback ASTs unchanged.",
+        "qualification_limit": "These checks belong to the source-owner executable commit, not this documentation branch. No native/live/actual-version/reset/cutover acceptance; no runtime tests rerun by #390."
       }
     }
-  ]
+  ],
+  "fresh_start_authority": {
+    "recorded_on": "2026-10-25",
+    "decision": "Graph-preserving fresh start supersedes required full historical-state migration, old-background completion/drain, server receipt replay, original-authority browser-envelope transfer and retention of old backups. Preserve a usable opening graph and necessary repertoire definitions; existing authored implementation/receipts remain available as prior work, not release prerequisites.",
+    "disposable_classification": "Old reviews/schedules, background jobs, receipts, browser pending envelopes, scratch and old backups may be classified disposable only after exact graph/repertoire separation. This decision permits bounded source preparation and feature pushes/draft PRs; it does not execute or authorize guessed live deletions.",
+    "protected": "Opening graph nodes/edges/publications, necessary authored repertoire/line/card/membership/prefix definitions and exclusions, plus any referenced source needed to read/rebuild the graph. Preserve current Study public interfaces and one-way ownership, shared live schemas/connections/transactions, and normal launcher functionality until an explicit replacement is accepted.",
+    "execution_confirmation": "No live DROP/DELETE/reset/cutover, credential deletion or deletion of graph/repertoire source or a new verified graph recovery copy. The operator must first present exact graph-independent targets and the specific irreversible action for final confirmation.",
+    "precedence": "This current authority overrides any earlier history/drain/recovery acceptance text in this manifest or the pinned #423/#427\u2013429 packets. Reuse their exact source/consumer/interface maps; their old-work drain decisions no longer block the source slice below."
+  }
 }
