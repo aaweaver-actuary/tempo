@@ -88,10 +88,12 @@ sequenceDiagram
 ```
 
 The existing disposable bootstrap/public API and guard are retained.
-No Learning schema or table relationship changes are introduced. New native
-creation and container behavior remain unverified until actual focused checks
-run. Authored fake regressions live in
-[the owning suite](../../tests/test_learning_persistent_bootstrap.py); run
-python -m unittest discover -s database/tests -p 'test_learning_persistent_bootstrap.py'.
-The shared DDL extraction additionally requires the existing
-test_learning_disposable_bootstrap.py suite and focused native role/schema proof.
+No Learning schema or table relationship changes are introduced. At executable
+commit 65ec53bfee1b3e94a374a9b5dfdcd8fdfff54020, the
+[owning fake suite](../../tests/test_learning_persistent_bootstrap.py) passed
+25 tests and the existing test_learning_disposable_bootstrap.py suite passed
+12 regressions (Python 3.15.0). Both Compose 5.6.1 profiles rendered without daemon
+contact, using a deliberately nonexistent DOCKER_HOST. The recovered focused
+qualification supersedes the earlier executor outage. Native PostgreSQL
+role/schema proof, installed-container runtime behavior and actual admission
+remain unverified; no real target or credentials/grants were created.
