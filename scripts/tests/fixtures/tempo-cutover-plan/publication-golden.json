@@ -31,7 +31,7 @@
       },
       "ports": [
         {
-          "service": "web",
+          "service": "study-web",
           "host": "127.0.0.1",
           "port": "3000",
           "target": 80
@@ -47,9 +47,9 @@
         "phase": "quarantined",
         "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "images": {
-          "web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
           "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
-          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "study-web": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
         },
         "database": {
           "name": "fixture_learning",
@@ -85,9 +85,9 @@
       "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "schema": 1,
       "images": {
-        "web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
         "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
-        "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "study-web": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
       },
       "composeFiles": [
         "/fixture/release/study.yml",
@@ -101,9 +101,9 @@
         "phase": "quarantined",
         "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "images": {
-          "web": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
           "learning": "registry.invalid/fixture-learning@sha256:2222222222222222222222222222222222222222222222222222222222222222",
-          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          "postgres": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "study-web": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
         },
         "database": {
           "name": "fixture_learning",

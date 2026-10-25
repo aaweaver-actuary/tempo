@@ -51,13 +51,13 @@ test("registration-only publication mismatch blocks rather than choosing an auth
 });
 
 for (const [name, mutate, expected] of [
-  ["mutable image tags", value => both(value, identity => { identity.images.web = "fixture-web:latest"; }), "images_unpinned"],
+  ["mutable image tags", value => both(value, identity => { identity.images["study-web"] = "fixture-web:latest"; }), "images_unpinned"],
   ["abbreviated revisions", value => both(value, identity => { identity.revision = "bbbbbbb"; }), "revision_unpinned"],
   ["activation begun before publication", value => both(value, identity => { identity.phase = "activation-started"; }), "publication_phase_invalid"],
   ["legacy service mixture", value => both(value, identity => { identity.images.redis = "sha256:" + "5".repeat(64); }), "legacy_service_mixture"],
   ["missing database identity", value => both(value, identity => { delete identity.database; }), "authority_identity_missing"],
   ["missing ingress identity", value => both(value, identity => { delete identity.ingress; }), "composition_identity_missing"],
-  ["receipt image drift", value => { value.proposed.receipt.images.web = "sha256:" + "6".repeat(64); }, "receipt_identity_mismatch"],
+  ["receipt image drift", value => { value.proposed.receipt.images["study-web"] = "sha256:" + "6".repeat(64); }, "receipt_identity_mismatch"],
   ["target port authority drift", value => { value.proposed.registration.webUrl = "http://127.0.0.1:3001"; }, "registration_identity_mismatch"],
   ["different Docker daemon", value => { value.proposed.registration.daemonId = "other-fixture-daemon"; }, "daemon_change_unqualified"],
   ["disposable target promotion", value => { value.proposed.registration.disposable = false; }, "disposable_authority_mismatch"],
@@ -79,6 +79,64 @@ for (const [name, mutate, expected] of [
     assert(!JSON.stringify(result).includes("fixture-secret"));
   });
 }
+
+for (const service of ["study-web", "learning", "postgres"]) {
+  test(`publication rejects missing required ${service} artifact even when all candidate records agree`, () => {
+    const supplied = input();
+    both(supplied, identity => { delete identity.images[service]; });
+    delete supplied.proposed.receipt.images[service];
+    assert(codes(planLauncherTransition(supplied)).includes("required_artifact_missing"));
+  });
+}
+
+test("PostgreSQL alone cannot satisfy the Study publication artifact contract", () => {
+  const supplied = input();
+  both(supplied, identity => { delete identity.images["study-web"]; delete identity.images.learning; });
+  delete supplied.proposed.receipt.images["study-web"];
+  delete supplied.proposed.receipt.images.learning;
+  const result = planLauncherTransition(supplied);
+  assert.equal(result.status, "blocked");
+  assert(codes(result).includes("required_artifact_missing"));
+});
+
+test("legacy web service aliases cannot substitute for the existing study-web interface", () => {
+  const supplied = input();
+  both(supplied, identity => { identity.images.web = identity.images["study-web"]; delete identity.images["study-web"]; });
+  supplied.proposed.receipt.images.web = supplied.proposed.receipt.images["study-web"];
+  delete supplied.proposed.receipt.images["study-web"];
+  supplied.proposed.registration.ports[0].service = "web";
+  const result = planLauncherTransition(supplied);
+  assert(codes(result).includes("required_artifact_missing"));
+  assert(codes(result).includes("ingress_service_mismatch"));
+});
+
+test("a selected Learning artifact cannot impersonate the Study ingress port service", () => {
+  const supplied = input();
+  supplied.proposed.registration.ports[0].service = "learning";
+  assert.deepEqual(codes(planLauncherTransition(supplied)), ["ingress_service_mismatch"]);
+});
+
+test("published ports must name selected artifact services", () => {
+  const supplied = input();
+  supplied.proposed.registration.ports.push({ service: "unselected-fixture", host: "127.0.0.1", port: "3001", target: 80 });
+  assert.deepEqual(codes(planLauncherTransition(supplied)), ["port_service_unselected"]);
+});
+
+test("Study ingress port must match both browser authority and the existing ingress listener", () => {
+  for (const change of [{ host: "0.0.0.0" }, { port: "3001" }, { target: 8001 }]) {
+    const supplied = input();
+    Object.assign(supplied.proposed.registration.ports[0], change);
+    assert.deepEqual(codes(planLauncherTransition(supplied)), ["ingress_service_mismatch"]);
+  }
+});
+
+test("PostgreSQL identity is matched to its own service rather than any artifact with the same image", () => {
+  const supplied = input();
+  const change = images => { images["study-web"] = supplied.proposed.registration.postgresImage; images.postgres = "sha256:" + "6".repeat(64); };
+  both(supplied, identity => change(identity.images));
+  change(supplied.proposed.receipt.images);
+  assert.deepEqual(codes(planLauncherTransition(supplied)), ["postgres_image_mismatch"]);
+});
 
 test("legacy source and backup volumes cannot be rebound even with matching candidate records", () => {
   const supplied = input();

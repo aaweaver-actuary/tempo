@@ -20,8 +20,9 @@ node --test scripts/tests/tempo-cutover-plan.test.mjs
 pair. `publication-golden.json` fixes the complete structural result, including
 the distinct source/target state identities and the original lock identity. The
 test inventory covers exact correspondence, unchanged originals, immutable
-output, mismatches, absent acceptance, mutable artifacts, legacy service/volume
-mixture, unqualified identity changes, secret material and malformed records.
+output, mismatches, absent acceptance, mutable/missing required artifacts,
+wrong ingress service/ports, legacy service/volume mixture, unqualified identity
+changes, secret material and malformed records.
 These tests need no Docker, dependency install, database, browser or broad suite.
 
 ## Implemented source boundary
@@ -45,6 +46,17 @@ is a launcher input contract; actual field values are mandatory caller inputs.
 It records the approved revision/image IDs, database/workspace, Compose/volumes,
 ingress, schema and opaque transfer receipt reference in both candidate records.
 Matching candidates remain quarantined and confer no traffic authority.
+
+The required artifact service keys `study-web`, `learning` and `postgres` reuse
+the exact existing [opt-in composition](../../../../docker-compose.study.yml)
+public interface. All three need pinned images; PostgreSQL's registration image
+must match its own service artifact. The selected `study-web` must publish the
+registered browser authority through its existing port-80 ingress interface,
+and any additional published port must belong to a selected artifact service.
+The fixture's proposed image and port keys use these public names; original v1
+`web` identity stays preserved. This source correspondence does not adopt the
+disposable Compose settings/volumes for the real installation or establish
+actual artifact provenance, which remains a release-gate evidence input.
 
 ## Required integration contracts
 

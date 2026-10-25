@@ -4,6 +4,10 @@ import { isDeepStrictEqual } from "node:util";
 import { isAbsolute, relative, resolve } from "node:path";
 import { targetKey } from "./tempo-deployment.mjs";
 
+// Existing public service names in docker-compose.study.yml (#367), not a
+// discovered live target or permission to adopt its disposable volumes/settings.
+const studyServices = ["study-web", "learning", "postgres"];
+
 /**
  * @typedef {object} CutoverIdentity
  * @property {string} transitionId Caller-selected identity, never generated here.
@@ -78,6 +82,8 @@ export function planLauncherTransition(input = {}) {
     if (!record(identity.images) || !Object.keys(identity.images).length
       || Object.values(identity.images).some(image => !immutableImage(image)))
       block("images_unpinned", "Supply immutable image IDs or repository digests for every selected artifact.");
+    if (studyServices.some(service => !Object.hasOwn(identity.images ?? {}, service)))
+      block("required_artifact_missing", "Select immutable Study web, Learning and PostgreSQL artifacts using the existing composition service identities.");
     if (["api", "redis", "foreground-worker", "background-worker", "background-scheduler", "defense-engine", "maia-worker"]
       .some(service => Object.hasOwn(identity.images ?? {}, service)))
       block("legacy_service_mixture", "Study publication must not retain legacy application or optional worker service dependencies.");
@@ -94,11 +100,16 @@ export function planLauncherTransition(input = {}) {
     if (receipt?.revision !== identity.revision || receipt?.schema !== identity.schema
       || !isDeepStrictEqual(receipt?.images, identity.images) || !isDeepStrictEqual(receipt?.composeFiles, identity.composeFiles))
       block("receipt_identity_mismatch", "Deployment revision, schema, images and Compose paths must match its cutover identity.");
-    if (immutableImage(registration?.postgresImage)
-      && !Object.values(identity.images ?? {}).includes(registration.postgresImage))
-      block("postgres_image_mismatch", "The selected PostgreSQL image must be among the pinned artifact identities.");
+    if (immutableImage(registration?.postgresImage) && identity.images?.postgres !== registration.postgresImage)
+      block("postgres_image_mismatch", "The registered PostgreSQL image must match the selected postgres service artifact.");
     if (!immutableImage(registration?.postgresImage))
       block("postgres_image_unpinned", "Supply the immutable PostgreSQL image identity; tags alone are insufficient.");
+    if (Array.isArray(registration?.ports)) {
+      if (registration.ports.some(port => !Object.hasOwn(identity.images ?? {}, port?.service)))
+        block("port_service_unselected", "Every published port must belong to a selected service artifact.");
+      if (!registration.ports.some(port => studyIngressPort(port, registration.webUrl)))
+        block("ingress_service_mismatch", "The registered web authority must be published by the selected study-web ingress service.");
+    }
   }
   if (targetShape(original) && targetShape(registration)) {
     if (original.daemonId !== registration.daemonId || original.context !== registration.context)
@@ -137,6 +148,13 @@ function origin(value) {
 function ingressShape(value) {
   return record(value) && origin(value.origin) === value.origin && Array.isArray(value.hosts) && value.hosts.length > 0
     && value.hosts.every(text) && new Set(value.hosts).size === value.hosts.length;
+}
+function studyIngressPort(port, webUrl) {
+  try {
+    const url = new URL(webUrl);
+    const published = url.port || (url.protocol === "https:" ? "443" : "80");
+    return port?.service === "study-web" && port.host === url.hostname.replace(/^\[|\]$/g, "") && port.port === published && port.target === 80;
+  } catch { return false; }
 }
 function targetShape(value) {
   return record(value) && ["root", "envFile"].every(key => text(value[key]) && isAbsolute(value[key]))
