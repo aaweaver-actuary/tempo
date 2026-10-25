@@ -805,8 +805,6 @@ def execute_priority_refresh(job: dict) -> None:
                 publications.publish_legacy_generation(database, repertoire_id, generation, _now())
                 from .refresh_requests import record_publication
                 record_publication(database, 'repertoire_priority', repertoire_id)
-                from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-                enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
             logging.getLogger("tempo.background").info(
                 "priority refresh commit repertoire_id=%s generation=%d duration=%.3fs",
                 repertoire_id,
@@ -894,8 +892,6 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
         )
         from .refresh_requests import record_publication
         record_publication(database, 'repertoire_priority', repertoire_id)
-        from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     return True
 
 

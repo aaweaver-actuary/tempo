@@ -79,7 +79,7 @@ from app.contracts.transport.study import ReviewRequest, QueueAttemptFailureRequ
 from app.contracts.transport.settings import Settings
 from app.contracts.transport.tactics import TacticAttemptRequest, TacticCaptureRequest, TacticCaptureResponse
 from app.contracts.transport.defense import ThreatAnalysisSubmission, ThreatAnalysisFailureRequest, DefenseAttemptRequest, DefenseRecognitionRequest
-from app.contracts.transport.discovery import DiscoveryAcceptanceRequest, DiscoveryTrainingRequest
+from app.contracts.transport.discovery import DiscoveryAcceptanceRequest
 from .services import queue_application, queue_ordering
 from .services.analysis import AnalysisCapabilities
 from .services.analysis_paste import (
@@ -162,12 +162,6 @@ from .services.opening_graph import (
     decision_segments,
     enqueue_opening_graph_rebuild,
     execute_opening_graph_rebuild,
-)
-from .services.repertoire_opportunities import (
-    acknowledge_opportunity, admit_existing_decision, dismiss_opportunity,
-    enqueue_opportunity_refresh, execute_opportunity_slice, existing_decision_training_eligibility,
-    list_opportunities,
-    snooze_opportunity,
 )
 from .services.discovery_admission import (
     create_admission_intent, enqueue_admission_intent,
@@ -514,17 +508,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
         repertoire_delete_command = (len(path_parts) == 3
                                      and path_parts[:2] == ["api", "repertoires"]
                                      and request.method == "DELETE")
-        opportunity_state_command = (
-            len(path_parts) == 6 and path_parts[:2] == ["api", "repertoires"]
-            and path_parts[3] == "opportunities"
-            and path_parts[5] in {"dismiss", "acknowledge", "snooze", "train"}
-            and request.method == "POST"
-        )
-        opportunity_refresh_command = (
-            len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
-            and path_parts[3:] == ["opportunities", "refresh"]
-            and request.method == "POST"
-        )
         coverage_refresh_command = (
             len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
             and path_parts[3:] == ["coverage", "refresh"]
@@ -692,8 +675,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, annotation_command, repertoire_rename_command,
                     repertoire_settings_command,
-                    repertoire_delete_command, opportunity_state_command,
-                    opportunity_refresh_command, coverage_refresh_command,
+                    repertoire_delete_command,
+                    coverage_refresh_command,
                     coverage_maia_command, coverage_explorer_session,
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command, tactic_capture_command,
@@ -1074,12 +1057,10 @@ def put_settings(s: Settings,
         eligible_repertoires = [
             row["id"]
             for row in settings_storage.clean_repertoires(db)
-        ] if coverage_changed or previous_settings["discovery_window_days"] != s.discovery_window_days else []
-        return eligible_repertoires if coverage_changed else [], (
-            eligible_repertoires if previous_settings["discovery_window_days"] != s.discovery_window_days else []
-        )
+        ] if coverage_changed else []
+        return eligible_repertoires
 
-    repertoire_ids, discovery_repertoire_ids = submit_foreground_write(
+    repertoire_ids = submit_foreground_write(
         persist_settings,
         label="settings-update",
     )
@@ -1095,9 +1076,7 @@ def put_settings(s: Settings,
             enqueued_coverage = True
         except (KeyError, sqlite3.OperationalError):
             continue
-    for repertoire_id in discovery_repertoire_ids:
-        enqueue_opportunity_refresh(repertoire_id, background=False)
-    if enqueued_coverage or discovery_repertoire_ids:
+    if enqueued_coverage:
         coordinator.wake()
     from .services.study_priority import refresh_policy
     refresh_policy()
@@ -1221,7 +1200,6 @@ from .services.postgres_opening_segmentation import execute_segmentation_slice
 register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
-register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
 register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
@@ -2623,32 +2601,6 @@ def repertoire_coverage_gaps(identifier: str):
     return {"gaps": coverage_gaps(identifier)}
 
 
-@app.get("/api/repertoires/{identifier}/opportunities")
-def repertoire_opportunities(identifier: str):
-    with connection() as database:
-        if not repertoire_projection_storage.repertoire_presence(database, identifier):
-            raise HTTPException(404, "Repertoire not found")
-        return {"opportunities": list_opportunities(database, identifier)}
-
-
-@app.get("/api/discoveries")
-def discoveries_feed(offset: int = 0, limit: int = 25):
-    if offset < 0 or not 1 <= limit <= 100:
-        raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 100")
-    with read_connection() as database:
-        total, unread_count = http_discovery_storage.discovery_counts(database, datetime.now(timezone.utc).isoformat())
-        identifiers = [dict(row) for row in http_discovery_storage.discovery_identifiers(database, limit, offset)]
-        by_repertoire: dict[str, list[str]] = {}
-        for item in identifiers:
-            by_repertoire.setdefault(item["repertoire_id"], []).append(item["id"])
-        details = {item["id"]: item for repertoire_id, selected_ids in by_repertoire.items()
-                   for item in list_opportunities(database, repertoire_id, selected_ids)}
-        page = [details[item["id"]] for item in identifiers if item["id"] in details]
-    return {"discoveries": page, "total": total,
-            "next_offset": offset + limit if offset + limit < total else None,
-            "unread_count": unread_count or 0}
-
-
 @app.get("/api/discoveries/{opportunity_id}/recommendations")
 def discovery_recommendations(opportunity_id: str):
     try:
@@ -2701,107 +2653,6 @@ def discovery_admission_status(intent_id: str):
             "failed" if failed else "preparing",
             "error": (task["last_error"] or intent["last_error"] or "Admission failed; retry Add and train")
             if failed else None}
-
-
-@app.post("/api/repertoires/{identifier}/opportunities/refresh", status_code=202)
-def refresh_repertoire_opportunities(identifier: str,
-                                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "opportunities.refresh", {"repertoire_id": identifier},
-            idempotency_key=idempotency_key,
-        )
-    with read_connection() as database:
-        if not repertoire_projection_storage.repertoire_presence(database, identifier):
-            raise HTTPException(404, "Repertoire not found")
-    enqueue_opportunity_refresh(identifier)
-    coordinator.wake()
-    return {"queued": True}
-
-
-@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss")
-def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str,
-                                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "opportunities.dismiss", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        try:
-            if not dismiss_opportunity(database, identifier, opportunity_id):
-                raise HTTPException(404, "Active opportunity not found")
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from error
-    return {"dismissed": True}
-
-
-@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge")
-def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str,
-                                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "opportunities.acknowledge", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        try:
-            if not acknowledge_opportunity(database, identifier, opportunity_id):
-                raise HTTPException(404, "Active discovery not found")
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from error
-    return {"acknowledged": True}
-
-
-@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze")
-def snooze_repertoire_opportunity(identifier: str, opportunity_id: str,
-                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "opportunities.snooze", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        try:
-            if not snooze_opportunity(database, identifier, opportunity_id):
-                raise HTTPException(404, "Active discovery not found")
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from error
-    return {"snoozed": True}
-
-
-@app.get("/api/repertoires/{identifier}/opportunities/{opportunity_id}/training-eligibility")
-def repertoire_opportunity_training_eligibility(identifier: str, opportunity_id: str):
-    with read_connection() as database:
-        try:
-            return existing_decision_training_eligibility(database, identifier, opportunity_id)
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
-
-
-@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
-def train_repertoire_opportunity(identifier: str, opportunity_id: str,
-                                 request: DiscoveryTrainingRequest,
-                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    expected_fingerprint = request.evidence_fingerprint
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id,
-                                    "evidence_fingerprint": expected_fingerprint},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        try:
-            return admit_existing_decision(database, identifier, opportunity_id, expected_fingerprint)
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from error
 
 
 @app.get("/api/repertoire-coverage/maia/available")
@@ -2910,8 +2761,6 @@ def coverage_maia_failure(request: dict,
         message = f"Maia coverage failed: {error[:900]}"
         http_coverage_storage.fail_node(database, message, now, node_id)
         http_coverage_storage.fail_run(database, message, now, node["run_id"])
-        from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
-        enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     return {"status": "failed"}
 
 
@@ -3715,10 +3564,6 @@ def save_game_analysis(
     with read_connection() as database:
         threat_analysis_version = analysis_publication_storage.published_version(database, game_id)[0]
     enqueue_threat_scan(game_id, threat_analysis_version, background=background)
-    with read_connection() as database:
-        affected_repertoires = analysis_publication_storage.affected_repertoire_ids(database, game_id)
-    for repertoire_id in affected_repertoires:
-        enqueue_opportunity_refresh(repertoire_id, background=True)
     coordinator.wake()
     return result
 
@@ -4238,10 +4083,6 @@ def exclude_game_from_adaptation(
         else:
             game_findings_storage.restore_excluded_findings(db, game_id, datetime.now(timezone.utc).isoformat())
     enqueue_game_derivation(game_id)
-    with read_connection() as database:
-        affected_repertoires = game_findings_storage.affected_repertoire_ids(database, game_id)
-    for repertoire_id in affected_repertoires:
-        enqueue_opportunity_refresh(repertoire_id, background=True)
     coordinator.wake()
     return {"game_id": game_id, "excluded": request.excluded}
 

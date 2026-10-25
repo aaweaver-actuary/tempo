@@ -13,7 +13,6 @@ def _now():
 def input_version(database, kind, repertoire_id):
     from .postgres_priority import _priority_source_version
     from .introduction_priorities import SCORING_VERSION as PRIORITY_SCORING_VERSION
-    from .repertoire_opportunities import SCORING_VERSION as OPPORTUNITY_SCORING_VERSION
 
     # Existing source locks serialize even the first request. Do not traverse
     # evidence or perform calculation inside a request transaction.
@@ -23,8 +22,7 @@ def input_version(database, kind, repertoire_id):
     if source_version is None:
         raise KeyError('Repertoire source is unavailable; restore it before refreshing')
     scope, graph, priority = storage.input_source_rows(database, kind, repertoire_id)
-    scoring_version = (PRIORITY_SCORING_VERSION if kind == 'repertoire_priority'
-                       else OPPORTUNITY_SCORING_VERSION)
+    scoring_version = PRIORITY_SCORING_VERSION
     return json.dumps([scoring_version, source_version, list(scope),
                        list(graph) if graph else None, priority[0] if priority else 0,
                        _now().date().isoformat()], separators=(',', ':'))
@@ -45,11 +43,8 @@ def request_refresh(database, kind, repertoire_id, *, quiet_seconds=5):
     requested_input_version = input_version(database, kind, repertoire_id)
     priority_job, existing_task, current_intent = storage.refresh_status_rows(database, kind, repertoire_id)
     if current_intent and current_intent['input_version'] == requested_input_version:
-        if kind == 'repertoire_priority':
-            useful_work_exists = bool(priority_job and priority_job['status'] != 'complete'
-                                      and (existing_task or not postgres_store.configured()))
-        else:
-            useful_work_exists = bool(existing_task and existing_task['state'] != 'complete')
+        useful_work_exists = bool(priority_job and priority_job['status'] != 'complete'
+                                  and (existing_task or not postgres_store.configured()))
         if useful_work_exists or current_intent['published_input_version'] == requested_input_version:
             if useful_work_exists and (existing_task is None or existing_task['state'] in {'queued', 'leased', 'retrying'}):
                 mark_queue_refresh_requested()

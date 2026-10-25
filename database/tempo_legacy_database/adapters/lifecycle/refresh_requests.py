@@ -10,11 +10,7 @@ def input_source_rows(database, kind: str, repertoire_id: str):
         'SELECT generation,state FROM opening_graph_publications WHERE repertoire_id=?',
         (repertoire_id,),
     ).fetchone()
-    priority = database.execute(
-        'SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?',
-        (repertoire_id,),
-    ).fetchone() if kind == 'repertoire_opportunity' else None
-    return scope, graph, priority
+    return scope, graph, None
 
 
 def refresh_status_rows(database, kind: str, repertoire_id: str):

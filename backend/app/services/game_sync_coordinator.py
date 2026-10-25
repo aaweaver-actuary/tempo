@@ -46,7 +46,6 @@ from .opening_graph import (
     prepare_opening_graph_rebuild,
     publish_opening_graph_rebuild,
 )
-from .repertoire_opportunities import enqueue_opportunity_refresh
 
 
 _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
@@ -141,12 +140,6 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
         storage.queue_derivation(database, game_id, _now())
 
 
-def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
-    with connection(background=True) as database:
-        repertoire_ids = storage.matching_repertoire_ids(database, game_id)
-    for repertoire_id in repertoire_ids:
-        activity_gate.wait_for_foreground()
-        enqueue_opportunity_refresh(repertoire_id, background=True)
 
 
 def _claim_derivation() -> str | None:
@@ -420,7 +413,7 @@ class GameSyncCoordinator:
                                 )
                             else:
                                 advanced = await asyncio.to_thread(handler, item)
-                            if item["kind"] not in {"repertoire_opportunity", "defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
+                            if item["kind"] not in {"defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
                                 await asyncio.to_thread(
                                     complete_task,
                                     item["id"],
