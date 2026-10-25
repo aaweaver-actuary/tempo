@@ -230,3 +230,314 @@ existing lockfile-matching dependencies: **1 passed, 2 failed**. Both rendering
 cases could not start Docker (`spawnSync` status `null`, error `ENOENT`), so this
 is an environment-blocked Compose proof, not a passing rerun or a demonstrated
 application regression. No Docker installation or service action was attempted.
+
+## Restricted-role, web and teardown evidence — 2026-10-25
+
+**#378's native proof passed. The initial #380 invocation below was partial;
+the focused follow-up later in this section completed its outage/recovery gap.**
+The initial run used clean main
+`f9449a2a9b32e8a86f7ad2030a28231a1d8e1d26` (tree
+`9d0831b0fc8f31bbe45ef7ea1fc9692a1acb3064`) in an isolated temporary checkout.
+No implementation was changed. The existing bootstrap/ownership producer and
+committed Compose/Dockerfiles were used. The bootstrap and Compose unit suites
+were not repeated; #408 and #415 retain their owning implementation/test proof.
+
+One new project, `tempo-study-test-8973949d8dd875a8`, ran from
+15:04:13 to 15:04:43 UTC. Its database was
+`learning_study_test_8973949d8dd875a8`, workspace
+`qualification-8973949d8dd875a8`, timezone `Etc/UTC`, and sole published origin
+`http://127.0.0.1:53498`. Docker was `29.9.2`, Compose `5.6.1`, and images were
+ARM64. Task-private admin/password/environment files were `0600` under a `0700`
+directory outside the checkout; no environment or user configuration discovery
+was used. An exclusive advisory lock on
+`/tmp/tempo-mac-validation-20261025.lock` was held by the parent throughout the
+Docker child, including teardown. The lock was opened in append mode without
+truncation and was not unlinked or replaced.
+
+### Exact artifacts and retained evidence
+
+The built image identities, also read from the actual owned containers, were:
+
+| Artifact | Image ID / repository digest (`sha256`) |
+| --- | --- |
+| Learning and one-shot bootstrap | `4be58c90a7cb5f559a494328ad05fe6239f34d816e59eebb9c0161dd0ec6df95` |
+| Study web | `4c5d339a9cec23a07a21273601f5414e0923b0582eb7e443d56d4ba6faec6c99` |
+| `postgres:18.6-trixie` | `74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+| `node:22-slim` build input | `de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d` |
+| `nginx:1.28-alpine` build input | `a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236` |
+| `python:3.12-slim` build input | `a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704` |
+| `ghcr.io/astral-sh/uv:0.12.22` build input | `f513a91fc62fe7c17567eee97230dd198e43edb8a9fbecca843714a4358fe1bc` |
+
+Sanitized local evidence remains outside the checkout at
+`/tmp/tempo-378-380-evidence-20261025`: `receipt.json` contains all 47 executed
+subprocess argument vectors, exit statuses, log hashes and the 65 completed
+assertion checkpoints; `commands.txt` expands every command without shell
+abbreviations; HTTP bodies, inspected ownership, schema, roles and service logs
+are retained beside it. These are diagnostic artifacts for this invocation,
+not a new supported runner or a 65-test suite. The overall runner exited **1**
+on the outage observation described below; completed assertions do not make
+that run a pass. There were no repeated or skipped unit suites.
+
+| Retained file | SHA-256 |
+| --- | --- |
+| `receipt.json` | `a7f2c93bd7b637782b4c02031ff8c200b30f4d9ef1602304dffb320433602903` |
+| `qualify.py` (executed harness) | `766fa0d95b0b845061e2227a79ad8b66ad1ce09205f435cccd57e169520b5b69` |
+| `roles.py` (native assertions) | `d04c48eb8c42f29f31c6a4c2ab7ddf271e9e53ae142e85dfd0c80d1059843c88` |
+| `service-logs.log` | `e96fd12b0b90c7ac37ca8c953d83ec88db3049f0a04fe539c2cfb0553cd74104` |
+| `roles.log` | `bffd9b34d1bea82c3e0e3381b436ac618d24c8241c402a043fcfc3470aecc921` |
+
+The launch command was
+`python3 /tmp/tempo-378-380-evidence-20261025/locked-run.py`. The principal
+expanded lifecycle commands below are a transcript: their private input files
+were destroyed after teardown, so the old invocation must not be rerun.
+
+```sh
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 config --format json
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 build bootstrap study-web
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 up -d --wait --no-build --pull never postgres
+python3 /tmp/tempo-378-380-20261025/database/tempo_learning_database/tooling/disposable_ownership.py --compose-file /tmp/tempo-378-380-20261025/docker-compose.study.yml --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env --invocation-directory /tmp/tempo-378-380-evidence-20261025/private/8973949d8dd875a8 --invocation-id 8973949d8dd875a8 --database learning_study_test_8973949d8dd875a8
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 up -d --no-build --pull never bootstrap
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 up -d --wait --no-deps --no-build --pull never learning
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 up -d --wait --no-deps --no-build --pull never study-web
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 exec -T learning /opt/learning/bin/python -I - < /tmp/tempo-378-380-evidence-20261025/roles.py
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 stop learning
+docker compose --profile bootstrap --env-file /tmp/tempo-378-380-evidence-20261025/private/study.env -f /tmp/tempo-378-380-20261025/docker-compose.study.yml -p tempo-study-test-8973949d8dd875a8 down --volumes --remove-orphans
+```
+
+### Native restrictions and migration ordering: passed
+
+Bootstrap exited `0`. Before any Learning container existed, `psql` inside the
+attested PostgreSQL container read `learning.instance` and
+`learning.migration_history`. The four IDs and SHA-256 checksums exactly matched
+the committed manifest and migration sources:
+
+| Migration | Checksum |
+| --- | --- |
+| `learning.runtime/0001` | `0dc465b03c6cd0e2487744bdbb58d9a21d1db8e4aa4037323295fe507d0df26e` |
+| `learning.runtime/0002` | `c3a1b03b8f4aad7e026be8a45eaf4ccd6a567ce5da23c9c42390ae6d623ef4ab` |
+| `learning.remediation/0001` | `96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d` |
+| `learning.bridge/0001` | `c4cde173083334cee565a125daa79e0e111d3b0498c87ca9151a61ac3679be91` |
+
+The cluster system identifier was `7700621498996572202`, matching both
+`pg_controldata` and the producer receipt. Learning was started only after
+successful bootstrap and this schema check, then reached readiness. This proves
+explicit migration before readiness for this run; HTTP startup did not supply
+the schema.
+
+`roles.py` ran with the installed image's Python as UID `10001`. It read only
+the bootstrap-created restricted-role DSNs and private passfile, and made real
+PostgreSQL connections to this disposable server. All attempted changes were
+rolled back, including a permitted writer settings update used as a control.
+
+| Assertion | Observed SQLSTATE |
+| --- | --- |
+| Writer `CREATE TABLE learning.qualification_denied(id integer)` | `42501` |
+| Writer `CREATE SCHEMA qualification_denied` | `42501` |
+| Writer `ALTER TABLE learning.settings ADD COLUMN qualification_denied integer` | `42501` |
+| Writer `UPDATE learning.instance SET workspace_id='qualification-other' WHERE id=1` | `42501` |
+| Writer `DELETE FROM learning.instance WHERE id=1` | `42501` |
+| Writer `INSERT INTO learning.instance VALUES(2,'qualification-other')` | `42501` |
+| Reader `UPDATE learning.settings SET timezone=timezone WHERE id=1` with default read-only transaction | `25006` |
+| Reader same `UPDATE`, `INSERT INTO learning.settings(id,timezone) VALUES(2,'Etc/UTC')`, and `DELETE FROM learning.settings WHERE id=1`, each after `SET TRANSACTION READ WRITE` | `42501` for all three |
+
+The workspace binding remained unchanged, instance/settings each still had one
+row, and the rejected table did not exist. The runtime directory was `0700`;
+its exact four files were `0600`, owned by UID `10001`, and readable by that
+runtime user. The sanitized manifest in `roles.log` has schema version `1`,
+the database/workspace/timezone above, owner/writer/reader names formed by
+appending `_owner`/`_writer`/`_reader` to the database identity, and DSNs containing
+only `host=postgres port=5432 dbname=<database> user=<restricted-role>`.
+Its remaining values are `pgpass_file=runtime.pgpass`,
+`study_token_file=study.token`, and `operator_token_file=operator.token`.
+No password, token bytes or admin DSN were retained in the evidence.
+
+### Initial web-origin wiring: passed; outage and recovery: incomplete
+
+The harness used Python `urllib.request` against `http://127.0.0.1:53498`,
+with a 10-second client timeout. Authenticated requests supplied the generated
+Study bearer in memory, the exact workspace header and that origin; credentials
+were omitted from logs. These actual responses were retained:
+
+| Request/assertion | Observed result |
+| --- | --- |
+| `GET /` | `200` Study shell; COOP `same-origin`, COEP `require-corp` |
+| `GET /assets/index-0TpZHsl1.js`, `GET /assets/index-BoEejwBZ.css` | Both `200`, neither returned the HTML shell |
+| `GET /study-composition.json` | `200`, valid JSON |
+| `GET /sw.js` | `200`, `application/javascript`; generated build asset list present and worker source excludes `api/` caching |
+| `GET /health/live` | `200`, `{"status":"alive"}` |
+| `GET /health/ready` | `200`, `{"status":"ready","workspace_id":"qualification-8973949d8dd875a8"}` |
+| Valid `GET /api/study/bootstrap` | `200`, schema version `1`, expected workspace and `Etc/UTC` |
+| Same bootstrap with wrong bearer | `401`, `{"detail":"Learning workspace credential required"}` |
+| Same bootstrap with wrong workspace | `403`, `{"detail":"Workspace scope mismatch"}` |
+| Same bootstrap with origin `https://invalid.example` | `403`, `{"detail":"Browser origin is not allowed"}` |
+| Authenticated `GET /api/qualification-missing` | `404`, `{"detail":"Not Found"}`; no HTML/`200` fallback |
+
+The worker check establishes delivery and source assertions, not browser
+registration, activation, offline cache behavior or fresh-PGN behavior.
+
+Stopping only this project's Learning service succeeded and inspection confirmed
+it was no longer running. The first subsequent authenticated
+`GET /api/study/bootstrap` **received no HTTP response within 10 seconds**;
+the client raised `TimeoutError: timed out`. nginx recorded that request as
+`499` with zero response bytes after the client closed. This is not an observed
+`502`/`503`/`504`, nor proof of the required explicit outage response/no legacy
+fallback. The observation budget was shorter than the proxy's configured
+limits; no implementation defect or repair is established by this result.
+
+The cleanup handler then tore down the project. Outage `/health/live`,
+`/health/ready`, static continuity, and restart of the same installed artifacts
+with recovered readiness/bootstrap were **not reached**. A second project or
+reuse after teardown was not attempted under the one-new-project constraint.
+Those assertions remained open after this initial invocation; the focused
+follow-up below completes them. Independent review agreed with the initial
+partial result and cleanup evidence; that first receipt did not close #380.
+
+### Ownership-verified teardown: passed
+
+There were exactly three long-lived services: PostgreSQL, Learning and Study
+web. Bootstrap was the fourth, successfully exited, container. There were no
+optional containers or published PostgreSQL/Learning ports in this project.
+Before teardown, project-filtered inventory required exactly these four known
+services, the two expected volumes and the default network. Every container
+matched its Compose project; PostgreSQL, its data volume and network also
+matched `tempo.owner` and `tempo.disposable=true`. The runtime-secrets volume
+matched its exact Compose project/volume labels and expected mount; it has no
+custom disposable label in the committed model.
+
+The producer receipt's PostgreSQL container ID
+`36489c9b5e39324173ad753cde73f68dd0331aad224b0b62f14b486a211b355c`,
+network ID `353d2ef4c0beca1223d2413d1a30cdae89e79f8bef01ebd76ff1af5dade58630`,
+volume name and cluster identifier all matched the inspected resources before
+`down --volumes --remove-orphans`. Mounts referenced only the two owned volumes.
+The exact project had no unexpected containers/orphans to remove.
+
+Teardown exited `0`. All captured container IDs, both volume names and the
+network ID were subsequently absent (`docker inspect`/volume/network inspect
+returned exit `1` and `[]`). Project-filtered `docker ps -aq`, `docker volume
+ls -q`, and `docker network ls -q`, each with
+`--filter label=com.docker.compose.project=tempo-study-test-8973949d8dd875a8`,
+were empty. Both invocation-specific application image tags and all three
+private input files were removed. Shared official images/caches and the
+advisory lock were preserved. No production database, user history, normal
+launcher, installed Study, host settings, deployment or CI configuration was
+accessed or changed. This is synthetic component/composition evidence, not
+actual-data, deployment or full-system completion.
+
+### Focused outage/recovery follow-up — 2026-10-25: passed
+
+A fresh, separately authorized invocation completed the missing #380 observations
+without repeating the native role, ordinary asset, credential or workspace
+rejection checks above. No application, Compose, nginx or bootstrap code was
+changed. The earlier failure was in the task-local observation harness: it
+closed the connection before the proxy's existing connection timeout elapsed.
+
+The committed nginx config and the installed image's `nginx -T` output matched.
+Both proxy locations use the single owned `learning:8001` address and leave
+`proxy_connect_timeout` unset. Its [documented nginx default is
+60 seconds](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_connect_timeout).
+The `/api/` location's explicit `proxy_read_timeout 180s` governs gaps while
+reading an established connection, not this stopped-container connection
+attempt. No error-page rewrite, proxy cache or legacy upstream was configured.
+A ten-second client cutoff could therefore not observe this case's expected
+explicit proxy failure.
+
+The corrected task-local observer uses a **70-second absolute child-process
+deadline**, but rejects any complete gateway response taking **over 65 seconds**
+(the 60-second connection timeout plus five seconds of scheduling tolerance).
+This changes observation, not serving behavior or its latency policy. A response
+outside that bound, a client timeout, an HTML `200`, or a bootstrap fallback
+fails the check. The observer kills and reaps only its own child on deadline;
+secret request headers travel through its private stdin pipe, never arguments
+or evidence. Five focused harness regressions passed, including the old
+10-second budget rejection, a real stalled-child deadline, late-response
+rejection, and rejection of timeout/HTML-200/bootstrap as gateway success.
+Independent review approved the observer before execution.
+
+The clean tested revision was `e196559ef1df17defba7305d70b64b5f454854ba`
+(tree `b50e9799dd49735f399ef47695a916f40133e215`), including current main
+`311a712581deb95bf9035b2a3b934c03335a1cd5`. Its qualified application/build inputs
+are unchanged from the initial receipt; the new build/container identities are
+recorded independently:
+
+| Identity | Exact value |
+| --- | --- |
+| New project | `tempo-study-test-242983c57c0bdf45` |
+| Database / workspace | `learning_study_test_242983c57c0bdf45` / `qualification-242983c57c0bdf45` |
+| Web origin / timezone | `http://127.0.0.1:53673` / `Etc/UTC` |
+| Learning and bootstrap image | `sha256:076c3229b8e6cf0c5fbcd237b1fa01aa1c50ce7565f64b0b05bcc4367a94cff9` |
+| Study web image | `sha256:2f39e7857609fb0bfc1b6241417f572279b56d5c0efeb6359916bf6f814be9e7` |
+| PostgreSQL image | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+| Committed Compose SHA-256 | `8160500dd2d84ff3c62131c8068bd8f65b0abc54bd8a64a59c26cc0eeeac66ff` |
+
+The existing producer attested the new PostgreSQL/volume/network/system
+identities and the existing bootstrap completed successfully. Only the minimal
+ready/bootstrap and static index/worker baseline was taken before stopping
+Learning. The three outage observations then ran concurrently, after inspection
+confirmed that exact Learning container had stopped successfully:
+
+| Web-origin observation | Status | Complete-response time |
+| --- | --- | --- |
+| `GET /api/study/bootstrap` with the generated Study credential/workspace/origin | `504` | `60.091 s` |
+| `GET /health/ready` | `504` | `60.128 s` |
+| `GET /health/live` | `504` | `60.129 s` |
+
+All three returned the same explicit 167-byte nginx `504 Gateway Time-out` HTML
+error (body SHA-256
+`0af4acf6069f6d34050940c546de76ec7303b3af0b07133c450f5b17c406c567`), with no
+Study shell or workspace bootstrap body and no `200`. nginx independently logged
+`upstream timed out ... while connecting to upstream` for each exact request and
+the owned Learning address. Thus the observed latency matches the configured
+connection-failure behavior; this is not a fast-failure or production latency
+qualification. While those requests were pending and Learning remained stopped,
+`GET /` and `GET /sw.js` returned `200` and were byte-identical to their baseline.
+
+Learning was then restarted with `--no-deps --no-build --pull never`. All four
+container IDs and image IDs were unchanged. PostgreSQL, web and the completed
+bootstrap retained their original start times; only Learning's start time
+changed. The database/workspace and all four migration IDs/checksums were
+identical before and after. Through the same web origin, `/health/ready` returned
+`200` with the expected ready/workspace JSON, `/health/live` returned `200` with
+`{"status":"alive"}`, and authenticated `/api/study/bootstrap` returned `200`
+with schema version `1` and the expected workspace. No bootstrap replay, rebuild,
+web restart or migration was needed for recovery.
+
+The exact launch was
+`python3 /tmp/tempo-380-recovery-evidence-20261025/locked-run.py`; that parent held
+the same nontruncated exclusive advisory lock through the entire Docker child
+and teardown. Principal expanded stop/recovery/cleanup commands were:
+
+```sh
+docker compose --profile bootstrap --env-file /tmp/tempo-380-recovery-evidence-20261025/private/study.env -f /tmp/tempo-380-recovery-20261025/docker-compose.study.yml -p tempo-study-test-242983c57c0bdf45 stop learning
+docker compose --profile bootstrap --env-file /tmp/tempo-380-recovery-evidence-20261025/private/study.env -f /tmp/tempo-380-recovery-20261025/docker-compose.study.yml -p tempo-study-test-242983c57c0bdf45 up -d --wait --no-deps --no-build --pull never learning
+docker compose --profile bootstrap --env-file /tmp/tempo-380-recovery-evidence-20261025/private/study.env -f /tmp/tempo-380-recovery-20261025/docker-compose.study.yml -p tempo-study-test-242983c57c0bdf45 down --volumes --remove-orphans
+```
+
+The run exited **0**, with **88 completed assertion checkpoints**, all passing,
+and 57 executed subprocess records. These are focused diagnostic assertions,
+not a repeated owning suite. The five harness regressions ran via
+`python3 -m unittest discover -s /tmp/tempo-380-recovery-evidence-20261025 -p test_outage_observation.py -v`.
+No role/auth/ordinary-asset suites or PR410 fresh-PGN cases were repeated.
+
+The same exact four-service/two-volume/default-network ownership checks were
+performed before teardown, including the existing producer receipt and cluster
+system identifier. Teardown exited `0`; all captured containers, volumes and
+network were absent by both exact identity and project-label inventory afterward.
+Both task image tags and the private admin/password/environment files were
+removed. Shared images/caches and the advisory lock were preserved.
+
+Sanitized evidence remains at `/tmp/tempo-380-recovery-evidence-20261025`, with
+all command vectors in `receipt.json`/`commands.txt`, response bodies, installed
+nginx configuration, timing records, ownership/recovery/schema inspections,
+regressions and cleanup logs. Selected SHA-256 identities:
+
+| Retained file | SHA-256 |
+| --- | --- |
+| `receipt.json` | `6b55d00cabbc53d4bffa09e3c75b266ca410494f06f075af54024a895941cff6` |
+| `qualify.py` | `20edea978d9357c87d5338610e0192457ce8b2d8348f698ccad5f5511d6f7772` |
+| `outage_observation.py` | `09a28fdf5f074e96f1c74016bf66591045b7ce241992339736bc2a08074f1273` |
+| `outage-nginx-log.log` | `a87f1348e0af0f6f997fe09eeb86b9f95d748176e9868eb32940b410db39746d` |
+
+Together with the initial role/web evidence, this completes the bounded missing
+#378/#380 disposable qualification. The evidence is synthetic component and
+composition proof. Study behavior, actual user data, browser offline semantics,
+#382's later assembled acceptance and deployment remain their separate gates.
