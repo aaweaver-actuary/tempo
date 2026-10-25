@@ -106,6 +106,7 @@ const phases = ["intent-recorded", ...stages.flatMap(([started, done]) => [start
 const order = phase => phases.indexOf(phase);
 const selected = (plan, journal) => journal.finalized ? { ...plan, ...journal.finalized } : plan;
 const identity = plan => plan.registration.cutover;
+const isSchemaIdentity = value => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value);
 
 function assertPlan(plan) {
   if (plan?.version !== 1 || !plan.transitionId || !plan.revision || !plan.sourceIdentity || !plan.targetIdentity
@@ -113,6 +114,9 @@ function assertPlan(plan) {
     || plan.freshStartChoice !== "graph-preserving-fresh-start" || identity(plan)?.mode !== "graph-preserving-fresh-start" || !identity(plan).graphSourceReference
     || !identity(plan).workspace || !plan.graphSource)
     blocked("graph-contract-pending", "Supply an explicit graph-preserving fresh-start intent, graph source, and new target authority.");
+  const schema = identity(plan).schema;
+  if (!isSchemaIdentity(schema) || plan.receipt.schema !== schema || plan.receipt.cutover?.schema !== schema)
+    blocked("fresh_start_schema_mismatch", "Pin one public Learning migration-map SHA-256 identity across the v2 registration and receipt.");
   if (!["registration", "receipt"].every(name => Object.hasOwn(plan.original, name)))
     blocked("fresh_start_prior_publication_unknown", "Record prior registration/receipt presence explicitly; a known absent receipt is allowed.");
 }
@@ -130,8 +134,9 @@ function checkFact(name, fact, plan) {
   if (["targetProvisioning", "freshInitialization", "quarantine"].includes(name)
     && (fact.workspace !== target.workspace || fact.ingressOrigin !== target.ingress.origin))
     blocked("fresh_start_authority_mismatch", "Fresh target workspace/origin does not match the pinned new authority.");
-  if (["targetProvisioning", "quarantine"].includes(name) && fact.schema !== target.schema)
-    blocked("fresh_start_schema_mismatch", "Provisioned and quarantined schema must match the explicitly selected Learning schema.");
+  if (["targetProvisioning", "quarantine"].includes(name)
+    && (!isSchemaIdentity(fact.schema) || fact.schema !== target.schema))
+    blocked("fresh_start_schema_mismatch", "Provisioning and quarantine must verify the exact pinned Learning migration-map SHA-256 identity.");
   if ((name === "graphSource" && fact.closureVerified !== true)
     || (name === "graphRecoveryCopy" && (fact.restoreVerified !== true || fact.immutable !== true || fact.fullSourcePreserved !== true))
     || (name === "targetProvisioning" && (fact.clean !== true || fact.independent !== true))
