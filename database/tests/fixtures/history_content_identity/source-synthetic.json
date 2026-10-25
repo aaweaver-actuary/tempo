@@ -1,0 +1,290 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "kind": "synthetic-only",
+    "source_version": "synthetic-source-map-not-installed"
+  },
+  "tables": {
+    "cards": [
+      {
+        "key": "synthetic:physical-card",
+        "row": {
+          "id": "synthetic-card",
+          "repertoire_id": "synthetic-repertoire-a",
+          "kind": "prefix",
+          "start_fen": "synthetic w - - 0 1",
+          "moves_json": "[ \"e2e4\", \"e7e5\", \"g1f3\" ]",
+          "unlock_after_card_id": null,
+          "content_type": "opening",
+          "archived": 0,
+          "superseded_by": null,
+          "source_ref": null,
+          "source_fen": null,
+          "revision": 3,
+          "trained_color": "white",
+          "pending_validation": 0,
+          "prefix_split_rejected_after_review_id": -1,
+          "study_exercise_id": null,
+          "canonical_route_source": 0
+        }
+      },
+      {
+        "key": "synthetic:distinct-equal-moves",
+        "row": {
+          "id": "synthetic-projected-card",
+          "repertoire_id": "synthetic-repertoire-a",
+          "kind": "prefix",
+          "start_fen": "synthetic w - - 0 1",
+          "moves_json": "[ \"e2e4\", \"e7e5\", \"g1f3\" ]",
+          "unlock_after_card_id": null,
+          "content_type": "opening",
+          "archived": 0,
+          "superseded_by": null,
+          "source_ref": null,
+          "source_fen": null,
+          "revision": 3,
+          "trained_color": "white",
+          "pending_validation": 0,
+          "prefix_split_rejected_after_review_id": -1,
+          "study_exercise_id": null,
+          "canonical_route_source": 0
+        }
+      }
+    ],
+    "repertoire_cards": [
+      {
+        "key": "synthetic:membership-a",
+        "row": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "card_id": "synthetic-card",
+          "canonical_route_source": 0
+        }
+      },
+      {
+        "key": "synthetic:membership-b",
+        "row": {
+          "repertoire_id": "synthetic-repertoire-b",
+          "card_id": "synthetic-card",
+          "canonical_route_source": 1
+        }
+      }
+    ],
+    "repertoire_integrity_card_blocks": [
+      {
+        "key": "synthetic:block-1",
+        "row": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "card_id": "synthetic-card",
+          "issue_id": "synthetic-issue-1",
+          "scan_generation": "synthetic-generation",
+          "published_at": "2030-01-01T01:02:03+04:00"
+        }
+      },
+      {
+        "key": "synthetic:block-2",
+        "row": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "card_id": "synthetic-card",
+          "issue_id": "synthetic-issue-2",
+          "scan_generation": "synthetic-generation",
+          "published_at": "2030-01-01T01:02:04+04:00"
+        }
+      }
+    ],
+    "repertoires": [
+      {
+        "key": "synthetic:repertoire-a",
+        "row": {
+          "id": "synthetic-repertoire-a",
+          "name": "Synthetic a",
+          "source_name": "synthetic.pgn",
+          "created_at": "2030-01-01T00:00:00Z",
+          "is_main": 0,
+          "new_cards_per_day": null,
+          "canonical_prefix_moves_json": "[]",
+          "canonical_prefix_revision": 0,
+          "canonical_prefix_preview_id": null,
+          "scope_source_revision": 0
+        }
+      },
+      {
+        "key": "synthetic:repertoire-b",
+        "row": {
+          "id": "synthetic-repertoire-b",
+          "name": "Synthetic b",
+          "source_name": "synthetic.pgn",
+          "created_at": "2030-01-01T00:00:00Z",
+          "is_main": 0,
+          "new_cards_per_day": null,
+          "canonical_prefix_moves_json": "[]",
+          "canonical_prefix_revision": 0,
+          "canonical_prefix_preview_id": null,
+          "scope_source_revision": 0
+        }
+      }
+    ],
+    "repertoire_lines": [],
+    "opening_graph_publications": [],
+    "opening_graph_steps": [],
+    "studies": [
+      {
+        "key": "synthetic:study",
+        "row": {
+          "id": "synthetic-study",
+          "title": "Synthetic Study",
+          "description": "Original notes",
+          "source_json": "{ \"source\": \"synthetic\" }",
+          "archived": 0,
+          "created_at": "2030-01-01T00:00:00Z",
+          "updated_at": "2030-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "study_positions": [
+      {
+        "key": "synthetic:position",
+        "row": {
+          "id": "synthetic-position",
+          "source_id": "synthetic-source",
+          "parent_id": null,
+          "child_index": 0,
+          "move_uci": null,
+          "fen": "synthetic w - - 0 1",
+          "history_json": "[]",
+          "comment": "Original answer context",
+          "starting_comment": "",
+          "nags_json": "[]",
+          "arrows_json": "[]",
+          "squares_json": "[]",
+          "node_path": "root",
+          "valid": 1
+        }
+      }
+    ],
+    "study_exercises": [
+      {
+        "key": "synthetic:exercise",
+        "row": {
+          "id": "synthetic-exercise",
+          "study_id": "synthetic-study",
+          "position_id": "synthetic-position",
+          "current_revision": 2,
+          "status": "published",
+          "sibling_group": null,
+          "source_json": "{}",
+          "point_value": 1.0,
+          "created_at": "2030-01-01T00:00:00Z",
+          "updated_at": "2030-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "study_exercise_revisions": [
+      {
+        "key": "synthetic:accepted-revision",
+        "row": {
+          "exercise_id": "synthetic-exercise",
+          "revision": 2,
+          "specification_json": "{\"type\": \"explanation\", \"rubric\": \"original\"}",
+          "specification_hash": "synthetic-original-digest",
+          "created_at": "2030-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "endgame_templates": [],
+    "opening_graph_legacy_mappings": [
+      {
+        "key": "synthetic:graph-is-not-alias",
+        "row": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "generation": 2,
+          "legacy_card_id": "synthetic-card",
+          "decision_card_id": "synthetic-projected-card"
+        }
+      }
+    ],
+    "card_revisions": [
+      {
+        "key": "synthetic:historical-executable",
+        "row": {
+          "id": 301,
+          "card_id": "synthetic-card",
+          "revision": 2,
+          "start_fen": "synthetic w - - 8 4",
+          "moves_json": "[\"e2e4\",\"e7e5\"]",
+          "history_mode": "synthetic-retain",
+          "created_at": "2030-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "prefix_splits": [],
+    "repertoire_line_training_depths": [],
+    "study_chapters": [
+      {
+        "key": "synthetic:chapter",
+        "row": {
+          "id": "synthetic-chapter",
+          "study_id": "synthetic-study",
+          "title": "Original chapter",
+          "description": "Original chapter notes",
+          "position": 0,
+          "archived": 0
+        }
+      }
+    ],
+    "study_sources": [
+      {
+        "key": "synthetic:source",
+        "row": {
+          "id": "synthetic-source",
+          "chapter_id": "synthetic-chapter",
+          "source_group_id": "synthetic-source-group",
+          "version": 1,
+          "raw_pgn": "[Event \"Synthetic\"]\n\n1. e4 *",
+          "sha256": "synthetic-hash",
+          "filename": "synthetic.pgn",
+          "record_index": 0,
+          "headers_json": "{ \"Event\": \"Synthetic\" }",
+          "diagnostics_json": "[]",
+          "valid": 1,
+          "created_at": "2030-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "study_links": [],
+    "puzzles": [],
+    "puzzle_decks": [],
+    "threat_training_candidates": [],
+    "tactic_captures": [],
+    "repertoire_card_introduction_priorities": [],
+    "repertoire_card_priority_generations": [],
+    "opening_segmentation_runs": [],
+    "opening_segmentation_state": [],
+    "opening_segmentation_occurrences": [],
+    "opening_segmentation_groups": [
+      {
+        "key": "synthetic:segmentation",
+        "row": {
+          "run_id": "synthetic-run",
+          "kind": "synthetic-kind",
+          "group_key": "synthetic-group",
+          "source_count": 1,
+          "decisions_before": 2,
+          "segment_count": 1,
+          "decisions_after": 1,
+          "first_discriminator": null,
+          "diverse": false,
+          "source_fingerprint": "synthetic-fingerprint"
+        }
+      }
+    ],
+    "opening_segmentation_parts": [],
+    "opening_segmentation_sources": [],
+    "opening_segmentation_recommendations": [],
+    "opening_segmentation_preferences": [],
+    "canonical_prefix_previews": [],
+    "canonical_prefix_results": [],
+    "canonical_prefix_positions": [],
+    "deleted_cards": []
+  },
+  "unresolved": []
+}

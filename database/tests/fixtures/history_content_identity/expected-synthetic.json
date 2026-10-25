@@ -1,0 +1,324 @@
+{
+  "cards": [
+    {
+      "key": "synthetic:block-1",
+      "data": {
+        "repertoire_integrity_card_blocks": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "card_id": "synthetic-card"
+        },
+        "cold": {
+          "repertoire_integrity_card_blocks": {
+            "issue_id": "synthetic-issue-1",
+            "scan_generation": "synthetic-generation",
+            "published_at": "2030-01-01T01:02:03+04:00"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:block-2",
+      "data": {
+        "repertoire_integrity_card_blocks": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "card_id": "synthetic-card"
+        },
+        "cold": {
+          "repertoire_integrity_card_blocks": {
+            "issue_id": "synthetic-issue-2",
+            "scan_generation": "synthetic-generation",
+            "published_at": "2030-01-01T01:02:04+04:00"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:distinct-equal-moves",
+      "data": {
+        "cards": {
+          "id": "synthetic-projected-card",
+          "repertoire_id": "synthetic-repertoire-a",
+          "kind": "prefix",
+          "start_fen": "synthetic w - - 0 1",
+          "moves_json": "[ \"e2e4\", \"e7e5\", \"g1f3\" ]",
+          "unlock_after_card_id": null,
+          "content_type": "opening",
+          "archived": 0,
+          "superseded_by": null,
+          "source_ref": null,
+          "source_fen": null,
+          "revision": 3,
+          "trained_color": "white",
+          "pending_validation": 0,
+          "prefix_split_rejected_after_review_id": -1,
+          "study_exercise_id": null
+        },
+        "cold": {
+          "cards": {
+            "canonical_route_source": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:membership-a",
+      "data": {
+        "repertoire_cards": {
+          "repertoire_id": "synthetic-repertoire-a",
+          "card_id": "synthetic-card"
+        },
+        "cold": {
+          "repertoire_cards": {
+            "canonical_route_source": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:membership-b",
+      "data": {
+        "repertoire_cards": {
+          "repertoire_id": "synthetic-repertoire-b",
+          "card_id": "synthetic-card"
+        },
+        "cold": {
+          "repertoire_cards": {
+            "canonical_route_source": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:physical-card",
+      "data": {
+        "cards": {
+          "id": "synthetic-card",
+          "repertoire_id": "synthetic-repertoire-a",
+          "kind": "prefix",
+          "start_fen": "synthetic w - - 0 1",
+          "moves_json": "[ \"e2e4\", \"e7e5\", \"g1f3\" ]",
+          "unlock_after_card_id": null,
+          "content_type": "opening",
+          "archived": 0,
+          "superseded_by": null,
+          "source_ref": null,
+          "source_fen": null,
+          "revision": 3,
+          "trained_color": "white",
+          "pending_validation": 0,
+          "prefix_split_rejected_after_review_id": -1,
+          "study_exercise_id": null
+        },
+        "cold": {
+          "cards": {
+            "canonical_route_source": 0
+          }
+        }
+      }
+    }
+  ],
+  "accepted_definitions": [
+    {
+      "key": "synthetic:accepted-revision",
+      "data": {
+        "study_exercise_revisions": {
+          "exercise_id": "synthetic-exercise",
+          "revision": 2,
+          "specification_json": "{\"type\": \"explanation\", \"rubric\": \"original\"}",
+          "specification_hash": "synthetic-original-digest",
+          "created_at": "2030-01-01T00:00:00Z"
+        }
+      }
+    },
+    {
+      "key": "synthetic:chapter",
+      "data": {
+        "cold": {
+          "study_chapters": {
+            "id": "synthetic-chapter",
+            "study_id": "synthetic-study",
+            "title": "Original chapter",
+            "description": "Original chapter notes",
+            "position": 0,
+            "archived": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:exercise",
+      "data": {
+        "study_exercises": {
+          "id": "synthetic-exercise",
+          "study_id": "synthetic-study",
+          "position_id": "synthetic-position",
+          "current_revision": 2,
+          "status": "published",
+          "sibling_group": null
+        },
+        "cold": {
+          "study_exercises": {
+            "source_json": "{}",
+            "point_value": 1.0,
+            "created_at": "2030-01-01T00:00:00Z",
+            "updated_at": "2030-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:graph-is-not-alias",
+      "data": {
+        "cold": {
+          "opening_graph_legacy_mappings": {
+            "repertoire_id": "synthetic-repertoire-a",
+            "generation": 2,
+            "legacy_card_id": "synthetic-card",
+            "decision_card_id": "synthetic-projected-card"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:historical-executable",
+      "data": {
+        "cold": {
+          "card_revisions": {
+            "id": 301,
+            "card_id": "synthetic-card",
+            "revision": 2,
+            "start_fen": "synthetic w - - 8 4",
+            "moves_json": "[\"e2e4\",\"e7e5\"]",
+            "history_mode": "synthetic-retain",
+            "created_at": "2030-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:position",
+      "data": {
+        "study_positions": {
+          "id": "synthetic-position",
+          "fen": "synthetic w - - 0 1"
+        },
+        "cold": {
+          "study_positions": {
+            "source_id": "synthetic-source",
+            "parent_id": null,
+            "child_index": 0,
+            "move_uci": null,
+            "history_json": "[]",
+            "comment": "Original answer context",
+            "starting_comment": "",
+            "nags_json": "[]",
+            "arrows_json": "[]",
+            "squares_json": "[]",
+            "node_path": "root",
+            "valid": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:repertoire-a",
+      "data": {
+        "repertoires": {
+          "id": "synthetic-repertoire-a",
+          "name": "Synthetic a",
+          "source_name": "synthetic.pgn",
+          "created_at": "2030-01-01T00:00:00Z",
+          "is_main": 0,
+          "new_cards_per_day": null
+        },
+        "cold": {
+          "repertoires": {
+            "canonical_prefix_moves_json": "[]",
+            "canonical_prefix_revision": 0,
+            "canonical_prefix_preview_id": null,
+            "scope_source_revision": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:repertoire-b",
+      "data": {
+        "repertoires": {
+          "id": "synthetic-repertoire-b",
+          "name": "Synthetic b",
+          "source_name": "synthetic.pgn",
+          "created_at": "2030-01-01T00:00:00Z",
+          "is_main": 0,
+          "new_cards_per_day": null
+        },
+        "cold": {
+          "repertoires": {
+            "canonical_prefix_moves_json": "[]",
+            "canonical_prefix_revision": 0,
+            "canonical_prefix_preview_id": null,
+            "scope_source_revision": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:segmentation",
+      "data": {
+        "cold": {
+          "opening_segmentation_groups": {
+            "run_id": "synthetic-run",
+            "kind": "synthetic-kind",
+            "group_key": "synthetic-group",
+            "source_count": 1,
+            "decisions_before": 2,
+            "segment_count": 1,
+            "decisions_after": 1,
+            "first_discriminator": null,
+            "diverse": false,
+            "source_fingerprint": "synthetic-fingerprint"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:source",
+      "data": {
+        "cold": {
+          "study_sources": {
+            "id": "synthetic-source",
+            "chapter_id": "synthetic-chapter",
+            "source_group_id": "synthetic-source-group",
+            "version": 1,
+            "raw_pgn": "[Event \"Synthetic\"]\n\n1. e4 *",
+            "sha256": "synthetic-hash",
+            "filename": "synthetic.pgn",
+            "record_index": 0,
+            "headers_json": "{ \"Event\": \"Synthetic\" }",
+            "diagnostics_json": "[]",
+            "valid": 1,
+            "created_at": "2030-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "key": "synthetic:study",
+      "data": {
+        "studies": {
+          "id": "synthetic-study",
+          "title": "Synthetic Study",
+          "archived": 0
+        },
+        "cold": {
+          "studies": {
+            "description": "Original notes",
+            "source_json": "{ \"source\": \"synthetic\" }",
+            "created_at": "2030-01-01T00:00:00Z",
+            "updated_at": "2030-01-01T00:00:00Z"
+          }
+        }
+      }
+    }
+  ]
+}
