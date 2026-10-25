@@ -7,6 +7,105 @@ after main advanced during publication. Earlier 44-check, 74-check and pre-refre
 
 Installed artifact qualification: `c4e24327775e478f13cc46fec899775ecf4dacc6`. Final native resource/cleanup qualification: `7fa179b06bae859aeb6e680498e8ae430d4cb3ae`, based on refreshed `main` `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`. The intervening runner change confines scratch data to the invocation; runtime package source is unchanged. Subsequent documentation records these results. No live checkout, database, service or development copy was reused.
 
+## PR #372 bounded readiness re-qualification — 2026-10-22
+
+- Branch: `codex/issue-365-learning-runtime-qualification`
+- Base: `2c55dfab8004cba2fe3ab3b0497570f1609aaea9`
+- Reviewed head (red baseline): `a3ab4a108dcf586fa40b4c30a4df93f3701b5595`
+- Tested executable SHA: `e6704daf08e39c19a3731fa6c3510f15f874374b`
+- Final published SHA: `e6704daf08e39c19a3731fa6c3510f15f874374b` (no post-test executable delta; this receipt append is documentation-only)
+
+### Exact commands and results
+
+```sh
+uv sync --project services/learning/runtime --locked --no-editable
+uv run --project services/learning/runtime --locked --no-editable pytest services/learning/runtime/tests/test_api_defense_storage_separation.py services/learning/runtime/tests/test_installation.py -q
+```
+
+`30 passed, 0 failed, 0 skipped, 1 warning` (owner-local doubles/install scope).
+
+Red baseline (task-owned temporary checkout, detached at reviewed head):
+
+```sh
+cd /private/tmp/tempo-pr372-readiness-red
+uv sync --project services/learning/runtime --locked --no-editable
+uv run --project services/learning/runtime --locked --no-editable pytest services/learning/runtime/tests/test_api_defense_storage_separation.py::test_readiness_requires_both_database_roles services/learning/runtime/tests/test_api_defense_storage_separation.py::test_readiness_checks_writer_migration_state -q
+```
+
+`2 failed, 0 passed` on reviewed head (old single-reader readiness path).
+
+Green on repaired head:
+
+```sh
+uv run --project services/learning/runtime --locked --no-editable pytest services/learning/runtime/tests/test_api_defense_storage_separation.py::test_readiness_requires_both_database_roles services/learning/runtime/tests/test_api_defense_storage_separation.py::test_readiness_checks_writer_migration_state -q
+```
+
+`2 passed, 0 failed, 0 skipped, 1 warning`.
+
+Native PostgreSQL + installed-image qualification:
+
+```sh
+services/learning/runtime/.venv/bin/python - <<'PY'
+from pathlib import Path
+import sys
+import tempfile
+
+root = Path.cwd()
+sys.path.insert(0, str(root / "database"))
+from tempo_learning_database.tooling.run_postgres import main
+
+tests = root / "services/learning/runtime/tests"
+selected = [
+    tests / "test_publications.py::test_workspace_binding_migration_history_and_admin_credentials_fail_readiness",
+    tests / "test_publications.py::test_readiness_requires_explicit_owner_migration_and_never_runs_it_implicitly",
+    tests / "test_publications.py::test_readiness_rejects_writer_only_privileged_credentials",
+    tests / "test_publications.py::test_readiness_rejects_unavailable_writer_with_healthy_reader",
+    tests / "test_publications.py::test_readiness_is_data_preserving_for_both_pools",
+    tests / "test_runtime.py::test_runtime_ready_authorized_and_ordinary_introduction",
+    tests / "test_runtime.py::test_lost_response_and_logical_retry_are_immutable",
+    tests / "test_publications.py::test_frozen_ranks_control_introductions_without_score_producers",
+    tests / "test_restart.py::test_owned_database_restart_exposes_unready_then_recovers_existing_receipts",
+    tests / "test_container.py",
+]
+evidence = Path(tempfile.mkdtemp(prefix="tempo-pr372-readiness-review-"))
+print(f"Evidence directory: {evidence}", flush=True)
+main(test_paths=selected, evidence_directory=evidence)
+PY
+```
+
+`10 passed, 0 failed, 0 skipped, 1 warning` split as:
+
+- Native PostgreSQL cases: 9 passed.
+- Installed-container case: 1 passed (`tests/test_container.py::test_minimal_installed_container_load_issue_review_without_backend_or_brokers`).
+
+Required repository checks:
+
+```sh
+npm run check:conflicts
+git diff --check 2c55dfab8004cba2fe3ab3b0497570f1609aaea9
+```
+
+Both passed cleanly.
+
+### Runtime image/source identity and installed-image absence checks
+
+- Native receipt: `native.json` (exact host path retained in private cleanup evidence).
+- Native evidence directory: exact host path retained in private cleanup evidence.
+- Tested source revision captured by the native receipt: `e6704daf08e39c19a3731fa6c3510f15f874374b`
+- Runtime image digest captured by the native receipt: `sha256:59087a565c5390dfaf2982e5d38a41b7d82a4a79c05ac6aa0e11da46533f3e4a`
+- PostgreSQL fixture image digest: `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`
+- Installed container guard (from `test_container.py`) verified:
+  - runtime UID `10001`,
+  - `importlib.util.find_spec(name) is None` for `app`, `celery`, `redis`, `torch`, `onnxruntime`, `tempo_game_evidence`,
+  - `/build` absent,
+  - imported runtime path includes `site-packages`.
+
+### Disposable resource cleanup and retained evidence
+
+- Native receipt flags are all true: `container_absent`, `volume_absent`, `runtime_image_tag_removed`, `temporary_test_data_removed`.
+- Temporary red-check worktree `/private/tmp/tempo-pr372-readiness-red` was removed after capture.
+- Evidence directories above were preserved for review.
+
 ## Commands and outcomes
 
 Run from the repository root unless a different directory is stated. Evidence was recorded outside the disposable checkout; `$evidence` below names that directory, not a production resource.
