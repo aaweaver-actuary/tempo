@@ -124,4 +124,6 @@ The older #192/M01-M12 roadmap is historical guidance, not an instruction to fin
 
 Keep the frozen audit baseline `7d77ed1b`: 597 narrow backend/database Python+SQL files, 69,686 physical lines, target approximately 34,843 net removed. The broader 881-file implementation/schema scope is 97,217 lines. Use an approved classification manifest; do not relabel directories to appear smaller. Moves count at both ends, and test/docs/generated inventories have separate totals. Formatting alone is not functional retirement.
 
+The [2026-10-25 reviewer-checked accounting receipt](./source-accounting-2026-10-25/README.md) verifies both original denominators and compares them with main `782bf537`: narrow 69,309 lines (net −377), broad 94,646 (net −2,571, including new runtime source). It preserves the historical broad helper-classification inconsistency, separates nonproduction/moves, and leaves 34,466 further comparable narrow physical lines against the original target. These are physical source measures, not certified functional retirement or 50% completion.
+
 The 292 table entries are source-schema observations across owners, not an installed-table count. Audit review-depth labels remain intact. Update running decisions and feature disposition; never rewrite historical evidence to claim a larger review or completed deployment.
