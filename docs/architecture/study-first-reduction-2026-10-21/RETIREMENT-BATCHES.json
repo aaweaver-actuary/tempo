@@ -1362,6 +1362,756 @@
         "decision": "independent candidate correspondence review complete; remains candidate, no deletion approval",
         "rationale": "Read-only reviewer /root/review_guided_candidate found no unresolved P1/P2. Independently verified 7 prior batches/top fields preserved, the one existing FEATURES row, 8 delete plus 15 edit paths without prior-cohort overlap, 399 deletion plus 65 edit-source lines (464 bounded source lines, not net reduction), 10 exclusive tests/258 lines, 29 protected file hashes and 3 complete decorated route-region hashes. Active routes, side-effect/dynamic receipt recovery, shared CF-9, inventories, broad build and retained SQL/export/schema consumers match source. No runtime suite, source-removed artifact, actual-data, launcher, migration or cutover acceptance is granted."
       }
+    },
+    {
+      "id": "opportunity-feed-refresh-01",
+      "status": "candidate",
+      "source_commit": "ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f",
+      "initial_inspected_source_commit": "782bf5374b87f223a023568305056415d5b63cea",
+      "scope": "Source-only cessation boundary, not a deletion manifest for the entire active 1617-line core. No runtime change is implemented or approved. Proposed first step retires new optional refresh ingress/callbacks while preserving reads, state/training, issued-command/task drain, browser recovery and stored eligibility. No actually-unused helper subset proven within the core.",
+      "delete_paths": [],
+      "edit_paths": [
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at save_prefix:57. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at fail_maia_node:82; submit_maia_node:101. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/game_analysis_publication.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at execute_game_analysis_followup_slice:307. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/game_commands.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at set_game_exclusion:38. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/main.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at put_settings:1099; refresh_repertoire_opportunities:2718; coverage_maia_failure:2914; save_game_analysis:3721; exclude_game_from_adaptation:4244. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering. The explicit ingress is the entire decorated refresh_repertoire_opportunities region at 2706-2720; remove only its opportunity_refresh_command recognition at 523-528 and corresponding inclusion at 696. Other opportunity/feed/training/acceptance/status routes, command imports and worker registrations remain. New requests then receive normal missing-route rejection, never a false queued acknowledgement. Unknown deployed/persisted clients must be resolved first."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at _enqueue_game_repertoire_refreshes:151. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/services/opening_graph.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at publish_opening_graph_rebuild:685. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at _fail_for_missing_token:90; _publish_node:121. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at execute_coverage_node:549; execute_coverage_node:568; execute_coverage_node:577; submit_maia_coverage:701. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        },
+        {
+          "path": "backend/app/services/threat_pipeline.py",
+          "required_edit": "After separate authority approval, remove only opportunity-refresh callback calls/imports at execute_threat_backfill_slice:212. Preserve every surrounding canonical/source/graph/game/coverage/integrity effect and its transaction/lease ordering."
+        }
+      ],
+      "production_scope": {
+        "core_footprint": [
+          {
+            "path": "backend/app/services/repertoire_opportunities.py",
+            "physical_lines": 991,
+            "sha256": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568"
+          },
+          {
+            "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
+            "physical_lines": 1,
+            "sha256": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72"
+          },
+          {
+            "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+            "physical_lines": 625,
+            "sha256": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d"
+          }
+        ],
+        "core_physical_lines": 1617,
+        "candidate_edit_path_count": 10,
+        "candidate_callsite_count": 19,
+        "priority_owner_handoff_paths": [
+          "backend/app/services/introduction_priorities.py",
+          "backend/app/services/postgres_game_priorities.py",
+          "backend/app/services/postgres_priority.py"
+        ],
+        "priority_owner_handoff_callsite_count": 4,
+        "realized_narrow_delta": 0,
+        "whole_file_deletions": 0,
+        "note": "Footprint includes comments/blanks, not approved deletion savings. Shared-file edits and priority-owner handoffs are additional. No whole core deletion is dependency-closed; all core paths stay. Future source cessation cannot be claimed until separately owned handoffs and issued deliveries are resolved."
+      },
+      "keep_paths": [
+        {
+          "path": "backend/app/services/repertoire_opportunities.py",
+          "reason": "All 991 lines retained for refresh drain, feed/state actions, scoring-version import and explicit existing-decision training; no complete-file deletion.",
+          "sha256": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
+          "reason": "Package remains while storage is imported.",
+          "sha256": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+          "reason": "All 64 top-level functions referenced by the service; reads, generation/lease publication and training writes remain active.",
+          "sha256": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d"
+        },
+        {
+          "path": "backend/app/opportunity_commands.py",
+          "reason": "Keep opportunities.refresh for already-issued broker/receipt work and its enqueue callback; keep dismiss/acknowledge/snooze/train registrations and original transaction effects.",
+          "sha256": "b081f2f64cbc9e07aa1be2eb453547d840fd5026cf9d4a4bfaa71fcdddea9744"
+        },
+        {
+          "path": "backend/app/tasks.py",
+          "reason": "Keep command recovery/redelivery, supported kinds and repertoire_opportunity/discovery_recommendation/discovery_admission handlers, foreground deferral and settlement.",
+          "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7"
+        },
+        {
+          "path": "backend/app/services/durable_tasks.py",
+          "reason": "Keep task generations/leases/retry/failure; opportunity complete_task locks priority source version and records only accepted publication.",
+          "sha256": "ab270699a8795d3db6bb1d2c14c962f7539712b3135fcb667133217021d6ecaf"
+        },
+        {
+          "path": "backend/app/services/refresh_requests.py",
+          "reason": "Keep shared input_version/request_refresh and imported opportunity scoring version; priority and opportunity input identities must remain usable.",
+          "sha256": "9ddbdba6fb33034c6e24669d3bff030ca1b2d73c30199236d22e2df7617aa3f4"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "reason": "Keep saved requested/published identities; task disappearance does not certify publication.",
+          "sha256": "7fc494bf6d93b8316ddf5cb3111c5ef73fd317f7b80528f1783bfb80592e1473"
+        },
+        {
+          "path": "backend/app/services/durable_scheduling.py",
+          "reason": "Keep scheduling-kind recognition during drain.",
+          "sha256": "6838a9a87666954a3379326815906174d41b98f5e7bc50b8eb6a4c98ea423321"
+        },
+        {
+          "path": "backend/app/discovery_commands.py",
+          "reason": "Keep discovery.accept and preparation; matching saved intent bypasses recommendations, unsent browser request without an intent still needs validated recommendations.",
+          "sha256": "b78e3af2d1eb18b30b6435cbbc6b163ce25e7b34c281ca0ef39bc564fcd1161a"
+        },
+        {
+          "path": "backend/app/authoring/discovery/acceptance.py",
+          "reason": "Keep original choice/revision identity, matching-intent-first replay, locked duplicate recheck and requeue policy.",
+          "sha256": "0fa5acd9494031b2e801cc62dc6f66812fc48cea8a0be79ed3e7df280353ffb3"
+        },
+        {
+          "path": "backend/app/authoring/discovery/contracts.py",
+          "reason": "Keep semantic borrowed transaction capabilities and immutable choice/intent facts.",
+          "sha256": "a6aec4df74959aef2a31ed932a1b4d09c66171001054735cd81d9f1b9f5384b0"
+        },
+        {
+          "path": "backend/app/services/discovery_acceptance_store.py",
+          "reason": "Keep original prefix/global-scope/opportunity lock order and receipt/intent/marker/task atomicity.",
+          "sha256": "ffe915e1bfc1cc3616c57d0624daf6715a4ca42aa1ea77cb8d1d49998eee5f39"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/discovery_acceptance_store.py",
+          "reason": "Keep matching historical intent reads and saved intent/task effects.",
+          "sha256": "a4218cfd3bea0eeda37e06403466238623854e1b611ebeecda930238df811c11"
+        },
+        {
+          "path": "backend/app/services/discovery_admission.py",
+          "reason": "Keep all 648 lines of recommendation/source validation, materialization, readiness retry and admitted-card completion; not part of feed-refresh cessation.",
+          "sha256": "cd02d5729e5ce32f46f7373115045cc38e5ca660ca7a5bfd5dbdcff851185bde"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_admission/storage.py",
+          "reason": "Keep all 307 lines of saved branch/card/intent/task operations; handled marker must still fence exact evidence fingerprint.",
+          "sha256": "be7519cb29d3049ab1c08c8bcc938d82953988e64b54baa86369209bc8651956"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_admission/__init__.py",
+          "reason": "Retained admission namespace.",
+          "sha256": "28760ce62f9c1eef6190ce9d0dcd602e1a69cde4d6051467286774951e531cac"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py",
+          "reason": "Shared command persistence: opening_advisory/segmentation.py still imports repertoire; not a whole-adapter deletion.",
+          "sha256": "51b1d1b25974f5835b2e4bcf81dd99a4bb7ed59933126ecb87fcd725237ecb7b"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/discovery.py",
+          "reason": "Keep admission status and existing feed projection.",
+          "sha256": "c0d41cccda80994a96b4e7011257fe728859d37fef0bb1ac57785ef1f41b2198"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/http_composition/queue_maintenance.py",
+          "reason": "Keep missing-task pending admission scan; it excludes an intent if ANY matching task row exists, including failed/complete.",
+          "sha256": "4c6f14a4780ca208c60899819de580d3b4866d77c8940200cd0a52f3ec8533ef"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "reason": "Keep active current non-analysis weak-known-decision candidate union, eligibility/reasons, current_opportunity and resolution on ordinary admission.",
+          "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "reason": "Keep ordinary candidate/eligibility/reason/resolution and explicit-admission exclusion from unseen reconciliation.",
+          "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "reason": "Keep current_capacity_priority opportunity EXISTS; stopping publication is not removal of stored eligibility.",
+          "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774"
+        },
+        {
+          "path": "backend/app/services/canonical_scope_freshness.py",
+          "reason": "Keep source/prefix/game-generation freshness; do not convert saved stale opportunities to current ones.",
+          "sha256": "281a8a51732de00026683cf3853ea503b60da04f8d1f001d213b83fb8eaae598"
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/repertoire_scope/freshness.py",
+          "reason": "Keep current opportunity SQL predicates and game-generation locks.",
+          "sha256": "6585207eee6a730c94a6f3c9c083cd10e1cb0d226fa48ac0444aaf33f8f14f7b"
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/canonical_scope_schema.py",
+          "reason": "Keep current_repertoire_opportunities definition and all schema.",
+          "sha256": "b3b0229d33fe3e7ad3b6c9efa918d9c40f878852d39c838eef09a6aea5ec9a6f"
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "reason": "Preserve historical current-view DDL and source-generation semantics.",
+          "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0"
+        },
+        {
+          "path": "database/tempo_legacy_database/ddl/migrations/028_revisioned_discovery_admissions.sql",
+          "reason": "Preserve historical intent IDs, revision identities and task references.",
+          "sha256": "57555e6a4b74acaff74ba134d22704c5622fabf893c3514d60b473cff869102d"
+        },
+        {
+          "path": "backend/app/command_gateway.py",
+          "reason": "Unknown-command check occurs BEFORE completed-receipt lookup; removing handlers breaks settled replay too. Preserve request hashes and saved payload/error/result.",
+          "sha256": "bbbf97ed281eac329c28a60df6c01374db30651ba4093ec397ae0840ff0173aa"
+        },
+        {
+          "path": "backend/app/command_dispatch.py",
+          "reason": "Keep original operation identity/status contract; timeout is not evidence work did not commit.",
+          "sha256": "c4fccd8d511548f3c2c59d8ce3f864fe1dd290e5f26cba42adb21e4f2de61afa"
+        },
+        {
+          "path": "app/lib/discovery-admission-outbox.ts",
+          "reason": "Mounted recovery submits old no-intent records and polls accepted records; only confirmed queued clears a record.",
+          "sha256": "c685c67306f64c7967830c5db9a76f2e9ebedc75727b6e2b07597a4da1d62352"
+        },
+        {
+          "path": "app/components/pending-discovery-saves.tsx",
+          "reason": "Keep immediate/three-second flush, failed-save Retry and queue-refresh callback.",
+          "sha256": "b41b5dd5ecd1f706dd55b83b179c1d0c253cc29b645e7bf2455c848d82036baf"
+        },
+        {
+          "path": "app/views/legacy-workspace.tsx",
+          "reason": "Keep PendingDiscoverySaves mounted; absence of new feed UI does not imply empty browser storage.",
+          "sha256": "4f358ee3df998588c481e36be598fe2e386aaedc6166b64b3e588da7efeecb91"
+        },
+        {
+          "path": "database/browser/adapters/authoring/discovery-admission.ts",
+          "reason": "Keep tempo-pending-discovery-admissions-v1 records and original operation/choice/evidence identity.",
+          "sha256": "9c1ead1dab42f51e8a929bcabb9fea78ed65cfe5ea992df689299aea7b505a3e"
+        },
+        {
+          "path": "database/browser/adapters/authoring/opportunity-refresh.ts",
+          "reason": "No current app consumer, but tempo-pending-opportunity-refresh-v1:${repertoireId} is a raw operation identity, not a JSON envelope or absence proof. Preserve until per-origin original-authority disposition; outside core helper scope.",
+          "sha256": "d176dc1fe278e2e9828b7a4ae7c4606352ff22591cb9e59336ae75d2fd27e562"
+        },
+        {
+          "path": "database/browser/adapters/authoring/opportunity.ts",
+          "reason": "No current app consumer, but tempo-pending-opportunity-v1:${opportunityId} may retain operationId/repertoire/action/fingerprint JSON. Preserve original state; do not invent missing evidence or infer settled work.",
+          "sha256": "5a85e9895ee4badab0b722f049f585bdf73a3ed2cfe79c1fbf177ec475845d42"
+        },
+        {
+          "path": "app/lib/operation-status.ts",
+          "reason": "Keep generic receipt polling across timeout/lost response.",
+          "sha256": "cd6a8f03e6d3f877f87f84eb73cc0edf35ae29817bf82d120b478b378d3fdd5f"
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "reason": "Separate priority-task ownership: this packet inventories its opportunity callback only; no calculation/publication/fallback or callback edit is authorized here. Integration must reconcile the handoff without taking over this file.",
+          "sha256": "295555d13146eb1ce9189266b3df9f55d017c56fc8c287b0d01aec2cbd9720c3"
+        },
+        {
+          "path": "backend/app/services/introduction_priorities.py",
+          "reason": "Separate priority-task ownership: this packet inventories its opportunity callback only; no calculation/publication/fallback or callback edit is authorized here. Integration must reconcile the handoff without taking over this file.",
+          "sha256": "5a7c18d20ebb2d31566bc86735de4192bce7ddb0d4971bf0f287824847e05435"
+        },
+        {
+          "path": "backend/app/services/postgres_priority.py",
+          "reason": "Separate priority-task ownership: this packet inventories its opportunity callback only; no calculation/publication/fallback or callback edit is authorized here. Integration must reconcile the handoff without taking over this file.",
+          "sha256": "4e6820145db66699a996354020e5b000ba1723ff4925cae4b63fc18cd6c20c22"
+        }
+      ],
+      "incoming_enqueuers": [
+        {
+          "path": "backend/app/canonical_prefix_api.py",
+          "function": "save_prefix",
+          "line": 57,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "function": "fail_maia_node",
+          "line": 82,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, row['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/coverage_maia_commands.py",
+          "function": "submit_maia_node",
+          "line": 101,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, row['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/game_analysis_publication.py",
+          "function": "execute_game_analysis_followup_slice",
+          "line": 307,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, next_repertoire_id)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/game_commands.py",
+          "function": "set_game_exclusion",
+          "line": 38,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/main.py",
+          "function": "put_settings",
+          "line": 1099,
+          "callee": "enqueue_opportunity_refresh",
+          "call": "enqueue_opportunity_refresh(repertoire_id, background=False)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/main.py",
+          "function": "refresh_repertoire_opportunities",
+          "line": 2718,
+          "callee": "enqueue_opportunity_refresh",
+          "call": "enqueue_opportunity_refresh(identifier)",
+          "disposition": "candidate-http-ingress"
+        },
+        {
+          "path": "backend/app/main.py",
+          "function": "coverage_maia_failure",
+          "line": 2914,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/main.py",
+          "function": "save_game_analysis",
+          "line": 3721,
+          "callee": "enqueue_opportunity_refresh",
+          "call": "enqueue_opportunity_refresh(repertoire_id, background=True)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/main.py",
+          "function": "exclude_game_from_adaptation",
+          "line": 4244,
+          "callee": "enqueue_opportunity_refresh",
+          "call": "enqueue_opportunity_refresh(repertoire_id, background=True)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/opportunity_commands.py",
+          "function": "refresh_opportunities",
+          "line": 95,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)",
+          "disposition": "retained-issued-command"
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "function": "_enqueue_game_repertoire_refreshes",
+          "line": 151,
+          "callee": "enqueue_opportunity_refresh",
+          "call": "enqueue_opportunity_refresh(repertoire_id, background=True)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/introduction_priorities.py",
+          "function": "execute_priority_refresh",
+          "line": 809,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "priority-owner-handoff"
+        },
+        {
+          "path": "backend/app/services/introduction_priorities.py",
+          "function": "publish_priority_records",
+          "line": 898,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "priority-owner-handoff"
+        },
+        {
+          "path": "backend/app/services/opening_graph.py",
+          "function": "publish_opening_graph_rebuild",
+          "line": 685,
+          "callee": "enqueue_opportunity_refresh",
+          "call": "enqueue_opportunity_refresh(repertoire_id, background=True)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "function": "_fail_for_missing_token",
+          "line": 90,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/postgres_coverage_explorer.py",
+          "function": "_publish_node",
+          "line": 121,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/postgres_game_priorities.py",
+          "function": "execute_game_priority_handoff_slice",
+          "line": 38,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "priority-owner-handoff"
+        },
+        {
+          "path": "backend/app/services/postgres_priority.py",
+          "function": "execute_repertoire_priority_slice",
+          "line": 190,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "priority-owner-handoff"
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "function": "execute_coverage_node",
+          "line": 549,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "function": "execute_coverage_node",
+          "line": 568,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "function": "execute_coverage_node",
+          "line": 577,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/repertoire_coverage.py",
+          "function": "submit_maia_coverage",
+          "line": 701,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id)",
+          "disposition": "candidate-automatic-edge"
+        },
+        {
+          "path": "backend/app/services/repertoire_opportunities.py",
+          "function": "enqueue_opportunity_refresh",
+          "line": 552,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=5 if background else 0)",
+          "disposition": "retained-wrapper"
+        },
+        {
+          "path": "backend/app/services/threat_pipeline.py",
+          "function": "execute_threat_backfill_slice",
+          "line": 212,
+          "callee": "enqueue_opportunity_refresh_in_transaction",
+          "call": "enqueue_opportunity_refresh_in_transaction(database, item['id'])",
+          "disposition": "candidate-automatic-edge"
+        }
+      ],
+      "retained_public_interfaces": [
+        {
+          "interface": "POST /api/repertoires/{identifier}/opportunities/refresh",
+          "disposition": "candidate ingress retirement ONLY after real-authority evidence; remains live in this documentation patch",
+          "why": "Remove new optional HTTP work without deregistering already-issued command recovery; source cannot rule out cached/external/browser requests.",
+          "source": "backend/app/main.py:2706-2720"
+        },
+        {
+          "interface": "opportunities.refresh",
+          "disposition": "KEEP registered and executable",
+          "why": "Broker deliveries, pending/executing/retrying/blocked receipts and generic retry can still invoke it; complete receipts need known handler for replay.",
+          "source": "backend/app/opportunity_commands.py:89-103; backend/app/command_gateway.py:184-219"
+        },
+        {
+          "interface": "GET /api/repertoires/{identifier}/opportunities; GET /api/discoveries",
+          "disposition": "KEEP",
+          "why": "Saved current feed projections and explicit-training visibility remain; retiring reads is a separate client/history decision, not a prerequisite for ceasing producers.",
+          "source": "backend/app/main.py:2626-2649"
+        },
+        {
+          "interface": "POST /api/repertoires/{identifier}/opportunities/{opportunity_id}/{dismiss|acknowledge|snooze|train}; GET .../training-eligibility; opportunities.dismiss/acknowledge/snooze/train",
+          "disposition": "KEEP each current route and command",
+          "why": "State operations and existing-decision training are distinct from refresh; training fences fingerprint/source/card integrity, can split prefix, introduce and queue atomically; queued replay does not repeat effects.",
+          "source": "backend/app/main.py:2723-2804; backend/app/services/repertoire_opportunities.py:863-991"
+        },
+        {
+          "interface": "POST /api/discoveries/{opportunity_id}/accept; discovery.accept; GET /api/discovery-admissions/{intent_id}; GET /api/discoveries/{opportunity_id}/recommendations",
+          "disposition": "KEEP",
+          "why": "Existing browser records with no intent submit original acceptance; known intent polls; no-match preparation still validates recommendation. Preserve confirmed failure and explicit retry.",
+          "source": "backend/app/main.py:2652-2703; backend/app/discovery_commands.py:20-64"
+        },
+        {
+          "interface": "GET /api/operations/{operation_id}; POST /api/operations/{operation_id}/retry; recover_operations; execute_foreground_command/execute_background_command",
+          "disposition": "KEEP generic names, registrations and payload handling",
+          "why": "Source has dynamic saved command-name redelivery; losing a response or receiving 202 is not settled work.",
+          "source": "backend/app/main.py:247-281; backend/app/tasks.py:300-326; backend/app/command_gateway.py:147-155"
+        },
+        {
+          "interface": "repertoire_opportunity; discovery_recommendation; discovery_admission durable-task kinds",
+          "disposition": "KEEP handlers, scheduling, status/failure/retry and completion",
+          "why": "Accepted refresh can still enqueue recommendations/daily_queue; accepted admissions still need graph, coverage and integrity. Study-only deferral is not retirement or drainage.",
+          "source": "backend/app/main.py:1224-1271; backend/app/tasks.py:371-445; backend/app/services/repertoire_opportunities.py:111-116,601-712"
+        },
+        {
+          "interface": "current_repertoire_opportunities; ordinary queue admission/capacity and explicit queue provenance",
+          "disposition": "KEEP views, rows and ordinary readers/writers",
+          "why": "Current active non-analysis weak_known_decision rows can admit locked cards under normal route/integrity/quota checks. Producer cessation cannot relabel/remove saved eligibility, queue, reviews or introductions.",
+          "source": "database/tempo_legacy_database/adapters/queue_refresh/openings.py:8-76,100-107,169-175; database/tempo_legacy_database/adapters/queue_refresh/application/admission.py:7-45,48-60,147-155; database/tempo_legacy_database/adapters/queue_refresh/capacity.py:148-156"
+        }
+      ],
+      "transition_truth_table": [
+        {
+          "existing_state": "No issued refresh operation/task; a future automatic trigger fires",
+          "current_truth": "Each inventoried source callback may create/coalesce refresh intent and durable work.",
+          "required_after_producer_cessation": "Candidate removes ONLY named automatic edges after approval. Surrounding prefix/graph/game/coverage work remains. All four priority-owner edges must also be resolved before claiming cessation.",
+          "source": "incoming_enqueuers; repertoire_opportunities.py:536-554"
+        },
+        {
+          "existing_state": "New explicit HTTP refresh request after separately approved ingress removal",
+          "current_truth": "Today POST dispatches opportunities.refresh or legacy enqueue and returns queued/202.",
+          "required_after_producer_cessation": "Then normal missing-route rejection; never return queued without work. Until client/authority evidence permits removal, retain current route. This is a proposed unsupported-route decision, not implemented policy.",
+          "source": "backend/app/main.py:2706-2720"
+        },
+        {
+          "existing_state": "Issued opportunities.refresh command: broker-only or receipt pending/executing/retrying/blocked",
+          "current_truth": "Dispatch may precede durable receipt creation; recovery/explicit retry redelivers stored command/payload. Handler can still create refresh work.",
+          "required_after_producer_cessation": "Retain command handler, enqueue wrapper, request identity and task worker; permit existing accepted deliveries to settle. Do not infer empty broker from absent DB receipt or auto-fail accepted work.",
+          "source": "backend/app/command_dispatch.py:19-75; command_gateway.py:78-155; tasks.py:300-326"
+        },
+        {
+          "existing_state": "Settled opportunities.* or discovery.accept receipt: complete/failed",
+          "current_truth": "Original result/error is recoverable. Unknown-handler guard precedes completed-receipt replay.",
+          "required_after_producer_cessation": "Retain command registrations and status/replay paths; preserve settled errors/results and historical payload identity. No new effect from complete replay.",
+          "source": "backend/app/command_gateway.py:180-219,275-331"
+        },
+        {
+          "existing_state": "Refresh task queued/retrying or leased/deferred/expired lease",
+          "current_truth": "Claims and slices use existing generation, lease, phase and cursor; foreground deferral/reclaim retains progress. Source changes/stale lease suppress obsolete publication.",
+          "required_after_producer_cessation": "Drain through unchanged owner; retain phases summaries/cards/nodes/findings/cleanup/summary_cleanup, lock order and retry fences. Never delete/complete just to make a retirement count zero.",
+          "source": "repertoire_opportunities.py:557-712; durable_tasks.py:185-278"
+        },
+        {
+          "existing_state": "Intermediate refresh slice advanced versus final slice completion",
+          "current_truth": "storage.advance_slice increments generation, queues next phase/cursor and clears lease. Native worker attempts complete_task with old delivery; its fence rejects that completion after an advance. Native final completion with kind records publication; legacy coordinator waits for no more work, then calls complete_task without kind and does not mark the refresh published identity.",
+          "required_after_producer_cessation": "Preserve each runtime path and distinguish complete-task state from accepted publication; neither terminal-looking row nor a stale delivery proves drainage. No source repair or new completion protocol here.",
+          "source": "opportunities/storage.py:378-385; backend/app/tasks.py:422-445; durable_tasks.py:241-268; game_sync_coordinator.py:425-431"
+        },
+        {
+          "existing_state": "Refresh task failed, or refresh request missing required task without accepted publication",
+          "current_truth": "Failed is observable, not complete. Current same-input refresh preserves failure; missing unsatisfied work can be recreated by an explicit refresh request.",
+          "required_after_producer_cessation": "Keep error/status and existing explicit operation/task recovery paths. Do not silently recreate/abandon/convert it. Real-authority disposition is a blocker before handler removal; source cessation alone is not settlement.",
+          "source": "refresh_requests.py:32-64; backend/tests/test_refresh_input_coalescing.py:208-243,309-315"
+        },
+        {
+          "existing_state": "Refresh complete with accepted published_input_version, including retained-task deletion",
+          "current_truth": "Accepted completion records publication under generation/lease fence; repeated identical requests need no new task.",
+          "required_after_producer_cessation": "Preserve requested/published identities and stored results; never treat missing task as evidence of publication or erase refresh intent. No recomputation solely for retirement.",
+          "source": "durable_tasks.py:241-268; adapters/lifecycle/refresh_requests.py:51-57; test_refresh_input_coalescing.py:264-292"
+        },
+        {
+          "existing_state": "Draining refresh publishes a new active missing_response/post_gap without saved card",
+          "current_truth": "_publish enqueues discovery_recommendation; card promotion can separately enqueue daily_queue.",
+          "required_after_producer_cessation": "Keep these downstream handlers and normal queue owner until resultant accepted work is settled. Stopping incoming refresh callbacks is not immediate downstream quiescence.",
+          "source": "repertoire_opportunities.py:77-116,709-712"
+        },
+        {
+          "existing_state": "Stored opportunity current, active, weak_known_decision, analysis_based absent, card unintroduced/new-or-locked",
+          "current_truth": "Normal candidates/capacity may use it, subject to graph route, card availability, integrity, allowance and queue checks; admitted opportunity resolves under existing owner.",
+          "required_after_producer_cessation": "Retain current projection/readers and ordinary behavior. No blanket freeze/unlock/resolve of stored rows. Saved priority/frozen rank facts are separate retained inputs.",
+          "source": "adapters/queue_refresh/openings.py:8-76,100-107,169-175; application/admission.py:7-45; capacity.py:148-156"
+        },
+        {
+          "existing_state": "Stored opportunity stale scope/game generation, dismissed/resolved, or analysis_based present",
+          "current_truth": "Stale rows fail current view/freshness; nonactive/analysis-based rows do not qualify through the weak-known-decision queue route. Direct training separately validates its own contract.",
+          "required_after_producer_cessation": "Preserve exact filters and historical rows; no fallback to old generations, no conversion to new opportunity, no deletion. Cessation may leave previously current rows stale after later source edits.",
+          "source": "adapters/repertoire_scope/freshness.py:50-55; canonical_scope_freshness.py:39-49; repertoire_opportunities.py:901-952"
+        },
+        {
+          "existing_state": "Explicit training: matching fingerprint and admission_state queued with admitted card",
+          "current_truth": "Returns queued/idempotent before current-source/status/card checks, after fingerprint validation.",
+          "required_after_producer_cessation": "Preserve original admitted card and queue/history; replay has no new introduction or prefix split.",
+          "source": "repertoire_opportunities.py:901-917,965-991"
+        },
+        {
+          "existing_state": "Explicit training not yet admitted",
+          "current_truth": "Requires fingerprint/current active opportunity, available exact card, membership and integrity; prefix target can split before one introduction/queue placement.",
+          "required_after_producer_cessation": "Keep route/command/plan/storage and canonical queue writer unchanged; no new training owner or assumed new acceptance. Obsolete revision stays an actionable error.",
+          "source": "repertoire_opportunities.py:901-991; opportunity_commands.py:55-86"
+        },
+        {
+          "existing_state": "Browser saved pending record without intentId (including lost response)",
+          "current_truth": "Mounted outbox POSTs original choice/evidence with saved operationId; matching intent bypasses recomputation, no match still needs recommendation validation.",
+          "required_after_producer_cessation": "Retain acceptance route/command, browser storage and source/recommendation boundary; never manufacture an intent or classify old local storage as no pending work.",
+          "source": "app/lib/discovery-admission-outbox.ts:151-165; backend/app/discovery_commands.py:20-44"
+        },
+        {
+          "existing_state": "Orphaned opportunity-refresh raw identity or opportunity-action JSON in browser storage",
+          "current_truth": "Current source retains adapters but no current app caller. Refresh key holds only operationId; action record holds operationId/repertoire/action and optional fingerprint. Cached/deployed clients and whether a request was sent are unobserved.",
+          "required_after_producer_cessation": "Preserve raw records and generic status/original-authority recovery; do not fabricate a refresh request or convert to discovery admission. Accept exact unsupported refresh-route/client disposition only after authorized per-origin evidence; no key clearing or adapter removal in this packet.",
+          "source": "database/browser/adapters/authoring/opportunity-refresh.ts:1-13; database/browser/adapters/authoring/opportunity.ts:1-13"
+        },
+        {
+          "existing_state": "Browser transient timeout/network/5xx/408/429",
+          "current_truth": "Record and identity remain, with retry/backoff; accepted-with-intent records poll instead of resubmitting.",
+          "required_after_producer_cessation": "Keep retry/recovery/status; timeout cannot authorize clearing or migration.",
+          "source": "app/lib/discovery-admission-outbox.ts:113-191; app/lib/operation-status.ts:22-67"
+        },
+        {
+          "existing_state": "Browser accepted with intent; status preparing/queued/failed",
+          "current_truth": "Status precedence: intent queued -> queued; else task failed -> failed; else preparing. Only confirmed queued removes browser record/emits queued event.",
+          "required_after_producer_cessation": "Preserve polling and truthful failure UI. Complete task + preparing intent is not queued. Failure preserves record; explicit retry clears intent and creates new operationId with original choice/evidence.",
+          "source": "backend/app/main.py:2692-2703; app/lib/discovery-admission-outbox.ts:73-80,166-191"
+        },
+        {
+          "existing_state": "PostgreSQL matching historical intent queued; or nonqueued with missing/failed task; or intent failed",
+          "current_truth": "Acceptance returns original intent first. Nonqueued intent requeues if task missing/failed OR intent failed. Queued intent never requeues.",
+          "required_after_producer_cessation": "Preserve revisioned identity and historical IDs; do not repeat materialization or transfer reviews. Keep the existing readmission path after explicit retry.",
+          "source": "backend/app/authoring/discovery/acceptance.py:36-47; migrations/028_revisioned_discovery_admissions.sql"
+        },
+        {
+          "existing_state": "Legacy matching historical admission intent",
+          "current_truth": "create_admission_intent returns prior saved identity before recommendation work. Nonqueued intent enqueues only if task missing/failed; queued/retrying task with numeric priority above 80 is promoted to admission priority. It does not use the PostgreSQL prior.state==failed requeue rule.",
+          "required_after_producer_cessation": "Retain legacy replay/promotion and separate coordinator settlement unchanged. Do not collapse the two runtime policies or assume a failed intent/complete task automatically repairs itself.",
+          "source": "backend/app/services/discovery_admission.py:415-441"
+        },
+        {
+          "existing_state": "Matching preparing intent with task queued/leased/complete",
+          "current_truth": "Acceptance returns existing intent; complete task does not trigger requeue. Maintenance selects only intents with no task row of ANY state.",
+          "required_after_producer_cessation": "Do not claim maintenance drains all nonqueued intents. Inconsistent complete-task/preparing-intent needs explicit real-authority investigation/disposition; retain error/retry visibility and state.",
+          "source": "acceptance.py:41-47; adapters/http_composition/queue_maintenance.py:40-47"
+        },
+        {
+          "existing_state": "Accepted admission before materialization, graph/coverage/integrity ready, or readiness incomplete",
+          "current_truth": "Saved source/scope/lease fences line insertion; incomplete readiness requests coverage/requeues at 10s. Ready card introduces/queues and marks intent queued and exact-revision opportunity handled in the caller transaction. PostgreSQL also settles task in that transaction; legacy coordinator settles separately after handler return.",
+          "required_after_producer_cessation": "Keep materializer, graph/coverage/integrity dependencies, original queue authority and each runtime recovery path. Intent queued is authoritative even if separate legacy task settlement has not finished. Removing new feed refresh must not remove this accepted-work path or treat prepared branch as queued.",
+          "source": "discovery_admission.py:483-648 (native settlement 632-634); adapters/authored_repertoires/discovery_admission/storage.py:268-307; game_sync_coordinator.py:425-431"
+        },
+        {
+          "existing_state": "Admission scope/source/evidence obsolete while saved branch/card or newer opportunity exists",
+          "current_truth": "Current fences reject stale writes; handled update requires matching fingerprint. Existing authored card/history remains; old intent cannot handle newer evidence.",
+          "required_after_producer_cessation": "Preserve old and new identities and truthful failure; no forced completion, deletion, migration, or resurrection.",
+          "source": "discovery_admission.py:483-648; adapters/authored_repertoires/discovery_admission/storage.py:284-307"
+        }
+      ],
+      "preserved_test_names": [
+        "backend/tests/test_repertoire_opportunities.py::test_issue4_strong_route_weak_target_promotes_without_reviews_or_parent_maturity",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_explicit_locked_decision_survives_daily_cap_and_duplicate_clicks",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_prefix_split_isolates_target_without_transferring_reviews",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_accepted_engine_branch_survives_publication_restart",
+        "backend/tests/test_repertoire_opportunities.py::test_stale_discovery_admission_preserves_card_without_handling_new_evidence",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh",
+        "backend/tests/test_repertoire_opportunities.py::test_discovery_admission_status_reports_terminal_failure",
+        "backend/tests/test_postgres_discovery_acceptance.py::test_postgres_discovery_terminal_readmission_policy",
+        "backend/tests/test_postgres_discovery_acceptance.py::test_postgres_discovery_acceptance_rechecks_duplicate_after_parent_lock",
+        "backend/tests/test_postgres_discovery_admission.py::test_postgres_discovery_branch_rebuild_is_admitted_once_under_lease",
+        "backend/tests/test_postgres_discovery_admission.py::test_postgres_discovery_admission_completes_published_card_without_replay",
+        "backend/tests/test_postgres_cutover.py::test_postgres_opportunity_state_actions_dispatch_idempotent_commands",
+        "backend/tests/test_postgres_cutover.py::test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay",
+        "backend/tests/test_postgres_cutover.py::test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering",
+        "backend/tests/test_refresh_input_coalescing.py",
+        "backend/tests/test_discovery_acceptance_boundary.py",
+        "tests/unit/discovery-admission-outbox-regressions.test.ts",
+        "tests/unit/pending-discovery-saves-regressions.test.tsx",
+        "tests/browser/recovery.spec.ts",
+        "database/tests/check_postgres_opportunity_freshness.py::prove_opportunity_dismissal_and_source_freshness"
+      ],
+      "test_commands": [
+        "npm run check:conflicts",
+        "git diff --check",
+        "Future authorized source edit only: PYTHONDONTWRITEBYTECODE=1 TEMPO_DATABASE_WRITE_URL= TEMPO_DATABASE_READ_URL= TEMPO_REDIS_URL= TEMPO_DB_PATH=/tmp/tempo-opportunity-proof/unused.sqlite PYTHONPATH=backend python -m pytest backend/tests/test_repertoire_opportunities.py backend/tests/test_refresh_input_coalescing.py backend/tests/test_discovery_acceptance_boundary.py backend/tests/test_postgres_discovery_acceptance.py backend/tests/test_postgres_discovery_admission.py -q -p no:cacheprovider",
+        "Future affected queue/worker boundary only: PYTHONDONTWRITEBYTECODE=1 TEMPO_DATABASE_WRITE_URL= TEMPO_DATABASE_READ_URL= TEMPO_REDIS_URL= TEMPO_DB_PATH=/tmp/tempo-opportunity-proof/unused.sqlite PYTHONPATH=backend python -m pytest backend/tests/test_postgres_cutover.py -k \"opportunity or unseen_reconciliation\" -q -p no:cacheprovider",
+        "Future changed browser recovery boundary only: node node_modules/vitest/vitest.mjs run tests/unit/discovery-admission-outbox-regressions.test.ts tests/unit/pending-discovery-saves-regressions.test.tsx"
+      ],
+      "future_qualification": {
+        "not_run": "Documentation-only: no unit reruns, synthetic scenario execution, PostgreSQL, browser, builds, source-absence execution, heavy-test lock or dependency installation. Existing test definitions are provenance, not fresh passes.",
+        "affected_tests": "If HTTP refresh is later removed, update only test_postgres_opportunity_refresh_dispatches_idempotent_command in backend/tests/test_postgres_cutover.py for missing-route/no-dispatch and keep its command-handler enqueue/replay proof. Add narrow owning callback-cessation assertions only after exact approved edits; never weaken retained admission/queue/freshness proofs.",
+        "actual_infrastructure": "SQLite/fake tests named postgres are not actual PostgreSQL proof. Reuse prove_opportunity_dismissal_and_source_freshness via existing canonical freshness owner and saved-discovery browser recovery cases against disposable fixtures; select exact existing runner allocation with the owner before running. Acquire shared heavy-test advisory lock only then. No broad test command is authorized here.",
+        "source_absence": "Reuse installed-source-absence qualification for the exact later approved deletion paths. This candidate has delete_paths=[]; no absent-core proof is possible or claimed while handlers/reads/train/recovery import it. Future deletions require a new exact manifest, focused checks and independent review.",
+        "diagrams": "Architecture impact: none in this documentation patch; no public interface/dependency/schema/transaction/lifecycle changed. Any executed cessation must update the affected backend/app/services/README.md source-truth view and opportunities owner README links, showing retained drain/admission/queue coupling; no independent shutdown/resource claim."
+      },
+      "dependency_receipts": [
+        {
+          "kind": "provenance",
+          "detail": "Exact task-14 NARROW-NEXT.md/json at /Users/andy/Documents/Codex/2026-10-25/task-14/evidence/narrow-next-2026-10-25, published by PR #426 at 37e9687c487304ecf0bd6bce0f22b1c225eaafba and now merged. Initial source inspected at 782bf537; main advanced during publication to ff8a7dc99d9be4f4d644e7d8fa285957d5eb196f. Rebased documentation only: all 40 protected hashes, exact core/calls/lines and preserved selectors are unchanged; current PLAN reread and all eight existing manifest cohorts/top metadata preserved, including merged #423. Main verified through GitHub on 2026-10-25. #390 issue and PLAN/SMALL-TASKS/AGENTS/CONTRIBUTING govern source-only preparation.",
+          "source_map_hashes": {
+            "NARROW-NEXT.md": "b2f7d09ab6e62675379c5e2e4bd206b6547034f9893cef5e30d5809af35ce800",
+            "NARROW-NEXT.json": "49ef4e9dbd52a16c77b0dc9b977123a20397362086f69454eae5a76b5e71bba9"
+          }
+        },
+        {
+          "kind": "unused-helper-check",
+          "detail": "AST resolves direct service references for all 64 top-level storage functions. Synchronous refresh helpers have owning synthetic regression consumers and share scoring algorithms with durable drain; absence of another production caller is not permission to erase invariants. No demonstrably unused self-contained helper subset within the 1617-line core. Browser enqueuePendingDiscoveryAdmission has no new application caller but persisted outbox is mounted and actively recovers; outside this core/scope."
+        },
+        {
+          "kind": "static-dynamic-incoming",
+          "detail": "incoming_enqueuers enumerates every direct backend call to both public refresh enqueue functions, including the wrapper and issued command deliberately retained. main imports/registers execute_opportunity_slice at 166-170/1224; tasks imports/maps at 100/397, supports kinds and recovers saved names through broker redelivery. Generic command gateway rejects unknown names before completed-receipt replay; HTTP retry and periodic recovery can republish stored names. Background diagnostics, scheduling and controls remain registered during drain."
+        },
+        {
+          "kind": "outgoing-work",
+          "detail": "Draining refresh _publish may enqueue discovery_recommendation (111-116); card qualification may enqueue daily_queue (709-712). Admission may request graph/coverage and waits for integrity/publication. Retire none of those owners here; active worker completion still imports priority source-version/refresh publication contracts."
+        },
+        {
+          "kind": "stored-eligibility",
+          "detail": "Current-view predicate is exact source/prefix/game generation, not a frozen archive or time-to-live policy. Keep all opportunity rows and current view; ordinary queue openings/admission/capacity readers retain active non-analysis weak-known-decision eligibility, reasons and resolution. Shared priority/frozen-order fallback belongs to another task and stays."
+        },
+        {
+          "kind": "configuration-build-sql-export",
+          "detail": "No current app caller of opportunity-refresh/opportunity storage adapters remains, but both adapters and their raw identity/JSON keys remain; no browser-empty claim follows. Mounted acceptance recovery is active and different work. Broad backend image/source copying still includes active modules, so removal cannot be justified by UI absence. Current view DDL, immutable migrations 028/035, schemas, stored rows, export/history and one-time converters remain untouched; source cannot certify installed schema/client/cache/broker absence or actual data recoverability."
+        },
+        {
+          "kind": "separate-owners",
+          "detail": "PR #423 at fb63771d475d608fc65f998d53a2d879f5c71d36 prepared the guided-review candidate and is now merged in the rebased main; its complete entry and FEATURES row are preserved unchanged, with no duplicate candidate. Four opportunity callback edges in three priority-owner files are read-only handoff blockers; this packet does not implement adaptive calculation/publication/fallback changes."
+        }
+      ],
+      "data_disposition": {
+        "action": "NONE: no actual-user state accessed, exported, converted, relabelled, migrated, deleted or manufactured. No live Study, secrets, settings, CI, deployment or merge.",
+        "preserve": "Authored lines/cards/prefixes/graph/integrity; introductions/queue/attempts/reviews/FSRS/history; opportunity evidence/dismissed/handled snapshots; revisioned admission intents, saved browser envelopes; command and task receipts/errors/results; refresh requested/published identities; saved frozen rank facts; all tables/views/migrations/export mappings and one-time converters.",
+        "authority_gate": "Before executing even ingress cessation: accept unsupported public refresh URL/client disposition and the exact drain table; resolve priority-owner callbacks. Before removing any core/command/task/recommendation/admission/recovery interface: authorized actual-authority evidence must classify broker-only, durable command/task/intent and per-origin browser pending work (including missing receipt/payload and inconsistent states), settle/preserve it under its original authority, establish recoverable history, retained #382/#386 proofs, and #359/#267/#369 launcher/update/cutover requirements. Source evidence and synthetic fixtures cannot substitute for these facts. Code approval never authorizes table DROP.",
+        "next_decision": "Approve or revise this exact cessation-and-retained-drain boundary, with separate priority-owner agreement and real-authority evidence; do not send a mechanical deletion agent the 1617-line footprint as an approved delete list. If those gates remain unresolved, keep candidate and current runtime unchanged."
+      },
+      "reviewer": {
+        "status": "Independent source review accepted for candidate preparation only; no remaining P1/P2. Not deletion approval.",
+        "scope": "All incoming edges, 40 protected hashes, 22 transition rows, prior-cohort preservation and source/test-selector correspondence checked independently. Corrected initial P2: task settlement atomicity is PostgreSQL-specific; legacy coordinator settlement and readmission remain distinct. Actual authority/deployment intentionally unverified.",
+        "evidence": "Task-owned sanitized review: /Users/andy/Documents/Codex/2026-10-25/task-15/evidence/independent-review.md. No unit/runtime tests run; no application or actual-data action."
+      }
     }
   ]
 }
