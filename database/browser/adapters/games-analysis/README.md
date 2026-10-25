@@ -1,7 +1,7 @@
-# Durable game and analysis command outboxes
+# Durable sync and retained practice command outboxes
 
-Current source definitions for the legacy browser command outboxes, including
-Endgames and Tactics commands. Each adapter owns only its existing `localStorage`
+Current source definitions for the legacy game synchronization, Endgames and
+Tactics command outboxes. Each adapter owns only its existing `localStorage`
 read, JSON write or deletion. The corresponding application module still owns
 validation, request bytes, operation identity, receipt interpretation, replay,
 errors and when an entry is removed. There is no new shared dispatcher, store
@@ -36,13 +36,7 @@ not a browser schema constraint. No index, new version or key format was added.
 | --- | --- | --- |
 | Endgames attempt — [endgame-attempt.ts](endgame-attempt.ts) | `tempo-pending-endgame-attempt-v1` | JSON `{ operationId: string, templateId: string }`; [attempt command](../../../../app/lib/endgame-attempt-command.ts). |
 | Endgames template admission — [endgame-template.ts](endgame-template.ts) | `tempo-pending-endgame-template-v1` | JSON `{ operationId: string, body: string }`. `body` is the exact request JSON for `name`, `white_material`, `black_material`, `trained_color`, `goal_mix` (all strings); [template command](../../../../app/lib/endgame-template-command.ts). |
-| Finding card save — [finding-card.ts](finding-card.ts) | `tempo-pending-finding-card-v1:${findingId}` | JSON `{ operationId: string, body: string }`. `body` retains `save: boolean` and optional `starting_fen: string`, `moves: string[]`, `trained_color: "white" or "black"`; [finding card command](../../../../app/lib/finding-card-command.ts). Preview-only requests do not create an outbox entry. |
-| Game exclusion — [game-exclusion.ts](game-exclusion.ts) | `tempo-pending-game-exclusion-v1:${gameId}` | JSON `{ operationId: string, excluded: boolean }`; [exclusion command](../../../../app/lib/game-exclusion-command.ts). |
-| Finding curation/decision — [game-finding.ts](game-finding.ts) | `tempo-pending-finding-v1:${findingId}` | JSON `{ kind: "curation" or "decision", value: string, operationId: string }`; [finding command](../../../../app/lib/game-finding-command.ts). Both actions retain the same existing per-finding slot. |
 | Game synchronization — [game-sync.ts](game-sync.ts) | `tempo-pending-game-sync-command-v1` | JSON `{ operationId: string, body: string }`. `body` is exact request JSON from `Record<string, unknown>`; [sync command](../../../../app/lib/game-sync-command.ts). |
-| Defensive scan request — [game-threat-refresh.ts](game-threat-refresh.ts) | `tempo-pending-game-threat-refresh-v1:${gameId}` | Raw operation ID string, not a JSON object; [threat refresh command](../../../../app/lib/game-threat-refresh-command.ts). |
-| Guided review start — [guided-review.ts](guided-review.ts) | `tempo-pending-guided-review-start-v1:${gameId}` | Raw operation ID string; [guided review command](../../../../app/lib/guided-review-command.ts). |
-| Guided review attempt — [guided-review.ts](guided-review.ts) | Existing legacy key `tempo-pending-guided-review-attempt-v1:${sessionId}:${currentIndex}` takes precedence when present; otherwise `tempo-pending-guided-review-attempt-v2:${sessionId}:${findingId}` | JSON `{ operationId: string, moveUci: string, findingId?: string }`. The existing reader validates operation/move strings; the application retains its separate finding/revision/rejection decisions. No legacy entry is rewritten by this move; [guided review command](../../../../app/lib/guided-review-command.ts). |
 | Tactic capture — [tactic-capture.ts](tactic-capture.ts) | `tempo-pending-tactic-capture-v1` | JSON `{ body: string }` containing exact transport JSON. Inner request fields: `capture_id: UUID string`, `starting_fen: string`, `moves: string[]`, `source_kind: "puzzle_rush", "game", "manual" or "other"`, optional nullable `source_ref/source_url: string`, `note: string`; [capture request schema and command](../../../../app/lib/tactic-capture-command.ts). The inner `capture_id` is the operation identity. |
 
 Operation IDs, template/game/finding IDs and guided-review session IDs have only
@@ -56,12 +50,11 @@ JSON encoding stays inside each write so storage-object/method lookup still
 precedes serialization. Reads return unchanged raw strings; existing application
 parsers and diagnostics remain outside the database tree.
 
-## Focused relocation evidence
+## Historical relocation evidence
 
-- The nine existing owning pending-command/capture suites pass: 42 tests; fake
-  browser storage and mocked transport only.
-- Task-local source expansion preserves all 56 original call sites and the full
-  surrounding application AST. The 30 named operations preserve native-expression
+- Historical relocation evidence at [source snapshot 1e7ffb04](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb/database/browser/adapters/games-analysis): nine owning pending-command/capture suites passed 42 fake-storage/mocked-transport cases before the browser Games action clients were retired. This is historical evidence, not a claim that all nine suites remain registered.
+- At the relocation baseline, task-local source expansion preserved all 56 original
+  call sites and the full surrounding application AST. The 30 named operations preserved native-expression
   traces across 150 synthetic normal/error cases, including storage/method lookup
   and JSON exception order.
 - Actual browser/session values, provider calls, servers, native databases and
@@ -71,3 +64,21 @@ parsers and diagnostics remain outside the database tree.
 The broader IndexedDB/portable persistence index remains in the
 [browser README](../../README.md). Root metadata and the global browser inventory
 have a separate integration owner.
+
+## Retired browser Games action journals
+
+The unused finding-card, exclusion, finding-decision, defensive-scan and guided-review
+browser clients and their five exclusive adapters are retired. The retained
+game-sync, Endgames attempt/template and Tactics capture adapters above are unchanged.
+Historical implementation and exact payload shapes remain in
+[source snapshot 1e7ffb04](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb/database/browser/adapters/games-analysis).
+
+Existing `tempo-pending-finding-card-v1:*`, `tempo-pending-game-exclusion-v1:*`,
+`tempo-pending-finding-v1:*`, `tempo-pending-game-threat-refresh-v1:*`,
+`tempo-pending-guided-review-start-v1:*`, `tempo-pending-guided-review-attempt-v1:*`
+and `tempo-pending-guided-review-attempt-v2:*` records are not read, cleared,
+reconciled or migrated by this source retirement. They remain cold stored facts.
+The [Study connection inspector](../../study-connection-storage.ts) is unchanged;
+its existing retained-practice key selection does not cover these optional keys.
+This retirement does not inspect or certify their settlement. No live browser
+data or server history was inspected or changed.

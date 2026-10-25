@@ -145,3 +145,45 @@ Current Study/import and prefix-comparison assertions and fixtures stay unchange
 This saves 378,527 fixture bytes and credits zero runtime or textual test lines.
 No routes, commands, user data or schema change. Architecture impact: none; only
 unreferenced test images are removed, with no runtime or ownership boundary change.
+
+## Orphan Games browser action retirement (orphan-games-browser-actions-01)
+
+This source-only candidate retires five uncalled browser action clients left after
+PR #407 removed Games UI: finding-card preview/save, game exclusion, finding
+curation/decision, defensive-scan refresh and guided-review start/attempt. Their
+five exclusive Web Storage adapters and five client-only unit suites retire with
+them. Exact paths, preserved checks and protected hashes are in
+[RETIREMENT-BATCHES.json](RETIREMENT-BATCHES.json). Last-good implementation and
+client-specific replay proofs remain in [main snapshot 1e7ffb04](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb).
+The app-local command exports are unsupported; no backend HTTP route is retired.
+
+No production caller remained outside each exclusive client/adapter pair. The
+Game sync hook/command and complete mixed status-polling suite remain, as do
+Study review/queue, imported content, saved exercise execution, Endgames/Tactics
+commands, `PendingDiscoverySaves`, generic operation receipts and the Workbench
+URL build helper. Existing optional journal values are left cold and unchanged;
+the retained connection inspector keeps its existing practice-key selection and
+does not cover these optional keys. No existing entry is certified settled,
+exported, erased or migrated. Study history, backend/data/schema, launcher and
+actual-data gates are unchanged.
+
+Architecture: the owning [browser dictionary](../../../database/browser/adapters/games-analysis/README.md)
+now names the four surviving adapters and explicitly records cold optional keys.
+Its generic application → named adapter → Web Storage/receipt flow remains accurate
+for those survivors; no Study-to-Games edge, transaction or process lifecycle is
+introduced. Prior Study/local source-absence builds are retained for unchanged
+frontend runtime inputs; live/native/browser qualification remains pending. This
+is not `legacy-01` approval or #390/#391 completion.
+
+Focused source-removed candidate evidence: eight installed-tool Vitest files passed
+163 tests on host Node 26.12.0, including unchanged sync/status, retained practice,
+pending-discovery, PGN pending handling and the Study composition guard. Independent
+source review found no unresolved P1/P2 and verified the exact allowlist and 20
+protected hashes. Current-main integration preserves the merged tactics/shadow
+and statistics-fixture cohorts. The eight-suite and Study/local build receipts
+are reused because their relevant executable, dependency, fixture and emission
+inputs are unchanged. The changed root TypeScript configuration is checked
+separately: strict `npm run typecheck` passed in the official digest-pinned Node
+26.10.0 Linux arm64 container, including its normal three-package declaration
+build. No units or Study/local builds were repeated for documentation conflicts.
+Native/browser/deployment qualification remains unrun.

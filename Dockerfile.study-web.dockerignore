@@ -21,9 +21,6 @@ app/views/legacy-home.tsx
 app/views/legacy-workspace.tsx
 app/components/workbench-launch.tsx
 app/lib/discovery-admission-outbox.ts
-app/lib/game-finding-command.ts
-app/lib/game-threat-refresh-command.ts
-app/lib/game-exclusion-command.ts
 app/views/repertoire_view.tsx
 app/views/card_editor.tsx
 app/views/tree_browser.tsx

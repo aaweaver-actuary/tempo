@@ -682,6 +682,188 @@
         "scope": "Only the exact two PNG deletions and their disposition records; no legacy-01, migration, table, launcher or deployment approval.",
         "evidence": "Independent review at base 1e7ffb049b9c5489cd0fa4c145d81ba1771813cb confirmed retired screenshot history, explicit filename resolution, no directory-discovery consumer, protected source/config/prefix PNG equality and prior manifest preservation. No actionable P1/P2 finding; no runtime tests or builds run."
       }
+    },
+    {
+      "id": "orphan-games-browser-actions-01",
+      "status": "candidate",
+      "source_commit": "1e7ffb049b9c5489cd0fa4c145d81ba1771813cb",
+      "delete_paths": [
+        "app/lib/finding-card-command.ts",
+        "app/lib/game-exclusion-command.ts",
+        "app/lib/game-finding-command.ts",
+        "app/lib/game-threat-refresh-command.ts",
+        "app/lib/guided-review-command.ts",
+        "database/browser/adapters/games-analysis/finding-card.ts",
+        "database/browser/adapters/games-analysis/game-exclusion.ts",
+        "database/browser/adapters/games-analysis/game-finding.ts",
+        "database/browser/adapters/games-analysis/game-threat-refresh.ts",
+        "database/browser/adapters/games-analysis/guided-review.ts",
+        "tests/unit/finding-card-pending-regressions.test.ts",
+        "tests/unit/game-exclusion-pending-regressions.test.ts",
+        "tests/unit/game-finding-pending-regressions.test.ts",
+        "tests/unit/game-threat-refresh-pending-regressions.test.ts",
+        "tests/unit/guided-review-pending-regressions.test.ts"
+      ],
+      "edit_paths": [
+        {
+          "path": "scripts/study-composition.ts",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "Dockerfile.study-web.dockerignore",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "scripts/ci-fast-lane-inventory.json",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "database/browser/README.md",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "database/browser/adapters/games-analysis/README.md",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/FEATURES.md",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        },
+        {
+          "path": "docs/architecture/study-first-reduction-2026-10-21/RETIREMENT-BATCHES.json",
+          "required_edit": "Remove only registrations and references exclusive to the retired Games browser action clients; retain sync/status, Study/import and pending-discovery ownership and assertions."
+        }
+      ],
+      "production_scope": {
+        "paths": [
+          "app/lib/finding-card-command.ts",
+          "app/lib/game-exclusion-command.ts",
+          "app/lib/game-finding-command.ts",
+          "app/lib/game-threat-refresh-command.ts",
+          "app/lib/guided-review-command.ts",
+          "database/browser/adapters/games-analysis/finding-card.ts",
+          "database/browser/adapters/games-analysis/game-exclusion.ts",
+          "database/browser/adapters/games-analysis/game-finding.ts",
+          "database/browser/adapters/games-analysis/game-threat-refresh.ts",
+          "database/browser/adapters/games-analysis/guided-review.ts"
+        ],
+        "path_count": 10,
+        "deleted_lines": 467,
+        "limit_paths": 25,
+        "limit_lines": 3000
+      },
+      "keep_paths": [
+        {
+          "path": "app/hooks/use-game-sync.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 03a3d9a2df54e6827105014a9fec2f71e2bffd3a90c870015d883f97f2169dbb"
+        },
+        {
+          "path": "app/lib/game-sync-command.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 7bc568c07cb7ebb13b6682e745bd0c7ef732e4dd6a4d394c428dd2107ff024a2"
+        },
+        {
+          "path": "tests/unit/status-polling-regressions.test.tsx",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 5380d8de092b5cd1d3c826c552c26f06cd0751470a55a8299e28df70eb140ea8"
+        },
+        {
+          "path": "app/components/pending-discovery-saves.tsx",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 b41b5dd5ecd1f706dd55b83b179c1d0c253cc29b645e7bf2455c848d82036baf"
+        },
+        {
+          "path": "app/lib/discovery-admission-outbox.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 c685c67306f64c7967830c5db9a76f2e9ebedc75727b6e2b07597a4da1d62352"
+        },
+        {
+          "path": "app/lib/operation-status.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 cd6a8f03e6d3f877f87f84eb73cc0edf35ae29817bf82d120b478b378d3fdd5f"
+        },
+        {
+          "path": "app/lib/review-outbox.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 f5ac92d00e7d790fa7266b4d1b29fe41e48d5ca451f33f1e0a7cb7ed5257f7e4"
+        },
+        {
+          "path": "app/lib/study-connection.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 212c06096b2b9c3e3e148f3cfbe6179c7597373f630a4ff88416d693e2074ca2"
+        },
+        {
+          "path": "app/lib/study.worker.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 6e34595b59b9e77a8ad3efc7e092a598773528a0a391e114875775123f74ee28"
+        },
+        {
+          "path": "app/views/legacy-workspace.tsx",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 4f358ee3df998588c481e36be598fe2e386aaedc6166b64b3e588da7efeecb91"
+        },
+        {
+          "path": "app/ImportDialogBox.tsx",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 d57f2ffd77f5ef368a24bf189602d8c6840c7fb97a22bb40aee31e43b5987f9f"
+        },
+        {
+          "path": "app/AnalysisPasteDialog.tsx",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 474c7a7b9e41beea236c8164b0242dc222b4b962fe6ddf5b7613d0318a952f64"
+        },
+        {
+          "path": "app/lib/workbench-navigation.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 f188013708257accd42ffd4eb73c8601380d943a5d67aee3c96d271a6b50f99e"
+        },
+        {
+          "path": "database/browser/study-connection-storage.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 0780be165f06d200c2895f4bff816376279e057a4665a5fb7ff6664c8c2cc687"
+        },
+        {
+          "path": "database/browser/adapters/games-analysis/game-sync.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 db08829b0df5c323478d14b033eab98eb3cff9785c63b3abd1ae824ddc5362ba"
+        },
+        {
+          "path": "database/browser/adapters/games-analysis/endgame-attempt.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 04c0b01ac0cc35197732056c37581227662266c8152010cc06cbf8e105b811c3"
+        },
+        {
+          "path": "database/browser/adapters/games-analysis/endgame-template.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 da0e971196c4f2eafcc3410e4e765c53f4f1afd3b30f0f0130f633fa28d8191d"
+        },
+        {
+          "path": "database/browser/adapters/games-analysis/tactic-capture.ts",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 2d86c58b4cd37a9c3e05750e4304aea6abd18c6581369976bfce6a9e5a3b8e0d"
+        },
+        {
+          "path": "public/sw.js",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 7b94bed5272a6c3fe2377b2efa754269f24a0e22778e8c333fcb3afdc9e4aec6"
+        },
+        {
+          "path": "public/data/studies/stalemate-swindles-2026-09-v1.tempo-study.json",
+          "reason": "Protected retained serving, imported-content, pending recovery, saved-practice or authority-inspection boundary; SHA-256 d8fc17a79bcc5d348e9643c44737bae1958f7c284fdd543cd840c79f1d373ff1"
+        }
+      ],
+      "preserved_test_names": [
+        "tests/unit/status-polling-regressions.test.tsx",
+        "tests/unit/game-sync-command-pending-regressions.test.ts",
+        "tests/unit/endgame-attempt-pending-regressions.test.ts",
+        "tests/unit/endgame-template-pending-regressions.test.ts",
+        "tests/unit/tactic-capture-regressions.test.tsx",
+        "tests/unit/pending-discovery-saves-regressions.test.tsx",
+        "tests/unit/pgn-import-pending-regressions.test.ts",
+        "tests/unit/study-composition-regressions.test.ts"
+      ],
+      "test_commands": [
+        "node node_modules/vitest/vitest.mjs run tests/unit/status-polling-regressions.test.tsx tests/unit/game-sync-command-pending-regressions.test.ts tests/unit/endgame-attempt-pending-regressions.test.ts tests/unit/endgame-template-pending-regressions.test.ts tests/unit/tactic-capture-regressions.test.tsx tests/unit/pending-discovery-saves-regressions.test.tsx tests/unit/pgn-import-pending-regressions.test.ts tests/unit/study-composition-regressions.test.ts --maxWorkers=1 --no-file-parallelism",
+        "git diff --check"
+      ],
+      "dependency_receipts": [
+        "At source 1e7ffb04, all five browser action clients have only their exclusive unit-suite imports; none has an app/static entry, export, dynamic loader, public URL, configuration or build consumer. Each deleted adapter has exactly its deleted client as production consumer.",
+        "All outgoing retained dependencies (operation-status, validated-data, API const, Zod and browser authority inspection) remain. No backend handler or persisted schema, receipt, exercise or Study history is changed.",
+        "Installed-tool focused selection on the source-removed candidate: eight Vitest files, 163 tests passed, zero failed or skipped, 5.60 seconds reported duration on host Node v26.12.0 and Vitest 5.0.1. Advisory validation lock held 13:26:52.808\u201313:26:58.904 UTC; existing dependencies reused with a task-local cache root, no build or install. Exact commands and logs retained in task-6/frontend-evidence. Test executable inputs match the final candidate; subsequent edits only finalize metadata.",
+        "Static checks pass: all 15 exact deleted paths absent, 20 protected SHA-256 values unchanged, no retired symbol consumer in retained app/static/apps/scripts/public/browser runtime, valid manifest and CI inventory JSON, and git diff --check. Physical source-absence builds, native PostgreSQL, actual browser, full-system and deployment qualification are unrun; this lane forbids builds and live operations. Root TypeScript baseline is not rerun or claimed passing.",
+        "Current-main integration at source 1abd0c2e6177bd59c3522849c0b0d0668fc7fa56 / tree 14845a1933c406938d335e93fa6c8fb6d9894642 includes main f9449a2a9b32e8a86f7ad2030a28231a1d8e1d26 and preserves all six existing retirement cohorts. The prior eight-file/163-pass receipt and Study/local source-absence build receipts remain applicable: all selected runtime/source/dependency/fixture inputs and 149 recorded Study composition modules match the prior qualified candidate, and the TypeScript alias/ambient-type change does not affect those runtime paths. No unit or Study/local build rerun was required for documentation conflicts. The actual changed root TypeScript configuration was qualified separately by npm run typecheck (zero errors, normal three-package declaration prebuild) under official Node 26.10.0 / TypeScript 5.9.3 in a bounded Linux arm64 container, network disconnected before checking. No host software, live services, schemas or data changed. Final post-check edits only document this receipt; native/browser/deployment gates remain unverified."
+      ],
+      "data_disposition": "Source-only removal. Existing origin localStorage values are untouched: tempo-pending-finding-card-v1:*, tempo-pending-game-exclusion-v1:*, tempo-pending-finding-v1:*, tempo-pending-game-threat-refresh-v1:*, tempo-pending-guided-review-start-v1:*, tempo-pending-guided-review-attempt-v1:* and tempo-pending-guided-review-attempt-v2:* records remain cold. The Study connection inspector is byte-identical and retains its existing practice-key selection; it does not inspect these optional keys. No journal reconciliation, historical migration, live-data observation, server settlement, schema change or table drop is claimed.",
+      "reviewer": {
+        "decision": "independent source isolation accepted; builds and release/cutover unqualified",
+        "rationale": "Independent reviewer /root/review_frontend found no unresolved P1/P2 in the exact 23-path diff, verified 20 protected file hashes and exact 15 deletions, and confirmed only five retired CI source rules and exclusive suite references changed. Review accepts this bounded #361 source-isolation packet; it does not approve legacy-01, deployment, actual-data or launcher/cutover."
+      }
     }
   ]
 }
