@@ -331,107 +331,122 @@ whole-product gate or merge claim.
 
 ## #382 native essential acceptance — 2026-10-25
 
-**Native section qualified: 10 collected, 10 executed, 10 passed, 0 failed,
-0 skipped.** Collection/execution identities, all **30** setup/call/teardown
-phases and ten JUnit cases agree. Pytest/JUnit time is **67.86 s**; the locked
-parent command took **70.95 s**, including install/collection/cleanup. One existing
-Starlette/AnyIO deprecation warning remains. This is the native static-server /
-Learning-forwarder assembly, separate from the browser owner's actual Compose
-same-ingress normal/lost-response proof. **#382 is not complete** on this receipt
-alone; physical-phone, live-data and deployment qualification remain unverified.
+**Native section qualified: exactly 10 collected, 10 executed, 10 passed,
+0 failed, 0 skipped.** Collection/execution identities, all **30**
+setup/call/teardown phases and ten JUnit identities agree. Final pytest/JUnit time
+is **66.26 s**; locked parent time is **69.48 s**, including install, collection
+and cleanup. Independent source/result review found no actionable issue. One
+existing Starlette/AnyIO deprecation warning remains. This proves the native
+production-assets / installed-Learning / owned-PostgreSQL assembly. Actual Compose
+same-ingress normal/lost-response proof remains separately owned; **#382 is not
+complete on this receipt alone**. Physical-phone, live-data, deployment and
+whole-product/CI qualification remain unverified.
 
-Tested source is `ee41f207f49a1d370bc6c00c7b39e03fdb321578`, tree
-`d01e376dadfe56fa4e574800ad4b5c44c9463285`, including main
-`782bf5374b87f223a023568305056415d5b63cea`. Later receipt edits change only this
-native section. The default `scripts/prove-study-learning.mjs` was unchanged:
-Git blob `d12f405b81289b09aa89f1ad5fdd63b792b73e17`, SHA256
-`1bb15cd682cded8009f7026e0000755138c26bcd5eca211e9f1378681ef5200b`.
-The browser owner's future opt-in change requires separate correspondence review;
-this native owner did not modify that shared script.
+Final tested assembly is `a534aeb0e2f96c8adecaaffc855fdd62abc1898e`, tree
+`cb6ac320e19980313e561f908e945c7e948ab9a3`, preserved on
+`codex/382-native-assembled-default`. It combines current main
+`782bf5374b87f223a023568305056415d5b63cea`, this native UUID repair and browser-owner
+commit `bc7c9194641938e605b7025e1f68faec1093dc22`. PR422 retains only its four native
+repair/receipt paths; consuming that dependency on a separate assembly branch
+did not modify the browser owner's script. The final script is exactly their
+Git blob `b02955e8513e1aba2d0778a149263ba324a8b193`, SHA256
+`628345de05aa8bbea3782f08778982c10ff3832ca6b664eb620fb5999348024b`.
+All ten proofs use default native mode, with its real forwarding proxy; no
+composed-mode results are claimed here.
 
-The only executable repair adds the missing `uuid` import to the native harness.
-Its named regular regression,
+The sole executable repair adds the missing `uuid` import. The named regular
+regression,
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`,
-executes actual fixture-key setup twice without starting servers. Retained proof
+executes actual fixture-key setup twice before servers start. Retained evidence
 at `594c561d797b1c41a77ab86d5fc87f02854062b9`: **1 failed before** with
 `NameError: name 'uuid' is not defined`, **1 passed after**, 0 skipped; selector
-suite **4 passed**. Independent current-main source review found no actionable
-issue. Exact native executable/dependency/fixture correspondence justified reusing
-those focused results after main integration; no unit suite was rerun for receipt
-edits. No assertion, skip, selection, timeout or browser protocol was weakened.
+suite **4 passed**. Relevant native executable/dependency/fixture correspondence
+preserves those results. No assertions, skips, selections or timeouts were
+weakened, and documentation/conflict integration caused no unit reruns.
 
 The parent accepted #380's recorded-artifact evidence at PR420 head
-`20be190eec5ed28ce149344767e8f9edb4f648ab`. Its exact handoff and all eight recorded
-configuration/source/lock hashes are pinned in `accepted-380-correspondence.json`.
-That acceptance includes explicit outage 504s at 60.09–60.13 s under nginx's existing
-connection timeout, static availability and same-artifact/schema recovery. Those
-role/outage/recovery/teardown checks were not repeated here. This receipt does not
-claim PR420 merged or reuse its earlier Study images as the newer build.
+`20be190eec5ed28ce149344767e8f9edb4f648ab`. Exact handoff identity and all eight
+recorded configuration/source/lock correspondences are pinned in
+`assembled/accepted-380-correspondence.json`. Its explicit outage 504s at the
+existing nginx timeout, static availability, same-artifact/schema recovery and
+role/teardown proof were not duplicated here. No PR420 merge is asserted.
 
 Evidence root (`taskEvidence` below):
-`/tmp/tempo-382-native-evidence-20261025`. The existing selector and owning
-PostgreSQL runner were invoked directly with `fixture_profile='essential'`, its
-unchanged extra-source closure and freshly built production assets:
+`/tmp/tempo-382-native-evidence-20261025`. Existing selection and owning PostgreSQL
+qualification were used directly with `fixture_profile='essential'`, unchanged
+extra-source closure and production assets. Exact commands/child arguments are
+retained in the external scripts and native receipts:
 
 ```sh
 python3 "$taskEvidence/locked-run.py" docker build --pull=false --target build \
   -f Dockerfile.study-web --label tempo.owner=tempo-382-native-assembled-20261025 \
   --label tempo.disposable=true -t tempo-382-native-build:assembled-20261025 .
 python3 "$taskEvidence/locked-run.py" services/learning/runtime/.venv/bin/python \
-  "$taskEvidence/assembled/run-native.py"
+  "$taskEvidence/final-native/run-native.py"
 python3 "$taskEvidence/locked-run.py" services/learning/runtime/.venv/bin/python \
   "$taskEvidence/assembled/run-core-support.py"
 ```
 
-Exact native IDs are
+Ten node IDs are
 `integration/study_tests/test_study_ui.py::test_production_study_learning_native[SCENARIO]`
 for exactly `normal`, `teaching`, `lost-response`, `before-commit`, `next-load`,
 `two-tabs`, `offline-shell`, `wrong-credential`, `origin-transition`, `quota`.
-Every retained browser proof reports complete with zero unexpected requests.
-Real forwarded traffic and the owning PostgreSQL assertions retain original
-commands/attempts and exactly one durable review in successful scenarios; denied
-credential, origin transition and quota cases retain zero reviews. Optional
-services are absent: the fixture receipt lists only `learning`.
+Every browser proof reports complete and zero unexpected requests. The unchanged
+owning PostgreSQL assertions require one durable review and one review-attempt
+receipt in all seven successful review scenarios; credential/origin/quota
+rejections retain zero reviews. Lost-response preserves the actual dropped reply
+and original operation; before-commit retries retain identical key/body. The
+fixture component inventory contains only `learning`; optional services are absent.
 
-The separate focused current native support check collected/executed/passed **2**
-cases, **0 failed/skipped**, all six phases/JUnit cases, in **0.85 s**:
-`tests/test_runtime.py::test_runtime_ready_authorized_and_ordinary_introduction` and
-`tests/test_publications.py::test_frozen_ranks_control_introductions_without_score_producers`.
-This removes reliance on unavailable raw/toolchain correspondence for the older
-#365 receipt; these two are not additional UI scenarios or a broad Learning run.
+Separate current ordinary-introduction/frozen-rank support: **2 collected,
+2 executed, 2 passed, 0 failed/skipped**, all six phases and two JUnit identities,
+**0.85 s** pytest / **5.80 s** parent. IDs are
+`tests/test_runtime.py::test_runtime_ready_authorized_and_ordinary_introduction`
+and `tests/test_publications.py::test_frozen_ranks_control_introductions_without_score_producers`.
+This avoids relying on unavailable raw/toolchain correspondence from the older
+#365 receipt. Its 184 source / 174 dependency inputs are unchanged on the final
+assembly, so it was not rerun for the browser-script-only delta. These are not
+additional UI scenarios or a broad Learning run.
 
-Toolchain: Python **3.12.12**, pytest **9.1.1**, existing host Node **26.12.0**,
-locked Playwright **1.63.0** / chess.js **1.4.0**, actual macOS Chromium
-**153.0.8010.12** (revision 1243; executable hash in `browser-toolchain.json`).
-Installed Learning/database sources byte-match **54 / 36 Python files**. Locked
-cached dependencies were used offline; no host software/browser/Python install.
-Each fresh PostgreSQL fixture was capped at **1 CPU / 512 MiB**.
+The earlier default script also passed its ten native cases at `ee41f207`
+(67.86 s pytest), retained under `assembled/native-essential`. The browser owner's
+subsequent shared startup/workspace/recovery code changes justified fresh final
+execution. Counts from the two runs are not combined. No production Docker COPY
+input changed with that script dependency; exact assets were reused without an
+unnecessary rebuild. The build had already been refreshed for #419's changed
+consumed composition manifest: all 744 old/new paths agree, and only
+`study-composition.json` differs from the original preparation assets.
 
-| Identity / retained artifact | Exact value |
+| Source/build/receipt identity | Exact value |
 | --- | --- |
 | Official Node 22.23.4 build image | `sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d` |
-| Current Study build-stage image | `sha256:1601bec32eb19fa4ed393e9d066ae10d70d097d65bc6a94cb6793c745c4e34bf` |
+| Production Study build-stage image | `sha256:1601bec32eb19fa4ed393e9d066ae10d70d097d65bc6a94cb6793c745c4e34bf` |
 | PostgreSQL 18.6 image | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
-| `assembled/study-assets.json`, 744 files | SHA256 `0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e` |
-| `assembled/source-inputs.json`, 1,415 files | SHA256 `11698e261efe63cc2b9ec37811d7eee5e77b7785d54a4b778c9bd6875445e223` |
-| Ten-case `native.json` | SHA256 `bd79a14e14fb042efd0eff438b785dc1ae41d90aa95dde01acc4d08e026e98dd` |
-| Ten-case `native.xml` | SHA256 `a1a4c3210e4171746cde980b96dd19ebc0f72c07d12962ad2134fda33dab139e` |
+| 744-asset manifest `assembled/study-assets.json` | SHA256 `0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e` |
+| 1,415-input final source manifest | SHA256 `a39a5e159c465bea3f0c00adacfbe57857f09826cd80be6c25730f42a1e2fc22` |
+| Final ten-case `native.json` | SHA256 `a2ae898084cd48e28ac801ba9f890a803f3aa0d37c6aa29bca70391d98553b68` |
+| Final ten-case `native.xml` | SHA256 `6ba011d5e2b3128db68502ff8317664d10498d5134922a0245f562f2b6a555d9` |
 
-The rebuild was necessary because #419 changed the consumed Study composition
-manifest. All 744 old/new asset paths match; **only `study-composition.json`
-changed**. Both builds and exact comparisons are preserved. The current native
-report records 184 source / 1,223 dependency inputs; complete child commands,
-node IDs, collection/execution hashes and both native receipts are summarized in
-`assembled/bounded-native-receipt.json`. Detailed ten-case evidence is
-`assembled/native-essential/run-7247047f0a2bb4d2`; supporting evidence is
-`assembled/core-support/run-528110449ec384d6`.
+Toolchain is Python **3.12.12**, pytest **9.1.1**, existing host Node **26.12.0**,
+locked Playwright **1.63.0** / chess.js **1.4.0**, actual macOS Chromium
+**153.0.8010.12** (revision 1243; executable hash in `browser-toolchain.json`).
+Installed runtime/database sources match **54 / 36 Python files**. Locked cached
+dependencies were used offline, with no host software/browser/Python installation.
+Each owned PostgreSQL fixture was capped at **1 CPU / 512 MiB**. The final native
+receipt records 184 source / 1,223 dependency inputs.
 
-Both native fixtures confirm container, volume and temporary-data removal;
-independent exact-name readback agrees. The task export container/build tag are
-removed, shared base images/cache preserved, and the existing advisory lock was
-opened without truncation, held through each full child/cleanup and never unlinked.
-Old/new assets, sanitized proofs/service logs, reproducer, manifests and reviews
-remain outside the disposable checkout. Final pushed-ref/checkout preservation is
-recorded in external `handoff.json`; no live Study/database/history, host setting,
-secret, deployment, CI configuration or merge was touched. Browser Compose proof
-and any later shared-script correspondence remain separately owned gates.
+Final machine receipt, exact commands, all node IDs and hashes are in
+`final-native/bounded-native-receipt.json`; detailed evidence is
+`final-native/native-essential/run-2e8cea583c7ee06b`. Support evidence is
+`assembled/core-support/run-528110449ec384d6`. Independent review reconciled every
+identity/phase/JUnit/proof, actual installed source and final script/build reuse.
+Three invocation-owned PostgreSQL containers/volumes and all temporary test data
+are confirmed absent, with exact-name cleanup readbacks. Export containers and
+task build tags are removed; shared images/cache are preserved. The existing
+advisory lock was opened without truncation, held through full child cleanup and
+never unlinked. Old/new assets, sanitized proofs/service logs, reproducer,
+manifests, reviews and pushed source identities remain outside the disposable
+checkout; final checkout cleanup is recorded in `handoff.json`. No live Study,
+database/history, host setting, secret, deployment, CI configuration or PR merge
+was touched. The main #419 test-inventory repair has another owner; no discovery
+failure was bypassed and no whole runner-lane pass is claimed.
