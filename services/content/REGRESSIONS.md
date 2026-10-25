@@ -1,5 +1,13 @@
 # Content regression ownership
 
+The existing bridge source-capacity proof now follows the public
+`SourceSnapshot.exercises` ceiling of 10,000 rather than the former 8,192
+implementation guard. `test_complete_9612_definition_source_fits_existing_public_capacity_without_truncation`
+checks complete binding/definition preservation through scope validation and
+draft preparation; `test_complete_10001_definition_source_rejected_by_both_public_bridge_paths`
+checks both public entry paths reject oversized input before storage. These are
+constructed input-boundary tests, not actual graph import or PostgreSQL evidence.
+
 Native test paths below are repository-root paths. The [native suite](../../database/tempo_content_database/tests/README.md) retains Content ownership; its [runner and benchmark](../../database/tempo_content_database/tooling/README.md) are centralized alongside it. Historical validation receipts retain their original paths.
 
 `tests/test_execution_projection.py` owns original full-executable preservation
