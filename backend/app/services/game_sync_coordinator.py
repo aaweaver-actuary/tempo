@@ -32,7 +32,7 @@ from .introduction_priorities import (
     load_priority_calculation_input,
     publish_priority_records,
 )
-from .statistics import claim_daily_snapshot, execute_daily_snapshot, refresh_game_features
+from .statistics import refresh_game_features
 from .repertoire_integrity import (
     claim_integrity_slice,
     execute_integrity_slice,
@@ -346,7 +346,6 @@ class GameSyncCoordinator:
             "derivation",
             "coverage",
             "integrity",
-            "statistics",
             "priority",
         )
         while True:
@@ -365,8 +364,6 @@ class GameSyncCoordinator:
                         item = await asyncio.to_thread(claim_coverage_node)
                     elif source == "integrity":
                         item = await asyncio.to_thread(claim_integrity_slice)
-                    elif source == "statistics":
-                        item = await asyncio.to_thread(claim_daily_snapshot)
                     else:
                         item = await asyncio.to_thread(claim_priority_refresh)
                 except sqlite3.OperationalError:
@@ -430,8 +427,6 @@ class GameSyncCoordinator:
                         await asyncio.to_thread(execute_coverage_node, item)
                     elif source == "integrity":
                         await asyncio.to_thread(execute_integrity_slice, item)
-                    elif source == "statistics":
-                        await asyncio.to_thread(execute_daily_snapshot, item)
                     else:
                         await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Loading priorities")
                         calculation_input = await asyncio.to_thread(

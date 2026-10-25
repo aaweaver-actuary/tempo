@@ -114,7 +114,6 @@ from .services.threat_training import (
     enqueue_defense_admission, execute_defense_rubric_audit_slice,
 )
 from .services.tactical_opportunities import tactical_statistics
-from .services.statistics import enqueue_daily_snapshot
 from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
 from .services.game_sync_coordinator import (
@@ -528,10 +527,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                      and request.method == "POST")
         task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
                               and path_parts[4] == "retry" and request.method == "POST")
-        statistics_refresh_command = (
-            len(path_parts) == 5 and path_parts[:3] == ["api", "statistics", "daily"]
-            and path_parts[4] == "refresh" and request.method == "POST"
-        )
         defensive_admin_command = (
             request.method == "POST" and path_parts in (
                 ["api", "defensive-threats", "analysis", "audit"],
@@ -670,7 +665,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     coverage_maia_command, coverage_explorer_session,
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command, tactic_capture_command,
-                    statistics_refresh_command,
                     defensive_admin_command,
                     defensive_candidate_command,
                     defensive_analysis_command,
@@ -4250,25 +4244,6 @@ def game_detail(game_id: str):
     return public_game_record(row)
 
 
-@app.post("/api/statistics/daily/{local_day}/refresh")
-def refresh_chess_statistics_day(
-    local_day: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    try:
-        datetime.fromisoformat(local_day)
-        if postgres_store.configured():
-            from .command_dispatch import dispatch_command
-
-            return dispatch_command(
-                "statistics.daily.refresh", {"local_day": local_day},
-                idempotency_key=idempotency_key,
-            )
-        enqueue_daily_snapshot(local_day)
-        coordinator.wake()
-        return {"local_day": local_day, "status": "queued"}
-    except ValueError as error:
-        raise HTTPException(422, "Invalid local day") from error
 
 
 from .opening_segmentation_api import router as opening_segmentation_router

@@ -2395,7 +2395,8 @@ def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(m
     assert enqueued == [("game_derivation_positions", "lichess:game-1",
                          {"game_id": "lichess:game-1", "derivation_version": 1,
                           "cursor": 0}, 125)]
-    assert any("DELETE FROM daily_chess_snapshots" in statement for statement, _ in statements)
+    assert not any("daily_chess_snapshots" in statement or "daily_chess_insights" in statement
+                   for statement, _ in statements)
 
 
 def test_postgres_game_sync_record_waits_for_foreground_and_discards_stale_replay(monkeypatch):
