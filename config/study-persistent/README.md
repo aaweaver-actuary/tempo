@@ -81,6 +81,11 @@ Receipt proves only producer-owned effects and no admission performed by this
 producer, not actual runtime or graph isolation. Disposable helper #452 remains
 unchanged; its receipt cannot be promoted into persistent acceptance.
 
-No live resource, credential, grant, capture, service start or cutover was
-executed. The Mac execution transport was unavailable during authoring. Focused
-fake and native/Compose checks must run before qualification is claimed.
+Focused qualification at executable commit
+65ec53bfee1b3e94a374a9b5dfdcd8fdfff54020 passed: 25 persistent fake tests and
+12 existing disposable-bootstrap regressions. Both Compose 5.6.1 profiles rendered
+successfully with DOCKER_HOST pointing to a nonexistent Unix socket; no daemon
+or resources were contacted. These results supersede the authoring-time executor
+outage. No live resource, credential, grant, capture, service start or cutover was
+executed. Native PostgreSQL, installed-container runtime and actual admission
+qualification remain unverified.
