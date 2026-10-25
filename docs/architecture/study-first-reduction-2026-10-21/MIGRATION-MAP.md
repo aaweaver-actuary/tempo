@@ -148,6 +148,7 @@ enumerated in the linked definition, not an adapter's shortened projection.
 | L1 `repertoire_lines`; `id` | M → `id,repertoire_id,trained_color,created_at`; C → `name,start_fen,moves_json` (N1's line table lacks them). | Ordered authored route is still required identity evidence. Preserve it in the accepted definition/archive, not solely as a recomputed graph. |
 | L1 `opening_graph_publications`; `repertoire_id` | M → `repertoire_id,generation,state`; C → `last_error,published_at`. | Bind steps to the captured generation, not whichever generation is current later. |
 | L1 `opening_graph_steps`; `(repertoire_id,generation,line_id,decision_index)` | M → those PK fields plus `card_id,parent_card_id,starting_fen,moves_json,trained_color`; C → `decision_fen_key,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json`. | Preserve prefix/segment coverage and complete route evidence. The N1 projection alone cannot explain old multi-decision segments. |
+| L1 `opening_graph_legacy_mappings`; `(repertoire_id,generation,legacy_card_id,decision_card_id)` | C → all four fields in `accepted_definitions.data.cold`; no N1 table. | These are existing graph-projection mappings, not reviewer-approved historical aliases. Preserve every generation and pair; using them to transfer reviews/schedules or adopt a decision identity is B until explicitly approved. |
 | L1 `card_revisions`; PK `id`, unique `(card_id,revision)` | C → all fields `id,card_id,revision,start_fen,moves_json,history_mode,created_at` (no N1 table). | Historical executable evidence must survive; do not substitute current card or opening presentation when absent. |
 | L1 `prefix_splits`; `source_card_id`; `repertoire_line_training_depths`; `line_id` | C → `source_card_id,source_revision,shortened_card_id,continuation_card_id,created_at` and `line_id,learner_decision_count`. | Preserve successor/depth evidence; any decision-history or admission mapping depending on it is B. No one-to-many review duplication. |
 | L1 `studies`; `id` | M → `id,title,archived`; C → `description,source_json,created_at,updated_at`. | Authoring provenance is not recreated by the reduced Learning projection. |
@@ -161,6 +162,7 @@ enumerated in the linked definition, not an adapter's shortened projection.
 | L1 `puzzles,puzzle_decks,threat_training_candidates`; [025][l25] `tactic_captures` | C → complete named-table rows/PKs; B for required accepted-definition extraction. | No exact table-to-table Learning equivalent. A retained tactic's card executable does not establish its source metadata. Candidate `id,card_id,exercise_revision,evidence_json,validation_json,policy_json,approved_at` do not by themselves define N1 `accepted_defense_exercises(candidate_id,card_id,exercise_revision,definition_json)`. Do not accept unapproved candidates. |
 | N1/N2/N3 accepted state | Preserve existing target `accepted_publications(publication_id,generation,digest,payload_json,state)`, `serving_publications(publication_id,generation,activation_revision)`, `accepted_defense_exercises`, `content_card_aliases(content_card_id,learning_card_id,publication_id,binding_digest)`, `accepted_evidence_revisions(workspace_id,evidence_id,evidence_revision,semantic_digest,updated_at)`. | B for manufacturing these from legacy defaults. The [publication adapter][publication] stages/activates content, not history migration. N2 null `semantic_digest` means unverified old semantic payload, not an empty digest. |
 | L50 `legacy_learning_identity`; `id` | C → exact `id,target_id,workspace_id` in retained source-authority metadata; B → independent `learning.instance(id,workspace_id)`. | `workspace_id='legacy'` and an actual target ID cannot be guessed or relabelled. The normalized logical workspace requires reviewer-approved linkage, not an invented live identity. |
+| N1 `tablebase_cache`; `fen_key` | C → exact `fen_key,response_json,fetched_at` in existing target `accepted_definitions.data.cold`. | Derived lookup cache, not an accepted exercise definition or historical answer. Retention does not authorize a new lookup or establish grading compatibility; any required serving dependency is B until its owner confirms it. |
 
 Supporting authoring/projection closure is also explicit: C preserves complete
 rows from L1 `repertoire_card_introduction_priorities`,
@@ -199,6 +201,8 @@ ledger is B until the snapshot inventory names its exact rows and disposition.
 | L16 + L32 `review_attempt_receipts`; `attempt_id` | M → `attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json,request_json`. | Keep request identity, warnings and scheduling result, including unknown/null request. [Receipt persistence][reconcile] is not permission to replay a new review. |
 | R1 `remediation_deliveries`; `(workspace_id,delivery_id)`; `remediation_review_receipts`; `(workspace_id,review_id)` | M → `(workspace_id,delivery_id,payload_hash,response_json)` and `(workspace_id,review_id,payload_json,settled)`. | Preserve boolean `settled`, typed JSONB response and TEXT payload distinctions. Legacy authority transfer remains B. |
 | N1 receipt/binding tables, when present | M → `activation_receipts(operation_id,request_hash,result_json)`, `evidence_deliveries(delivery_id,digest,result_json)`, `logical_request_bindings(family,attempt_id,request_hash)`. | No synthetic legacy binding or successful activation receipt. [Gateway][gateway] checks command + hash and commits effects/receipt atomically; browser completion requires the matching receipt. |
+| N1 `analysis_obligations`; `request_id` | Retain complete existing target rows `request_id,candidate_id,request_json,state`. B for unfinished work; C in `operation_receipts.data.cold` only after owner-verified terminal disposition. | These durable defense-analysis requests are not absent because their optional producer is unavailable. Preserve original request identity/payload/state; do not replay, mark complete or transfer ownership to make snapshots equal. |
+| N1 `advisory_notifications`; `(kind,subject)` | C → exact `kind,subject,generation` in existing target `operation_receipts.data.cold`. | Advisory refresh generation is not a review/settlement receipt. Any unfinished required publication/queue effect is B until the existing owner reconciles it; capture does not start an optional producer. |
 | L38 transition rows/fences | B for any nonterminal application or outstanding fence; C complete rows after owner-verified terminal state. Exact `prefix_transition_applications`, `prefix_transition_card_fences`, `prefix_transition_repertoire_fences` fields/PKs are in L38. | Existing transition owner, not a second source fence or new recovery implementation. Keep retired-operation references. |
 | L1 `discovery_admission_intents`, related `background_tasks/background_task_events` | B for unfinished Study-affecting work; C complete original rows after owner-verified terminal resolution, with PKs and every column from L1 plus applicable ordered migrations. | N1 background-task shapes differ. Do not silently drop durable work or transfer a producer lease; lack of a typed command mapping is a blocker. |
 
@@ -222,8 +226,9 @@ to the other or assume phone/desktop means a particular implementation.
 | --- | --- | --- |
 | IndexedDB `tempo-study-intents` v1 / `intents`; `(workspace,key)` | M → retained same-authority `workspace,key,kind,attemptId,requestId,endpoint,revision?,createdAt,payload,sequence,state,version,data?,receipt?,claim?`; claim contains `owner,token,expiresAt`. | Immutable envelope includes endpoint/payload/time/revision; retain mutable delivery state separately. Repeated key + changed envelope is conflict, not overwrite. A claim coordinates delivery, not settlement; preserve it as evidence, not a newly authorized lease. |
 | Same DB / `metadata`; `(workspace,key)` | M → `workspace,key,value`, including sequence, practice boundaries and legacy-import checkpoints; complete teaching facts are owned by introductions above. | Keep committed/discarded as well as pending/conflicted rows. Checkpoints never authorize skipping retained legacy sources. |
-| `tempo-learning-authorities-v1` localStorage | M → original registry identity and `origin,workspace,offlineDatabase`; browser-build/origin capture is an external gate. | Keep mapping for every source authority; do not grant target credentials. `tempo-learning-connection-v1` contains a session credential: **exclude secrets from fixtures/Git**, retain only authorized non-secret authority/bootstrap evidence privately. |
+| `tempo-learning-authorities-v1` localStorage | M → original registry identity and `origin,workspace,offlineDatabase`; browser-build/origin capture is an external gate. | Keep mapping for every source authority; do not grant target credentials. `tempo-learning-connection-v1` is **sessionStorage**, containing `origin,workspace,credential,bootstrap?`: **exclude secrets from fixtures/Git**, retain only authorized non-secret authority/bootstrap evidence privately. |
 | Legacy localStorage keys listed by B | C exact raw values for pending reviews/failures/teaching, `tempo-seen-moves`, `tempo-first-clean-passes`, and inspector-discovered endgame/burial/tactic-capture/card-delete keys. | B until validated with the actual installed reader and reconciled. `legacy-time-unavailable` and `teaching-fact` are adapter sentinels, not observed timestamps. Preserve malformed/unrecognized data rather than silently clearing it. |
+| `tempo-study-intents-cutover-v1` localStorage | C → exact raw acknowledgement value (or observed absence) in `browser_intents.data.cold`, separately from IndexedDB migration checkpoints. | The current retained-data inspector does not capture this key; the authorized browser inventory must include it explicitly. A stored acknowledgement is not proof older tabs are closed or authority has transferred. Never manufacture or replay it as cutover approval. |
 | `tempo-offline-training` or registered authority-specific v2 DB / `training`, key `prepared-daily-queue` | M → [PreparedTraining][offline-types] `localDate,preparedAt,cards,attempts,nextTemporaryId` with complete original card transport objects. Each OfflineAttempt retains every field in that type (including original answer/assessment, local/parent/server IDs, cycle, expected revision/review, acknowledgment/conflict, evidence and continuation state). | No regeneration of a prepared card/answer, no integer-ID coercion, no deletion based on a locally shown success. Any schema/authority/required payload gap is B. |
 | Same DB / `opening_attempts`, key `attempt_id`; `opening_events`, key `(attempt_id,sequence)` | M → [SavedAttempt/SavedEvent][journal-types] complete checkpoint/manifest/context/terminal, `owner_session_id,final_sequence,delivery_state,rejection?,retention_reason?,local_capture_gap?,delivery?`; frozen delivery includes `checkpoint,operationKey`. Event fields exactly as [OpeningDecisionEvent][evidence-types]. | Preserve `retained`/quota-fallback data, gaps and event order. [Journal adapter][journal-storage] confirms acknowledged sequences; its separate completion-removal operation deletes the whole journal only after the caller confirms completion. A receipt must match the attempt. No storage mutation performed here. |
 
@@ -464,9 +469,15 @@ both sides. Equality does not settle that pending work.
 
 ### Reproduce the bounded checks
 
-Executed 2026-10-25 against base `cb0ed591`: **23/23 existing comparator tests
-passed**, plus **12 CLI scenarios and 2 equal/nonmutation API checks** below.
-`git diff --check` passed. No database/browser/infrastructure tests were run.
+Re-executed 2026-10-25 in an isolated Mac checkout against base `cb0ed591`:
+**23/23 existing comparator tests passed**, plus **12 CLI scenarios and 2
+equal/nonmutation API checks** below. All **41 local source links** resolve;
+`npm run check:conflicts` and `git diff --check` passed. Independent source review
+covered the ledger's DDL, identity/adaptation limits and browser storage fields;
+all **55 historical source-file comparisons** were verified (53 byte-identical,
+the two relocation differences described above). This is source correspondence,
+not installed-data completeness or an approved historical identity map.
+No database/browser/infrastructure tests were run.
 
 From the repository root, this reads only this document and the existing
 standalone comparator, and writes temporary JSON files outside the checkout.
@@ -477,9 +488,9 @@ changed saved answer, and duplicate/unresolved/missing-group invalid inputs. It 
 database, import idempotency, browser replay or interruption recovery.
 
 ```sh
-python -m unittest discover -s database/tests -p test_study_snapshot_compare.py -v
-python - <<'PY'
-import copy, importlib.util, json, pathlib, re, subprocess, tempfile
+python3 -m unittest discover -s database/tests -p test_study_snapshot_compare.py -v
+python3 - <<'PY'
+import copy, importlib.util, json, pathlib, re, subprocess, sys, tempfile
 root = pathlib.Path.cwd()
 document = (root / 'docs/architecture/study-first-reduction-2026-10-21/MIGRATION-MAP.md').read_text()
 def example(label):
@@ -496,7 +507,7 @@ with tempfile.TemporaryDirectory(prefix='tempo-history-map-') as directory:
     left.write_text(json.dumps(before))
     def check(value, expected, group=None, path=None, missing=None):
         right.write_text(json.dumps(value))
-        result = subprocess.run(['python', str(tool), str(left), str(right)], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(tool), str(left), str(right)], capture_output=True, text=True)
         assert result.returncode == expected, result.stderr or result.stdout
         if group:
             difference = json.loads(result.stdout)['entities'][group]
@@ -525,6 +536,7 @@ with tempfile.TemporaryDirectory(prefix='tempo-history-map-') as directory:
     changed = copy.deepcopy(after); del changed['entities']['introductions']; check(changed, 2)
 print('12 CLI scenarios and 2 equal/nonmutation API checks passed; synthetic only.')
 PY
+npm run check:conflicts
 git diff --check
 ```
 
