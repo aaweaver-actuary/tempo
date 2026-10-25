@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_commit": "cb0ed5910e6bd05894919fd8d49f5dc7bc236975",
-  "scope": "Historical integrated source retirement covers five independently bounded exact-path cohorts accepted under #361 conclusive isolation; other earlier entries are bounded candidate/evidence records and are not approved merely by inclusion. Current graph-preserving fresh-start preparation appends adaptive-priority-callbacks-fresh-start-01, an exact six-file callback-only branch slice with zero file/data/schema deletion. Guided legacy server deletion remains a separate unexecuted candidate. Current fresh_start_authority supersedes prior full-history/old-work drain gates; source preparation, integration, live reset and deployment are separate decisions.",
+  "scope": "Historical integrated source retirement covers five independently bounded exact-path cohorts under #361. Current graph-preserving fresh-start source cuts are recorded separately: six-file optional priority callbacks are actually integrated by #454; old Games guided quiz server deletion is explicitly user-approved and published/reviewed in #458. Other candidate entries are not approved merely by inclusion. Source approval, actual main integration and live/deployment state are distinct, with exact receipts below; prior full-history/old-work drain gates are superseded.",
   "remaining_gates": [
     "Graph/repertoire preservation: freeze exact owned graph/definition/source-reference closure and review each physical target before any live reset/deletion; no blanket shared table removal.",
     "Source integration: independent review of exact callback diff, preserved graph/repertoire/current Study/opportunity effects, owning regressions and source correspondence. Feature branch preparation is authorized now; no merge/deploy authorized.",
@@ -867,7 +867,7 @@
     },
     {
       "id": "legacy-guided-game-review-01",
-      "status": "candidate",
+      "status": "approved",
       "source_commit": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
       "purpose": "Retire the correction-first top-five Games guided-review server capability under graph-preserving fresh start. Exact base-source consumer/edit/hash records below belong to source_commit1a0fd5c5; actual feature-branch code35ccb6e5 removes the eight files and thirteen non-central-metadata edits, separately recorded in implementation_receipt. Current main integration/deployment is not inferred from this manifest. No old Games session/history/receipt/broker/browser drain is required; current graph/repertoire/Study and shared launcher/schema ownership stay protected.",
       "delete_paths": [
@@ -1359,14 +1359,15 @@
           "reviewer": "/root/retirement_390",
           "source_commit": "35ccb6e5fc497810d29582926e0e3a570767a051",
           "source_review_sha256": "1af67a2b50d1ac0243f74bb81a7a9898bf8004aff3189031e0d5468268cb8762",
-          "decision": "Accepted no remaining source finding: exact21paths, unchanged graph/currentStudy/normal launcher source and shared generic endpoints; all remaining main functions AST-identical except exact middleware change. Current executable guided modules/commands absent. Root-authorized three retained route rows only. Actual data/live action not observed or authorized."
+          "decision": "Accepted no remaining source finding: exact21paths, unchanged graph/currentStudy/normal launcher source and shared generic endpoints; all remaining main functions AST-identical except exact middleware change. Current executable guided modules/commands absent. Root-authorized three retained route rows only. Actual data/live action not observed or authorized.",
+          "published_correspondence": "Published7c4cc59e/currentbase66d98610 retains the reviewed35ccb executable source and selected tests; upstream454+451+437 changes are independently bounded. Exact source-owner rebase correspondence retained; no runtime tests repeated."
         }
       },
       "initial_inspected_source_commit": "782bf5374b87f223a023568305056415d5b63cea",
       "execution_handoff": {
         "prior_issue391_batch_id": "legacy-01",
         "available_candidate_id": "legacy-guided-game-review-01",
-        "state": "ACTUAL GUIDED SERVER SOURCE CUT IMPLEMENTED/REVIEWED ON FEATURE BRANCH; pending source integration, not live reset",
+        "state": "EXPLICITLY USER-APPROVED GUIDED SOURCE RETIREMENT, PUBLISHED/REVIEWED #458; not live schema/data reset",
         "delete_edit_allowlist_unchanged": true,
         "production_removed": "Yes on reviewed feature branch35ccb6e5 only: net469narrow/broad cohort lines; not merged/deployed.",
         "fresh_start_scope": "Literal legacy-01 and old-history/background/receipt/browser drain were the prior retirement route. They do not block the new six-file optional-priority callback preparation; that slice uses its own exact id/path/hashes and graph/current Study review. No inference of approval for these eight guided deletions.",
@@ -1565,7 +1566,7 @@
         "branch": "codex/retire-guided-review-server-20261025",
         "source_base": "1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf",
         "tested_source_commit": "35ccb6e5fc497810d29582926e0e3a570767a051",
-        "publication_state": "Published draft458 at reviewed source35ccb6e5; owner reconciling with currentmain66d98610. Not merged/deployed; final published rebase/input correspondence will be recorded separately.",
+        "publication_state": "User-approved source retirement, published draft458 at7c4cc59e; clean patch-identical rebase of tested35ccb6e5. API open draft/mergeable confirmed. Not merged/deployed at this receipt.",
         "exact_paths": "8 deleted + 13 edited source/support paths; central manifest and FEATURES not edited by implementation owner.",
         "realized_feature_branch_delta": {
           "narrow_production_net": -469,
@@ -1580,8 +1581,14 @@
         "retained_proofs": "29 legacy + 21 graph protected file hashes (48 unique blobs), three generic main regions and 18 other canonical freshness proof functions unchanged.",
         "retired_checks": "Two Games-guided exclusive suites/10cases and only CF-9 retire with unsupported capability; never counted as passing removal tests.",
         "qualification_limit": "Task-owned SQLite/fakes and current source absence, not native PostgreSQL/live/installed-host/reset/cutover acceptance. #390 reviewer did not rerun runtime tests.",
-        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/458"
-      }
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/458",
+        "published_source_commit": "7c4cc59eefddd168645c10fdec4cae063b7221da",
+        "published_tree": "fc71253291408486e454ea31f6c2437072a3de7c",
+        "published_base": "66d98610924971ea4cce3603c76cd4c330b50ae1",
+        "rebase_correspondence": "Both source commits patch-identical; executable files and selected tests unchanged. Only two owned CI-inventory/REGRESSIONS documents incorporate already-merged upstream metadata. Reuse92selected passes; no documentation-only test repetition.",
+        "rebase_correspondence_sha256": "952880104a67742bf7cad99957160d911ded8ec01b41d16a27805a0c02252a9d"
+      },
+      "approval_scope": "Explicit user-approved retirement of the old correction-first Games quiz server source (up to five findings, session/resumption and correction attempts), separate from ordinary Study, graph/repertoire and analysis engine. Exact source branch458 only; no live table/data DROP/reset or deployment approval is inferred."
     },
     {
       "id": "adaptive-priority-callbacks-fresh-start-01",
