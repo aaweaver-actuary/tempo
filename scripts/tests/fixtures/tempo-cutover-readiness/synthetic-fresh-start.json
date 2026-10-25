@@ -39,7 +39,7 @@
             "synthetic-new.invalid"
           ]
         },
-        "schema": 1,
+        "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "graphSourceReference": "synthetic-source-bundle",
         "graphReceipt": "synthetic-graph-import",
         "freshInitReceipt": "synthetic-fresh-init"
@@ -77,11 +77,12 @@
             "synthetic-new.invalid"
           ]
         },
-        "schema": 1,
+        "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "graphSourceReference": "synthetic-source-bundle",
         "graphReceipt": "synthetic-graph-import",
         "freshInitReceipt": "synthetic-fresh-init"
-      }
+      },
+      "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "original": {
       "registration": {
@@ -152,7 +153,7 @@
       "version": 1,
       "checkpoint": "before-preparation",
       "gateContext": "synthetic-original-lock-invocation",
-      "planSha256": "0818dc66d71504b17e0a8a83c4ce9bdfc52d9fd69014e3854f6a2cba9cf5fceb"
+      "planSha256": "f888b2ecae6b88ab13ab7ba22b0a4b41aac9743731f7deb432ba101d924b7dd6"
     },
     "authorityIsolation": {
       "evidenceId": "synthetic-isolation",
@@ -204,7 +205,7 @@
       "clean": true,
       "independent": true,
       "ingressOrigin": "https://synthetic-new.invalid",
-      "schema": 1
+      "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "graphImported": {
       "evidenceId": "synthetic-import",
@@ -241,7 +242,7 @@
       "graphClosureVerified": true,
       "ingressOrigin": "https://synthetic-new.invalid",
       "graphSourceReference": "synthetic-source-bundle",
-      "schema": 1
+      "schema": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "publication": {
       "evidenceId": "synthetic-durable-pair",

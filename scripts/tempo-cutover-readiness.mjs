@@ -79,7 +79,8 @@ export function evaluateFreshStartReadiness({ plan, checkpoint, gateContext, evi
   const identity = plan?.receipt?.cutover;
   if (plan?.freshStartChoice !== "graph-preserving-fresh-start"
     || identity?.mode !== "graph-preserving-fresh-start" || !text(identity.graphSourceReference)
-    || !text(identity.workspace) || !text(identity.ingress?.origin) || !Number.isInteger(identity.schema) || identity.schema < 1
+    || !text(identity.workspace) || !text(identity.ingress?.origin) || typeof identity.schema !== "string"
+    || !/^sha256:[0-9a-f]{64}$/.test(identity.schema) || plan?.receipt?.schema !== identity.schema
     || !sameJson(identity, plan?.registration?.cutover))
     block("fresh-start-identity-missing", "Matching records must explicitly pin fresh-start mode, authored graph reference and new workspace/origin authority.");
   const expected = { transitionId: plan?.transitionId, revision: plan?.revision,

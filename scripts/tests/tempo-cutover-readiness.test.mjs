@@ -89,6 +89,44 @@ test("public activation response cannot be rebound to another explicit launcher 
   assert.ok(codes(evaluate(input)).includes("fresh-initialization-rejected"));
 });
 
+
+test("fresh switch rejects numeric malformed and noncanonical v2 schema identities", () => {
+  for (const schema of [1, 999, "sha256:abc", "sha256:" + "A".repeat(64), "a".repeat(64)]) {
+    const input = fixture("before-authority-switch");
+    for (const record of [input.plan.registration, input.plan.receipt]) record.cutover.schema = schema;
+    input.plan.receipt.schema = schema;
+    input.evidence.binding = readinessBinding(input.plan, input.checkpoint, input.gateContext);
+    assert.ok(codes(evaluate(input)).includes("fresh-start-identity-missing"));
+  }
+});
+
+test("fresh switch rejects receipt schema drift and rebound target schema proofs", () => {
+  const input = fixture("before-authority-switch");
+  input.plan.receipt.schema = "sha256:" + "b".repeat(64);
+  input.evidence.binding = readinessBinding(input.plan, input.checkpoint, input.gateContext);
+  assert.ok(codes(evaluate(input)).includes("fresh-start-identity-missing"));
+  const rebound = fixture("before-authority-switch");
+  for (const record of [rebound.plan.registration, rebound.plan.receipt]) record.cutover.schema = "sha256:" + "b".repeat(64);
+  rebound.plan.receipt.schema = "sha256:" + "b".repeat(64);
+  rebound.evidence.binding = readinessBinding(rebound.plan, rebound.checkpoint, rebound.gateContext);
+  const result = evaluate(rebound);
+  assert.ok(codes(result).includes("clean-target-unverified"));
+  assert.ok(codes(result).includes("target-quarantine-unverified"));
+});
+
+test("v2 schema identity leaves public activation response and original v1 numeric schema unchanged", () => {
+  const input = fixture("before-authority-switch");
+  assert.match(input.plan.receipt.schema, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(input.plan.receipt.cutover.schema, input.plan.receipt.schema);
+  input.plan.original.receipt = { version: 1, schema: 110 };
+  input.evidence.binding = readinessBinding(input.plan, input.checkpoint, input.gateContext);
+  const original = structuredClone(input.plan.original);
+  const response = structuredClone(input.plan.freshInitialization);
+  assert.equal(evaluate(input).status, "ready");
+  assert.deepEqual(input.plan.original, original);
+  assert.deepEqual(input.plan.freshInitialization, response);
+});
+
 test("missing public graph and fresh-init adapters are explicit provider blockers", () => {
   assert.deepEqual(codes(evaluateFreshStartReadiness(fixture("before-authority-switch"))),
     ["graph-contract-pending", "fresh-initialization-contract-pending"]);
