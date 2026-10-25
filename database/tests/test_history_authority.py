@@ -24,7 +24,7 @@ def source():
 def checkpoint(packet):
     # These labels are fabricated tests, never an authenticated actual receipt.
     return {"consistent": True, "evidence_kind": "actual", "actual_release": True,
-            "authenticated": False, "final_acceptance": False,
+            "authenticated": False, "final_acceptance": "unverified",
             "authority_fingerprint_sha256": "a" * 64,
             "checkpoint_sha256": "d" * 64,
             "approved_leafs": ["server_receipts"],

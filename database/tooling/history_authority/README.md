@@ -31,7 +31,7 @@ the artifact is trustworthy. The leaf never interprets or relabels its authority
 The checkpoint is the public result of the separately owned
 `study_mapping_checkpoint.validate_checkpoint`. Required result fields are
 `consistent: true`, `evidence_kind: 'actual'`, `actual_release: true`,
-`authenticated: false`, `final_acceptance: false`, `approved_leafs`,
+`authenticated: false`, `final_acceptance: 'unverified'`, `approved_leafs`,
 `authority_fingerprint_sha256`, `checkpoint_sha256`, and `leaf_source_sha256`.
 `checkpoint_sha256` binds the complete validated checkpoint, including exact
 snapshot/map/golden/authorization bindings and named reviewers. The independent

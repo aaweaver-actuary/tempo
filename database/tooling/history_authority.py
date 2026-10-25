@@ -87,7 +87,7 @@ def approved_source_validator(checkpoint, leaf, *, independent_approval):
         or frozen.get("actual_release") is not True
         or frozen.get("evidence_kind") != "actual"
         or frozen.get("authenticated") is not False
-        or frozen.get("final_acceptance") is not False
+        or frozen.get("final_acceptance") != "unverified"
     ):
         raise AuthorityError("actual implementation-release checkpoint is required")
     approved = frozen.get("approved_leafs")
