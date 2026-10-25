@@ -331,7 +331,9 @@ whole-product gate or merge claim.
 
 ## #382 native essential acceptance preparation — 2026-10-25
 
-**Prepared, not accepted:** the ten native scenarios are collected but unexecuted.
+**Harness fix and assembled acceptance are separate:** the UUID import repair
+has a passing named regression and independent review. The ten native acceptance
+scenarios remain **10 collected, 0 executed**; #382 is not accepted.
 Final assembled execution awaits the parent-provided #380 composition receipt.
 The reported #380 Learning-outage request timed out at 10 seconds with nginx 499;
 explicit failure/no-fallback and same-artifact recovery remain unobserved. That
@@ -342,12 +344,30 @@ Pinned base is merged PR410/main `311a712581deb95bf9035b2a3b934c03335a1cd5`.
 Prepared executable commit is `594c561d797b1c41a77ab86d5fc87f02854062b9`, tree
 `12263734cda741dfc94fc67fa09abac5aa32ec66`, on
 `codex/382-native-acceptance` in `/tmp/tempo-382-native-20261025`.
-Main later advanced to `782bf5374b87f223a023568305056415d5b63cea` through #419,
-changing retained Study build inputs; `later-main-correspondence.json` lists them.
-This preparation remains pinned to the earlier tree. Before final execution,
-reconcile current main and the browser owner's pending opt-in composed-ingress
-change to `scripts/prove-study-learning.mjs`; its default native behavior must be
-preserved. The native owner has not modified that shared script.
+Current main `782bf5374b87f223a023568305056415d5b63cea` was integrated in clean
+merge `ea4d5193b26ec00e4027bae911315fb6eec027fa` while #380 remains pending.
+`integrated-source-correspondence.json` verifies that the harness, named regression,
+selector, runtime/database, imported fixtures and dependency/lock inputs are
+byte-identical to their checked inputs at `594c561d`; the existing 1 regression
+pass, 4 selector passes and ten-case collection remain applicable. No unit or
+native execution was repeated for this source correspondence/documentation work.
+Independent current-main review found no actionable issue and considers the tiny
+UUID repair and named regression ready for scoped merge independently of #382
+execution. No merge has been performed; assembled acceptance remains pending.
+
+The current default `scripts/prove-study-learning.mjs` is explicitly pinned to
+Git blob `d12f405b81289b09aa89f1ad5fdd63b792b73e17`, SHA256
+`1bb15cd682cded8009f7026e0000755138c26bcd5eca211e9f1378681ef5200b`.
+It is unchanged across prepared `594c561d`, current main and the integration.
+The browser owner's future opt-in composed-ingress change will be assessed when
+final; it does not block integration or scoped review of this harness fix. The
+native owner has not modified that shared script.
+
+#419 retired ten unused Games client/adapter files and modified four recorded
+preparation inputs (two documentation files, Docker ignore rules and the Study
+composition manifest). The original 744 assets and their manifest remain intact
+for later exact comparison. They are not relabeled as a build of current main;
+final assembled acceptance still needs corresponding production-build evidence.
 The only executable repair imports `uuid` in the owning native UI harness.
 The new regular owning-suite regression
 `tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`
@@ -388,13 +408,16 @@ in [Learning VALIDATION.md](../../services/learning/runtime/VALIDATION.md#preser
 not fresh execution or current-image qualification. The original raw receipt is
 no longer at its documented temporary path. No broader Learning suite was rerun.
 
-The prepared `run-native.py` will use the same merged selector and owned
+After final source/build correspondence is accepted, `run-native.py` will use
+the same merged selector and owned
 PostgreSQL runner with `fixture_profile='essential'`, its exact extra-source
 closure, and these already-built production assets. It requires the parent's
 accepted #380 receipt, checks the pinned source/assets, then re-collects, executes
 and reconciles all ten identities, all 30 setup/call/teardown phases and JUnit.
 The parent must assess the receipt's contents and source correspondence; the
-prepared path-existence guard does not itself establish #380 acceptance.
+prepared path-existence guard does not itself establish #380 acceptance. Its
+original source-manifest guard now intentionally rejects the integrated tree
+until final build/input correspondence is resolved; do not bypass that guard.
 Pending invocation, from the disposable checkout, is:
 
 ```sh
