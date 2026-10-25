@@ -136,6 +136,18 @@ test("unclassified backend service modules require deployment lifecycle with ord
   }
 });
 
+test("retired Endgames service path requires deployment lifecycle if reintroduced", () => {
+  const retiredPath = "backend/app/services/endgames.py";
+  assert.equal(existsSync(retiredPath), false, "The retired Endgames service must remain absent");
+  for (const paths of [[retiredPath], [retiredPath, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+    "tests/unit/study-regressions.test.tsx"]]) {
+    const planned = plan({ paths });
+    assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
+    assert.equal(planned.jobs.lifecycle.required, true, paths.join(", "));
+    assert.match(planned.jobs.lifecycle.reason, /unclassified infrastructure/);
+  }
+});
+
 test("reviewed ordinary and sensitive service classifications survive ordinary companions", () => {
   const ordinaryCompanions = ["tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
     "tests/unit/study-regressions.test.tsx"];

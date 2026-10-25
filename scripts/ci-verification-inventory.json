@@ -116,7 +116,6 @@
       "backend/app/services/defensive_analysis.py",
       "backend/app/services/discovery_admission.py",
       "backend/app/services/durable_tasks.py",
-      "backend/app/services/endgames.py",
       "backend/app/services/engine_diagnostics.py",
       "backend/app/chess/evaluation.py",
       "backend/app/services/game_analysis_worker.py",
