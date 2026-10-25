@@ -41,14 +41,9 @@
       "tests/unit/endgame-attempt-pending-regressions.test.ts",
       "tests/unit/endgame-template-pending-regressions.test.ts",
       "tests/unit/engine-job-recovery-regressions.test.ts",
-      "tests/unit/finding-card-pending-regressions.test.ts",
       "tests/unit/game-contract-recovery-regressions.test.tsx",
-      "tests/unit/game-exclusion-pending-regressions.test.ts",
-      "tests/unit/game-finding-pending-regressions.test.ts",
       "tests/unit/game-sync-command-pending-regressions.test.ts",
       "tests/unit/game-sync-enqueue-regressions.test.ts",
-      "tests/unit/game-threat-refresh-pending-regressions.test.ts",
-      "tests/unit/guided-review-pending-regressions.test.ts",
       "tests/unit/held-drag-diagnostics-regressions.test.ts",
       "tests/unit/integrity-repair-outbox-regressions.test.ts",
       "tests/unit/integrity-repair-pending-regressions.test.ts",
@@ -187,6 +182,7 @@
       "tests/runner/inference-priority.test.mjs",
       "tests/runner/merge-conflict-guard.test.mjs",
       "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/runner/study-learning-proof.test.mjs",
       "tests/runner/tempo-cli.test.mjs"
     ],
     "integration": [

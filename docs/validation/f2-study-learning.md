@@ -328,3 +328,243 @@ other worktrees, historical evidence and shared caches were preserved.
 Native offline evidence is Chromium/macOS only. There is no cross-device offline
 release qualification, live data conversion, production deployment, hosted CI pass,
 whole-product gate or merge claim.
+
+## #382 native essential acceptance — 2026-10-25
+
+**Native section qualified: exactly 10 collected, 10 executed, 10 passed,
+0 failed, 0 skipped.** Collection/execution identities, all **30**
+setup/call/teardown phases and ten JUnit identities agree. Final pytest/JUnit time
+is **66.26 s**; locked parent time is **69.48 s**, including install, collection
+and cleanup. Independent source/result review found no actionable issue. One
+existing Starlette/AnyIO deprecation warning remains. This proves the native
+production-assets / installed-Learning / owned-PostgreSQL assembly. Actual Compose
+same-ingress normal/lost-response proof remains separately owned; **#382 is not
+complete on this receipt alone**. Physical-phone, live-data, deployment and
+whole-product/CI qualification remain unverified.
+
+Final tested assembly is `a534aeb0e2f96c8adecaaffc855fdd62abc1898e`, tree
+`cb6ac320e19980313e561f908e945c7e948ab9a3`, preserved on
+`codex/382-native-assembled-default`. It combines current main
+`782bf5374b87f223a023568305056415d5b63cea`, this native UUID repair and browser-owner
+commit `bc7c9194641938e605b7025e1f68faec1093dc22`. PR422 retains only its four native
+repair/receipt paths; consuming that dependency on a separate assembly branch
+did not modify the browser owner's script. The final script is exactly their
+Git blob `b02955e8513e1aba2d0778a149263ba324a8b193`, SHA256
+`628345de05aa8bbea3782f08778982c10ff3832ca6b664eb620fb5999348024b`.
+All ten proofs use default native mode, with its real forwarding proxy; no
+composed-mode results are claimed here.
+
+The sole executable repair adds the missing `uuid` import. The named regular
+regression,
+`tests/test_study_ui_harness.py::test_native_study_harness_initializes_fixture_key_before_starting_servers`,
+executes actual fixture-key setup twice before servers start. Retained evidence
+at `594c561d797b1c41a77ab86d5fc87f02854062b9`: **1 failed before** with
+`NameError: name 'uuid' is not defined`, **1 passed after**, 0 skipped; selector
+suite **4 passed**. Relevant native executable/dependency/fixture correspondence
+preserves those results. No assertions, skips, selections or timeouts were
+weakened, and documentation/conflict integration caused no unit reruns.
+
+The parent accepted #380's recorded-artifact evidence at PR420 head
+`20be190eec5ed28ce149344767e8f9edb4f648ab`. Exact handoff identity and all eight
+recorded configuration/source/lock correspondences are pinned in
+`assembled/accepted-380-correspondence.json`. Its explicit outage 504s at the
+existing nginx timeout, static availability, same-artifact/schema recovery and
+role/teardown proof were not duplicated here. No PR420 merge is asserted.
+
+Evidence root (`taskEvidence` below):
+`/tmp/tempo-382-native-evidence-20261025`. Existing selection and owning PostgreSQL
+qualification were used directly with `fixture_profile='essential'`, unchanged
+extra-source closure and production assets. Exact commands/child arguments are
+retained in the external scripts and native receipts:
+
+```sh
+python3 "$taskEvidence/locked-run.py" docker build --pull=false --target build \
+  -f Dockerfile.study-web --label tempo.owner=tempo-382-native-assembled-20261025 \
+  --label tempo.disposable=true -t tempo-382-native-build:assembled-20261025 .
+python3 "$taskEvidence/locked-run.py" services/learning/runtime/.venv/bin/python \
+  "$taskEvidence/final-native/run-native.py"
+python3 "$taskEvidence/locked-run.py" services/learning/runtime/.venv/bin/python \
+  "$taskEvidence/assembled/run-core-support.py"
+```
+
+Ten node IDs are
+`integration/study_tests/test_study_ui.py::test_production_study_learning_native[SCENARIO]`
+for exactly `normal`, `teaching`, `lost-response`, `before-commit`, `next-load`,
+`two-tabs`, `offline-shell`, `wrong-credential`, `origin-transition`, `quota`.
+Every browser proof reports complete and zero unexpected requests. The unchanged
+owning PostgreSQL assertions require one durable review and one review-attempt
+receipt in all seven successful review scenarios; credential/origin/quota
+rejections retain zero reviews. Lost-response preserves the actual dropped reply
+and original operation; before-commit retries retain identical key/body. The
+fixture component inventory contains only `learning`; optional services are absent.
+
+Separate current ordinary-introduction/frozen-rank support: **2 collected,
+2 executed, 2 passed, 0 failed/skipped**, all six phases and two JUnit identities,
+**0.85 s** pytest / **5.80 s** parent. IDs are
+`tests/test_runtime.py::test_runtime_ready_authorized_and_ordinary_introduction`
+and `tests/test_publications.py::test_frozen_ranks_control_introductions_without_score_producers`.
+This avoids relying on unavailable raw/toolchain correspondence from the older
+#365 receipt. Its 184 source / 174 dependency inputs are unchanged on the final
+assembly, so it was not rerun for the browser-script-only delta. These are not
+additional UI scenarios or a broad Learning run.
+
+The earlier default script also passed its ten native cases at `ee41f207`
+(67.86 s pytest), retained under `assembled/native-essential`. The browser owner's
+subsequent shared startup/workspace/recovery code changes justified fresh final
+execution. Counts from the two runs are not combined. No production Docker COPY
+input changed with that script dependency; exact assets were reused without an
+unnecessary rebuild. The build had already been refreshed for #419's changed
+consumed composition manifest: all 744 old/new paths agree, and only
+`study-composition.json` differs from the original preparation assets.
+Read-only comparison with the browser owner's subsequent 745-file web-image
+manifest finds all **744 current native asset paths byte-identical**; its only
+extra path is nginx's `50x.html`. The original pre-#419 manifest still differs at
+`study-composition.json`. `final-native/browser-asset-correspondence.json` records
+both comparisons without relabeling old assets or combining acceptance categories.
+
+| Source/build/receipt identity | Exact value |
+| --- | --- |
+| Official Node 22.23.4 build image | `sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d` |
+| Production Study build-stage image | `sha256:1601bec32eb19fa4ed393e9d066ae10d70d097d65bc6a94cb6793c745c4e34bf` |
+| PostgreSQL 18.6 image | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+| 744-asset manifest `assembled/study-assets.json` | SHA256 `0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e` |
+| 1,415-input final source manifest | SHA256 `a39a5e159c465bea3f0c00adacfbe57857f09826cd80be6c25730f42a1e2fc22` |
+| Final ten-case `native.json` | SHA256 `a2ae898084cd48e28ac801ba9f890a803f3aa0d37c6aa29bca70391d98553b68` |
+| Final ten-case `native.xml` | SHA256 `6ba011d5e2b3128db68502ff8317664d10498d5134922a0245f562f2b6a555d9` |
+
+Toolchain is Python **3.12.12**, pytest **9.1.1**, existing host Node **26.12.0**,
+locked Playwright **1.63.0** / chess.js **1.4.0**, actual macOS Chromium
+**153.0.8010.12** (revision 1243; executable hash in `browser-toolchain.json`).
+Installed runtime/database sources match **54 / 36 Python files**. Locked cached
+dependencies were used offline, with no host software/browser/Python installation.
+Each owned PostgreSQL fixture was capped at **1 CPU / 512 MiB**. The final native
+receipt records 184 source / 1,223 dependency inputs.
+
+Final machine receipt, exact commands, all node IDs and hashes are in
+`final-native/bounded-native-receipt.json`; detailed evidence is
+`final-native/native-essential/run-2e8cea583c7ee06b`. Support evidence is
+`assembled/core-support/run-528110449ec384d6`. Independent review reconciled every
+identity/phase/JUnit/proof, actual installed source and final script/build reuse.
+Three invocation-owned PostgreSQL containers/volumes and all temporary test data
+are confirmed absent, with exact-name cleanup readbacks. Export containers and
+task build tags are removed; shared images/cache are preserved. The existing
+advisory lock was opened without truncation, held through full child cleanup and
+never unlinked. Old/new assets, sanitized proofs/service logs, reproducer,
+manifests, reviews and pushed source identities remain outside the disposable
+checkout; final checkout cleanup is recorded in `handoff.json`. No live Study,
+database/history, host setting, secret, deployment, CI configuration or PR merge
+was touched. The main #419 test-inventory repair has another owner; no discovery
+failure was bypassed and no whole runner-lane pass is claimed.
+
+## #382 composed browser qualification — October 25, 2026
+
+**Browser scope passed: 2/2 scenarios, 0 failed/skipped.** Production Study used
+actual web ingress, installed Learning and disposable PostgreSQL at executable
+`bc7c9194641938e605b7025e1f68faec1093dc22`, incorporating main
+`782bf5374b87f223a023568305056415d5b63cea`. Native ten-case acceptance belongs to
+its separate owner; these results do not close that gate or qualify real
+history, physical phones or deployment. Later receipt publication is documentation
+only and does not require runtime reruns.
+
+The parent accepted #380's recorded source/artifact evidence at
+[PR #420](https://github.com/aaweaver-actuary/tempo/pull/420), head
+`20be190eec5ed28ce149344767e8f9edb4f648ab`; no merge is asserted here. Compose,
+nginx and Learning COPY inputs are unchanged from its qualified source
+`e196559ef1df17defba7305d70b64b5f454854ba`. #419 changed web build inputs, so
+current web artifacts were built afresh from the committed Dockerfile. The older
+Learning image was removed; it was recreated from unchanged source using build
+caches. Installed image files byte-match **54 runtime + 36 database** Python
+sources. Images actually used were:
+
+| Artifact | Image ID |
+| --- | --- |
+| Study web | `sha256:e4f76ef652e2afa4a70b83a4eb71420a04753c5751a0f8acd1549c58228b3515` |
+| Learning/bootstrap | `sha256:b7b5e20946ae44d67ada8c9ff222fe19c1af55535b7ae6dfc167c48303aafffc` |
+| PostgreSQL | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+
+The new image contains **745** files, including nginx's `50x.html`; asset manifest
+SHA256 is `9a2b81f1741d638af98b72b6cbc273dbb14f5e807d9738fbab175d22439d1351`.
+Against the native owner's earlier 744-file build, all paths are present but
+`study-composition.json` changed after #419; the old manifest is not relabelled as
+identical. Its final current 744-file build is now byte-identical to the browser
+image apart from nginx's added `50x.html`; native manifest SHA256 is
+`0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e`.
+The separate [PR #422](https://github.com/aaweaver-actuary/tempo/pull/422) receipt
+records **10/10 native cases plus 2 supporting cases**, no skips, on assembly
+`a534aeb0e2f96c8adecaaffc855fdd62abc1898e`, consuming this exact browser script.
+Those tests were not repeated by the browser owner. Exact commands,
+image/source hashes, installed-file and asset maps,
+raw sanitized browser/SQL logs and cleanup evidence are retained at
+`/tmp/tempo-382-browser-repair-evidence-20261025`. The aggregate
+`composed-acceptance.json` SHA256 is
+`6bd348ffdd229e9d0ef320c099a2f43eaed12841413c16df65672277a1faff68`.
+
+The existing [Node proof](../../scripts/prove-study-learning.mjs) now accepts
+`mode: "composed-ingress"` only for `normal`/`lost-response`. Supply the same exact
+`http://127.0.0.1:<port>` origin in `frontend` and `learning`, explicit configured
+`workspace`, task-generated Study `credential`, and `scenario` through private
+stdin. Paths, userinfo, query strings, remote hosts and competing Learning origins
+are rejected. Omitted mode retains the native random-port proxy and `workspace-a`.
+No application protocol, operator, production configuration or fixture endpoint
+was added; no Python invocation wrapper is necessary:
+
+```sh
+node scripts/prove-study-learning.mjs < "$PRIVATE_INPUT_JSON"
+```
+
+Each scenario had a fresh `tempo-study-test-<id>` project, workspace `workspace-a`,
+timezone `America/New_York`, existing ownership producer/explicit bootstrap, and
+exactly three running services: web, Learning and PostgreSQL. Bootstrap was an
+exited one-shot; optional services were absent. Synthetic accepted publication
+setup reused `test_runtime.bundle()` and its existing stage/activate interfaces,
+then the native normal/lost-response teaching precondition. Each baseline had
+zero reviews and review-attempt receipts. Chromium **153.0.8010.12**, Playwright
+**1.63.0** and existing host Node **26.12.0** used copied locked JS packages and
+read-only cached browser executables, with no host software installation.
+
+| Scenario / project suffix | Original operation ID | Independent durable result |
+| --- | --- | --- |
+| normal / `e367dedd09ff96a1` | `review-attempt:cfc94ff9-15fa-4b8e-89b5-616cebc750b8` | One original POST, one complete operation, one review-attempt receipt, review ID 1 |
+| lost-response / `255f9da6cb7f556e` | `review-attempt:f99cb507-3964-4799-8837-81e5c19c21a1` | One original POST, same-ID receipt recovery after reload, one review-attempt receipt, review ID 1 |
+
+Actual browser URL inventory keeps bootstrap, queue and review requests on each
+web origin (`127.0.0.1:54671` / `:54685`), without proxy-origin substitution.
+Lost-response forwards the original request through ingress, reads its real
+HTTP **200 / 382-byte** response, then aborts at **browser-route-after-ingress**.
+This is injected browser-transport loss, not an nginx-generated outage claim.
+The original retained operation/attempt/authority/endpoint/body is checked, then
+a separate authenticated ingress read confirms that original complete, persisted
+receipt and positive review ID. Independent PostgreSQL reads match its operation
+payload/response, original attempt/card/queue binding and exactly one durable
+review in each fresh database. The harness's `database_verification:
+required-external` is fulfilled by those separate SQL results, not by browser or
+transport observation.
+
+The registered owning Node test file adds **10 passing contracts**, separately
+from **2 passing real-Chromium transport checks with a synthetic HTTP fixture**
+and the **2 actual composed scenarios** above. Native proxy defaults, rejected
+bindings, passive observation, real-response-before-abort ordering, original
+identity/body retention and rejected false receipt/ingress evidence are covered.
+Pure contracts used official `node:22-slim` image
+`sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d`.
+The registered lane initially stopped before collection because main #419 left
+five deleted Games unit files in the frontend inventory. That baseline failure
+is retained in `lane-baseline-mismatch.json`. The owner's exact
+[PR #425](https://github.com/aaweaver-actuary/tempo/pull/425) repair
+`3f17d26e564f9edad59cc60c14792e212256346c` was consumed without duplicating its
+change, preserving this new runner registration. The newly unblocked command
+`node tools/component-build/test-lane.mjs runners study-learning-proof` then
+executed **10/10 passed, 0 failed/skipped** on validation assembly
+`5e9e29b4ead71b7c9cbfc7ac2c1419739f019e51`; discovery found 160 unit files and
+10 runner files. This repeats the same ten contracts through registered dispatch,
+not ten additional cases. Only documentation and that inventory dependency
+changed after the actual browser run; no browser/database/build rerun was needed.
+
+Independent source/evidence review found no blocking findings. Builds and browser
+execution held `/tmp/tempo-mac-validation-20261025.lock`, opened without truncation
+and preserved. Both projects' exact containers, two volumes and network, all six
+task image tags and private inputs were removed. Project-label inventories were
+empty; a separate **20-target** exact absence audit passed. Shared images/caches,
+live Study/data and other tasks were preserved. Physical-phone/live-data,
+deployment and full CI remain **UNVERIFIED**. Native qualification is separately
+reported in PR #422 and is not included in this receipt's browser count.

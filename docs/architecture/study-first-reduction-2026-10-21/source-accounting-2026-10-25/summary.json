@@ -1,0 +1,105 @@
+{
+  "added-runtime": {
+    "after": 95,
+    "after_files": 1,
+    "before": 0,
+    "before_files": 0,
+    "net": 95
+  },
+  "baseline_verification": {
+    "index_sha256": "907df27c2b2067882b2135e79a6854ae3e2fd2c3923de1770819b307cf6f4995",
+    "mismatches": 0,
+    "rows": 881
+  },
+  "binary-test-fixtures": {
+    "after_bytes": 0,
+    "before_bytes": 2109457,
+    "paths": 19
+  },
+  "broad-production-inclusive": {
+    "after": 94646,
+    "after_files": 855,
+    "before": 97217,
+    "before_files": 881,
+    "net": -2571
+  },
+  "build-configuration": {
+    "after": 2800,
+    "after_files": 15,
+    "before": 3034,
+    "before_files": 21,
+    "net": -234
+  },
+  "evaluation-fixture": {
+    "after": 0,
+    "after_files": 0,
+    "before": 9055,
+    "before_files": 17,
+    "net": -9055
+  },
+  "generated-evidence": {
+    "after": 0,
+    "after_files": 0,
+    "before": 19350,
+    "before_files": 30,
+    "net": -19350
+  },
+  "historical-helpers": {
+    "after": 298,
+    "after_files": 6,
+    "before": 733,
+    "before_files": 9,
+    "net": -435
+  },
+  "inventory-metadata": {
+    "after": 27387,
+    "after_files": 7,
+    "before": 26587,
+    "before_files": 6,
+    "net": 800
+  },
+  "moves": {
+    "deleted_production_blobs_surviving_anywhere": {},
+    "git_rename_rows_by_similarity_percent": {
+      "10": [],
+      "20": [],
+      "50": []
+    },
+    "whole_file_move_adjustment_lines": 0
+  },
+  "narrow-production": {
+    "after": 69309,
+    "after_files": 594,
+    "before": 69686,
+    "before_files": 597,
+    "net": -377
+  },
+  "outside-audit-runtime": {
+    "after": 9383,
+    "after_files": 19,
+    "before": 20425,
+    "before_files": 51,
+    "net": -11042
+  },
+  "prose": {
+    "after": 19217,
+    "after_files": 55,
+    "before": 16255,
+    "before_files": 53,
+    "net": 2962
+  },
+  "test-support": {
+    "after": 19577,
+    "after_files": 72,
+    "before": 26013,
+    "before_files": 124,
+    "net": -6436
+  },
+  "tooling": {
+    "after": 3022,
+    "after_files": 12,
+    "before": 4158,
+    "before_files": 32,
+    "net": -1136
+  }
+}

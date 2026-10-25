@@ -5190,3 +5190,12 @@ Persisted-save UI coverage now belongs to `tests/unit/pending-discovery-saves-re
 Durable admission replay, accepted/failed receipt transitions, idempotency and recovery remain covered by the unchanged `tests/unit/discovery-admission-outbox-regressions.test.ts` suite, including `legacy rejected discovery saves recover with a bounded key after reload`, `accepted discovery reload preserves its operation and confirms its original intent`, `failed discovery operation receipt requires a new key on explicit retry`, and `timed out discovery save remains unconfirmed and replays the same choice after reload`.
 
 Remaining gap: the pending-save UI has component-level coverage but no browser test of its workspace wiring. Its storage and queue transitions are covered at the outbox boundary; a browser-level appearance/Retry case can be added if that surface needs end-to-end qualification.
+# Study composed-ingress proof adapter (#382)
+
+`tests/runner/study-learning-proof.test.mjs`, registered in the existing runners
+lane, covers unchanged native workspace/proxy defaults; explicit same-origin
+ingress without a proxy; rejected endpoint/workspace/scenario inputs; actual
+browser-origin observation; real-response-before-abort ordering; rejected failed,
+redirected, empty and escaped responses; original HTTP receipt and immutable
+review/attempt/authority/body bindings. These harness contracts do not substitute
+for the separate original-operation, one-durable-review Compose/PostgreSQL proof.
