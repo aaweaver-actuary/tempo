@@ -491,3 +491,23 @@ def test_graph_only_null_physical_color_uses_recorded_same_route_graph_color_wit
     tables['cards'][0]['trained_color']='black' if color=='white' else 'white'
     with pytest.raises(ValueError,match='graph_card_definition_disagrees'):
         graph_only(tables,steps)
+
+
+def test_graph_only_indexed_source_scope_preserves_shared_memberships_explicit_zero_and_null_color_without_aliases():
+    tables,steps=canonical_graph_capture()
+    tables['cards'][0]['trained_color']=None
+    tables['repertoires'].append({'id':'shared-policy','name':'Shared policy'})
+    tables['repertoire_lines'].append({**tables['repertoire_lines'][0],'id':'shared-route','repertoire_id':'shared-policy'})
+    tables['repertoire_cards'][0]['canonical_route_source']=0
+    tables['repertoire_cards'].append({'repertoire_id':'shared-policy','card_id':'physical','canonical_route_source':1})
+    steps=[{**steps[0],'repertoire_id':'shared-policy','line_id':'shared-route'}]
+    before=deepcopy(tables)
+    raw,manifest,report=graph_only(tables,steps,['italian','shared-policy'])
+    source=json.loads(raw)
+    assert manifest['legacy_aliases']=={} and manifest['historical_mapping_unknown']==[]
+    assert report['serving_repertoires']==['shared-policy']
+    assert {row['policy_key'] for row in source['bindings']}=={'shared-policy'}
+    assert tables==before and tables['cards'][0]['trained_color'] is None
+    tables['repertoire_cards'][0]['canonical_route_source']=1
+    with pytest.raises(ValueError,match='canonical_source_occurrence_required'):
+        graph_only(tables,steps,['italian','shared-policy'])

@@ -166,15 +166,22 @@ def _graph_only_scope(tables, graphs, selected):
     # Canonical cards can also be authored sources. Every effective source needs
     # an explicit accepted occurrence; no line association is guessed from FEN.
     links = {(row['repertoire_id'],row['card_id']):row for row in tables.get('repertoire_cards',[])}
+    memberships_by_card = defaultdict(dict)
+    for (owner,card_id),link in links.items():
+        memberships_by_card[card_id][owner] = link
+    # Packet-local indexes are read-only during source validation. Preserve the
+    # composite membership key and explicit zero; no truthy fallback/aliasing.
+    memberships_by_card = {key:tuple(rows.items()) for key,rows in memberships_by_card.items()}
+    occurrence_scopes = frozenset((row['repertoire_id'],row['card_id']) for row in occurrences)
     for card in cards.values():
         if card.get('content_type') != 'opening' or card.get('archived') != 0 or card['id'] in deleted:
             continue
-        owners = {owner for (owner,key), link in links.items()
-            if key == card['id'] and owner in selected and link.get('canonical_route_source') == 1}
+        owners = {owner for owner,link in memberships_by_card.get(card['id'],())
+            if owner in selected and link.get('canonical_route_source') == 1}
         owner = card.get('repertoire_id')
         if owner in selected and (owner,card['id']) not in links and card.get('canonical_route_source') == 1:
             owners.add(owner)
-        if any(not any(row['repertoire_id']==owner and row['card_id']==card['id'] for row in occurrences) for owner in owners):
+        if any((owner,card['id']) not in occurrence_scopes for owner in owners):
             raise ValueError('graph_only_canonical_source_occurrence_required')
     if not exercises:
         raise ValueError('graph_only_no_serving_graph_decision')
