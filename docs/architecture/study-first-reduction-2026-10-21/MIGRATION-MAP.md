@@ -1,6 +1,6 @@
 # Retained Study history map (#389): source preparation only
 
-**BLOCKED for real-history mapping, converter assignment and cutover.** This is a
+**BLOCKED for approved real-history mapping, converter release and cutover.** This is a
 field ledger and synthetic comparison example, not a migration, installed-data
 inventory, approved identity map or golden fixture. It does not close #389.
 
@@ -552,19 +552,48 @@ git diff --check
 3. Reviewer-approved authority/card/revision/route/decision/attempt identity map,
    explicit C destinations and all B decisions, including shared memberships,
    old prefix granularity, unknown issuance and nullable/legacy receipt shapes.
-4. Independently extracted golden BEFORE/AFTER, reviewed exact serializers,
-   interruption/repeated-import and original-authority replay receipts on that
-   disposable snapshot. Comparator equality alone is insufficient.
-5. Only then release separate bounded converter leaves for content/identity,
-   reviews/schedules/introductions, server receipts/queue/teaching and browser
-   envelopes. Each needs exact files, approved expected output and an owner test.
-   Launcher implementation and any authorized live cutover remain separate gates.
+4. **Implementation-release checkpoint:** independently extracted golden
+   BEFORE/AFTER for the authorized snapshot, reviewed exact serializers and an
+   independent review approving the exact installed source version, field map,
+   identities, preservation dispositions and expected fixture output. Bind the
+   approval to the authority fingerprint, snapshot/authorization, map and both
+   golden byte digests, the extraction receipt and the exact approved leaves.
+   Comparator equality alone is insufficient. Converter replay evidence cannot
+   precede its implementation and is not a prerequisite of this checkpoint.
+5. Release the corresponding bounded converter leaves for content/identity,
+   reviews/schedules/introductions/frozen order, server receipts/queue/teaching/
+   attempts and browser original-authority envelopes. Each needs exact files,
+   approved expected output and an owner test. Contract boundaries, parsing,
+   validation and synthetic fixture harnesses may be prepared in parallel before
+   release, with unresolved actual mappings failing closed. That preparation
+   cannot approve an alias, import actual history or release a converter.
+6. **Final acceptance:** after implementation, demonstrate repeated import,
+   interruption/conflict recovery and pending original-authority replay on the
+   representative disposable snapshot. These remain mandatory preservation
+   proofs. Launcher implementation and any authorized live cutover remain
+   separate gates; the implementation-release checkpoint does not satisfy them.
 
-Architecture impact: none. This file documents existing source fields and
-unverified preservation requirements; it changes no schema, runtime interface,
-dependency, state owner, transaction, launcher or deployment.
+The bounded [checkpoint reader][checkpoint] checks only supplied evidence
+consistency: exact artifact SHA-256 bindings, explicitly scoped converter owners,
+independent preparer/reviewer labels and #388 golden equality. Its CLI hashes the
+supplied files and emits no private identities, paths or data. An `actual` label
+is a supplied assertion, never proof of snapshot authorization, genuine installed
+versions or reviewer identity; an external reviewer must establish those facts.
+The result's `checkpoint_sha256` identifies the complete canonical review packet
+for that external approval check. Its `actual_release` flag means supplied
+evidence eligibility only; an independent trusted approval capability must
+approve that exact checkpoint before any actual converter can use it.
+Synthetic reader tests cannot release a converter, and no actual checkpoint is
+provided by this source preparation. The reader accesses no application state
+and writes no import, approval or activation state.
+
+Architecture impact: none. This field ledger and standalone evidence reader
+change no runtime interface, dependency, schema, state owner, transaction,
+launcher or deployment. The reader reuses the existing normalized comparator
+without importing an application, database adapter or converter implementation.
 
 [cutover]: https://github.com/aaweaver-actuary/tempo/blob/bb073b6482fa97c5780118ff4fd52a395a8d2c21/docs/architecture/study-first-reduction-2026-10-21/LAUNCHER-CUTOVER.md
+[checkpoint]: ../../../database/tooling/study_mapping_checkpoint.py
 [l1]: ../../../database/tempo_legacy_database/ddl/migrations/001_initial.sql
 [l16]: ../../../database/tempo_legacy_database/ddl/migrations/016_phone_review_receipts.sql
 [l17]: ../../../database/tempo_legacy_database/ddl/migrations/017_operation_recovery.sql
