@@ -547,9 +547,6 @@ def execute_coverage_node(node: dict) -> None:
             progress_counts = storage.explorer_progress_counts(database, (node["run_id"],))
             from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
             enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
-        from .introduction_priorities import enqueue_priority_refresh
-
-        enqueue_priority_refresh(node["repertoire_id"], background=True)
         emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
@@ -702,7 +699,3 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
     emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                     (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                     progress_counts["total"] * 2)
-    if repertoire_id:
-        from .introduction_priorities import enqueue_priority_refresh
-
-        enqueue_priority_refresh(repertoire_id, background=True)

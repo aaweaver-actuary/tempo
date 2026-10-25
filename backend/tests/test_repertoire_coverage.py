@@ -101,6 +101,12 @@ def test_opponent_reply_without_a_trained_response_remains_a_coverage_gap():
 def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete(
     tmp_path, monkeypatch
 ):
+    from app.services import introduction_priorities
+
+    def unavailable_priority(*_args, **_kwargs):
+        raise AssertionError("Explorer publication must not require optional adaptive priority")
+
+    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", unavailable_priority)
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as database_connection:
@@ -136,7 +142,16 @@ def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complet
     assert summary["required_branches"] == 2
     assert summary["covered_branches"] == 1
     assert summary["is_complete"] is False
+    assert summary["status"] in {"running", "complete"} and summary["last_error"] is None
     assert [gap["move_uci"] for gap in gaps] == ["c7c5"]
+    with database.read_connection() as database_connection:
+        assert database_connection.execute(
+            "SELECT explorer_status FROM repertoire_coverage_nodes WHERE id=?", (node["id"],)
+        ).fetchone()[0] == "complete"
+        assert database_connection.execute(
+            "SELECT state FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key='r'"
+        ).fetchone()[0] == "queued"
+        assert database_connection.execute("SELECT COUNT(*) FROM repertoire_priority_jobs").fetchone()[0] == 0
     repertoire_coverage.set_explorer_session_token(None)
 
 

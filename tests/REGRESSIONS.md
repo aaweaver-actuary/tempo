@@ -1,3 +1,23 @@
+## Immediate adaptive-priority callback cessation
+
+`backend/tests/test_priority_callback_retirement.py` owns
+`test_prefix_save_preserves_source_and_coverage_without_optional_priority`,
+`test_native_explorer_publication_preserves_progress_and_cursor_without_optional_priority`
+and `test_local_game_handoff_preserves_opportunities_without_optional_priority`.
+The six-file source slice retains prefix/epoch invalidation and graph dispatch,
+coverage candidates/progress/cursors and game/opportunity completion while the
+removed optional enqueue functions fail if invoked.
+
+Existing owning cases retain their primary assertions and add the same absence
+boundary: `test_postgres_cutover.py::test_postgres_maia_submit_publishes_candidates_in_bounded_sets`,
+`test_postgres_game_completion.py::test_postgres_game_priority_handoff_finishes_only_after_last_repertoire`,
+`test_repertoire_coverage.py::test_coverage_refresh_persists_required_gaps_without_marking_unknown_complete`
+and `test_repertoire_opportunities.py::test_issue8_maia_claim_and_partial_submit_survive_explorer_failure`.
+The SQLite Explorer case also rejects a swallowed optional-callback error that
+would otherwise mark already-published coverage failed. Native SQL/locking,
+installed/deployed behavior and full producer shutdown are not established by
+these SQLite/fake checks. See the [source ownership view](../backend/app/services/README.md#immediate-adaptive-priority-callback-cessation).
+
 ## Legacy review without adaptive recomputation
 
 `backend/tests/test_legacy_review_storage_separation.py` owns
@@ -885,9 +905,6 @@ Quiet notifications (October 2, 2026):
 | Unanalyzed games contaminate engine-derived statistics | `test_statistics_score_rate_and_engine_metrics_use_exact_denominators` |
 | Day-of-week and hour statistics ignore the configured timezone or DST | `test_statistics_local_day_and_hour_respect_timezone_and_dst` |
 | Opening and endgame evaluations reverse meaning for Black | `test_opening_and_endgame_evaluations_use_player_perspective` |
-| Guided game review repeats findings from the same position or exceeds five prompts | `test_guided_review_ranks_and_deduplicates_top_five_actionable_positions` |
-| Guided game review loses its place across navigation or reload | `test_guided_review_resumes_and_correction_does_not_change_fsrs` |
-| A guided correction silently changes FSRS scheduling | `test_guided_review_resumes_and_correction_does_not_change_fsrs` |
 | Tactical opportunities lose their denominator, queue state, or card provenance | `test_tactical_statistics_has_explicit_zero_safe_conversion_and_pin_breakdown`; `test_tactical_queue_skip_keeps_finding_pending_and_ignore_removes_it`; `test_tactical_card_preview_is_side_effect_free_and_save_admits_one_personal_tactics_card` |
 | Tactical themes show misleading percentages or the wrong queue orientation | `tactical statistics render an explicit zero-denominator rate`; `tactical queue uses the player's board orientation` |
 | Games summary transports moves, timelines, or findings for every library row | `test_games_summary_pagination_omits_heavy_fields_and_caps_rows` |
@@ -1358,7 +1375,6 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - PostgreSQL game finalization writes analysis rows from the API, holds a long transaction over a full game, switches visibility before all rows exist, or loses follow-up work after publication: `backend/tests/test_postgres_cutover.py::test_postgres_game_finalization_admits_durable_publication_via_background_celery`, `test_postgres_game_publication_limits_each_slice_to_eight_moves`, `test_postgres_game_publication_rejects_incomplete_stage_before_visibility_switch`, and `test_postgres_game_publication_admission_checkpoints_durable_task`. Synthetic PostgreSQL rehearsals verified a 229-move publication in 30 bounded slices and a completed game with derivation, threat-scan, and repertoire follow-up intents.
 - PostgreSQL study PGN preview is blocked as a write or opens a writer, and import commit bypasses Celery or loses parent links and duplicate detection: `backend/tests/test_postgres_cutover.py::test_postgres_study_import_preview_uses_query_only_reader_without_write_worker`, `test_postgres_study_import_commit_dispatches_parsed_source_with_stable_receipt`, and `test_postgres_study_import_worker_keeps_parent_links_and_duplicate_receipt`.
 - A native study bundle import attempts SQLite `PRAGMA` on PostgreSQL or writes from the API process instead of the foreground Celery worker: `backend/tests/test_postgres_cutover.py::test_postgres_native_study_bundle_import_dispatches_celery_command`. A rolled-back PostgreSQL preserve/copy rehearsal also verified complete column inspection and chapter import.
-- PostgreSQL guided review creation races another session, correction attempts advance the same item twice, or receipt dispatch bypasses command ownership: `backend/tests/test_postgres_guided_review.py::test_postgres_guided_review_routes_dispatch_foreground_receipts`, `test_postgres_guided_review_start_locks_game_before_creating_session`, `test_postgres_guided_review_attempt_locks_session_before_advancing`. The browser-only pending correction proof retires alongside the unused Games command client.
 - Finding curation or acceptance writes from the API, races game exclusion, reprioritizes a noncanonical miss, or command receipt dispatch is bypassed: `backend/tests/test_postgres_findings.py::test_postgres_finding_routes_dispatch_idempotent_foreground_commands`, `test_postgres_finding_curation_locks_source_before_changing_status`, `test_postgres_accepted_repertoire_lapse_uses_canonical_miss_and_queue_lock`. The browser-only pending decision proof retires alongside the unused Games command client.
 - Finding-card preview opens a writer, a save bypasses Celery, a stale tactical opportunity creates a card, or save dispatch is bypassed: `backend/tests/test_postgres_finding_cards.py::test_postgres_finding_card_preview_reads_only_and_save_dispatches`, `test_postgres_finding_card_save_rejects_stale_tactical_opportunity_before_writing`. The browser-only pending save proof retires alongside the unused Games command client.
 - PostgreSQL finding preparation accidentally opens a writer or publishes evidence before a bounded derivation slice: `backend/tests/test_postgres_game_findings.py::test_postgres_game_findings_prepare_does_not_open_writer_or_publish`.
@@ -2356,18 +2372,19 @@ Real PostgreSQL checks in `database/tests/check_postgres_canonical_freshness.py`
 
 CI's FEN-only phone study workflow failed after UTC midnight when the regular browser inherited UTC and the disposable service used New York time. `regular browser and service share the study day across UTC midnight` in `tests/unit/postgres-browser-day-regressions.test.ts` compares actual fixture configuration and both sides of the calendar boundary. `prepared study queue shares the disposable service calendar day` in `tests/browser/studies.spec.ts` proves the browser's real calendar matches the authoritative prepared queue. Regular browser timezone is pinned to the same service timezone; the existing grading assertion is unchanged.
 
-### PR #66 boundary review: guided-session publication reconciliation
+### Retired Games guided-review server regression ownership
 
-`backend/tests/test_guided_review.py` covers:
-
-- `test_guided_review_hidden_current_get_and_submit_grade_same_finding_without_500`: canonical freshness hides the current item; GET and POST select its successor and the saved attempt references that successor.
-- `test_guided_review_hidden_completed_finding_remaps_index_and_preserves_attempts`: removed completed items reduce the index while historical attempts survive.
-- `test_guided_review_all_remaining_hidden_post_commits_completion_and_resume_is_not_stranded` and `test_guided_review_all_findings_hidden_get_returns_complete_session`: exhausted sessions complete durably and never dereference missing findings.
-- `test_guided_review_scope_change_between_display_and_attempt_rejects_old_target`: stale displayed identities return 409 without grading another finding.
-
-The retired browser Games command client and its guided correction suite are preserved in [source snapshot 1e7ffb04](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb/tests/unit/guided-review-pending-regressions.test.ts). Their finding-based response, stale rejection and legacy move-only pending-operation assertions retire with that unsupported client; retained Study review and browser authority fencing are unchanged. The existing PostgreSQL command locking/receipt tests remain required; real command parity is proved by CF-9 in the disposable durability workflow.
-
-Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current HTTP regression reproduced SQLite `TypeError: 'NoneType' object is not subscriptable` before production edits. The four initial boundary cases ran in 1.38s; the corrected generated-split fixture independently reproduced authored child links in 0.62s. These are failing-baseline evidence, not candidate validation.
+The correction-first Games session server, its two exclusive suites (10 tests)
+and CF-9 command reconciliation proof retire with the unsupported capability.
+Their purpose was finding ranking/deduplication, resumable correction, stale
+finding reconciliation and command locking/receipts; [last source](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/backend/tests/test_guided_review.py)
+and [native proof](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/database/tests/check_postgres_canonical_freshness.py)
+remain available in Git. These deleted checks are retired, not passing checks.
+All other canonical freshness proofs stay registered. Ordinary Study guided
+failure/review/attempt invariants, saved exercise execution, graph/repertoire
+and frozen-order/no-score fallback checks remain independently owned.
+No old Games-session replay/drain requirement is imposed by fresh-start policy;
+no data, schema or live state was removed by this source change.
 
 ### PR #66 boundary review: independent card and link provenance
 

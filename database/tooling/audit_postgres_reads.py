@@ -58,7 +58,6 @@ def representative_values(database: psycopg.Connection) -> dict[str, str]:
             "SELECT id FROM threat_training_candidates WHERE card_id IS NOT NULL ORDER BY id LIMIT 1"
         ),
         "game_id": game_id,
-        "session_id": first("SELECT id FROM guided_review_sessions ORDER BY id LIMIT 1"),
         "database_name": "invalid",  # Rejected before any external Explorer request.
         "fen": first("SELECT start_fen FROM cards ORDER BY id LIMIT 1"),
     }

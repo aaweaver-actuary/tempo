@@ -14,3 +14,48 @@
 Database queries, drivers, DDL, native harnesses and database tooling belong in the single [root database tree](../../../database/README.md). Some legacy composition still imports concrete adapters or other application workflows; it remains explicitly pending and is not an accepted domain boundary. Study must acquire no Games dependency. New domain policy uses only its own internals, explicit contracts and neutral pure libraries; outer composition wires capabilities and lifecycle.
 
 No consolidation is performed during this organization phase. Observed duplication/simplification questions stay in the one [running proposal list](../../../database/SIMPLIFICATION.md). Existing function behavior, SQL, transaction/lock order and resource authority remain the constraints on every split.
+
+## Immediate adaptive-priority callback cessation
+
+**Implemented in this source branch; deployment unverified.** Seven immediate
+adaptive-priority requests are removed from the six source paths below. This is
+the remaining callback slice from #427 after #431 retired the legacy review
+hook. It does not stop internal priority workers or their recovery paths.
+
+```mermaid
+flowchart LR
+  prefix["Canonical prefix save"] --> definitions["Prefix values, source epoch and stale-score invalidation"]
+  prefix --> graph["Existing repertoire game-refresh task"]
+  prefix --> seed["Existing coverage seed request"]
+  seed --> coverage["Explorer and Maia coverage publication"]
+  coverage --> facts["Candidates, completion and progress"]
+  coverage --> cursor["Existing native task cursor"]
+  prefix --> opportunity["Existing opportunity refresh owner"]
+  coverage --> opportunity
+  game["Native and local game derivation handoff"] --> opportunity
+  game --> completion["Existing per-repertoire cursor and derivation completion"]
+```
+
+Concrete owners are [`save_prefix`](../canonical_prefix_api.py),
+[`submit_maia_node`](../coverage_maia_commands.py),
+[`_publish_node`](postgres_coverage_explorer.py),
+[`execute_coverage_node` and `submit_maia_coverage`](repertoire_coverage.py),
+[`execute_game_priority_handoff_slice`](postgres_game_priorities.py) and
+[`_enqueue_game_repertoire_refreshes`](game_sync_coordinator.py).
+The [coverage storage view](../../../database/tempo_legacy_database/adapters/coverage/README.md)
+records the unchanged database owners and transaction boundaries.
+
+Prefix/source certification, graph and repertoire definitions, source-epoch
+triggers, coverage mathematics and stored candidates remain unchanged. Every
+opportunity callback stays, including the four callbacks in
+`introduction_priorities.execute_priority_refresh`, `publish_priority_records`,
+`postgres_priority.execute_repertoire_priority_slice` and the game handoff.
+Ordinary Study queue/review, frozen ordering and no-score fallback retain their
+existing owners; no Study dependency on these optional producers is added.
+Existing legacy cross-workflow imports and shared resources remain disclosed
+above; this bounded removal does not establish full plugin/resource isolation.
+
+The named regressions in [the regular inventory](../../../tests/REGRESSIONS.md#immediate-adaptive-priority-callback-cessation)
+exercise primary prefix/coverage/game effects with adaptive enqueue functions
+unavailable. SQLite and semantic fakes are source evidence; native PostgreSQL
+locking, installed artifacts and deployment remain unverified.

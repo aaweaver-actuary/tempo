@@ -59,12 +59,10 @@ def save_prefix(database, payload: dict) -> dict:
         storage.fail_active_local_coverage(database, repertoire_id)
     if storage.postgres_is_configured():
         from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
-        from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
         storage.advance_priority_source_epoch(database, repertoire_id)
         request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
         storage.delete_priority_publication(database, repertoire_id)
         storage.delete_introduction_priorities(database, repertoire_id)
-        enqueue_priority_refresh_in_transaction(database, repertoire_id)
     return prefix_projection(moves, revision)
 
 
