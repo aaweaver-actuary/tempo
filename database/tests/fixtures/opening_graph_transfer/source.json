@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "workspace_id": "synthetic-fresh-workspace",
+  "source_key": "synthetic-opening-source",
+  "title": "Synthetic authored opening",
+  "repertoires": [{"key": "synthetic-repertoire", "title": "Synthetic opening", "learner_color": "white"}],
+  "policies": [{"key": "synthetic-policy", "repertoire_key": "synthetic-repertoire"}],
+  "routes": [{"key": "synthetic-line", "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "moves": ["e2e4", "e7e5"]}],
+  "memberships": [{"repertoire_key": "synthetic-repertoire", "policy_key": "synthetic-policy", "route_key": "synthetic-line"}],
+  "exercises": [{"key": "synthetic-new-decision", "decision_key": "synthetic-new-decision", "policy_key": "synthetic-policy", "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "prompt": "Play the authored move", "specification": {"type": "move_line", "mode": "single", "grading_policy": "reference", "accepted_lines": [["e2e4"]]}}],
+  "bindings": [{"route_key": "synthetic-line", "policy_key": "synthetic-policy", "ply": 0, "exercise_key": "synthetic-new-decision"}]
+}
