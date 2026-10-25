@@ -75,7 +75,7 @@ def _recorded_archived_split_continuation(card, owner, tables, cards, lines, pub
         boundary=chess.Board(original['start_fen'])
         for move in short_moves:
             boundary.push_uci(move)
-        recorded_graph_starting_fen(boundary.fen(en_passant='fen'),card['start_fen'])
+        recorded_graph_starting_fen(boundary.fen(en_passant='legal'),card['start_fen'])
         raw=[row for row in selected_steps if row['repertoire_id']==owner and row['card_id']==original['id']]
         if not raw:
             return None

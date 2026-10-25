@@ -715,15 +715,15 @@ def test_generated_availability_reset_cannot_hide_executable_or_position_conflic
         graph_only(tables,steps)
 
 
-def recorded_archived_continuation_capture():
+def recorded_archived_continuation_capture(original_moves=None, alternatives=None):
     tables=captured();template=tables['repertoire_lines'][0]
-    original_moves=['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6','e1g1'];short=original_moves[:7];tail=original_moves[7:]
-    alternatives=[short+['h7h6','d2d3'],short+['d7d6','e1g1']]
+    original_moves=original_moves or ['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6','e1g1'];short=original_moves[:7];tail=original_moves[7:]
+    alternatives=alternatives or [short+['h7h6','d2d3'],short+['d7d6','e1g1']]
     tables['repertoire_lines']=[{**template,'id':name,'moves_json':json.dumps(sequence)} for name,sequence in
         [('arch-1',original_moves),('arch-2',original_moves),('arch-3',original_moves),('alt-1',alternatives[0]),('alt-2',alternatives[1])]]
     board=chess.Board()
     for move in short: board.push_uci(move)
-    boundary=board.fen(en_passant='fen')
+    boundary=board.fen(en_passant='legal')
     c={**tables['cards'][0],'content_type':'opening','kind':'prefix','canonical_route_source':1,'superseded_by':None,'repertoire_id':'italian'}
     tables['cards']=[{**c,'id':'original','moves_json':json.dumps(original_moves),'archived':1,'revision':7},
         {**c,'id':'shortened','moves_json':json.dumps(short),'canonical_route_source':0},
@@ -773,5 +773,43 @@ def test_recorded_continuation_coverage_never_infers_identity_from_content_or_un
         for row in steps:
             if row['card_id']=='original': row['card_id']='unrelated'
     if fault=='ambiguous-split': tables['prefix_splits'].append(dict(tables['prefix_splits'][0]))
+    with pytest.raises(ValueError,match='canonical_source_occurrence_required'):
+        graph_only(tables,steps)
+
+
+def noncapturable_boundary_case():
+    original=['g1f3','d7d5','d2d4','g8f6','e2e3','e7e6','c2c4','f8e7','f1d3']
+    return recorded_archived_continuation_capture(original,[original[:7]+['b8d7','f1e2'],original[:7]+['c7c6','f1e2']])
+
+
+def test_recorded_split_boundary_matches_pinned_legal_ep_serialization_without_rewriting_raw_fen():
+    tables,steps=noncapturable_boundary_case();before=deepcopy(tables)
+    original=next(row for row in tables['cards'] if row['id']=='original')
+    candidate=next(row for row in tables['cards'] if row['id']=='old-continuation')
+    board=chess.Board(original['start_fen'])
+    for move in json.loads(original['moves_json'])[:7]: board.push_uci(move)
+    assert board.has_legal_en_passant() is False
+    assert board.fen(en_passant='fen').split()[:4]!=candidate['start_fen'].split()[:4]
+    assert board.fen(en_passant='legal').split()[:4]==candidate['start_fen'].split()[:4]
+    raw,manifest,report=graph_only(tables,steps)
+    assert len(json.loads(raw)['exercises'])==3 and len(report['canonical_source_dispositions'])==1
+    assert tables==before and manifest['legacy_aliases']=={}
+
+
+@pytest.mark.parametrize('fault',['legal_ep','turn','castling'])
+def test_recorded_split_derived_boundary_still_rejects_real_position_rights_changes(fault):
+    if fault=='legal_ep':
+        original=['g1f3','d7d5','b1c3','d5d4','a2a3','g8f6','e2e4','d4e3','f1b5']
+        tables,steps=recorded_archived_continuation_capture(original,[original[:7]+['b8c6','f1b5'],original[:7]+['c7c5','f1c4']])
+    else:
+        tables,steps=noncapturable_boundary_case()
+    candidate=next(row for row in tables['cards'] if row['id']=='old-continuation')
+    fields=candidate['start_fen'].split()
+    if fault=='legal_ep':
+        assert fields[3]!='-'
+        fields[3]='-'
+    if fault=='turn': fields[1]='w' if fields[1]=='b' else 'b'
+    if fault=='castling': fields[2]='-'
+    candidate['start_fen']=' '.join(fields)
     with pytest.raises(ValueError,match='canonical_source_occurrence_required'):
         graph_only(tables,steps)
