@@ -51,4 +51,4 @@ Schema/storage relationship changes must update the affected directory README di
 
 ## Reducing the schema
 
-The [initial 163-table breakdown and simplification recommendation](SIMPLIFICATION.md) separates feature storage, legacy generations and operational state. Andy's 20–30 table goal is a future design target, not permission to drop tables, migrate live data or implement the pending canonical model here.
+There is **no target live table count**. The [initial source breakdown](SIMPLIFICATION.md) separates feature storage, legacy generations and operational state; its counts do not establish what is installed or unused. [The #362 family disposition](PERSISTENCE-DISPOSITION.md) records the retained consumers and exact prerequisites for the currently named candidates. No family is approved for physical retirement. Retaining an unused installation's history cold is allowed once its live source dependencies and pending obligations are resolved; do not consolidate across component owners to lower a count.
