@@ -20,7 +20,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@tempo/board-ui": ["./packages/board-ui/src/index.ts"]
     }
   },
   "include": [
