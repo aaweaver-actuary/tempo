@@ -1939,12 +1939,13 @@
       "implementation_preparation_receipt": {
         "owner": "/root/retirement_391",
         "branch": "codex/retire-immediate-priority-callbacks-20261025",
-        "local_tested_commit": "e46c41bba8906a751979fd47b147088cdf9a734a",
-        "local_tested_tree": "c2b33697e1dac17ec5c0be48fc436db49021a3fb",
-        "publication_state": "Local source-owner commit awaiting independent root review/publication at the time of this receipt; no merge/deployment.",
+        "publication_state": "Draft #454 published and independently reviewed on the exact tested source; no merge/deployment/live action.",
         "source_correspondence_sha256": "71169973d129b3fceee06045290a9ef876554aac1a579b5a310d1949f33ca2b8",
         "reported_results": "8 affected + 10 retained cases = 18 passed, 0 skipped using task-owned SQLite/fakes. Prior source failed 7 direct cases plus the legacy swallowed-error assertion. Exact six proposed source hashes and 17-/0+ match; all four opportunity callback ASTs unchanged.",
-        "qualification_limit": "These checks belong to the source-owner executable commit, not this documentation branch. No native/live/actual-version/reset/cutover acceptance; no runtime tests rerun by #390."
+        "qualification_limit": "These checks belong to the source-owner executable commit, not this documentation branch. No native/live/actual-version/reset/cutover acceptance; no runtime tests rerun by #390.",
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/454",
+        "tested_and_published_commit": "e46c41bba8906a751979fd47b147088cdf9a734a",
+        "tested_and_published_tree": "c2b33697e1dac17ec5c0be48fc436db49021a3fb"
       }
     }
   ],
