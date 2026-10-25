@@ -1985,6 +1985,316 @@
         "verified_main_checkpoint": "66d98610924971ea4cce3603c76cd4c330b50ae1",
         "effect": "Actual seven optional callback requests removed in main; -17 production lines, no files or data deleted. Not complete priority calculation/recovery shutdown or deployed-state evidence."
       }
+    },
+    {
+      "id": "daily-statistics-fresh-start-01",
+      "status": "candidate",
+      "source_commit": "66d98610924971ea4cce3603c76cd4c330b50ae1",
+      "purpose": "Remove optional daily outcome/tactical snapshots, insight materialization, its refresh ingress/workers/admission and daily invalidation callers. Keep current per-game chess features and phase6 publication/handoff, graph/repertoire and ordinary Study. Actual reviewed source is published in draft461; this status does not claim main integration or live retirement.",
+      "delete_paths": [
+        "backend/app/services/postgres_daily_statistics.py",
+        "backend/app/statistics_commands.py",
+        "backend/tests/test_postgres_daily_statistics.py",
+        "database/tempo_legacy_database/adapters/commands/statistics.py",
+        "database/tempo_legacy_database/adapters/derived_publications/daily_statistics.py"
+      ],
+      "deleted_path_sha256": {
+        "backend/app/services/postgres_daily_statistics.py": "c85affbafa0c43b5421e1b78ec2a00856a49d5b223b2a1a62d43eff7b21dfe8a",
+        "backend/app/statistics_commands.py": "a3ec16008ad7b196e03dbe5f5c8c626e6e31bf8d5a685e860ac5bf8dec95ccc1",
+        "backend/tests/test_postgres_daily_statistics.py": "4e5dfe6443ed62c55b7033c1604efe39510e2dc3b152afc301a48c394f1080b3",
+        "database/tempo_legacy_database/adapters/commands/statistics.py": "f02afaf33c0e100e4d89778d4ce07e00a2e0f6981c0d9ad38583092a4339a6fc",
+        "database/tempo_legacy_database/adapters/derived_publications/daily_statistics.py": "8b1025067981c07687d70fb55b25a1e3f301e833dd5615d215b0b2bd6edcb2e1"
+      },
+      "edit_paths": [
+        {
+          "path": "backend/app/main.py",
+          "sha256": "9de307a346628b429daed2718211844d2db79607afc8b9644914ec91b491cef1",
+          "proposed_sha256": "08638941d514740347257d83c40a54df065a49e7e2f753c776eaa4a63f80c030",
+          "required_edit": "Remove enqueue_daily_snapshot import, statistics_refresh_command guard/tuple entry and refresh_chess_statistics_day POST route only. Keep every unrelated handler; root-approved retained GameEvidence metadata rows are not API additions."
+        },
+        {
+          "path": "backend/app/services/background_activity.py",
+          "sha256": "e4987e56b050e1fff404ba3cec5d0592ed8b8154bf172449d6f1ed65fb2929be",
+          "proposed_sha256": "bcde58a7c63f68526fc03939616895c359610f0c1a8e6370bf918a3c6863a963",
+          "required_edit": "Remove only list_activity daily_statistics_jobs projection branch; keep all other current activity sources."
+        },
+        {
+          "path": "backend/app/services/background_metric_kinds.py",
+          "sha256": "05239413c7ef9ff77d9d443d3b9c6623a400b1c44fd027f6d573410611170e56",
+          "proposed_sha256": "9ef0b5eb33b61409f81cb78842282d6269e3fcbd30fe05dfcb627efa5af16aac",
+          "required_edit": "Remove only daily_statistics from known metric kinds."
+        },
+        {
+          "path": "backend/app/services/durable_scheduling.py",
+          "sha256": "6838a9a87666954a3379326815906174d41b98f5e7bc50b8eb6a4c98ea423321",
+          "proposed_sha256": "cb0e065a7e86ea4f394aa2bbcd618f410486bcb99ae5e8478ffa199fac2983d7",
+          "required_edit": "Remove only daily_statistics from priority class kind tuple; preserve daily_queue and all other current scheduling."
+        },
+        {
+          "path": "backend/app/services/game_sync.py",
+          "sha256": "487ec8a88b931e5990fbdbcdd79612802d3b9c2b91070e4cf0fdaafb49991649",
+          "proposed_sha256": "f08afedd2189aad6a86663ecca99fdf7a68f28c37293a760edc1e0febc1e67e4",
+          "required_edit": "Remove only daily snapshot/insight invalidation calls in changed-record and new-record persistence paths; retain insert/duplicate/update/analysis intent behavior."
+        },
+        {
+          "path": "backend/app/services/game_sync_coordinator.py",
+          "sha256": "dd506eeabb1c669b18741996b87d4c18ea883465601313f4a4e6aab387210f4f",
+          "proposed_sha256": "0e19ceb0b9a7445468b3b05e4c6d761f64c759400cfcc6421c4253df12dd9686",
+          "required_edit": "Remove only daily import/round-robin source/claim/execute branches; retain per-game feature derivation and previously integrated priority454 cut without duplicate credit."
+        },
+        {
+          "path": "backend/app/services/postgres_game_sync.py",
+          "sha256": "27f15c50bf0aa3a73ed10abcb9a5bee87548bd661e9449bd87be1f9abc502d91",
+          "proposed_sha256": "dd55c7a4aa5c48508351a82f61bf42a5d2e43d7fd37899678d4627c2cb98d1ec",
+          "required_edit": "Remove only two daily invalidation calls from persist_game_record_in_transaction; preserve native game upsert and atomic follow-up intents."
+        },
+        {
+          "path": "backend/app/services/statistics.py",
+          "sha256": "338d9f49b08a2974b448fbd1c8fa219086b0979309fa773086cc7a01be3fc84e",
+          "proposed_sha256": "d33f0743d7ea2a88b3d679e6ad2d043756a27ba0ce1cbd9fa3f10d13a7ef233c",
+          "required_edit": "Remove refresh_daily_snapshot/enqueue_daily_snapshot/claim_daily_snapshot/execute_daily_snapshot and now-unused imports; preserve four exact per-game feature function ASTs."
+        },
+        {
+          "path": "backend/app/tasks.py",
+          "sha256": "6ba3a48094cab5b345d4723aed101a9fb97faecbf3e1ff96f694f31006fe5df7",
+          "proposed_sha256": "73aac32fb391d06a71ee884b1bdb7c2724c8f79638f65e3e28675fcd3ac10371",
+          "required_edit": "Remove statistics command side-effect import, postgres_daily_statistics import and daily_statistics supported-kind/handler/settlement-exclusion entries only."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+          "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2",
+          "proposed_sha256": "d36c5833847a9ae665298eace716d230f9fac01ae74ce11498b1c232fe5ee90d",
+          "required_edit": "Remove statistics source map entry and statistics_activity query only; preserve all other activity/control SQL."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/sync/records.py",
+          "sha256": "f69fc86309785de06395aafc52ddb9f0367ac18bcc84e7e4cf629787bc93a02e",
+          "proposed_sha256": "ddcb4fe0146f217c8d9fe890948c9e963c861be23af1fc1282043d09c91640b6",
+          "required_edit": "Remove only invalidate_day_snapshot and invalidate_day_insights; other persistence helpers remain AST-identical."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "sha256": "3faa4d6428ff3d1b9d939cf25c59e43dc55fe489e48c89896aaa23d55943d5ab",
+          "proposed_sha256": "bfd6645911ae841d726c97532330e8f91edd57b432bba0d7b0d666e5e4cb54bc",
+          "required_edit": "Remove fourteen daily materialization/job/insight helper functions and now-unused claim imports; retain five exact per-game projection ASTs and canonical feature upsert re-export."
+        }
+      ],
+      "supporting_edit_paths": [
+        {
+          "path": "app/domain/schemas/background-diagnostics.ts",
+          "sha256": "f6659cfa6b86b2671503e994681c1a964694204fb1947976e68741dd5ea955ba",
+          "proposed_sha256": "9401eb624e946477365a3214c512d2b56eb6271f3ec616231e406a5dcf379fa4",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/organization-inventory.json",
+          "sha256": "b9ac0c0539aed2b92bc032d5d607d5844cd597be7ead4e374f14974a9f021e3e",
+          "proposed_sha256": "1ad815f9fe1c8602b84527042bebe1e963c8092c6a9a2833a528ec3a0dfa06a5",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/tests/test_background_activity.py",
+          "sha256": "174650e6a13eab2ccf1dbf88c4d0dbea43ebaa1ea37677801cadc0d528608d71",
+          "proposed_sha256": "6fa56f0b8612465f084b352e800a833bb8d7844529c903692816ecbfd2392cad",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/tests/test_legacy_command_database_split.py",
+          "sha256": "f90f0d029eb227fbfc2ed5ef1ba67b3667226edbe062a76718578abc5d08ad8e",
+          "proposed_sha256": "55fa4b78c7bde5dd32b9c151a3e6f4a36906264622c20beb15970aca94c696e1",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/tests/test_legacy_derived_publication_database_split.py",
+          "sha256": "80437fee4c95a186768e3b265f2d5eb718769d12b72e1a01e3b45a30258a5cdb",
+          "proposed_sha256": "b31db26a0247b1e48306bb4c172ab60da03320e526a1327c5f90136da77b9d1b",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/tests/test_legacy_statistics_database_split.py",
+          "sha256": "d7722c803ae12e7cc02e2409ade37c5ac19db72493c30c1d2102e19a6def4856",
+          "proposed_sha256": "8ee1525f614b3c97c7f766f8c04d8b80c9a0f354f6924bb240a79eb41152c35e",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/tests/test_postgres_cutover.py",
+          "sha256": "31823532267e8f04ad3052556b2794fc7e5c93ae0191a756d4fd53806d4bd56b",
+          "proposed_sha256": "21e5198afe17daa5db6960063ec7b2f5467259c2e6ec679d2e634f6cdc1d67b5",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "backend/tests/test_statistics.py",
+          "sha256": "cb7856b67d85cc99dead43f4f258581f97831bebce51bbe9e65e362927e0fd1a",
+          "proposed_sha256": "bc67d7888b52c8aec95924cf91d9cc92347167be88ebe2921cd0983089617094",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "database/INVENTORY.md",
+          "sha256": "359e9c31b1adb0fab4f193a54e39c7c7ca23401115c1e589377f55f4de23c3ad",
+          "proposed_sha256": "9a4b2a31e1b029990a3c8b62b77b44152a360e0dcc8c6351d8491fa280911223",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/commands/README.md",
+          "sha256": "5bcf889a5e60c5f836e13f31e85fda741ab8c5f261b941331a8fe709ee510cf9",
+          "proposed_sha256": "b397decb6b6f4c4ce70170bebfd0bb72381b2e85afa3f42adb240db829cfd773",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/controls/activity/README.md",
+          "sha256": "7a250a971535d9d1aaba0d03c746a3ff6e0e3221b297d934d999cd52a60edd70",
+          "proposed_sha256": "15c0896192cc98f00de5d95b37b63384a6aeb61a1c6e7ff7ae88442818902feb",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/derived_publications/README.md",
+          "sha256": "914ad02a51e6bc89ef939ee091908736e8d1987d12a789f5e5a5d84d6635fac2",
+          "proposed_sha256": "34e046c6e8804c3ea9f51f1eeaddcaa880052bbb0c00cee819159e8f043b0a46",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/sync/README.md",
+          "sha256": "06db41053a8dfb1d1851d0c5b79c9f050ece934395f80988536bccbbe2dcd959",
+          "proposed_sha256": "205b5f72c9dcd4cac707f04f248ae86cea666c18f87c9624f6209b38da764d47",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/statistics/README.md",
+          "sha256": "983fb7bb8ec11080c0e9e15199a50d341c7c84758b736f385555064bd3ecb0a2",
+          "proposed_sha256": "2f2affb79e478559d1abaf1b9a8d7e9f218989825b1962c4c5d6fe1fa3e6e70d",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "docs/postgres-route-contract.json",
+          "sha256": "8fa13135d7da7c3f60122034df1ee6b9117dc3c6e5ae995a95a979cf021fa768",
+          "proposed_sha256": "ff6cc7fa9b6e7e83b49676aa8d4278b3b0c778bdaa88142701a2516a46d78adc",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "scripts/ci-verification-inventory.json",
+          "sha256": "5621b4e41e7c95229f24e298aa8b10ce0d2768285a5f0b0481fedb401cf4ca07",
+          "proposed_sha256": "215c7bd4226ad1cf3cc5def2036f50cd51a705b5a67c1676b3c284b37db626ea",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        },
+        {
+          "path": "tests/REGRESSIONS.md",
+          "sha256": "a22e09c9c649b6d39843669146f05a841a6d91dbd77c4137e15c03bf9dc19388",
+          "proposed_sha256": "f241cf540882b4b65c85e8478ac79ac994507d72c5c6777d6c302841207b46c6",
+          "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
+        }
+      ],
+      "keep_paths": [
+        {
+          "path": "backend/app/services/postgres_game_features.py",
+          "sha256": "19024124c422b56819e5d56ec32a448bc1c2a6292b2c078aa9fef9c084a0bbea",
+          "reason": "Canonical per-game feature writer/phase6 handoff remains byte-identical; no schema/storage owner change."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/derivation/features.py",
+          "sha256": "a64d3e7115ad21710f48d5b1baa82675ae33a2cf482f9c13bfec3b0decdf89d3",
+          "reason": "Canonical per-game feature writer/phase6 handoff remains byte-identical; no schema/storage owner change."
+        },
+        {
+          "path": "database/tempo_legacy_database/adapters/games/derivation/jobs.py",
+          "sha256": "71b85d996b095490c7ad2e4c0414dbc559c96960c12e9c7feb13fbb7a1007ee0",
+          "reason": "Canonical per-game feature writer/phase6 handoff remains byte-identical; no schema/storage owner change."
+        }
+      ],
+      "preserved_function_asts": {
+        "backend/app/services/statistics.py": [
+          "_player_score",
+          "_local_datetime",
+          "_evaluation_before_ply",
+          "refresh_game_features"
+        ],
+        "database/tempo_legacy_database/adapters/statistics/storage.py": [
+          "game_row",
+          "analysis_rows",
+          "game_event_rows",
+          "primary_match",
+          "configured_timezone"
+        ]
+      },
+      "graph_contract_ref": {
+        "cohort": "adaptive-priority-callbacks-fresh-start-01",
+        "source_receipt_sha256": "dc73aa3ff613196a8c36a27e1c13a7910bbb0307fe728e1dabde46eccffee33a",
+        "keep_paths": 21,
+        "result": "All 21 graph/repertoire keep hashes remain unchanged in source461; physical epoch/source/task/practice structures untouched."
+      },
+      "preserved_test_names": [
+        "backend/tests/test_statistics.py",
+        "backend/tests/test_legacy_statistics_database_split.py",
+        "backend/tests/test_legacy_derived_publication_database_split.py",
+        "backend/tests/test_legacy_command_database_split.py::test_remaining_command_handlers_delegate_all_sql_execution_to_database_owner",
+        "backend/tests/test_background_activity.py::test_activity_projection_lists_every_background_source_and_pages_without_losing_counts",
+        "backend/tests/test_postgres_route_contract.py",
+        "backend/tests/test_postgres_game_completion.py::test_postgres_game_features_publish_then_handoff_with_current_version",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_graph_materialization_preserves_authoritative_source_revision",
+        "backend/tests/test_canonical_repertoire_prefix.py::test_canonical_graph_cleanup_preserves_independently_authored_cards",
+        "backend/tests/test_frozen_opening_order.py::test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains",
+        "backend/tests/test_postgres_cutover.py::test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically"
+      ],
+      "test_commands": [
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_statistics.py backend/tests/test_legacy_statistics_database_split.py backend/tests/test_legacy_derived_publication_database_split.py backend/tests/test_legacy_command_database_split.py::test_remaining_command_handlers_delegate_all_sql_execution_to_database_owner backend/tests/test_background_activity.py::test_activity_projection_lists_every_background_source_and_pages_without_losing_counts backend/tests/test_postgres_route_contract.py -q --rootdir=. -o cache_dir=/tmp/tempo-daily-statistics-evidence-20261025/pytest-cache --basetemp=/tmp/tempo-daily-statistics-evidence-20261025/pytest-after",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_game_completion.py::test_postgres_game_features_publish_then_handoff_with_current_version backend/tests/test_canonical_repertoire_prefix.py::test_canonical_graph_materialization_preserves_authoritative_source_revision backend/tests/test_canonical_repertoire_prefix.py::test_canonical_graph_cleanup_preserves_independently_authored_cards backend/tests/test_frozen_opening_order.py::test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains -q --rootdir=. -o cache_dir=/tmp/tempo-daily-statistics-evidence-20261025/pytest-cache --basetemp=/tmp/tempo-daily-statistics-evidence-20261025/pytest-retained",
+        "/Users/andy/tempo/.venv/bin/python -m pytest backend/tests/test_statistics.py::test_game_arrival_and_features_do_not_access_retired_daily_materialization backend/tests/test_postgres_cutover.py::test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically -q --rootdir=. -o cache_dir=/tmp/tempo-daily-statistics-evidence-20261025/pytest-cache --basetemp=/tmp/tempo-daily-statistics-evidence-20261025/pytest-ingestion"
+      ],
+      "test_command_receipts": [
+        {
+          "path": "/tmp/tempo-daily-statistics-evidence-20261025/after-command.json",
+          "sha256": "a891af1106a2f08c27f214fa31674065dc93a94a69f95ad759ec3167489d8458",
+          "exit_code": 1,
+          "meaning": "Historical split qualification command; initial route baseline omission is retained, subsequent route and refined ingestion proofs establish unique final passes. Do not rerun/overwrite prior task evidence for metadata changes."
+        },
+        {
+          "path": "/tmp/tempo-daily-statistics-evidence-20261025/retained-command.json",
+          "sha256": "3a57e666cbf1b46a9e6da27039030563d61a3b9389f46fc4b6d80e8e2a0c7cfa",
+          "exit_code": 0,
+          "meaning": "Historical split qualification command; initial route baseline omission is retained, subsequent route and refined ingestion proofs establish unique final passes. Do not rerun/overwrite prior task evidence for metadata changes."
+        },
+        {
+          "path": "/tmp/tempo-daily-statistics-evidence-20261025/ingestion-command.json",
+          "sha256": "578dcb79babe10b21e6fde9f16506274af34d2926d6e22bf42fe3e0184be2819",
+          "exit_code": 0,
+          "meaning": "Historical split qualification command; initial route baseline omission is retained, subsequent route and refined ingestion proofs establish unique final passes. Do not rerun/overwrite prior task evidence for metadata changes."
+        }
+      ],
+      "test_environment": "Historical source-owner commands force task-owned source PYTHONPATH and empty database URLs; SQLite/fakes only. Test names containing postgres are not native PostgreSQL acceptance. Evidence commands are retained receipts, not instructions to repeat documentation-only qualification.",
+      "implementation_receipt": {
+        "owner": "/root/statistics_source_retirement",
+        "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/461",
+        "tested_initial_executable": "2a1f1a3f40a0a94912e85a77e85c6bd2a4b93136",
+        "published_source_commit": "90720597f29cef2f5ff3362dabe7c00237759678",
+        "published_tree": "d4e3d6f33d94c11c8df95c0fabdf6c1b7481a02e",
+        "published_base": "66d98610924971ea4cce3603c76cd4c330b50ae1",
+        "source_contract_sha256": "f07170bc85b9bbac7597fe784596192bae515cfc33b060d9febf4ce894525493",
+        "source_state": "Draft/open/unmerged; actual code cut independently reviewed and published. No merge/deployment/live action by this metadata task.",
+        "exact_scope": "34 paths: four production modules and one exclusive suite deleted, twelve production edits, seventeen supporting edits (including one frontend enum value/zero physical net lines).",
+        "source_delta": {
+          "narrow_production_net": -414,
+          "broad_production_net": -414,
+          "tests_net": -173,
+          "moves": 0,
+          "classification_sha256": "0f8be57d27295e66583d4f24449f623d96213a7f5d5656b9daafbe7f244e9d2b",
+          "scope": "Exact cohort only; no whole-repository/programme reduction claim."
+        },
+        "results": "17 unique current selected checks passed, zero skipped: nine affected components, seven route/graph/frozen/phase6 cases and one additional atomic native-fake sync case. Three new cases failed before the cut. Later two targeted refinements strengthened real SQLite insert/duplicate/changed-record update/feature persistence and native-fake atomic sync; production unchanged.",
+        "provenance": "Earlier78921dd review/16-pass receipt remains immutable; final90720597 changes only named test refinements and REG docs. Clean rebase retains separately qualified454 coordinator cut and preserves both REG sections. Exact three already-retained GameEvidence route rows repaired using same-baseline guided proof; no API added.",
+        "source_absence": "Four producer modules/refresh command/daily kind and worker/refresh route are removed; remaining per-game feature ASTs and shared source remain. Source tests deny daily admission and daily invalidation while proving primary writes.",
+        "qualification_limit": "No native PostgreSQL, actual-host/version mapping, database/file reset, live data or deployment acceptance."
+      },
+      "dependency_receipts": [
+        "Reuses exact #428 packet e4b6c557a368fdc6d4b627dc9e228f41031499a5 for purpose/consumer/feature-writer frontier; its old-history/background drain policy is superseded.",
+        "Root reviewed final90720597; #390 independently reviewed final production/proposed hashes, nine feature ASTs, three phase6 files, twenty-one graph keeps, exact route/type removals and owning receipts without rerunning runtime checks.",
+        "Source code only. Old daily snapshots/insights/jobs/receipts may be disposable after graph separation; source retirement never authorizes a live DROP/reset."
+      ],
+      "data_disposition": "No schema, table, row, browser data or backup mutation. Historical daily materialization has no drain requirement. Current game features, graph/repertoire source and ordinary Study contracts remain; cold retained persistence can stay with no target table count. Exact live disposal remains separate confirmation.",
+      "reviewer": {
+        "decision": "Independent source review accepted with no remaining finding; root accepted final90720597 before publication.",
+        "reviewer": "/root/retirement_390",
+        "review_sha256": "ce90e479a17c97c50f184bf286e849dce1b979f6c5f11873a2ab73f2383f3821",
+        "rationale": "No new imports/owners/private cross-domain dependency. Removes only optional materialization decisions/effects; per-game canonical writer, phase6, transactions and graph/Study interfaces remain. Native/host/live results are not inferred from task-owned SQLite/fakes."
+      }
     }
   ],
   "fresh_start_authority": {
