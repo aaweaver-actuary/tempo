@@ -1141,34 +1141,6 @@
     "state": "staged"
   },
   {
-    "method": "POST",
-    "path": "/api/statistics/daily/{local_day}/refresh",
-    "handler": "refresh_chess_statistics_day",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/games/{game_id:path}/guided-review",
-    "handler": "start_guided_game_review",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/guided-reviews/{session_id}",
-    "handler": "guided_game_review",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/guided-reviews/{session_id}/attempt",
-    "handler": "attempt_guided_game_review",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
     "method": "GET",
     "path": "/api/repertoires/{identifier}/segmentation",
     "handler": "segmentation_list",
@@ -1284,6 +1256,27 @@
     "method": "GET",
     "path": "/api/games/next-opponent-profile",
     "handler": "next_opponent_profile",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/game-evidence/legacy/deliveries",
+    "handler": "receive_legacy_evidence",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/game-evidence/legacy/cards/{card_id}/queue",
+    "handler": "queue_legacy_evidence_card",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/game-evidence/legacy/cards/{card_id}",
+    "handler": "legacy_card_status",
     "treatment": "reader",
     "state": "staged"
   }

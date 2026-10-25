@@ -231,19 +231,49 @@ def test_C3_authored_reply_without_executable_binding_remains_unknown():
     assert scope['complete'] is False
 
 
-def test_C3_complete_source_capacity_is_finite_without_truncation():
-    from tempo_content.bridge import validate_bridge_execution_scope
-    from tempo_content.models import SourceSnapshot
+def complete_capacity_source(count):
     raw=authored_pgn();description=manifest(raw)
     import chess
     description['route_assignments']=[{'fingerprint':digest([chess.STARTING_FEN,['e2e4','e7e5','g1f3']]),'route_key':'route','policy_key':'main'}]
     source,_=map_import(raw,description)
     document=source.model_dump(mode='json')
-    base=document['exercises'][0]
-    document['exercises']=[{**base,'key':f'exercise-{number}'} for number in range(8193)]
-    document['bindings']=[]
-    with pytest.raises(ContentError,match='8192'):
-        validate_bridge_execution_scope(SourceSnapshot.model_validate(document),description)
+    exercise=document['exercises'][0];route=document['routes'][0]
+    document['exercises']=[{**exercise,'key':f'exercise-{number}','decision_key':f'decision-{number}'} for number in range(count)]
+    document['routes']=[{**route,'key':f'route-{number}'} for number in range(count)]
+    document['memberships']=[{'repertoire_key':'white','policy_key':'main','route_key':f'route-{number}'} for number in range(count)]
+    document['bindings']=[{'route_key':f'route-{number}','policy_key':'main','ply':0,'exercise_key':f'exercise-{number}'} for number in range(count)]
+    return document,description
+
+
+def test_complete_9612_definition_source_fits_existing_public_capacity_without_truncation():
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from tempo_content.bridge import BridgeApplication,validate_bridge_execution_scope
+    from tempo_content.models import SourceSnapshot
+    document,description=complete_capacity_source(9612)
+    validate_bridge_execution_scope(document,description)
+    class Storage:
+        record=None
+        def insert_draft(self,database,identifier,source_id,source_key,revision,fingerprint,document):
+            self.record={'id':identifier,'digest':fingerprint,'document':document}
+        def draft(self,identifier):
+            return self.record
+    storage=Storage()
+    application=BridgeApplication(SimpleNamespace(workspace_id='bridge-test',_transaction=lambda: nullcontext(None)),storage)
+    result=application.draft(document,description,0)
+    assert len(result['document']['source']['exercises'])==9612
+    assert len(result['document']['source']['bindings'])==9612
+    assert SourceSnapshot.model_json_schema()['properties']['exercises']['maxItems']==10000
+
+
+def test_complete_10001_definition_source_rejected_by_both_public_bridge_paths():
+    from types import SimpleNamespace
+    from tempo_content.bridge import BridgeApplication,validate_bridge_execution_scope
+    document,description=complete_capacity_source(10001)
+    with pytest.raises(ValueError):validate_bridge_execution_scope(document,description)
+    application=BridgeApplication(SimpleNamespace(workspace_id='bridge-test'),None)
+    with pytest.raises(ValueError):application.draft(document,description,0)
+    assert len(document['exercises'])==10001
 
 
 def test_C3_expanded_export_budget_rejects_before_retaining_oversized_scope():

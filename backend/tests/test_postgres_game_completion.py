@@ -190,11 +190,11 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
     monkeypatch.setattr(postgres_game_priorities, "background_read_connection", database_connection)
     monkeypatch.setattr(postgres_game_priorities, "connection", database_connection)
     monkeypatch.setattr(postgres_game_priorities, "lock_current_slice", lambda *_args: True)
+    def unavailable_priority(*_args, **_kwargs):
+        raise AssertionError("Game derivation must complete without optional adaptive priority")
+
     monkeypatch.setattr(postgres_game_priorities, "enqueue_priority_refresh_in_transaction",
-                        lambda _database, _id:
-                        queued.append(("repertoire_priority", _id,
-                                       {"repertoire_id": _id, "generation": 4,
-                                        "cursor": 0})) or 4)
+                        unavailable_priority, raising=False)
     monkeypatch.setattr(postgres_game_priorities,
                         "enqueue_opportunity_refresh_in_transaction",
                         lambda _database, key: queued.append(('repertoire_opportunity', key, {'repertoire_id': key})))
@@ -208,8 +208,9 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
             "payload": {"game_id": "game-one", "derivation_version": 7,
                         "after_repertoire_id": ""}}
     assert postgres_game_priorities.execute_game_priority_handoff_slice(task)
-    assert [item[0] for item in queued] == ["repertoire_priority", "repertoire_opportunity"]
-    assert queued[0][2]["generation"] == 4
+    assert queued == [("repertoire_opportunity", "repertoire-one", {"repertoire_id": "repertoire-one"})]
+    assert advanced == [{"game_id": "game-one", "derivation_version": 7,
+                         "after_repertoire_id": "repertoire-one"}]
     task["payload"] = advanced[0]
     assert postgres_game_priorities.execute_game_priority_handoff_slice(task)
     assert updates[0][1:] == ("game-one", 7)

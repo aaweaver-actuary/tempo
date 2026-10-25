@@ -12,6 +12,7 @@ from typing import Literal
 import chess
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
+from tempo_content_publication_contracts.v1 import Publication
 
 from .publications import PublicationBundle, ExecutionFacts, lock_opening_repertoires
 from .gateway import request_digest
@@ -19,7 +20,8 @@ from .durable_tasks import enqueue_task_in_transaction
 from .clock import date
 from tempo_learning_database.adapters import publication_bridge as storage
 
-MAX_DEFINITIONS = 8192
+MAX_DEFINITIONS = Publication.model_json_schema()['properties']['definitions']['maxItems']
+MAX_LEGACY_ALIASES = 8192
 MAX_BUNDLE_BYTES = 12 * 1024 * 1024
 prepared_activation = ContextVar('prepared_content_activation',default=None)
 
@@ -30,6 +32,12 @@ def canonical(value):
 
 def digest(value):
     return hashlib.sha256(canonical(value).encode()).hexdigest()
+
+
+def graph_routes_digest(routes):
+    """Keep the existing routing identity; the full bundle binds display titles."""
+    return digest([{key: value for key, value in route.items() if key != 'repertoire_title'}
+                   for route in routes])
 
 
 class Binding(BaseModel):
@@ -57,12 +65,22 @@ class Binding(BaseModel):
 
 class Route(BaseModel):
     authority_start_ply: int | None = Field(default=0, ge=0, le=1000)
+    repertoire_title: str | None = Field(default=None, min_length=1, max_length=2000)
+
+    @field_validator('repertoire_title')
+    @classmethod
+    def nonblank_repertoire_title(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError('Repertoire title must not be blank')
+        return value
 
     @model_serializer(mode='wrap')
     def preserve_prior_routes(self, handler):
         value=handler(self)
         if self.authority_start_ply == 0:
             value.pop('authority_start_ply',None)
+        if self.repertoire_title is None:
+            value.pop('repertoire_title',None)
         return value
 
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -96,7 +114,7 @@ class PublicationBundleV2(PublicationBundle):
     facts: list[ExecutionFacts] = Field(min_length=1, max_length=MAX_DEFINITIONS)
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     routes: list[Route] = Field(min_length=1, max_length=10000)
-    legacy_aliases: dict[str, str] = Field(default_factory=dict, max_length=MAX_DEFINITIONS)
+    legacy_aliases: dict[str, str] = Field(default_factory=dict, max_length=MAX_LEGACY_ALIASES)
 
     @field_validator('schema_version',mode='before')
     @classmethod
@@ -125,8 +143,17 @@ class PublicationBundleV2(PublicationBundle):
         if len(set(physical)) != len(physical):
             raise ValueError("Multiple Content objects cannot merge one learning object")
         seen, coverage, primary_coverage = set(), set(), set()
+        repertoire_titles = {}
+        owned_repertoires = {membership for fact in self.facts for membership in fact.memberships}
         decision_projections={}
         for route in self.routes:
+            if route.repertoire_title is not None:
+                if route.repertoire_id not in owned_repertoires:
+                    raise ValueError('Repertoire title requires an accepted opening membership')
+                if (route.repertoire_id in repertoire_titles and
+                        repertoire_titles[route.repertoire_id] != route.repertoire_title):
+                    raise ValueError('Conflicting titles for one repertoire')
+                repertoire_titles[route.repertoire_id] = route.repertoire_title
             key = (route.repertoire_id, route.route_id, route.policy_id)
             if key in seen or len({binding.ply for binding in route.bindings}) != len(route.bindings):
                 raise ValueError("Ambiguous route/binding")
@@ -253,7 +280,7 @@ def status(database, publication_id, workspace_id, generation=None):
             document=json.loads(selected[1])
             accepted={'workspace_id':document['publication']['workspace_id'],'publication_id':publication_id,'publication_generation':selected_generation,
                 'source_revision':document['publication']['source_revision'],'source_digest':document.get('source_digest'),
-                'publication_digest':digest(document['publication']),'routes_digest':digest(document.get('routes',[])),
+                'publication_digest':digest(document['publication']),'routes_digest':graph_routes_digest(document.get('routes',[])),
                 'bundle_digest':selected[0],'bundle_schema_version':document['schema_version']}
     return {"schema_version": 1, "workspace_id": workspace_id, "publication_id": publication_id,'accepted':accepted,
         "local_date":date.today().isoformat(),
@@ -332,7 +359,13 @@ def activate(database, payload):
             "revision": definition.exercise_revision, "trained_color": fact.trained_color,
             "publication_id": identity, "publication_generation": generation, "pending_validation": int(not fact.integrity_allowed)})
     # Set-based writes avoid N network round trips while retaining one authoritative activation.
-    storage.insert_repertoires(database, datetime.now(timezone.utc).isoformat(), memberships)
+    repertoire_titles = {route.repertoire_id: route.repertoire_title for route in bundle.routes
+                         if route.repertoire_title is not None}
+    repertoire_arguments = (database, datetime.now(timezone.utc).isoformat(), memberships)
+    if repertoire_titles:
+        storage.insert_repertoires(*repertoire_arguments, repertoire_titles)
+    else:
+        storage.insert_repertoires(*repertoire_arguments)
     if alias_rows:
         storage.insert_aliases(database, alias_rows)
     storage.deactivate_cards(database, identity)

@@ -12,7 +12,6 @@ from .durable_tasks import (
     complete_task_slice_in_transaction,
     lock_current_slice,
 )
-from .introduction_priorities import enqueue_priority_refresh_in_transaction
 from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 
 
@@ -34,7 +33,6 @@ def execute_game_priority_handoff_slice(task: dict[str, Any]) -> bool:
             return complete_task_slice_in_transaction(database, task)
         if repertoire is not None:
             repertoire_id = repertoire["repertoire_id"]
-            enqueue_priority_refresh_in_transaction(database, repertoire_id)
             enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
             return advance_task_slice_in_transaction(
                 database, task, next_phase="enqueueing_priorities",

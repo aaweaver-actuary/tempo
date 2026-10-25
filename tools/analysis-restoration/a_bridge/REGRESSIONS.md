@@ -26,6 +26,12 @@ acceptance, queue issuance or review is performed by this translator.
 and origin validation, and serialized Content-to-Learning identity/alternative
 mapping. The normal component suite rejects zero selection.
 
+`test_execution_mapping_preserves_optional_repertoire_title_without_changing_old_routes`
+in that same owning suite preserves the existing public export's display title
+in the V2 payload, exact old route output when absent, and full input nonmutation.
+Learning's model/native title cases own validation and atomic name persistence;
+the operator does not write a repertoire store or depend on a domain service.
+
 `services/learning/runtime/tests/test_authoritative_bridge.py` owns the actual
 installed command across three restricted PostgreSQL databases, real HTTP
 activation/response loss/restart, authenticated evidence delivery, late evidence,

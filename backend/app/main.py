@@ -72,7 +72,6 @@ from app.contracts.transport.endgames import EndgameProbeRequest, EndgameTemplat
 from app.contracts.transport.game_analysis import GameAnalysisRequest, GameAnalysisFailureRequest, GameAnalysisLeaseRequest, GameAnalysisPositionClaimRequest
 from app.contracts.transport.game_findings import GameFindingDecisionRequest, GameFindingCurationRequest, GameExclusionRequest, GameFindingCardRequest
 from app.contracts.transport.games import GamePublicRecord, GameSummaryRecord, GamesSummaryResponse
-from app.contracts.transport.guided_review import GuidedReviewAttemptRequest
 from app.contracts.transport.authored_import import ImportResult
 from app.contracts.transport.authored_repertoire import PositionAnnotationRequest, RepertoireRenameRequest, RepertoireSettingsRequest
 from app.contracts.transport.study import ReviewRequest, QueueAttemptFailureRequest, TeachingStateRequest
@@ -115,10 +114,8 @@ from .services.threat_training import (
     enqueue_defense_admission, execute_defense_rubric_audit_slice,
 )
 from .services.tactical_opportunities import tactical_statistics
-from .services.statistics import enqueue_daily_snapshot
 from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
-from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
     enqueue_game_derivation,
@@ -547,10 +544,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                      and request.method == "POST")
         task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
                               and path_parts[4] == "retry" and request.method == "POST")
-        statistics_refresh_command = (
-            len(path_parts) == 5 and path_parts[:3] == ["api", "statistics", "daily"]
-            and path_parts[4] == "refresh" and request.method == "POST"
-        )
         defensive_admin_command = (
             request.method == "POST" and path_parts in (
                 ["api", "defensive-threats", "analysis", "audit"],
@@ -582,14 +575,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
                              and request.method == "POST")
         game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
                                   and path_parts[-1] == "exclusion" and request.method == "POST")
-        guided_review_start_command = (
-            len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
-            and path_parts[-1] == "guided-review" and request.method == "POST"
-        )
-        guided_review_attempt_command = (
-            len(path_parts) == 4 and path_parts[:2] == ["api", "guided-reviews"]
-            and path_parts[-1] == "attempt" and request.method == "POST"
-        )
         game_finding_decision_command = (
             len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
             and path_parts[-1] in {"curation", "decision"} and request.method == "POST"
@@ -697,13 +682,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     coverage_maia_command, coverage_explorer_session,
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command, tactic_capture_command,
-                    statistics_refresh_command,
                     defensive_admin_command,
                     defensive_candidate_command,
                     defensive_analysis_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
-                    guided_review_start_command, guided_review_attempt_command,
                     game_finding_decision_command, game_finding_card_command,
                     game_analysis_claim_command, game_analysis_repair_command,
                     game_manual_analysis_command, discovery_accept_command,
@@ -739,14 +722,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
     )
-    guided_review_reconciliation_read = (
-        request.method == "GET" and len(request_path_parts) == 3
-        and request_path_parts[:2] == ["api", "guided-reviews"]
-    )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
     }
-    request_scope = query_only_request() if (request.method == "GET" and not guided_review_reconciliation_read and not queue_issuance_read) or read_only_post else None
+    request_scope = query_only_request() if (request.method == "GET" and not queue_issuance_read) or read_only_post else None
     if request_scope is not None:
         request_scope.__enter__()
     try:
@@ -4424,74 +4403,6 @@ def game_detail(game_id: str):
     return public_game_record(row)
 
 
-@app.post("/api/statistics/daily/{local_day}/refresh")
-def refresh_chess_statistics_day(
-    local_day: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    try:
-        datetime.fromisoformat(local_day)
-        if postgres_store.configured():
-            from .command_dispatch import dispatch_command
-
-            return dispatch_command(
-                "statistics.daily.refresh", {"local_day": local_day},
-                idempotency_key=idempotency_key,
-            )
-        enqueue_daily_snapshot(local_day)
-        coordinator.wake()
-        return {"local_day": local_day, "status": "queued"}
-    except ValueError as error:
-        raise HTTPException(422, "Invalid local day") from error
-
-
-@app.post("/api/games/{game_id:path}/guided-review")
-def start_guided_game_review(game_id: str,
-                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.guided_review.start", {"game_id": game_id},
-            idempotency_key=idempotency_key,
-        )
-    try:
-        return create_or_resume_session(game_id)
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from error
-
-
-@app.get("/api/guided-reviews/{session_id}")
-def guided_game_review(session_id: str):
-    try:
-        return read_session(session_id)
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from error
-
-
-@app.post("/api/guided-reviews/{session_id}/attempt")
-def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequest,
-                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        result = dispatch_command(
-            "games.guided_review.attempt",
-            {"session_id": session_id, "move_uci": request.move_uci, "finding_id": request.finding_id},
-            idempotency_key=idempotency_key,
-        )
-        if isinstance(result, dict) and "guided_review_error" in result:
-            error = result["guided_review_error"]
-            raise HTTPException(error["status_code"], error["detail"])
-        return result
-    try:
-        result = submit_attempt(session_id, request.move_uci, request.finding_id)
-        if "guided_review_error" in result:
-            error = result["guided_review_error"]
-            raise HTTPException(error["status_code"], error["detail"])
-        return result
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
 
 
 from .opening_segmentation_api import router as opening_segmentation_router

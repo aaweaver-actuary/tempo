@@ -628,6 +628,20 @@
           "title": "Repertoire Id",
           "type": "string"
         },
+        "repertoire_title": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repertoire Title"
+        },
         "route_id": {
           "title": "Route Id",
           "type": "string"
@@ -698,7 +712,7 @@
       "items": {
         "$ref": "#/$defs/ExecutionFacts"
       },
-      "maxItems": 8192,
+      "maxItems": 10000,
       "minItems": 1,
       "title": "Facts",
       "type": "array"

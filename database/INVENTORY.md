@@ -27,7 +27,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy Games command SQL split: [backend/app/game_commands.py](tempo_legacy_database/adapters/games/README.md).
 - Completed legacy authority/evidence storage split: [backend/app/game_evidence_commands.py](tempo_legacy_database/adapters/games/authority/README.md).
 - Completed legacy Games command SQL split: [backend/app/game_sync_commands.py](tempo_legacy_database/adapters/games/README.md).
-- Completed guided game-review storage split: [backend/app/guided_review_commands.py](tempo_legacy_database/adapters/games/guided_review/README.md).
+- Historical completed guided game-review storage split; unsupported server/adapter source retired: [backend/app/guided_review_commands.py](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/backend/app/guided_review_commands.py). Original extraction evidence is retained in Git; stored schema is unchanged.
 - Completed authored discovery/integrity command storage split: [backend/app/integrity_repair_commands.py](tempo_legacy_database/adapters/authored_repertoires/README.md).
 - Completed HTTP composition persistence split: [backend/app/main.py](tempo_legacy_database/adapters/http_composition/README.md).
 - Completed controls SQL split: [backend/app/opening_evidence_api.py](tempo_legacy_database/adapters/controls/README.md).
@@ -61,7 +61,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed legacy Games imports storage split: [backend/app/services/game_sync.py](tempo_legacy_database/adapters/games/imports/README.md).
 - Completed legacy Games coordinator storage split: [backend/app/services/game_sync_coordinator.py](tempo_legacy_database/adapters/games/coordinator/README.md).
 - Completed legacy Games evidence storage split: [backend/app/services/gameplay_events.py](tempo_legacy_database/adapters/games/evidence/README.md).
-- Completed guided game-review storage split: [backend/app/services/guided_review.py](tempo_legacy_database/adapters/games/guided_review/README.md).
+- Historical completed guided game-review storage split; unsupported server/adapter source retired: [backend/app/services/guided_review.py](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/backend/app/services/guided_review.py). Original extraction evidence is retained in Git; stored schema is unchanged.
 - Completed legacy introduction-priority storage split: [backend/app/services/introduction_priorities.py](tempo_legacy_database/adapters/introduction_priorities/README.md).
 - Completed legacy Learning review storage split: [backend/app/services/learning_review_adapter.py](tempo_legacy_database/adapters/learning_bridge/README.md).
 - Completed legacy authority/evidence storage split: [backend/app/services/legacy_game_authority.py](tempo_legacy_database/adapters/games/authority/README.md).
@@ -75,7 +75,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed coverage build storage split: [backend/app/services/postgres_coverage_explorer.py](tempo_legacy_database/adapters/coverage/README.md).
 - Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed coverage build storage split: [backend/app/services/postgres_coverage_seed.py](tempo_legacy_database/adapters/coverage/README.md).
-- Completed legacy derived-publication storage split: [backend/app/services/postgres_daily_statistics.py](tempo_legacy_database/adapters/derived_publications/README.md).
+- Historical legacy daily-publication extraction; producer source now retired: [owner disposition](tempo_legacy_database/adapters/derived_publications/README.md#daily-statistics-source-retirement).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_derivation.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_events.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_features.py](tempo_legacy_database/adapters/games/derivation/README.md).
@@ -122,7 +122,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed existing threat training storage split: [backend/app/services/threat_training.py](tempo_legacy_database/adapters/threats/README.md).
 - Completed foreground control storage split: [backend/app/settings_commands.py](tempo_legacy_database/adapters/foreground_controls/README.md).
 - Completed intact database snapshot/evidence reader move: [backend/app/snapshot_reads.py](tempo_legacy_database/adapters/snapshot_reads.py).
-- Completed commands SQL split: [backend/app/statistics_commands.py](tempo_legacy_database/adapters/commands/README.md).
+- Historical daily-refresh command extraction; source now retired: [owner disposition](tempo_legacy_database/adapters/commands/README.md#retired-daily-statistics-command).
 - Completed legacy exercise-attempt storage split: [backend/app/study_attempt_commands.py](tempo_legacy_database/adapters/study_attempts/README.md).
 - Completed authored-Studies command storage split: [backend/app/study_commands.py](tempo_legacy_database/adapters/commands/studies/README.md).
 - Completed authored-Studies route storage split: [backend/app/study_routes.py](tempo_legacy_database/adapters/commands/studies/README.md).

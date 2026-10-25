@@ -28,12 +28,11 @@ from .repertoire_coverage import claim_coverage_node, execute_coverage_node
 from .introduction_priorities import (
     calculate_priority_records,
     claim_priority_refresh,
-    enqueue_priority_refreshes_for_game,
     execute_priority_refresh,
     load_priority_calculation_input,
     publish_priority_records,
 )
-from .statistics import claim_daily_snapshot, execute_daily_snapshot, refresh_game_features
+from .statistics import refresh_game_features
 from .repertoire_integrity import (
     claim_integrity_slice,
     execute_integrity_slice,
@@ -143,7 +142,6 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
 
 
 def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
-    enqueue_priority_refreshes_for_game(game_id, background=True)
     with connection(background=True) as database:
         repertoire_ids = storage.matching_repertoire_ids(database, game_id)
     for repertoire_id in repertoire_ids:
@@ -362,7 +360,6 @@ class GameSyncCoordinator:
             "derivation",
             "coverage",
             "integrity",
-            "statistics",
             "priority",
         )
         while True:
@@ -381,8 +378,6 @@ class GameSyncCoordinator:
                         item = await asyncio.to_thread(claim_coverage_node)
                     elif source == "integrity":
                         item = await asyncio.to_thread(claim_integrity_slice)
-                    elif source == "statistics":
-                        item = await asyncio.to_thread(claim_daily_snapshot)
                     else:
                         item = await asyncio.to_thread(claim_priority_refresh)
                 except sqlite3.OperationalError:
@@ -446,8 +441,6 @@ class GameSyncCoordinator:
                         await asyncio.to_thread(execute_coverage_node, item)
                     elif source == "integrity":
                         await asyncio.to_thread(execute_integrity_slice, item)
-                    elif source == "statistics":
-                        await asyncio.to_thread(execute_daily_snapshot, item)
                     else:
                         await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Loading priorities")
                         calculation_input = await asyncio.to_thread(
