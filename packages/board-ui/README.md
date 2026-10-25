@@ -112,6 +112,12 @@ observer notifications after cleanup.
 
 ## Package-local checks
 
+Repository-wide `npm run typecheck` resolves only the exact public
+`@tempo/board-ui` name to `src/index.ts` so the checked-in consumer fixtures are
+checked without installing the package. Private subpaths remain unresolved.
+This is source validation; the unchanged standalone consumer configuration and
+`qualify` command below own installed declarations and package-export proof.
+
 ```sh
 cd packages/board-ui
 npm ci --ignore-scripts --workspaces=false
