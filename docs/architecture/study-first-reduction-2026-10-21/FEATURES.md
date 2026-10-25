@@ -100,3 +100,37 @@ The removed runtime API is not replaced with a new framework. Its lifecycle and
 resource guarantees are retired rather than attributed to the computation API.
 This source-only candidate does not establish deployment absence or complete
 legacy-01/#391; real-data/cutover and merge gates remain separate.
+
+## Orphan Games browser action retirement (orphan-games-browser-actions-01)
+
+This source-only candidate retires five uncalled browser action clients left after
+PR #407 removed Games UI: finding-card preview/save, game exclusion, finding
+curation/decision, defensive-scan refresh and guided-review start/attempt. Their
+five exclusive Web Storage adapters and five client-only unit suites retire with
+them. Exact paths, preserved checks and protected hashes are in
+[RETIREMENT-BATCHES.json](RETIREMENT-BATCHES.json). Last-good implementation and
+client-specific replay proofs remain in [main snapshot 1e7ffb04](https://github.com/aaweaver-actuary/tempo/tree/1e7ffb049b9c5489cd0fa4c145d81ba1771813cb).
+The app-local command exports are unsupported; no backend HTTP route is retired.
+
+No production caller remained outside each exclusive client/adapter pair. The
+Game sync hook/command and complete mixed status-polling suite remain, as do
+Study review/queue, imported content, saved exercise execution, Endgames/Tactics
+commands, `PendingDiscoverySaves`, generic operation receipts and the Workbench
+URL build helper. Existing optional journal values are left cold and unchanged;
+the retained connection inspector keeps its existing practice-key selection and
+does not cover these optional keys. No existing entry is certified settled,
+exported, erased or migrated. Study history, backend/data/schema, launcher and
+actual-data gates are unchanged.
+
+Architecture: the owning [browser dictionary](../../../database/browser/adapters/games-analysis/README.md)
+now names the four surviving adapters and explicitly records cold optional keys.
+Its generic application → named adapter → Web Storage/receipt flow remains accurate
+for those survivors; no Study-to-Games edge, transaction or process lifecycle is
+introduced. Physical source-absence builds and live/native/browser qualification
+remain pending; this is not `legacy-01` approval or #390/#391 completion.
+
+Focused source-removed candidate evidence: eight installed-tool Vitest files passed
+163 tests on host Node 26.12.0, including unchanged sync/status, retained practice,
+pending-discovery, PGN pending handling and the Study composition guard. Independent
+source review found no unresolved P1/P2 and verified the exact allowlist and 20
+protected hashes. This does not replace the pending build/native/browser gates.
