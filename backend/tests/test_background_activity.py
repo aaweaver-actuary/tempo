@@ -46,9 +46,10 @@ def test_activity_projection_lists_every_background_source_and_pages_without_los
     all_items = client.get("/api/system/activity?limit=100").json()["items"]
     assert {item["source"] for item in all_items} == {
         "durable", "sync", "derivation", "integrity", "coverage",
-        "statistics", "priority", "game_analysis",
+        "priority", "game_analysis",
     }
-    assert first["total"] == 8
+    assert first["total"] == 7
+    assert not set_control("statistics", "2026-09-22", "prioritize")
     assert len(first["items"]) == 3
     assert first["next_offset"] == 3
     integrity = next(item for item in all_items if item["source"] == "integrity")

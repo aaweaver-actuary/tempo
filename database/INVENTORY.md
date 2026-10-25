@@ -75,7 +75,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed coverage build storage split: [backend/app/services/postgres_coverage_explorer.py](tempo_legacy_database/adapters/coverage/README.md).
 - Completed controls SQL split: [backend/app/services/postgres_coverage_recovery.py](tempo_legacy_database/adapters/controls/README.md).
 - Completed coverage build storage split: [backend/app/services/postgres_coverage_seed.py](tempo_legacy_database/adapters/coverage/README.md).
-- Completed legacy derived-publication storage split: [backend/app/services/postgres_daily_statistics.py](tempo_legacy_database/adapters/derived_publications/README.md).
+- Historical legacy daily-publication extraction; producer source now retired: [owner disposition](tempo_legacy_database/adapters/derived_publications/README.md#daily-statistics-source-retirement).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_derivation.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_events.py](tempo_legacy_database/adapters/games/derivation/README.md).
 - Completed Games derivation storage split: [backend/app/services/postgres_game_features.py](tempo_legacy_database/adapters/games/derivation/README.md).
@@ -122,7 +122,7 @@ Baseline mixed source files found by a conservative database-call/IndexedDB text
 - Completed existing threat training storage split: [backend/app/services/threat_training.py](tempo_legacy_database/adapters/threats/README.md).
 - Completed foreground control storage split: [backend/app/settings_commands.py](tempo_legacy_database/adapters/foreground_controls/README.md).
 - Completed intact database snapshot/evidence reader move: [backend/app/snapshot_reads.py](tempo_legacy_database/adapters/snapshot_reads.py).
-- Completed commands SQL split: [backend/app/statistics_commands.py](tempo_legacy_database/adapters/commands/README.md).
+- Historical daily-refresh command extraction; source now retired: [owner disposition](tempo_legacy_database/adapters/commands/README.md#retired-daily-statistics-command).
 - Completed legacy exercise-attempt storage split: [backend/app/study_attempt_commands.py](tempo_legacy_database/adapters/study_attempts/README.md).
 - Completed authored-Studies command storage split: [backend/app/study_commands.py](tempo_legacy_database/adapters/commands/studies/README.md).
 - Completed authored-Studies route storage split: [backend/app/study_routes.py](tempo_legacy_database/adapters/commands/studies/README.md).

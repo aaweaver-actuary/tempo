@@ -75,7 +75,7 @@
     "backend/app/study/review/__init__.py",
     "backend/app/study/review/feedback_contracts.py"
   ],
-  "current_python_module_count": 233,
+  "current_python_module_count": 231,
   "modules": [
     {
       "original_path": "backend/app/__init__.py",
@@ -1800,15 +1800,13 @@
     },
     {
       "original_path": "backend/app/services/postgres_daily_statistics.py",
-      "current_paths": [
-        "backend/app/services/postgres_daily_statistics.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Optional Games daily aggregate and insight publication",
       "responsibility": [
         "Read provider watermarks/game analysis readiness; calculate daily outcome/tactical totals; publish one snapshot and threshold-based insights under a current task lease."
       ],
-      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+      "next_step": "Retired daily statistics producer under graph-preserving fresh start; last implementation source 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf. No schema/data removal."
     },
     {
       "original_path": "backend/app/services/postgres_game_derivation.py",
@@ -3184,10 +3182,8 @@
     },
     {
       "original_path": "backend/app/statistics_commands.py",
-      "current_paths": [
-        "backend/app/statistics_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Statistics / daily-refresh command composition",
       "responsibility": [
         {
@@ -3211,7 +3207,7 @@
           "responsibility": "Import-time statistics.daily.refresh registration"
         }
       ],
-      "next_step": "First small cohesive move: relocate all32 lines into Statistics outer command composition, update tasks.py:54 and test/static paths. Keep datetime.fromisoformat acceptance exactly; do not tighten day parsing or change task priority120."
+      "next_step": "Retired daily statistics producer under graph-preserving fresh start; last implementation source 1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf. No schema/data removal."
     },
     {
       "original_path": "backend/app/studies/__init__.py",
