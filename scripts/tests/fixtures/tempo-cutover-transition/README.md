@@ -68,6 +68,16 @@ replace actual authority observation. Gate inputs after finalization contain
 the finalized selected records. Before activation, lifecycle adds publication
 facts only after exact readback and successful file plus parent-directory fsync.
 
+The readiness adapter owns `before-fence`, `before-resume`,
+`before-publication`, `before-activation`, and `before-forward-recovery`
+checkpoint decisions. Forward recovery needs the finalized transfer/publication
+pair and a fresh fence, and never implies zero accepted effects. Original
+restoration instead has its own `proveOriginalRestoration` capability; its
+`before-original-restoration` binding is produced with lifecycle's exported
+`cutoverReleaseBinding`, not the readiness evaluator. These capabilities are
+separate because forward repair and proof of zero target-only effects authorize
+different operations.
+
 On a resumed unfinished transition, a fresh gate and fresh original-authority
 fence/pending-work evidence are required. Interrupted effects must be reconciled
 with their existing operation receipts. Unknown completion blocks; the lifecycle
