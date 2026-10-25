@@ -100,3 +100,35 @@ The removed runtime API is not replaced with a new framework. Its lifecycle and
 resource guarantees are retired rather than attributed to the computation API.
 This source-only candidate does not establish deployment absence or complete
 legacy-01/#391; real-data/cutover and merge gates remain separate.
+
+## Offline tactics generation and legacy shadow capture retirement (2026-10-25)
+
+Two source-only packets are stacked on PR #411 head
+[`8c0b3b5a22fd357607497ac4e50ad9804884c12c`](https://github.com/aaweaver-actuary/tempo/commit/8c0b3b5a22fd357607497ac4e50ad9804884c12c),
+the last-good recovery point for these entrypoints. Local tracked-source/import
+searches found no serving consumer outside each exclusive implementation set.
+
+- `scripts/build_tactics_decks.py` built the original tactical decks and
+  `scripts/expand_tactics_catalog.py` selected/validated the expanded pack catalog.
+  Both generation commands are unsupported. The committed manifest, original
+  decks, all 692 packs / 17,300 puzzles, licenses/provenance, frontend catalog and
+  workspace/card-editor consumers, backend catalog service and Docker assets
+  remain byte-for-byte unchanged. [Catalog documentation](../../TACTICS-CATALOG.md)
+  identifies the retained invariant tests. No catalog was regenerated.
+- `scripts/evaluate_opening_rankings.py` captured current opening candidates or
+  compared saved JSON, through `backend/app/services/opening_ranking_snapshot.py`
+  and `database/tempo_legacy_database/adapters/opening_ranking/`. This exclusive
+  legacy CLI/composition/storage path and its capture-flow drawing are retired;
+  both CLI subcommands are unsupported. This is distinct from PR #411's
+  `tools/ranking-evaluation` package retirement. [Pure evaluation and history](../../opening-shadow-ranking.md)
+  remain, including DTOs/math, selected-policy/serialization tests, card valuation,
+  frontier, production admission/capacity, frozen ordering, queue SQL, miss
+  projection and the shared connection pool-timeout regression. Only exclusive
+  capture/CLI tests, their native shadow proof and its Redis helper retire.
+
+No user data was accessed, exported or removed. No tables, schema, live services,
+Study behavior or deployment configuration changed. The retired capture adapter's
+canonical drawing is removed with its owning directory; its parent inventory
+points to the retained history. Other maintained architecture views are unchanged.
+Source checks and native case collection do not establish deployed-client absence,
+native PostgreSQL/Redis recovery or merge qualification.
