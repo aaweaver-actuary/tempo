@@ -1,10 +1,11 @@
 """Primary source work remains usable without optional adaptive-priority or opportunity effects."""
 
 import json
+from importlib.util import find_spec
 
 from app import canonical_prefix_api
 from app.services import (
-    game_sync_coordinator, introduction_priorities, postgres_coverage_explorer,
+    game_sync_coordinator, postgres_coverage_explorer,
     postgres_coverage_seed,
 )
 
@@ -37,7 +38,7 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
                         lambda *args: effects.append(("invalidate-publication", args)))
     monkeypatch.setattr(storage, "delete_introduction_priorities",
                         lambda *args: effects.append(("invalidate-scores", args)))
-    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh_in_transaction", unavailable_priority)
+    assert find_spec("app.services.introduction_priorities") is None
 
     result = canonical_prefix_api.save_prefix(database, {"repertoire_id": "rep", "request": {
         "preview_id": "preview", "expected_revision": 2,

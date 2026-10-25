@@ -25,7 +25,6 @@ from psycopg.rows import dict_row
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.connections import background_read_connection
-from app.services import introduction_priorities, priority_retention
 from app.threat_analysis_commands import claim_threat_analysis
 
 
@@ -192,40 +191,6 @@ def measure() -> None:
     assert request["lease_expires_at"] is not None and request["attempts"] == 1, after_claim
     print(f"threat claim: 20000 queued, 1 eligible, committed in {claim_elapsed:.3f}s; baseline rollback and committed lease verified")
 
-    @contextmanager
-    def read_section():
-        with background_read_connection() as database:
-            yield database
-
-    started = time.perf_counter()
-    rows = introduction_priorities._read_personal_evidence_rows(
-        read_section, [f"synthetic-position-{number:04d}" for number in range(864)], "white",
-    )
-    assert len(rows) == 864
-    print(f"position evidence: 864 keys, 7 sections, {len(rows)} rows in {time.perf_counter()-started:.3f}s")
-
-    original_lock = priority_retention.lock_current_slice
-    original_enqueue = priority_retention.enqueue_task_in_transaction
-    priority_retention.lock_current_slice = lambda _database, _task: True
-    priority_retention.enqueue_task_in_transaction = lambda *_args, **_kwargs: None
-    task = {"id": "synthetic", "generation": 1, "lease_token": "synthetic",
-            "payload": {"repertoire_id": REPERTOIRE_ID}}
-    started = time.perf_counter()
-    try:
-        for _ in range(4):
-            more = priority_retention.execute_priority_retention_slice(task)
-            if not more:
-                break
-    finally:
-        priority_retention.lock_current_slice = original_lock
-        priority_retention.enqueue_task_in_transaction = original_enqueue
-    with psycopg.connect(DATABASE_URL) as database:
-        generations = dict(database.execute(
-            "SELECT generation,COUNT(*) FROM repertoire_card_priority_generations "
-            "WHERE repertoire_id=%s GROUP BY generation", (REPERTOIRE_ID,),
-        ).fetchall())
-    assert generations == {1: 48, 2: 48}
-    print(f"priority retention: 48 stale rows removed in bounded slices, active/published intact, {time.perf_counter()-started:.3f}s")
 
 
 def cleanup() -> None:

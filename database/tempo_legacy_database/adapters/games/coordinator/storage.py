@@ -247,10 +247,3 @@ def requeue_interrupted_integrity_state(database):
     )
 
 
-def requeue_interrupted_priorities(database, now):
-    database.execute(
-        """UPDATE repertoire_priority_jobs
-               SET status='queued',next_attempt_at=?,updated_at=?
-               WHERE status='running'""",
-        (now, now),
-    )
