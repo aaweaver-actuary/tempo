@@ -455,3 +455,116 @@ checkout; final checkout cleanup is recorded in `handoff.json`. No live Study,
 database/history, host setting, secret, deployment, CI configuration or PR merge
 was touched. The main #419 test-inventory repair has another owner; no discovery
 failure was bypassed and no whole runner-lane pass is claimed.
+
+## #382 composed browser qualification — October 25, 2026
+
+**Browser scope passed: 2/2 scenarios, 0 failed/skipped.** Production Study used
+actual web ingress, installed Learning and disposable PostgreSQL at executable
+`bc7c9194641938e605b7025e1f68faec1093dc22`, incorporating main
+`782bf5374b87f223a023568305056415d5b63cea`. Native ten-case acceptance belongs to
+its separate owner; these results do not close that gate or qualify real
+history, physical phones or deployment. Later receipt publication is documentation
+only and does not require runtime reruns.
+
+The parent accepted #380's recorded source/artifact evidence at
+[PR #420](https://github.com/aaweaver-actuary/tempo/pull/420), head
+`20be190eec5ed28ce149344767e8f9edb4f648ab`; no merge is asserted here. Compose,
+nginx and Learning COPY inputs are unchanged from its qualified source
+`e196559ef1df17defba7305d70b64b5f454854ba`. #419 changed web build inputs, so
+current web artifacts were built afresh from the committed Dockerfile. The older
+Learning image was removed; it was recreated from unchanged source using build
+caches. Installed image files byte-match **54 runtime + 36 database** Python
+sources. Images actually used were:
+
+| Artifact | Image ID |
+| --- | --- |
+| Study web | `sha256:e4f76ef652e2afa4a70b83a4eb71420a04753c5751a0f8acd1549c58228b3515` |
+| Learning/bootstrap | `sha256:b7b5e20946ae44d67ada8c9ff222fe19c1af55535b7ae6dfc167c48303aafffc` |
+| PostgreSQL | `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336` |
+
+The new image contains **745** files, including nginx's `50x.html`; asset manifest
+SHA256 is `9a2b81f1741d638af98b72b6cbc273dbb14f5e807d9738fbab175d22439d1351`.
+Against the native owner's earlier 744-file build, all paths are present but
+`study-composition.json` changed after #419; the old manifest is not relabelled as
+identical. Its final current 744-file build is now byte-identical to the browser
+image apart from nginx's added `50x.html`; native manifest SHA256 is
+`0f48f5191917a52439502d50c7e5110d0f41d5a39d583952d7fe98f0de88da8e`.
+The separate [PR #422](https://github.com/aaweaver-actuary/tempo/pull/422) receipt
+records **10/10 native cases plus 2 supporting cases**, no skips, on assembly
+`a534aeb0e2f96c8adecaaffc855fdd62abc1898e`, consuming this exact browser script.
+Those tests were not repeated by the browser owner. Exact commands,
+image/source hashes, installed-file and asset maps,
+raw sanitized browser/SQL logs and cleanup evidence are retained at
+`/tmp/tempo-382-browser-repair-evidence-20261025`. The aggregate
+`composed-acceptance.json` SHA256 is
+`6bd348ffdd229e9d0ef320c099a2f43eaed12841413c16df65672277a1faff68`.
+
+The existing [Node proof](../../scripts/prove-study-learning.mjs) now accepts
+`mode: "composed-ingress"` only for `normal`/`lost-response`. Supply the same exact
+`http://127.0.0.1:<port>` origin in `frontend` and `learning`, explicit configured
+`workspace`, task-generated Study `credential`, and `scenario` through private
+stdin. Paths, userinfo, query strings, remote hosts and competing Learning origins
+are rejected. Omitted mode retains the native random-port proxy and `workspace-a`.
+No application protocol, operator, production configuration or fixture endpoint
+was added; no Python invocation wrapper is necessary:
+
+```sh
+node scripts/prove-study-learning.mjs < "$PRIVATE_INPUT_JSON"
+```
+
+Each scenario had a fresh `tempo-study-test-<id>` project, workspace `workspace-a`,
+timezone `America/New_York`, existing ownership producer/explicit bootstrap, and
+exactly three running services: web, Learning and PostgreSQL. Bootstrap was an
+exited one-shot; optional services were absent. Synthetic accepted publication
+setup reused `test_runtime.bundle()` and its existing stage/activate interfaces,
+then the native normal/lost-response teaching precondition. Each baseline had
+zero reviews and review-attempt receipts. Chromium **153.0.8010.12**, Playwright
+**1.63.0** and existing host Node **26.12.0** used copied locked JS packages and
+read-only cached browser executables, with no host software installation.
+
+| Scenario / project suffix | Original operation ID | Independent durable result |
+| --- | --- | --- |
+| normal / `e367dedd09ff96a1` | `review-attempt:cfc94ff9-15fa-4b8e-89b5-616cebc750b8` | One original POST, one complete operation, one review-attempt receipt, review ID 1 |
+| lost-response / `255f9da6cb7f556e` | `review-attempt:f99cb507-3964-4799-8837-81e5c19c21a1` | One original POST, same-ID receipt recovery after reload, one review-attempt receipt, review ID 1 |
+
+Actual browser URL inventory keeps bootstrap, queue and review requests on each
+web origin (`127.0.0.1:54671` / `:54685`), without proxy-origin substitution.
+Lost-response forwards the original request through ingress, reads its real
+HTTP **200 / 382-byte** response, then aborts at **browser-route-after-ingress**.
+This is injected browser-transport loss, not an nginx-generated outage claim.
+The original retained operation/attempt/authority/endpoint/body is checked, then
+a separate authenticated ingress read confirms that original complete, persisted
+receipt and positive review ID. Independent PostgreSQL reads match its operation
+payload/response, original attempt/card/queue binding and exactly one durable
+review in each fresh database. The harness's `database_verification:
+required-external` is fulfilled by those separate SQL results, not by browser or
+transport observation.
+
+The registered owning Node test file adds **10 passing contracts**, separately
+from **2 passing real-Chromium transport checks with a synthetic HTTP fixture**
+and the **2 actual composed scenarios** above. Native proxy defaults, rejected
+bindings, passive observation, real-response-before-abort ordering, original
+identity/body retention and rejected false receipt/ingress evidence are covered.
+Pure contracts used official `node:22-slim` image
+`sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d`.
+The registered lane initially stopped before collection because main #419 left
+five deleted Games unit files in the frontend inventory. That baseline failure
+is retained in `lane-baseline-mismatch.json`. The owner's exact
+[PR #425](https://github.com/aaweaver-actuary/tempo/pull/425) repair
+`3f17d26e564f9edad59cc60c14792e212256346c` was consumed without duplicating its
+change, preserving this new runner registration. The newly unblocked command
+`node tools/component-build/test-lane.mjs runners study-learning-proof` then
+executed **10/10 passed, 0 failed/skipped** on validation assembly
+`5e9e29b4ead71b7c9cbfc7ac2c1419739f019e51`; discovery found 160 unit files and
+10 runner files. This repeats the same ten contracts through registered dispatch,
+not ten additional cases. Only documentation and that inventory dependency
+changed after the actual browser run; no browser/database/build rerun was needed.
+
+Independent source/evidence review found no blocking findings. Builds and browser
+execution held `/tmp/tempo-mac-validation-20261025.lock`, opened without truncation
+and preserved. Both projects' exact containers, two volumes and network, all six
+task image tags and private inputs were removed. Project-label inventories were
+empty; a separate **20-target** exact absence audit passed. Shared images/caches,
+live Study/data and other tasks were preserved. Physical-phone/live-data,
+deployment and full CI remain **UNVERIFIED**. Native qualification is separately
+reported in PR #422 and is not included in this receipt's browser count.
