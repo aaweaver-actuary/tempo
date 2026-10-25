@@ -139,6 +139,15 @@ mocked tests and configuration rendering do not establish that proof.
 
 ## Bounded qualification receipt for #378–#380 (2026-10-23)
 
+PR #410's later five-case synthetic fresh-PGN qualification passed on
+`d9ce864b97b81196fb7bad5ddef8e61f2394ee5e`, integrated with main
+`f9449a2a9b32e8a86f7ad2030a28231a1d8e1d26`; see the dated
+[Learning validation receipt](../../../services/learning/runtime/VALIDATION.md#focused-fresh-pgn-native-qualification--2026-10-25).
+That separate owned PostgreSQL runner removed its own fixture. It did not
+requalify the older Compose images/projects or establish any of the open
+#378–#380 assertions below. The following receipt remains historical; a
+separate owner is collecting the remaining #378/#380 evidence.
+
 **Partial, not an accepted #380 gate.** This section records the original Mac
 executor's [#380 report](https://github.com/aaweaver-actuary/tempo/issues/380#issuecomment-6368830975)
 and recorded task outcome. This documentation edit did not access the Mac, its

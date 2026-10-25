@@ -1,5 +1,80 @@
 # Independent Learning runtime validation
 
+## Focused fresh-PGN native qualification — 2026-10-25
+
+Tested commit `d9ce864b97b81196fb7bad5ddef8e61f2394ee5e` integrates PR #410
+head `f3c3ea9b724d93367cd99950aad64e07b8ff0e9d` with current main
+`f9449a2a9b32e8a86f7ad2030a28231a1d8e1d26`. The base-relative scope remains
+the same six files. Main's removal of `scripts/maia-cache-asset.ts` from
+`run_study.py`'s `extra_sources` is preserved; no retired asset is restored.
+An AST comparison proves that removal is the runner's only executable change
+since the prior PR head, and all twelve remaining source paths exist.
+
+The five `test_fresh_pgn_intake.py` cases **collected 5, passed 5, failed 0,
+skipped 0** in 22.952 seconds. Collection, all fifteen setup/call/teardown
+phases, and JUnit identities agree. One existing Starlette/AnyIO TestClient
+deprecation warning was emitted. Coverage includes white/black PGN variations
+with frozen ranks, committed response-loss replay, unchanged decision/card and
+review/FSRS identity on reimport, and invalid/stale input rejection preserving
+previous content.
+
+The existing `tempo_learning_database.tooling.run_postgres.main` owned fresh
+synthetic PostgreSQL, using `fixture_profile="full"` (Learning, Game Evidence,
+Content, and the operator bridge). Both the test process and installed CLIs
+used Python 3.12.12; installed Learning and database Python sources were
+byte-checked against the tested checkout (54 and 36 files respectively).
+Cached dependencies were installed with `UV_OFFLINE=1` and
+`UV_PYTHON_DOWNLOADS=never`; no fresh dependency or Python download was needed.
+PostgreSQL image:
+`sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`.
+The fixture had one CPU and 512 MiB; its receipt confirms container, volume,
+and temporary test-data absence after cleanup. No runtime image or browser
+was needed for this explicit-file diagnostic.
+
+From the isolated repository root, after offline locked runtime installation:
+
+```sh
+UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never PYTHONDONTWRITEBYTECODE=1 \
+services/learning/runtime/.venv/bin/python - <<'PY'
+from pathlib import Path
+import sys
+root = Path.cwd().resolve()
+sys.path.insert(0, str(root / "database"))
+from tempo_learning_database.tooling.run_postgres import main
+main(
+    test_paths=[root / "services/learning/runtime/tests/test_fresh_pgn_intake.py"],
+    evidence_directory=root.parent / "evidence/native",
+    fixture_profile="full",
+)
+PY
+```
+
+The task wrapper opened `/tmp/tempo-mac-validation-20261025.lock` in append
+mode without truncating it and held an exclusive `flock` through installation
+and child completion; it never replaced or unlinked the lock. Retained local
+evidence is under the task's `evidence/`: `run_qualification.py`,
+`invocation.json`, `qualification-input-check.json`,
+`installed-source-check.json`, `qualification-summary.json`, and
+`native/run-3dec16b6b263a16f/` (native JSON, JUnit, collection/execution
+receipts, install/service logs, and seven synthetic bridge evidence files).
+
+The earlier four selector and seven frozen-contract passes below are retained,
+not rerun. Their test bodies and relevant runtime/dependency/lock inputs are
+unchanged; only the retired runner source path required the narrow check above.
+Those pure-suite passes retain their original Python 3.12.14 provenance; this
+does not assert a fresh pure-suite run on Python 3.12.12. Independent read-only
+review of the integrated six-file diff found no actionable issue. Subsequent
+receipt-only edits do not change the tested executable inputs.
+
+This proves only the five synthetic #386 cases. The ten native essential Study
+UI cases, production build/browser qualification, final-image Compose checks,
+live history, physical devices and deployment remain unrun here. Separate
+#378/#380 qualification owns restricted-role/outage acceptance and teardown of
+the older retained Compose projects; this invocation did not inspect or reuse
+them. No live database, Study session, CI enablement, deployment or merge was
+performed. Architecture impact: none; tests and runner selection use existing
+Content/operator and Learning authorities without changing production boundaries.
+
 ## Study contract bundle — 2026-10-23
 
 The prepared bundle at `8890773d` imported four published file snapshots:
