@@ -52,6 +52,8 @@ it.each([
   "tempo-study-authority",
   "tempo-study-configuration",
   "tempo-study-runtime",
+  "tempo-study-startup",
+  "tempo-study-startup-recovery",
 ])("Installed Study provider regressions run in the regular suite: %s", name => {
   const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", `tests/runner/${name}.test.mjs`], { encoding: "utf8" });
   expect(result.status, result.stdout + result.stderr).toBe(0);
