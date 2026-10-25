@@ -1,12 +1,13 @@
 {
   "schema_version": 1,
   "source_commit": "cb0ed5910e6bd05894919fd8d49f5dc7bc236975",
-  "scope": "Source-only candidate preparation in an isolated branch, not approved legacy-01 execution. No merge/deployment or table-drop authority. Five independently bounded cohorts; aggregate totals are not a single legacy-01 cohort.",
+  "scope": "Source-only retirement of five independently bounded exact-path cohorts, accepted by independent source review under the #361 conclusive-isolation route and recorded affected-boundary qualification. This does not approve legacy-01 execution, deployment, table drops, actual-data migration, launcher/cutover or #390/#391 completion. Source qualification and programme/deployment acceptance are separate claims; confirmed baseline failures and unexecuted checks remain explicit.",
   "remaining_gates": [
-    "#390 reviewer approval",
-    "#382/#386 retained Study and import qualification",
-    "#359/#267/#369 launcher, cutover and migration gates",
-    "Native PostgreSQL, real browser/ONNX and deployed-client absence not established"
+    "Source merge: owner acceptance of this metadata reconciliation and explicit merge authorization; no merge or deployment has occurred. Exact runtime/source evidence remains tied to 8c0b3b5a22fd357607497ac4e50ad9804884c12c, tree ac4811566806528210cf8ba8e53d4d9c5fee0e0c; this reconciliation changes metadata only.",
+    "Deferred programme/execution: legacy-01 authorization and #390/#391 completion remain open; source retirement acceptance does not satisfy them.",
+    "Deferred programme/execution: #382/#386 retained Study/import native qualification and actual-data/history preservation acceptance remain open for their execution scope; persistence inputs are unchanged by these removals.",
+    "Deferred programme/deployment: #359/#267/#369 launcher, cutover and actual-data migration gates remain open. No live deployment, table drop or migration is authorized.",
+    "Deferred deployment: native PostgreSQL/real-browser/host acceptance and deployed-client/cache absence are not established. Classic optional Maia URLs are unsupported after source retirement; unknown external consumers and deployed caches are not claimed absent."
   ],
   "batches": [
     {
@@ -97,12 +98,13 @@
       ],
       "dependency_receipts": [
         "No incoming source/config consumer outside the two dormant evidence-math qualification branches; documentation inventory updated.",
-        "37 total paths include only 8 production modules / 772 lines. Remaining 11074 deleted lines are exclusive fixtures, corpus, tests and metadata, not live code."
+        "37 total paths include only 8 production modules / 772 lines. Remaining 11074 deleted lines are exclusive fixtures, corpus, tests and metadata, not live code.",
+        "Exact-head independent source review accepts offline-only consumer isolation; retained ranking operators and evidence-math paths remain. No execution or data-migration acceptance is inferred."
       ],
       "data_disposition": "Only packaged synthetic/replay corpus fixtures removed. No user data, frozen ordering, schema, migrations or live state touched.",
       "reviewer": {
-        "decision": "pending",
-        "rationale": "Single offline capability, 8 production paths; no size exception required for production scope."
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Single offline capability, 8 production paths; no size exception required for production scope. Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
       }
     },
     {
@@ -211,11 +213,14 @@
       "dependency_receipts": [
         "Classic public worker has no current static caller after browser engine retirement; exact build/config references removed.",
         "Actual aggregate Study/local builds and 3 unit files / 4 tests pass; outputs omit both retired classic assets.",
-        "Unknown external public-URL consumers and deployed caches are not verified absent."
+        "Unknown external public-URL consumers and deployed caches are not verified absent.",
+        "Exact-head Mac verification: Study and local builds passed; the five retained offline/build/classic-worker/frozen/coverage files executed 12 passing tests. Reduced-source Study regression remains passing. Docker COPY/source isolation is the bounded #361 proof; a Docker Study image build and actual browser/deployment were not run.",
+        "Classic optional Maia worker/cache URLs are unsupported after source retirement. External public-URL users and deployed caches remain unknown; existing browser cache data is untouched."
       ],
       "data_disposition": "Existing MaiaModels browser caches are untouched; no model assets, persisted Study state, tables or migrations removed.",
       "reviewer": {
-        "decision": "pending"
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
       }
     },
     {
@@ -305,11 +310,13 @@
       ],
       "dependency_receipts": [
         "CLI callers were confined to exclusive regression/bootstrap cases and retired operator documentation.",
-        "All 19 retained test function bodies are unchanged; native PostgreSQL proof is unchanged and not executed by this candidate batch."
+        "All 19 retained test function bodies are unchanged; native PostgreSQL proof is unchanged and not executed by this candidate batch.",
+        "Exact-head Mac verification: retained synthetic/in-memory/corpus suite 30 passed and direct CLI bootstrap 8 passed with already-installed Celery. Unchanged base bootstrap 9 passed, including the extra retired-CLI case. Native import/reimport/history execution remains unrun and separately gated."
       ],
       "data_disposition": "No corpus, stored Study history, imported exercises, schema or migration changes. CLI retirement does not retire the shared backend service.",
       "reviewer": {
-        "decision": "pending"
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
       }
     },
     {
@@ -461,9 +468,12 @@
       ],
       "data_disposition": "No user data, Study history, schema or migrations changed.",
       "reviewer": {
-        "decision": "source candidate reviewed; final combined review pending",
-        "rationale": "Not legacy-01 approval or release/cutover qualification."
-      }
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Not legacy-01 approval or release/cutover qualification. Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      },
+      "dependency_receipts": [
+        "Exact-head Mac verification: focused Intelligence engine/Maia/validation suites 58 passed. Retained native/browser engine sources/assets are unchanged. Worker/boundary aggregate is 67/68 on both head and base; the retained engine selection is 8/9 on both, with the same 15-second smoke timeout. These baseline failures are not passing gates or introduced regressions."
+      ]
     },
     {
       "id": "maia-supervisor-01",
@@ -590,9 +600,17 @@
       ],
       "data_disposition": "No user data, Study history, schema or migrations changed.",
       "reviewer": {
-        "decision": "source candidate reviewed; final combined review pending",
-        "rationale": "Not legacy-01 approval or release/cutover qualification."
-      }
+        "decision": "source retirement accepted under #361; execution/cutover not authorized",
+        "rationale": "Not legacy-01 approval or release/cutover qualification. Independent source review accepts this exact-path cohort as isolated from retained Study/import serving behavior under #361. Acceptance concerns source retirement only with recorded affected-boundary qualification; it does not establish deployed-client absence or authorize deployment/table drops, legacy-01, actual-data migration, launcher/cutover or #390/#391 completion."
+      },
+      "dependency_receipts": [
+        "Exact runtime Docker verification at 2026-10-25T12:35:37Z through 12:35:54Z: source 8c0b3b5a22fd357607497ac4e50ad9804884c12c, tree ac4811566806528210cf8ba8e53d4d9c5fee0e0c; Node v26.10.0, npm 11.19.1, linux/arm64; 47 pure, 1 real-model and 3 installed-artifact cases passed, with no failed/skipped owning cases.",
+        "Official image reused from Dockerfile.maia: node:26.10.0-bookworm-slim@sha256:3ffc19ea878019d9e9ae8971732ad4a03cda44f167107173174b60ed7c65bed3. Observed limits: 2 CPUs, 2147483648 bytes memory and equal memory+swap, 256 PIDs. Network was disconnected before tests; the existing restricted qualifier ran offline with its ordinary temporary npm ci and immutable model/vocabulary/schema checks.",
+        "Installed artifact tempo-maia-worker-1.0.0.tgz SHA-256 0a33c9d9a08e2fe6bcc58e185436b8e3cb10501090715dcd1a2c6066afb272e5. Existing qualifier temporary workspace, owned container and task npm cache were removed; official image retained. No host Node download, Python installation, live-container alteration, live database, deployment or settings change.",
+        "The slim image has no git binary, so the unmodified installed qualifier records null source_revision/source_dirty; the outer host receipt attests exact source SHA/tree and clean tracked inputs. This is not an installed-source provenance claim from the inner report.",
+        "Root TypeScript checking produced identical 124 diagnostics on head and base. The unchanged registered Python installed-contract consumer was not executed; these receipts do not claim every registered/full-system suite passed.",
+        "Read-only GitHub state at 2026-10-25 12:19 UTC: main unprotected, no effective branch rules/rulesets or PR required checks; repository-wide Actions disabled despite active workflow definitions. Sourcery skipped and supplied no approval. No setting changed."
+      ]
     }
   ]
 }
