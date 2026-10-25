@@ -263,18 +263,10 @@ def position_key_for_test(fen):
     return " ".join(chess.Board(fen).fen().split()[:4])
 
 
-def test_canonical_prefix_probabilities_condition_on_assumed_opponent_moves():
-    from app.services.introduction_priorities import IntendedLine, _line_probabilities, _route_signature
-    moves = tuple([*ITALIAN, "f8c5", "c2c3"])
-    line = IntendedLine("italian", chess.STARTING_FEN, "white", moves, _route_signature(chess.STARTING_FEN, moves), 5)
-    probabilities, edges, _ = _line_probabilities([line], {}, {}, 15, 0.0005)
-    assert probabilities["italian"] == 1
-    assert [value[1]["explorer"] for value in edges.values()][:2] == ["assumed", "assumed"]
 
 
-def test_canonical_prefix_anchored_continuation_retains_downstream_probabilities_and_absolute_horizon(prefix_database):
+def test_canonical_prefix_anchored_continuation_retains_downstream_routes_and_absolute_horizon(prefix_database):
     from app.services.canonical_prefix import scope_lines
-    from app.services.introduction_priorities import _maximal_intended_lines, _line_probabilities
     add_line(ITALIAN[:3], "opening-stub")
     add_line(["f8c5", "c2c3"], "continuation", prefix_projection(ITALIAN)["ending_fen"])
     apply_preview(prepare_prefix())
@@ -287,17 +279,6 @@ def test_canonical_prefix_anchored_continuation_retains_downstream_probabilities
     assert [node["ply"] for node in nodes] == [3, 5]
     assert nodes[0]["routes"] == [ITALIAN[:3]]
     assert nodes[0]["covered_replies"] == ["b8c6"]
-    intended_lines = _maximal_intended_lines(analysis_lines)
-    public = {
-        position_key_for_test(prefix_projection(route)["ending_fen"]): {
-            "moves": {move: {"explorer_probability": probability}},
-            "explorer_status": "complete", "explorer_games": 100,
-            "maia_status": "failed",
-        }
-        for route, move, probability in ((ITALIAN[:3], "b8c6", 0.25), (ITALIAN, "f8c5", 0.5))
-    }
-    probabilities, _, _ = _line_probabilities(intended_lines, public, {}, 15, 0.0005)
-    assert probabilities == {"continuation": 0.125}
     with database.read_connection() as connection:
         assert [dict(row) for row in connection.execute("SELECT * FROM repertoire_lines")] == original_lines
 
@@ -819,9 +800,8 @@ def _complete_gap_run():
 
 
 
-def test_canonical_explorer_source_race_cannot_publish_and_priority_ignores_old_run(prefix_database, monkeypatch):
+def test_canonical_explorer_source_race_cannot_publish_old_run(prefix_database, monkeypatch):
     from app.services import repertoire_coverage as coverage
-    from app.services.introduction_priorities import _coverage_evidence
     add_line([*ITALIAN, "f8c5", "c2c3"])
     apply_preview(prepare_prefix())
     run_id = coverage.enqueue_coverage_refresh("italian")
@@ -836,7 +816,6 @@ def test_canonical_explorer_source_race_cannot_publish_and_priority_ignores_old_
     coverage.execute_coverage_node(node)
     with database.read_connection() as connection:
         assert not connection.execute("SELECT 1 FROM repertoire_coverage_candidates WHERE node_id=?", (node["id"],)).fetchone()
-        assert _coverage_evidence(connection, "italian") == {}
     assert coverage.coverage_summary("italian")["run_id"] is None
     assert coverage.enqueue_coverage_refresh("italian") != run_id
 
@@ -891,22 +870,32 @@ def test_canonical_graph_cleanup_preserves_independently_authored_cards(prefix_d
         assert connection.execute("SELECT 1 FROM repertoire_cards WHERE card_id='authored'").fetchone()
 
 
+def seed_saved_introduction_scores(connection, repertoire_id):
+    """Saved serving facts are fixtures, independent of the retired calculator."""
+    from app.services.canonical_scope_freshness import scope_identity, game_scope_generation
+    evidence = {**scope_identity(connection, repertoire_id),
+                "game_scope_generation": game_scope_generation(connection)}
+    connection.execute(
+        """INSERT INTO repertoire_card_introduction_priorities(
+               repertoire_id,card_id,scoring_version,priority_score,evidence_json,updated_at)
+           SELECT ?,id,2,0.5,?,'2026-10-25' FROM cards WHERE repertoire_id=? AND content_type='opening'""",
+        (repertoire_id, json.dumps(evidence), repertoire_id),
+    )
+
+
 def test_canonical_published_introduction_priorities_hide_after_source_edit(prefix_database):
     from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
-    from app.services.introduction_priorities import rebuild_introduction_priorities, priority_status
     add_line([*ITALIAN, "f8c5", "c2c3"])
     apply_preview(prepare_prefix())
     enqueue_opening_graph_rebuild("italian")
     execute_opening_graph_rebuild(claim_task("opening_graph_rebuild"))
     with database.connection() as connection:
-        rebuild_introduction_priorities(connection, "italian")
+        seed_saved_introduction_scores(connection, "italian")
         assert connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
-        assert priority_status(connection, "italian")["updated_at"] is not None
     add_line([*ITALIAN, "g8f6"], "new-route")
     with database.read_connection() as connection:
         assert connection.execute("SELECT 1 FROM repertoire_card_introduction_priorities").fetchone()
         assert not connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
-        assert priority_status(connection, "italian")["updated_at"] is None
 
 
 def test_canonical_foreground_discovery_admission_rejects_stale_saved_source(prefix_database):
@@ -950,7 +939,6 @@ def test_canonical_preview_checks_authored_membership_of_a_generated_shared_card
 
 def test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes(prefix_database):
     from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
-    from app.services.introduction_priorities import rebuild_introduction_priorities
     from app.services.canonical_prefix import read_prefix
     add_line([*ITALIAN, "f8c5", "c2c3"])
     with database.connection() as connection:
@@ -959,7 +947,7 @@ def test_canonical_introduction_scores_hide_after_another_repertoire_scope_chang
     enqueue_opening_graph_rebuild("italian")
     execute_opening_graph_rebuild(claim_task("opening_graph_rebuild"))
     with database.connection() as connection:
-        rebuild_introduction_priorities(connection, "italian")
+        seed_saved_introduction_scores(connection, "italian")
         source_revision = read_prefix(connection, "italian")["source_revision"]
         assert connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
     _set_other_prefix("other", ITALIAN)

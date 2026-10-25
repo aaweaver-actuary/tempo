@@ -225,8 +225,6 @@ def claim_task(
             return None
         if scheduling_turn is not None:
             persist_scheduling_turn(database, scheduling_turn)
-        if row['kind'] in {'repertoire_priority'}:
-            storage.clear_pending_refresh(database, (row['kind'], row['deduplication_key']))
         _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
         claimed = dict(storage.read_task(database, (row["id"],)))
         claimed["payload"] = json.loads(claimed.pop("payload_json"))

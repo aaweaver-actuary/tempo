@@ -25,13 +25,6 @@ from app.games.ingestion.serialization import serialize_job
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
 from .repertoire_coverage import claim_coverage_node, execute_coverage_node
-from .introduction_priorities import (
-    calculate_priority_records,
-    claim_priority_refresh,
-    execute_priority_refresh,
-    load_priority_calculation_input,
-    publish_priority_records,
-)
 from .statistics import refresh_game_features
 from .repertoire_integrity import (
     claim_integrity_slice,
@@ -346,7 +339,6 @@ class GameSyncCoordinator:
             "derivation",
             "coverage",
             "integrity",
-            "priority",
         )
         while True:
             worked = False
@@ -364,8 +356,6 @@ class GameSyncCoordinator:
                         item = await asyncio.to_thread(claim_coverage_node)
                     elif source == "integrity":
                         item = await asyncio.to_thread(claim_integrity_slice)
-                    else:
-                        item = await asyncio.to_thread(claim_priority_refresh)
                 except sqlite3.OperationalError:
                     await asyncio.sleep(0.25)
                     continue
@@ -403,7 +393,7 @@ class GameSyncCoordinator:
                                 )
                             else:
                                 advanced = await asyncio.to_thread(handler, item)
-                            if item["kind"] not in {"defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
+                            if item["kind"] not in {"defensive_threat_scan", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
                                 await asyncio.to_thread(
                                     complete_task,
                                     item["id"],
@@ -427,21 +417,6 @@ class GameSyncCoordinator:
                         await asyncio.to_thread(execute_coverage_node, item)
                     elif source == "integrity":
                         await asyncio.to_thread(execute_integrity_slice, item)
-                    else:
-                        await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Loading priorities")
-                        calculation_input = await asyncio.to_thread(
-                            load_priority_calculation_input, item
-                        )
-                        if self._process_pool is None:
-                            self._process_pool = ProcessPoolExecutor(max_workers=1)
-                        records = await asyncio.get_running_loop().run_in_executor(
-                            self._process_pool,
-                            calculate_priority_records,
-                            calculation_input,
-                        )
-                        await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Publishing priorities")
-                        await asyncio.to_thread(publish_priority_records, item, records)
-                        await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Finished")
                 except sqlite3.OperationalError as error:
                     if source == "integrity":
                         await asyncio.to_thread(requeue_integrity_slice, item, error)
@@ -497,7 +472,6 @@ def _requeue_interrupted_background_work() -> None:
         storage.requeue_interrupted_coverage(database, now)
         storage.requeue_interrupted_integrity_jobs(database, now)
         storage.requeue_interrupted_integrity_state(database)
-        storage.requeue_interrupted_priorities(database, now)
 
 
 coordinator = GameSyncCoordinator()

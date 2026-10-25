@@ -20,7 +20,8 @@ No consolidation is performed during this organization phase. Observed duplicati
 **Implemented in this source branch; deployment unverified.** Seven immediate
 adaptive-priority requests are removed from the six source paths below. This is
 the remaining callback slice from #427 after #431 retired the legacy review
-hook. It does not stop internal priority workers or their recovery paths.
+hook. The full producer retirement below subsequently removes its remaining
+workers, admission and recovery paths.
 
 ```mermaid
 flowchart LR
@@ -105,3 +106,41 @@ cases remain; three Maia/coverage cases move to their regular coverage suite.
 Only tests/assertions exclusive to the removed producer/API are retired.
 The owning Game Sync regression also runs all six real local stages and checks
 persisted features, terminal state and progress without the optional producer.
+
+
+## Adaptive-priority producer retirement
+
+**Implemented source; deployment unverified.** The optional adaptive introduction
+ranking producer is removed: coverage/personal/real-game evidence scoring,
+coalesced refresh admission, preparation/jobs/generation publication, interrupted
+job recovery and generation retention. The unused `introduction_priority`
+repertoire response field and matching client schema field are removed. No
+retained frontend consumer reads that field. The algorithms remain in
+[Git history at the last producer source](https://github.com/aaweaver-actuary/tempo/tree/66d98610924971ea4cce3603c76cd4c330b50ae1/backend/app/services/introduction_priorities.py).
+
+```mermaid
+flowchart LR
+  definitions["Repertoire / canonical-prefix definitions"] --> invalidation["Existing source epochs and stale-score invalidation"]
+  queue["Ordinary Study queue owner"] --> scores["Saved current scores or existing no-score fallback"]
+  queue --> frozen["Existing frozen order and origin protection"]
+  rollover["Daily rollover task"] --> projection["Existing daily_queue_projection read"]
+  local["Local game derivation"] --> six["Six primary stages and terminal completion"]
+  native["Native game derivation"] --> handoff["Existing phase-six repertoire handoff and terminal completion"]
+```
+
+The saved-score/frozen-order readers in the queue adapters, canonical-prefix
+invalidation, repertoire graph/source writes and physical epoch/trigger
+structures are unchanged. Those surviving readers and invalidators still use
+priority relations; producer removal does not authorize dropping their tables.
+The native game handoff retains its cursor and terminal seven-phase protocol
+although its legacy module name contains `priority`. The lifecycle adapter keeps
+only its existing `daily_queue_projection` read for the essential rollover task.
+No replacement producer, compatibility handler or cross-domain import is added.
+
+[Named owning checks](../../../tests/REGRESSIONS.md#adaptive-priority-producer-retirement)
+cover actual source absence, retained API/schema, saved scores, fallback/frozen
+ordering, source invalidation, real game effects and local terminal completion.
+The old producer-only cases and native benchmarks retire with their capability;
+modified native fixture readers are source preparation, not native acceptance.
+No migration, database/file cleanup, snapshot, service operation or deployment
+is performed. Shared legacy resource coupling above remains unqualified.

@@ -28,14 +28,13 @@ from app.pgn_import_commands import admit_pgn_import, prepare_import_payload
 from app.canonical_prefix_api import save_prefix
 from app.services.canonical_prefix import read_prefix, line_origin, prefix_projection, scope_line
 from app.services.canonical_prefix_preview import request_preview, execute_prefix_preview_slice, _next_item
-from app.services.canonical_scope_freshness import game_scope_generation, coverage_run_is_current
+from app.services.canonical_scope_freshness import game_scope_generation, coverage_run_is_current, scope_identity
 from app.services.durable_tasks import complete_task, claim_task, enqueue_task_in_transaction, warm_completion_sql
 from app.services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from app.services.postgres_coverage_seed import execute_coverage_seed_slice, request_coverage_seed_in_transaction
 from app.services.postgres_coverage_explorer import _publish_node
 from app.services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
 from app.services.repertoire_coverage import coverage_summary, coverage_gaps
-from app.services.introduction_priorities import rebuild_introduction_priorities
 from app.services.postgres_game_derivation import execute_game_position_index_slice
 from app.services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from app.services.postgres_opening_graph import request_graph_rebuild_in_transaction
@@ -876,7 +875,12 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
             database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','fixture',?,'rapid',1,'white','1-0',?,?)",(game_id,NOW,chess.STARTING_FEN,json.dumps(['e2e4','e7e5','g1f3','d7d6','f1c4'])))
         publish_game_comparison(game_id,1)
         with postgres_store.connection() as database:
-            rebuild_introduction_priorities(database,repertoire_id)
+            saved_identity = {**scope_identity(database, repertoire_id),
+                              'game_scope_generation': game_scope_generation(database)}
+            database.execute("""INSERT INTO repertoire_card_introduction_priorities(
+                repertoire_id,card_id,scoring_version,priority_score,evidence_json,updated_at)
+                SELECT ?,id,2,0.5,?,? FROM cards WHERE repertoire_id=? AND content_type='opening'""",
+                (repertoire_id, json.dumps(saved_identity), NOW, repertoire_id))
             assert database.execute('SELECT 1 FROM current_repertoire_card_introduction_priorities WHERE repertoire_id=?',(repertoire_id,)).fetchone()
         with postgres_store.connection(read_only=True) as database:
             assert database.execute('SELECT repertoire_id FROM repertoire_comparisons WHERE game_id=?',(game_id,)).fetchone()[0] == baseline_repertoire_id

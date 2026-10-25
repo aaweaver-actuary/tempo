@@ -1,4 +1,4 @@
-"""Measure four incident workloads on an explicitly isolated PostgreSQL restore."""
+"""Measure the retained threat-claim incident workload on an explicitly isolated PostgreSQL restore."""
 
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_legacy_database.adapters import postgres_store
-from app.services import introduction_priorities, priority_retention
 from app.threat_analysis_commands import claim_threat_analysis
 
 
@@ -112,27 +111,11 @@ def main() -> None:
         version = database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0]
         if version != 20:
             raise RuntimeError(f"Restore schema must be 20 for candidate measurements; found {version}")
-        recurring = database.execute(
-            "SELECT repertoire_id,card_id,COUNT(*) FROM repertoire_decision_events "
-            "WHERE card_id IS NOT NULL GROUP BY repertoire_id,card_id "
-            "ORDER BY COUNT(*) DESC LIMIT 1"
-        ).fetchone()
-        retention = database.execute(
-            "SELECT repertoire_id,COUNT(*) FROM repertoire_card_priority_generations "
-            "GROUP BY repertoire_id ORDER BY COUNT(*) DESC LIMIT 1"
-        ).fetchone()
-        popular = database.execute(
-            "SELECT fen_key,COUNT(*) FROM game_position_occurrences "
-            "WHERE move_uci IS NOT NULL GROUP BY fen_key ORDER BY COUNT(*) DESC LIMIT 8"
-        ).fetchall()
         queued_threats = database.execute(
             "SELECT COUNT(*) FROM threat_analysis_requests WHERE state='queued'"
         ).fetchone()[0]
     print({"source": "verified backup restored into isolated PostgreSQL",
-           "queued_threats": queued_threats,
-           "recurring_events_for_top_card": recurring[2] if recurring else 0,
-           "priority_rows_for_top_repertoire": retention[1] if retention else 0,
-           "popular_position_counts": [row[1] for row in popular]}, flush=True)
+           "queued_threats": queued_threats}, flush=True)
 
     def threat_claim():
         with postgres_store.connection(background=True) as database:
@@ -143,32 +126,6 @@ def main() -> None:
     failures = [measure_section("defensive_threat_claim", threat_claim, options.dsn,
                                 explain_plan=options.explain)]
 
-    if retention:
-        original_lock = priority_retention.lock_current_slice
-        original_enqueue = priority_retention.enqueue_task_in_transaction
-        priority_retention.lock_current_slice = lambda _database, _task: True
-        priority_retention.enqueue_task_in_transaction = lambda *_args, **_kwargs: None
-        try:
-            task = {"id": "isolated-rehearsal", "generation": 1,
-                    "lease_token": "isolated-rehearsal",
-                    "payload": {"repertoire_id": retention[0]}}
-            failures.append(measure_section("priority_retention_slice",
-                            lambda: priority_retention.execute_priority_retention_slice(task),
-                            options.dsn, explain_plan=options.explain))
-        finally:
-            priority_retention.lock_current_slice = original_lock
-            priority_retention.enqueue_task_in_transaction = original_enqueue
-
-    if popular:
-        @contextmanager
-        def read_section():
-            with postgres_store.connection(read_only=True, background=True) as database:
-                yield database
-
-        failures.append(measure_section("position_occurrence_evidence",
-                        lambda: len(introduction_priorities._read_personal_evidence_rows(
-                            read_section, [row[0] for row in popular], "white"
-                        )), options.dsn, explain_plan=options.explain))
     postgres_store.close_pools()
     if any(failures):
         raise SystemExit("One or more representative workloads exceeded the candidate budget")

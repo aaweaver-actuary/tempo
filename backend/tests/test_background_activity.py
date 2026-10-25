@@ -33,7 +33,6 @@ def _seed_all_sources() -> None:
         db.execute("""INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,total_nodes,completed_nodes,created_at,updated_at)
                    VALUES('activity-coverage','activity-rep','queued','{}',0,0,?,?)""", (now, now))
         db.execute("INSERT INTO daily_statistics_jobs(local_day,status,updated_at) VALUES('2026-09-22','queued',?)", (now,))
-        db.execute("INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,next_attempt_at,updated_at) VALUES('activity-rep',1,'queued',?,?)", (now, now))
         db.execute("INSERT INTO game_analysis_jobs(game_id,status,updated_at) VALUES('activity-game','queued',?)", (now,))
 
 
@@ -46,10 +45,11 @@ def test_activity_projection_lists_every_background_source_and_pages_without_los
     all_items = client.get("/api/system/activity?limit=100").json()["items"]
     assert {item["source"] for item in all_items} == {
         "durable", "sync", "derivation", "integrity", "coverage",
-        "priority", "game_analysis",
+        "game_analysis",
     }
-    assert first["total"] == 7
+    assert first["total"] == 6
     assert not set_control("statistics", "2026-09-22", "prioritize")
+    assert not set_control("priority", "activity-rep", "prioritize")
     assert len(first["items"]) == 3
     assert first["next_offset"] == 3
     integrity = next(item for item in all_items if item["source"] == "integrity")
@@ -139,7 +139,7 @@ def test_derivation_pauses_after_a_phase_and_resumes_without_replaying_completed
     monkeypatch.setattr(game_sync_coordinator, "_index_game_positions", finish_first_phase)
     for operation_name in (
         "compare_games", "refresh_game_findings", "apply_real_game_misses",
-        "refresh_gameplay_events", "refresh_game_features", "enqueue_priority_refreshes_for_game",
+        "refresh_gameplay_events", "refresh_game_features",
     ):
         monkeypatch.setattr(game_sync_coordinator, operation_name, lambda *args, **kwargs: None)
     with database.connection() as db:

@@ -149,12 +149,6 @@ from .services.repertoire_coverage import (
     set_explorer_session_token,
     submit_maia_coverage,
 )
-from .services.introduction_priorities import (
-    enqueue_priority_refresh,
-    enqueue_priority_refresh_in_transaction,
-    priority_status,
-)
-from .services.priority_retention import execute_priority_retention_slice
 from .services.opening_graph import (
     decision_segments,
     enqueue_opening_graph_rebuild,
@@ -1179,7 +1173,6 @@ from .services.postgres_opening_segmentation import execute_segmentation_slice
 register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
-register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
 register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
 register_durable_task_handler("defensive_threat_validate", execute_threat_validation)
@@ -1537,7 +1530,6 @@ def list_repertoires():
         repertoire_items = [
             {
                 **{key: value for key, value in dict(row).items() if key not in {"canonical_prefix_moves_json", "canonical_prefix_revision"}},
-                "introduction_priority": priority_status(db, row["id"]),
                 "canonical_prefix": prefix_projection(
                     json.loads(row["canonical_prefix_moves_json"]), int(row["canonical_prefix_revision"])),
             }

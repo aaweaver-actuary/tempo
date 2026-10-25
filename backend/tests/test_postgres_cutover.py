@@ -4631,105 +4631,6 @@ def test_postgres_cutover_rubric_audit_yields_and_discards_stale_replay(monkeypa
     assert "defensive_rubric_audit" in claimed_filters[0]
 
 
-def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypatch):
-    from app.services import priority_retention
-
-    statements: list[tuple[str, tuple]] = []
-    generation_rows = {(2, "stale-card"), (3, "published-card"), (4, "active-card")}
-    prepared_rows = {(2, 0), (4, 0)}
-    manifests = {2, 4}
-    followups = []
-
-    class Cursor:
-        def __init__(self, row=None, rows=()):
-            self.row = row
-            self.rows = rows
-
-        def fetchone(self):
-            return self.row
-
-        def __iter__(self):
-            return iter(self.rows)
-
-    class Database:
-        def execute(self, statement, parameters=()):
-            statements.append((statement, tuple(parameters)))
-            if "FROM background_tasks" in statement:
-                return Cursor(row={"generation": 1, "lease_token": "lease", "state": "leased"})
-            if "FROM repertoire_priority_publications" in statement:
-                return Cursor(row={"generation": 3})
-            if "FROM repertoire_priority_jobs" in statement:
-                return Cursor(row={"generation": 4, "status": "running"})
-            if "SELECT generation FROM repertoire_priority_preparations" in statement:
-                return Cursor(row=next(({"generation": generation} for generation in sorted(manifests)
-                                        if generation != parameters[1]), None))
-            if "SELECT generation,ordinal FROM repertoire_priority_prepared_rows" in statement:
-                return Cursor(rows=[{"generation": generation, "ordinal": ordinal}
-                                    for generation, ordinal in sorted(prepared_rows)
-                                    if generation == parameters[1]][:parameters[2]])
-            if "DELETE FROM repertoire_priority_preparations" in statement:
-                if not any(row[0] == parameters[1] for row in prepared_rows):
-                    manifests.remove(parameters[1])
-                return Cursor()
-            if "SELECT generation,card_id FROM repertoire_card_priority_generations" in statement:
-                return Cursor(rows=[{"generation": generation, "card_id": card_id}
-                                    for generation, card_id in sorted(generation_rows)
-                                    if generation not in parameters[1:3]][:parameters[3]])
-            if "SELECT 1 FROM repertoire_card_priority_generations" in statement:
-                return Cursor(row=next(((1,) for generation, _ in generation_rows
-                                        if generation not in parameters[1:3]), None))
-            if "SELECT 1 FROM repertoire_priority_prepared_rows" in statement:
-                return Cursor(row=next(((1,) for generation, _ in prepared_rows
-                                        if generation != parameters[1]), None))
-            if "SELECT 1 FROM repertoire_priority_preparations" in statement:
-                return Cursor(row=next(((1,) for generation in manifests
-                                        if generation != parameters[1]), None))
-            return Cursor()
-
-        def executemany(self, statement, parameters):
-            parameter_rows = list(parameters)
-            statements.append((statement, tuple(parameter_rows)))
-            if "DELETE FROM repertoire_priority_prepared_rows" in statement:
-                for _, generation, ordinal in parameter_rows:
-                    prepared_rows.remove((generation, ordinal))
-            elif "DELETE FROM repertoire_priority_preparations" in statement:
-                for _, generation in parameter_rows:
-                    manifests.remove(generation)
-            elif "DELETE FROM repertoire_card_priority_generations" in statement:
-                for _, generation, card_id in parameter_rows:
-                    generation_rows.remove((generation, card_id))
-
-    @contextmanager
-    def test_connection(*, background):
-        assert background
-        yield Database()
-
-    monkeypatch.setattr(priority_retention.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(priority_retention, "connection", test_connection)
-    monkeypatch.setattr(priority_retention.activity_gate, "wait_for_foreground", lambda: None)
-    monkeypatch.setattr(priority_retention, "enqueue_task_in_transaction",
-                        lambda *_args, **_kwargs: followups.append(True))
-    current_task = {
-        "id": "task", "generation": 1, "lease_token": "lease",
-        "payload": {"repertoire_id": "repertoire"},
-    }
-    assert priority_retention.execute_priority_retention_slice(current_task) is True
-    assert generation_rows == {(2, "stale-card"), (3, "published-card"), (4, "active-card")}
-    assert prepared_rows == {(4, 0)}
-    assert manifests == {4}
-    assert followups == [True]
-    assert priority_retention.execute_priority_retention_slice(current_task) is False
-    assert generation_rows == {(3, "published-card"), (4, "active-card")}
-    assert prepared_rows == {(4, 0)} and manifests == {4}
-    assert any("FOR UPDATE SKIP LOCKED" in statement for statement, _ in statements)
-    assert all("rowid" not in statement for statement, _ in statements)
-    assert any("FROM repertoire_priority_jobs" in statement for statement, _ in statements)
-    assert any("FROM repertoire_card_priority_generations" in statement
-               and parameters[1:3] == (3, 4) for statement, parameters in statements)
-    previous_state = (generation_rows.copy(), prepared_rows.copy(), manifests.copy())
-    assert priority_retention.execute_priority_retention_slice(
-        {**current_task, "lease_token": "expired-lease"}) is False
-    assert (generation_rows, prepared_rows, manifests) == previous_state
 
 
 def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkeypatch):
@@ -5898,8 +5799,6 @@ def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch, unsc
 def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nodes, monkeypatch):
     from app import coverage_maia_commands
     from tempo_legacy_database.adapters import postgres_store
-    from app.services import refresh_requests
-    monkeypatch.setattr(refresh_requests, 'request_refresh', lambda *_args, **_kwargs: 5)
 
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
     def unavailable_priority(*_args, **_kwargs):

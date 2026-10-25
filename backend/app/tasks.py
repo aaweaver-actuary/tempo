@@ -69,7 +69,6 @@ from .services.durable_tasks import claim_task, complete_task, defer_task_for_co
 
 from .services.durable_tasks import defer_task_for_foreground
 from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refresh_after_foreground_denial
-from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import (
@@ -88,7 +87,6 @@ from .services.postgres_game_misses import execute_game_miss_slice
 from .services.postgres_game_events import execute_game_event_slice
 from .services.postgres_game_features import execute_game_feature_slice
 from .services.postgres_game_priorities import execute_game_priority_handoff_slice
-from .services.postgres_priority import execute_repertoire_priority_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
@@ -125,7 +123,6 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_threat_scan",
     "defensive_threat_backfill",
     "defensive_threat_validate",
-    "priority_retention",
     "next_opponent_profile",
     "game_sync_record",
     "game_derivation_positions",
@@ -135,7 +132,6 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "game_derivation_events",
     "game_derivation_features",
     "game_derivation_priorities",
-    "repertoire_priority",
     "game_sync_window",
     "opening_graph_rebuild",
     prefix_transition_application.TASK_KIND,
@@ -370,7 +366,6 @@ def _execute_claimed_background_slice(
         "defensive_threat_scan": execute_threat_scan_slice,
         "defensive_threat_backfill": execute_threat_backfill_slice,
         "defensive_threat_validate": execute_threat_validation,
-        "priority_retention": execute_priority_retention_slice,
         "next_opponent_profile": execute_profile_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_derivation_positions": execute_game_position_index_slice,
@@ -380,7 +375,6 @@ def _execute_claimed_background_slice(
         "game_derivation_events": execute_game_event_slice,
         "game_derivation_features": execute_game_feature_slice,
         "game_derivation_priorities": execute_game_priority_handoff_slice,
-        "repertoire_priority": execute_repertoire_priority_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         prefix_transition_application.TASK_KIND: prefix_transition_application.execute_application_slice,
@@ -416,7 +410,6 @@ def _execute_claimed_background_slice(
                 "game_derivation_misses",
                 "game_derivation_events",
                 "game_derivation_features", "game_derivation_priorities",
-                "repertoire_priority",
                 "opening_graph_rebuild",
                 prefix_transition_application.TASK_KIND,
                 "integrity_scan",
@@ -441,7 +434,7 @@ def _execute_claimed_background_slice(
         except TransactionTimeout as error:
             if claimed_task['kind'] == 'daily_queue':
                 more_work = defer_task_for_transaction_timeout(claimed_task, error)
-            elif claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention", prefix_transition_application.TASK_KIND}:
+            elif claimed_task["kind"] in {"opening_graph_rebuild", prefix_transition_application.TASK_KIND}:
                 retry_result = fail_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error,
                 )
